@@ -1,3 +1,4 @@
+import contextlib
 import re
 import shlex
 
@@ -37,6 +38,86 @@ _REQUIRED_SERVICES = ("odoo", "db")
 # different: the containers are still there, they simply cannot attach
 # to anything, so the stack has to be recreated rather than restored.
 NETWORK_ALERT_CODE = "prune_swept_network"
+
+# Alert raised when a host has used most of the networks Docker can give
+# it. Each instance takes at least one; past the host's address pools a
+# deploy fails with «all predefined address pools have been fully
+# subnetted». Docker's own pools allow about 31, which is what capped a
+# server at ~24 instances until the pools were widened (2-nov-2026).
+NETWORKS_HIGH_ALERT_CODE = "docker_networks_high"
+#: Share of the host's networks in use at which the alert is raised.
+NETWORKS_HIGH_RATIO = 0.8
+
+#: Compose projects that are the host's own, never an instance's: their
+#: networks stay whatever their state. The panel's own stacks (the
+#: master's, the QA copy's) run on the master host.
+INFRA_PROJECTS = (
+    "inverseproxy", "globalwhitelist", "incubacloud-observability", "traefik",
+    "incubacloud", "incubacloud-production", "incubacloud-qa",
+)
+
+#: Run on the host as the panel's account. Removes the networks a deleted
+#: instance left behind, and reports how many networks are in use against
+#: how many the address pools allow. A network goes only when all of
+#: this holds: it is an instance's kind (``<project>_default`` or
+#: ``<project>_whitelist``), it carries a compose project, that project is
+#: neither an instance the panel knows on this host (active or archived)
+#: nor one of the host's own stacks, and no container uses it, running or
+#: stopped. Never ``docker network prune``: on 2026-08-20 that took the
+#: networks of stopped warm spares, whose containers then could not start.
+#: Written without double braces, so Ansible leaves it as it is.
+_NETWORK_SWEEP = r"""python3 - <<'PY'
+import ipaddress, json, subprocess
+OWNED = set(%(owned)r.split())
+INFRA = set(%(infra)r.split())
+def run(*args):
+    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
+names = [
+    json.loads(line)["Name"]
+    for line in run("docker", "network", "ls", "--filter", "type=custom", "--format", "json").splitlines()
+    if line.strip()
+]
+for name in names:
+    if not name.endswith(("_default", "_whitelist")):
+        continue
+    try:
+        info = json.loads(run("docker", "network", "inspect", name))[0]
+    except Exception:
+        continue
+    project = (info.get("Labels") or dict()).get("com.docker.compose.project", "")
+    if not project or project in OWNED or project in INFRA:
+        continue
+    if run("docker", "ps", "-aq", "--filter", "network=" + name).split():
+        continue
+    if subprocess.run(["docker", "network", "rm", name], capture_output=True).returncode == 0:
+        print("removed " + name)
+used = len([line for line in run("docker", "network", "ls", "--filter", "type=custom", "-q").splitlines() if line.strip()])
+try:
+    with open("/etc/docker/daemon.json", encoding="utf-8") as fh:
+        pools = json.load(fh).get("default-address-pools") or []
+    total = sum(2 ** (p["size"] - ipaddress.ip_network(p["base"]).prefixlen) for p in pools)
+except Exception:
+    total = 0
+print("networks %%d %%d" %% (used, total or 31))
+PY"""
+
+
+def network_sweep(env, host):
+    """The orphaned-network sweep for *host*, with its instances named.
+
+    :param env: an Odoo environment
+    :param host: the ``cloud.host`` the sweep runs on
+    :return: the command the playbook runs
+    :rtype: str
+    """
+    projects = env["cloud.instance"].sudo().with_context(active_test=False).search(
+        [("host_id", "=", host.id)],
+    ).mapped("doodba_project_name")
+    return _NETWORK_SWEEP % {
+        "owned": " ".join(sorted(p for p in projects if p)),
+        "infra": " ".join(INFRA_PROJECTS),
+    }
+
 
 #: What releases before 1.0.200 named, at /tmp, the files a job staged or
 #: built and the directories it worked in: archives of customers'
@@ -252,6 +333,7 @@ class DockerPruneExecutor(AnsibleExecutor):
         return {
             "ic_protect_label": PROTECT_LABEL,
             "ic_tmp_sweep": tmp_sweep(self.env, self.job.host_id),
+            "ic_network_sweep": network_sweep(self.env, self.job.host_id),
         }
 
     async def before_execute(self, transport):
@@ -414,8 +496,44 @@ class DockerPruneExecutor(AnsibleExecutor):
                     NETWORK_ALERT_CODE, host=host,
                 )
 
+    def _report_network_sweep(self, stdout):
+        """Log the networks the sweep removed and check the host's room.
+
+        :param stdout: the sweep's output: ``removed <name>`` lines and a
+            last ``networks <used> <total>`` line
+        """
+        removed = []
+        used = total = None
+        for line in (stdout or "").splitlines():
+            words = line.split()
+            if len(words) == 2 and words[0] == "removed":
+                removed.append(words[1])
+            elif len(words) == 3 and words[0] == "networks":
+                with contextlib.suppress(ValueError):
+                    used, total = int(words[1]), int(words[2])
+        if removed:
+            self._sys(f"Removed orphaned network(s): {', '.join(removed)}")
+        if used is None or not total:
+            return
+        with self._durable_env() as alert_env:
+            host = alert_env["cloud.host"].browse(self.job.host_id.id)
+            if used >= total * NETWORKS_HIGH_RATIO:
+                alert_env["cloud.alert"].raise_alert(
+                    NETWORKS_HIGH_ALERT_CODE,
+                    f"Host '{host.name}' uses {used} of the {total} Docker "
+                    f"networks its address pools allow: past them, a new "
+                    f"instance cannot be deployed on it.",
+                    level="warning",
+                    host=host,
+                )
+            else:
+                alert_env["cloud.alert"].resolve_alert(
+                    NETWORKS_HIGH_ALERT_CODE, host=host,
+                )
+
     async def on_success(self, results):
         facts = self.playbook_facts()
+        self._report_network_sweep(facts.get("ic_network_sweep_stdout"))
         stdout = facts.get("ic_prune_stdout", "")
         self._summarize_prune_output(stdout)
         # Every prune in the play prints its own total; report the sum,
