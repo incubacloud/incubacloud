@@ -1502,3 +1502,42 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
             "-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token",
             vmagent["command"],
         )
+
+
+class TestUsersOfGoneAccountsAreRemoved(BaseCase):
+    """2-nov-2026: a tenant re-created with the same e-mail got "User sync
+    failed" in Grafana, because the user of its old login was still there."""
+
+    _TASKS = _ROOT / "ansible" / "playbooks" / "tasks" / "grafana_orgs.yml"
+
+    def _tasks(self):
+        return yaml.safe_load(self._TASKS.read_text())
+
+    def _named(self, prefix):
+        tasks = self._tasks()
+        return next(i for i, task in enumerate(tasks) if task["name"].startswith(prefix))
+
+    def test_users_go_after_the_organisations_they_lost(self):
+        self.assertLess(
+            self._named("Delete the organisations of accounts"),
+            self._named("Delete the users left without an organisation"),
+        )
+
+    def test_only_panel_sign_ins_without_any_organisation_go(self):
+        tasks = self._tasks()
+        keep = tasks[self._named("Keep only the panel's sign-ins")]
+        expression = keep["ansible.builtin.set_fact"]["ic_panel_users"]
+        self.assertIn("'Generic OAuth'", expression)
+        self.assertIn("rejectattr('login', 'equalto', 'admin')", expression)
+        delete = tasks[self._named("Delete the users left without an organisation")]
+        self.assertEqual(delete["ansible.builtin.uri"]["method"], "DELETE")
+        self.assertIn("item.json | length == 0", delete["when"])
+
+    def test_a_lost_account_list_deletes_nobody(self):
+        """An empty list must not read as "every account is gone"."""
+        tasks = self._tasks()
+        first = self._named("List the users who signed in through the panel")
+        for task in tasks[first:]:
+            when = task["when"]
+            when = when if isinstance(when, list) else [when]
+            self.assertIn("ic_account_names | length > 0", when[0], task["name"])
