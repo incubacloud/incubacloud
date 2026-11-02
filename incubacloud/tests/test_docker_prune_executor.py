@@ -132,6 +132,7 @@ class TestDockerPruneProtectFilter(TransactionCase):
             {
                 "ic_protect_label": PROTECT_LABEL,
                 "ic_tmp_sweep": docker_prune_executor.tmp_sweep(self.env, host),
+                "ic_network_sweep": docker_prune_executor.network_sweep(self.env, host),
             },
         )
         self.assertEqual(
@@ -745,3 +746,94 @@ class TestPostPruneGuard(TransactionCase):
             self._survivors(f"{project}-odoo-1", f"{project}-db-1"),
         )
         self.assertFalse(self._alert())
+
+
+class TestTheNightlySweepOfOrphanedNetworks(TransactionCase):
+    """2-nov-2026: networks of deleted instances piled up unseen, and a
+    host on Docker's own pools tops out at about 31."""
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.host = self.env["cloud.host"].create({
+            "name": "sweep-host", "ip_address": "192.0.2.64",
+            "user": "ubuntu", "wildcard_domain": "sweep.example.com",
+        })
+        self.live = self.env["cloud.instance"].create({
+            "name": "live", "project_id": self.env["cloud.project"].create(
+                {"name": "Sweep Live", "remote_folder": "sweeplive"}).id,
+            "environment": "production", "host_id": self.host.id, "state": "deployed",
+        })
+        self.archived = self.env["cloud.instance"].create({
+            "name": "gone", "project_id": self.env["cloud.project"].create(
+                {"name": "Sweep Gone", "remote_folder": "sweepgone"}).id,
+            "environment": "production", "host_id": self.host.id, "state": "deployed",
+        })
+        self.archived.active = False
+        job = self.env["cloud.job"].create({
+            "name": "Prune", "host_id": self.host.id,
+            "job_type_id": self.env.ref("incubacloud.docker_prune").id,
+        })
+        self.executor = DockerPruneExecutor(job, self.host)
+        self.logged = []
+        self.executor._sys = self.logged.append
+
+    def _script(self):
+        command = docker_prune_executor.network_sweep(self.env, self.host)
+        return command.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+
+    def test_every_instance_of_the_host_is_spared_archived_too(self):
+        script = self._script()
+        owned = script.split("OWNED = set(", 1)[1].split(".split()", 1)[0]
+        self.assertIn(self.live.doodba_project_name, owned)
+        self.assertIn(self.archived.doodba_project_name, owned)
+        for infra in ("inverseproxy", "incubacloud-production", "incubacloud-qa"):
+            self.assertIn(infra, script.split("INFRA = set(", 1)[1].split(".split()", 1)[0])
+
+    def test_the_script_is_python_ansible_leaves_alone(self):
+        script = self._script()
+        compile(script, "network_sweep", "exec")
+        self.assertNotIn("{{", script)
+        self.assertNotIn("{%", script)
+        # Never Docker's own prune; only networks no container uses.
+        self.assertNotIn("network prune", script)
+        self.assertIn('"ps", "-aq", "--filter", "network=" + name', script)
+
+    def _alert(self):
+        return self.env["cloud.alert"].search([
+            ("code", "=", docker_prune_executor.NETWORKS_HIGH_ALERT_CODE),
+            ("host_id", "=", self.host.id), ("state", "=", "active"),
+        ])
+
+    def test_what_was_removed_is_logged(self):
+        self.executor._report_network_sweep(
+            "removed firma-firma1-staging_whitelist\nnetworks 12 1024",
+        )
+        self.assertTrue(any("firma-firma1-staging_whitelist" in line for line in self.logged))
+        self.assertFalse(self._alert())
+
+    def test_a_host_near_its_pools_is_told_and_cleared_after(self):
+        self.executor._report_network_sweep("networks 25 31")
+        self.assertEqual(len(self._alert()), 1)
+        self.assertIn("25 of the 31", self._alert().message)
+        self.executor._report_network_sweep("networks 25 1024")
+        self.assertFalse(self._alert())
+
+    def test_an_unreadable_report_changes_nothing(self):
+        self.executor._report_network_sweep("networks 25 31")
+        self.executor._report_network_sweep("")
+        self.assertEqual(len(self._alert()), 1)
+
+    def test_the_play_sweeps_before_its_inventory_and_exports_it(self):
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks", "host_maintenance.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            tasks = yaml.safe_load(fh)[0]["tasks"]
+        names = [task["name"] for task in tasks]
+        sweep = next(i for i, n in enumerate(names) if n.startswith("Sweep the networks"))
+        inventory = names.index("Inventory the surviving networks")
+        self.assertLess(sweep, inventory)
+        self.assertFalse(tasks[sweep]["failed_when"])
+        exported = next(t for t in tasks if "ansible.builtin.set_stats" in t)
+        self.assertIn("ic_network_sweep_stdout", exported["ansible.builtin.set_stats"]["data"])

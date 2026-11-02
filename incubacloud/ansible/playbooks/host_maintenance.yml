@@ -137,6 +137,19 @@
       register: ic_survivors
       changed_when: false
 
+    # The networks deleted instances left behind, and how many networks
+    # the host uses against how many its pools allow. The panel builds
+    # the command (``network_sweep``): it alone knows which projects are
+    # instances. Never fails the play: what it cannot remove waits for
+    # the next night. Before the inventory below, which then counts
+    # what is left.
+    - name: Sweep the networks deleted instances left behind  # noqa: command-instead-of-shell
+      ansible.builtin.shell:
+        cmd: "{{ ic_network_sweep | default('true') }}"
+      register: ic_net_sweep
+      changed_when: "'removed ' in (ic_net_sweep.stdout | default(''))"
+      failed_when: false
+
     # Post-prune network inventory. The container check below cannot
     # see this failure mode: the containers survive, the network does
     # not, and the stack is unstartable until it is recreated. It
@@ -157,3 +170,4 @@
                | select('string') | join('\n') }}
           ic_containers_after: "{{ ic_survivors.stdout | default('') }}"
           ic_networks_after: "{{ ic_networks.stdout | default('') }}"
+          ic_network_sweep_stdout: "{{ ic_net_sweep.stdout | default('') }}"
