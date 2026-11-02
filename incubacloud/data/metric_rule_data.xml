@@ -86,6 +86,30 @@
         <field name="message">CPU on %(host)s has been saturated (load/core %(value)s).</field>
     </record>
 
+    <record id="metric_rule_proxy_down" model="cloud.metric.rule">
+        <field name="name">Host proxy not running</field>
+        <field name="sequence">35</field>
+        <field name="code">metrics_proxy_absent</field>
+        <!-- An instant reading: a proxy recreated by a deploy is gone for
+             seconds, and must not page anyone. -->
+        <field name="confirm_cycles">2</field>
+        <!-- A host that still reports, minus the hosts whose proxy
+             container does: what is left is a host with no proxy, and
+             with it no instance answering. The container's samples go
+             stale minutes after it stops or is removed, which is when
+             its host appears here. On 2 November 2026 saas-free ran nine
+             hours without its proxy and nothing said so: every check
+             reached the host over SSH, never through the proxy.
+             Verified on the live backend: with every proxy up this is
+             empty; asked for a container no host runs, it names every
+             host, with ``host_id`` and ``host``. -->
+        <field name="expression">(max by (host_id, host) (up{job="node"})) unless on (host_id) (max by (host_id) (container_last_seen{name="inverseproxy-proxy-1"}))</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">0</field>
+        <field name="level">critical</field>
+        <field name="message">The proxy on %(host)s is not running: no instance on it answers.</field>
+    </record>
+
     <!-- ── Instance-scoped rules ──────────────────────────────────────
          These raise against the instance, so the alert lands on its own
          page instead of being buried in its host's. Both depend on the
