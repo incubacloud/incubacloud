@@ -20,6 +20,13 @@ env:
   # queue_job 18.0, the commit the 18.0 root clones: the head of OCA's
   # 18.0 moves under a release otherwise.
   OCA_QUEUE_REF: 4ccc50b153fdfd4ea48292978070043cda2e9aee
+  # A failed test runs once more before it counts, as on Odoo's own
+  # runbot. Chrome on GitHub's runners now and then stops answering the
+  # first network command of a test (Network.setCookie, 2-nov-2026: three
+  # red runs in a day, each test green on the next run and in devel). A
+  # test that fails both times still fails the job; the last step of each
+  # test job lists the ones that only passed on the second try.
+  ODOO_TEST_FAILURE_RETRIES: "1"
 
 jobs:
   lint:
@@ -205,8 +212,25 @@ jobs:
       - name: Initialize test database
         run: oca_init_test_database
 
+      # Also copied to /tmp/odoo-tests.log for the retry list below;
+      # ``pipefail`` keeps Odoo's exit status.
       - name: Run tests
-        run: oca_run_tests
+        shell: bash
+        run: |
+          set -o pipefail
+          oca_run_tests 2>&1 | tee -a /tmp/odoo-tests.log
+
+      # Odoo logs each retry; a test that needed one is flaky, and should
+      # be looked at even though the job is green.
+      - name: List the tests that passed only on a retry
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/odoo-tests.log ] && grep -q "Retrying a failed test" /tmp/odoo-tests.log; then
+            grep -o "Retrying a failed test: .*" /tmp/odoo-tests.log | sort -u | while read -r line; do
+              echo "::warning::$line"
+            done
+          fi
 
   upgrade:
     name: Test (upgrade path)
