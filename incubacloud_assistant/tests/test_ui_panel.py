@@ -3,6 +3,7 @@
 from odoo.tests import HttpCase, tagged
 
 from odoo.addons.queue_job.tests.common import trap_jobs
+from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
 from .common import AssistantMixin
 
@@ -36,7 +37,7 @@ _READY = (
 
 
 @tagged("post_install", "-at_install")
-class TestAssistantPanel(AssistantMixin, HttpCase):
+class TestAssistantPanel(AssistantMixin, ChromeStartRetry, HttpCase):
     """What a user sees of the assistant in the panel."""
 
     def setUp(self):
