@@ -92,3 +92,48 @@ class TestAccessLogFileRetrofit(TransactionCase):
         self.assertIn(
             "/var/log/traefik:/var/log/traefik", host.traefik_inverseproxy_yaml,
         )
+
+
+class TestProxyProtectedFromThePrune(TransactionCase):
+    """2-nov-2026: the nightly prune deleted saas-free's stopped proxy."""
+
+    _PROXY = (
+        "services:\n  proxy:\n    image: traefik:v2.11\n    labels:\n"
+        '      - "traefik.enable=true"\n'
+        "  dockersocket:\n    image: tecnativa/docker-socket-proxy\n"
+        "    labels:\n      - \"traefik.enable=false\"\n"
+    )
+
+    def setUp(self):
+        super().setUp()
+        self.Host = type(self.env["cloud.host"])
+
+    def test_the_proxy_gains_the_label(self):
+        out = self.Host._add_proxy_protect_label(self._PROXY)
+        self.assertIn(
+            '    labels:\n      - "incubacloud.protect=1"\n'
+            '      - "traefik.enable=true"\n',
+            out,
+        )
+        # Only the proxy: the socket proxy's labels are untouched.
+        self.assertEqual(out.count("incubacloud.protect=1"), 1)
+        self.assertEqual(self.Host._add_proxy_protect_label(out), out)
+
+    def test_a_proxy_without_labels_is_left_alone(self):
+        bare = "services:\n  proxy:\n    image: traefik:v2.11\n"
+        self.assertEqual(self.Host._add_proxy_protect_label(bare), bare)
+
+    def test_the_shipped_template_carries_it(self):
+        root = Path(get_module_path("incubacloud"), "data", "traefik")
+        proxy = (root / "inverseproxy.yaml").read_text(encoding="utf-8")
+        self.assertEqual(self.Host._add_proxy_protect_label(proxy), proxy)
+        self.assertIn('- "incubacloud.protect=1"', proxy)
+
+    def test_an_upgrade_protects_a_stored_host(self):
+        host = self.env["cloud.host"].create({
+            "name": "protect-retrofit", "ip_address": "10.0.0.9",
+            "user": "ubuntu", "wildcard_domain": "example.test",
+        })
+        host.traefik_inverseproxy_yaml = self._PROXY
+        self.env["cloud.host"].init_traefik_templates()
+        self.assertIn("incubacloud.protect=1", host.traefik_inverseproxy_yaml)
