@@ -47,6 +47,22 @@ _SSH_PORT_MAX = 29999
 # step edits this same file.
 _SSHD_DROPIN = "/etc/ssh/sshd_config.d/00-incubacloud-hardening.conf"
 
+#: Make the running sshd read the drop-in. Under socket activation
+#: (Debian 13 after the playbook: ``ssh.socket`` holds the port) a reload
+#: makes sshd re-exec and bind the port itself, which the socket holds:
+#: «Cannot bind any address», and the daemon dies. That is what failed the
+#: hardening of Cloud1 on 2 November 2026, and of a fresh Debian 13 server
+#: after it. A restart of the service is handed the socket's port by
+#: systemd instead (verified on that server: new logins read the new
+#: file, and a reboot brings both units back). Without the socket, a
+#: running daemon is reloaded as before; an idle one has nothing to read.
+_SSHD_APPLY_COMMAND = (
+    "if systemctl is-active --quiet ssh.socket; then "
+    "sudo systemctl restart ssh.service; "
+    "elif systemctl is-active --quiet ssh.service; then "
+    "sudo systemctl reload ssh.service; fi"
+)
+
 
 def _pick_new_ssh_port(current_port):
     """Return the current port if already non-default, else a random one."""
@@ -386,19 +402,29 @@ class HostHardeningExecutor(AnsibleExecutor):
                 idr = await conn.run("id", check=True)
                 if self._hardened_user not in (idr.stdout or ""):
                     return False
-                # New access proven — now flip root off and reload sshd.
-                # Under socket activation sshd may be idle (ssh.service not
-                # running because ssh.socket holds the port), and reloading
-                # a stopped unit fails; there is nothing to reload in that
-                # case because the next connection spawns sshd fresh and
-                # reads the new config. Reload only when it is running.
+                # New access proven — now flip root off. From here on the
+                # file says so, whatever happens to the daemon next.
                 await conn.run(
                     "sudo sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "
-                    f"{_SSHD_DROPIN} && "
-                    "if systemctl is-active --quiet ssh.service; then "
-                    "sudo systemctl reload ssh.service; fi",
+                    f"{_SSHD_DROPIN}",
                     check=True,
                 )
+                applied = await conn.run(_SSHD_APPLY_COMMAND, check=False)
+                if applied.exit_status:
+                    # Root is off in the file, and the hardened login is
+                    # proven: the hardening stands. Only when the daemon
+                    # reads the file again is open to doubt, so that is
+                    # what is said, never that root was kept.
+                    _logger.warning(
+                        "host_hardening: root login disabled on %s, but "
+                        "applying it to the running sshd failed: %s",
+                        host.name, (applied.stderr or "").strip(),
+                    )
+                    self._sys(
+                        "⚠ Root login is disabled in the configuration, but "
+                        "the running SSH daemon could not be restarted: it "
+                        "applies at its next start."
+                    )
                 return True
         except Exception as exc:
             _logger.warning(
