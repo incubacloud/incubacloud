@@ -2505,6 +2505,62 @@ class CloudHost(models.Model):
         return inverseproxy_yaml
 
     @staticmethod
+    def _add_proxy_protect_label(inverseproxy_yaml):
+        """Return the proxy's compose file with the prune's protection label.
+
+        The nightly prune (``host_maintenance.yml``) removes every stopped
+        container without ``incubacloud.protect=1``, and the image with
+        it. On 2 November 2026 saas-free's proxy, stopped by a reboot,
+        was deleted that way and no instance on the host answered for
+        hours. Added as the first entry of the ``proxy`` service's
+        ``labels`` list; a file whose proxy service has no such list, or
+        already carries the label, is left alone.
+
+        :param inverseproxy_yaml: the host's stored compose file
+        :return: the file with the label, or the input untouched
+        :rtype: str
+        """
+        import re
+
+        if not inverseproxy_yaml:
+            return inverseproxy_yaml
+        service = re.search(
+            r"^(?P<sindent>[ \t]+)proxy:[ \t]*\n", inverseproxy_yaml,
+            re.MULTILINE,
+        )
+        if not service:
+            return inverseproxy_yaml
+        depth = len(service.group("sindent"))
+        lines = inverseproxy_yaml[service.end():].splitlines(keepends=True)
+        offset = service.end()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                if len(line) - len(line.lstrip()) <= depth:
+                    break  # left the proxy service
+                if stripped == "labels:":
+                    items = []
+                    for item in lines[i + 1:]:
+                        if not item.strip() or item.strip().startswith("#"):
+                            continue
+                        if not item.strip().startswith("- "):
+                            break
+                        items.append(item)
+                    if not items:
+                        break
+                    if any("incubacloud.protect=1" in item for item in items):
+                        return inverseproxy_yaml
+                    item_indent = items[0][:len(items[0]) - len(items[0].lstrip())]
+                    at = offset + len(line)
+                    return (
+                        inverseproxy_yaml[:at]
+                        + f'{item_indent}- "incubacloud.protect=1"\n'
+                        + inverseproxy_yaml[at:]
+                    )
+            offset += len(line)
+        return inverseproxy_yaml
+
+    @staticmethod
     def _add_traefik_security_headers(config_yml):
         """Return ``config.yml`` with the ``secure`` middleware completed.
 
@@ -3966,6 +4022,21 @@ class CloudHost(models.Model):
                 "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
             ):
                 vals["traefik_inverseproxy_yaml"] = with_port
+
+            # 2-nov-2026: the nightly prune deleted a stopped proxy, and
+            # with it every instance on the host stopped answering.
+            with_protect = self._add_proxy_protect_label(
+                vals.get(
+                    "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
+                ),
+            )
+            if with_protect != vals.get(
+                "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
+            ):
+                vals["traefik_inverseproxy_yaml"] = with_protect
+                _logger.info(
+                    "Protected the proxy from the prune for host: %s", host.name,
+                )
 
             if vals:
                 host.write(vals)
