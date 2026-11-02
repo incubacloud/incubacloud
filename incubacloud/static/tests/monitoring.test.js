@@ -111,3 +111,21 @@ describe("Monitoring — instance picker", () => {
         ]);
     });
 });
+
+describe("Monitoring — a fleet with no server", () => {
+    /**
+     * With no server nothing can report, and every chart read "No data"
+     * as if the page were broken (2-nov-2026, a tenant without a VPS).
+     * The page says why instead of embedding empty dashboards.
+     */
+    const withHosts = (hosts) => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.state = { hosts };
+        return cmp;
+    };
+
+    test("is told apart from a fleet that has one", () => {
+        expect(withHosts([]).hasHosts).toBe(false);
+        expect(withHosts([{ name: "vps-1" }]).hasHosts).toBe(true);
+    });
+});
