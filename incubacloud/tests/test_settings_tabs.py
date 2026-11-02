@@ -18,6 +18,7 @@ is never sent; and one cancelled while it loaded — Settings drew again
 meanwhile — never stands in for the one on screen.
 """
 from odoo.tests import HttpCase, new_test_user, tagged
+from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
 #: What the steps of a check can use: wait for something, open a tab,
 #: type into a field as a person does, read one back or check it is
@@ -124,7 +125,7 @@ const expectSent = (url, expected) => {
 """
 
 
-class SettingsInBrowser:
+class SettingsInBrowser(ChromeStartRetry):
     """Drive the panel's Settings screen in a headless browser.
 
     A mixin, not a test case, so saas checks its own tabs the same way
