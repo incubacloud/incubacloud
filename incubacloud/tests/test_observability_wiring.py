@@ -1549,7 +1549,9 @@ class TestMonitoringExplainsAnEmptyFleet(BaseCase):
     _TEMPLATE = _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.xml"
 
     def test_the_empty_fleet_is_explained_before_any_dashboard_is_embedded(self):
-        page = ElementTree.parse(self._TEMPLATE).find(".//t[@t-name='incubacloud.Monitoring']/div")
+        page = ElementTree.parse(  # nosec B314 — our own template, shipped in this repo
+            self._TEMPLATE,
+        ).find(".//t[@t-name='incubacloud.Monitoring']/div")
         branches = [
             el for el in page
             if el.tag == "t" and ({"t-if", "t-elif", "t-else"} & set(el.attrib))
