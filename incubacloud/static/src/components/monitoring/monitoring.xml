@@ -62,6 +62,18 @@
                 </div>
             </t>
 
+            <!-- No server in the fleet: nothing can report metrics yet.
+                 Every chart would read "No data", which looks broken; a
+                 tenant's panel itself runs on our servers, and those are
+                 ours to watch, not part of its fleet. -->
+            <t t-elif="!hasHosts">
+                <div class="rl-stub">
+                    <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                    <h3>No servers yet</h3>
+                    <p>Here you will see your fleet's metrics: the servers you add and the instances you deploy on them. You have no server yet, so there is nothing to show. Add a VPS or connect a server of your own to start.</p>
+                </div>
+            </t>
+
             <!-- Embedded dashboards -->
             <t t-else="">
                 <div class="rl-tabs" role="tablist" aria-label="Dashboards">

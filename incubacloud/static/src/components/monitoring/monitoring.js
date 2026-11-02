@@ -71,6 +71,16 @@ export class Monitoring extends Component {
         return this.env.features?.observability?.configure !== false;
     }
 
+    /**
+     * True when the fleet has at least one server that can report.
+     *
+     * Without one every dashboard reads "No data": the page explains
+     * why instead of embedding empty charts.
+     */
+    get hasHosts() {
+        return this.state.hosts.length > 0;
+    }
+
     get hostOptions() {
         return this.state.hosts.map((h) => h.name);
     }

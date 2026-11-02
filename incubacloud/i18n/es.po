@@ -16644,3 +16644,22 @@ msgstr "↻ Re-detectar instalación"
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "⚠ Could not undo what the job had prepared: %s"
 msgstr "⚠ No se pudo deshacer lo que el trabajo había preparado: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "No servers yet"
+msgstr "Todavía no hay servidores"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid ""
+"Here you will see your fleet's metrics: the servers you add and the "
+"instances you deploy on them. You have no server yet, so there is nothing to"
+" show. Add a VPS or connect a server of your own to start."
+msgstr ""
+"Aquí verá las métricas de su flota: los servidores que añada y las "
+"instancias que despliegue en ellos. Todavía no tiene ningún servidor, por "
+"eso no hay nada que mostrar. Añada un VPS o conecte un servidor propio para "
+"empezar."
