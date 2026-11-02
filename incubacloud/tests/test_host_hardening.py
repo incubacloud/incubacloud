@@ -13,7 +13,9 @@ import asyncio
 import importlib.util
 import os
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import asyncssh
 
 from lxml import etree
 
@@ -21,6 +23,7 @@ from odoo.modules.module import get_module_path
 from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.models.host_hardening_executor import (
+    _SSHD_APPLY_COMMAND,
     DEFAULT_HARDENED_USER,
     HostHardeningExecutor,
     _build_ssh_allowlist,
@@ -1373,3 +1376,59 @@ class TestHardeningScreensSpacing(BaseCase):
                 'msgstr "Escriba %(host)s para confirmar:"',
                 fh.read(),
             )
+
+
+class TestRootIsDisabledUnderSocketActivation(TransactionCase):
+    """2-nov-2026: on Debian 13 the reload killed sshd and the hardening of
+    Cloud1 was reported failed, «root SSH preserved», with root off."""
+
+    def test_the_socket_gets_a_restart_and_a_plain_daemon_a_reload(self):
+        self.assertIn(
+            "if systemctl is-active --quiet ssh.socket; then "
+            "sudo systemctl restart ssh.service;", _SSHD_APPLY_COMMAND,
+        )
+        self.assertIn(
+            "elif systemctl is-active --quiet ssh.service; then "
+            "sudo systemctl reload ssh.service; fi", _SSHD_APPLY_COMMAND,
+        )
+
+    def _finalize(self, apply_status):
+        """Run the last step against a connection whose daemon restart
+        exits with *apply_status*; return its verdict and what it logged."""
+        host = MagicMock(spec=type(self.env["cloud.host"]))
+        host.name = "host-x"
+        host.sudo.return_value.ssh_connect_kwargs.return_value = {"host": "10.0.0.5"}
+        ex = object.__new__(HostHardeningExecutor)
+        ex.env = self.env
+        ex._hardened_user = "incubacloud"
+        ex._new_port = 29336
+        ex._host = lambda: host
+        logged = []
+        ex._sys = logged.append
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        answers = {
+            "id": MagicMock(stdout="uid=1000(incubacloud)", exit_status=0, stderr=""),
+            _SSHD_APPLY_COMMAND: MagicMock(stdout="", exit_status=apply_status,
+                                           stderr="Cannot bind any address"),
+        }
+        conn.run = AsyncMock(side_effect=lambda cmd, check=False: answers.get(
+            cmd, MagicMock(stdout="", exit_status=0, stderr="")))
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        with patch.object(asyncssh, "connect", return_value=cm):
+            verdict = asyncio.run(ex._finalize_disable_root())
+        return verdict, logged, conn
+
+    def test_root_off_with_the_daemon_restarted_is_a_success(self):
+        verdict, logged, conn = self._finalize(apply_status=0)
+        self.assertTrue(verdict)
+        self.assertFalse(logged)
+        commands = [c.args[0] for c in conn.run.call_args_list]
+        self.assertIn("PermitRootLogin no", commands[1])
+        self.assertEqual(commands[2], _SSHD_APPLY_COMMAND)
+
+    def test_a_daemon_that_does_not_restart_does_not_undo_the_hardening(self):
+        verdict, logged, _conn = self._finalize(apply_status=1)
+        self.assertTrue(verdict, "root is off in the file: never report it kept")
+        self.assertTrue(any("Root login is disabled" in line for line in logged))
