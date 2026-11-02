@@ -354,17 +354,25 @@ class FullSetupExecutor(
             install_cert = (
                 "mkdir -p ~/traefik/certs ~/traefik/dynamic"
                 " && rm -f ~/traefik/dynamic/tls-default.yml"
-                " ~/traefik/certs/default.crt ~/traefik/certs/default.key"
+                " && { rm -f ~/traefik/certs/default.crt"
+                " ~/traefik/certs/default.key 2>/dev/null"
+                " || sudo rm -f ~/traefik/certs/default.crt"
+                " ~/traefik/certs/default.key; }"
             )
+        # The authority goes into the same directory as the certificate,
+        # so it takes the same fallback (2-nov-2026).
         if ships_ca:
             require_ca = (
-                f"mv {stage('cdn-ca.pem')} ~/traefik/certs/cdn-client-ca.pem"
-                f" && mv {stage('client-auth.yml')}"
+                f"{put}"
+                f" ic_put {stage('cdn-ca.pem')} ~/traefik/certs/cdn-client-ca.pem"
+                f" && ic_put {stage('client-auth.yml')}"
                 " ~/traefik/dynamic/tls-client-auth.yml"
             )
         else:
             require_ca = (
                 "rm -f ~/traefik/dynamic/tls-client-auth.yml"
+                " ~/traefik/certs/cdn-client-ca.pem 2>/dev/null"
+                " || sudo rm -f ~/traefik/dynamic/tls-client-auth.yml"
                 " ~/traefik/certs/cdn-client-ca.pem"
             )
         host = self._host()
@@ -584,10 +592,18 @@ class FullSetupExecutor(
                 "Keep the running proxy files",
             ) if label in results
         ]
+        # The certificate, the CDN's authority and the access log too:
+        # each leaves the proxy other than configured when it fails —
+        # serving an old certificate, taking traffic that did not come
+        # through the CDN, or writing a log nothing rotates — and the job
+        # used to end "fully configured" all the same (Tenants1, 1-nov).
         for label in (
             "Create traefik directory",
             *ran,
             "Move traefik config files",
+            "Install the default certificate",
+            "Require the CDN client certificate",
+            "Prepare the proxy access log",
             "Start Traefik",
         ):
             exit_status = results.get(label, {}).get('exit_status', 1)

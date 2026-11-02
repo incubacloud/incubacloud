@@ -146,6 +146,33 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
                 errors = executor.parse_results(failed)
                 self.assertTrue([e for e in errors if label in e], errors)
 
+    def test_a_failed_certificate_authority_or_log_step_fails_the_job(self):
+        """1-nov-2026: the certificate failed on Tenants1 and the job
+        still ended "fully configured"."""
+        executor = self._executor(FullSetupExecutor, "full_setup")
+        results = self._good_results(executor)
+        for label in (
+            "Install the default certificate",
+            "Require the CDN client certificate",
+            "Prepare the proxy access log",
+        ):
+            with self.subTest(label=label):
+                failed = {**results, label: {"stdout": "", "exit_status": 1}}
+                errors = executor.parse_results(failed)
+                self.assertTrue([e for e in errors if label in e], errors)
+
+    def test_the_authority_falls_back_to_sudo_as_the_certificate_does(self):
+        """``certs/`` can belong to root: Traefik writes there."""
+        for ships_ca in (True, False):
+            with self.subTest(ships_ca=ships_ca):
+                executor = self._executor(FullSetupExecutor, "full_setup")
+                self._before(executor)
+                executor._ships_cdn_ca = ships_ca
+                command = dict(
+                    c[:2] for c in executor.get_commands()
+                )["Require the CDN client certificate"]
+                self.assertIn("sudo", command)
+
     def test_success_records_the_port_it_published(self):
         executor = self._executor(FullSetupExecutor, "full_setup")
         with patch.object(
