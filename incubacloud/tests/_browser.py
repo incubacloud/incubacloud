@@ -12,9 +12,10 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-#: What Odoo sends Chrome before the page is opened. A timeout on any of
-#: them means the test has not started.
-_BEFORE_THE_PAGE = ("Network.setCookie(", "Network.deleteCookies(")
+#: What Odoo sends Chrome before the test's code runs: the cookies, and
+#: the order to open the page. A timeout on any of them means the test has
+#: not started (``Page.navigate`` hung the same way on 2-nov-2026).
+_BEFORE_THE_PAGE = ("Network.setCookie(", "Network.deleteCookies(", "Page.navigate(")
 
 
 class ChromeStartRetry:
