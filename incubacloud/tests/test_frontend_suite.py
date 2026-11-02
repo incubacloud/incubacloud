@@ -12,6 +12,7 @@ from odoo.tests import HttpCase, new_test_user, tagged
 from odoo.tests.common import _find_executable
 
 from odoo.addons.web.tests.test_js import unit_test_error_checker
+from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
 
 def _suite_id(name):
@@ -29,7 +30,7 @@ def _suite_id(name):
     return f"{value:08x}"
 
 
-class FrontEndSuite:
+class FrontEndSuite(ChromeStartRetry):
     """Run one module's hoot suite in a headless browser.
 
     A mixin, not a test case, so a module that runs its own suite with
