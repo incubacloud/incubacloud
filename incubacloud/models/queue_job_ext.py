@@ -250,7 +250,7 @@ class QueueJob(models.Model):
                     cjob, exc_message=qjob.exc_message,
                 )
             elif new_state == 'done':
-                CJob._dismiss_job_failed_alerts(cjob)
+                self._dismiss_failures_after_commit(cjob)
                 self._seal_autopurge_clock(cjob)
             # The end is acted on last, with its alerts recorded: a
             # failure that holds the queue has its alert, and a retry
@@ -356,6 +356,41 @@ class QueueJob(models.Model):
                 _logger.warning(
                     "Job %s: on_never_run raised.", job.id, exc_info=True,
                 )
+
+    def _dismiss_failures_after_commit(self, cjob):
+        """Dismiss *cjob*'s earlier failures once the job's own commit is in.
+
+        Done in the job's transaction, the dismissal read the alerts as
+        they were when the job started: one an operator dismissed by hand
+        while the job ran was written again, the transaction lost the
+        serialization race, and queue_job ran the whole job a second time
+        (production, 2026-11-02: two ``UPDATE cloud_alert`` failures as
+        alerts were dismissed by hand). On a cursor of its own after the
+        commit it sees the alerts as they are now, and a failure there
+        is logged: the job is done either way.
+
+        Armed before ``_on_state_changed`` arms its own, so a retry that
+        succeeded has dismissed its alert before the target's queue is
+        looked at.
+
+        :param cjob: the ``cloud.job`` that just reached ``done``.
+        """
+        env = self.env
+        cjob_id = cjob.id
+
+        def _dismiss():
+            """Dismiss on a cursor of its own; never raises."""
+            try:
+                with env.registry.cursor() as cr:
+                    job = env(cr=cr)['cloud.job'].browse(cjob_id)
+                    if job.exists():
+                        job.env['cloud.job']._dismiss_job_failed_alerts(job)
+            except Exception:
+                _logger.exception(
+                    "could not dismiss the earlier failures of job %s", cjob_id,
+                )
+
+        self.env.cr.postcommit.add(_dismiss)
 
     def _seal_autopurge_clock(self, cjob):
         """Count a finished job as somebody having used the instance.
