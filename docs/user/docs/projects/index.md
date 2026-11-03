@@ -13,6 +13,13 @@ its instances, its repositories, its environments.
 - **Backup backend** — the S3 destination for backups. Inherited from project
   unless overridden per instance.
 
+!!! note "Odoo Enterprise"
+    A project can deploy Odoo Community or Odoo Enterprise. The panel itself
+    runs on Community only, and IncubaCloud does not provide Enterprise: for
+    an Enterprise instance, you bring its code in your repositories and need
+    your own Odoo Enterprise subscription ("On-premise") from Odoo S.A. See
+    [Third-party software](../reference/third-party.md#odoo-enterprise).
+
 ## Common tasks
 
 - [Create your first project](../getting-started/first-project.md)
