@@ -19,6 +19,8 @@ Per-screen documentation for the IncubaCloud SPA at `/cloud`.
 - [Monitoring](monitoring.md) — what is measured and where to look, plus a
   [card-by-card guide](monitoring-panels.md) to every chart.
 - [Service limits](limits.md) — request size and duration on the hosted service.
+- [Third-party software](third-party.md) — the software IncubaCloud is built on, and
+  what deploying Odoo Enterprise needs.
 
 ## Coming soon
 

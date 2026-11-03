@@ -143,3 +143,4 @@ nav:
     - Monitoring: reference/monitoring.md
     - Monitoring panels: reference/monitoring-panels.md
     - Service limits: reference/limits.md
+    - Third-party software: reference/third-party.md
