@@ -31,15 +31,19 @@
             </p>
 
             <p t-if="state.blocked" class="rl-tabnote" role="note" t-esc="state.blocked"/>
+            <!-- The box first, then the switch: it is accepted before it goes on. -->
             <div class="rl-fgrid">
-                <div class="rl-frow">
-                    <label for="ic_asst_enabled">Assistant on</label>
-                    <input id="ic_asst_enabled" type="checkbox" t-model="state.form.enabled"
-                           t-att-disabled="(state.blocked and !state.form.enabled) or providerChanged or (needsTerms and !state.form.enabled and !state.form.accept_ai_terms)"/>
-                </div>
                 <div class="rl-frow" t-if="needsTerms">
                     <label for="ic_asst_terms" t-esc="state.termsLabel"/>
                     <input id="ic_asst_terms" type="checkbox" t-model="state.form.accept_ai_terms"/>
+                </div>
+                <div class="rl-frow">
+                    <label for="ic_asst_enabled">Assistant on</label>
+                    <input id="ic_asst_enabled" type="checkbox" t-model="state.form.enabled"
+                           t-att-disabled="switchDisabled"
+                           t-att-aria-describedby="switchOnBlocker ? 'ic_asst_switch_hint' : undefined"/>
+                    <p t-if="switchOnBlocker" id="ic_asst_switch_hint" class="ic-asst-hint"
+                       t-esc="switchOnBlocker"/>
                 </div>
                 <div class="rl-frow">
                     <label for="ic_asst_provider">AI provider</label>
@@ -86,6 +90,8 @@
                 Switching the assistant on needs the box above ticked, each time. The
                 panel records when, by whom and from which address.
             </p>
+            <p t-if="state.saveWarning" class="rl-tabnote ic-asst-warning" role="alert"
+               t-esc="state.saveWarning"/>
             <p class="rl-tabnote" t-if="termsLine" t-esc="termsLine"/>
             <p class="rl-tabnote">
                 The monthly limit is the same for every user: each one may spend up to it
@@ -95,62 +101,64 @@
             </p>
 
             <div class="rl-saas-fsec">Models</div>
-            <p class="rl-tabnote" t-if="!state.models.length">
-                Save the provider's key to read its models.
+            <p class="rl-tabnote" t-if="!state.models.length and keySaved">
+                Read the provider's models with the saved key, then choose the ones
+                allowed.
+            </p>
+            <p class="rl-tabnote" t-elif="!state.models.length">
+                Type the provider's key, then read its models to choose from them. The key
+                is kept when you save.
             </p>
             <t t-else="">
                 <p class="rl-tabnote">
                     Recommended: tested with the panel's tools. Untested ones may fail at
                     writing modules.
-                    <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="refreshModels"
-                            t-att-disabled="state.refreshing">Update the list</button>
                 </p>
                 <p class="rl-tabnote">
                     With a monthly limit, a model whose price is unknown cannot be used: the
                     assistant could not count what it costs. Without a limit it can, as an
                     untested one.
                 </p>
-                <p t-if="state.notice" class="rl-tabnote" role="alert" t-esc="state.notice.text"/>
-                <table class="rl-table ic-asst-models">
-                    <thead><tr><th>Allowed</th><th>Default</th><th>Model</th><th/></tr></thead>
-                    <tbody>
-                        <tr t-foreach="modelRows" t-as="model" t-key="model.id">
-                            <td>
-                                <input type="checkbox" t-att-checked="model.allowed"
-                                       t-att-aria-label="model.label"
-                                       t-att-disabled="model.blocked and !model.allowed"
-                                       t-on-change="() => this.toggleModel(model.id)"/>
-                            </td>
-                            <td>
-                                <input type="radio" name="ic_asst_default"
-                                       t-att-checked="model.isDefault"
-                                       t-att-disabled="!model.allowed or (model.blocked and !model.isDefault)"
-                                       t-on-change="() => { state.form.default_model = model.id; }"/>
-                            </td>
-                            <td t-esc="model.label"/>
-                            <td>
-                                <span t-att-class="model.recommended ? 'ic-asst-tag ic-asst-tag--ok' : 'ic-asst-tag'"
-                                      t-esc="model.tag"/>
-                                <span t-if="!model.priceKnown" class="ic-asst-tag">Price unknown</span>
-                                <span t-if="model.blocked" class="ic-asst-muted">Not usable with a monthly limit</span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
             </t>
+            <div class="ic-asst-read">
+                <button id="ic_asst_read_models" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                        t-att-disabled="!canReadModels" t-on-click="readModels">
+                    <t t-if="state.refreshing">Reading the models…</t>
+                    <t t-elif="state.models.length">Update the list</t>
+                    <t t-else="">Read the models</t>
+                </button>
+            </div>
+            <p t-if="state.notice" class="rl-tabnote ic-asst-warning" role="alert" t-esc="state.notice.text"/>
+            <div class="rl-fgrid ic-asst-models" t-if="state.models.length">
+                <div class="rl-frow">
+                    <label for="ic_asst_allowed">Allowed models</label>
+                    <MultiSelect id="'ic_asst_allowed'"
+                                 options="allowedModelOptions"
+                                 value="state.form.allowed_models"
+                                 onChange.bind="setAllowedModels"
+                                 placeholder.translate="Search models…"/>
+                </div>
+                <div class="rl-frow ic-asst-default">
+                    <label>Default model</label>
+                    <RlSelect options="defaultModelOptions"
+                              value="state.form.default_model"
+                              onChange="(value) => { state.form.default_model = value; }"
+                              disabled="!defaultModelOptions.length"
+                              placeholder.translate="Choose the allowed models first"
+                              ariaLabel.translate="Default model"/>
+                </div>
+            </div>
 
             <div class="rl-saas-fsec">Users</div>
             <p class="rl-tabnote">Only the users chosen here see the assistant.</p>
-            <ul class="ic-asst-users">
-                <li t-foreach="userRows" t-as="candidate" t-key="candidate.id">
-                    <label>
-                        <input type="checkbox" t-att-checked="candidate.allowed"
-                               t-on-change="() => this.toggleUser(candidate.id)"/>
-                        <t t-esc="candidate.name"/>
-                        <span class="ic-asst-muted"> · <t t-esc="candidate.roleLabel"/></span>
-                    </label>
-                </li>
-            </ul>
+            <div class="rl-frow ic-asst-users">
+                <label for="ic_asst_users">Users of the assistant</label>
+                <MultiSelect id="'ic_asst_users'"
+                             options="userOptions"
+                             value="state.form.user_ids"
+                             onChange.bind="setUsers"
+                             placeholder.translate="Search users…"/>
+            </div>
 
             <div class="rl-saas-fsec">Usage</div>
             <p class="rl-tabnote" t-if="!usageRows.length">Nobody has used the assistant yet.</p>

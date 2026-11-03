@@ -243,7 +243,11 @@ export function screenContext(route) {
     return context;
 }
 
-/** What Settings → Assistant sends: what changed, the key only when typed. */
+/**
+ * What Settings → Assistant sends: what changed, the key only when typed.
+ * With another provider the models and the switch go too: the server starts
+ * it off with none allowed, and what the form holds may match what was saved.
+ */
 export function settingsChanges(loaded, form) {
     const vals = {};
     for (const key of PLAIN_SETTINGS) {
@@ -256,6 +260,11 @@ export function settingsChanges(loaded, form) {
         if (sorted(loaded[key]) !== sorted(form[key])) {
             vals[key] = form[key];
         }
+    }
+    if ("provider" in vals) {
+        vals.allowed_models = form.allowed_models;
+        vals.default_model = form.default_model;
+        vals.enabled = form.enabled;
     }
     if (form.api_key) {
         // A key typed after "Remove the key" replaces it: the typed one wins.

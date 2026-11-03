@@ -13,6 +13,11 @@ from ..models.cloud_settings import BLOCKED_PARAM
 from .common import KEY, MODELS, AssistantMixin
 
 NEW_KEY = "sk-ant-new-settings-key-0009"
+#: What a save that asked to switch on without models answers.
+_KEY_SAVED = (
+    "Key saved. Choose the allowed models and a default model, then switch the "
+    "assistant on."
+)
 
 
 @tagged("post_install", "-at_install")
@@ -64,6 +69,7 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
             ("get_settings", {}),
             ("save_settings", {"vals": {}}),
             ("refresh_models", {}),
+            ("read_models", {"api_key": NEW_KEY}),
             ("usage", {}),
         ):
             with self.subTest(path):
@@ -317,4 +323,174 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
         self.assertEqual(
             [(row["user_id"], row["cost"]) for row in result["rows"]],
             [(self.dev.id, 0.25)],
+        )
+
+
+    def _no_key_yet(self):
+        """The assistant as a manager finds it at first: off, no key, no models."""
+        self._configure(
+            users=[self.dev],
+            models=(),
+            allowed=(),
+            default=False,
+            enabled=False,
+            key=False,
+            terms=False,
+        )
+
+    def _terms_hook(self):
+        """Patch the hook that records the box; return its mock.
+
+        A tenant panel has IncubaCloud record it: the tests answer for it.
+        """
+        Settings = type(self.env["cloud.settings"])
+        patcher = patch.object(
+            Settings,
+            "_assistant_record_terms_acceptance",
+            autospec=True,
+            side_effect=lambda _settings, acceptance: {**acceptance, "v": ""},
+        )
+        hook = patcher.start()
+        self.addCleanup(patcher.stop)
+        return hook
+
+    def test_the_key_and_the_models_chosen_switch_it_on_in_one_save(self):
+        """Typed, read, chosen and switched on, all in the save that keeps the key."""
+        self._no_key_yet()
+        hook = self._terms_hook()
+        result, _error, _text = self._rpc(
+            self.manager.login,
+            "save_settings",
+            vals={
+                "api_key": NEW_KEY,
+                "allowed_models": ["claude-sonnet-5-5", "claude-new-x"],
+                "default_model": "claude-sonnet-5-5",
+                "enabled": True,
+                "accept_ai_terms": True,
+            },
+        )
+        self.assertEqual(result, {"ok": True})
+        hook.assert_called_once()
+        Settings = self.env["cloud.settings"]
+        config = Settings._assistant_config()
+        self.assertTrue(config.enabled)
+        self.assertEqual(Settings._assistant_key(), NEW_KEY)
+        self.assertEqual(config.allowed_models, ("claude-sonnet-5-5", "claude-new-x"))
+        self.assertEqual(config.default_model, "claude-sonnet-5-5")
+        self.assertTrue(config.terms_accepted)
+
+    def test_switching_on_without_models_keeps_the_key_and_says_what_is_missing(self):
+        """The key and its listing are kept; it stays off; the answer says why.
+
+        The box is not recorded: nothing was switched on. With the key kept,
+        the same request says what is missing without "Key saved".
+        """
+        self._no_key_yet()
+        hook = self._terms_hook()
+        result, _error, text = self._rpc(
+            self.manager.login,
+            "save_settings",
+            vals={"api_key": NEW_KEY, "enabled": True, "accept_ai_terms": True},
+        )
+        self.assertEqual(result, {"ok": True, "warning": _KEY_SAVED})
+        self.assertNotIn(NEW_KEY, text)
+        hook.assert_not_called()
+        Settings = self.env["cloud.settings"]
+        config = Settings._assistant_config()
+        self.assertFalse(config.enabled)
+        self.assertFalse(config.terms_accepted)
+        self.assertEqual(Settings._assistant_key(), NEW_KEY)
+        self.assertEqual(
+            [model["id"] for model in config.models],
+            ["claude-opus-5-5", "claude-sonnet-5-5", "claude-new-x"],
+        )
+        result, _error, _text = self._rpc(
+            self.manager.login,
+            "save_settings",
+            vals={
+                "allowed_models": ["claude-opus-5-5"],
+                "enabled": True,
+                "accept_ai_terms": True,
+            },
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertNotIn("Key saved", result["warning"])
+        self.assertIn("default model", result["warning"])
+        config = Settings._assistant_config()
+        self.assertEqual(config.allowed_models, ("claude-opus-5-5",))
+        self.assertFalse(config.enabled)
+
+    def test_models_read_with_a_typed_key_keep_nothing(self):
+        """The provider's listing, tagged, for the key typed; the settings unchanged.
+
+        The key goes to the provider it was typed for, and is never in the
+        answer; a refused one says why without quoting it.
+        """
+        settings = self.env["cloud.settings"]._get_system()
+        before = (settings.assistant_models, settings.assistant_models_at)
+        result, _error, text = self._rpc(
+            self.manager.login,
+            "read_models",
+            provider="openai",
+            api_key=" sk-openai-typed-0010 ",
+        )
+        self.assertTrue(result["ok"], result)
+        self.connector_for.assert_called_once_with("openai", "sk-openai-typed-0010")
+        self.assertEqual(
+            [model["id"] for model in result["models"]],
+            ["claude-opus-5-5", "claude-sonnet-5-5", "claude-new-x"],
+        )
+        self.assertEqual(
+            set(result["models"][0]), {"id", "name", "tools", "recommended", "price_known"}
+        )
+        self.assertNotIn("sk-openai-typed-0010", text)
+        self.env.invalidate_all()
+        config = self.env["cloud.settings"]._assistant_config()
+        self.assertEqual(self.env["cloud.settings"]._assistant_key(), KEY)
+        self.assertEqual(config.provider, "anthropic")
+        self.assertEqual((settings.assistant_models, settings.assistant_models_at), before)
+        self.connector.list_models.side_effect = ProviderError(
+            "other", "bad sk-ant-refused-0011"
+        )
+        result, _error, text = self._rpc(
+            self.manager.login, "read_models", api_key="sk-ant-refused-0011"
+        )
+        self.assertFalse(result["ok"])
+        self.assertNotIn("sk-ant-refused-0011", text)
+        for params in ({}, {"api_key": "  "}, {"provider": "nope", "api_key": NEW_KEY}):
+            with self.subTest(params):
+                result, _error, _text = self._rpc(
+                    self.manager.login, "read_models", **params
+                )
+                self.assertFalse(result["ok"])
+
+    def test_the_platform_s_users_are_neither_listed_nor_accepted(self):
+        """The cron bot and Odoo's own are not people of the panel.
+
+        Out of the candidates, refused in ``user_ids``, and not sent back
+        among the chosen when they were chosen before.
+        """
+        platform = self._cloud_user("__asis-platform__", group="group_cloud_manager")
+        bot = self.env["res.users"]._get_cron_bot()
+        self._configure(users=[self.dev, platform])
+        result, _error, _text = self._rpc(self.manager.login, "get_settings")
+        candidates = [candidate["id"] for candidate in result["candidates"]]
+        self.assertIn(self.manager.id, candidates)
+        self.assertNotIn(platform.id, candidates)
+        if bot:
+            self.assertNotIn(bot.id, candidates)
+        self.assertEqual(result["user_ids"], [self.dev.id])
+        result, _error, _text = self._rpc(
+            self.manager.login,
+            "save_settings",
+            vals={"user_ids": [self.dev.id, platform.id]},
+        )
+        self.assertFalse(result["ok"])
+        result, _error, _text = self._rpc(
+            self.manager.login, "save_settings", vals={"user_ids": [self.dev.id]}
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(
+            self.env["cloud.settings"]._assistant_config().user_ids,
+            frozenset({self.dev.id}),
         )

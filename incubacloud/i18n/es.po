@@ -9055,6 +9055,7 @@ msgstr "No se han registrado peticiones"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+#: code:addons/incubacloud/static/src/components/multi_select/multi_select.js:0
 #: code:addons/incubacloud/static/src/components/search_select/search_select.xml:0
 msgid "No results"
 msgstr "Sin resultados"
@@ -11243,6 +11244,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/multi_select/multi_select.js:0
+msgid "Remove %(label)s"
+msgstr "Quitar %(label)s"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Remove instance"
 msgstr "Eliminar instancia"
@@ -12189,6 +12196,7 @@ msgstr "Buscando…"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/multi_select/multi_select.js:0
 #: code:addons/incubacloud/static/src/components/search_select/search_select.js:0
 msgid "Search…"
 msgstr "Buscar…"
