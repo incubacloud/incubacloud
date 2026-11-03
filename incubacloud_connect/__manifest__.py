@@ -4,7 +4,7 @@
     'summary': 'Magic-link passwordless login for IncubaCloud managed instances',
     'category': 'Hidden',
     'author': 'IncubaCloud',
-    'license': 'Other OSI approved licence',
+    'license': 'LGPL-3',
     'depends': ['web'],
     'installable': True,
     'auto_install': False,
