@@ -11,6 +11,8 @@ announced the failure.
 import json
 from unittest.mock import patch
 
+from psycopg2.errors import SerializationFailure
+
 from odoo.tests.common import TransactionCase, tagged
 
 
@@ -153,3 +155,80 @@ class TestAlertResolution(TransactionCase):
         alert.write({"state": "dismissed", "resolution": "manual"})
         self.assertEqual(alert.resolved_at, closed_at)
         self.assertEqual(alert.resolution, "manual")
+
+
+@tagged("post_install", "-at_install")
+class TestAResolutionThatLosesTheRow(TransactionCase):
+    """A cron resolving an alert someone dismissed while it ran.
+
+    The cron's snapshot still shows the alert active; PostgreSQL refuses
+    its write because the row changed since. That lost the cron's whole
+    pass (inventory H7). The write now runs in a savepoint: an alert
+    another writer already closed is left as it is, and one that is
+    still active raises as before.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # The alert is read again on a cursor of its own: in test mode
+        # it rides on this transaction.
+        self.registry_enter_test_mode()
+        self.host = self.env["cloud.host"].create({
+            "name": "lost-row-host",
+            "ip_address": "10.0.0.62",
+            "user": "ubuntu",
+            "wildcard_domain": "lost-row.example.com",
+        })
+        self.Alert = self.env["cloud.alert"]
+        self.alert = self.Alert.raise_alert(
+            "disk_warning", "Disk at 85%", host=self.host,
+        )
+        self.assertEqual(self.alert.state, "active")
+        self.env.flush_all()
+
+    def _resolve_losing_the_row(self):
+        """Resolve the alert as a snapshot that still sees it active.
+
+        ``search`` answers what that snapshot would, and ``write`` is
+        refused the way PostgreSQL refuses the second writer of a row.
+        """
+        Model = type(self.Alert)
+        with patch.object(
+            Model, "search", autospec=True, return_value=self.alert,
+        ), patch.object(
+            Model, "write", autospec=True,
+            side_effect=SerializationFailure("could not serialize access"),
+        ), patch.object(
+            Model, "_notify_alert_resolved", autospec=True,
+        ) as notify:
+            try:
+                return self.Alert.resolve_alert("disk_warning", host=self.host)
+            finally:
+                notify.assert_not_called()
+
+    def test_an_alert_dismissed_meanwhile_is_left_alone(self):
+        self.env.cr.execute(
+            "UPDATE cloud_alert SET state = 'dismissed', resolution = 'manual'"
+            " WHERE id = %s", (self.alert.id,),
+        )
+        resolved = self._resolve_losing_the_row()
+        self.assertFalse(resolved)
+        # The transaction goes on: the rest of the cron's pass stands.
+        self.alert.invalidate_recordset()
+        self.assertEqual(self.alert.state, "dismissed")
+        self.assertEqual(self.alert.resolution, "manual")
+
+    def test_an_alert_still_active_raises_as_before(self):
+        with self.assertRaises(SerializationFailure):
+            self._resolve_losing_the_row()
+        self.alert.invalidate_recordset()
+        self.assertEqual(self.alert.state, "active")
+
+    def test_raising_an_alert_is_not_made_tolerant(self):
+        """``raise_alert`` stays as it was: only the closing is forgiven."""
+        Model = type(self.Alert)
+        with patch.object(
+            Model, "write", autospec=True,
+            side_effect=SerializationFailure("could not serialize access"),
+        ), self.assertRaises(SerializationFailure):
+            self.Alert.raise_alert("disk_warning", "Disk at 90%", host=self.host)
