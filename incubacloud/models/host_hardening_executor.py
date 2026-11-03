@@ -64,13 +64,21 @@ _SSHD_APPLY_COMMAND = (
     "sudo systemctl reload ssh.service; fi"
 )
 
-#: Attempts, and seconds between them, to reach the rotated port for the
-#: new-login proof. An edge firewall (Hetzner's, a BYOH one) can take a
-#: few seconds more to let the port in after it was asked to: a timeout or
-#: a network error is tried again on a fresh connection; anything else is
-#: final at once.
-_FINALIZE_CONNECT_ATTEMPTS = 3
-_FINALIZE_CONNECT_DELAY = 10
+#: Seconds to wait before each new attempt to reach the rotated port for
+#: the new-login proof, one more attempt than delays. An edge firewall
+#: (Hetzner's, a BYOH one) can take minutes to let the port in after it
+#: was asked to: on 3 November 2026 Hetzner still dropped it two minutes
+#: after the request. A timeout or a network error is tried again on a
+#: fresh connection, waiting longer each time, so the attempts span some
+#: three minutes; anything else is final at once.
+_FINALIZE_CONNECT_DELAYS = (5, 10, 15, 20, 30)
+_FINALIZE_CONNECT_ATTEMPTS = len(_FINALIZE_CONNECT_DELAYS) + 1
+
+#: Seconds one attempt waits for the rotated port to answer. A dropped SYN
+#: is resent at 1, 3, 7 and 15 s: past 20 s a fresh connection, with a new
+#: source port, has better chances than the same one waiting the 30 s the
+#: other connections to a host get.
+_FINALIZE_CONNECT_TIMEOUT = 20
 
 
 def _pick_new_ssh_port(current_port):
@@ -396,9 +404,11 @@ class HostHardeningExecutor(AnsibleExecutor):
         ``prohibit-password`` — so the operator can still recover).
 
         Only reaching the port is tried again: a timeout or a network
-        error before the session opens gets a fresh connection, up to
-        ``_FINALIZE_CONNECT_ATTEMPTS`` in all. A refused login, a
-        different identity or a failure once connected is final.
+        error before the session opens gets a fresh connection, after the
+        growing waits of ``_FINALIZE_CONNECT_DELAYS``, each attempt
+        waiting ``_FINALIZE_CONNECT_TIMEOUT`` seconds for the port. A
+        refused login, a different identity or a failure once connected
+        is final.
         """
         host = self._host()
         # Trusted reader, same pattern as ``get_transport``: the job was
@@ -411,6 +421,7 @@ class HostHardeningExecutor(AnsibleExecutor):
         # The host key is unchanged but the port rotated; skip the pin for
         # this internal proof connection only.
         connect_kw["known_hosts"] = None
+        connect_kw["connect_timeout"] = _FINALIZE_CONNECT_TIMEOUT
         error = None
         for attempt in range(1, _FINALIZE_CONNECT_ATTEMPTS + 1):
             connected = False
@@ -449,6 +460,7 @@ class HostHardeningExecutor(AnsibleExecutor):
                 if connected or attempt == _FINALIZE_CONNECT_ATTEMPTS:
                     error = exc
                     break
+                delay = _FINALIZE_CONNECT_DELAYS[attempt - 1]
                 _logger.info(
                     "host_hardening: port %s of %s not reachable yet "
                     "(attempt %s): %r",
@@ -456,9 +468,9 @@ class HostHardeningExecutor(AnsibleExecutor):
                 )
                 self._sys(
                     f"… Port {self._new_port} is not reachable yet; trying "
-                    f"again in {_FINALIZE_CONNECT_DELAY} s."
+                    f"again in {delay} s."
                 )
-                await asyncio.sleep(_FINALIZE_CONNECT_DELAY)
+                await asyncio.sleep(delay)
             except Exception as exc:
                 error = exc
                 break
