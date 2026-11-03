@@ -1021,6 +1021,15 @@ describe("InstanceDetail — Recent requests table", () => {
         expect(String(cmp.requestsCountLabel)).toBe("8 of 120 requests");
     });
 
+    test("a single request is counted in the singular", () => {
+        allowTranslations();
+        const cmp = build();
+        cmp.state.accessLog.entries = response.entries.slice(0, 1);
+        expect(String(cmp.requestsCountLabel)).toBe("1 request");
+        cmp.setRequestsClass("5");
+        expect(String(cmp.requestsCountLabel)).toBe("0 of 1 request");
+    });
+
     test("the hit is split out for <mark>, never turned into markup", () => {
         const cmp = build();
         cmp.onRequestsSearch({ target: { value: "<B>" } });
