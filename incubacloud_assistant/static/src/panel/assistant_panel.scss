@@ -210,32 +210,50 @@
         resize: vertical;
     }
 
+    // The model picker on the left, the buttons on the right. On a narrow
+    // panel the picker shrinks (ellipsis) before the buttons do.
     .ic-asst-foot-actions {
         display: flex;
-        justify-content: flex-end;
+        align-items: center;
+        justify-content: space-between;
         gap: 8px;
         margin-block-start: 6px;
     }
-}
 
-// The model picker above the chat.
-.ic-asst-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-
-    label {
-        font-family: var(--rl-fm);
-        font-size: 10.5px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--rl-muted);
+    .ic-asst-modelpick {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-inline-size: 0;
+        flex: 0 1 auto;
     }
 
-    select {
-        flex: 1;
+    .ic-asst-model-field {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
         min-inline-size: 0;
+
+        .ic-asst-model-icon {
+            position: absolute;
+            inset-inline-start: 8px;
+            display: inline-flex;
+            pointer-events: none;
+            color: var(--rl-muted);
+        }
+
+        select {
+            max-inline-size: 210px;
+            min-inline-size: 0;
+            padding-inline-start: 26px;
+            text-overflow: ellipsis;
+        }
+    }
+
+    .ic-asst-foot-buttons {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
     }
 }
 

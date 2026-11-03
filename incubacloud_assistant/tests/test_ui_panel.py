@@ -171,6 +171,37 @@ class TestAssistantPanel(AssistantMixin, ChromeStartRetry, HttpCase):
         self.assertEqual(conversation.state, "working")
         self.assertTrue(self.allowed.sudo().assistant_notice_at)
 
+    def test_the_model_picker_sits_in_the_foot_before_the_buttons(self):
+        """The picker is in the buttons' row, left of them, and still changes the model."""
+        with trap_jobs():
+            self._open(
+                self.allowed.login,
+                """
+                click(await until("the button", () => $(".ic-asst-btn")));
+                click((await until("the notice", () => $(".ic-asst-notice")))
+                    .querySelector("button"));
+                click(await until("new conversation", () => $(".ic-asst-new")));
+                const select = await until("the picker", () =>
+                    $(".ic-asst-foot-actions #ic_asst_model"));
+                if ($(".ic-asst-toolbar")) {
+                    throw new Error("the bar above the chat is still there");
+                }
+                const send = $(".ic-asst-foot-actions .ic-asst-send");
+                if (select.getBoundingClientRect().right
+                    > send.getBoundingClientRect().left) {
+                    throw new Error("the picker is not before the buttons");
+                }
+                const other = [...select.options].find(
+                    (option) => !option.disabled && !option.selected);
+                select.value = other.value;
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+                await sleep(300);
+                if (select.value !== other.value) {
+                    throw new Error("the picker did not keep the model");
+                }
+            """,
+            )
+
     def test_a_card_is_cancelled_from_the_chat(self):
         """The card says what happens, on production; Cancel withdraws it."""
         self._read_notice()
