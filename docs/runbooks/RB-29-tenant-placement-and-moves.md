@@ -37,7 +37,7 @@ settings are in Settings → SaaS → Placement.
 
 | Button | Shown when | Does |
 |---|---|---|
-| **Move now** | Active, *Move booked* or *Owes a move* | `action_move_now`: refused while a job of ours is queued or running on the panel, with no host free in the pool, or within 30 minutes of the last «Move now» (each one deploys the destination whole before it may be postponed). Otherwise the chain starts with trigger `now`; its `move_quiet_check` still postpones it if a job runs on the panel right before the stop. |
+| **Move now** | Active, *Move booked* or *Owes a move* | `action_move_now`: refused while a job of ours is queued or running on the panel, with no host free in the pool, or, after a postponement, within 30 minutes of the last «Move now» (each one deploys the destination whole before it may be postponed). Otherwise the chain starts with trigger `now`; its `move_quiet_check` still postpones it if a job runs on the panel right before the stop. |
 | **Cancel booked move** | *Move booked* | Takes the window and the panel's announcement away. The tenant still owes the move: **the next run of the planner books it again** unless it is pinned or paused by then. To keep it where it is, pin it instead. |
 | **Resume moves** | *Moves paused* | Clears `move_retry_paused` and works the state out again; the planner books it on its next run if the pool has room. |
 | **Pinned to its host** (checkbox, saved with «Save changes») | Always | Pinned: *Settled* where it runs, any booking and its announcement go, the planner leaves it alone. Released: owes the move again and is booked at once if the pool has room. Both are written in the history. |
