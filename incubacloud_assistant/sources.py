@@ -35,6 +35,7 @@ PUBLIC_ENTRIES = frozenset(
         "CONTRIBUTING.md",
         "SECURITY.md",
         "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
         "requirements.txt",
         "oca_dependencies.txt",
     }

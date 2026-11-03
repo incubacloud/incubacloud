@@ -202,15 +202,33 @@ If you are an Odoo partner or developer:
 
 ## Licensing
 
-IncubaCloud Core is licensed under the **[Elastic License 2.0 (ELv2)](LICENSE)**.
+Copyright © INCUBACLOUD, SOCIEDAD LIMITADA.
 
-You are free to:
+IncubaCloud Core is licensed under the **[Elastic License 2.0 (ELv2)](LICENSE)**, except the two modules the table below marks LGPL-3.0, which carry their own `LICENSE` file.
+
+| Module | Licence | Manifest `license` |
+|---|---|---|
+| `incubacloud` | ELv2 | `Other proprietary` |
+| `incubacloud_pitr` | ELv2 | `Other proprietary` |
+| `incubacloud_mcp` | ELv2 | `Other proprietary` |
+| `incubacloud_mcp_pitr` | ELv2 | `Other proprietary` |
+| `incubacloud_assistant` | ELv2 | `Other proprietary` |
+| `incubacloud_connect` | LGPL-3.0 | `LGPL-3` |
+| `auth_oauth_github` | LGPL-3.0 | `LGPL-3` |
+
+Odoo's manifest accepts only a closed list of licence keys, and ELv2 is not one of them: `Other proprietary` is the key that list has for it. The licence of these modules is the ELv2 in [LICENSE](LICENSE).
+
+Under the ELv2 you are free to:
 - Use the software for your own Odoo installations
 - Study and modify the source code
 - Distribute modified versions
 
 You may **not**:
 - Offer the software (or a product substantially based on it) as a hosted or managed service to third parties
+
+The third-party software IncubaCloud uses is listed, with its licences, in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Odoo is a trademark of Odoo S.A. IncubaCloud is not affiliated with Odoo S.A.
 
 ---
 
