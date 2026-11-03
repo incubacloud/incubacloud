@@ -147,7 +147,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             Odoo regenerate the three, the base URL as
             ``http://localhost:8069``. Sessions are not carried: they live
             in the data dir's ``sessions/``, which the archive does not
-            hold, so users sign in again on the new host.
+            hold, so users sign in again on the new host. Only
+            ``move_to_host`` sets it, and it is honoured only while the
+            instance is moving to this job's host (``_loads_as_move``):
+            a restore anyone else queues loads a copy.
     """
 
     _job_type = "restore_instance"
@@ -162,6 +165,27 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
     def _inst(self):
         return self.job.instance_id
+
+    def _loads_as_move(self, inst, payload):
+        """Return whether this restore loads its archive as moved.
+
+        ``as_move`` keeps the archive's ``database.uuid`` and
+        ``database.secret``. Asked by anyone but a move — a restore
+        queued straight through ``cloud.job.enqueue`` with it in the
+        payload — a staging could take production's: two databases
+        claiming to be one, and signed links valid in both. So it counts
+        only while *inst* is moving to the host this job runs on, which
+        ``move_to_host`` marks before it queues the chain and nobody
+        else may write.
+
+        :param inst: the instance restored.
+        :param dict payload: this job's payload.
+        :rtype: bool
+        """
+        if not payload.get('as_move'):
+            return False
+        target = inst.move_target_host_id
+        return bool(target) and target.id == self.job.host_id.id
 
     def _source_job(self):
         """Return the chained job referenced by ``source_job_id``, or an
@@ -756,7 +780,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         dbname = inst.postgres_dbname or 'prod'
         payload = self.job.payload or {}
         neutralize = "1" if payload.get('neutralize') else "0"
-        load_as = "move" if payload.get('as_move') else "copy"
+        load_as = "move" if self._loads_as_move(inst, payload) else "copy"
 
         cmds = []
         if payload.get('mode') == 'from_url':

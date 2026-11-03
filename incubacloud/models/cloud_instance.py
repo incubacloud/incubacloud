@@ -3085,7 +3085,14 @@ class CloudInstance(models.Model):
         self.env["cloud.security.mixin"]._check_can_manage_backups()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
-        payload = payload or {}
+        # ``as_move`` keeps the archive's uuid and secret; only
+        # ``move_to_host`` may ask for it, and its chain does not come
+        # through here. From a caller over JSON-RPC it would hand a
+        # staging the identity of the production its dump came from.
+        payload = {
+            key: value for key, value in (payload or {}).items()
+            if key != "as_move"
+        }
         if payload.get("mode") not in (
             "browser", "from_job", "rsync", "ssh_upload", "from_url",
         ):
