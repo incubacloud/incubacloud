@@ -20,6 +20,8 @@ import re
 import time
 from contextlib import contextmanager
 
+import psycopg2.errors
+
 from odoo import api, models
 from odoo.exceptions import AccessError
 from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
@@ -95,12 +97,19 @@ class AssistantEngine(models.AbstractModel):
     def _step(self, conversation):
         """Run one step of *conversation*'s task (the queue job).
 
-        Never raises: a failure leaves the conversation in error, with
-        Retry, and what was done stays done.
+        A failure leaves the conversation in error, with Retry, and what
+        was done stays done. A conflict with another transaction on one of
+        the step's cursors is the exception: it goes up, and queue_job runs
+        the step again in 5 seconds, which runs no tool twice.
         """
         conversation_id = conversation.id
         try:
             self._run_step(conversation_id)
+        except (
+            psycopg2.errors.SerializationFailure,
+            psycopg2.errors.DeadlockDetected,
+        ):
+            raise
         except Exception:  # the person gets Retry; the log keeps why
             _logger.exception(
                 "assistant: a step of conversation %s failed", conversation_id
