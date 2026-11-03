@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
 
+from .test_cloud_job import _run_after_commit
+
 
 class TestQueueJobExtInvalidatesCache(TransactionCase):
 
@@ -78,6 +80,9 @@ class TestQueueJobExtFailureAlert(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # A success dismisses the earlier failures on a cursor of its
+        # own after the commit: in test mode it shares this transaction.
+        self.registry_enter_test_mode()
         self.host = self.env['cloud.host'].create({
             'name': 'alert-host',
             'ip_address': '10.0.0.43',
@@ -169,6 +174,7 @@ class TestQueueJobExtFailureAlert(TransactionCase):
         # enqueued and then to done, same uuid.
         qjob.write({'state': 'enqueued'})
         qjob.write({'state': 'done'})
+        _run_after_commit(self.env)
 
         alert.invalidate_recordset()
         self.assertEqual(alert.state, 'dismissed')
@@ -187,6 +193,7 @@ class TestQueueJobExtFailureAlert(TransactionCase):
         # A brand-new job of the same type on the same host succeeds.
         cjob_b, qjob_b = self._make('rebuild_instance', 'uuid-stale-b')
         qjob_b.write({'state': 'done'})
+        _run_after_commit(self.env)
 
         alert.invalidate_recordset()
         self.assertEqual(alert.state, 'dismissed')
@@ -647,6 +654,8 @@ class TestJobFailedAlertDedup(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # Successes dismiss on a cursor of their own after the commit.
+        self.registry_enter_test_mode()
         self.host = self.env['cloud.host'].create({
             'name': 'dedup-job-host',
             'ip_address': '10.0.0.45',
@@ -721,6 +730,7 @@ class TestJobFailedAlertDedup(TransactionCase):
             'func_string': 'noop()',
         })
         qjob.write({'state': 'done'})
+        _run_after_commit(self.env)
         self.assertFalse(self._alerts())
         self.assertTrue(cjob)
 

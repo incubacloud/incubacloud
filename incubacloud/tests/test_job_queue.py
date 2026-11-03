@@ -466,8 +466,8 @@ class TestHold(_QueueCase):
         with self.assertRaisesRegex(UserError, "already waiting"):
             deploy.retry_job()
         retry.queue_job_id.write({"state": "done"})
-        self.assertEqual(alert.state, "dismissed")
         _run_after_commit(self.env)
+        self.assertEqual(alert.state, "dismissed")
         self.assertEqual(restart.state, "pending")
 
     def test_a_retry_only_a_fresh_read_sees_refuses_a_second(self):
@@ -559,8 +559,8 @@ class TestHold(_QueueCase):
         self.assertEqual(deploy_retry.state, "pending")
         self.assertEqual(backup_retry.state, "queued")
         self._end(deploy_retry)
-        self.assertEqual(alert.state, "dismissed")
         _run_after_commit(self.env)
+        self.assertEqual(alert.state, "dismissed")
         self.assertEqual(backup_retry.state, "pending")
 
     def test_a_host_level_failure_holds_the_host_not_its_instances(self):
@@ -2797,6 +2797,7 @@ class TestMoves(_QueueCase):
         self.assertEqual(retry.state, "pending")
         self.assertEqual(alert.state, "active")
         self._end(retry)
+        _run_after_commit(self.env)
         self.assertEqual(alert.state, "dismissed")
 
     def _assert_a_failure_before_the_cutover_holds_the_queue(self, code):

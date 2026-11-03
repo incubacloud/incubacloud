@@ -87,6 +87,9 @@ class TestAlertResolution(TransactionCase):
 
     @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
     def test_a_later_success_resolves_the_failure_and_says_so(self, urlopen):
+        # The dismissal runs on a cursor of its own after the commit: in
+        # test mode that cursor shares this transaction.
+        self.registry_enter_test_mode()
         failed, qfailed = self._job("rebuild_instance", "uuid-resolution-a")
         qfailed.write({"state": "failed", "exc_message": "Connection lost"})
         alert = self.env["cloud.alert"].search([
@@ -97,6 +100,12 @@ class TestAlertResolution(TransactionCase):
 
         succeeded, qsucceeded = self._job("rebuild_instance", "uuid-resolution-b")
         qsucceeded.write({"state": "done"})
+        # Nothing is dismissed inside the job's transaction: it waits
+        # for the commit (2026-11-02, a job run twice over an alert
+        # dismissed by hand while it ran).
+        self.assertEqual(alert.state, "active")
+        self.env.flush_all()
+        self.env.cr.postcommit.run()
 
         alert.invalidate_recordset()
         self.assertEqual(alert.state, "dismissed")
