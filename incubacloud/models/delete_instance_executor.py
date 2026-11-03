@@ -248,6 +248,18 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             # normal path below.
             self._sys("Instance already removed from the host; nothing to do.")
             return []
+        return self._teardown_commands(inst)
+
+    def _teardown_commands(self, inst):
+        """Return the teardown of the instance's copy on this job's host.
+
+        Backups and addon steps first when this run ends the instance's
+        life (``_owns_instance_lifecycle``), then the containers, the log
+        rotation and the directory.
+
+        :param inst: the ``cloud.instance``, which exists
+        :return: the commands, as ``get_commands`` returns them
+        """
         d = self._inst_dir(inst)
         return [
             *self._archive_step(inst, d),

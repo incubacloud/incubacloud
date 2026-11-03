@@ -53,7 +53,7 @@ class TestInstanceMove(TransactionCase):
     def _patch_chain(self):
         return patch.object(
             type(self.env['cloud.job']), 'enqueue_chain',
-            return_value=[1, 2, 3, 4, 5, 6, 7],
+            return_value=[1, 2, 3, 4, 5, 6, 7, 8, 9],
         )
 
     def _patch_enqueue(self, return_value=8):
@@ -70,9 +70,9 @@ class TestInstanceMove(TransactionCase):
         self.assertTrue(res['ok'])
         steps = m.call_args[0][0]
         expected_codes = [
-            'deploy_instance', 'stop_instance', 'stop_instance',
-            'backup_download', 'restore_instance', 'move_cutover',
-            'move_cleanup_source',
+            'deploy_instance', 'stop_instance', 'move_quiet_check',
+            'stop_instance', 'move_fingerprint', 'backup_download',
+            'restore_instance', 'move_cutover', 'move_freeze_source',
         ]
         self.assertEqual(
             [s['job_type_code'] for s in steps], expected_codes,
@@ -80,7 +80,8 @@ class TestInstanceMove(TransactionCase):
         self.assertEqual(
             [s['host_id'] for s in steps],
             [self.target.id, self.target.id, self.source.id, self.source.id,
-             self.target.id, self.target.id, self.source.id],
+             self.source.id, self.source.id, self.target.id, self.target.id,
+             self.source.id],
         )
         # The destination's odoo stops before the source's, outside the
         # window the customer waits through; the instance is not marked
@@ -88,43 +89,85 @@ class TestInstanceMove(TransactionCase):
         self.assertEqual(
             steps[1]['payload'], {'services': ['odoo'], 'move_target': True},
         )
-        self.assertEqual(steps[2]['payload'], {'services': ['odoo']})
+        # Nothing said what started it: an operator's move.
+        self.assertEqual(
+            steps[2]['payload'], {'move_options': {'trigger': 'manual'}},
+        )
+        # The source's stop starts the cut the cutover measures.
+        self.assertEqual(
+            steps[3]['payload'], {'services': ['odoo'], 'move_cut': True},
+        )
         # The data goes as a live dump of the stopped panel's database,
         # staged on the source (handoff) and streamed by the restore: no
         # backup container, no bucket, never an ir.attachment.
         self.assertEqual(
-            steps[3]['payload'],
+            steps[5]['payload'],
             {'time': 'live', 'download_type': 'all', 'handoff': 'host'},
         )
-        self.assertEqual(steps[4]['payload']['mode'], 'from_host')
+        self.assertEqual(steps[6]['payload']['mode'], 'from_host')
         self.assertEqual(
-            steps[4]['payload']['source_job_id'], '__chain_job_3__',
+            steps[6]['payload']['source_job_id'], '__chain_job_5__',
+        )
+        # And is checked against what the source counted.
+        self.assertEqual(
+            steps[6]['payload']['verify_job'], '__chain_job_4__',
         )
         # The same database changing hosts, not a copy: it keeps its
         # secret (the links it signed), uuid and base URL.
-        self.assertIs(steps[4]['payload']['as_move'], True)
+        self.assertIs(steps[6]['payload']['as_move'], True)
         self.assertEqual(self.inst.move_origin_host_id, self.source)
         self.assertEqual(self.inst.move_target_host_id, self.target)
-        self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6,7')
+        self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6,7,8,9')
 
-    def test_cut_steps_run_after_the_source_stops(self):
-        """A layer's cut steps go after the source stops and before its
-        data is taken; the restore still finds the download job."""
-        cut = [{
-            'host_id': self.target.id, 'instance_id': self.inst.id,
-            'job_type_code': 'deploy_instance',
-        }]
+    def test_the_move_options_reach_the_quiet_check(self):
+        with self._patch_chain() as m:
+            self.inst.move_to_host(self.target, move_options={'trigger': 'idle'})
+        quiet = next(
+            s for s in m.call_args[0][0]
+            if s['job_type_code'] == 'move_quiet_check'
+        )
+        self.assertEqual(quiet['payload'], {'move_options': {'trigger': 'idle'}})
+
+    def test_every_layer_step_takes_its_place(self):
+        """Pre-steps after the quiet check, cut steps after the source's
+        stop, post-restore steps before the cutover, freeze steps last;
+        the restore still finds the download and the fingerprint."""
+        def layer_step(name):
+            return {
+                'host_id': self.source.id, 'instance_id': self.inst.id,
+                'job_type_code': 'start_instance', 'payload': {'layer': name},
+            }
+        Instance = type(self.inst)
         with self._patch_chain() as m, patch.object(
-            type(self.inst), '_move_cut_steps', return_value=cut,
+            Instance, '_move_pre_steps', return_value=[layer_step('pre')],
+        ), patch.object(
+            Instance, '_move_cut_steps', return_value=[layer_step('cut')],
+        ), patch.object(
+            Instance, '_move_post_restore_steps',
+            return_value=[layer_step('post')],
+        ), patch.object(
+            Instance, '_move_freeze_steps', return_value=[layer_step('freeze')],
         ):
             self.inst.move_to_host(self.target)
         steps = m.call_args[0][0]
-        self.assertEqual(steps[3], cut[0])
-        self.assertEqual(steps[2]['host_id'], self.source.id)
-        self.assertEqual(steps[2]['job_type_code'], 'stop_instance')
-        self.assertEqual(steps[4]['job_type_code'], 'backup_download')
+        labels = [
+            (s.get('payload') or {}).get('layer') or s['job_type_code']
+            for s in steps
+        ]
+        self.assertEqual(labels, [
+            'deploy_instance', 'stop_instance', 'move_quiet_check', 'pre',
+            'stop_instance', 'cut', 'move_fingerprint', 'backup_download',
+            'restore_instance', 'post', 'move_cutover', 'move_freeze_source',
+            'freeze',
+        ])
+        restore = steps[labels.index('restore_instance')]['payload']
         self.assertEqual(
-            steps[5]['payload']['source_job_id'], '__chain_job_4__',
+            restore['source_job_id'],
+            f"__chain_job_{labels.index('backup_download')}__",
+        )
+        self.assertEqual(
+            restore['verify_job'],
+            f"__chain_job_{labels.index('move_fingerprint')}__",
         )
 
     def test_stopping_the_destination_leaves_the_instance_running(self):
@@ -181,7 +224,8 @@ class TestInstanceMove(TransactionCase):
             self.inst.move_to_host(self.target)
         codes = [s['job_type_code'] for s in m.call_args[0][0]]
         self.assertNotIn('backup_create', codes)
-        self.assertEqual(m.call_args[0][0][3]['payload']['time'], 'live')
+        download = m.call_args[0][0][codes.index('backup_download')]
+        self.assertEqual(download['payload']['time'], 'live')
 
     def test_core_deploy_job_type(self):
         self.assertEqual(
@@ -643,34 +687,30 @@ class TestInstanceMove(TransactionCase):
         self.assertTrue(self.inst.move_origin_host_id)
 
     def test_the_source_cleanup_never_runs_where_the_instance_lives(self):
-        """Before the cutover the source is still the instance's host;
-        after it, the old source is the one to clean and the new host is
-        not."""
-        self.inst.write({
-            'move_origin_host_id': self.source.id,
-            'move_target_host_id': self.target.id,
-        })
-        with self.assertRaises(JobRefused):
-            self._executor('move_cleanup_source', self.source).pre_run_checks()
+        """It removes the copy a move froze, on its host alone: never the
+        copy the instance lives in, nor anything on a host with none."""
         self.inst.write({
             'host_id': self.target.id,
-            'move_origin_host_id': False,
-            'move_target_host_id': False,
+            'move_frozen_source_host_id': self.source.id,
         })
         self._executor('move_cleanup_source', self.source).pre_run_checks()
+        for host in (self.target, self._third_host()):
+            with self.subTest(host=host.name), self.assertRaises(JobRefused):
+                self._executor('move_cleanup_source', host).pre_run_checks()
+        self.inst.move_frozen_source_host_id = False
         with self.assertRaises(JobRefused):
-            self._executor('move_cleanup_source', self.target).pre_run_checks()
+            self._executor('move_cleanup_source', self.source).pre_run_checks()
 
-    def test_the_source_cleanup_spares_the_host_a_new_move_goes_to(self):
-        """Moved away and now moving back: the old cleanup's host is the
-        new move's target, being built."""
+    def test_the_source_cleanup_runs_on_the_target_of_a_new_move_it_froze(self):
+        """Moving back to the host of the frozen copy: the copy goes first,
+        on the new move's target, before its deploy builds there."""
         self.inst.write({
             'host_id': self.target.id,
             'move_origin_host_id': self.target.id,
             'move_target_host_id': self.source.id,
+            'move_frozen_source_host_id': self.source.id,
         })
-        with self.assertRaises(JobRefused):
-            self._executor('move_cleanup_source', self.source).pre_run_checks()
+        self._executor('move_cleanup_source', self.source).pre_run_checks()
 
     def test_the_cutover_belongs_to_the_move_in_progress(self):
         """Retried once the move was undone, it handed the instance to a

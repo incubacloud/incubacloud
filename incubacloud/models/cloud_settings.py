@@ -108,6 +108,25 @@ class CloudSettings(models.Model):
              'purging entirely (table will grow unbounded).',
     )
 
+    # ── Moves between hosts ───────────────────────────────────────────────
+
+    move_frozen_source_hours = fields.Integer(
+        string='Keep the old copy after a move (hours)',
+        default=48,
+        help='After a move, the copy left on the old host is stopped and '
+             'kept, data included, for this many hours, so it can still '
+             'be restored from by hand; then it is removed. 0 removes it '
+             'at the next hourly pass. It uses disk on the old host until '
+             'then.',
+    )
+    move_cut_alert_seconds = fields.Integer(
+        string='Move cut alert (seconds)',
+        default=90,
+        help='A move that keeps the instance unavailable longer than this, '
+             'from the stop of its source to its destination answering, '
+             'raises a warning. 0 never raises it.',
+    )
+
     # A staging nobody uses still costs disk on the customer's host,
     # still generates probes and series, and still holds a copy of
     # production data. Nothing pushes anyone to delete it once stagings

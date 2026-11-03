@@ -79,6 +79,7 @@ from . import backup_download_neutralized_executor
 from . import backup_restore_executor
 from . import move_cutover_executor
 from . import move_rollback_cleanup_executor
+from . import move_steps_executor
 from . import host_hardening_executor
 from . import observability_agents_executor
 from . import observability_central_executor
