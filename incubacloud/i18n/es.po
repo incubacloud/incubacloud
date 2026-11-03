@@ -38,6 +38,20 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#, python-format
+msgid "%(count)s of %(total)s requests"
+msgstr "%(count)s de %(total)s peticiones"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#, python-format
+msgid "%(count)s requests"
+msgstr "%(count)s peticiones"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "\"%s\" has not started yet. Cancel it and take it out of the queue?"
 msgstr "\"%s\" aún no ha empezado. ¿Cancelarlo y quitarlo de la cola?"
@@ -5287,6 +5301,12 @@ msgstr "Rellene los campos obligatorios *"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Filter by status"
+msgstr "Filtrar por estado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Filter repositories"
 msgstr "Filtrar repositorios"
@@ -8748,6 +8768,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "No request matches this search."
+msgstr "Ninguna petición coincide con esta búsqueda."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__none
 msgid "No TLS"
@@ -11483,6 +11509,12 @@ msgstr "El árbol del repositorio es demasiado grande."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Requests"
+msgstr "Peticiones"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
@@ -11871,6 +11903,18 @@ msgstr "Cadena S3"
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "S3 error %(code)s: %(msg)s"
 msgstr "Error S3 %(code)s: %(msg)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Search path, client, method or status…"
+msgstr "Buscar por ruta, cliente, método o estado…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Search requests"
+msgstr "Buscar peticiones"
 
 #. module: incubacloud
 #. odoo-javascript
