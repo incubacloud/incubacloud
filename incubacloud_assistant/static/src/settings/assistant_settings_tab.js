@@ -4,11 +4,14 @@ import { Component, onMounted, onWillStart, onWillUnmount, status, useState } fr
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { user } from "@web/core/user";
+import { MultiSelect } from "@incubacloud/components/multi_select/multi_select";
+import { RlSelect } from "@incubacloud/components/rl_select/rl_select";
 import { modelOptions, money, roleLabel, settingsChanges } from "../assistant_format";
 
 /** Settings → Assistant: provider, key, models, users, limits and usage. */
 export class AssistantSettingsTab extends Component {
     static template = "incubacloud_assistant.AssistantSettingsTab";
+    static components = { MultiSelect, RlSelect };
     static props = {};
 
     /** Read the settings and the usage; save them with the page's Save button. */
@@ -18,6 +21,8 @@ export class AssistantSettingsTab extends Component {
             loadError: null,
             refreshing: false,
             notice: null,
+            // What the last save could not do (switch it on), or "".
+            saveWarning: "",
             providers: [],
             models: [],
             candidates: [],
@@ -112,23 +117,31 @@ export class AssistantSettingsTab extends Component {
         this._register();
     }
 
-    /** Allow or disallow a model; the default stays among the allowed. */
-    toggleModel(id) {
+    /**
+     * Allow the models *ids*. The default stays among them (the first one
+     * usable, when it is not); with none left the assistant cannot stay on.
+     *
+     * @param {string[]} ids the allowed models, as the selector lists them
+     */
+    setAllowedModels(ids) {
         const form = this.state.form;
-        form.allowed_models = form.allowed_models.includes(id)
-            ? form.allowed_models.filter((model) => model !== id)
-            : [...form.allowed_models, id];
+        form.allowed_models = [...ids];
         if (!form.allowed_models.includes(form.default_model)) {
-            form.default_model = form.allowed_models[0] || "";
+            const usable = new Set(this.defaultModelOptions.filter((o) => !o.disabled).map((o) => o.value));
+            form.default_model = form.allowed_models.find((id) => usable.has(id)) || "";
+        }
+        if (!form.allowed_models.length || !form.default_model) {
+            form.enabled = false;
         }
     }
 
-    /** Let a user use the assistant, or not. */
-    toggleUser(id) {
-        const form = this.state.form;
-        form.user_ids = form.user_ids.includes(id)
-            ? form.user_ids.filter((userId) => userId !== id)
-            : [...form.user_ids, id];
+    /**
+     * Let the users *ids* use the assistant.
+     *
+     * @param {number[]} ids
+     */
+    setUsers(ids) {
+        this.state.form.user_ids = [...ids];
     }
 
     /** Remove the key on the next Save: the assistant goes off. */
@@ -140,9 +153,9 @@ export class AssistantSettingsTab extends Component {
     /**
      * Pick another provider. Its models are others and its key is its own:
      * the allowed models and the default empty, the assistant goes off (and
-     * cannot go on until it is saved), and the server refuses the change
-     * unless its key is typed with it. Back to the saved provider, its
-     * models show again.
+     * cannot go on until its key is typed and its models read and chosen),
+     * and the server refuses the change unless its key is typed with it.
+     * Back to the saved provider, its models show again.
      */
     changeProvider(value) {
         const form = this.state.form;
@@ -185,6 +198,11 @@ export class AssistantSettingsTab extends Component {
         );
     }
 
+    /** Whether a key is typed in the form, to be tried and kept on Save. */
+    get keyTyped() {
+        return Boolean(String(this.state.form.api_key || "").trim());
+    }
+
     /** The key field's hint: a key is saved, typing replaces it. */
     get keyPlaceholder() {
         return this.keySaved ? _t("Saved — type to replace it") : "";
@@ -192,11 +210,44 @@ export class AssistantSettingsTab extends Component {
 
     /**
      * Whether switching on needs the box ticked (section 12A of the Terms on
-     * a tenant panel): the assistant is saved off, on a database that does
-     * not block it.
+     * a tenant panel): the assistant is saved off, or the form changes its
+     * provider, on a database that does not block it.
      */
     get needsTerms() {
-        return !this.state.blocked && !this._loaded?.enabled;
+        return !this.state.blocked && (!this._loaded?.enabled || this.providerChanged);
+    }
+
+    /**
+     * Why "Assistant on" cannot be ticked yet, or "". Switching on needs a
+     * key (typed or saved) whose models were read, the allowed models, a
+     * default model, and the box when it is asked for. Once ticked, it can
+     * always be unticked.
+     *
+     * @returns {string}
+     */
+    get switchOnBlocker() {
+        const form = this.state.form;
+        if (form.enabled || this.state.blocked) {
+            return "";
+        }
+        if (!this.keyTyped && !this.keySaved) {
+            return _t("Type the provider's key and read its models to switch the assistant on.");
+        }
+        if (!this.state.models.length) {
+            return _t("Read the provider's models to switch the assistant on.");
+        }
+        if (!form.allowed_models.length || !form.default_model) {
+            return _t("Choose the allowed models and a default model to switch the assistant on.");
+        }
+        if (this.needsTerms && !form.accept_ai_terms) {
+            return _t("Tick the acceptance box to switch the assistant on.");
+        }
+        return "";
+    }
+
+    /** Whether "Assistant on" is disabled: off, and it cannot go on yet. */
+    get switchDisabled() {
+        return !this.state.form.enabled && (Boolean(this.state.blocked) || Boolean(this.switchOnBlocker));
     }
 
     /**
@@ -223,15 +274,37 @@ export class AssistantSettingsTab extends Component {
             : _t("Last switched on, with the box ticked, on %(date)s by %(user)s from %(ip)s.", values);
     }
 
-    /** Read the provider's models again with the key kept. */
-    async refreshModels() {
+    /** Whether the models can be read now: with the key typed, or the saved one. */
+    get canReadModels() {
+        return !this.state.refreshing && (this.keyTyped || this.keySaved);
+    }
+
+    /**
+     * Read the provider's models, to choose from them before saving. With a
+     * key typed, with that key, and nothing is kept: Save tries it again and
+     * keeps it with its listing. Without one, with the saved key, and the
+     * listing is kept, as before.
+     */
+    async readModels() {
+        if (!this.canReadModels) {
+            return;
+        }
+        const form = this.state.form;
+        const typed = this.keyTyped;
         this.state.refreshing = true;
         this.state.notice = null;
         try {
-            const result = await rpc("/cloud/assistant/refresh_models", {});
+            const result = typed
+                ? await rpc("/cloud/assistant/read_models", {
+                      provider: form.provider,
+                      api_key: form.api_key,
+                  })
+                : await rpc("/cloud/assistant/refresh_models", {});
             if (result.ok) {
-                this.state.models = result.models;
-                this._savedModels = result.models;
+                this._setModels(result.models);
+                if (!typed) {
+                    this._savedModels = result.models;
+                }
             } else {
                 this.state.notice = { type: "error", text: result.error };
             }
@@ -242,6 +315,20 @@ export class AssistantSettingsTab extends Component {
             };
         } finally {
             this.state.refreshing = false;
+        }
+    }
+
+    /**
+     * Show the listing *models*; an allowed model it no longer has goes.
+     *
+     * @param {object[]} models the provider's listing, tagged by the server
+     */
+    _setModels(models) {
+        this.state.models = models;
+        const known = new Set(models.map((model) => model.id));
+        const allowed = this.state.form.allowed_models;
+        if (allowed.some((id) => !known.has(id))) {
+            this.setAllowedModels(allowed.filter((id) => known.has(id)));
         }
     }
 
@@ -261,12 +348,46 @@ export class AssistantSettingsTab extends Component {
         }));
     }
 
-    /** The users who may be chosen, with their role's name. */
-    get userRows() {
+    /**
+     * The allowed models' selector: every model, with what the list said of
+     * it (recommended or untested, price unknown); one that cannot be used
+     * under the form's monthly limit cannot be picked.
+     */
+    get allowedModelOptions() {
+        return this.modelRows.map((model) => {
+            const hint = [model.tag];
+            if (!model.priceKnown) {
+                hint.push(_t("Price unknown"));
+            }
+            if (model.blocked) {
+                hint.push(_t("Not usable with a monthly limit"));
+            }
+            return {
+                value: model.id,
+                label: model.label,
+                hint: hint.map(String).join(" · "),
+                disabled: model.blocked,
+            };
+        });
+    }
+
+    /** The default model's selector: the allowed models, in the listing's order. */
+    get defaultModelOptions() {
+        return this.modelRows
+            .filter((model) => model.allowed)
+            .map((model) => ({
+                value: model.id,
+                label: model.label,
+                disabled: model.blocked && !model.isDefault,
+            }));
+    }
+
+    /** The users' selector: the panel's people, each with their role. */
+    get userOptions() {
         return this.state.candidates.map((candidate) => ({
-            ...candidate,
-            roleLabel: roleLabel(candidate.role),
-            allowed: this.state.form.user_ids.includes(candidate.id),
+            value: candidate.id,
+            label: candidate.name,
+            hint: roleLabel(candidate.role),
         }));
     }
 
@@ -285,7 +406,11 @@ export class AssistantSettingsTab extends Component {
      * The box goes only with the switch-on, and is asked for again at the
      * next one.
      *
-     * @returns {Promise<{ok: boolean, error?: string}>} the save's answer
+     * Switched on without the models chosen, the server keeps the rest (a
+     * new key and its listing) and answers why it stayed off: the tab says
+     * so, and tells Settings the form it has now is the saved one.
+     *
+     * @returns {Promise<{ok: boolean, error?: string, warning?: string}>} the save's answer
      */
     async _save() {
         const vals = settingsChanges(this._loaded, this.state.form);
@@ -305,8 +430,19 @@ export class AssistantSettingsTab extends Component {
             this.state.form.api_key = "";
             this.state.form.clear_api_key = "";
             this.state.form.accept_ai_terms = "";
+            this.state.saveWarning = result.warning || "";
+            if (result.warning) {
+                this.state.form.enabled = false;
+                this._loaded.enabled = false;
+            }
             if (vals.api_key || vals.provider || vals.clear_api_key || vals.enabled === true) {
                 this._applyListing(await rpc("/cloud/assistant/get_settings", {}));
+            }
+            if (result.warning) {
+                this.env.toast?.warning?.(result.warning);
+                // Settings keeps what was sent, the switch on, as saved: the
+                // switch stayed off, and the form as it is now is what is saved.
+                this._register();
             }
         }
         return result;
