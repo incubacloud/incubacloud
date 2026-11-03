@@ -1,13 +1,18 @@
 """A step: what it sends, what it records, when it stops."""
 
+from unittest.mock import patch
+
+from psycopg2.errors import DeadlockDetected, SerializationFailure
+
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud_mcp.tests.common import HOST_PASSWORD
 from odoo.addons.queue_job.tests.common import trap_jobs
 
 from ..connectors.base import ProviderError, Usage
-from ..models.assistant_engine import as_data
+from ..models.assistant_engine import AssistantEngine, as_data
 from .common import KEY, EngineMixin, answer
 
 
@@ -265,6 +270,29 @@ class TestEngineStep(EngineMixin, TransactionCase):
         self._step(conversation, job_uuid="an-older-job")
         connector.chat.assert_not_called()
         self.assertEqual(conversation.state, "working")
+
+    def test_a_conflict_with_another_transaction_is_left_to_queue_job(self):
+        """It goes up, for queue_job to run the step again in 5 s; the
+        conversation stays at work instead of showing Retry."""
+        conversation = self._working(self.dev)
+        for conflict in (
+            SerializationFailure("could not serialize access"),
+            DeadlockDetected("deadlock detected"),
+        ):
+            with patch.object(
+                AssistantEngine, "_run_step", autospec=True, side_effect=conflict,
+            ), self.assertRaises(type(conflict)):
+                self._step(conversation)
+            self.assertEqual(conversation.state, "working")
+
+    def test_any_other_failure_still_leaves_retry(self):
+        conversation = self._working(self.dev)
+        with patch.object(
+            AssistantEngine, "_run_step", autospec=True,
+            side_effect=RuntimeError("boom"),
+        ), mute_logger("odoo.addons.incubacloud_assistant.models.assistant_engine"):
+            self._step(conversation)
+        self.assertEqual(conversation.state, "error")
 
     def test_an_answer_cut_before_it_said_anything_is_told(self):
         """The output limit reached with no text and no call: an error with Retry."""
