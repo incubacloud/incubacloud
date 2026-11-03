@@ -360,8 +360,10 @@ SQL
 # a database of that name, as a copy (a new database uuid, so the copy
 # never answers for the original) and neutralized when <neutralize> is 1.
 # With <as> set to ``move`` it is the same database changing machines: Odoo
-# keeps its ``database.secret`` (the sessions it signed stay open), its
+# keeps its ``database.secret`` (the links it signed stay valid), its
 # ``database.uuid`` and its ``web.base.url``, which a copy regenerates.
+# Sessions are not carried: they live in the data dir's ``sessions/``,
+# which the archive does not hold.
 #   ic_db_load_args <db> <archive> <0|1> [copy|move]
 # shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
 ic_db_load_args() {

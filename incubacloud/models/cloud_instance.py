@@ -2285,8 +2285,8 @@ class CloudInstance(models.Model):
                     "mode": "from_host",
                     "source_job_id": f"__chain_job_{download_idx}__",
                     # The same database changing hosts: a copy would
-                    # sign every panel session out and point the base
-                    # URL at localhost.
+                    # regenerate its secret (the links it signed) and
+                    # uuid, and point the base URL at localhost.
                     "as_move": True,
                 },
             },

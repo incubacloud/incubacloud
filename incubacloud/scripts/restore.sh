@@ -18,9 +18,10 @@
 #
 # Its optional 5th argument (copy/move, default copy) says whether the
 # archive is a copy or the database itself: a move loads it with
-# ``move``, so Odoo keeps the source's database.secret (the sessions it
-# signed stay open), database.uuid and web.base.url, where a copy has
-# them regenerated (the base URL to http://localhost:8069).
+# ``move``, so Odoo keeps the source's database.secret (the links it
+# signed stay valid), database.uuid and web.base.url, where a copy has
+# them regenerated (the base URL to http://localhost:8069). Sessions are
+# not carried: they live in the data dir's sessions/, outside the archive.
 #
 # ``set-base-url`` overwrites the web.base.url/report.url that travelled
 # inside the restored dump. It also drops web.base.url.freeze: with the

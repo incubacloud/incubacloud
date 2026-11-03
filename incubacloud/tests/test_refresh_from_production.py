@@ -645,8 +645,8 @@ class TestRestoreNeutralize(BaseCase):
         self.assertEqual(argv[-1], "copy")
 
     def test_a_move_loads_the_database_as_moved(self):
-        # A copy regenerates database.secret (every session of the panel
-        # signed out) and sets web.base.url to localhost.
+        # A copy regenerates database.secret (the links it signed) and
+        # database.uuid, and sets web.base.url to localhost.
         argv = _argv(self._restore_step({
             "mode": "from_job", "as_move": True,
         }))
