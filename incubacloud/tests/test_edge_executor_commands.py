@@ -181,6 +181,9 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         self.host.write({"tls_default_cert": False, "tls_default_key": False})
         command = self._cmds()[self._INSTALL]
         self.assertIn("|| sudo rm -f ~/traefik/certs/default.crt", command)
+        self.assertIn(
+            "|| sudo rm -f ~/traefik/dynamic/tls-default.yml", command,
+        )
 
     def test_the_private_key_is_owner_only(self):
         self._give_certificate()

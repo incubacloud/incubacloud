@@ -539,6 +539,10 @@ class TestTheProxySecretsAreStagedPrivately(_StagingCase):
                 self.assertNotIn("mv ", install)
                 self.assertNotIn("ic_put ", install)
                 self.assertIn("rm -f ~/traefik/dynamic/tls-default.yml", install)
+                # A store left behind by root names files that are gone.
+                self.assertIn(
+                    "|| sudo rm -f ~/traefik/dynamic/tls-default.yml", install,
+                )
                 self.assertNotIn(executor._job_dir(), install)
 
     def test_the_steps_still_move_them_from_where_they_were_staged(self):
