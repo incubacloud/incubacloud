@@ -16,7 +16,9 @@ Flow:
      - Copy incubacloud_connect
   5. Rebuild the Odoo Docker image and restart.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+from odoo import fields
 
 from odoo.addons.queue_job.exception import RetryableJobError
 from .host_build_lock import HostBuildLockMixin
@@ -28,6 +30,11 @@ from .deploy_instance_executor import DeployInstanceExecutor
 # executing after its budget: nothing was updated, so the job is worth
 # retrying rather than failing.
 _EXIT_CRONS_BUSY = 75
+#: How long a rebuild keeps coming back while the instance's crons run,
+#: counted from its first attempt. Past it the job fails for good.
+_CRONS_BUSY_PATIENCE = timedelta(minutes=30)
+#: Seconds between two attempts of a rebuild the crons held back.
+_CRONS_BUSY_RETRY_S = 60
 #: What a failed image build waits before its one repetition, in seconds.
 _BUILD_RETRY_WAIT_S = 60
 
@@ -338,11 +345,24 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         # was never touched. Ask queue_job to come back later instead of
         # failing the job — a failure here would raise an alert (and
         # notify the customer) for something that fixes itself.
+        #
+        # ``ignore_retry``: every rebuild is queued with ``max_retries=1``,
+        # so a plain ``RetryableJobError`` was queue_job's last attempt
+        # and ended the job failed. The patience below is the cap instead;
+        # meanwhile the job stays pending at the head of its queue.
         update = results.get("Update changed modules", {})
         if update.get("exit_status") == _EXIT_CRONS_BUSY:
+            waited = fields.Datetime.now() - self._first_attempt_started_at()
+            if waited >= _CRONS_BUSY_PATIENCE:
+                return [
+                    "The instance's crons kept running for 30 minutes;"
+                    " nothing was updated."
+                ]
             raise RetryableJobError(
                 "Instance crons were still running; rescheduling the "
                 "rebuild.",
+                seconds=_CRONS_BUSY_RETRY_S,
+                ignore_retry=True,
             )
         # "List services" exit_status != 0 only means compose isn't configured;
         # don't treat it as a fatal error — the rebuild itself may have worked.
@@ -352,6 +372,31 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             for label, data in results.items()
             if data.get("exit_status", 1) != 0 and label not in ignored
         ]
+
+    def _first_attempt_started_at(self):
+        """Return when this job's first attempt began.
+
+        Neither record keeps it: queue_job blanks ``date_started`` each
+        time it postpones the job, and ``cloud.job`` has no start of its
+        own. What outlives the rollback of a retried attempt is its log,
+        which every attempt writes on a durable cursor from its first
+        line. The earliest chunk written since the job's ``queue.job``
+        was created is the first attempt's: notes logged before, while
+        the job waited for its turn or for an alert, are left out.
+
+        The first attempt does not see its own chunks (its snapshot was
+        taken before them), so it counts from now.
+
+        :return: naive UTC datetime
+        """
+        domain = [("job_id", "=", self.job.id)]
+        created = self.job.sudo().queue_job_id.date_created
+        if created:
+            domain.append(("create_date", ">=", created))
+        first = self.env["cloud.job.log.chunk"].sudo().search(
+            domain, order="id", limit=1,
+        )
+        return first.create_date or fields.Datetime.now()
 
     async def on_success(self, results):
         self._cancel_stale_waits()
