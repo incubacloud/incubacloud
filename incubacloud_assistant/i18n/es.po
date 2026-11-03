@@ -1232,11 +1232,11 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 msgid ""
-"Switching the assistant on needs the box above ticked, each time. The\n"
-"                panel records when, by whom and from which address."
+"Switching the assistant on needs the acknowledgement box ticked, each\n"
+"                time. The panel records when, by whom and from which address."
 msgstr ""
-"Encender el asistente exige marcar la casilla de arriba, cada vez. El panel "
-"registra cuándo, quién y desde qué dirección."
+"Encender el asistente exige marcar la casilla de reconocimiento, cada vez. El "
+"panel registra cuándo, quién y desde qué dirección."
 
 #. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__tainted

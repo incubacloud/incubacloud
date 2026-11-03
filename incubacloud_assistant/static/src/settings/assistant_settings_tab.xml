@@ -87,8 +87,8 @@
                 <a t-att-href="state.termsUrl" target="_blank" rel="noopener noreferrer">Read the Terms</a>
             </p>
             <p class="rl-tabnote" t-elif="needsTerms">
-                Switching the assistant on needs the box above ticked, each time. The
-                panel records when, by whom and from which address.
+                Switching the assistant on needs the acknowledgement box ticked, each
+                time. The panel records when, by whom and from which address.
             </p>
             <p t-if="state.saveWarning" class="rl-tabnote ic-asst-warning" role="alert"
                t-esc="state.saveWarning"/>
