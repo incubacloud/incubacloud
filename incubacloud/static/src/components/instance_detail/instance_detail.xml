@@ -2869,25 +2869,74 @@
                         </div>
                     </div>
 
-                    <table class="ic-audit-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th><th>Client</th><th>Method</th>
-                                <th>Path</th><th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <t t-foreach="recentRequests" t-as="req" t-key="req_index">
-                                <tr>
-                                    <td t-esc="req.time"/>
-                                    <td t-esc="req.ClientHost"/>
-                                    <td t-esc="req.RequestMethod"/>
-                                    <td class="ic-path" t-esc="req.RequestPath"/>
-                                    <td t-esc="req.DownstreamStatus"/>
-                                </tr>
-                            </t>
-                        </tbody>
-                    </table>
+                    <div class="rl-card ic-requests">
+                        <div class="ic-requests-toolbar">
+                            <label class="ic-requests-search">
+                                <i class="fa fa-search" aria-hidden="true"/>
+                                <input type="search"
+                                       placeholder="Search path, client, method or status…"
+                                       aria-label="Search requests"
+                                       t-att-value="state.accessLog.q"
+                                       t-on-input="onRequestsSearch"/>
+                            </label>
+                            <div class="ic-requests-chips" role="group" aria-label="Filter by status">
+                                <t t-foreach="requestChips" t-as="chip" t-key="chip.key">
+                                    <button type="button" class="ic-requests-chip"
+                                            t-att-aria-pressed="state.accessLog.cls === chip.key ? 'true' : 'false'"
+                                            t-on-click="() => this.setRequestsClass(chip.key)">
+                                        <t t-esc="chip.label"/>
+                                        <span class="ic-requests-n" t-esc="chip.count"/>
+                                    </button>
+                                </t>
+                            </div>
+                        </div>
+                        <div class="ic-requests-box" t-ref="requestsBox" tabindex="0"
+                             role="region" aria-label="Requests">
+                            <table class="rl-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th><th>Client</th><th>Method</th>
+                                        <th>Path</th><th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-foreach="pagedRequests" t-as="req" t-key="req_index">
+                                        <tr>
+                                            <td class="ic-requests-time" t-esc="req.time"/>
+                                            <td>
+                                                <t t-set="hl" t-value="highlightRequest(req.ClientHost)"/>
+                                                <t t-esc="hl[0]"/><mark t-if="hl[1]" t-esc="hl[1]"/><t t-esc="hl[2]"/>
+                                            </td>
+                                            <td>
+                                                <t t-set="hl" t-value="highlightRequest(req.RequestMethod)"/>
+                                                <t t-esc="hl[0]"/><mark t-if="hl[1]" t-esc="hl[1]"/><t t-esc="hl[2]"/>
+                                            </td>
+                                            <td class="ic-path">
+                                                <t t-set="hl" t-value="highlightRequest(req.RequestPath)"/>
+                                                <t t-esc="hl[0]"/><mark t-if="hl[1]" t-esc="hl[1]"/><t t-esc="hl[2]"/>
+                                            </td>
+                                            <td>
+                                                <t t-set="hl" t-value="highlightRequest(req.DownstreamStatus)"/>
+                                                <span t-attf-class="ic-status ic-status-#{requestClass(req) || 'x'}">
+                                                    <t t-esc="hl[0]"/><mark t-if="hl[1]" t-esc="hl[1]"/><t t-esc="hl[2]"/>
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                            <div class="ic-requests-empty" t-if="!filteredRequests.length">
+                                No request matches this search.
+                            </div>
+                        </div>
+                        <div class="ic-requests-foot">
+                            <span t-esc="requestsCountLabel"/>
+                            <IcPager offset="state.accessLog.offset"
+                                     limit="requestsPageSize"
+                                     total="filteredRequests.length"
+                                     onPage="(o) => this.requestsGoPage(o)"/>
+                        </div>
+                    </div>
                 </t>
             </div>
         </t>
