@@ -353,7 +353,8 @@ class FullSetupExecutor(
         else:
             install_cert = (
                 "mkdir -p ~/traefik/certs ~/traefik/dynamic"
-                " && rm -f ~/traefik/dynamic/tls-default.yml"
+                " && { rm -f ~/traefik/dynamic/tls-default.yml 2>/dev/null"
+                " || sudo rm -f ~/traefik/dynamic/tls-default.yml; }"
                 " && { rm -f ~/traefik/certs/default.crt"
                 " ~/traefik/certs/default.key 2>/dev/null"
                 " || sudo rm -f ~/traefik/certs/default.crt"
