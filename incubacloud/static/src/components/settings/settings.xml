@@ -117,6 +117,29 @@
                                t-on-change="(ev) => this.onIntInput('job_retention_days', ev)"/>
                     </div>
 
+                    <!-- Moves between hosts -->
+                    <div class="rl-saas-fsec">Moves between hosts</div>
+                    <p class="rl-tabnote">
+                        After a move, the copy left on the old host is stopped and kept,
+                        data included, so it can still be restored from by hand; then it
+                        is removed. It uses disk on the old host until then. Set to 0 to
+                        remove it at the next hourly pass. A move that keeps the instance
+                        unavailable longer than the alert threshold raises a warning; 0
+                        never raises it.
+                    </p>
+                    <div class="rl-frow">
+                        <label>Keep the old copy (hours)</label>
+                        <input type="number" min="0"
+                               t-att-value="state.form.move_frozen_source_hours"
+                               t-on-change="(ev) => this.onIntInput('move_frozen_source_hours', ev)"/>
+                    </div>
+                    <div class="rl-frow">
+                        <label>Alert when a move's cut exceeds (seconds)</label>
+                        <input type="number" min="0"
+                               t-att-value="state.form.move_cut_alert_seconds"
+                               t-on-change="(ev) => this.onIntInput('move_cut_alert_seconds', ev)"/>
+                    </div>
+
                     <!-- Staging autopurge -->
                     <div class="rl-saas-fsec">Staging autopurge</div>
                     <p class="rl-tabnote">

@@ -307,6 +307,18 @@ class OpsMixin:
         except UserError as exc:
             return {"ok": False, "error": str(exc)}
 
+    @http.route(["/cloud/clean_frozen_copy"], type="json", auth="user")
+    def cloud_clean_frozen_copy(self, instance_id):
+        """Remove the copy the last move froze on the old host (manager-only)."""
+        self._sec()._check_can_manage_hosts()
+        instance = request.env["cloud.instance"].browse(instance_id)
+        if not instance.exists():
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            return instance.action_clean_frozen_copy()
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+
     @http.route(["/cloud/download_backup"], type="json", auth="user")
     def cloud_download_backup(self, instance_id, time, download_type="dump"):
         """Download a backup. Prod: enqueue job. Non-prod: return attachment URL."""

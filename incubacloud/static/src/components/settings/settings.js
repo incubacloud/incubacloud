@@ -59,6 +59,9 @@ export class Settings extends Component {
                 audit_log_retention_days: 90,
                 job_log_retention_days: 30,
                 job_retention_days: 180,
+                // Moves between hosts
+                move_frozen_source_hours: 48,
+                move_cut_alert_seconds: 90,
                 staging_autopurge_days: 90,
                 default_backup_alert_threshold_pct: 80,
                 github_event_retention_days: 90,
@@ -147,6 +150,12 @@ export class Settings extends Component {
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             job_retention_days: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            move_frozen_source_hours: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            move_cut_alert_seconds: [
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             staging_autopurge_days: [
@@ -355,6 +364,8 @@ export class Settings extends Component {
             this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
             this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
             this.state.form.job_retention_days = general.job_retention_days ?? 180;
+            this.state.form.move_frozen_source_hours = general.move_frozen_source_hours ?? 48;
+            this.state.form.move_cut_alert_seconds = general.move_cut_alert_seconds ?? 90;
             this.state.form.staging_autopurge_days = general.staging_autopurge_days ?? 90;
             this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
             this.state.form.github_event_retention_days = general.github_event_retention_days ?? 90;
@@ -487,6 +498,8 @@ export class Settings extends Component {
                 audit_log_retention_days: this.state.form.audit_log_retention_days,
                 job_log_retention_days: this.state.form.job_log_retention_days,
                 job_retention_days: this.state.form.job_retention_days,
+                move_frozen_source_hours: this.state.form.move_frozen_source_hours,
+                move_cut_alert_seconds: this.state.form.move_cut_alert_seconds,
                 staging_autopurge_days: this.state.form.staging_autopurge_days,
                 default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
                 github_event_retention_days: this.state.form.github_event_retention_days,

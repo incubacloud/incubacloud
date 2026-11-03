@@ -380,6 +380,17 @@
                                     <i class="fa fa-undo" /> Roll back move
                                 </button>
                             </t>
+                            <t t-if="hasFrozenCopy and env.permissions?.can_manage_hosts">
+                                <span class="rl-asep" />
+                                <button
+                  class="rl-btn rl-btn-ghost"
+                  title="Clean frozen copy now"
+                  aria-label="Remove the copy the last move left on the old host"
+                  t-on-click="() => this.cleanFrozenCopy()"
+                >
+                                    <i class="fa fa-snowflake-o" /> Clean frozen copy now
+                                </button>
+                            </t>
                             <t t-if="isRollingBack">
                                 <span class="rl-asep" />
                                 <span
@@ -522,6 +533,18 @@
                       t-esc="state.inst.host || '—'"
                     />
                                     </div>
+                                    <t t-if="hasFrozenCopy">
+                                        <div class="rl-ovrow">
+                                            <span class="rl-l">Frozen copy until</span>
+                                            <span
+                        class="rl-v"
+                        t-att-title="state.inst.move_frozen_until"
+                      >
+                                                <t t-esc="state.inst.move_frozen_until ? formatDate(state.inst.move_frozen_until) : '—'" />
+                                                on <t t-esc="state.inst.move_frozen_source_host" />
+                                            </span>
+                                        </div>
+                                    </t>
                                     <div class="rl-ovrow">
                                         <span class="rl-l">Odoo</span>
                                         <span

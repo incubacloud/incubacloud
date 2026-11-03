@@ -503,7 +503,8 @@ class CloudJob(models.Model):
         job running now. That clearing sees this snapshot only, as the
         collapse does: a job another request committed between the
         snapshot and the lock is not cancelled, and runs before the
-        delete — it was asked for first.
+        delete — it was asked for first. An instance with the frozen copy
+        of a move on its old host has that copy's removal queued first.
         """
         # Server-side role gate: the public entrypoint is reachable via
         # call_kw with only create-ACL, so enforce the per-type manager
@@ -546,6 +547,14 @@ class CloudJob(models.Model):
                     waiting,
                     _("Cancelled: the instance was asked to be deleted."),
                 )
+                # The copy a move froze on the old host goes first, while
+                # the record still names it: queued before the delete,
+                # it runs before it (``cloud.instance._enqueue_frozen_cleanup``).
+                inst = self.env["cloud.instance"].browse(int(instance_id))
+                if inst.move_frozen_source_host_id:
+                    inst._enqueue_frozen_cleanup(
+                        f"the {job_type_code} of the instance",
+                    )
             existing = self._check_queue_admission(
                 job_type_id, scope, payload, head=head,
             )
@@ -989,6 +998,9 @@ class CloudJob(models.Model):
         # Queued from the transaction that ends a restore, sometimes with
         # the queues' locks held: it must wait for nothing.
         "discard_handoff",
+        # Steps of a move only the platform queues: the move shows
+        # through its deploy, stops, restore and cutover.
+        "move_quiet_check", "move_fingerprint", "move_freeze_source",
     ]
 
     # Job types whose failure should raise a critical alert — these
@@ -1084,6 +1096,9 @@ class CloudJob(models.Model):
         "move_cutover": "group_cloud_manager",
         "move_cleanup_source": "group_cloud_manager",
         "move_rollback_cleanup": "group_cloud_manager",
+        "move_quiet_check": "group_cloud_manager",
+        "move_fingerprint": "group_cloud_manager",
+        "move_freeze_source": "group_cloud_manager",
         # Deletes a chain that nothing else can reach any more, and the
         # record with it. Manager-only for the same reason production
         # deletion is: there is no undo behind it.

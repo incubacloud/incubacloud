@@ -301,6 +301,14 @@ class CloudHost(models.Model):
         inverse_name="host_id",
         string="Instances",
     )
+    incoming_instance_ids = fields.One2many(
+        comodel_name="cloud.instance",
+        inverse_name="move_target_host_id",
+        string="Instances Moving Here",
+        help="Instances whose move to this host is under way. They count "
+        "against its capacity from the start of the move, as they do on "
+        "the host they leave until the cutover.",
+    )
     whitelist_ids = fields.One2many(
         comodel_name="cloud.host.whitelist",
         inverse_name="host_id",
@@ -505,12 +513,26 @@ class CloudHost(models.Model):
         "instance_ids.db_memory_limit",
         "instance_ids.backup_memory_limit",
         "instance_ids.smtp_memory_limit",
+        "incoming_instance_ids.odoo_cpus",
+        "incoming_instance_ids.db_cpus",
+        "incoming_instance_ids.backup_cpus",
+        "incoming_instance_ids.smtp_cpus",
+        "incoming_instance_ids.odoo_memory_limit",
+        "incoming_instance_ids.db_memory_limit",
+        "incoming_instance_ids.backup_memory_limit",
+        "incoming_instance_ids.smtp_memory_limit",
     )
     def _compute_resource_availability(self):
+        """Sum what the host's instances reserve, those moving here included.
+
+        An instance on its way here (``incoming_instance_ids``) counts on
+        both hosts until its cutover: the destination is built, and
+        reserved, minutes before the source is let go.
+        """
         for host in self:
             total_cpus = 0.0
             total_ram = 0.0
-            for inst in host.instance_ids:
+            for inst in host.instance_ids | host.incoming_instance_ids:
                 if not host._consumes_capacity(inst):
                     continue
                 total_cpus += (

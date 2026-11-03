@@ -2773,21 +2773,25 @@ class TestMoves(_QueueCase):
         ])
 
     def test_a_failed_source_cleanup_does_not_hold_the_queue(self):
-        """The move cut over, and removing the old copy from the source
-        failed: the instance lives on the destination, and its backups
-        and jobs go on (owner, 27-oct-2026). The failure is still
-        announced, and its alert stays."""
-        *steps, cleanup = self._move_chain()
-        self.assertEqual(cleanup.job_type_id.code, "move_cleanup_source")
-        for step in steps:
+        """The move cut over and froze the old copy, and removing that copy
+        from the source failed: the instance lives on the destination, and
+        its backups and jobs go on (owner, 27-oct-2026). The failure is
+        still announced, and its alert stays."""
+        *steps, freeze = self._move_chain()
+        self.assertEqual(freeze.job_type_id.code, "move_freeze_source")
+        for step in (*steps, freeze):
             self._end(step)
-        # What the cutover's success writes.
+        # What the cutover's and the freeze's success write.
         self.inst.write({
             "host_id": self.target.id,
             "move_origin_host_id": False,
             "move_target_host_id": False,
             "move_chain_job_ids": False,
+            "move_frozen_source_host_id": self.host.id,
         })
+        cleanup = self.Job.browse(self.inst._enqueue_frozen_cleanup("a test"))
+        _run_after_commit(self.env)
+        self.assertEqual(cleanup.host_id, self.host)
         with patch.object(
             type(self.Job), "_broadcast_job_update", autospec=True,
         ) as told:
@@ -2818,7 +2822,7 @@ class TestMoves(_QueueCase):
 
     def _assert_a_failure_before_the_cutover_holds_the_queue(self, code):
         """Fail the move at its *code* step: that step holds the queue,
-        and the source's cleanup ends without running."""
+        and the freeze of the source ends without running."""
         chain = self._move_chain()
         failing = chain.filtered(lambda job: job.job_type_id.code == code)
         self.assertEqual(len(failing), 1, code)
@@ -2826,7 +2830,7 @@ class TestMoves(_QueueCase):
             self._end(step)
         self._fail_as_the_runner(failing)
         cleanup = chain[-1]
-        self.assertEqual(cleanup.job_type_id.code, "move_cleanup_source")
+        self.assertEqual(cleanup.job_type_id.code, "move_freeze_source")
         self.assertEqual(failing.state, "failed")
         self.assertEqual(cleanup.state, "cancelled")
         self.assertFalse(cleanup.queue_job_id.date_started)

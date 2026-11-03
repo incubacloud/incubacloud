@@ -19,7 +19,11 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
     blocked by a cleanup problem on the target.
 
     On success clears all move-related markers so the instance returns
-    to a clean state with ``host_id`` still pointing at the source.
+    to a clean state with ``host_id`` still pointing at the source, and
+    tells the instance's layers why the move did not happen (the outcome
+    its payload carries, ``move_outcome``). A move postponed by its quiet
+    check (``move_postponed``) is taken down the same way; its source
+    never stopped.
     """
 
     _job_type = "move_rollback_cleanup"
@@ -179,6 +183,12 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
         inst = self.job.instance_id
         if inst.exists():
             target = inst.move_target_host_id
+            # Built when the rollback (or the postponement) was decided,
+            # from the chain the markers below still named then
+            # (``cloud.instance._enqueue_rollback_jobs``).
+            outcome = dict(
+                (self.job.payload or {}).get("move_outcome") or {"kind": "manual"}
+            )
             # With ``sudo``: the markers are the platform's
             # (``cloud.instance._check_guarded_vals``).
             inst.sudo().write({
@@ -186,6 +196,7 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
                 'move_target_host_id': False,
                 'move_chain_job_ids': False,
                 'move_rollback_in_progress': False,
+                'move_cut_started_at': False,
             })
             # Dismiss any stale move_stuck alert that may have been
             # raised by a previous cron recovery pass.
@@ -194,5 +205,8 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
                 ('code', '=', 'move_stuck'),
                 ('state', '=', 'active'),
             ]).write({'state': 'dismissed'})
-            inst._on_move_rolled_back(target_host=target)
+            inst._on_move_rolled_back(target_host=target, outcome=outcome)
+        if (self.job.payload or {}).get("move_postponed"):
+            self._sys("✓ Postponed move: destination taken down. Markers cleared.")
+            return
         self._sys("✓ Rollback cleanup complete. Markers cleared.")

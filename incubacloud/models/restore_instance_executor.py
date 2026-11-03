@@ -17,6 +17,7 @@ from ._odoo_versions import script_env
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
+    JobRefused,
     handoff_archive_path,
     handoff_dir,
     handoff_sweep,
@@ -24,6 +25,7 @@ from .abstract_executor import (
     sql_escape_literal,
 )
 from .cloud_restore_upload_grant import SAFE_UPLOAD_NAME
+from .move_steps_executor import parse_fingerprint
 from .password_utils import merge_secret_key_lines
 from .secret_key_escrow import SecretKeyEscrowMixin
 
@@ -136,6 +138,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             ``web.base.url.freeze``. Skipped when the instance has no
             domain — writing an empty parameter would be worse than
             leaving the inherited one.
+        verify_job: the ``move_fingerprint`` of the move this restore
+            belongs to. Between the restore of the database and the
+            start of Odoo, the same tables and the filestore are counted
+            here and compared with what it counted on the source; any
+            difference fails the restore before Odoo starts, and the
+            move's cutover never runs.
         share_secret_key: give this instance the encryption keys of the
             instance the data comes from (a refresh from production): the
             restored database was encrypted with them. Odoo is then
@@ -186,6 +194,66 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             return False
         target = inst.move_target_host_id
         return bool(target) and target.id == self.job.host_id.id
+
+    def _verify_fingerprint(self):
+        """Return the source's fingerprint this restore checks against.
+
+        Only that of a step of its own chain (``same_chain``): the ID in
+        the payload is the caller's to write.
+
+        :return: the fingerprint (``parse_fingerprint``'s shape), or None
+            when the payload names none, or one that cannot be used
+        :rtype: dict | None
+        """
+        verify_id = (self.job.payload or {}).get('verify_job')
+        if not str(verify_id or '').isdigit():
+            return None
+        source = self.job.sudo().browse(int(verify_id)).exists()
+        if not source or not same_chain(self.job, source):
+            return None
+        result = source.result or {}
+        if not isinstance(result.get('tables'), dict) \
+                or not isinstance(result.get('files'), int):
+            return None
+        return result
+
+    def pre_run_checks(self):
+        """Refuse a restore that must verify and has nothing to verify with.
+
+        Before connecting: the database is not touched.
+
+        :raises JobRefused: when the payload names a ``verify_job`` whose
+            fingerprint is missing
+        """
+        if (self.job.payload or {}).get('verify_job') \
+                and self._verify_fingerprint() is None:
+            raise JobRefused(
+                "Refused: the fingerprint of the source this restore checks "
+                "against is missing, so the copy could not be verified."
+            )
+        super().pre_run_checks()
+
+    def _verify_step(self, d, inst, dbname):
+        """Return the integrity check against the source, or nothing.
+
+        :param str d: the instance's directory
+        :param inst: the ``cloud.instance``
+        :param str dbname: its database
+        :return: a tuple of zero or one command
+        """
+        fingerprint = self._verify_fingerprint()
+        if fingerprint is None:
+            return ()
+        tables = fingerprint['tables']
+        return ((
+            "Verify integrity",
+            self.run_script("move_steps.sh", [
+                "verify", d, inst.postgres_username or 'odoo', dbname,
+                str(fingerprint['files']),
+                *(f"{name}={count}" for name, count in sorted(tables.items())),
+            ]),
+            {"stop_on_failure": True},
+        ),)
 
     def _source_job(self):
         """Return the chained job referenced by ``source_job_id``, or an
@@ -805,6 +873,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ),
                 {"stop_on_failure": True},
             ),
+            # Right after the restore, before anything writes to the
+            # database (the base URL, the connector) and before Odoo
+            # starts: what is compared is what the dump brought.
+            *self._verify_step(d, inst, dbname),
         ]
 
         # Only where ``smtplocal`` is the mail catcher: a production
@@ -881,6 +953,16 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         for label, data in results.items():
             if label in ("Remove remote backup file",
                          "Ensure incubacloud_connect"):
+                continue
+            if label == "Verify integrity" and data.get('exit_status', 1) != 0:
+                # The script names each difference: that is the error.
+                found = [
+                    line.strip() for line in (data.get('stdout') or '').splitlines()
+                    if line.startswith("Integrity check failed")
+                ]
+                errors.extend(found or [
+                    f"'{label}' exited with status {data.get('exit_status')}"
+                ])
                 continue
             if data.get('exit_status', 1) != 0:
                 errors.append(
