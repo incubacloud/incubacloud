@@ -100,6 +100,9 @@ class TestInstanceMove(TransactionCase):
         self.assertEqual(
             steps[4]['payload']['source_job_id'], '__chain_job_3__',
         )
+        # The same database changing hosts, not a copy: it keeps its
+        # secret (the panel's sessions), uuid and base URL.
+        self.assertIs(steps[4]['payload']['as_move'], True)
         self.assertEqual(self.inst.move_origin_host_id, self.source)
         self.assertEqual(self.inst.move_target_host_id, self.target)
         self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6,7')

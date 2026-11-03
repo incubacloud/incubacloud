@@ -296,6 +296,23 @@ _repo_with_tracked_walg() {
     [ "${IC_DB_ARGS[*]}" = "odoo db load --neutralize --force prod /mnt/restore.zip" ]
 }
 
+@test "a move loads the database as moved with either tool" {
+    unset IC_DB_TOOL
+    ic_db_load_args prod /mnt/restore.zip 0 move
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-restoredb --move --force prod /mnt/restore.zip" ]
+    ic_db_load_args prod /mnt/restore.zip 0 copy
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-restoredb --copy --force prod /mnt/restore.zip" ]
+    export IC_DB_TOOL=odoo-db
+    ic_db_load_args prod /mnt/restore.zip 0 move
+    [ "${IC_DB_ARGS[*]}" = "odoo db load --move --force prod /mnt/restore.zip" ]
+}
+
+@test "a load the library does not know stops the script" {
+    run ic_db_load_args prod /mnt/restore.zip 0 clone
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown load: clone"* ]]
+}
+
 @test "a series without Odoo's neutralization loads plainly, then runs the SQL" {
     export IC_NEUTRALIZE=sql
     ic_db_load_args prod /mnt/restore.zip 1

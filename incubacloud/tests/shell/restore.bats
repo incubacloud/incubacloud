@@ -104,6 +104,13 @@ STUB
     [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
 }
 
+@test "restore-db loads a move as moved, keeping the database's secret" {
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 0 move
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"odoo click-odoo-restoredb --move --force prod /mnt/restore.zip"* ]]
+    [[ "$(cat "$CALLS")" != *"--copy"* ]]
+}
+
 @test "restore-db treats an explicit 0 as no neutralization" {
     run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 0
     [ "$status" -eq 0 ]
