@@ -7703,6 +7703,18 @@ msgstr ""
 "es la única respuesta honesta a '¿están llegando métricas?'."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__running_stopped_at
+msgid ""
+"Last time the instance was written as stopped. The metrics cron does not "
+"read an odoo last seen before it as a start: a stopped container's series "
+"stays reported, ageing, for minutes after the stop."
+msgstr ""
+"Última vez que la instancia se marcó como detenida. El cron de métricas no "
+"toma como un arranque un odoo visto por última vez antes de ese momento: la "
+"serie de un contenedor detenido se sigue notificando, cada vez más antigua, "
+"durante minutos después de la parada."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__metrics_last_seen
 msgid ""
 "Last time the metrics backend reported on this instance. Written only by the"
@@ -11824,6 +11836,11 @@ msgstr "Ejecución confirmada el"
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "Running instances may be interrupted."
 msgstr "Las instancias en ejecución pueden verse interrumpidas."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running_stopped_at
+msgid "Running stopped at"
+msgstr "Ejecución detenida el"
 
 #. module: incubacloud
 #. odoo-javascript

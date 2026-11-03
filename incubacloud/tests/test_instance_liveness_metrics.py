@@ -123,6 +123,20 @@ class InstanceLivenessCase(TransactionCase):
             "environment": "staging",
         })
 
+    def _stopped_long_ago(self):
+        """Write the instance stopped, as though an hour ago.
+
+        A stop written now holds back a rise on any ``odoo`` last seen
+        before it, which every fresh series a test hands the cron
+        would be. These tests are about a start after a stop long gone.
+        """
+        self.inst.write({"running": False})
+        self.inst.write({
+            "running_stopped_at": (
+                fields.Datetime.now() - timedelta(hours=1)
+            ),
+        })
+
     def _run(self, payload=None, exc=None, odoo_payload=None,
              host_payload=None):
         # The cron stamps on a cursor of its own, so it reads what is in
@@ -191,7 +205,7 @@ class TestLivenessSendsCredentials(InstanceLivenessCase):
 class TestLiveness(InstanceLivenessCase):
 
     def test_a_recently_seen_container_marks_running(self):
-        self.inst.write({"running": False})
+        self._stopped_long_ago()
         self._run(_samples((self.inst.id, 20)))
         self.inst.invalidate_recordset()
         self.assertTrue(self.inst.running)
@@ -206,7 +220,7 @@ class TestLiveness(InstanceLivenessCase):
         """Just over the scrape interval must not flap the flag."""
         window = self.env["cloud.instance"]._metrics_liveness_window()
         self.assertGreaterEqual(window, 90)
-        self.inst.write({"running": False})
+        self._stopped_long_ago()
         self._run(_samples((self.inst.id, 45)))
         self.inst.invalidate_recordset()
         self.assertTrue(self.inst.running)
@@ -216,7 +230,7 @@ class TestLivenessFailSafes(InstanceLivenessCase):
 
     def test_a_timeout_absorbed_by_the_retry_still_refreshes(self):
         """One slow answer is asked again; the cron then runs as usual."""
-        self.inst.write({"running": False})
+        self._stopped_long_ago()
         self.env.flush_all()
         responses = [requests.Timeout("slow")]
         for body in (
@@ -522,7 +536,7 @@ class TestSeveralSeriesOfOneSubject(InstanceLivenessCase):
 
     def test_the_freshest_odoo_series_decides(self):
         """The old container's series, 600 s old, beside the new one's."""
-        self.inst.write({"running": False})
+        self._stopped_long_ago()
         self._run_series(odoo=[(self.inst.id, 600), (self.inst.id, 10)])
         self.assertTrue(
             self.inst.running,
@@ -738,7 +752,7 @@ class TestGraceAfterAConfirmation(InstanceLivenessCase):
 
     def test_a_rise_the_cron_read_opens_no_grace(self):
         """Or an odoo that keeps going away would never read as stopped."""
-        self.inst.write({"running": False})
+        self._stopped_long_ago()
         self._tick(odoo_age=5)
         self.assertTrue(self.inst.running)
         self._tick()
@@ -750,7 +764,13 @@ class TestGraceAfterAConfirmation(InstanceLivenessCase):
         executor = self._executor(StopInstanceExecutor, "stop_instance")
         asyncio.run(executor.on_success({}))
         self.assertFalse(self.inst.running)
-        # Its series ages out: inside the window, the cron reads it up…
+        # Started again without a job, a wake on traffic say: an odoo
+        # seen after the stop, which the cron reads up…
+        self.inst.write({
+            "running_stopped_at": (
+                self.inst.running_stopped_at - timedelta(seconds=200)
+            ),
+        })
         self._tick(odoo_age=100)
         self.assertTrue(self.inst.running)
         # …and once it is gone, down at once.
@@ -858,3 +878,88 @@ class TestGraceAfterAConfirmation(InstanceLivenessCase):
             asyncio.run(executor.on_success({}))
         self.assertFalse(self.inst.running)
         self.assertFalse(self.inst.running_confirmed_at)
+
+    # A stop is not undone either. cAdvisor stops reporting a container
+    # it no longer sees, and its last series stays in the backend,
+    # ageing, for minutes: well inside the window the cron reads as up.
+    # Read as such, a Stop the job had just written was undone at the
+    # cron's next pass, and the panel showed the instance running, with
+    # Shell and Restart, for minutes after it (QA b100, 2-nov-2026:
+    # stopped at 02:01:36, raised again at 02:01:43).
+
+    def _stop(self):
+        """Have a Stop job take the confirmed instance down now."""
+        self._confirm(seconds_ago=_CONFIRMED_GRACE_SECONDS + 1)
+        executor = self._executor(StopInstanceExecutor, "stop_instance")
+        asyncio.run(executor.on_success({}))
+        self.assertFalse(self.inst.running)
+        self.assertTrue(self.inst.running_stopped_at)
+
+    def test_the_stopped_odoos_series_does_not_raise_it(self):
+        """The QA b100 case: seen before the stop, ageing out after it."""
+        self._stop()
+        self._tick(odoo_age=100)
+        self.assertFalse(
+            self.inst.running,
+            "the series of the container a Stop took down raised it again",
+        )
+
+    def test_an_odoo_seen_just_before_the_stop_does_not_raise_it(self):
+        """The last scrape before the stop is the freshest such series."""
+        self._stop()
+        self._tick(odoo_age=1)
+        self.assertFalse(self.inst.running)
+
+    def test_an_odoo_seen_after_the_stop_raises_it(self):
+        """A start without a job, such as a wake on traffic, still counts."""
+        self._stop()
+        self.inst.write({
+            "running_stopped_at": (
+                self.inst.running_stopped_at - timedelta(seconds=60)
+            ),
+        })
+        self._tick(odoo_age=5)
+        self.assertTrue(self.inst.running)
+
+    def test_any_stop_written_is_noted(self):
+        """Whoever writes it: the probe, the cron, a layer above."""
+        self.inst.write({"running": True})
+        self.assertFalse(self.inst.running_stopped_at)
+        before = fields.Datetime.now()
+        self.inst.write({"running": False})
+        self.assertGreaterEqual(self.inst.running_stopped_at, before)
+
+    def test_a_stop_committed_after_the_cron_read_is_kept(self):
+        """The cron reads every row it covers, then decides on each in
+        turn. A Stop committed in between is read again, under the row's
+        lock, before the series from before it is written as a start."""
+        self.inst.write({"running": False})
+        self.inst.write({
+            "running_stopped_at": (
+                fields.Datetime.now() - timedelta(hours=1)
+            ),
+        })
+        Instance = type(self.env["cloud.instance"])
+        original = Instance.write
+        neighbour = self.other.id
+
+        def write(records, vals):
+            """Write; the neighbour's, decided first, lets the Stop in.
+
+            :param records: the instances written
+            :param dict vals: the values written
+            :return: what ``write`` returns
+            """
+            if neighbour in records.ids:
+                self.env.cr.execute(
+                    "UPDATE cloud_instance SET running_stopped_at = %s"
+                    " WHERE id = %s",
+                    (fields.Datetime.now(), self.inst.id),
+                )
+            return original(records, vals)
+
+        with patch.object(Instance, "write", autospec=True, side_effect=write):
+            self._tick(odoo_age=5)
+        self.assertFalse(
+            self.inst.running, "the cron wrote a start over a stop",
+        )
