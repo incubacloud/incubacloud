@@ -217,6 +217,32 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
     _job_type = "deploy_instance"
 
+    def pre_run_checks(self):
+        """Never build a move's destination over the copy a move froze there.
+
+        A move back to a host where an earlier move left its frozen copy
+        (``move_frozen_source_host_id``) has that copy removed first, by a
+        job queued ahead of the chain (``cloud.instance.move_to_host``),
+        whose success clears the field. If the removal failed, the
+        deploy's ``docker compose up`` would start the old copy, with the
+        database it had up to two days before, its crons and its queue,
+        until the move stopped it. So the deploy refuses: the chain stops
+        before anything starts and the move is rolled back.
+
+        :raises JobRefused: when the frozen copy is still on this host
+        """
+        inst = self.job.instance_id
+        host = self.job.host_id
+        if (inst and inst.move_origin_host_id
+                and inst.move_target_host_id == host
+                and inst.move_frozen_source_host_id == host):
+            raise JobRefused(
+                f"Refused: the copy an earlier move froze on {host.name} is "
+                "still there, and the move would start it. Remove it "
+                "(Clean frozen copy now), then move the instance again."
+            )
+        super().pre_run_checks()
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _get_github_tokens(self):
