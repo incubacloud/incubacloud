@@ -52,21 +52,6 @@
             </section>
 
             <section t-else="" class="ic-asst-body ic-asst-chat">
-                <div t-if="!readOnly" class="ic-asst-toolbar">
-                    <label for="ic_asst_model">Model</label>
-                    <select id="ic_asst_model" t-on-change="(ev) => this.setModel(ev.target.value)">
-                        <t t-foreach="models" t-as="model" t-key="model.id">
-                            <option t-att-value="model.id" t-att-selected="model.id === state.modelId"
-                                    t-att-disabled="model.disabled">
-                                <t t-esc="model.label"/> · <t t-esc="model.tag"/>
-                            </option>
-                        </t>
-                    </select>
-                    <span t-if="state.conversation" class="ic-asst-muted">
-                        <t t-esc="state.conversation.cost_unknown ? '≈ ?' : ''"/>
-                    </span>
-                </div>
-
                 <ol class="ic-asst-messages" aria-live="polite" t-ref="messages">
                     <t t-foreach="views" t-as="item" t-key="item.message.id">
                         <t t-set="view" t-value="item.view"/>
@@ -122,12 +107,32 @@
                               placeholder="Ask the assistant…" aria-label="Message"
                               t-on-keydown="onInputKey"/>
                     <div class="ic-asst-foot-actions">
-                        <button t-if="stateInfo.canStop" class="rl-btn rl-btn-ghost rl-btn-sm"
-                                t-on-click="stop">Stop</button>
-                        <button t-if="stateInfo.canRetry" class="rl-btn rl-btn-ghost rl-btn-sm"
-                                t-on-click="retry">Retry</button>
-                        <button class="rl-btn rl-btn-primary rl-btn-sm ic-asst-send"
-                                t-att-disabled="state.sending" t-on-click="send">Send</button>
+                        <div class="ic-asst-modelpick">
+                            <label class="ic-asst-model-field">
+                                <span class="ic-visually-hidden">Model</span>
+                                <span class="ic-asst-model-icon" aria-hidden="true">
+                                    <t t-out="env.icon('cube', 13)"/>
+                                </span>
+                                <select id="ic_asst_model" title="Model"
+                                        t-on-change="(ev) => this.setModel(ev.target.value)">
+                                    <t t-foreach="models" t-as="model" t-key="model.id">
+                                        <option t-att-value="model.id" t-att-selected="model.id === state.modelId"
+                                                t-att-disabled="model.disabled">
+                                            <t t-esc="model.label"/> · <t t-esc="model.tag"/>
+                                        </option>
+                                    </t>
+                                </select>
+                            </label>
+                            <span t-if="state.conversation and state.conversation.cost_unknown" class="ic-asst-muted" t-esc="'≈ ?'"/>
+                        </div>
+                        <div class="ic-asst-foot-buttons">
+                            <button t-if="stateInfo.canStop" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-on-click="stop">Stop</button>
+                            <button t-if="stateInfo.canRetry" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-on-click="retry">Retry</button>
+                            <button class="rl-btn rl-btn-primary rl-btn-sm ic-asst-send"
+                                    t-att-disabled="state.sending" t-on-click="send">Send</button>
+                        </div>
                     </div>
                 </footer>
             </section>
