@@ -27,7 +27,8 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
     DEFAULT_HARDENED_USER,
     HostHardeningExecutor,
     _FINALIZE_CONNECT_ATTEMPTS,
-    _FINALIZE_CONNECT_DELAY,
+    _FINALIZE_CONNECT_DELAYS,
+    _FINALIZE_CONNECT_TIMEOUT,
     _build_ssh_allowlist,
     _pick_new_ssh_port,
     _SSH_PORT_MAX,
@@ -1456,17 +1457,39 @@ class TestTheNewPortGetsAFreshConnection(TransactionCase):
         verdict, logged, _conn = self._finalize(0, failures=[TimeoutError()])
         self.assertTrue(verdict)
         self.assertEqual(self.connect.call_count, 2)
-        self.sleep.assert_awaited_once_with(_FINALIZE_CONNECT_DELAY)
+        self.sleep.assert_awaited_once_with(_FINALIZE_CONNECT_DELAYS[0])
         self.assertTrue(any("not reachable yet" in line for line in logged))
 
     def test_a_port_that_never_answers_fails_after_every_attempt(self):
         verdict, _logged, conn = self._finalize(0, failures=[
             TimeoutError(), ConnectionRefusedError(), OSError("unreachable"),
+            TimeoutError(), TimeoutError(), TimeoutError(),
         ])
         self.assertFalse(verdict)
         self.assertEqual(self.connect.call_count, _FINALIZE_CONNECT_ATTEMPTS)
-        self.assertEqual(self.sleep.await_count, _FINALIZE_CONNECT_ATTEMPTS - 1)
+        self.assertEqual(
+            [c.args[0] for c in self.sleep.await_args_list],
+            list(_FINALIZE_CONNECT_DELAYS),
+        )
         conn.run.assert_not_called()
+
+    def test_the_attempts_cover_some_three_minutes(self):
+        """QA 3-nov-2026: Hetzner still dropped the port two minutes after
+        it was asked to open it; the waits grow, and each attempt gives up
+        on the port sooner than the 30 s of a host's other connections."""
+        self.assertEqual(_FINALIZE_CONNECT_DELAYS, (5, 10, 15, 20, 30))
+        self.assertEqual(_FINALIZE_CONNECT_ATTEMPTS, 6)
+        self.assertEqual(_FINALIZE_CONNECT_TIMEOUT, 20)
+        span = (
+            sum(_FINALIZE_CONNECT_DELAYS)
+            + _FINALIZE_CONNECT_ATTEMPTS * _FINALIZE_CONNECT_TIMEOUT
+        )
+        self.assertGreaterEqual(span, 180)
+        self.assertLessEqual(span, 240)
+        self._finalize(0)
+        kwargs = self.connect.call_args.kwargs
+        self.assertEqual(kwargs["connect_timeout"], _FINALIZE_CONNECT_TIMEOUT)
+        self.assertEqual(kwargs["port"], 29336)
 
     def test_a_refused_login_is_final_at_once(self):
         verdict, _logged, _conn = self._finalize(0, failures=[
