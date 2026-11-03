@@ -142,10 +142,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             recreated rather than started, so it reads the new file.
         as_move: the archive is this same database changing hosts (a
             move), not a copy of it: it is loaded with ``--move``, so the
-            database keeps its ``database.secret`` (the sessions it signed
-            stay open), ``database.uuid`` and ``web.base.url``. A copy has
+            database keeps its ``database.secret`` (the links it signed
+            stay valid), ``database.uuid`` and ``web.base.url``. A copy has
             Odoo regenerate the three, the base URL as
-            ``http://localhost:8069``.
+            ``http://localhost:8069``. Sessions are not carried: they live
+            in the data dir's ``sessions/``, which the archive does not
+            hold, so users sign in again on the new host.
     """
 
     _job_type = "restore_instance"
