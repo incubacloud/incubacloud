@@ -39,6 +39,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-26](RB-26-agency-own-server.md) | Agency: its own server | planned | A tenant signs up for or changes to Agency; an Agency tenant downgrades or is deleted |
 | [RB-27](RB-27-illegal-content-notice.md) | A notice of illegal content | high | Someone reports illegal content to `support@`, or an authority writes to it as our point of contact |
 | [RB-28](RB-28-personal-data-breach.md) | A personal-data breach | critical | Personal data may have been read, copied, changed or lost by someone who should not have, or a sub-processor reports a breach |
+| [RB-29](RB-29-tenant-placement-and-moves.md) | A tenant's placement and its moves between hosts | warning | *Moves paused* on a tenant; `move_pending`, `move_postponed`, `move_slow_cut`; a dump of, or disk from, the frozen copy a move left |
 
 ## Conventions
 
