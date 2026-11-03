@@ -26,6 +26,8 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
     _SSHD_APPLY_COMMAND,
     DEFAULT_HARDENED_USER,
     HostHardeningExecutor,
+    _FINALIZE_CONNECT_ATTEMPTS,
+    _FINALIZE_CONNECT_DELAY,
     _build_ssh_allowlist,
     _pick_new_ssh_port,
     _SSH_PORT_MAX,
@@ -1392,9 +1394,15 @@ class TestRootIsDisabledUnderSocketActivation(TransactionCase):
             "sudo systemctl reload ssh.service; fi", _SSHD_APPLY_COMMAND,
         )
 
-    def _finalize(self, apply_status):
+    def _finalize(self, apply_status, failures=(), identity="uid=1000(incubacloud)"):
         """Run the last step against a connection whose daemon restart
-        exits with *apply_status*; return its verdict and what it logged."""
+        exits with *apply_status*; return its verdict and what it logged.
+
+        *failures* are raised by the first calls to ``asyncssh.connect``,
+        one each, before the connection opens; *identity* is what ``id``
+        prints. The patched ``asyncssh.connect`` and ``asyncio.sleep``
+        are left on ``self.connect`` and ``self.sleep``.
+        """
         host = MagicMock(spec=type(self.env["cloud.host"]))
         host.name = "host-x"
         host.sudo.return_value.ssh_connect_kwargs.return_value = {"host": "10.0.0.5"}
@@ -1407,7 +1415,7 @@ class TestRootIsDisabledUnderSocketActivation(TransactionCase):
         ex._sys = logged.append
         conn = MagicMock(spec=asyncssh.SSHClientConnection)
         answers = {
-            "id": MagicMock(stdout="uid=1000(incubacloud)", exit_status=0, stderr=""),
+            "id": MagicMock(stdout=identity, exit_status=0, stderr=""),
             _SSHD_APPLY_COMMAND: MagicMock(stdout="", exit_status=apply_status,
                                            stderr="Cannot bind any address"),
         }
@@ -1416,7 +1424,11 @@ class TestRootIsDisabledUnderSocketActivation(TransactionCase):
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=conn)
         cm.__aexit__ = AsyncMock(return_value=False)
-        with patch.object(asyncssh, "connect", return_value=cm):
+        with patch.object(
+            asyncssh, "connect", side_effect=[*failures, cm],
+        ) as self.connect, patch.object(
+            asyncio, "sleep", new_callable=AsyncMock,
+        ) as self.sleep:
             verdict = asyncio.run(ex._finalize_disable_root())
         return verdict, logged, conn
 
@@ -1432,3 +1444,41 @@ class TestRootIsDisabledUnderSocketActivation(TransactionCase):
         verdict, logged, _conn = self._finalize(apply_status=1)
         self.assertTrue(verdict, "root is off in the file: never report it kept")
         self.assertTrue(any("Root login is disabled" in line for line in logged))
+
+
+class TestTheNewPortGetsAFreshConnection(TransactionCase):
+    """QA 3-nov-2026: the panel tried the new port once, 30 ms after core
+    asked Hetzner to open it, and the hardening failed on a timeout."""
+
+    _finalize = TestRootIsDisabledUnderSocketActivation._finalize
+
+    def test_a_timeout_is_tried_again_on_a_new_connection(self):
+        verdict, logged, _conn = self._finalize(0, failures=[TimeoutError()])
+        self.assertTrue(verdict)
+        self.assertEqual(self.connect.call_count, 2)
+        self.sleep.assert_awaited_once_with(_FINALIZE_CONNECT_DELAY)
+        self.assertTrue(any("not reachable yet" in line for line in logged))
+
+    def test_a_port_that_never_answers_fails_after_every_attempt(self):
+        verdict, _logged, conn = self._finalize(0, failures=[
+            TimeoutError(), ConnectionRefusedError(), OSError("unreachable"),
+        ])
+        self.assertFalse(verdict)
+        self.assertEqual(self.connect.call_count, _FINALIZE_CONNECT_ATTEMPTS)
+        self.assertEqual(self.sleep.await_count, _FINALIZE_CONNECT_ATTEMPTS - 1)
+        conn.run.assert_not_called()
+
+    def test_a_refused_login_is_final_at_once(self):
+        verdict, _logged, _conn = self._finalize(0, failures=[
+            asyncssh.PermissionDenied("denied"),
+        ])
+        self.assertFalse(verdict)
+        self.assertEqual(self.connect.call_count, 1)
+        self.sleep.assert_not_awaited()
+
+    def test_another_identity_is_final_and_leaves_root_alone(self):
+        verdict, _logged, conn = self._finalize(0, identity="uid=0(root)")
+        self.assertFalse(verdict)
+        self.assertEqual(self.connect.call_count, 1)
+        self.assertEqual([c.args[0] for c in conn.run.call_args_list], ["id"])
+        self.sleep.assert_not_awaited()

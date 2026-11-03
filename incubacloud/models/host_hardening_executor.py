@@ -21,6 +21,7 @@ firewall on the new port (a hook; no-op in core), connects as the
 hardened user on the new port, and only then flips root to ``no``. If
 that connection fails, root is left reachable and the job fails.
 """
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -62,6 +63,14 @@ _SSHD_APPLY_COMMAND = (
     "elif systemctl is-active --quiet ssh.service; then "
     "sudo systemctl reload ssh.service; fi"
 )
+
+#: Attempts, and seconds between them, to reach the rotated port for the
+#: new-login proof. An edge firewall (Hetzner's, a BYOH one) can take a
+#: few seconds more to let the port in after it was asked to: a timeout or
+#: a network error is tried again on a fresh connection; anything else is
+#: final at once.
+_FINALIZE_CONNECT_ATTEMPTS = 3
+_FINALIZE_CONNECT_DELAY = 10
 
 
 def _pick_new_ssh_port(current_port):
@@ -385,6 +394,11 @@ class HostHardeningExecutor(AnsibleExecutor):
         Returns True when the login succeeds and root has been disabled;
         False on any failure (root is then left as the playbook set it —
         ``prohibit-password`` — so the operator can still recover).
+
+        Only reaching the port is tried again: a timeout or a network
+        error before the session opens gets a fresh connection, up to
+        ``_FINALIZE_CONNECT_ATTEMPTS`` in all. A refused login, a
+        different identity or a failure once connected is final.
         """
         host = self._host()
         # Trusted reader, same pattern as ``get_transport``: the job was
@@ -397,39 +411,60 @@ class HostHardeningExecutor(AnsibleExecutor):
         # The host key is unchanged but the port rotated; skip the pin for
         # this internal proof connection only.
         connect_kw["known_hosts"] = None
-        try:
-            async with asyncssh.connect(**connect_kw) as conn:
-                idr = await conn.run("id", check=True)
-                if self._hardened_user not in (idr.stdout or ""):
-                    return False
-                # New access proven — now flip root off. From here on the
-                # file says so, whatever happens to the daemon next.
-                await conn.run(
-                    "sudo sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "
-                    f"{_SSHD_DROPIN}",
-                    check=True,
+        error = None
+        for attempt in range(1, _FINALIZE_CONNECT_ATTEMPTS + 1):
+            connected = False
+            try:
+                async with asyncssh.connect(**connect_kw) as conn:
+                    connected = True
+                    idr = await conn.run("id", check=True)
+                    if self._hardened_user not in (idr.stdout or ""):
+                        return False
+                    # New access proven — now flip root off. From here on
+                    # the file says so, whatever happens to the daemon next.
+                    await conn.run(
+                        "sudo sed -i "
+                        "'s/^PermitRootLogin .*/PermitRootLogin no/' "
+                        f"{_SSHD_DROPIN}",
+                        check=True,
+                    )
+                    applied = await conn.run(_SSHD_APPLY_COMMAND, check=False)
+                    if applied.exit_status:
+                        # Root is off in the file, and the hardened login
+                        # is proven: the hardening stands. Only when the
+                        # daemon reads the file again is open to doubt, so
+                        # that is what is said, never that root was kept.
+                        _logger.warning(
+                            "host_hardening: root login disabled on %s, but "
+                            "applying it to the running sshd failed: %s",
+                            host.name, (applied.stderr or "").strip(),
+                        )
+                        self._sys(
+                            "⚠ Root login is disabled in the configuration, "
+                            "but the running SSH daemon could not be "
+                            "restarted: it applies at its next start."
+                        )
+                    return True
+            except (TimeoutError, OSError) as exc:
+                if connected or attempt == _FINALIZE_CONNECT_ATTEMPTS:
+                    error = exc
+                    break
+                _logger.info(
+                    "host_hardening: port %s of %s not reachable yet "
+                    "(attempt %s): %r",
+                    self._new_port, host.name, attempt, exc,
                 )
-                applied = await conn.run(_SSHD_APPLY_COMMAND, check=False)
-                if applied.exit_status:
-                    # Root is off in the file, and the hardened login is
-                    # proven: the hardening stands. Only when the daemon
-                    # reads the file again is open to doubt, so that is
-                    # what is said, never that root was kept.
-                    _logger.warning(
-                        "host_hardening: root login disabled on %s, but "
-                        "applying it to the running sshd failed: %s",
-                        host.name, (applied.stderr or "").strip(),
-                    )
-                    self._sys(
-                        "⚠ Root login is disabled in the configuration, but "
-                        "the running SSH daemon could not be restarted: it "
-                        "applies at its next start."
-                    )
-                return True
-        except Exception as exc:
-            _logger.warning(
-                "host_hardening: finalize (login as %s on port %s) failed "
-                "for %s: %s",
-                self._hardened_user, self._new_port, host.name, exc,
-            )
-            return False
+                self._sys(
+                    f"… Port {self._new_port} is not reachable yet; trying "
+                    f"again in {_FINALIZE_CONNECT_DELAY} s."
+                )
+                await asyncio.sleep(_FINALIZE_CONNECT_DELAY)
+            except Exception as exc:
+                error = exc
+                break
+        _logger.warning(
+            "host_hardening: finalize (login as %s on port %s) failed "
+            "for %s: %s",
+            self._hardened_user, self._new_port, host.name, error,
+        )
+        return False
