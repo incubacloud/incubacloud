@@ -1916,7 +1916,16 @@ class CloudJob(models.Model):
             if record.asked_as_superuser:
                 # After ``with_user``, which drops it.
                 runner = runner.sudo()
-            nodes.append(runner.delayable(max_retries=1).execute())
+            # The channel and priority of a single job of its type: a
+            # step without one ran in ``root`` and escaped the cap of
+            # ``root.user``.
+            channel, priority = self._resolve_channel_priority(
+                record.job_type_id,
+                record.instance_id.id if record.instance_id else False,
+            )
+            nodes.append(runner.delayable(
+                max_retries=1, channel=channel, priority=priority,
+            ).execute())
         delay_chain(*nodes).delay()
         for position, (node, record) in enumerate(zip(nodes, records, strict=False)):
             vals = {"state": "pending" if position == 0 else "wait_dependencies"}

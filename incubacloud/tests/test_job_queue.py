@@ -2413,6 +2413,22 @@ class TestChains(_QueueCase):
             chain[0].queue_job_id.graph_uuid, chain[1].queue_job_id.graph_uuid,
         )
 
+    def test_a_chains_steps_run_in_the_channel_of_a_single_job(self):
+        """Without one they ran in ``root``, past the cap of ``root.user``."""
+        single = self._enqueue("backup_create", inst=self._instance("queue-single"))
+        staging = (single.queue_job_id.channel, single.queue_job_id.priority)
+        self.assertEqual(staging, ("root.user", 10))
+        production = self._instance("queue-prod", environment="production")
+        for inst, expected in (
+            (self.inst, staging), (production, ("root.user", 5)),
+        ):
+            chain = self._chain(["backup_create", "backup_list"], inst=inst)
+            for step in chain:
+                self.assertEqual(
+                    (step.queue_job_id.channel, step.queue_job_id.priority),
+                    expected, step.job_type_id.code,
+                )
+
     def test_chain_references_are_resolved_at_dispatch(self):
         running = self._job("rebuild_instance")
         chain = self.Job.browse(self.Job.enqueue_chain([
