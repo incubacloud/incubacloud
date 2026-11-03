@@ -869,14 +869,20 @@ export class InstanceDetail extends JobsMixin(
 
   /**
    * Footer count: "N requests" when nothing is filtered out, otherwise
-   * "N of M requests".
+   * "N of M requests". A total of one has strings of its own, as the
+   * panel words a singular elsewhere.
    * @returns {string} translated count
    */
   get requestsCountLabel() {
     const shown = this.filteredRequests.length;
     const total = this.recentRequests.length;
-    return shown === total
-      ? _t("%(count)s requests", {count: total})
+    if (shown === total) {
+      return total === 1
+        ? _t("1 request")
+        : _t("%(count)s requests", {count: total});
+    }
+    return total === 1
+      ? _t("%(count)s of 1 request", {count: shown})
       : _t("%(count)s of %(total)s requests", {count: shown, total});
   }
 

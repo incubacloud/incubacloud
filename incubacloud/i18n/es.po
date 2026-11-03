@@ -47,6 +47,13 @@ msgstr "%(count)s de %(total)s peticiones"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #, python-format
+msgid "%(count)s of 1 request"
+msgstr "%(count)s de 1 petición"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#, python-format
 msgid "%(count)s requests"
 msgstr "%(count)s peticiones"
 
@@ -368,6 +375,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ".zip"
 msgstr ".zip"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "1 request"
+msgstr "1 petición"
 
 #. module: incubacloud
 #. odoo-javascript
