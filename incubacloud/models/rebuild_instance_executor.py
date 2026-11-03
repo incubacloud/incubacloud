@@ -33,8 +33,11 @@ _EXIT_CRONS_BUSY = 75
 #: How long a rebuild keeps coming back while the instance's crons run,
 #: counted from its first attempt. Past it the job fails for good.
 _CRONS_BUSY_PATIENCE = timedelta(minutes=30)
-#: Seconds between two attempts of a rebuild the crons held back.
-_CRONS_BUSY_RETRY_S = 60
+#: Seconds between two attempts of a rebuild the crons held back. Each
+#: attempt starts over — the copier, an image build without cache, the
+#: boot test — so they are five minutes apart: within the half hour of
+#: patience that is six of them, not thirty.
+_CRONS_BUSY_RETRY_S = 300
 #: What a failed image build waits before its one repetition, in seconds.
 _BUILD_RETRY_WAIT_S = 60
 

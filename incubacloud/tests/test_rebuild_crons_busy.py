@@ -4,9 +4,10 @@
 after its budget: nothing was updated. Every rebuild is queued with
 ``max_retries=1``, so the plain ``RetryableJobError`` it raised was
 queue_job's last attempt, and the job ended failed with an alert, a
-mail and a held queue (inventory H4). It now comes back every minute
-without spending its attempt, and fails for good only after 30 minutes
-counted from its first attempt.
+mail and a held queue (inventory H4). It now comes back every five
+minutes without spending its attempt, and fails for good only after 30
+minutes counted from its first attempt. Five, not one: each attempt
+builds the image again from scratch.
 """
 from datetime import timedelta
 from unittest.mock import patch
@@ -62,10 +63,10 @@ class TestCronsBusy(_QueueCase):
         )
         qjob.invalidate_recordset(["date_created"])
 
-    def test_the_first_attempt_comes_back_in_a_minute_without_spending_it(self):
+    def test_the_first_attempt_comes_back_in_five_minutes_without_spending_it(self):
         with self.assertRaises(RetryableJobError) as caught:
             self._executor().parse_results(_BUSY)
-        self.assertEqual(caught.exception.seconds, 60)
+        self.assertEqual(caught.exception.seconds, 300)
         self.assertTrue(caught.exception.ignore_retry)
 
     def test_a_later_attempt_inside_the_half_hour_comes_back_too(self):
@@ -121,7 +122,7 @@ class TestCronsBusy(_QueueCase):
                 retry = exc
         self.assertIsNotNone(retry, "the job was not postponed")
         self.assertEqual(stored.retry, 0)
-        self.assertEqual(retry.seconds, 60)
+        self.assertEqual(retry.seconds, 300)
         # What the runner's ``retry_postpone`` does next.
         stored.postpone(result=str(retry), seconds=retry.seconds)
         stored.set_pending(reset_retry=False)
