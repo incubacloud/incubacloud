@@ -149,6 +149,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_settings.py:0
+#: code:addons/incubacloud/models/cloud_settings_direct.py:0
 msgid ""
 "%(name)s is not a host name. Write the name alone, for example "
 "metrics.example.com: no https:// and no path."
@@ -499,20 +500,20 @@ msgstr ""
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
 msgid ""
-"<span style=\"background:#fef2f2;color:#dc2626;font-size:11px;padding:2px "
-"8px;border-radius:10px;\">critical</span>"
+"<span style=\"background:#fbf2df;color:#865602;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">warning</span>"
 msgstr ""
-"<span style=\"background:#fef2f2;color:#dc2626;font-size:11px;padding:2px "
-"8px;border-radius:10px;\">crítico</span>"
+"<span style=\"background:#fbf2df;color:#865602;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">aviso</span>"
 
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
 msgid ""
-"<span style=\"background:#fef3c7;color:#d97706;font-size:11px;padding:2px "
-"8px;border-radius:10px;\">warning</span>"
+"<span style=\"background:#fdecec;color:#c0393c;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">critical</span>"
 msgstr ""
-"<span style=\"background:#fef3c7;color:#d97706;font-size:11px;padding:2px "
-"8px;border-radius:10px;\">advertencia</span>"
+"<span style=\"background:#fdecec;color:#c0393c;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">crítico</span>"
 
 #. module: incubacloud
 #. odoo-python
@@ -628,6 +629,17 @@ msgstr ""
 "actuaría sobre el servidor equivocado y los pasos siguientes no se "
 "ejecutarían. Deje que termine la reversión o, si el traslado falló, use "
 "«Revertir traslado»; después inícielo de nuevo si aún lo necesita."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__move_cut_alert_seconds
+msgid ""
+"A move that keeps the instance unavailable longer than this, from the stop "
+"of its source to its destination answering, raises a warning. 0 never raises"
+" it."
+msgstr ""
+"Un traslado que deja la instancia no disponible más que esto, desde la "
+"parada de su origen hasta que responde su destino, genera un aviso. 0 no lo "
+"genera nunca."
 
 #. module: incubacloud
 #. odoo-python
@@ -930,6 +942,37 @@ msgstr "Avanzado…"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"After a move, the copy left on the old host is stopped and kept,\n"
+"                        data included, so it can still be restored from by hand; then it\n"
+"                        is removed. It uses disk on the old host until then. Set to 0 to\n"
+"                        remove it at the next hourly pass. A move that keeps the instance\n"
+"                        unavailable longer than the alert threshold raises a warning; 0\n"
+"                        never raises it."
+msgstr ""
+"Tras un traslado, la copia que queda en el host antiguo se detiene y se conserva,\n"
+"                        con sus datos, para poder restaurar desde ella a mano; después\n"
+"                        se elimina. Hasta entonces ocupa disco en el host antiguo. Con 0 se\n"
+"                        elimina en la siguiente pasada horaria. Un traslado que deja la instancia\n"
+"                        no disponible más que el umbral de alerta genera un aviso; 0\n"
+"                        no lo genera nunca."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__move_frozen_source_hours
+msgid ""
+"After a move, the copy left on the old host is stopped and kept, data "
+"included, for this many hours, so it can still be restored from by hand; "
+"then it is removed. 0 removes it at the next hourly pass. It uses disk on "
+"the old host until then."
+msgstr ""
+"Tras un traslado, la copia que queda en el host antiguo se detiene y se "
+"conserva, con sus datos, durante estas horas para poder restaurar desde ella"
+" a mano; después se elimina. Con 0 se elimina en la siguiente pasada "
+"horaria. Hasta entonces ocupa disco en el host antiguo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "After installing, come back here and click"
 msgstr "Después de instalar, vuelva aquí y haga clic en"
 
@@ -1053,6 +1096,12 @@ msgstr "Alerta no encontrada"
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Alert not found or already resolved"
 msgstr "Alerta no encontrada o ya resuelta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Alert when a move's cut exceeds (seconds)"
+msgstr "Avisar cuando el corte de un traslado supere (segundos)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2379,6 +2428,17 @@ msgstr ""
 "memoria y el número de errores en el log de una instancia desplegada."
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_quiet_check
+msgid ""
+"Checks, right before a move stops the instance on its source, that nothing "
+"is running on it; when something is, the move is postponed and the source "
+"keeps serving."
+msgstr ""
+"Comprueba, justo antes de que un traslado detenga la instancia en su origen,"
+" que no se está ejecutando nada en ella; si hay algo, el traslado se pospone"
+" y el origen sigue sirviendo."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
@@ -2409,6 +2469,19 @@ msgid "Choose which version spec to keep for each package:"
 msgstr "Elija qué versión mantener para cada paquete:"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+msgid "Clean frozen copy"
+msgstr "Limpiar copia congelada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+msgid "Clean frozen copy now"
+msgstr "Limpiar la copia congelada ahora"
+
+#. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.move_rollback_cleanup
 msgid ""
 "Cleans up the half-built destination after a rolled-back move (docker "
@@ -2421,6 +2494,18 @@ msgstr ""
 #: model:ir.actions.server,name:incubacloud.cron_cleanup_backup_attachments_ir_actions_server
 msgid "Cleanup Backup Attachments (2h TTL)"
 msgstr "Limpieza de adjuntos de backup (TTL 2h)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Cleanup of the postponed move of '%(name)s' failed on target host "
+"'%(target)s'; the instance kept running on '%(origin)s'. Manual cleanup of "
+"the target may be needed."
+msgstr ""
+"La limpieza del traslado pospuesto de '%(name)s' falló en el host de destino"
+" '%(target)s'; la instancia siguió funcionando en '%(origin)s'. Puede hacer "
+"falta limpiar el destino a mano."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2625,6 +2710,11 @@ msgstr "Mixin de seguridad Cloud"
 #: model:ir.model,name:incubacloud.model_cloud_tag
 msgid "Cloud Tag"
 msgstr "Etiqueta Cloud"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_clean_frozen_move_sources_ir_actions_server
+msgid "Cloud: clean frozen move sources"
+msgstr "Cloud: limpiar orígenes congelados de traslados"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__acme_dns_cloudflare_token
@@ -3151,6 +3241,12 @@ msgstr "No se pudo comprobar la subida."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+msgid "Could not clean the frozen copy"
+msgstr "No se pudo limpiar la copia congelada"
+
+#. module: incubacloud
+#. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_mails.js:0
@@ -3265,6 +3361,17 @@ msgstr "No se pudo leer el registro del proxy."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__count
 msgid "Count"
 msgstr "Cantidad"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_fingerprint
+msgid ""
+"Counts the rows of a few tables and the filestore's files on the source of a"
+" move, once Odoo is stopped, so the restore on the destination can check it "
+"received the same."
+msgstr ""
+"Cuenta las filas de algunas tablas y los archivos del filestore en el origen"
+" de un traslado, con Odoo ya detenido, para que la restauración en el "
+"destino compruebe que ha recibido lo mismo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5505,6 +5612,28 @@ msgid "From a link"
 msgstr "Desde un enlace"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_frozen_source_host_id
+msgid "Frozen Copy Host"
+msgstr "Host de la copia congelada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_frozen_until
+msgid "Frozen Copy Until"
+msgstr "Copia congelada hasta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+msgid "Frozen copy forgotten: its host cannot be reached."
+msgstr "Copia congelada olvidada: no se puede acceder a su host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Frozen copy until"
+msgstr "Copia congelada hasta"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_backup__backup_type__full
 msgid "Full"
 msgstr "Completo"
@@ -6105,6 +6234,19 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid ""
+"Here you will see your fleet's metrics: the servers you add and the "
+"instances you deploy on them. You have no server yet, so there is nothing to"
+" show. Add a VPS or connect a server of your own to start."
+msgstr ""
+"Aquí verá las métricas de su flota: los servidores que añada y las "
+"instancias que despliegue en ellos. Todavía no tiene ningún servidor, por "
+"eso no hay nada que mostrar. Añada un VPS o conecte un servidor propio para "
+"empezar."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Hide"
 msgstr "Ocultar"
@@ -6122,6 +6264,7 @@ msgid "Hide earlier history"
 msgstr "Ocultar el historial anterior"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__scheduling_priority__high
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__high
 msgid "High"
 msgstr "Alta"
@@ -6353,6 +6496,17 @@ msgid "Host still has instances. Delete all instances first."
 msgstr "El host aún tiene instancias. Elimina todas las instancias primero."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_frozen_source_host_id
+msgid ""
+"Host where the last move left the instance's old copy, stopped and with its "
+"data intact, so an operator can still restore from it by hand. Cleared once "
+"that copy is removed."
+msgstr ""
+"Host donde el último traslado dejó la copia antigua de la instancia, "
+"detenida y con sus datos intactos, para que un operador aún pueda restaurar "
+"desde ella a mano. Se vacía cuando esa copia se elimina."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/host_terminal.py:0
 msgid "Host:"
@@ -6445,6 +6599,15 @@ msgid ""
 msgstr ""
 "Cuánto tiempo conserva las series el central. Se pasa al playbook de "
 "despliegue del central."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_last_cut_seconds
+msgid ""
+"How long the last move kept the instance unavailable, from the drain of its "
+"source to its destination answering healthy."
+msgstr ""
+"Cuánto tiempo dejó el último traslado la instancia no disponible, desde el "
+"vaciado del tráfico de su origen hasta que su destino respondió sano."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__backup_retention
@@ -7112,6 +7275,22 @@ msgid "Instances"
 msgstr "Instancias"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__incoming_instance_ids
+msgid "Instances Moving Here"
+msgstr "Instancias que se trasladan aquí"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__incoming_instance_ids
+msgid ""
+"Instances whose move to this host is under way. They count against its "
+"capacity from the start of the move, as they do on the host they leave until"
+" the cutover."
+msgstr ""
+"Instancias cuyo traslado a este host está en curso. Cuentan contra su "
+"capacidad desde el inicio del traslado, igual que en el host que dejan hasta"
+" el corte."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Interactive Odoo/Python shell (commits by default — use with care)"
@@ -7456,6 +7635,17 @@ msgid "Keep in panel"
 msgstr "Conservar en el panel"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Keep the old copy (hours)"
+msgstr "Conservar la copia antigua (horas)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__move_frozen_source_hours
+msgid "Keep the old copy after a move (hours)"
+msgstr "Conservar la copia antigua tras un traslado (horas)"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__autopurge_exempt
 msgid ""
 "Keep this instance out of the staging autopurge for good. For the permanent "
@@ -7573,6 +7763,11 @@ msgstr "Último medido (GB)"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__last_measured_at
 msgid "Last Measured At"
 msgstr "Última medición"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_last_cut_seconds
+msgid "Last Move Cut (s)"
+msgstr "Corte del último traslado (s)"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_rebuild_fingerprint
@@ -8051,6 +8246,7 @@ msgid "Lost connection while scanning."
 msgstr "Se perdió la conexión durante el escaneo."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__scheduling_priority__low
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__low
 msgid "Low"
 msgstr "Baja"
@@ -8459,14 +8655,34 @@ msgid "Move Cleanup (source)"
 msgstr "Traslado: limpiar el origen"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_cut_started_at
+msgid "Move Cut Started At"
+msgstr "Inicio del corte del traslado"
+
+#. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.move_cutover
 msgid "Move Cutover"
 msgstr "Traslado: pasar al destino"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_fingerprint
+msgid "Move Fingerprint"
+msgstr "Huella del traslado"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_freeze_source
+msgid "Move Freeze (source)"
+msgstr "Congelación del traslado (origen)"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_origin_host_id
 msgid "Move Origin Host"
 msgstr "Host de origen del traslado"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_quiet_check
+msgid "Move Quiet Check"
+msgstr "Comprobación de calma del traslado"
 
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.move_rollback_cleanup
@@ -8482,6 +8698,11 @@ msgstr "Rollback de movimiento en progreso"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_target_host_id
 msgid "Move Target Host"
 msgstr "Host de destino del traslado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__move_cut_alert_seconds
+msgid "Move cut alert (seconds)"
+msgstr "Alerta de corte del traslado (segundos)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8528,6 +8749,12 @@ msgstr "Mover a host"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Move to:"
 msgstr "Mover a:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Moves between hosts"
+msgstr "Traslados entre hosts"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9101,6 +9328,12 @@ msgstr "Sin resultados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "No servers yet"
+msgstr "Todavía no hay servidores"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "No specs yet — run Check from the host page"
 msgstr "Sin especificaciones aún — ejecute Verificar desde la página del host"
@@ -9158,6 +9391,7 @@ msgid "None"
 msgstr "Ninguno"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__scheduling_priority__normal
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__normal
 msgid "Normal"
 msgstr "Normal"
@@ -9170,7 +9404,9 @@ msgstr "Todavía sin aplicar."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
 #: code:addons/incubacloud/static/src/utils/archive_copy.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_direct_state__unknown
 msgid "Not checked yet"
 msgstr "Aún sin comprobar"
 
@@ -11300,6 +11536,22 @@ msgid "Remove repository"
 msgstr "Eliminar repositorio"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Remove the copy the last move left on the old host"
+msgstr "Eliminar la copia que dejó el último traslado en el host antiguo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+msgid ""
+"Remove the stopped copy the last move left on %s, with its data. It can no "
+"longer be restored from by hand afterwards."
+msgstr ""
+"Eliminar la copia detenida que dejó el último traslado en %s, con sus datos."
+" Después ya no se podrá restaurar desde ella a mano."
+
+#. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.revoke_restore_upload_key
 msgid ""
 "Removes a one-use upload key from the host, and its directory unless a "
@@ -11320,11 +11572,11 @@ msgstr ""
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.move_cleanup_source
 msgid ""
-"Removes the old host copy after a successful move, without archiving the "
+"Removes the copy a move froze on the old host, without archiving the "
 "instance record."
 msgstr ""
-"Elimina la copia del host anterior tras un traslado correcto, sin archivar "
-"la ficha de la instancia."
+"Elimina la copia que un traslado congeló en el host antiguo, sin archivar el"
+" registro de la instancia."
 
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.delete_project
@@ -12198,6 +12450,11 @@ msgid "Scanning…"
 msgstr "Escaneando…"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__scheduling_priority
+msgid "Scheduling Priority"
+msgstr "Prioridad de planificación"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__scope
 msgid "Scope"
 msgstr "Alcance"
@@ -12517,6 +12774,20 @@ msgstr "Configurar host"
 #: model:cloud.job.type,name:incubacloud.setup_whitelist
 msgid "Setup Whitelist"
 msgstr "Configurar lista blanca"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__scheduling_priority
+msgid ""
+"Share of the host's CPU this instance gets when the host is busy, and, at "
+"High, memory kept for it: Low gives half the CPU weight of Normal, High "
+"twice as much and reserves half of each service's memory limit. Applied on "
+"the next deploy, rebuild or resource update."
+msgstr ""
+"Parte de la CPU del host que recibe esta instancia cuando el host está "
+"ocupado y, en Alta, memoria reservada para ella: Baja da la mitad del peso "
+"de CPU de Normal, Alta el doble y reserva la mitad del límite de memoria de "
+"cada servicio. Se aplica en el siguiente despliegue, reconstrucción o "
+"actualización de recursos."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job__queue_chain_key
@@ -12870,6 +13141,15 @@ msgstr "Detiene una instancia doodba en ejecución (docker compose stop)."
 #: model:cloud.job.type,description:incubacloud.delete_instance
 msgid "Stops and removes a doodba instance from the host."
 msgstr "Detiene una instancia doodba y la elimina del host."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_freeze_source
+msgid ""
+"Stops the old host copy after a successful move and keeps it, data included,"
+" for a while before it is removed."
+msgstr ""
+"Detiene la copia del host antiguo tras un traslado correcto y la conserva, "
+"con sus datos, un tiempo antes de eliminarla."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13228,6 +13508,13 @@ msgid "The SSH host key is not trusted yet."
 msgstr "La clave SSH del host aún no es de confianza."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/connect.py:0
+msgid "The Telegram bot token can be %(max)s characters at most."
+msgstr ""
+"El token del bot de Telegram puede tener como máximo %(max)s caracteres."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_write_url
 msgid ""
 "The URL this host's agents were installed with. Empty: installed before the "
@@ -13235,13 +13522,6 @@ msgid ""
 msgstr ""
 "La URL con la que se instalaron los agentes de este host. Vacío: instalados "
 "antes del camino directo, con la URL de remote-write de la configuración."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/connect.py:0
-msgid "The Telegram bot token can be %(max)s characters at most."
-msgstr ""
-"El token del bot de Telegram puede tener como máximo %(max)s caracteres."
 
 #. module: incubacloud
 #. odoo-python
@@ -13511,6 +13791,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/move_cutover_executor.py:0
+msgid ""
+"The move of %(name)s kept it down %(seconds)d s, over the %(limit)d s "
+"budget."
+msgstr ""
+"El traslado de %(name)s la dejó caída %(seconds)d s, por encima del límite "
+"de %(limit)d s."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "The name %(name)s is reserved by an archived instance of this project. Its "
@@ -13602,8 +13892,8 @@ msgid ""
 "The server '%(name)s' did not present the approved SSH key %(expected)s. "
 "Nothing was trusted."
 msgstr ""
-"El servidor «%(name)s» no ha presentado la clave SSH aprobada "
-"%(expected)s. No se ha guardado ninguna clave."
+"El servidor «%(name)s» no ha presentado la clave SSH aprobada %(expected)s. "
+"No se ha guardado ninguna clave."
 
 #. module: incubacloud
 #. odoo-python
@@ -13849,6 +14139,12 @@ msgid ""
 msgstr ""
 "Esta instancia no tiene destino de backup, así que lo que\n"
 "                    se destruya aquí no se podrá recuperar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "This instance has no frozen copy to clean."
+msgstr "Esta instancia no tiene ninguna copia congelada que limpiar."
 
 #. module: incubacloud
 #. odoo-python
@@ -15335,6 +15631,15 @@ msgstr ""
 "todo su periodo de aviso."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_frozen_until
+msgid ""
+"When the frozen copy left by the last move may be removed. An hourly cron "
+"removes it once this has passed."
+msgstr ""
+"Cuándo se puede eliminar la copia congelada que dejó el último traslado. Una"
+" tarea horaria la elimina una vez pasado ese momento."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_direct_checked_at
 msgid ""
 "When the name was last probed. Kept in a system parameter, not in this row: "
@@ -15342,6 +15647,15 @@ msgid ""
 msgstr ""
 "Cuándo se sondeó el nombre por última vez. Se guarda en un parámetro del "
 "sistema, no en esta fila: cambia en cada sondeo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_cut_started_at
+msgid ""
+"When the stop of the source began to drain its traffic, during a move: the "
+"start of the cut the customer waits through."
+msgstr ""
+"Cuándo empezó la parada del origen a vaciar su tráfico, durante un traslado:"
+" el inicio del corte que el cliente espera."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archived_at
@@ -16307,6 +16621,12 @@ msgstr "de"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "on"
+msgstr "en"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
 "opening a pull request on a repository a production instance follows creates"
@@ -16327,6 +16647,7 @@ msgstr "ops@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "pending"
 msgstr "pendiente"
@@ -16726,22 +17047,3 @@ msgstr "↻ Re-detectar instalación"
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "⚠ Could not undo what the job had prepared: %s"
 msgstr "⚠ No se pudo deshacer lo que el trabajo había preparado: %s"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "No servers yet"
-msgstr "Todavía no hay servidores"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid ""
-"Here you will see your fleet's metrics: the servers you add and the "
-"instances you deploy on them. You have no server yet, so there is nothing to"
-" show. Add a VPS or connect a server of your own to start."
-msgstr ""
-"Aquí verá las métricas de su flota: los servidores que añada y las "
-"instancias que despliegue en ellos. Todavía no tiene ningún servidor, por "
-"eso no hay nada que mostrar. Añada un VPS o conecte un servidor propio para "
-"empezar."
