@@ -2231,6 +2231,20 @@ class CloudInstance(models.Model):
         """
         return []
 
+    def _frozen_copy_cleanup_steps(self):
+        """Return extra steps of the removal of the copy a move froze.
+
+        Run by ``move_cleanup_source`` on the old host, after the copy's
+        teardown. Core: none. Inheriting layers (SaaS) take away there
+        what a move's freeze left for that copy, such as the proxy's file
+        for the panel.
+
+        :return: ``(label, command[, opts])`` tuples
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
     def _move_quiet_sql(self):
         """Return the SQL that counts what is busy inside the instance, or ''.
 
