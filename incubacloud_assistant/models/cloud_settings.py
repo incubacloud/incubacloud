@@ -298,6 +298,20 @@ class CloudSettings(models.Model):
         return {**acceptance, "v": ""}
 
     @api.model
+    def _assistant_is_platform_user(self, user):
+        """Return whether *user* is one of the platform's own, not a person of the panel.
+
+        Settings → Assistant neither lists nor accepts them. Here the users
+        whose login starts with ``__``: the cron bot (``__incubacloud_cron__``)
+        and Odoo's own (``__system__``). A tenant panel adds IncubaCloud's
+        support user (incubacloud_tenant), as its Users page leaves it out.
+
+        :param user: a ``res.users`` record
+        :rtype: bool
+        """
+        return (user.login or "").startswith("__")
+
+    @api.model
     def _assistant_available_for(self, user):
         """Return whether *user* may use the assistant now.
 
