@@ -24,7 +24,7 @@ not *Settled*.
 |---|---|---|---|
 | `settled` | Settled | On its plan's pool, pinned by an operator, not active, or closing its account. | Nothing. |
 | `owed` | Owes a move | No host of the pool has room (`move_pending` alert), or the panel cannot move yet (the reason is in its history: usually an older tenant module, which the release rollout rebuilds). | The planner books it as soon as there is room. |
-| `booked` | Move booked | A window is booked: `move_window_local_hour` (03:00) in the owner's time zone, `move_window_hours` long, at least `move_min_notice_hours` ahead; the customer sees it in the portal and in an announcement of the panel, and may choose another time or «Move now». | Moves earlier if the panel is idle for `move_idle_minutes` (up to three tries), otherwise inside the window. |
+| `booked` | Move booked | A window is booked: `move_window_local_hour` (04:00) in the owner's time zone, `move_window_hours` long, at least `move_min_notice_hours` ahead; the customer sees it in the portal and in an announcement of the panel, and may choose another time or «Move now». | Moves earlier if the panel is idle for `move_idle_minutes` (up to three tries), otherwise inside the window. |
 | `moving` | Moving | The chain runs (`cloud.instance.move_origin_host_id` is set). Delete is hidden and refused. | `settled` after the cutover; `booked` again if postponed; `paused` if it failed. |
 | `paused` | Moves paused | A move failed, was rolled back by hand or by the watchdog (`move_retry_paused`). The panel keeps working on its current host. | Nothing until an operator resumes it (§3). |
 
@@ -37,7 +37,7 @@ settings are in Settings → SaaS → Placement.
 
 | Button | Shown when | Does |
 |---|---|---|
-| **Move now** | Active, *Move booked* or *Owes a move* | `action_move_now`: refused while a job of ours is queued or running on the panel, or with no host free in the pool. Otherwise the chain starts with trigger `now`; its `move_quiet_check` still postpones it if a job runs on the panel right before the stop. |
+| **Move now** | Active, *Move booked* or *Owes a move* | `action_move_now`: refused while a job of ours is queued or running on the panel, with no host free in the pool, or within 30 minutes of the last «Move now» (each one deploys the destination whole before it may be postponed). Otherwise the chain starts with trigger `now`; its `move_quiet_check` still postpones it if a job runs on the panel right before the stop. |
 | **Cancel booked move** | *Move booked* | Takes the window and the panel's announcement away. The tenant still owes the move: **the next run of the planner books it again** unless it is pinned or paused by then. To keep it where it is, pin it instead. |
 | **Resume moves** | *Moves paused* | Clears `move_retry_paused` and works the state out again; the planner books it on its next run if the pool has room. |
 | **Pinned to its host** (checkbox, saved with «Save changes») | Always | Pinned: *Settled* where it runs, any booking and its announcement go, the planner leaves it alone. Released: owes the move again and is booked at once if the pool has room. Both are written in the history. |
@@ -73,11 +73,16 @@ the move, with no alert and without touching the source, when:
 - for a move started by inactivity (`idle`) or by its window (`window`),
   the panel had requests in the last minutes (`active`); a move started
   `idle` is also postponed when the requests cannot be read. «Move now»
-  and an operator's move do not look at requests.
+  and an operator's move do not look at requests;
+- what runs inside the panel could not be counted (`unknown`): the count
+  failed for a moment, and the panel had not stopped, so the move waits
+  rather than fail and be paused.
 
 The tenant goes back to *Move booked* in the same window while it is ahead,
-`move_postponed_count` goes up by one, and the history says «Move postponed:
-busy (N jobs running)» or «…: active (N requests in M min)». From the third
+`move_postponed_count` goes up by one, the reason stays in
+`move_postponed_reason`, and the history says «Move postponed: busy (N jobs
+running)», «…: active (N requests in M min)» or «…: unknown (…)». The
+destination the move had let into the panel's servers is taken out again. From the third
 postponement in a row the planner stops trying by inactivity and waits for
 the window. A window that closes after three or more postponements raises
 `move_postponed` (warning) and the move is booked for the next one; the

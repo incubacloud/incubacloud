@@ -129,9 +129,10 @@ class TestInstanceMove(TransactionCase):
         self.assertEqual(quiet['payload'], {'move_options': {'trigger': 'idle'}})
 
     def test_every_layer_step_takes_its_place(self):
-        """Pre-steps after the quiet check, cut steps after the source's
-        stop, post-restore steps before the cutover, freeze steps last;
-        the restore still finds the download and the fingerprint."""
+        """Prepare steps before the quiet check, pre-steps after it, cut
+        steps after the source's stop, post-restore steps before the
+        cutover, freeze steps last; the restore still finds the download
+        and the fingerprint."""
         def layer_step(name):
             return {
                 'host_id': self.source.id, 'instance_id': self.inst.id,
@@ -139,6 +140,9 @@ class TestInstanceMove(TransactionCase):
             }
         Instance = type(self.inst)
         with self._patch_chain() as m, patch.object(
+            Instance, '_move_prepare_steps',
+            return_value=[layer_step('prepare')],
+        ), patch.object(
             Instance, '_move_pre_steps', return_value=[layer_step('pre')],
         ), patch.object(
             Instance, '_move_cut_steps', return_value=[layer_step('cut')],
@@ -155,8 +159,8 @@ class TestInstanceMove(TransactionCase):
             for s in steps
         ]
         self.assertEqual(labels, [
-            'deploy_instance', 'stop_instance', 'move_quiet_check', 'pre',
-            'stop_instance', 'cut', 'move_fingerprint', 'backup_download',
+            'deploy_instance', 'stop_instance', 'prepare', 'move_quiet_check',
+            'pre', 'stop_instance', 'cut', 'move_fingerprint', 'backup_download',
             'restore_instance', 'post', 'move_cutover', 'move_freeze_source',
             'freeze',
         ])

@@ -71,8 +71,12 @@ OWN_TRANSACTION_HOOKS = frozenset({
 
 #: Methods that write with ``self.env`` and are only ever called from a
 #: hook (or from another of them), so they write on the hook's durable
-#: cursor. Each is verified to have no other caller.
+#: cursor. Each is verified to have no other caller. One writes on the
+#: job's own transaction instead, on purpose and from a hook only:
+#: ``_write_own_job``, for the job's own row (its docstring says why).
 HOOK_HELPERS = {
+    "_write_own_job": "the job's own row, in the transaction that stores it done",
+    "_record_frozen_copy": "records the copy a move froze, or failed to freeze",
     "_record_shipped_accounts": "records the ACL a successful run shipped",
     "_sync_backup_records": "mirrors the listed backups after success",
     "_alert_on_purge_failure": "alerts on a failed teardown",

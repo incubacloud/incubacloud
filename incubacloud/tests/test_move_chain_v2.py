@@ -116,14 +116,22 @@ class TestDeployForAMove(TransactionCase):
 
 class TestQuietCheck(_MoveCase):
 
+    def _postponed_outcome(self):
+        """What the postponement's cleanup will tell the hook, or None."""
+        cleanup = self.Job.search([
+            ("instance_id", "=", self.inst.id),
+            ("job_type_id.code", "=", "move_rollback_cleanup"),
+        ], order="id desc", limit=1)
+        return (cleanup.payload or {}).get("move_outcome")
+
     def test_a_job_of_the_panel_running_postpones_the_move(self):
         chain = self._chain()
         check = self._running(chain, "move_quiet_check")
         other = self._job("rebuild_instance", self.source, state="started")
         asyncio.run(self._executor(check).on_success({}))
-        self.assertEqual(
-            check.result, {"postponed": "busy", "detail": "1 jobs running"},
-        )
+        # Nothing on its own row: its hook's cursor commits before the
+        # job's transaction stores it done (test_move_own_job_row).
+        self.assertFalse(check.result)
         # What waited of the chain is gone; the check itself goes on.
         rest = chain - check
         self.assertEqual(set(rest.mapped("state")), {"cancelled"})
@@ -137,6 +145,7 @@ class TestQuietCheck(_MoveCase):
         self.assertEqual(cleanup.payload["move_outcome"], {
             "kind": "postponed", "reason": "busy",
             "detail": "1 jobs running", "job_id": check.id,
+            "trigger": "manual",
         })
         # The source never stopped: nothing starts it, nothing alerts.
         self.assertFalse(self.Job.search([
@@ -200,7 +209,38 @@ class TestQuietCheck(_MoveCase):
             },
         }
         asyncio.run(self._executor(check).on_success(results))
-        self.assertEqual(check.result["detail"], "2 jobs running")
+        self.assertEqual(self._postponed_outcome()["detail"], "2 jobs running")
+
+    def test_a_count_that_could_not_be_read_postpones_without_failing(self):
+        """The source has not stopped: no failure, no watchdog, no pause."""
+        chain = self._chain(trigger="window")
+        check = self._running(chain, "move_quiet_check")
+        executor = self._executor(check)
+        for results in (
+            {"Count what runs inside the instance": {
+                "stdout": "", "exit_status": 1,
+            }},
+            {"Count what runs inside the instance": {
+                "stdout": "ERROR: relation does not exist\n", "exit_status": 0,
+            }},
+        ):
+            with self.subTest(results=results):
+                self.assertEqual(executor.parse_results(results), [])
+                self.assertEqual(executor._verdict(results)[0], "unknown")
+        asyncio.run(executor.on_success({
+            "Count what runs inside the instance": {
+                "stdout": "", "exit_status": 1,
+            },
+        }))
+        outcome = self._postponed_outcome()
+        self.assertEqual(outcome["reason"], "unknown")
+        self.assertEqual(outcome["trigger"], "window")
+        self.assertIn("status 1", outcome["detail"])
+        self.assertTrue(self.inst.move_rollback_in_progress)
+        self.assertFalse(self.Job.search([
+            ("instance_id", "=", self.inst.id),
+            ("job_type_id.code", "=", "start_instance"),
+        ]))
 
     def test_the_count_inside_runs_only_when_a_layer_gives_its_sql(self):
         chain = self._chain()
@@ -223,7 +263,8 @@ class TestQuietCheck(_MoveCase):
         ) as asked:
             asyncio.run(self._executor(check).on_success({}))
         asked.assert_called_once_with(self.inst, "idle")
-        self.assertEqual(check.result["postponed"], "active")
+        self.assertEqual(self._postponed_outcome()["reason"], "active")
+        self.assertEqual(self._postponed_outcome()["trigger"], "idle")
 
 
 class TestRollbackOutcome(_MoveCase):
@@ -545,6 +586,45 @@ class TestTheOldCopyIsFrozen(_MoveCase):
                 self.assertLess(cleanup.id, min(chain.ids))
                 self.assertFalse(cleanup.queue_chain_key)
                 (chain | cleanup).write({"state": "cancelled"})
+
+    def test_the_deploy_refuses_a_destination_that_still_holds_the_copy(self):
+        """A failed removal must not let ``compose up`` start the old copy."""
+        self.inst.write({
+            "move_origin_host_id": self.target.id,
+            "move_target_host_id": self.source.id,
+        })
+        self._frozen(until_hours=5, host=self.source)
+        deploy = self._job("deploy_instance", self.source)
+        with self.assertRaises(JobRefused) as refused:
+            self._executor(deploy).pre_run_checks()
+        self.assertIn("froze", str(refused.exception))
+        # Removed: the move's deploy goes on there.
+        self.inst.write({
+            "move_frozen_source_host_id": False, "move_frozen_until": False,
+        })
+        self._executor(deploy).pre_run_checks()
+
+    def test_the_deploy_leaves_a_copy_frozen_elsewhere_alone(self):
+        self.inst.write({
+            "move_origin_host_id": self.target.id,
+            "move_target_host_id": self.third.id,
+        })
+        self._frozen(until_hours=5, host=self.source)
+        self._executor(self._job("deploy_instance", self.third)).pre_run_checks()
+
+    def test_a_freeze_that_failed_still_records_the_copy_and_alerts(self):
+        """Possibly running, and removed by the clean-up all the same."""
+        freeze = self._job("move_freeze_source", self.source)
+        asyncio.run(self._executor(freeze).on_failure({}, ["exit 1"]))
+        self.assertEqual(self.inst.move_frozen_source_host_id, self.source)
+        self.assertTrue(self.inst.move_frozen_until)
+        alert = self.env["cloud.alert"].search([
+            ("instance_id", "=", self.inst.id),
+            ("code", "=", "move_freeze_failed"),
+            ("state", "=", "active"),
+        ])
+        self.assertEqual(alert.level, "warning")
+        self.assertIn(self.source.name, alert.message)
 
     def test_the_instances_delete_removes_the_copy_first(self):
         self._frozen(until_hours=5)
