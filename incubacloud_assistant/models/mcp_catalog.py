@@ -24,7 +24,13 @@ ASSISTANT_EXCLUDED = {
     },
     **{
         f"/cloud/assistant/{name}": _SETTINGS
-        for name in ("get_settings", "save_settings", "refresh_models", "usage")
+        for name in (
+            "get_settings",
+            "save_settings",
+            "refresh_models",
+            "read_models",
+            "usage",
+        )
     },
 }
 
