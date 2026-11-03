@@ -627,17 +627,32 @@ class TestRestoreNeutralize(BaseCase):
             "mode": "from_job", "neutralize": True,
         }))
         self.assertEqual(argv[2], "restore-db")
-        self.assertEqual(argv[-1], "1")
+        self.assertEqual(argv[-2], "1")
 
     def test_without_the_flag_the_script_is_told_not_to(self):
         argv = _argv(self._restore_step({"mode": "from_job"}))
-        self.assertEqual(argv[-1], "0")
+        self.assertEqual(argv[-2], "0")
 
     def test_explicit_false_is_not_neutralized(self):
         argv = _argv(self._restore_step({
             "mode": "from_job", "neutralize": False,
         }))
-        self.assertEqual(argv[-1], "0")
+        self.assertEqual(argv[-2], "0")
+
+    def test_a_restore_loads_a_copy_unless_told_it_is_a_move(self):
+        argv = _argv(self._restore_step({"mode": "from_job"}))
+        self.assertEqual(argv[-1], "copy")
+
+    def test_a_move_loads_the_database_as_moved(self):
+        # A copy regenerates database.secret (every session of the panel
+        # signed out) and sets web.base.url to localhost.
+        argv = _argv(self._restore_step({
+            "mode": "from_job", "as_move": True,
+        }))
+        self.assertEqual(argv[2:], [
+            "restore-db", INSTANCE_DIR, "prod",
+            argv[5], "0", "move",
+        ])
 
 
 class TestRestoreMailCatcher(BaseCase):
