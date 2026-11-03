@@ -31,6 +31,7 @@ from . import (
     test_cloud_instance,
     test_cloud_instance_move,
     test_move_chain_hooks,
+    test_move_chain_v2,
     test_cloud_instance_domain,
     test_cloud_instance_repo,
     test_cloud_github_app,

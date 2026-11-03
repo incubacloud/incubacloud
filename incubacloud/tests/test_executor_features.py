@@ -31,7 +31,8 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
         domain='test.example.com',
         project_id=SimpleNamespace(remote_folder='projects'),
         odoo_initial_lang=None,
-        **extra,
+        # Not moving, unless a test says it is.
+        **({'move_origin_host_id': False} | extra),
     )
 
     ex = object.__new__(DeployInstanceExecutor)

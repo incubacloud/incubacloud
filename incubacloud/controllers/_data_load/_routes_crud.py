@@ -1758,6 +1758,8 @@ class CrudMixin:
             ),
             'job_log_retention_days': settings.job_log_retention_days or 0,
             'job_retention_days': settings.job_retention_days or 0,
+            'move_frozen_source_hours': settings.move_frozen_source_hours or 0,
+            'move_cut_alert_seconds': settings.move_cut_alert_seconds or 0,
             'staging_autopurge_days': (
                 settings.staging_autopurge_days or 0
             ),
@@ -1821,6 +1823,7 @@ class CrudMixin:
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
         job_retention_days=180, staging_autopurge_days=None,
+        move_frozen_source_hours=None, move_cut_alert_seconds=None,
         default_backup_alert_threshold_pct=80,
         github_event_retention_days=90, github_event_truncate_days=7,
         metrics_enabled=None, metrics_central_url=None,
@@ -1883,6 +1886,17 @@ class CrudMixin:
                 0, _safe_int(github_event_truncate_days, 7),
             ),
         })
+        # Written only when the client sent them, as the autopurge below.
+        moves = {
+            name: max(0, _safe_int(value, default))
+            for name, value, default in (
+                ('move_frozen_source_hours', move_frozen_source_hours, 48),
+                ('move_cut_alert_seconds', move_cut_alert_seconds, 90),
+            )
+            if value is not None
+        }
+        if moves:
+            request.env['cloud.settings'].sudo()._get().write(moves)
 
         # ── Staging autopurge ─────────────────────────────────────────
         # Written only when the client sent it, and through the model so
@@ -2181,6 +2195,11 @@ class CrudMixin:
                 if inst.move_target_host_id else ''
             ),
             'move_rollback_in_progress': inst.move_rollback_in_progress,
+            'move_frozen_source_host': (
+                inst.move_frozen_source_host_id.name
+                if inst.move_frozen_source_host_id else ''
+            ),
+            'move_frozen_until': inst.move_frozen_until or None,
             'odoo_version': inst.odoo_version,
             'odoo_commit_sha': inst.odoo_commit_sha or '',
             'last_deploy_date': last_deploy.create_date if last_deploy else None,
