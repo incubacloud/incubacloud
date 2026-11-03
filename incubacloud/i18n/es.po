@@ -17047,3 +17047,15 @@ msgstr "↻ Re-detectar instalación"
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "⚠ Could not undo what the job had prepared: %s"
 msgstr "⚠ No se pudo deshacer lo que el trabajo había preparado: %s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/move_steps_executor.py:0
+msgid ""
+"The old copy of %(name)s on %(host)s could not be stopped after its move and "
+"may still be running. It is removed on %(until)s UTC, or now with «Clean "
+"frozen copy now»."
+msgstr ""
+"La copia antigua de %(name)s en %(host)s no se pudo detener tras su traslado "
+"y puede seguir en marcha. Se elimina el %(until)s UTC, o ahora con «Limpiar "
+"la copia congelada ahora»."
