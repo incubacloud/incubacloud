@@ -133,23 +133,40 @@ class CloudInstance(models.Model):
              "minute to arrive. Cleared whenever the instance is written "
              "as stopped.",
     )
+    running_stopped_at = fields.Datetime(
+        string="Running stopped at",
+        copy=False,
+        readonly=True,
+        help="Last time the instance was written as stopped. The metrics "
+             "cron does not read an odoo last seen before it as a start: "
+             "a stopped container's series stays reported, ageing, for "
+             "minutes after the stop.",
+    )
 
     def write(self, vals):
-        """Close a job's grace as soon as the instance is written stopped.
+        """Close a job's grace, and note the stop, when written stopped.
 
         ``running_confirmed_at`` holds the metrics cron back from reading
         a missing ``odoo`` as a stop. A stop written by anyone — a Stop
         job, the probe that found the container down, a layer above that
         parks the stack after its own job — ends that grace: a
-        confirmation from before it must not hold the next stop back, and
-        with the cron raising the flag on a series still ageing out, it
-        would.
+        confirmation from before it must not hold the next stop back.
+
+        The stop's moment is kept (``running_stopped_at``): the stopped
+        container's series stays reported, ageing, for minutes after it,
+        and the cron does not read one last seen before the stop as the
+        instance up again. QA b100 (2-nov-2026): a Stop job wrote the
+        instance stopped at 02:01:36 and the cron raised it again at
+        02:01:43, on the series of the container it had just stopped.
 
         :param dict vals: the values to write
         :return: what ``write`` returns
         """
         if "running" in vals and not vals["running"]:
-            vals = vals | {"running_confirmed_at": False}
+            vals = vals | {
+                "running_confirmed_at": False,
+                "running_stopped_at": fields.Datetime.now(),
+            }
         return super().write(vals)
 
     def _running_confirmed_vals(self):
@@ -189,6 +206,27 @@ class CloudInstance(models.Model):
         )
         row = self.env.cr.fetchone()
         return bool(row and row[0] and row[0] > moment)
+
+    def _running_stopped_since(self, moment):
+        """Return whether this instance was written stopped at or after *moment*.
+
+        Read from its row, locked, and not from the cache, for the same
+        reason as ``_running_confirmed_after``: a Stop committing as the
+        cron decides must not see its stop undone by a series from before
+        it. Asked only before writing a start, on a row the write locks
+        anyway.
+
+        :param datetime moment: when the ``odoo`` the cron read was last seen
+        :rtype: bool
+        """
+        self.ensure_one()
+        self.env.cr.execute(
+            "SELECT running_stopped_at FROM cloud_instance"
+            " WHERE id = %s FOR UPDATE",
+            (self.id,),
+        )
+        row = self.env.cr.fetchone()
+        return bool(row and row[0] and row[0] >= moment)
 
     def _metric_alerts_suppressed(self):
         """Return True when metric alerts about this instance are noise.
@@ -303,6 +341,12 @@ class CloudInstance(models.Model):
         at all, leaves the flag up. A rise read here opens no grace, and a
         stop written by anyone closes it (``write``).
 
+        Nor does a series undo a stop. A stopped ``odoo``'s series stays
+        within the window for minutes, and one last seen no later than
+        the instance was written stopped (``running_stopped_at``) is that
+        container's, and leaves the flag down. One seen after it — a
+        start without a job, such as a wake on traffic — raises it.
+
         Fail-safe, three times over:
 
         * a backend that cannot be reached updates nothing — silence is
@@ -327,6 +371,10 @@ class CloudInstance(models.Model):
         )
         if not covered:
             return
+        # Before the question, so that what is read as when an ``odoo``
+        # was last seen errs early: a series only just older than a stop
+        # must not pass for one seen after it.
+        asked_at = fields.Datetime.now()
         odoo_ages = self._ages_by_instance(
             base, _ODOO_EXPRESSION, user, token,
         )
@@ -370,6 +418,15 @@ class CloudInstance(models.Model):
                     # A job has just brought it up: its new series is
                     # not answered yet. See ``_CONFIRMED_GRACE_SECONDS``.
                     running = True
+                if (
+                    running and not inst.running
+                    and inst._running_stopped_since(
+                        asked_at - timedelta(seconds=age),
+                    )
+                ):
+                    # The series of the container a stop took down,
+                    # still ageing out of the window. See ``write``.
+                    running = False
                 vals = {"metrics_last_seen": now}
                 if inst.running != running:
                     vals["running"] = running
