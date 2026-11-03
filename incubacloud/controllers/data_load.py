@@ -1,4 +1,3 @@
-# Part of Odoo. See LICENSE file for full copyright and licensing details.
 """Facade for the Cloud data-load controller.
 
 Historically this file held every /cloud/* JSON-RPC route in a single
