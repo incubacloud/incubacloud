@@ -254,6 +254,10 @@ class MoveCleanupSourceExecutor(DeleteInstanceExecutor):
                 "move_frozen_source_host_id": False,
                 "move_frozen_until": False,
             })
+            # A copy whose freeze failed, possibly running until now.
+            self.env["cloud.alert"].sudo().resolve_alert(
+                "move_freeze_failed", instance=inst,
+            )
         # The old host no longer holds the instance: drop it from that
         # host's label map.
         host.refresh_observability_labels(reason="move cleanup")
