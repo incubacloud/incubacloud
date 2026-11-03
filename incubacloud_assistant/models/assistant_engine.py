@@ -143,7 +143,9 @@ class AssistantEngine(models.AbstractModel):
         if not same_model(model, response.model):
             self._wrong_model(conversation_id, config, model, response)
             return
-        calls = self._record_answer(conversation_id, config, response, model)
+        calls = self._retried(
+            lambda: self._record_answer(conversation_id, config, response, model)
+        )
         if response.stop == "max_tokens" and not calls and not response.text:
             self._finish(
                 conversation_id,
