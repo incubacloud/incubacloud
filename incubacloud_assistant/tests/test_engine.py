@@ -285,6 +285,35 @@ class TestEngineStep(EngineMixin, TransactionCase):
                 self._step(conversation)
             self.assertEqual(conversation.state, "working")
 
+    def test_a_conflict_recording_the_answer_does_not_ask_again(self):
+        """The answer is written again; the provider is not paid twice."""
+        connector = self._provider(answer("A staging is a copy."))
+        conversation = self._working(self.dev)
+        record = AssistantEngine._record_answer
+        attempts = []
+
+        def conflict_once(engine, *args):
+            """Meet a concurrent change on the first write, then write."""
+            attempts.append(len(attempts))
+            if len(attempts) == 1:
+                raise SerializationFailure("could not serialize access")
+            return record(engine, *args)
+
+        with patch.object(
+            AssistantEngine, "_record_answer", autospec=True,
+            side_effect=conflict_once,
+        ):
+            self._step(conversation)
+        self.assertEqual(len(attempts), 2)
+        connector.chat.assert_called_once()
+        self.assertEqual(
+            conversation.message_ids.filtered(
+                lambda m: m.role == "assistant"
+            ).content,
+            "A staging is a copy.",
+        )
+        self.assertEqual(conversation.state, "idle")
+
     def test_any_other_failure_still_leaves_retry(self):
         conversation = self._working(self.dev)
         with patch.object(
