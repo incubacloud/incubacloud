@@ -1437,3 +1437,172 @@
 // No host to pick yet: the note, then the way to get one, on its own line.
 .ic-no-host-note { display: block; }
 .ic-no-host-add { margin-top: 6px; }
+
+// ── Monitoring tab: Recent requests ─────────────────────────────────────────
+// One card holding the search, the status chips, a table in a box of its
+// own (about fifteen rows, then it scrolls) and the page footer, so a
+// busy instance does not push the rest of the tab out of reach.
+.ic-requests {
+    padding: 0;
+    overflow: hidden;
+}
+
+.ic-requests-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-block-end: 1px solid var(--rl-line);
+}
+
+.ic-requests-search {
+    position: relative;
+    flex: 1 1 260px;
+    min-width: 0;
+
+    .fa {
+        position: absolute;
+        inset-inline-start: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--rl-faint);
+        font-size: 12px;
+    }
+
+    input {
+        width: 100%;
+        box-sizing: border-box;
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--rl-fg);
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        padding-block: 6px;
+        padding-inline: 30px 10px;
+
+        &:focus-visible {
+            outline: 2px solid var(--rl-green);
+            outline-offset: 2px;
+        }
+    }
+}
+
+.ic-requests-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ic-requests-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--rl-fg2);
+    background: var(--rl-surf);
+    border: 1px solid var(--rl-line2);
+    border-radius: 999px;
+    padding: 3px 10px;
+    cursor: pointer;
+
+    .ic-requests-n {
+        color: var(--rl-faint);
+        font-variant-numeric: tabular-nums;
+    }
+
+    &[aria-pressed="true"] {
+        background: var(--rl-green-soft);
+        border-color: var(--rl-green);
+        color: var(--rl-green-text);
+
+        .ic-requests-n { color: inherit; }
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--rl-green);
+        outline-offset: 2px;
+    }
+}
+
+// Fifteen rows plus the sticky header; the box scrolls, the page does not.
+.ic-requests-box {
+    max-block-size: calc(15 * 31px + 34px);
+    overflow: auto;
+    min-width: 0;
+
+    &:focus-visible {
+        outline: 2px solid var(--rl-green);
+        outline-offset: -2px;
+    }
+
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--rl-surf2);
+        padding-inline: 12px;
+        white-space: nowrap;
+    }
+
+    td {
+        padding-block: 6px;
+        padding-inline: 12px;
+        font-family: var(--rl-fm);
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    td.ic-path {
+        white-space: normal;
+        min-inline-size: 240px;
+    }
+
+    tbody tr:hover td { background: var(--rl-surf2); }
+
+    mark {
+        // Bootstrap pads <mark>; a match inside a path must not split it.
+        padding: 0;
+        background: var(--rl-amber-soft);
+        color: inherit;
+        border-radius: 2px;
+    }
+}
+
+.ic-requests-time { color: var(--rl-fg2); }
+
+.ic-requests-empty {
+    padding: 28px 14px;
+    text-align: center;
+    color: var(--rl-muted);
+}
+
+.ic-requests-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-block-start: 1px solid var(--rl-line);
+    color: var(--rl-muted);
+    font-size: 12px;
+
+    .rl-pager { margin-block-start: 0; }
+}
+
+// Status code by class: the text token on its soft background, the pair
+// the panel already uses for state pills, so both themes stay legible.
+.ic-status {
+    display: inline-block;
+    border-radius: 4px;
+    padding-inline: 6px;
+    font-weight: 600;
+}
+.ic-status-2 { background: var(--rl-green-soft); color: var(--rl-green-text); }
+.ic-status-3 { background: var(--rl-cyan-soft); color: var(--rl-cyan-text); }
+.ic-status-4 { background: var(--rl-amber-soft); color: var(--rl-amber-text); }
+.ic-status-5 { background: var(--rl-red-soft); color: var(--rl-red-text); }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import {
     newestSeries,
@@ -923,5 +924,116 @@ describe("InstanceDetail — the backups tab is for who manages backups", () => 
         comp.state = { inst: { deployed: false } };
         comp.env = { permissions: { can_manage_backups: true } };
         expect(comp.canShowBackups).toBe(false);
+    });
+});
+
+// ── Monitoring tab: Recent requests ─────────────────────────────────────────
+
+describe("InstanceDetail — Recent requests table", () => {
+    /**
+     * A response shaped like ``/cloud/instance/access_log``: 120 lines,
+     * oldest first as the proxy writes them. Every third is a 404 on
+     * ``/wp-login.php`` from one IP, every tenth a 500, the rest 200s.
+     */
+    const response = {
+        ok: true,
+        entries: Array.from({ length: 120 }, (_, i) => ({
+            time: `2026-11-03T08:${String(i % 60).padStart(2, "0")}:00Z`,
+            ClientHost: i % 3 === 0 ? "216.73.216.191" : "66.249.66.12",
+            RequestMethod: i % 5 === 0 ? "POST" : "GET",
+            RequestPath: i % 3 === 0 ? "/wp-login.php" : `/shop/item-${i}`,
+            DownstreamStatus: i % 3 === 0 ? 404 : i % 10 === 1 ? 500 : 200,
+        })),
+    };
+
+    const build = () => {
+        const cmp = Object.create(InstanceDetail.prototype);
+        cmp.state = {
+            accessLog: {
+                entries: response.entries, q: "", cls: "all", offset: 0,
+            },
+        };
+        cmp.requestsBoxRef = { el: { scrollTop: 99 } };
+        return cmp;
+    };
+
+    test("shows newest first and no more than a page", () => {
+        const cmp = build();
+        expect(cmp.recentRequests.length).toBe(120);
+        expect(cmp.pagedRequests.length).toBe(50);
+        expect(cmp.pagedRequests[0]).toBe(response.entries[119]);
+    });
+
+    test("the last page holds the remainder", () => {
+        const cmp = build();
+        cmp.requestsGoPage(100);
+        expect(cmp.pagedRequests.length).toBe(20);
+    });
+
+    test("changing page scrolls the box back to the top", () => {
+        const cmp = build();
+        cmp.requestsGoPage(50);
+        expect(cmp.state.accessLog.offset).toBe(50);
+        expect(cmp.requestsBoxRef.el.scrollTop).toBe(0);
+    });
+
+    test("the search matches path, client, method and status, ignoring case", () => {
+        const cmp = build();
+        cmp.onRequestsSearch({ target: { value: "WP-LOGIN" } });
+        expect(cmp.filteredRequests.length).toBe(40);
+        cmp.onRequestsSearch({ target: { value: "66.249" } });
+        expect(cmp.filteredRequests.length).toBe(80);
+        cmp.onRequestsSearch({ target: { value: "post" } });
+        expect(cmp.filteredRequests.every((r) => r.RequestMethod === "POST")).toBe(true);
+        cmp.onRequestsSearch({ target: { value: "500" } });
+        expect(cmp.filteredRequests.every((r) => r.DownstreamStatus === 500)).toBe(true);
+        cmp.onRequestsSearch({ target: { value: "no-such-thing" } });
+        expect(cmp.filteredRequests.length).toBe(0);
+    });
+
+    test("searching goes back to the first page", () => {
+        const cmp = build();
+        cmp.requestsGoPage(100);
+        cmp.onRequestsSearch({ target: { value: "shop" } });
+        expect(cmp.state.accessLog.offset).toBe(0);
+    });
+
+    test("the status chips count what the search left and filter the table", () => {
+        const cmp = build();
+        const counts = () =>
+            Object.fromEntries(cmp.requestChips.map((c) => [c.key, c.count]));
+        expect(counts()).toEqual({ all: 120, 2: 72, 3: 0, 4: 40, 5: 8 });
+        cmp.onRequestsSearch({ target: { value: "wp-login" } });
+        expect(counts()).toEqual({ all: 40, 2: 0, 3: 0, 4: 40, 5: 0 });
+        cmp.onRequestsSearch({ target: { value: "" } });
+        cmp.requestsGoPage(50);
+        cmp.setRequestsClass("4");
+        expect(cmp.state.accessLog.offset).toBe(0);
+        expect(cmp.filteredRequests.length).toBe(40);
+        expect(cmp.pagedRequests.length).toBe(40);
+    });
+
+    test("the count says N, or N of M once something is filtered out", () => {
+        allowTranslations();
+        const cmp = build();
+        expect(String(cmp.requestsCountLabel)).toBe("120 requests");
+        cmp.setRequestsClass("5");
+        expect(String(cmp.requestsCountLabel)).toBe("8 of 120 requests");
+    });
+
+    test("the hit is split out for <mark>, never turned into markup", () => {
+        const cmp = build();
+        cmp.onRequestsSearch({ target: { value: "<B>" } });
+        expect(cmp.highlightRequest("/a<b>c")).toEqual(["/a", "<b>", "c"]);
+        expect(cmp.highlightRequest("/nothing")).toEqual(["/nothing", "", ""]);
+        cmp.onRequestsSearch({ target: { value: "" } });
+        expect(cmp.highlightRequest(404)).toEqual(["404", "", ""]);
+    });
+
+    test("a status outside 2xx-5xx belongs to no chip", () => {
+        const cmp = build();
+        expect(cmp.requestClass({ DownstreamStatus: 0 })).toBe("");
+        expect(cmp.requestClass({})).toBe("");
+        expect(cmp.requestClass({ DownstreamStatus: 301 })).toBe("3");
     });
 });

@@ -5,6 +5,7 @@ import {
   onMounted,
   onWillUnmount,
   useEnv,
+  useRef,
 } from "@odoo/owl";
 import {rpc} from "@web/core/network/rpc";
 import {useService} from "@web/core/utils/hooks";
@@ -279,6 +280,8 @@ export class InstanceDetail extends JobsMixin(
   setup() {
     this.env = useEnv();
     this.orm = useService("orm");
+    // Scroll box of the Recent requests table; reset on a page change.
+    this.requestsBoxRef = useRef("requestsBox");
 
     this.state = useState({
       tab: "overview",
@@ -317,6 +320,9 @@ export class InstanceDetail extends JobsMixin(
       accessLog: {
         loading: false, loaded: false, error: "",
         entries: [], summary: { by_status: [], top_clients: [], top_paths: [] },
+        // Table view over the entries already read: the search text,
+        // the status class chip ("all", "2".."5") and the page offset.
+        q: "", cls: "all", offset: 0,
       },
       // Mails tab — a staging's captured mailbox. Read on demand for
       // the same reason as the access log: it is live data on the
@@ -730,6 +736,7 @@ export class InstanceDetail extends JobsMixin(
   async loadAccessLog() {
     this.state.accessLog.loading = true;
     this.state.accessLog.error = "";
+    this.state.accessLog.offset = 0;
     try {
       const res = await rpc("/cloud/instance/access_log", {
         instance_id: this.props.instance_id,
@@ -782,7 +789,142 @@ export class InstanceDetail extends JobsMixin(
 
   /** Most recent requests first, which is how an incident is read. */
   get recentRequests() {
-    return [...(this.state.accessLog.entries || [])].reverse().slice(0, 100);
+    return [...(this.state.accessLog.entries || [])].reverse();
+  }
+
+  /** Rows per page of the Recent requests table. */
+  get requestsPageSize() {
+    return 50;
+  }
+
+  /**
+   * Status class of a log entry.
+   * @param {Object} req access log entry
+   * @returns {string} "2", "3", "4" or "5"; "" when the status is not a code
+   */
+  requestClass(req) {
+    const first = String(req.DownstreamStatus ?? "").charAt(0);
+    return "2345".includes(first) && first ? first : "";
+  }
+
+  /** Lower-cased search text of the Recent requests table. */
+  get requestsQuery() {
+    return (this.state.accessLog.q || "").trim().toLowerCase();
+  }
+
+  /**
+   * Requests matching the search text, before the status chip applies.
+   * The text is looked for in the client, method, path and status code,
+   * ignoring case.
+   * @returns {Object[]} matching entries, newest first
+   */
+  get searchedRequests() {
+    const q = this.requestsQuery;
+    if (!q) {
+      return this.recentRequests;
+    }
+    return this.recentRequests.filter((req) =>
+      [req.ClientHost, req.RequestPath, req.RequestMethod, req.DownstreamStatus]
+        .some((field) => String(field ?? "").toLowerCase().includes(q))
+    );
+  }
+
+  /**
+   * Status chips with the number of searched requests each one holds, so
+   * the counts follow the search.
+   * @returns {{key: string, label: string, count: number}[]} chips
+   */
+  get requestChips() {
+    const searched = this.searchedRequests;
+    const count = (key) =>
+      searched.filter((req) => this.requestClass(req) === key).length;
+    return [
+      { key: "all", label: _t("All"), count: searched.length },
+      ...["2", "3", "4", "5"].map((key) => ({
+        key, label: `${key}xx`, count: count(key),
+      })),
+    ];
+  }
+
+  /**
+   * Requests matching both the search text and the status chip.
+   * @returns {Object[]} filtered entries, newest first
+   */
+  get filteredRequests() {
+    const cls = this.state.accessLog.cls;
+    const searched = this.searchedRequests;
+    return cls === "all"
+      ? searched
+      : searched.filter((req) => this.requestClass(req) === cls);
+  }
+
+  /**
+   * The page of filtered requests the table shows.
+   * @returns {Object[]} at most ``requestsPageSize`` entries
+   */
+  get pagedRequests() {
+    const {offset} = this.state.accessLog;
+    return this.filteredRequests.slice(offset, offset + this.requestsPageSize);
+  }
+
+  /**
+   * Footer count: "N requests" when nothing is filtered out, otherwise
+   * "N of M requests".
+   * @returns {string} translated count
+   */
+  get requestsCountLabel() {
+    const shown = this.filteredRequests.length;
+    const total = this.recentRequests.length;
+    return shown === total
+      ? _t("%(count)s requests", {count: total})
+      : _t("%(count)s of %(total)s requests", {count: shown, total});
+  }
+
+  /**
+   * Split a cell's text around the first occurrence of the search text so
+   * the template can wrap the hit in ``<mark>`` without building HTML.
+   * @param {*} value cell value
+   * @returns {string[]} [before, hit, after]; hit is empty without a match
+   */
+  highlightRequest(value) {
+    const text = String(value ?? "");
+    const q = this.requestsQuery;
+    const at = q ? text.toLowerCase().indexOf(q) : -1;
+    if (at < 0) {
+      return [text, "", ""];
+    }
+    return [text.slice(0, at), text.slice(at, at + q.length), text.slice(at + q.length)];
+  }
+
+  /**
+   * Search the Recent requests table and go back to its first page.
+   * @param {Event} ev input event of the search box
+   */
+  onRequestsSearch(ev) {
+    this.state.accessLog.q = ev.target.value;
+    this.state.accessLog.offset = 0;
+  }
+
+  /**
+   * Filter the Recent requests table by status class and go back to its
+   * first page.
+   * @param {string} key "all", "2", "3", "4" or "5"
+   */
+  setRequestsClass(key) {
+    this.state.accessLog.cls = key;
+    this.state.accessLog.offset = 0;
+  }
+
+  /**
+   * Change page in the Recent requests table and scroll its box to the top.
+   * @param {number} offset index of the first request of the new page
+   */
+  requestsGoPage(offset) {
+    this.state.accessLog.offset = offset;
+    const box = this.requestsBoxRef?.el;
+    if (box) {
+      box.scrollTop = 0;
+    }
   }
 
   onInput(field, ev) {
