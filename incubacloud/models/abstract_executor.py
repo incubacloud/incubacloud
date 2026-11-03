@@ -1029,6 +1029,31 @@ class AbstractExecutor(ABC):
             )
             self._sys(f"⚠ A follow-up step for '{inst.name}' failed: {exc}")
 
+    def _write_own_job(self, vals):
+        """Write *vals* on this job's own row, in the job's transaction.
+
+        The one write of a hook that does not go on its durable cursor.
+        That cursor commits when the hook ends, before the job's
+        transaction, whose snapshot predates it, stores the job ``done``
+        on the same row: PostgreSQL answers ``could not serialize access
+        due to concurrent update``, and queue_job runs the job again in
+        5 s without counting the attempt — for ever, on a move, with the
+        panel stopped. Written where ``done`` is written, the values land
+        with it or not at all, and the next step of a chain, which starts
+        once that transaction committed, reads them. Flushed now:
+        ``cloud.job.execute`` ends with ``env.clear()``, which drops
+        writes not flushed yet.
+
+        :param dict vals: values of ``cloud.job`` fields, in ``write``
+            format
+        """
+        # ``_job_cr`` is set by ``_dispatch_outcome``; a hook invoked
+        # directly (tests) has only its own cursor, which is the job's.
+        cr = getattr(self, "_job_cr", None) or self.job.env.cr
+        job = self.job.with_env(self.job.env(cr=cr)).sudo()
+        job.write(vals)
+        job.flush_recordset(list(vals))
+
     def _persist(self, record, vals):
         """Write *vals* on *record* durably and let this job see the result.
 

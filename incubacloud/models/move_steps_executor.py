@@ -106,10 +106,19 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
     what the layer above counts inside the instance's database
     (``cloud.instance._move_quiet_sql``), or, for the triggers that
     depend on it, recent requests (``_move_requests_check``). A busy
-    instance ends this step ``done`` with ``result['postponed']`` and
-    hands the move to ``cloud.instance._postpone_move``: the rest of the
-    chain is cancelled and the destination taken down, without a failure
-    or an alert. The source never stopped.
+    instance ends this step ``done`` and hands the move to
+    ``cloud.instance._postpone_move``, with what was found (``postponed``
+    and ``detail``), which travels to the layers' hook in the rollback's
+    outcome: the rest of the chain is cancelled and the destination taken
+    down, without a failure or an alert. The source never stopped. A
+    count inside the instance that could not be read postpones the move
+    the same way (``unknown``), rather than failing it: nothing stopped,
+    and a failed move is rolled back with a critical alert and paused.
+
+    The step writes nothing on its own job: its hooks run on a cursor
+    that commits before the job's transaction stores it ``done``, and a
+    write of this job's row there makes that store fail (see
+    ``AbstractExecutor._write_own_job``).
     """
 
     _job_type = "move_quiet_check"
@@ -126,15 +135,28 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
         )]
 
     def parse_results(self, results):
-        """Fail when the count could not be read: the move must not guess."""
+        """Never fail on the count: one that could not be read postpones.
+
+        The source has not stopped yet, so a count that failed for a
+        moment is no reason to roll the move back (``_count_problem``).
+        """
+        return []
+
+    @staticmethod
+    def _count_problem(results):
+        """Say why the count inside the instance could not be read, or None.
+
+        :param dict results: what the commands printed
+        :rtype: str | None
+        """
         data = results.get(QUIET_LABEL)
         if data is None:
-            return []
+            return None
         if data.get("exit_status", 1) != 0:
-            return [f"'{QUIET_LABEL}' exited with status {data.get('exit_status')}"]
-        if not self._inside_count(results).isdigit():
-            return [f"'{QUIET_LABEL}' did not answer a count"]
-        return []
+            return f"the count exited with status {data.get('exit_status')}"
+        if not MoveQuietCheckExecutor._inside_count(results).isdigit():
+            return "the count did not answer a number"
+        return None
 
     @staticmethod
     def _inside_count(results):
@@ -167,6 +189,9 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
         :rtype: tuple | None
         """
         inst = self._inst()
+        problem = self._count_problem(results)
+        if problem:
+            return "unknown", problem
         inside = self._inside_count(results)
         busy = self._panel_jobs_running(inst) + (
             int(inside) if inside.isdigit() else 0
@@ -185,7 +210,6 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
             return
         reason, detail = verdict
         result = {"postponed": reason, "detail": detail}
-        self.job.sudo().result = result
         self._sys(f"Move postponed: {reason} ({detail}). The instance keeps running here.")
         inst._postpone_move(self.job, result)
 
@@ -227,7 +251,9 @@ class MoveFingerprintExecutor(_MoveSourceStep):
         """Keep the fingerprint on the job, for the restore to read."""
         data = results.get(FINGERPRINT_LABEL) or {}
         fingerprint = parse_fingerprint(data.get("stdout")) or {}
-        self.job.sudo().result = fingerprint
+        # On the job's own transaction, which stores it done: the
+        # restore reads it once that transaction committed.
+        self._write_own_job({"result": fingerprint})
         self._sys(
             f"✓ Fingerprint taken: {len(fingerprint.get('tables') or {})} "
             f"tables, {fingerprint.get('files', 0)} files."
@@ -286,6 +312,57 @@ class MoveFreezeSourceExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         """Record the copy as frozen until its time is up."""
+        until = self._record_frozen_copy()
+        self._sys(
+            f"✓ Old copy on '{self.job.host_id.name}' stopped and kept until "
+            f"{fields.Datetime.to_string(until)} UTC."
+        )
+        # The host no longer serves the instance: its label map must
+        # forget it.
+        self.job.host_id.refresh_observability_labels(reason="move freeze")
+
+    async def on_failure(self, results, errors):
+        """Record the copy all the same, and tell the operator.
+
+        The move succeeded and the instance lives elsewhere, but the old
+        copy may still run, its ``db`` and ``backup`` with
+        ``restart=always``. Recorded as frozen, the hourly clean-up
+        removes it when its time is up, as for a copy that stopped; the
+        alert says it may be running meanwhile.
+        """
+        for err in errors:
+            self._sys(f"✗ Freezing the old copy: {err}")
+        inst = self._inst()
+        host = self.job.host_id
+        until = self._record_frozen_copy()
+        self._sys(
+            f"The old copy on '{host.name}' is recorded all the same, and is "
+            f"removed after {fields.Datetime.to_string(until)} UTC."
+        )
+        self.env["cloud.alert"].sudo().raise_alert(
+            "move_freeze_failed",
+            self.env._(
+                "The old copy of %(name)s on %(host)s could not be stopped "
+                "after its move and may still be running. It is removed on "
+                "%(until)s UTC, or now with «Clean frozen copy now».",
+                name=inst.name, host=host.name,
+                until=fields.Datetime.to_string(until),
+            ),
+            level="warning",
+            host=host,
+            instance=inst,
+        )
+
+    def _record_frozen_copy(self):
+        """Record the old copy on this job's host as frozen, until its time.
+
+        A copy an earlier move froze on another host, never removed, is
+        forgotten with a note: nothing would name it once this one takes
+        its place.
+
+        :return: when the copy's time is up, naive UTC
+        :rtype: datetime
+        """
         inst = self._inst()
         host = self.job.host_id
         hours = self.env["cloud.settings"].sudo()._get().move_frozen_source_hours
@@ -301,15 +378,4 @@ class MoveFreezeSourceExecutor(AbstractSSHExecutor):
             "move_frozen_source_host_id": host.id,
             "move_frozen_until": until,
         })
-        self._sys(
-            f"✓ Old copy on '{host.name}' stopped and kept until "
-            f"{fields.Datetime.to_string(until)} UTC."
-        )
-        # The host no longer serves the instance: its label map must
-        # forget it.
-        host.refresh_observability_labels(reason="move freeze")
-
-    async def on_failure(self, results, errors):
-        """Log only: the move succeeded and the instance lives elsewhere."""
-        for err in errors:
-            self._sys(f"✗ Freezing the old copy: {err}")
+        return until

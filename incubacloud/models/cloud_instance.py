@@ -2171,6 +2171,21 @@ class CloudInstance(models.Model):
         """
         return "deploy_instance"
 
+    def _move_prepare_steps(self, source_host):
+        """Return extra chain steps to run before the instance is checked.
+
+        They run once the destination is built and its Odoo stopped, and
+        before ``move_quiet_check``: what takes time and harms nothing
+        if the move is postponed (letting the destination in somewhere,
+        say) goes here, so that only seconds pass between the check and
+        the source's stop. A postponed move is undone by the layer's
+        rollback hook, which takes back what these did. Core: none.
+
+        :param source_host: the ``cloud.host`` the instance moves from
+        :return: list of chain step dicts, as for :meth:`_move_pre_steps`
+        """
+        return []
+
     def _move_pre_steps(self, source_host):
         """Return extra chain steps to run just before the source stops.
 
@@ -2312,8 +2327,8 @@ class CloudInstance(models.Model):
             (a step failed), ``cancelled`` (cancelled while it waited),
             ``manual`` (an operator rolled it back) or ``stuck`` (the
             watchdog ended it) — and, when known, ``reason``,
-            ``detail``, ``job_id``, ``job_type`` and ``message``. None
-            when unknown.
+            ``detail``, ``trigger``, ``job_id``, ``job_type`` and
+            ``message``. None when unknown.
         """
 
     def _move_outcome(self, kind, **extra):
@@ -2371,7 +2386,7 @@ class CloudInstance(models.Model):
         ``cron_recover_stuck_moves``)::
 
             deploy(target, no database) → stop(target, odoo only) →
-            move_quiet_check(source) → [pre-steps] →
+            [prepare steps] → move_quiet_check(source) → [pre-steps] →
             stop(source, odoo only, the cut starts) → [cut steps] →
             move_fingerprint(source) → backup_download(source, live) →
             restore(target, verified against the fingerprint) →
@@ -2436,6 +2451,10 @@ class CloudInstance(models.Model):
         options = dict(move_options or {})
         options.setdefault("trigger", "manual")
 
+        # Ahead of the chain in the instance's queue. Its failure does not
+        # stop the chain, but the deploy of a destination that still holds
+        # the copy refuses (``DeployInstanceExecutor.pre_run_checks``): it
+        # would start the old copy.
         if self.move_frozen_source_host_id:
             self._enqueue_frozen_cleanup(
                 f"a new move of the instance to {target_host.name}",
@@ -2468,8 +2487,9 @@ class CloudInstance(models.Model):
             step(target_host, "stop_instance", {
                 "services": ["odoo"], "move_target": True,
             }),
-            step(source, "move_quiet_check", {"move_options": options}),
         ]
+        steps += self._move_prepare_steps(source)
+        steps.append(step(source, "move_quiet_check", {"move_options": options}))
         steps += self._move_pre_steps(source)
         steps.append(step(source, "stop_instance", {
             "services": ["odoo"], "move_cut": True,
@@ -2583,16 +2603,23 @@ class CloudInstance(models.Model):
         itself (``MoveCutoverExecutor.on_cancelled_queued``), and the
         watchdog leaves a rollback whose cleanup waits alone.
 
+        What it found travels in the outcome, with what started the move
+        (``trigger``): the job's own row is not written from its hook
+        (``AbstractExecutor._write_own_job``), so the layers read the
+        reason there rather than on the job.
+
         :param job: the ``move_quiet_check`` job, still running
         :param dict result: what it found, ``postponed`` and ``detail``
         :return: the ``move_rollback_cleanup`` job id
         """
         self.ensure_one()
+        options = (job.payload or {}).get("move_options") or {}
         outcome = self._move_outcome(
             "postponed",
             reason=result.get("postponed"),
             detail=result.get("detail") or "",
             job_id=job.id,
+            trigger=options.get("trigger") or "manual",
         )
         self.sudo().move_rollback_in_progress = True
         self.sudo()._cancel_move_chain(except_job=job)
