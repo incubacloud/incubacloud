@@ -17,6 +17,7 @@ from odoo.tools import config as odoo_config
 from ..github.http_utils import safe_urlopen
 from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
+from ._concurrency import read_committed_cursor
 from .res_users_ext import as_platform, telegram_markdown
 
 _logger = logging.getLogger(__name__)
@@ -483,7 +484,17 @@ class CloudAlert(models.Model):
             ),
         )
         if active:
-            active.write({"state": "dismissed", "resolution": "auto"})
+            # In a cron's snapshot the alert may have been dismissed by
+            # hand since: PostgreSQL refuses the second writer of the row,
+            # and the cron lost its whole pass to an alert already closed.
+            # The savepoint keeps the rest of the transaction usable.
+            try:
+                with self.env.cr.savepoint(flush=True):
+                    active.write({"state": "dismissed", "resolution": "auto"})
+            except psycopg2.errors.SerializationFailure:
+                if self._still_active(active):
+                    raise
+                return self.browse()
             # On-call channels saw the problem; they must also see the
             # closure, or every incident looks permanently open from
             # Telegram/webhook. Only *automatic* resolution notifies:
@@ -492,6 +503,20 @@ class CloudAlert(models.Model):
             for record in active:
                 record._notify_alert_resolved()
         return active
+
+    def _still_active(self, alerts):
+        """Return whether any of *alerts* is still active, as committed.
+
+        Read on a READ COMMITTED cursor of its own: after losing the row
+        to another writer, this transaction's snapshot would still show
+        the alert as it was when the transaction began.
+
+        :param alerts: the ``cloud.alert`` records to read again.
+        :rtype: bool
+        """
+        with read_committed_cursor(self.env.registry) as cr:
+            fresh = alerts.with_env(alerts.env(cr=cr)).sudo().exists()
+            return any(state == "active" for state in fresh.mapped("state"))
 
     @api.model
     def resolve_instance_alerts(self, instance):
