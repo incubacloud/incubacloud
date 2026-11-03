@@ -16,6 +16,7 @@ import logging
 
 from odoo import api, fields, models
 
+from ._concurrency import read_committed_cursor
 from .cloud_metric_rule import promql_query
 from .host_metrics_executor import DISK_CRITICAL_THRESHOLD
 
@@ -73,14 +74,34 @@ class CloudHost(models.Model):
             )
             return
 
-        # The central answered every query: what the convergence of the
-        # direct path reads as "the central is up" (cloud_host_direct).
-        settings._direct_note_read_ok()
-
-        if not readings:
-            return
-
         now = fields.Datetime.now()
+        # Every write of the pass happens here, on a READ COMMITTED
+        # cursor of its own opened after the queries, and the cron's own
+        # transaction writes nothing. These host rows are the ones the
+        # durable hooks of ``host_metrics``, ``full_setup`` and
+        # ``host_hardening`` and a save of the host write: under the
+        # cron's snapshot, the second writer lost the row and the whole
+        # pass rolled back, the disk status with it. A row written here
+        # must never be written by the cron's transaction too, before or
+        # after, or the two cursors would wait for each other.
+        with read_committed_cursor(self.env.registry) as cr:
+            env = self.env(cr=cr)
+            # The central answered every query: what the convergence of
+            # the direct path reads as "the central is up"
+            # (cloud_host_direct).
+            env["cloud.settings"].sudo()._direct_note_read_ok()
+            env["cloud.host"]._write_specs_from_metrics(readings, now)
+
+    @api.model
+    def _write_specs_from_metrics(self, readings, now):
+        """Write what the metrics backend read of each host.
+
+        Called on the specs cron's READ COMMITTED cursor: everything it
+        writes goes through ``self.env``.
+
+        :param dict readings: ``{host_id: {field: value}}`` as queried.
+        :param datetime now: the time stamped as the hosts' last read.
+        """
         for host in self.sudo().browse(list(readings)).exists():
             data = readings[host.id]
             # ``metrics_last_seen`` is written here and nowhere else. The

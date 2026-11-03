@@ -16,14 +16,18 @@ host would quietly leave the pool with no alert and no log line.
 
 These tests pin both directions of that transition.
 """
+import contextlib
+import re
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from odoo import fields
+from odoo.sql_db import Cursor
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models import cloud_host_metrics
 from odoo.addons.incubacloud.models.host_metrics_executor import (
     DISK_CRITICAL_THRESHOLD,
 )
@@ -37,6 +41,10 @@ class HostMetricsHandoverCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The cron writes on a READ COMMITTED cursor of its own: in test
+        # mode it rides on this transaction, outside it would be a real
+        # connection that sees nothing of the test and waits for its locks.
+        self.registry_enter_test_mode()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({
             "metrics_enabled": True,
@@ -85,7 +93,15 @@ class HostMetricsHandoverCase(TransactionCase):
             return resp
 
         with patch(f"{_MODULE}.requests.get", side_effect=fake_get):
-            self.env["cloud.host"]._cron_refresh_specs_from_metrics()
+            self._cron()
+
+    def _cron(self):
+        """Run the specs cron as after a commit: what the test wrote is
+        flushed first, and the test reads what the cron's own cursor
+        wrote afterwards."""
+        self.env.flush_all()
+        self.env["cloud.host"]._cron_refresh_specs_from_metrics()
+        self.env.invalidate_all()
 
     def _disk_alerts(self):
         return self.env["cloud.alert"].sudo().search([
@@ -114,7 +130,7 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         self.assertTrue(self.settings.metrics_read_ok_at)
         self.settings.metrics_read_ok_at = False
         with patch("requests.get", side_effect=requests.ConnectionError("down")):
-            self.env["cloud.host"]._cron_refresh_specs_from_metrics()
+            self._cron()
         self.settings.invalidate_recordset()
         self.assertFalse(self.settings.metrics_read_ok_at)
 
@@ -182,3 +198,85 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         self.assertEqual(self.host.ram_total_gb, 8.0)
         self.assertEqual(self.host.disk_usage, 50.0)
         self.assertTrue(self.host.last_probed)
+
+
+#: The table a writing statement writes, whatever the statement.
+_WRITE = re.compile(
+    r"^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+\"?(\w+)\"?",
+    re.IGNORECASE,
+)
+
+
+class TestTheCronsTransactionWritesNothing(HostMetricsHandoverCase):
+    """Every write of the specs cron is on its READ COMMITTED cursor.
+
+    The host rows it stamps are the ones the durable hooks of
+    ``host_metrics``, ``full_setup`` and ``host_hardening`` and a save of
+    the host write. Written in the cron's REPEATABLE READ snapshot after
+    the PromQL queries, the second writer lost the row and the whole
+    pass rolled back, the disk status with it (inventory H7). The rule
+    pinned here: the separate cursor only writes rows the cron's own
+    transaction does not write, before or after; and since that
+    transaction writes nothing at all, no row can be written by both.
+    """
+
+    def _writes(self, percent):
+        """Run the cron and sort what it wrote by the cursor writing it.
+
+        :return: ``(main, separate)``, the sets of tables written by the
+            cron's transaction and by its READ COMMITTED cursor.
+        """
+        # What the test itself wrote is not the cron's.
+        self.env.flush_all()
+        main, separate = set(), set()
+        inside = []
+        real_open = cloud_host_metrics.read_committed_cursor
+        real_execute = Cursor.execute
+
+        @contextlib.contextmanager
+        def tracked(registry):
+            """Open the real cursor and note while it is in use, its
+            commit included."""
+            inside.append(True)
+            try:
+                with real_open(registry) as cr:
+                    yield cr
+            finally:
+                inside.pop()
+
+        def spy(cr, query, params=None, *args, **kwargs):
+            """Note the table of every write, by the cursor it is on."""
+            code = getattr(query, "code", query)
+            found = _WRITE.match(code if isinstance(code, str) else "")
+            if found:
+                (separate if inside else main).add(found.group(1))
+            return real_execute(cr, query, params, *args, **kwargs)
+
+        with patch.object(
+            cloud_host_metrics, "read_committed_cursor", side_effect=tracked,
+        ), patch.object(Cursor, "execute", autospec=True, side_effect=spy):
+            self._refresh_with_disk_usage(percent)
+            # What the cron's transaction left in its cache would be
+            # written by its commit.
+            self.env.flush_all()
+        return main, separate
+
+    def test_the_hosts_and_the_disk_status_are_written_apart(self):
+        self.host.write({"status": "compatible"})
+        main, separate = self._writes(DISK_CRITICAL_THRESHOLD + 2)
+        self.assertIn("cloud_host", separate)
+        self.assertEqual(self.host.status, "degraded")
+        self.assertEqual(main, set())
+        self.assertFalse(main & separate)
+
+    def test_a_recovered_disk_resolves_its_alert_apart_too(self):
+        self.env["cloud.alert"].sudo().raise_alert(
+            "disk_critical", "Disk at 99%", host=self.host, level="critical",
+            confirm_after=1,
+        )
+        self.host.write({"status": "degraded"})
+        main, separate = self._writes(20)
+        self.assertIn("cloud_alert", separate)
+        self.assertEqual(self.host.status, "compatible")
+        self.assertFalse(self._disk_alerts())
+        self.assertEqual(main, set())
