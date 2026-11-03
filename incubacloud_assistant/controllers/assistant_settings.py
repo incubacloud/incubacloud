@@ -77,7 +77,14 @@ class AssistantSettingsRoutes(http.Controller):
         )
 
     def _candidates(self):
-        """Return the panel's internal users with a cloud role."""
+        """Return the panel's internal users with a cloud role.
+
+        The platform's own users are left out
+        (``cloud.settings._assistant_is_platform_user``): the cron bot and
+        Odoo's, and on a tenant panel IncubaCloud's support user. The manager
+        sees, and may choose, the people of the panel only.
+        """
+        Settings = request.env["cloud.settings"]
         groups = [
             request.env.ref(f"incubacloud.{group}").id for group in _GROUP_HIERARCHY
         ]
@@ -101,24 +108,35 @@ class AssistantSettingsRoutes(http.Controller):
                 "role": self._role(user),
             }
             for user in users
+            if not Settings._assistant_is_platform_user(user)
         ]
 
     @staticmethod
     def _models(config):
-        """Return the provider's listing, tagged."""
-        recommended = RECOMMENDED.get(config.provider, ())
+        """Return the provider's listing kept in *config*, tagged."""
+        return AssistantSettingsRoutes._tagged(config.provider, config.models)
+
+    @staticmethod
+    def _tagged(provider, items):
+        """Return *provider*'s listing *items*, each tagged as the tab shows it.
+
+        :param str provider: the provider's code
+        :param items: ``{id, name, tools, price_in, price_out}`` dicts
+        :return: ``{id, name, tools, recommended, price_known}`` dicts
+        :rtype: list
+        """
+        recommended = RECOMMENDED.get(provider, ())
+        by_id = {item["id"]: item for item in items}
         return [
             {
                 "id": item["id"],
                 "name": item.get("name") or item["id"],
                 "tools": item.get("tools"),
                 "recommended": item["id"] in recommended,
-                "price_known": pricing.price_for(
-                    config.provider, item["id"], config.listing
-                )
+                "price_known": pricing.price_for(provider, item["id"], by_id.get)
                 is not None,
             }
-            for item in config.models
+            for item in items
         ]
 
     @staticmethod
@@ -157,6 +175,7 @@ class AssistantSettingsRoutes(http.Controller):
         self._check()
         Settings = request.env["cloud.settings"]
         config = Settings._assistant_config()
+        candidates = self._candidates()
         return {
             "enabled": config.enabled,
             "provider": config.provider,
@@ -172,8 +191,10 @@ class AssistantSettingsRoutes(http.Controller):
                 Settings._get_system().assistant_models_at
             )
             or "",
-            "user_ids": sorted(config.user_ids),
-            "candidates": self._candidates(),
+            # Among the candidates only: a user chosen before the platform's
+            # were left out is not sent back with the next save.
+            "user_ids": sorted(config.user_ids & {c["id"] for c in candidates}),
+            "candidates": candidates,
             "monthly_limit": config.monthly_limit,
             "step_cap": config.step_cap,
             "blocked": Settings._assistant_blocked_reason(),
@@ -194,10 +215,18 @@ class AssistantSettingsRoutes(http.Controller):
         first-use notice again: it names the provider. It also switches the
         assistant off: switching it on again asks for the box, as any
         switch-on.
+
+        Switching on with a key but without allowed models or a default
+        model is not refused: the rest of the save is kept (a new key and
+        its listing with it), the assistant stays off, and ``warning`` says
+        what is missing.
+
+        :return: ``{ok: true}``, with ``warning`` when it was not switched
+            on; or ``{ok: false, error}`` and nothing saved
         """
         self._check()
         try:
-            write = self._changes(dict(vals or {}))
+            write, warning = self._changes(dict(vals or {}))
         except _Refusal as refusal:
             return _refused(str(refusal))
         if write:
@@ -207,10 +236,14 @@ class AssistantSettingsRoutes(http.Controller):
             request.env["res.users"].sudo().with_context(active_test=False).search(
                 [("assistant_notice_at", "!=", False)]
             ).write({"assistant_notice_at": False})
+        if warning:
+            return {"ok": True, "warning": warning}
         return {"ok": True}
 
     def _changes(self, vals):
-        """Return the settings' fields *vals* changes, every one checked.
+        """Return ``(fields, warning)``: the fields *vals* changes, every one checked.
+
+        *warning* is why the assistant was not switched on, or "".
 
         :raises _Refusal: with the reason, for the first value refused
         """
@@ -226,8 +259,8 @@ class AssistantSettingsRoutes(http.Controller):
         self._users_and_limits(vals, write)
         limit = write.get("assistant_monthly_limit", config.monthly_limit)
         self._check_default_price(provider, default, items, limit)
-        self._switch(vals, key, allowed, default, write)
-        return write
+        warning = self._switch(vals, key, allowed, default, write)
+        return write, warning
 
     def _provider_and_key(self, vals, config, provider, key):
         """Return ``(fields, the provider's listing)`` for the provider and the key.
@@ -348,29 +381,46 @@ class AssistantSettingsRoutes(http.Controller):
 
         Switching it on (it was off, or the save changes the provider) needs
         the box ticked in the same save, recorded last of all
-        (:meth:`_terms_accepted`).
+        (:meth:`_terms_accepted`). With a key but without allowed models or
+        a default model, it stays off and the rest of the save goes on: a
+        key typed in it was tried, and is kept with its listing, so the
+        models can be chosen from it.
 
-        :raises _Refusal: on a database that blocks it, without a key,
-            allowed models and a default model, or without the acceptance
+        :return: why it was not switched on, or ""
+        :rtype: str
+        :raises _Refusal: on a database that blocks it, without a key, or
+            without the acceptance
         """
         if "enabled" not in vals or write.get("assistant_api_key") is False:
-            return
+            return ""
         Settings = request.env["cloud.settings"]
         blocked = Settings._assistant_blocked_reason()
         if vals["enabled"] and blocked:
             raise _Refusal(blocked)
         has_key = bool(key or Settings._assistant_key())
-        if vals["enabled"] and not (has_key and default and allowed):
+        if vals["enabled"] and not has_key:
             raise _Refusal(
                 _(
                     "Set the provider's key, the allowed models and a default "
                     "model before switching it on."
                 )
             )
+        if vals["enabled"] and not (default and allowed):
+            write["assistant_enabled"] = False
+            if key:
+                return _(
+                    "Key saved. Choose the allowed models and a default model, "
+                    "then switch the assistant on."
+                )
+            return _(
+                "Choose the allowed models and a default model, then switch the "
+                "assistant on."
+            )
         was_on = Settings._assistant_config().enabled
         if vals["enabled"] and (not was_on or "assistant_provider" in write):
             write.update(AssistantSettingsRoutes._terms_accepted(vals))
         write["assistant_enabled"] = bool(vals["enabled"])
+        return ""
 
     @staticmethod
     def _terms_accepted(vals):
@@ -424,6 +474,32 @@ class AssistantSettingsRoutes(http.Controller):
             return _refused(error)
         Settings._assistant_save_models(listing)
         return {"ok": True, "models": self._models(Settings._assistant_config())}
+
+    @http.route("/cloud/assistant/read_models", type="json", auth="user")
+    def assistant_read_models(self, provider=None, api_key=None):
+        """Read the provider's models with a key typed in the form; keep nothing.
+
+        The tab lists them to choose from before anything is saved: neither
+        the key nor the listing is kept here. Save tries the key again and
+        keeps both (:meth:`assistant_save_settings`). The key goes to the
+        provider it was typed for only, and an error never quotes it.
+
+        :param str provider: the provider of the form; the saved one if none
+        :param str api_key: the key typed
+        :return: ``{ok: true, models}``, tagged as ``get_settings`` tags them,
+            or ``{ok: false, error}``
+        """
+        self._check()
+        provider = provider or request.env["cloud.settings"]._assistant_config().provider
+        if provider not in [code for code, _label, _beta in PROVIDERS]:
+            return _refused(_("Unknown AI provider."))
+        key = str(api_key or "").strip()
+        if not key:
+            return _refused(_("Type the provider's key first."))
+        listing, error = self._listing(provider, key)
+        if error:
+            return _refused(error)
+        return {"ok": True, "models": self._tagged(provider, listing)}
 
     @http.route("/cloud/assistant/usage", type="json", auth="user")
     def assistant_usage(self, months=12):

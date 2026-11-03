@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="incubacloud.MultiSelect">
+        <div class="ic-multi-select"
+             t-att-class="{
+                 'ic-multi-select--open': state.open,
+                 'ic-multi-select--disabled': props.disabled,
+             }">
+
+            <!-- The chosen options as chips, and the search field after them. -->
+            <div class="ic-multi-select__field" t-ref="wrap" t-on-click="onFieldClick">
+                <span t-foreach="chips" t-as="chip" t-key="chip.value"
+                      t-att-class="'ic-multi-select__chip' + (chip.disabled ? ' ic-multi-select__chip--disabled' : '')">
+                    <span class="ic-multi-select__chip-label" t-esc="chip.label"/>
+                    <button type="button" class="ic-multi-select__remove"
+                            t-att-aria-label="removeLabel(chip)"
+                            t-att-disabled="props.disabled || null"
+                            t-on-click.stop="() => this.remove(chip.value)">×</button>
+                </span>
+                <input class="ic-multi-select__input" t-ref="input"
+                       type="text"
+                       autocomplete="off"
+                       role="combobox"
+                       aria-autocomplete="list"
+                       t-att-id="props.id"
+                       t-att-aria-label="props.ariaLabel"
+                       t-att-aria-expanded="state.open ? 'true' : 'false'"
+                       t-att-aria-controls="menuId"
+                       t-att-placeholder="props.placeholder"
+                       t-att-disabled="props.disabled || null"
+                       t-att-value="state.input"
+                       t-on-focus="open"
+                       t-on-input="onInput"
+                       t-on-keydown="onKeydown"
+                       t-on-blur="onBlur"/>
+            </div>
+
+            <!-- The options left, fixed-positioned to escape overflow clipping. -->
+            <div t-if="state.open" class="ic-multi-select__menu" role="listbox"
+                 aria-multiselectable="true"
+                 t-att-id="menuId" t-att-style="state.menuStyle">
+                <div t-foreach="filtered" t-as="option" t-key="option.value"
+                     role="option"
+                     aria-selected="false"
+                     t-att-aria-disabled="option.disabled ? 'true' : 'false'"
+                     t-att-class="'ic-multi-select__option'
+                         + (option_index === state.active ? ' ic-multi-select__option--active' : '')
+                         + (option.disabled ? ' ic-multi-select__option--disabled' : '')"
+                     t-on-mousedown.prevent="() => this.pick(option)">
+                    <span class="ic-multi-select__label" t-esc="option.label"/>
+                    <span t-if="option.hint" class="ic-multi-select__hint" t-esc="option.hint"/>
+                </div>
+                <div t-if="!filtered.length" class="ic-multi-select__empty" t-esc="props.emptyText"/>
+            </div>
+
+        </div>
+    </t>
+
+</templates>

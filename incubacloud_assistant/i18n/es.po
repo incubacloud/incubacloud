@@ -130,10 +130,6 @@ msgstr "Permita solo modelos que el proveedor lista."
 #. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid "Allowed"
-msgstr "Permitido"
-
-#. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_allowed_models
 msgid "Allowed models"
 msgstr "Modelos permitidos"
@@ -315,6 +311,30 @@ msgid "Channel"
 msgstr "Canal"
 
 #. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid ""
+"Choose the allowed models and a default model to switch the assistant on."
+msgstr ""
+"Para encender el asistente, elija los modelos permitidos y un modelo "
+"predeterminado."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"Choose the allowed models and a default model, then switch the assistant on."
+msgstr ""
+"Elija los modelos permitidos y un modelo predeterminado, y después encienda "
+"el asistente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Choose the allowed models first"
+msgstr "Elija primero los modelos permitidos"
+
+#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
 msgid "Choose users of the panel with a role."
@@ -445,10 +465,6 @@ msgstr "Creando el staging"
 #. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid "Default"
-msgstr "Predeterminado"
-
-#. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_default_model
 msgid "Default model"
 msgstr "Modelo predeterminado"
@@ -663,6 +679,16 @@ msgid "Job result"
 msgstr "Resultado del trabajo"
 
 #. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"Key saved. Choose the allowed models and a default model, then switch the "
+"assistant on."
+msgstr ""
+"Clave guardada. Elija los modelos permitidos y un modelo predeterminado, y "
+"después encienda el asistente."
+
+#. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__lang
 msgid "Lang"
 msgstr "Idioma"
@@ -723,7 +749,6 @@ msgstr "Mensaje"
 #. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__model_id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__model_id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__model
@@ -780,7 +805,7 @@ msgstr "Nadie ha usado todavía el asistente."
 
 #. module: incubacloud_assistant
 #. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
 msgid "Not usable with a monthly limit"
 msgstr "No se puede usar con un límite mensual"
 
@@ -860,7 +885,7 @@ msgstr "Lugar en el contexto del modelo; 0 mientras está pendiente."
 #. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
 msgid "Price unknown"
 msgstr "Precio desconocido"
 
@@ -915,6 +940,28 @@ msgid "Read the Terms"
 msgstr "Leer los Términos del servicio"
 
 #. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Read the models"
+msgstr "Leer los modelos"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "Read the provider's models to switch the assistant on."
+msgstr "Para encender el asistente, lea los modelos del proveedor."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Read the provider's models with the saved key, then choose the ones\n"
+"                allowed."
+msgstr ""
+"Lea los modelos del proveedor con la clave guardada y elija después los "
+"permitidos."
+
+#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/models/assistant_message.py:0
 msgid "Reading the documentation"
@@ -931,6 +978,12 @@ msgstr "Leyendo el trabajo"
 #: code:addons/incubacloud_assistant/models/assistant_message.py:0
 msgid "Reading the logs"
 msgstr "Leyendo los logs"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Reading the models…"
+msgstr "Leyendo los modelos…"
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1003,15 +1056,21 @@ msgstr "Llamada en curso"
 
 #. module: incubacloud_assistant
 #. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid "Save the provider's key to read its models."
-msgstr "Guarde la clave del proveedor para leer sus modelos."
-
-#. module: incubacloud_assistant
-#. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
 msgid "Saved — type to replace it"
 msgstr "Guardada — escriba para reemplazarla"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Search models…"
+msgstr "Buscar modelos…"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Search users…"
+msgstr "Buscar usuarios…"
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1603,6 +1662,12 @@ msgstr "Marque \"%s\" para encender el asistente."
 
 #. module: incubacloud_assistant
 #. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "Tick the acceptance box to switch the assistant on."
+msgstr "Para encender el asistente, marque la casilla de aceptación."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 msgid "Tokens"
 msgstr "Tokens"
@@ -1651,6 +1716,31 @@ msgid ""
 msgstr ""
 "Escriba con él la clave del nuevo proveedor: el panel nunca envía la clave "
 "de un proveedor a otro."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid ""
+"Type the provider's key and read its models to switch the assistant on."
+msgstr ""
+"Para encender el asistente, escriba la clave del proveedor y lea sus "
+"modelos."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Type the provider's key first."
+msgstr "Escriba primero la clave del proveedor."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Type the provider's key, then read its models to choose from them. The key\n"
+"                is kept when you save."
+msgstr ""
+"Escriba la clave del proveedor y lea después sus modelos para elegir entre "
+"ellos. La clave se conserva cuando guarde los cambios."
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1708,6 +1798,8 @@ msgid "Users"
 msgstr "Usuarios"
 
 #. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_user_ids
 msgid "Users of the assistant"
 msgstr "Usuarios del asistente"

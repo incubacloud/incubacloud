@@ -1,0 +1,164 @@
+// ─── MultiSelect ──────────────────────────────────────────────────────────────
+// Generic searchable multi-select on the rl design tokens: chips and a search
+// field in one box the height of the panel's other fields, and a menu that is
+// position:fixed (coords from _menuStyle in the .js) so it escapes any
+// overflow:hidden ancestor.
+
+.ic-multi-select {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+
+    &__field {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        min-block-size: 40px;
+        padding: 5px 8px;
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        cursor: text;
+
+        &:focus-within {
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
+        }
+    }
+
+    &--disabled &__field {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    &__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-inline-size: 100%;
+        padding: 2px 4px 2px 9px;
+        border-radius: 999px;
+        background: var(--rl-surf2);
+        border: 1px solid var(--rl-line2);
+        color: var(--rl-fg);
+        font-family: var(--rl-fm);
+        font-size: 11px;
+
+        &--disabled {
+            color: var(--rl-muted);
+            border-style: dashed;
+        }
+    }
+
+    // A long name breaks inside its chip rather than widening the page.
+    &__chip-label {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+    }
+
+    &__remove {
+        flex: none;
+        background: none;
+        border: none;
+        padding: 0 4px;
+        color: inherit;
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0.6;
+        cursor: pointer;
+
+        &:hover,
+        &:focus-visible {
+            opacity: 1;
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+        }
+    }
+
+    &__input {
+        flex: 1 1 120px;
+        min-inline-size: 80px;
+        padding: 4px 2px;
+        background: none;
+        border: none;
+        outline: none;
+        color: var(--rl-fg);
+        font-family: var(--rl-fb);
+        font-size: 13px;
+
+        &::placeholder {
+            color: var(--rl-faint);
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+        }
+    }
+
+    // The box rings while focused (:focus-within): the panel's focus ring on
+    // the search field too drew a second box inside it.
+    & &__input:focus,
+    & &__input:focus-visible {
+        outline: none;
+        box-shadow: none;
+    }
+
+    &__menu {
+        position: fixed; // fallback; the inline style places it
+        z-index: 100050;
+        max-block-size: 280px;
+        overflow-y: auto;
+        padding: 5px;
+        background: var(--rl-surf2);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+        scrollbar-width: thin;
+        scrollbar-color: var(--rl-line2) transparent;
+    }
+
+    &__option {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px 10px;
+        padding: 8px 11px;
+        border-radius: var(--rl-rsm);
+        color: var(--rl-fg2);
+        font-size: 13px;
+        cursor: pointer;
+
+        &:hover,
+        &--active {
+            background: var(--rl-surf3);
+            color: var(--rl-fg);
+        }
+
+        &--disabled,
+        &--disabled:hover {
+            opacity: 0.45;
+            cursor: not-allowed;
+            background: transparent;
+        }
+    }
+
+    &__label {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
+    }
+
+    &__hint {
+        color: var(--rl-muted);
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+    }
+
+    &__empty {
+        padding: 8px 11px;
+        color: var(--rl-muted);
+        font-size: 12px;
+    }
+}

@@ -201,6 +201,19 @@ describe("assistant_format", () => {
                 settingsChanges(loaded, { ...loaded, clear_api_key: true, api_key: "sk-2" })
             ).toEqual({ api_key: "sk-2" });
         });
+        test("settings: another provider sends its models and the switch, even as saved", () => {
+            const loaded = {
+                enabled: true, provider: "anthropic", default_model: "a", monthly_limit: 0,
+                step_cap: 30, allowed_models: ["a"], user_ids: [], api_key: "",
+                clear_api_key: "",
+            };
+            expect(
+                settingsChanges(loaded, { ...loaded, provider: "openrouter", api_key: "sk-3" })
+            ).toEqual({
+                provider: "openrouter", default_model: "a", allowed_models: ["a"], enabled: true,
+                api_key: "sk-3",
+            });
+        });
         test("roles by their panel name", () => {
             expect(roleLabel("group_cloud_developer")).toBe("Developer");
             expect(roleLabel("nope")).toBe("");

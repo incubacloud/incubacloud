@@ -20,6 +20,27 @@ _ON = "Assistant on"
 #: The box and the Terms of a tenant panel, as incubacloud_tenant answers them.
 _TERMS = "I accept section 12A (AI features) of the Terms of Service"
 _TERMS_URL = "https://www.incubacloud.io/terms"
+#: The options of a selector of the tab, once it is opened: the menu of the
+#: field whose search box has the id given.
+_MENU = """
+const openMenu = async (id) => {
+    const input = await until(`the selector ${id}`, () => document.getElementById(id));
+    input.closest(".ic-multi-select__field").click();
+    return until(`the menu of ${id}`, () => document.getElementById(`${id}-menu`));
+};
+const option = (id, label) => [
+    ...(document.getElementById(`${id}-menu`)?.querySelectorAll(".ic-multi-select__option") || []),
+].find((el) => el.querySelector(".ic-multi-select__label").textContent.trim() === label);
+const pick = async (id, label) => {
+    await openMenu(id);
+    const found = await until(`the option ${label}`, () => option(id, label));
+    found.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    await until(`${label} chosen`, () => [
+        ...document.getElementById(id).closest(".ic-multi-select")
+            .querySelectorAll(".ic-multi-select__chip-label"),
+    ].some((chip) => chip.textContent.trim() === label));
+};
+"""
 
 
 @tagged("post_install", "-at_install")
@@ -77,19 +98,22 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         )
 
     def test_under_a_limit_an_unpriced_model_cannot_be_allowed(self):
-        """Its box is disabled while the form has a limit, and free again at 0."""
+        """Its option is disabled while the form has a limit, and free again at 0."""
         self._configure(models=MODELS + ("claude-new-x",), limit=10.0)
         self._in_settings(
             "assistant",
-            f"""
-            const box = () => document.querySelector(
-                '.ic-asst-models input[aria-label="claude-new-x"]');
-            await until("the unpriced model's box", box);
-            if (!box().disabled) {{
+            _MENU
+            + f"""
+            await openMenu("ic_asst_allowed");
+            const unpriced = () => option("ic_asst_allowed", "claude-new-x");
+            await until("the unpriced model's option", unpriced);
+            if (unpriced().getAttribute("aria-disabled") !== "true"
+                    || !unpriced().textContent.includes("Not usable with a monthly limit")) {{
                 throw new Error("an unpriced model can be allowed under a limit");
             }}
             await type("{_LIMIT}", "0");
-            await until("the box to be free without a limit", () => !box().disabled);
+            await until("the option to be free without a limit",
+                () => unpriced().getAttribute("aria-disabled") === "false");
         """,
         )
 
@@ -203,38 +227,91 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         """,
         )
 
-    def test_another_provider_empties_the_models_and_needs_its_key(self):
-        """Its models are asked for again, and saved with the key typed with it.
+    def test_another_provider_is_read_chosen_and_switched_on_in_one_save(self):
+        """Its key typed, its models read before saving, chosen, and on, in one save.
 
-        Meanwhile the switch is off and cannot go on: saved, switching on
-        asks for the box again.
+        Switching provider empties the models and the switch cannot go on;
+        the switch says what it waits for at each step. The models are read
+        with the key typed, and nothing is saved until Save, which keeps the
+        key, the models chosen and the switch together.
         """
+        # No acceptance on record yet: the line the save brings is this one's.
+        self._configure(terms=False)
         label = self.env["cloud.settings"]._assistant_terms_label()
-        self._in_settings(
-            "assistant",
-            f"""
-            const select = await until("the provider", () => document.querySelector(
-                "#ic_asst_provider"));
-            select.value = "openai";
-            select.dispatchEvent(new Event("change", {{ bubbles: true }}));
-            await until("the models to go", () => document.body.textContent.includes(
-                "Save the provider's key to read its models."));
-            const on = await field("{_ON}");
-            if (on.checked || !on.disabled) {{
-                throw new Error("the switch stays on, or can be, with no models");
-            }}
-            await type("{_KEY_FIELD}", "sk-openai-typed-0007");
-            await save();
-            await expectAllSaved();
-            await until("the box asked for again", () => shownRow("{label}"));
-        """,
-        )
+        Settings = type(self.env["cloud.settings"])
+        with patch.object(
+            Settings,
+            "_assistant_record_terms_acceptance",
+            autospec=True,
+            side_effect=lambda _settings, acceptance: {**acceptance, "v": ""},
+        ):
+            self._in_settings(
+                "assistant",
+                _MENU
+                + f"""
+                const hint = () => document.getElementById("ic_asst_switch_hint")?.textContent || "";
+                const select = await until("the provider", () => document.querySelector(
+                    "#ic_asst_provider"));
+                select.value = "openai";
+                select.dispatchEvent(new Event("change", {{ bubbles: true }}));
+                await until("the models to go", () => document.body.textContent.includes(
+                    "Type the provider's key, then read its models"));
+                const on = await field("{_ON}");
+                if (on.checked || !on.disabled || !hint().includes("Type the provider's key")) {{
+                    throw new Error("the switch stays on, or can be, with no key: " + hint());
+                }}
+                await type("{_KEY_FIELD}", "sk-openai-typed-0007");
+                await until("the switch to ask for the models",
+                    () => hint().includes("Read the provider's models"));
+                document.getElementById("ic_asst_read_models").click();
+                // The provider names its models: the selector shows their names.
+                await pick("ic_asst_allowed", "Claude Opus 5.5");
+                expectSent("/cloud/assistant/read_models", true);
+                expectSent("/cloud/assistant/save_settings", false);
+                const chosen = document.querySelector(".ic-asst-default .rl-sel__value");
+                if (chosen.textContent.trim() !== "Claude Opus 5.5") {{
+                    throw new Error("the default is not the model allowed: " + chosen.textContent);
+                }}
+                await until("the switch to ask for the box",
+                    () => hint().includes("acceptance box"));
+                (await field("{label}")).click();
+                await until("the switch to be free", () => !on.disabled);
+                on.click();
+                await save();
+                await expectAllSaved();
+                await until("the acknowledgement shown", () => document.body.textContent
+                    .includes("Last switched on, with the box ticked, on"));
+                await expectValue("{_KEY_FIELD}", "");
+            """,
+            )
         self.env.invalidate_all()
         config = self.env["cloud.settings"]._assistant_config()
         self.assertEqual(config.provider, "openai")
-        self.assertEqual(list(config.allowed_models), [])
-        self.assertFalse(config.default_model)
-        self.assertFalse(config.enabled)
+        self.assertEqual(self.env["cloud.settings"]._assistant_key(), "sk-openai-typed-0007")
+        self.assertEqual(list(config.allowed_models), ["claude-opus-5-5"])
+        self.assertEqual(config.default_model, "claude-opus-5-5")
+        self.assertTrue(config.enabled)
+
+    def test_the_users_are_chosen_in_a_selector(self):
+        """A user picked from the selector is saved; the platform's are not offered."""
+        self._configure()
+        user = self._cloud_user("asis-ui-dev")
+        platform = self._cloud_user("__asis-ui-platform__", group="group_cloud_manager")
+        self._in_settings(
+            "assistant",
+            _MENU
+            + f"""
+            await openMenu("ic_asst_users");
+            if (option("ic_asst_users", "{platform.name}")) {{
+                throw new Error("a user of the platform is offered");
+            }}
+            await pick("ic_asst_users", "{user.name}");
+            await save();
+            await expectAllSaved();
+        """,
+        )
+        self.env.invalidate_all()
+        self.assertIn(user.id, self.env["cloud.settings"]._assistant_config().user_ids)
 
 
 class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
