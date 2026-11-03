@@ -265,4 +265,53 @@ export const MoveMixin = (Base) =>
         this.env.toast?.error(e.data?.message || e.message || _t("Roll back failed"));
       }
     }
+
+    // ── Frozen copy ───────────────────────────────────────────────────────
+
+    /**
+     * Whether the last move left a frozen copy on its old host.
+     *
+     * @returns {boolean}
+     */
+    get hasFrozenCopy() {
+      return !!this.state.inst?.move_frozen_source_host;
+    }
+
+    /**
+     * Confirm and remove the frozen copy the last move left on the old
+     * host, now rather than when its time is up. Refreshes on success.
+     *
+     * @returns {Promise<void>}
+     */
+    async cleanFrozenCopy() {
+      const ok = await this._confirm({
+        title: _t("Clean frozen copy"),
+        message: _t(
+          "Remove the stopped copy the last move left on %s, with its data. It can no longer be restored from by hand afterwards."
+        ).replace("%s", this.state.inst.move_frozen_source_host),
+        confirmLabel: _t("Clean frozen copy now"),
+        isDanger: true,
+      });
+      if (!ok) return;
+      try {
+        const r = await rpc("/cloud/clean_frozen_copy", {
+          instance_id: this.props.instance_id,
+        });
+        if (r.ok === false) {
+          this.env.toast?.error(r.error || _t("Could not clean the frozen copy"));
+          return;
+        }
+        if (r.job_id) {
+          await announceJob(this.env.toast, r.job_id);
+        } else {
+          // Its host cannot be reached: the copy was forgotten.
+          this.env.toast?.success(_t("Frozen copy forgotten: its host cannot be reached."));
+        }
+        this._silentRefresh();
+      } catch (e) {
+        this.env.toast?.error(
+          e.data?.message || e.message || _t("Could not clean the frozen copy")
+        );
+      }
+    }
   };

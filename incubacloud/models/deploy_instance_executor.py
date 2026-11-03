@@ -153,6 +153,37 @@ def _github_authed_url(url, token):
     return url
 
 
+#: ``cpu_shares`` by ``cloud.instance.scheduling_priority``: 1024 is
+#: Docker's own default, so a normal instance weighs what it always did.
+_CPU_SHARES = {"low": 512, "normal": 1024, "high": 2048}
+
+_MEMORY_RE = re.compile(r"^(\d+(?:\.\d+)?)([bkmgt]?)$", re.IGNORECASE)
+_LOWER_UNIT = {"t": "g", "g": "m", "m": "k", "k": "b"}
+
+
+def _half_memory(limit):
+    """Return half of a compose memory value, in the same unit when it can.
+
+    ``1280m`` → ``640m``, ``2g`` → ``1g``; a half that is not whole moves
+    to the next unit down (``1g`` → ``512m``), as compose reads only a
+    whole number of a unit reliably.
+
+    :param str limit: a ``mem_limit`` value
+    :return: the half, or '' when *limit* is not a memory value
+    :rtype: str
+    """
+    match = _MEMORY_RE.match(str(limit or "").strip())
+    if not match:
+        return ""
+    number, unit = float(match.group(1)), match.group(2).lower()
+    half = number / 2
+    while half != int(half) and unit in _LOWER_UNIT:
+        half, unit = half * 1024, _LOWER_UNIT[unit]
+    if half != int(half) or half <= 0:
+        return ""
+    return f"{int(half)}{'' if unit == 'b' else unit}"
+
+
 #: Compose keys whose list an addon fragment may add entries to. Any
 #: other list (``command``, ``entrypoint``) is one value, never appended.
 _ADDITIVE_LISTS = frozenset({"volumes", "env_file", "depends_on"})
@@ -855,6 +886,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 if cpus:
                     entry["cpus"] = cpus
                 services[svc] = entry
+        for svc in ("odoo", "db"):
+            if svc in allowed:
+                services.setdefault(svc, {}).update(
+                    self._scheduling_priority_entry(inst, services[svc]),
+                )
         key, value = PROTECT_LABEL.split("=", 1)
         settings = self.env["cloud.settings"].sudo()._get()
         for svc in allowed:
@@ -933,6 +969,30 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             default_flow_style=False,
             allow_unicode=True,
         )
+
+    def _scheduling_priority_entry(self, inst, entry):
+        """Return what the instance's priority adds to a service's override.
+
+        ``cpu_shares`` weighs the service's CPU against the other
+        containers of the host only when the host is busy: 512, 1024 (the
+        Docker default) or 2048 for a low, normal or high priority. A high
+        one also reserves half of the service's memory limit
+        (``mem_reservation``), which the kernel reclaims from the others
+        first under memory pressure.
+
+        :param inst: the ``cloud.instance``
+        :param dict entry: the service's override so far, ``mem_limit``
+            included when it has one
+        :return: the keys to add
+        :rtype: dict
+        """
+        priority = inst.scheduling_priority or "normal"
+        added = {"cpu_shares": _CPU_SHARES.get(priority, 1024)}
+        if priority == "high" and entry.get("mem_limit"):
+            reservation = _half_memory(entry["mem_limit"])
+            if reservation:
+                added["mem_reservation"] = reservation
+        return added
 
     def _conf_content(self):
         """Return Odoo conf with the proxy settings the platform owns.
@@ -1610,7 +1670,31 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 f"cd {d} && docker compose up -d",
             ),
         ]
+        if inst.move_origin_host_id:
+            skipped = self._move_skipped_labels()
+            cmds = [cmd for cmd in cmds if cmd[0] not in skipped]
         return cmds
+
+    def _move_skipped_labels(self):
+        """Return the steps a move's deploy of its destination leaves out.
+
+        A move deploys the destination only to receive the source's
+        database: whatever these steps would put in a database of its
+        own, the restore replaces minutes later. Code, images and every
+        container still come — Odoo starts with no database and serves
+        nothing, and the next step of the move stops it; the restore
+        starts Odoo with ``compose start``, which creates no container.
+        Layers above add their own steps.
+
+        :return: step labels
+        :rtype: set
+        """
+        return {
+            "Start database",
+            "Initialize database",
+            "Initialize module checksums",
+            "Set system parameters",
+        }
 
     def parse_results(self, results):
         errors = []

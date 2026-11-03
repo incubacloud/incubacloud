@@ -102,7 +102,7 @@ class TestAMoveClosesEveryStep(TransactionCase):
         """A rollback leaves the instance on its source; the layer above
         (SaaS: the tenant the move put in 'provisioning') must hear it."""
         self._chain()
-        cleanup_id = self.inst._do_rollback_move()
+        cleanup_id = self.inst._do_rollback_move(kind="manual")
         cleanup = self.env["cloud.job"].browse(cleanup_id)
         Instance = type(self.inst)
         with patch.object(
@@ -110,7 +110,7 @@ class TestAMoveClosesEveryStep(TransactionCase):
         ) as rolled_back:
             self._close(cleanup)
         rolled_back.assert_called_once_with(
-            self.inst, target_host=self.target,
+            self.inst, target_host=self.target, outcome={"kind": "manual"},
         )
         self.assertFalse(self.inst.move_origin_host_id)
         self.assertEqual(self.inst.host_id, self.source)
@@ -119,7 +119,7 @@ class TestAMoveClosesEveryStep(TransactionCase):
         """The watchdog clears the markers of a rollback whose target
         could not be cleaned: the source runs, so the move is undone."""
         self._chain()
-        self.inst._do_rollback_move()
+        self.inst._do_rollback_move(kind="manual")
         self.env["cloud.job"].search(
             [("instance_id", "=", self.inst.id)],
         ).write({"state": "failed"})
@@ -128,8 +128,9 @@ class TestAMoveClosesEveryStep(TransactionCase):
             Instance, "_on_move_rolled_back", autospec=True,
         ) as rolled_back:
             self.env["cloud.instance"].cron_recover_stuck_moves()
+        # The outcome the rollback was queued with, read from its cleanup.
         rolled_back.assert_called_once_with(
-            self.inst, target_host=self.target,
+            self.inst, target_host=self.target, outcome={"kind": "manual"},
         )
         self.assertFalse(self.inst.move_origin_host_id)
 

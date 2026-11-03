@@ -174,7 +174,7 @@
             <field name="name">Move Cleanup (source)</field>
             <field name="code">move_cleanup_source</field>
             <field name="apply_to">instance</field>
-            <field name="description">Removes the old host copy after a successful move, without archiving the instance record.</field>
+            <field name="description">Removes the copy a move froze on the old host, without archiving the instance record.</field>
             <!-- False, not left out: an update writes only the fields
                  listed, and the type held the queue until 1.0.200. It
                  runs after the cutover, when the instance already lives
@@ -182,6 +182,27 @@
                  must not stop its backups and jobs. Its alert stays,
                  and so does the retry. -->
             <field name="failure_holds_queue">False</field>
+        </record>
+
+        <record id="move_quiet_check" model="cloud.job.type">
+            <field name="name">Move Quiet Check</field>
+            <field name="code">move_quiet_check</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Checks, right before a move stops the instance on its source, that nothing is running on it; when something is, the move is postponed and the source keeps serving.</field>
+        </record>
+
+        <record id="move_fingerprint" model="cloud.job.type">
+            <field name="name">Move Fingerprint</field>
+            <field name="code">move_fingerprint</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Counts the rows of a few tables and the filestore's files on the source of a move, once Odoo is stopped, so the restore on the destination can check it received the same.</field>
+        </record>
+
+        <record id="move_freeze_source" model="cloud.job.type">
+            <field name="name">Move Freeze (source)</field>
+            <field name="code">move_freeze_source</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Stops the old host copy after a successful move and keeps it, data included, for a while before it is removed.</field>
         </record>
 
         <record id="move_rollback_cleanup" model="cloud.job.type">

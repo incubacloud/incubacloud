@@ -288,6 +288,8 @@ class TestTeardownsShareTheHostLock(_HostLockBase):
             'user': 'ubuntu',
             'wildcard_domain': 'buildlock-new.example.com',
         })
+        # It left its copy frozen there, the one this removes.
+        self.instance.move_frozen_source_host_id = self.host
         executor = self._delete_executor(MoveCleanupSourceExecutor)
         cr = self._hold_lock(self.host.id)
         try:
