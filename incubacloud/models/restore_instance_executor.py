@@ -140,6 +140,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             instance the data comes from (a refresh from production): the
             restored database was encrypted with them. Odoo is then
             recreated rather than started, so it reads the new file.
+        as_move: the archive is this same database changing hosts (a
+            move), not a copy of it: it is loaded with ``--move``, so the
+            database keeps its ``database.secret`` (the sessions it signed
+            stay open), ``database.uuid`` and ``web.base.url``. A copy has
+            Odoo regenerate the three, the base URL as
+            ``http://localhost:8069``.
     """
 
     _job_type = "restore_instance"
@@ -748,6 +754,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         dbname = inst.postgres_dbname or 'prod'
         payload = self.job.payload or {}
         neutralize = "1" if payload.get('neutralize') else "0"
+        load_as = "move" if payload.get('as_move') else "copy"
 
         cmds = []
         if payload.get('mode') == 'from_url':
@@ -767,7 +774,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "Restore database",
                 self.run_script(
                     "restore.sh",
-                    ["restore-db", d, dbname, remote, neutralize],
+                    ["restore-db", d, dbname, remote, neutralize, load_as],
                     env=script_env(inst.odoo_version),
                 ),
                 {"stop_on_failure": True},

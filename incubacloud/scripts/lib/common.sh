@@ -359,11 +359,18 @@ SQL
 # Fill IC_DB_ARGS with the argv that loads <archive> into <db>, replacing
 # a database of that name, as a copy (a new database uuid, so the copy
 # never answers for the original) and neutralized when <neutralize> is 1.
-#   ic_db_load_args <db> <archive> <0|1>
+# With <as> set to ``move`` it is the same database changing machines: Odoo
+# keeps its ``database.secret`` (the sessions it signed stay open), its
+# ``database.uuid`` and its ``web.base.url``, which a copy regenerates.
+#   ic_db_load_args <db> <archive> <0|1> [copy|move]
 # shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
 ic_db_load_args() {
-    local database="$1" archive="$2" neutralize="${3:-0}" tool
+    local database="$1" archive="$2" neutralize="${3:-0}" as="${4:-copy}" tool
     tool="$(ic_db_tool)" || exit 1
+    case "$as" in
+        copy|move) ;;
+        *) ic_die "ic_db_load_args: unknown load: $as (expected copy or move)" ;;
+    esac
     local flags=()
     # A series without Odoo's own neutralization loads plainly, and its
     # script then runs what ic_db_neutralize_args builds.
@@ -371,10 +378,11 @@ ic_db_load_args() {
         && flags+=(--neutralize)
     case "$tool" in
         click-odoo)
-            IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" --copy --force "$database" "$archive")
+            IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" "--$as" --force "$database" "$archive")
             ;;
         odoo-db)
             # ``odoo db load`` copies unless told --move.
+            [ "$as" = move ] && flags+=(--move)
             IC_DB_ARGS=(odoo db load "${flags[@]}" --force "$database" "$archive")
             ;;
     esac

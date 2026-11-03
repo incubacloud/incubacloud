@@ -3,7 +3,7 @@
 #
 # Usage:
 #   restore.sh verify-file    <dir> <remote_zip>
-#   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize]
+#   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize] [copy|move]
 #   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   restore.sh use-mail-catcher <dir> <pg_user> <dbname>
 #   restore.sh ensure-connect <dir> <dbname>
@@ -15,6 +15,12 @@
 # → red banner). Callers that copy a production database into a staging
 # instance MUST pass 1; a move between hosts must not, since that is the
 # same production instance changing machines.
+#
+# Its optional 5th argument (copy/move, default copy) says whether the
+# archive is a copy or the database itself: a move loads it with
+# ``move``, so Odoo keeps the source's database.secret (the sessions it
+# signed stay open), database.uuid and web.base.url, where a copy has
+# them regenerated (the base URL to http://localhost:8069).
 #
 # ``set-base-url`` overwrites the web.base.url/report.url that travelled
 # inside the restored dump. It also drops web.base.url.freeze: with the
@@ -70,14 +76,16 @@ case "$op" in
         ;;
     restore-db)
         ic_require_args 2 "$#" \
-            "restore.sh restore-db <dir> <dbname> <remote_zip> [neutralize]"
-        dbname="$1"; remote="$2"; neutralize="${3:-0}"
+            "restore.sh restore-db <dir> <dbname> <remote_zip> [neutralize] [copy|move]"
+        dbname="$1"; remote="$2"; neutralize="${3:-0}"; load_as="${4:-copy}"
         if [ "$neutralize" = "1" ]; then
             ic_log "restoring $dbname (neutralized)"
+        elif [ "$load_as" = "move" ]; then
+            ic_log "restoring $dbname (moved, not copied)"
         else
             ic_log "restoring $dbname"
         fi
-        ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize"
+        ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize" "$load_as"
         ic_compose_run --rm -v "$remote:/mnt/restore.zip:ro" \
             odoo "${IC_DB_ARGS[@]}"
         if [ "$neutralize" = "1" ]; then

@@ -2284,6 +2284,10 @@ class CloudInstance(models.Model):
                 "payload": {
                     "mode": "from_host",
                     "source_job_id": f"__chain_job_{download_idx}__",
+                    # The same database changing hosts: a copy would
+                    # sign every panel session out and point the base
+                    # URL at localhost.
+                    "as_move": True,
                 },
             },
         ] + self._move_post_restore_steps(target_host) + [
