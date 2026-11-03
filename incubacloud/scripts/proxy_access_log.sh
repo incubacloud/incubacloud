@@ -20,10 +20,13 @@
 # in the entry, a run rotates only when the day has changed or the file
 # is over the limit; the other runs do nothing.
 #
-# Idempotent: runs on every Full Setup. Nothing here is fatal: a host
-# where the operator cannot escalate still serves traffic; the proxy
-# then creates the directory through its bind mount and the log grows
-# without rotation, which is said in the job log.
+# Idempotent: runs on every Full Setup, which counts this step. Only one
+# thing fails it: the logrotate entry that cannot be written, because
+# without it nothing ever rotates the log and it fills the disk. The
+# rest is not fatal and is said in the job log: the directory, which the
+# proxy creates through its bind mount; installing logrotate, the check
+# of the entry, and the ten-minute timer, without which the daily run
+# still rotates.
 set -uo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -97,7 +100,8 @@ CONF
                     || ic_warn "logrotate rejected $conf; the access log will not be rotated"
             fi
         else
-            ic_warn "could not write $conf: the access log will grow without rotation"
+            rm -f "$tmp"
+            ic_die "could not write $conf: the access log would grow without rotation"
         fi
         rm -f "$tmp"
 

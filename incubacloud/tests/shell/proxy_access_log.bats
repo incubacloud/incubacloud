@@ -111,6 +111,44 @@ teardown() {
     [ "$status" -ne 0 ]
 }
 
+@test "a logrotate entry that cannot be written fails the step" {
+    : > "$TMP/not-a-dir"
+    export IC_LOGROTATE_DIR="$TMP/not-a-dir/logrotate.d"
+    run "$SCRIPT" install
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"could not write"* ]]
+    # Nothing would rotate with the timer: it is not installed.
+    [ ! -f "$IC_SYSTEMD_DIR/incubacloud-traefik-logrotate.timer" ]
+}
+
+@test "a timer that cannot be enabled is not fatal" {
+    cat > "$TMP/bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+echo "systemctl $*" >> "$CALLS"
+exit 1
+STUB
+    run "$SCRIPT" install
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not enable"* ]]
+    [ -f "$CONF" ]
+}
+
+@test "logrotate that cannot be installed is not fatal" {
+    cat > "$TMP/bin/apt-get" <<'STUB'
+#!/usr/bin/env bash
+exit 100
+STUB
+    # No logrotate on PATH: only the stubs and what the script needs.
+    rm "$TMP/bin/logrotate"
+    for tool in bash cat cp chmod dirname id mkdir mktemp rm; do
+        ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
+    done
+    run env PATH="$TMP/bin" "$SCRIPT" install
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not install logrotate"* ]]
+    [ -f "$CONF" ]
+}
+
 @test "an unknown operation fails" {
     run "$SCRIPT" remove
     [ "$status" -ne 0 ]
