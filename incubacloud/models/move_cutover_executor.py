@@ -232,13 +232,17 @@ class MoveCleanupSourceExecutor(DeleteInstanceExecutor):
         """The teardown, whatever the record says about its own removal.
 
         ``removal_finalized`` speaks of the instance's own copy; the
-        frozen one is another, still on its host.
+        frozen one is another, still on its host. Then what the layers
+        remove with it (``cloud.instance._frozen_copy_cleanup_steps``).
         """
         inst = self._inst()
         if not inst.exists():
             self._sys("Instance already removed; nothing to do.")
             return []
-        return self._teardown_commands(inst)
+        return [
+            *self._teardown_commands(inst),
+            *inst._frozen_copy_cleanup_steps(),
+        ]
 
     async def on_success(self, results):
         self._sys("✓ Old host copy removed after move.")
