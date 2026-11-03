@@ -235,7 +235,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         host = self.job.host_id
         if (inst and inst.move_origin_host_id
                 and inst.move_target_host_id == host
-                and inst.move_frozen_source_host_id == host):
+                == inst.move_frozen_source_host_id):
             raise JobRefused(
                 f"Refused: the copy an earlier move froze on {host.name} is "
                 "still there, and the move would start it. Remove it "

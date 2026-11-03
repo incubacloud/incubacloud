@@ -625,6 +625,11 @@ class TestTheOldCopyIsFrozen(_MoveCase):
         ])
         self.assertEqual(alert.level, "warning")
         self.assertIn(self.source.name, alert.message)
+        # Removed later: the alert goes with it.
+        cleanup = self._job("move_cleanup_source", self.source)
+        asyncio.run(self._executor(cleanup).on_success({}))
+        self.assertFalse(self.inst.move_frozen_source_host_id)
+        self.assertEqual(alert.state, "dismissed")
 
     def test_the_instances_delete_removes_the_copy_first(self):
         self._frozen(until_hours=5)
