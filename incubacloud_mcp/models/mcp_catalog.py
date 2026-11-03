@@ -25,6 +25,10 @@ CORE_EXCLUDED = {
     "/cloud/<path:subpath>": _SPA,
     "/cloud/get_secret": "Secrets never leave through an agent (decision 6).",
     "/cloud/save_github_pat": "Credentials are only written in the panel (decision 6).",
+    "/cloud/clean_frozen_copy": (
+        "Removes a move's frozen copy: the panel's button alone, once the new host "
+        "is checked."
+    ),
     "/cloud/instance/<int:instance_id>/restore": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/begin": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/part": _UPLOAD,
