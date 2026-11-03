@@ -644,16 +644,44 @@ class TestRestoreNeutralize(BaseCase):
         argv = _argv(self._restore_step({"mode": "from_job"}))
         self.assertEqual(argv[-1], "copy")
 
+    def _moving_restore_step(self, payload, moving_to, runs_on):
+        """The restore step of an instance moving to host *moving_to*.
+
+        :param dict payload: the restore's payload.
+        :param moving_to: id of the host the instance moves to, or None
+            when it is not moving.
+        :param int runs_on: id of the host the restore runs on.
+        """
+        ex = _make_restore_executor(payload)
+        ex.job.instance_id.move_target_host_id = (
+            SimpleNamespace(id=moving_to) if moving_to else None
+        )
+        ex.job.host_id = SimpleNamespace(id=runs_on)
+        return _find(ex.get_commands(), "Restore database")
+
     def test_a_move_loads_the_database_as_moved(self):
         # A copy regenerates database.secret (the links it signed) and
         # database.uuid, and sets web.base.url to localhost.
-        argv = _argv(self._restore_step({
-            "mode": "from_job", "as_move": True,
-        }))
+        argv = _argv(self._moving_restore_step(
+            {"mode": "from_job", "as_move": True}, moving_to=3, runs_on=3,
+        ))
         self.assertEqual(argv[2:], [
             "restore-db", INSTANCE_DIR, "prod",
             argv[5], "0", "move",
         ])
+
+    def test_as_move_without_a_move_loads_a_copy(self):
+        """Queued straight through ``cloud.job.enqueue`` (review M2)."""
+        argv = _argv(self._moving_restore_step(
+            {"mode": "from_job", "as_move": True}, moving_to=None, runs_on=3,
+        ))
+        self.assertEqual(argv[-1], "copy")
+
+    def test_as_move_on_another_host_than_the_move_s_loads_a_copy(self):
+        argv = _argv(self._moving_restore_step(
+            {"mode": "from_job", "as_move": True}, moving_to=4, runs_on=3,
+        ))
+        self.assertEqual(argv[-1], "copy")
 
 
 class TestRestoreMailCatcher(BaseCase):

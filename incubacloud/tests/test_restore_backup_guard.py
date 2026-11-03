@@ -185,3 +185,30 @@ class TestRestoreBackupGuard(TransactionCase):
             self.staging.restore_db(payload)
         steps = m.call_args[0][0]
         self.assertEqual(steps[2]["payload"]["source_job_id"], "42")
+
+    # ── restore_db: a move's load is the platform's to ask for ───────
+
+    def test_restore_db_drops_as_move(self):
+        """Over JSON-RPC it would hand a staging production's identity.
+
+        A dump loaded as moved keeps its ``database.uuid`` and
+        ``database.secret``; only ``move_to_host`` asks for that, and
+        not through here (release review M2).
+        """
+        payload = {"mode": "rsync", "as_move": True}
+        with self._patch_enqueue() as m:
+            self.staging.restore_db(payload)
+        m.assert_called_once_with(
+            self.host.id,
+            self.staging.id,
+            "restore_instance",
+            payload={"mode": "rsync"},
+        )
+
+    def test_restore_db_drops_as_move_from_the_chained_restore(self):
+        payload = {
+            "mode": "rsync", "as_move": True, "backup_before_restore": True,
+        }
+        with self._patch_chain() as m:
+            self.staging.restore_db(payload)
+        self.assertNotIn("as_move", m.call_args[0][0][2]["payload"])
