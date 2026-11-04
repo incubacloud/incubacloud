@@ -2098,3 +2098,9 @@ msgstr "la instancia de producción %(name)s (proyecto %(project)s)"
 #: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
 msgid "without a safety backup"
 msgstr "sin backup de seguridad"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "That door is closed already: nothing to do."
+msgstr "Esa puerta ya está cerrada: no hay nada que hacer."

@@ -6,7 +6,7 @@ as the user who connected them.
 
 - **Who:** OAuth access tokens of the configured issuer, or the panel's own
   API keys where allowed. Never the browser's cookie, never the superuser.
-- **What:** sixty-nine tools, fifty-eight over the panel's own routes, five
+- **What:** seventy tools, fifty-eight over the panel's own routes, six
   restores from an archive over the instance's own methods (a link, a file on
   the server, a one-use upload door) and six on the project's GitHub
   repository (three more with `incubacloud_mcp_pitr`), listed by role.
