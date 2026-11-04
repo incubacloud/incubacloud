@@ -5,11 +5,12 @@ from odoo.exceptions import UserError
 
 from ..protocol.limits import (
     MAX_BYTES,
-    SEPARATOR_BYTES,
     page_answer,
     page_items,
+    page_lines,
     size_of,
 )
+from ..protocol.log_view import clean_lines
 from ..protocol.tool_spec import (
     LIMIT,
     OFFSET,
@@ -30,6 +31,10 @@ _MANAGER = "group_cloud_manager"
 _INSTANCE = record_id("The instance.")
 #: Log chunks read at a time while paging a job's log.
 _CHUNK_BATCH = 50
+#: What a page of a job's log may take: the answer's limit, less room for
+#: the job's state and the page's own keys. A fixed size, so the pages of
+#: a log are cut at the same lines from one call to the next.
+LOG_PAGE_BYTES = MAX_BYTES - 4 * 1024
 
 TOOLS = (
     ToolSpec(
@@ -119,10 +124,30 @@ TOOLS = (
     ),
     ToolSpec(
         "get_job",
-        "A job: its state, what it waits behind and its log, in pages.",
+        "A job: its state, what it waits behind and its log, in pages. The log "
+        "is a clean view of the panel's: terminal colour codes are taken out, "
+        "and consecutive lines that differ only in their numbers (download or "
+        "extraction progress) show as the last of them followed by "
+        "'(+N similar lines)'. Lines are counted on that view: total says how "
+        "many lines, total_pages how many pages and page which one this is. Ask "
+        "for any page, the last one too, with page; or start at a line with "
+        "offset (next_offset continues). limit makes pages of at most that many "
+        "lines.",
         _USER,
         obj(
-            {"job_id": record_id("The job."), "offset": OFFSET, "limit": LIMIT},
+            {
+                "job_id": record_id("The job."),
+                "offset": integer(
+                    "The line of the log's view where the page starts: the "
+                    "next_offset of the previous answer.",
+                    minimum=0,
+                ),
+                "page": integer(
+                    "The page to show, from 1 to total_pages; instead of offset.",
+                    minimum=1,
+                ),
+                "limit": LIMIT,
+            },
             required=("job_id",),
         ),
         handler="_tool_get_job",
@@ -420,55 +445,70 @@ class McpToolsRead(models.AbstractModel):
             **details,
             **{key: value for key, value in state.items() if key != "ok"},
             "log": self._job_log_page(
-                args["job_id"], args.get("offset"), args.get("limit")
+                args["job_id"], args.get("offset"), args.get("limit"), args.get("page")
             ),
         }
 
     @api.model
-    def _job_log_page(self, job_id, offset=0, limit=None):
-        """Return a page of a job's log, reading its chunks only up to it.
+    def _job_log_lines(self, job_id):
+        """Yield the lines of a job's log the user may read, from the first.
 
-        The lines the user may read (the record rules of
-        ``cloud.job.log.chunk``), counted from the first; the chunks are
-        read a batch at a time and the reading stops once the page is
-        full, so a page of a long log does not cost the whole log.
+        The record rules of ``cloud.job.log.chunk`` decide which; the
+        chunks are read a batch at a time, so a long log is never all in
+        memory at once. Each line says the stream it came from.
 
-        :return: ``{items, offset, total, truncated, next_offset}``;
-            ``total`` is None when the log was not read to its end
+        :param int job_id: the job
+        :return: a generator of ``[source] line`` strings
         """
         Chunk = self.env["cloud.job.log.chunk"]
-        start = max(0, int(offset or 0))
-        cap = int(limit) if limit else None
-        window, size, index, read, more = [], 2, 0, 0, False
-        while not more:
+        read = 0
+        while True:
             chunks = Chunk.search(
                 [("job_id", "=", job_id)], order="id", offset=read, limit=_CHUNK_BATCH
             )
             if not chunks:
-                break
+                return
             read += len(chunks)
             for chunk in chunks:
                 for line in (chunk.content or "").splitlines():
-                    if index >= start:
-                        if (cap and len(window) >= cap) or size > MAX_BYTES:
-                            more = True
-                            break
-                        text = f"[{chunk.source}] {line}"
-                        window.append(text)
-                        size += size_of(text) + SEPARATOR_BYTES
-                    index += 1
-                if more:
-                    break
-        page = page_items(window, 0, cap)
-        following = start + len(page["items"])
-        more = more or following < start + len(window)
-        return {
-            "items": page["items"],
-            "offset": start,
-            "total": None if more else index,
-            "truncated": page["truncated"] or more,
-            "next_offset": following if more else None,
-        }
+                    yield f"[{chunk.source}] {line}"
+            chunks.invalidate_recordset(["content"])
+
+    @api.model
+    def _job_log_page(self, job_id, offset=0, limit=None, page=None):
+        """Return a page of the agent's view of a job's log.
+
+        The view (``protocol.log_view``) has no terminal codes and folds
+        the runs of progress lines; offsets, lines and pages are counted
+        on it. The log is read to its end, so the answer always says how
+        many lines and pages it has. The panel's log is not changed.
+
+        :param int job_id: the job
+        :param int offset: the view's line where the page starts
+        :param limit: at most this many lines a page, or None
+        :param page: the page to show, from 1, instead of *offset*
+        :return: ``{items, offset, page, total, total_pages, truncated,
+            next_offset}``
+        :raises UserError: for both *offset* and *page*, or a page the
+            log does not have
+        """
+        if page and offset:
+            raise UserError(self.env._("Give either offset or page."))
+        result = page_lines(
+            clean_lines(self._job_log_lines(job_id)),
+            offset,
+            limit,
+            page,
+            max_bytes=LOG_PAGE_BYTES,
+        )
+        if page and page > max(1, result["total_pages"]):
+            raise UserError(
+                self.env._(
+                    "This log has %(pages)s pages: ask for one from 1 to %(pages)s.",
+                    pages=result["total_pages"],
+                )
+            )
+        return result
 
     @api.model
     def _tool_github_repo_info(self, args):
