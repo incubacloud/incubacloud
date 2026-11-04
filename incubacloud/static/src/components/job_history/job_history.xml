@@ -28,87 +28,108 @@
     </t>
 
 
-    <!-- ── Filters ── -->
+    <!-- ── Filters ──
+         One row: the category, always on view, and the toggles that open
+         the rest of the filters and the timeline. -->
     <div t-att-class="'jh-filters' + (state.alertMode ? ' jh-filters-hidden' : '')">
-
-        <!-- Category chips -->
-        <div class="jh-filter-group">
-            <span class="jh-filter-label">Category</span>
-            <div class="jh-chips">
-                <button t-att-class="'jh-chip' + (state.filter.job_category === 'operational' ? ' active' : '')"
-                        t-on-click="() => this.setCategory('operational')">Operational</button>
-                <button t-att-class="'jh-chip' + (state.filter.job_category === 'admin' ? ' active' : '')"
-                        t-on-click="() => this.setCategory('admin')">Admin</button>
-                <button t-att-class="'jh-chip' + (state.filter.job_category === 'all' ? ' active' : '')"
-                        t-on-click="() => this.setCategory('all')">All</button>
-            </div>
-        </div>
-
-        <!-- State chips -->
-        <div class="jh-filter-group">
-            <span class="jh-filter-label">State</span>
-            <div class="jh-chips">
-                <t t-foreach="allStateKeys" t-as="s" t-key="s">
-                    <button
-                        t-att-class="'jh-chip jh-chip-' + s + (state.filter.states.includes(s) ? ' active' : '')"
-                        t-on-click="() => this.toggleState(s)">
-                        <t t-esc="stateLabel(s)"/>
-                    </button>
-                </t>
-            </div>
-        </div>
-
-        <!-- Host + Instance + User -->
-        <div class="jh-filter-row">
-            <div class="jh-filter-group jh-filter-group-search">
-                <span class="jh-filter-label">Host</span>
-                <SearchSelect options="hostOptions"
-                              value="state.filter.host_id"
-                              onChange.bind="setHost"
-                              placeholder.translate="All hosts"
-                              emptyLabel.translate="All hosts"/>
-            </div>
-
-            <div class="jh-filter-group jh-filter-group-search">
-                <span class="jh-filter-label">Instance</span>
-                <SearchSelect options="instanceOptions"
-                              value="state.filter.instance_id"
-                              onChange.bind="setInstance"
-                              placeholder.translate="All instances"
-                              emptyLabel.translate="All instances"/>
-            </div>
-
-            <div class="jh-filter-group jh-filter-group-search" t-if="state.users.length > 1">
-                <span class="jh-filter-label">User</span>
-                <SearchSelect options="userOptions"
-                              value="state.filter.user_id"
-                              onChange.bind="setUser"
-                              placeholder.translate="All users"
-                              emptyLabel.translate="All users"/>
-            </div>
-        </div>
-
-        <!-- Dates -->
-        <div class="jh-filter-row">
+        <div class="jh-bar">
             <div class="jh-filter-group">
-                <span class="jh-filter-label">From</span>
-                <input type="datetime-local" class="jh-filter-input"
-                       t-att-value="state.filter.date_from"
-                       t-on-change="onDateFromChange"/>
+                <span class="jh-filter-label">Category</span>
+                <div class="jh-chips">
+                    <button t-att-class="'jh-chip' + (state.filter.job_category === 'operational' ? ' active' : '')"
+                            t-on-click="() => this.setCategory('operational')">Operational</button>
+                    <button t-att-class="'jh-chip' + (state.filter.job_category === 'admin' ? ' active' : '')"
+                            t-on-click="() => this.setCategory('admin')">Admin</button>
+                    <button t-att-class="'jh-chip' + (state.filter.job_category === 'all' ? ' active' : '')"
+                            t-on-click="() => this.setCategory('all')">All</button>
+                </div>
             </div>
-
-            <div class="jh-filter-group">
-                <span class="jh-filter-label">To</span>
-                <input type="datetime-local" class="jh-filter-input"
-                       t-att-value="state.filter.date_to"
-                       t-on-change="onDateToChange"/>
-            </div>
-
-            <div class="jh-filter-actions">
-                <button class="rl-btn rl-btn-primary rl-btn-sm" t-on-click="applyFilter">Apply</button>
-                <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetFilter">Reset</button>
+            <div class="jh-bar-toggles">
+                <button type="button" class="jh-fold jh-fold-filters"
+                        t-att-aria-expanded="state.filtersOpen ? 'true' : 'false'"
+                        t-on-click="toggleFilters">
+                    <t t-esc="filtersLabel"/>
+                    <span class="jh-fold-caret" aria-hidden="true"><t t-if="state.filtersOpen">▴</t><t t-else="">▾</t></span>
+                </button>
+                <button type="button" class="jh-fold jh-fold-gantt"
+                        t-att-aria-expanded="state.ganttOpen ? 'true' : 'false'"
+                        t-on-click="toggleGantt">
+                    Timeline <t t-esc="ganttWindowLabel"/>
+                    <span class="jh-fold-caret" aria-hidden="true"><t t-if="state.ganttOpen">▴</t><t t-else="">▾</t></span>
+                </button>
             </div>
         </div>
+
+        <t t-if="state.filtersOpen">
+            <div class="jh-filters-body">
+
+                <!-- State chips -->
+                <div class="jh-filter-group">
+                    <span class="jh-filter-label">State</span>
+                    <div class="jh-chips">
+                        <t t-foreach="allStateKeys" t-as="s" t-key="s">
+                            <button
+                                t-att-class="'jh-chip jh-chip-' + s + (state.filter.states.includes(s) ? ' active' : '')"
+                                t-on-click="() => this.toggleState(s)">
+                                <t t-esc="stateLabel(s)"/>
+                            </button>
+                        </t>
+                    </div>
+                </div>
+
+                <!-- Host + Instance + User -->
+                <div class="jh-filter-row">
+                    <div class="jh-filter-group jh-filter-group-search">
+                        <span class="jh-filter-label">Host</span>
+                        <SearchSelect options="hostOptions"
+                                      value="state.filter.host_id"
+                                      onChange.bind="setHost"
+                                      placeholder.translate="All hosts"
+                                      emptyLabel.translate="All hosts"/>
+                    </div>
+
+                    <div class="jh-filter-group jh-filter-group-search">
+                        <span class="jh-filter-label">Instance</span>
+                        <SearchSelect options="instanceOptions"
+                                      value="state.filter.instance_id"
+                                      onChange.bind="setInstance"
+                                      placeholder.translate="All instances"
+                                      emptyLabel.translate="All instances"/>
+                    </div>
+
+                    <div class="jh-filter-group jh-filter-group-search" t-if="state.users.length > 1">
+                        <span class="jh-filter-label">User</span>
+                        <SearchSelect options="userOptions"
+                                      value="state.filter.user_id"
+                                      onChange.bind="setUser"
+                                      placeholder.translate="All users"
+                                      emptyLabel.translate="All users"/>
+                    </div>
+                </div>
+
+                <!-- Dates -->
+                <div class="jh-filter-row">
+                    <div class="jh-filter-group">
+                        <span class="jh-filter-label">From</span>
+                        <input type="datetime-local" class="jh-filter-input"
+                               t-att-value="state.filter.date_from"
+                               t-on-change="onDateFromChange"/>
+                    </div>
+
+                    <div class="jh-filter-group">
+                        <span class="jh-filter-label">To</span>
+                        <input type="datetime-local" class="jh-filter-input"
+                               t-att-value="state.filter.date_to"
+                               t-on-change="onDateToChange"/>
+                    </div>
+
+                    <div class="jh-filter-actions">
+                        <button class="rl-btn rl-btn-primary rl-btn-sm" t-on-click="applyFilter">Apply</button>
+                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetFilter">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </t>
     </div>
 
     <!-- ── Loading ── -->
@@ -127,7 +148,7 @@
     <t t-else="">
 
         <!-- ── Gantt ── -->
-        <div class="rl-card jh-gantt">
+        <div t-if="state.ganttOpen" class="rl-card jh-gantt">
             <div class="jh-gantt-head">
                 <span class="rl-tlh">Timeline</span>
                 <div class="jh-gantt-wins">
