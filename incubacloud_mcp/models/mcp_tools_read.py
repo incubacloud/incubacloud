@@ -5,12 +5,14 @@ from odoo.exceptions import UserError
 
 from ..protocol.limits import (
     MAX_BYTES,
+    cap_strings,
     page_answer,
     page_items,
     page_lines,
     size_of,
 )
 from ..protocol.log_view import clean_lines
+from ..protocol.redact import mask_token_urls
 from ..protocol.tool_spec import (
     LIMIT,
     OFFSET,
@@ -35,6 +37,10 @@ _CHUNK_BATCH = 50
 #: the job's state and the page's own keys. A fixed size, so the pages of
 #: a log are cut at the same lines from one call to the next.
 LOG_PAGE_BYTES = MAX_BYTES - 4 * 1024
+#: What each text of the job's state and brief keeps beside its log: with
+#: their keys, well within the 4 KB the page leaves them, so the answer's
+#: last guard never cuts a page of the log (``_tool_get_job``).
+_JOB_FIELD_BYTES = 256
 
 TOOLS = (
     ToolSpec(
@@ -108,10 +114,10 @@ TOOLS = (
     ),
     ToolSpec(
         "list_hosts",
-        "List the servers the user can see, with their capacity.",
+        "List the servers the user can see, with their capacity, in pages.",
         _USER,
-        obj(),
-        route="/cloud/get_hosts",
+        obj({"offset": OFFSET, "limit": LIMIT}),
+        handler="_tool_list_hosts",
         read_only=True,
     ),
     ToolSpec(
@@ -127,8 +133,8 @@ TOOLS = (
         "A job: its state, what it waits behind and its log, in pages. The log "
         "is a clean view of the panel's: terminal colour codes are taken out, "
         "and consecutive lines that differ only in their numbers (download or "
-        "extraction progress) show as the last of them followed by "
-        "'(+N similar lines)'. Lines are counted on that view: total says how "
+        "extraction progress) show as the first and the last of them, with "
+        "'(+N similar lines)' between. Lines are counted on that view: total says how "
         "many lines, total_pages how many pages and page which one this is. Ask "
         "for any page, the last one too, with page; or start at a line with "
         "offset (next_offset continues). limit makes pages of at most that many "
@@ -398,6 +404,18 @@ class McpToolsRead(models.AbstractModel):
         }
 
     @api.model
+    def _tool_list_hosts(self, args):
+        """The servers, as the panel caps them, in pages."""
+        result = self._route("/cloud/get_hosts")
+        return {
+            **page_items(
+                result.get("hosts") or [], args.get("offset"), args.get("limit")
+            ),
+            "autoassign_enabled": result.get("autoassign_enabled"),
+            "capped_at": result.get("limit") if result.get("truncated") else None,
+        }
+
+    @api.model
     def _tool_get_project(self, args):
         """A project and, when asked, its instances."""
         project = self._route("/cloud/get_project", project_id=args["project_id"])
@@ -441,9 +459,15 @@ class McpToolsRead(models.AbstractModel):
             if brief.get("ok")
             else {}
         )
+        # Its texts cut short, so that with a page of the log the answer
+        # stays within the limit: the guard would cut the page, and the
+        # next page asked for by number would start past lines never shown.
+        company, _cut = cap_strings(
+            {**details, **{key: value for key, value in state.items() if key != "ok"}},
+            _JOB_FIELD_BYTES,
+        )
         return {
-            **details,
-            **{key: value for key, value in state.items() if key != "ok"},
+            **company,
             "log": self._job_log_page(
                 args["job_id"], args.get("offset"), args.get("limit"), args.get("page")
             ),
@@ -455,20 +479,24 @@ class McpToolsRead(models.AbstractModel):
 
         The record rules of ``cloud.job.log.chunk`` decide which; the
         chunks are read a batch at a time, so a long log is never all in
-        memory at once. Each line says the stream it came from.
+        memory at once, each batch after the last chunk read (``id``): an
+        ``OFFSET`` would have the database walk every chunk before it
+        again, batch after batch. Each line says the stream it came from.
 
         :param int job_id: the job
         :return: a generator of ``[source] line`` strings
         """
         Chunk = self.env["cloud.job.log.chunk"]
-        read = 0
+        last = 0
         while True:
             chunks = Chunk.search(
-                [("job_id", "=", job_id)], order="id", offset=read, limit=_CHUNK_BATCH
+                [("job_id", "=", job_id), ("id", ">", last)],
+                order="id",
+                limit=_CHUNK_BATCH,
             )
             if not chunks:
                 return
-            read += len(chunks)
+            last = chunks[-1].id
             for chunk in chunks:
                 for line in (chunk.content or "").splitlines():
                     yield f"[{chunk.source}] {line}"
@@ -483,6 +511,12 @@ class McpToolsRead(models.AbstractModel):
         on it. The log is read to its end, so the answer always says how
         many lines and pages it has. The panel's log is not changed.
 
+        Each line is masked before it is measured, as the answer masks it
+        (the secrets, and a link with a one-time token): a mask may be
+        longer than what it hides, and a page measured before masking
+        could grow past what the answer takes. Masked first, a page is
+        what the answer shows, whole: page N+1 starts where page N ended.
+
         :param int job_id: the job
         :param int offset: the view's line where the page starts
         :param limit: at most this many lines a page, or None
@@ -494,8 +528,12 @@ class McpToolsRead(models.AbstractModel):
         """
         if page and offset:
             raise UserError(self.env._("Give either offset or page."))
+        scrubber = self.env["incubacloud.mcp.secrets"]._scrubber()
         result = page_lines(
-            clean_lines(self._job_log_lines(job_id)),
+            (
+                mask_token_urls(scrubber.text(line))
+                for line in clean_lines(self._job_log_lines(job_id))
+            ),
             offset,
             limit,
             page,

@@ -555,13 +555,35 @@ class McpServer(models.AbstractModel):
         # or a page that masking grew — is cut here and says so, a page
         # with its next_offset moved back so no entry is skipped.
         if size_of(payload) > MAX_BYTES + PAGE_SLACK:
-            payload, cut = fit_answer(payload, MAX_BYTES - GUARD_MARGIN)
+            payload, cut = fit_answer(
+                payload, MAX_BYTES - GUARD_MARGIN, whole=self._replaced_whole()
+            )
             # A list cannot say it was cut: it comes back under items.
             if cut and isinstance(payload, list):
                 payload = {"items": payload}
             if cut:
                 payload["truncated"] = True
         return self._tool_result(ctx, spec, payload, is_error=bool(outcome))
+
+    @api.model
+    def _replaced_whole(self):
+        """Return the keys an update tool writes back whole.
+
+        The fields of the ``vals`` of every ``update_<…>`` tool: a list of
+        them (repositories, domains, allowed hosts, members) replaces the
+        current one, a text (the dependencies, ``odoo_conf``) is written
+        as it comes. An agent that read one cut and wrote it back would
+        delete what was cut, so the guard never cuts them
+        (``limits.fit_answer``).
+
+        :rtype: frozenset[str]
+        """
+        keys = set()
+        for spec in self.env["incubacloud.mcp.catalog"]._tool_specs():
+            vals = spec.input_schema.get("properties", {}).get("vals")
+            if spec.name.startswith("update_") and isinstance(vals, dict):
+                keys.update(vals.get("properties", {}))
+        return frozenset(keys)
 
     @api.model
     def _known_before_rollback(self):

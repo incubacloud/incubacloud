@@ -83,6 +83,32 @@ class TestSourcesOnATree(BaseCase):
         top = sources.read_source(self.root, "", 1, 50)
         self.assertEqual(top["entries"], ["docs/", "incubacloud/"])
 
+    def test_a_file_read_by_lines_skips_none_that_did_not_fit(self):
+        """Lines are read up to what the answer takes: next_line follows the
+        last line returned, and reading on from it reaches every line once;
+        a line longer than the answer comes cut, alone."""
+        self._write(
+            "incubacloud/models/long.py",
+            "".join(f"value_{n} = '{'v' * 300}'\n" for n in range(1, 201)),
+        )
+        seen, line = [], 1
+        while line is not None:
+            read = sources.read_source(
+                self.root, "incubacloud/models/long.py", line, 2000, max_bytes=4096
+            )
+            self.assertLessEqual(sources.size_of(read), 4096)
+            self.assertEqual(read["lines"][0].split(":")[0], str(line))
+            seen.extend(int(text.split(":")[0]) for text in read["lines"])
+            line = read["next_line"]
+        self.assertEqual(seen, list(range(1, 201)))
+        self._write("incubacloud/models/wide.py", "w" * 9000 + "\nshort\n")
+        read = sources.read_source(
+            self.root, "incubacloud/models/wide.py", 1, 10, max_bytes=4096
+        )
+        self.assertEqual(len(read["lines"]), 1)
+        self.assertTrue(read["truncated"])
+        self.assertEqual(read["next_line"], 2)
+
     def test_docs_answer_sections_with_their_page_links(self):
         """The section that matches, its heading, and the page on the docs site."""
         found = sources.search_docs(self.root, "restore from another server", 3)
