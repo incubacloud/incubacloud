@@ -17,6 +17,8 @@ class HostProbeExecutor(AnsibleExecutor):
     """
 
     _job_type = "host_probe"
+    # The disk shown is read from metrics as soon as the job ends.
+    _refreshes_host_disk = True
     _playbook = "playbooks/host_probe.yml"
 
     # (probe-fact key, display name, extra-check method name or None).

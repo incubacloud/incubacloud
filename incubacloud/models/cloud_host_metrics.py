@@ -46,12 +46,43 @@ class CloudHost(models.Model):
         be worse than stale data — the auto-assign scoring reads these
         fields to place instances.
         """
+        readings = self._read_specs_from_metrics()
+        if readings is None:
+            return
+
+        now = fields.Datetime.now()
+        # Every write of the pass happens here, on a READ COMMITTED
+        # cursor of its own opened after the queries, and the cron's own
+        # transaction writes nothing. These host rows are the ones the
+        # durable hooks of ``host_metrics``, ``full_setup`` and
+        # ``host_hardening`` and a save of the host write: under the
+        # cron's snapshot, the second writer lost the row and the whole
+        # pass rolled back, the disk status with it. A row written here
+        # must never be written by the cron's transaction too, before or
+        # after, or the two cursors would wait for each other.
+        with read_committed_cursor(self.env.registry) as cr:
+            env = self.env(cr=cr)
+            # The central answered every query: what the convergence of
+            # the direct path reads as "the central is up"
+            # (cloud_host_direct).
+            env["cloud.settings"].sudo()._direct_note_read_ok()
+            env["cloud.host"]._write_specs_from_metrics(readings, now)
+
+    @api.model
+    def _read_specs_from_metrics(self):
+        """Ask the metrics backend what it knows of every host.
+
+        :return: ``{host_id: {field: value}}``, or ``None`` when there is
+            nothing to read (metrics off, no central) or the backend did
+            not answer; logged, never raised.
+        :rtype: dict | None
+        """
         settings = self.env["cloud.settings"].sudo()._get_system()
         if not settings.metrics_enabled:
-            return
+            return None
         base = (settings.metrics_central_url or "").strip()
         if not base:
-            return
+            return None
         user, token = settings._metrics_auth()
 
         readings = {}
@@ -72,25 +103,39 @@ class CloudHost(models.Model):
             _logger.warning(
                 "[metrics] could not refresh host specs: %s", exc,
             )
-            return
+            return None
+        return readings
 
-        now = fields.Datetime.now()
-        # Every write of the pass happens here, on a READ COMMITTED
-        # cursor of its own opened after the queries, and the cron's own
-        # transaction writes nothing. These host rows are the ones the
-        # durable hooks of ``host_metrics``, ``full_setup`` and
-        # ``host_hardening`` and a save of the host write: under the
-        # cron's snapshot, the second writer lost the row and the whole
-        # pass rolled back, the disk status with it. A row written here
-        # must never be written by the cron's transaction too, before or
-        # after, or the two cursors would wait for each other.
-        with read_committed_cursor(self.env.registry) as cr:
-            env = self.env(cr=cr)
-            # The central answered every query: what the convergence of
-            # the direct path reads as "the central is up"
-            # (cloud_host_direct).
-            env["cloud.settings"].sudo()._direct_note_read_ok()
-            env["cloud.host"]._write_specs_from_metrics(readings, now)
+    def _refresh_specs_from_metrics_now(self):
+        """Read these hosts' specs and disk from metrics now, not in 5 minutes.
+
+        What ``_cron_refresh_specs_from_metrics`` does, for these hosts
+        only, when something just changed their disk or someone asked to
+        see it: the host's Check, the end of a build or of a teardown.
+        Written on the caller's cursor, inside a savepoint: the caller is
+        a job's hook on its durable cursor, which may hold these rows
+        already, and a second cursor would wait for it. A host with no
+        metrics is left as it is, and nothing here ever raises: the
+        disk shown is the cron's again in five minutes.
+        """
+        if not self:
+            return
+        try:
+            readings = self.env["cloud.host"]._read_specs_from_metrics()
+            if not readings:
+                return
+            mine = {hid: readings[hid] for hid in self.ids if hid in readings}
+            if not mine:
+                return
+            with self.env.cr.savepoint():
+                self.env["cloud.host"]._write_specs_from_metrics(
+                    mine, fields.Datetime.now(),
+                )
+        except Exception as exc:  # noqa: BLE001 — logged, never fatal
+            _logger.warning(
+                "[metrics] could not refresh the disk of host(s) %s: %s",
+                self.ids, exc,
+            )
 
     @api.model
     def _write_specs_from_metrics(self, readings, now):
