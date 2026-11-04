@@ -8,6 +8,8 @@ one statement.
 
 from odoo import api, fields, models
 
+from odoo.addons.incubacloud.models.big_integer import BigInteger
+
 
 class AssistantUsage(models.Model):
     """Tokens and approximate cost of one user's calls of one model in one month."""
@@ -22,12 +24,14 @@ class AssistantUsage(models.Model):
     month = fields.Date(required=True, index=True, readonly=True, help="Its first day.")
     provider = fields.Char(required=True, readonly=True)
     model = fields.Char(required=True, readonly=True)
-    input_tokens = fields.Integer(readonly=True)
+    # A month of an agent's steps reads its whole context again at each
+    # one: input and cache reads pass 2^31 tokens; 64 bits (``BigInteger``).
+    input_tokens = BigInteger(readonly=True)
     output_tokens = fields.Integer(readonly=True)
-    cache_read_tokens = fields.Integer(readonly=True)
+    cache_read_tokens = BigInteger(readonly=True)
     cache_write_tokens = fields.Integer(readonly=True)
     cost = fields.Float(digits=(16, 6), readonly=True, help="Euros, approximately.")
-    unpriced_tokens = fields.Integer(
+    unpriced_tokens = BigInteger(
         readonly=True, help="Tokens of calls whose price is not known."
     )
 
@@ -106,11 +110,14 @@ class AssistantUsage(models.Model):
         first = fields.Date.subtract(
             fields.Date.today().replace(day=1), months=months - 1
         )
+        # The sum of a bigint is a numeric, which psycopg reads as a float:
+        # cast back, so the tokens stay whole numbers.
         self.env.cr.execute(
             """
-            SELECT u.user_id, p.name, u.month, SUM(u.input_tokens),
-                   SUM(u.output_tokens), SUM(u.cache_read_tokens),
-                   SUM(u.cache_write_tokens), SUM(u.cost), SUM(u.unpriced_tokens)
+            SELECT u.user_id, p.name, u.month, SUM(u.input_tokens)::bigint,
+                   SUM(u.output_tokens), SUM(u.cache_read_tokens)::bigint,
+                   SUM(u.cache_write_tokens), SUM(u.cost),
+                   SUM(u.unpriced_tokens)::bigint
               FROM incubacloud_assistant_usage u
               JOIN res_users r ON r.id = u.user_id
               JOIN res_partner p ON p.id = r.partner_id

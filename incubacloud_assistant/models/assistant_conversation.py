@@ -16,6 +16,7 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 
+from odoo.addons.incubacloud.models.big_integer import BigInteger
 from odoo.addons.incubacloud_mcp.models.mcp_tools import quoted
 
 _logger = logging.getLogger(__name__)
@@ -89,7 +90,9 @@ class AssistantConversation(models.Model):
     cost_unknown = fields.Boolean(
         readonly=True, help="Some call used a model whose price is not known."
     )
-    input_tokens = fields.Integer(readonly=True)
+    # Every step's whole context, cache reads included, for as long as the
+    # conversation lasts: 64 bits (``BigInteger``).
+    input_tokens = BigInteger(readonly=True)
     output_tokens = fields.Integer(readonly=True)
     last_activity = fields.Datetime(
         readonly=True, index=True, default=fields.Datetime.now
