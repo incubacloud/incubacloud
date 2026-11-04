@@ -1,12 +1,13 @@
 """Read tools: what the panel shows, as the user may see it, with no secret."""
 
 import json
+import string
 from unittest.mock import patch
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
-from odoo.addons.incubacloud_mcp.models.mcp_tools_read import _CHUNK_BATCH
+from odoo.addons.incubacloud_mcp.models.mcp_server import PAGE_SLACK
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 
@@ -31,6 +32,19 @@ OFFLINE_READS = (
 )
 #: Read tools of this group that reach a server or GitHub: answered by a canned route.
 NETWORK_READS = ("github_repo_info", "read_access_log")
+#: What Claude Code takes from one tool's answer by default, in tokens; a
+#: token stands for at least one byte.
+CLAUDE_CODE_TOKENS = 25_000
+
+
+def _word(number):
+    """Return *number* written in letters: lines that do not fold together."""
+    letters = ""
+    while True:
+        number, digit = divmod(number, 26)
+        letters = string.ascii_lowercase[digit] + letters
+        if not number:
+            return letters
 
 
 @tagged("post_install", "-at_install")
@@ -59,12 +73,12 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                 }
             )
         )
-        for index in range(3):
+        for word in ("first", "second", "third"):
             self.env["cloud.job.log.chunk"].sudo().create(
                 {
                     "job_id": self.job.id,
                     "source": "stdout",
-                    "content": f"line {index} {PG_PASSWORD}",
+                    "content": f"{word} {PG_PASSWORD}",
                 }
             )
 
@@ -257,39 +271,121 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(payload["log"]["next_offset"], 2)
         self.assertIn("[secreto]", payload["log"]["items"][0])
 
-    def test_a_job_s_log_is_read_only_up_to_its_page(self):
-        """A page of a long job log reads the chunks up to it, not all of them."""
+    def test_a_job_s_log_says_its_lines_and_pages_and_gives_the_last(self):
+        """Every page says how many lines and pages the log has; the last
+        page is asked for by its number."""
         self.env["cloud.job.log.chunk"].sudo().create(
             [
-                {"job_id": self.job.id, "source": "stdout", "content": f"more {index}"}
+                {
+                    "job_id": self.job.id,
+                    "source": "stdout",
+                    "content": f"more {_word(index)}",
+                }
                 for index in range(120)
             ]
         )
-        Chunk = type(self.env["cloud.job.log.chunk"])
-        original = Chunk.search
-        read = []
-
-        def counted(*args, **kwargs):
-            """Search, and count the chunks the search read."""
-            found = original(*args, **kwargs)
-            read.append(len(found))
-            return found
-
         Tools = self.env["incubacloud.mcp.tools"]
-        with patch.object(
-            Chunk, "search", autospec=True, side_effect=counted
-        ) as search:
-            first = Tools._job_log_page(self.job.id, 0, 10)
-        self.assertEqual(search.call_count, 1)
-        # One batch, not the 123 chunks of the log.
-        self.assertEqual(read, [_CHUNK_BATCH])
-        self.assertEqual((len(first["items"]), first["next_offset"]), (10, 10))
-        self.assertTrue(first["truncated"])
-        last = Tools._job_log_page(self.job.id, 118, 10)
+        first = Tools._job_log_page(self.job.id, 0, 10)
         self.assertEqual(
-            last["items"], [f"[stdout] more {index}" for index in range(115, 120)]
+            (len(first["items"]), first["next_offset"], first["truncated"]),
+            (10, 10, True),
         )
-        self.assertEqual((last["next_offset"], last["total"]), (None, 123))
+        self.assertEqual(
+            (first["page"], first["total"], first["total_pages"]), (1, 123, 13)
+        )
+        last = Tools._job_log_page(self.job.id, None, 10, 13)
+        self.assertEqual(
+            last["items"],
+            [f"[stdout] more {_word(index)}" for index in range(117, 120)],
+        )
+        self.assertEqual(
+            (last["offset"], last["page"], last["next_offset"], last["truncated"]),
+            (120, 13, None, False),
+        )
+        middle = Tools._job_log_page(self.job.id, 25, 10)
+        self.assertEqual((middle["offset"], middle["page"]), (25, 3))
+        result = self._call_tool(
+            self.key, "get_job", {"job_id": self.job.id, "page": 14, "limit": 10}
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("13 pages", result["content"][0]["text"])
+        result = self._call_tool(
+            self.key, "get_job", {"job_id": self.job.id, "page": 2, "offset": 3}
+        )
+        self.assertTrue(result["isError"])
+
+    def test_a_job_s_log_is_shown_clean_and_the_panel_s_stays_as_it_came(self):
+        """Escape codes are taken out and progress runs folded in what the
+        agent reads; the chunks the panel shows keep every byte."""
+        progress = "".join(
+            f"6e00e0164b46 Extracting {size}B\n" for size in range(1, 301)
+        ) + "".join(
+            f"\x1b[32mUpdating files: {percent}% ({percent * 10}/1000)\x1b[0m\n"
+            for percent in range(1, 101)
+        )
+        content = (
+            "\x1b]0;title\x07\x1b[1m\x1b[32mcreate\x1b[0m done\n"
+            + progress
+            + "6e00e0164b46 Pull complete\n"
+            + "a1b2c3d4e5f6 Pull complete\n"
+            + "Error at step 3\nError at step 4 \u2014 again\n"
+        )
+        chunk = (
+            self.env["cloud.job.log.chunk"]
+            .sudo()
+            .create({"job_id": self.job.id, "source": "stdout", "content": content})
+        )
+        payload = self._payload(
+            self._call_tool(self.key, "get_job", {"job_id": self.job.id, "offset": 3})
+        )
+        self.assertEqual(
+            payload["log"]["items"],
+            [
+                "[stdout] create done",
+                "[stdout] 6e00e0164b46 Extracting 300B (+299 similar lines)",
+                "[stdout] Updating files: 100% (1000/1000) (+99 similar lines)",
+                "[stdout] 6e00e0164b46 Pull complete",
+                "[stdout] a1b2c3d4e5f6 Pull complete",
+                "[stdout] Error at step 3",
+                "[stdout] Error at step 4 \u2014 again",
+            ],
+        )
+        self.assertEqual(
+            (payload["log"]["total"], payload["log"]["total_pages"]), (10, 1)
+        )
+        chunk.invalidate_recordset(["content"])
+        self.assertEqual(chunk.content, content)
+
+    def test_a_job_s_long_log_fits_claude_code_on_every_page(self):
+        """No page of a long log full of escaped codes passes the limit, nor
+        the 25,000 tokens Claude Code takes from a tool."""
+        line = "\x1b[33m" + 'é"\\' * 200 + "\x07"
+        self.env["cloud.job.log.chunk"].sudo().create(
+            [
+                {
+                    "job_id": self.job.id,
+                    "source": "stderr",
+                    "content": "\n".join(f"{_word(i)} {line}" for i in range(60)),
+                }
+                for _chunk in range(10)
+            ]
+        )
+        offset, pages, seen = 0, 0, 0
+        while offset is not None and pages < 200:
+            result = self._call_tool(
+                self.key, "get_job", {"job_id": self.job.id, "offset": offset}
+            )
+            # What the client reads: the texts of the result's content.
+            size = sum(len(item["text"].encode()) for item in result["content"])
+            self.assertLessEqual(size, MAX_BYTES + PAGE_SLACK)
+            self.assertLess(size, CLAUDE_CODE_TOKENS)
+            log = self._payload(result)["log"]
+            self.assertEqual(log["total"], 603)
+            seen += len(log["items"])
+            offset = log["next_offset"]
+            pages += 1
+        self.assertEqual(seen, 603)
+        self.assertEqual(pages, log["total_pages"])
 
     def test_a_job_s_short_lines_are_all_read_page_after_page(self):
         """Paging a job's log reaches every line, short and lengthened by
@@ -302,7 +398,7 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                     "job_id": self.job.id,
                     "source": "stdout",
                     "content": "\n".join(
-                        f"{chunk:03d}{line:03d} {secret} {secret}"
+                        f"{_word(chunk * 100 + line)} {secret} {secret}"
                         for line in range(100)
                     ),
                 }
@@ -322,7 +418,7 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             offset = log["next_offset"]
             pages += 1
         expected = [
-            f"[stdout] {chunk:03d}{line:03d} {MASK} {MASK}"
+            f"[stdout] {_word(chunk * 100 + line)} {MASK} {MASK}"
             for chunk in range(100)
             for line in range(100)
         ]

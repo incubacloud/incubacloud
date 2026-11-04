@@ -149,7 +149,7 @@ class McpToolsLogs(models.AbstractModel):
 
     @api.model
     def _tool_staging_mailbox(self, args):
-        """A staging's captured mail: the list, or one message, in 64 KB pages.
+        """A staging's captured mail: the list, or one message, in pages.
 
         One message's text and HTML are paged as one (``page_record``); the
         list is paged by messages, the host reading from ``offset``.
