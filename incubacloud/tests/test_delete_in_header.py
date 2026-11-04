@@ -29,7 +29,7 @@ def _template(name):
 class TestDeleteInHeader(TransactionCase):
 
     def test_the_host_action_bar_ends_with_a_trash(self):
-        """The bar's last group, its upkeep, ends with the trash."""
+        """The bar's last group, its upkeep, holds the trash."""
         bar = _template("host_detail").xpath(
             "//div[contains(@class, 'ic-action-bar')]"
         )[0]
@@ -46,14 +46,17 @@ class TestDeleteInHeader(TransactionCase):
         stylesheet = (
             _COMPONENTS / "host_detail" / "host_detail.scss"
         ).read_text()
-        self.assertIn(".ic-action-bar > .ic-ab-upkeep {\n    order: 1;", stylesheet)
+        self.assertIn(
+            ".ic-action-bar > .ic-ab-upkeep {\n    order: 1;\n    margin-left: auto;",
+            stylesheet,
+        )
 
-    def test_the_host_bar_never_leaves_the_trash_alone(self):
-        """The bar breaks between its two groups, each kept whole while it fits.
+    def test_the_host_bar_is_one_row_of_two_groups(self):
+        """The bar breaks between its two groups, never inside the trash's.
 
-        It wrapped button by button, and at 1440 pixels the trash went to
-        a second line on its own (visual pass of the release candidate,
-        29-oct-2026).
+        At 1440 pixels the trash once went to a second line on its own
+        (visual pass of the release candidate, 29-oct-2026); every control
+        sits in a group, the trash alone in the last.
         """
         bar = _template("host_detail").xpath(
             "//div[contains(@class, 'ic-action-bar')]"
@@ -63,30 +66,32 @@ class TestDeleteInHeader(TransactionCase):
             ["ic-ab-group", "ic-ab-group ic-ab-upkeep"],
         )
         self.assertFalse(bar.xpath("button | span"), "every control sits in a group")
+        self.assertEqual(
+            len(bar.xpath("div[contains(@class, 'ic-ab-upkeep')]//button")), 1
+        )
 
-    def test_no_host_bar_separator_can_end_a_line(self):
-        """A separator sits between buttons kept on one line, never between groups.
-
-        One between two items of a wrapping group ended a line at 768
-        pixels ("Sync Direct Path |", visual pass of the release
-        candidate, 29-oct-2026). The host key, the shell and the trash
-        form a unit that wraps whole, and the separators are inside it.
-        """
+    def test_the_host_bar_keeps_the_daily_actions_out_of_the_menu(self):
+        """Check, Full Setup, hardening and the shell are in the row; the rest, under More."""
         bar = _template("host_detail").xpath(
             "//div[contains(@class, 'ic-action-bar')]"
         )[0]
-        for group in bar.xpath("div"):
-            self.assertFalse(
-                group.xpath("*[contains(@class, 'rl-asep')]"),
-                "a separator between the items of a wrapping group",
-            )
-        tail = bar.xpath("div/div[contains(@class, 'ic-ab-tail')]")
-        self.assertEqual(len(tail), 1)
-        kinds = [
-            "sep" if "rl-asep" in child.get("class", "") else "button"
-            for child in tail[0].xpath("*")
-        ]
-        self.assertEqual(kinds, ["button", "sep", "button", "sep", "button"])
+        row = ["runCheck", "runFullSetup", "openHardeningModal", "openHostShell"]
+        in_menu = bar.xpath(".//IcMenu//button/@t-on-click")
+        for handler in row:
+            with self.subTest(handler=handler):
+                self.assertTrue(bar.xpath(
+                    f"div[1]//button[not(ancestor::IcMenu)]"
+                    f"[contains(@t-on-click, '{handler}')]"
+                ))
+                self.assertFalse([c for c in in_menu if handler in c])
+        for handler in ["openImportBrowser", "hostAction", "trustHostKey"]:
+            with self.subTest(handler=handler):
+                self.assertTrue([c for c in in_menu if handler in c])
+        # The SaaS manager adds its Traefik button before this one.
+        self.assertTrue(
+            bar.xpath(".//IcMenu//button[@title='Import existing instance']"),
+            "an extension's xpath anchors on the import button",
+        )
 
     def test_the_project_header_has_a_trash(self):
         trash = _template("project_detail").xpath(

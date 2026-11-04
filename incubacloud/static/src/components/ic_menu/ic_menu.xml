@@ -1,0 +1,22 @@
+<templates>
+
+    <t t-name="incubacloud.IcMenu">
+        <div class="ic-menu" t-ref="root" t-on-keydown="onKeydown">
+            <button type="button"
+                    t-att-class="'rl-btn rl-btn-ghost ic-menu-trigger' + (props.triggerClass ? ' ' + props.triggerClass : '')"
+                    t-ref="trigger"
+                    aria-haspopup="menu"
+                    t-att-aria-expanded="state.open ? 'true' : 'false'"
+                    t-on-click="toggle"
+                    t-on-keydown="onTriggerKeydown">
+                <t t-esc="props.label"/> <span class="ic-menu-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="ic-menu-list" role="menu" t-ref="list"
+                 t-att-hidden="!state.open"
+                 t-on-click="onListClick">
+                <t t-slot="default"/>
+            </div>
+        </div>
+    </t>
+
+</templates>
