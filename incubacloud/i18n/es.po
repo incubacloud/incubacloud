@@ -11084,6 +11084,12 @@ msgid "Re-trust Key"
 msgstr "Volver a confiar en la clave"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Re-trust SSH host key"
+msgstr "Volver a confiar en la clave SSH del host"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__behind_cdn
 msgid "Reached Through a CDN"
 msgstr "Se llega a través de un CDN"
@@ -14716,6 +14722,14 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Trust SSH Key"
 msgstr "Confiar clave SSH"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Trust SSH host key (required before any SSH operation)"
+msgstr ""
+"Confiar en la clave SSH del host (necesario antes de cualquier operación "
+"SSH)"
 
 #. module: incubacloud
 #. odoo-javascript
