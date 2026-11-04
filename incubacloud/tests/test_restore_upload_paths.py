@@ -300,6 +300,24 @@ class TestRestoreModeGate(TransactionCase):
         self.assertEqual(job.payload["mode"], "from_url")
         self.assertFalse(job.secret_payload)
 
+    def test_a_link_restore_says_whether_to_neutralize_and_reset_the_address(self):
+        """Off unless asked, as the panel's dialog leaves them; asked for,
+        the executor gets both (``neutralize``, ``reset_base_url``)."""
+        plain = self.env["cloud.job"].browse(
+            self.instance.restore_from_url(PUBLIC_LINK),
+        )
+        self.assertEqual(
+            (plain.payload["neutralize"], plain.payload["reset_base_url"]),
+            (False, False),
+        )
+        asked = self.env["cloud.job"].browse(self.instance.restore_from_url(
+            PUBLIC_LINK, neutralize=True, reset_base_url=True,
+        ))
+        self.assertEqual(
+            (asked.payload["neutralize"], asked.payload["reset_base_url"]),
+            (True, True),
+        )
+
     def test_a_link_to_a_private_address_is_refused(self):
         from odoo.exceptions import UserError
         with self.assertRaises(UserError):
@@ -523,6 +541,97 @@ class TestUploadGrant(TransactionCase):
             self.instance,
         )
         self.assertTrue(grant.fingerprint.startswith("SHA256:"))
+
+    @staticmethod
+    def _caller_key():
+        """Return a fresh ed25519 key pair as ssh-keygen writes it:
+        ``(public line with a comment, private PEM)``."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        key = ed25519.Ed25519PrivateKey.generate()
+        public = key.public_key().public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        ).decode()
+        private = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        return f"{public} someone@laptop", private
+
+    def test_the_caller_s_own_key_opens_a_door_and_no_private_key_is_made(self):
+        """The grant installs the caller's public key, without its comment,
+        under every restriction; no private key exists, and the answer of
+        ``grant_restore_upload`` carries none."""
+        public, _private = self._caller_key()
+        grant, private = self.env["cloud.restore.upload.grant"]._open(
+            self.instance, public_key=public,
+        )
+        self.assertIsNone(private)
+        self.assertEqual(grant.public_key, public.rsplit(" ", 1)[0])
+        line = grant._authorized_keys_line()
+        self.assertIn("restrict", line)
+        self.assertIn("expiry-time=", line)
+        self.assertNotIn("someone@laptop", line)
+        other, _private = self._caller_key()
+        opened = self.instance.grant_restore_upload(public_key=other)
+        self.assertNotIn("private_key", opened)
+        self.assertEqual(
+            self.env["cloud.restore.upload.grant"].browse(
+                opened["grant_id"],
+            ).public_key,
+            other.rsplit(" ", 1)[0],
+        )
+
+    def test_a_key_opens_one_door_only(self):
+        """A key that already held a door is refused, on any instance."""
+        public, _private = self._caller_key()
+        self.env["cloud.restore.upload.grant"]._open(
+            self.instance, public_key=public,
+        )
+        before = self.env["cloud.restore.upload.grant"].search_count([])
+        with self.assertRaisesRegex(UserError, "already opened"):
+            self.env["cloud.restore.upload.grant"]._open(
+                self.instance, public_key=public,
+            )
+        self.assertEqual(
+            self.env["cloud.restore.upload.grant"].search_count([]), before,
+        )
+
+    def test_only_an_ed25519_public_key_is_installed(self):
+        """Another type, a private key pasted by mistake, a key that does
+        not decode, or a line that smuggles options or a second line: each
+        refused, and none of what was given is quoted back."""
+        public, private = self._caller_key()
+        body = public.split()[1]
+        rsa = (
+            "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAAgQC7 someone@laptop"
+        )
+        Grant = self.env["cloud.restore.upload.grant"]
+        for given in (
+            rsa, private, "ssh-ed25519 AAAAnotakey", "", "ssh-ed25519",
+            f'command="sh" ssh-ed25519 {body}',
+            f"ssh-ed25519 {body[:-4]}",
+        ):
+            with self.subTest(given=given[:40]):
+                with self.assertRaisesRegex(UserError, "ed25519") as caught:
+                    Grant._parse_public_key(given)
+                if len(given) > 20:
+                    self.assertNotIn(given, str(caught.exception))
+        before = Grant.search_count([])
+        with self.assertRaisesRegex(UserError, "ed25519"):
+            Grant._open(self.instance, public_key=rsa)
+        self.assertEqual(Grant.search_count([]), before)
+        # What follows the key — a line break and an options line —
+        # never reaches the key's line.
+        grant, _none = Grant._open(
+            self.instance,
+            public_key=f'ssh-ed25519 {body}\ncommand="sh",no-pty ssh-ed25519 {body}',
+        )
+        self.assertEqual(grant.public_key, f"ssh-ed25519 {body}")
+        self.assertNotIn("\n", grant._authorized_keys_line())
 
 
 class TestJobSecretPayload(TransactionCase):

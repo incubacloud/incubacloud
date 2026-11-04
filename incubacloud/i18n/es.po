@@ -17097,3 +17097,21 @@ msgstr "Filtros · 1 activo"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Filters · %s active"
 msgstr "Filtros · %s activos"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"That is not an ed25519 public key: give the line ssh-keygen writes to the "
+".pub file (ssh-ed25519 AAAA…)."
+msgstr ""
+"Eso no es una clave pública ed25519: indique la línea que ssh-keygen escribe"
+" en el archivo .pub (ssh-ed25519 AAAA…)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"That key already opened an upload door: generate a new one for each upload."
+msgstr ""
+"Esa clave ya abrió una puerta de subida: genere una nueva para cada subida."
