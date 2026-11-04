@@ -56,6 +56,18 @@ _DEFAULT_TIMEOUT = 10
 _MAX_RESPONSE_BYTES = 8192
 
 
+#: IPv6 ranges refused by name, which Python 3.12's ``is_global`` calls
+#: global: NAT64's well-known prefix, translated to any IPv4 address the
+#: gateway reaches (64:ff9b::7f00:1 is 127.0.0.1), the deprecated
+#: IPv4-compatible addresses (::a.b.c.d) and the deprecated site-local
+#: range, private to a site like 10/8.
+_REFUSED_IPV6 = (
+    (ipaddress.ip_network("64:ff9b::/96"), "NAT64"),
+    (ipaddress.ip_network("::/96"), "IPv4-compatible"),
+    (ipaddress.ip_network("fec0::/10"), "site-local"),
+)
+
+
 class OutboundError(Exception):
     """A request was refused before it left, or could not complete.
 
@@ -90,6 +102,10 @@ def _reject_address(ip):
         return 'unspecified'
     if ip.is_private:
         return 'private'
+    if isinstance(ip, ipaddress.IPv6Address):
+        for network, reason in _REFUSED_IPV6:
+            if ip in network:
+                return reason
     if ip.is_reserved:
         return 'reserved'
     if ip.is_multicast:

@@ -2905,6 +2905,43 @@ class CloudJob(models.Model):
             for job in self
         ]
 
+    def _restore_url_secret(self):
+        """Return what a from-URL restore keeps encrypted, as a dict.
+
+        The job runs as whoever asked for it, without superuser rights
+        unless they had them; the field is the server's.
+
+        :return: the decoded ``secret_payload``, ``{}`` without one
+        :rtype: dict
+        """
+        self.ensure_one()
+        raw = self.sudo().secret_payload
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _restore_url_link(self):
+        """Return the link a from-URL restore downloads.
+
+        Kept encrypted with the credential, never in the payload: a
+        presigned link's signature, or a share link's token, downloads
+        the archive by itself, and every member of a project reads its
+        instances' jobs. A job queued before 1.0.212 that its upgrade did
+        not reach still has it in its payload.
+
+        :return: the link, or ``''``
+        :rtype: str
+        """
+        self.ensure_one()
+        link = self._restore_url_secret().get("url")
+        if not link:
+            link = (self.payload or {}).get("url")
+        return str(link or "").strip()
+
     def _restore_url_credential(self):
         """Return the credential a from-URL restore must authenticate with.
 
@@ -2915,15 +2952,7 @@ class CloudJob(models.Model):
         :return: ``(machine, login, password)``, or ``None``.
         """
         self.ensure_one()
-        # The job runs as whoever asked for it, without superuser rights
-        # unless they had them; the field is the server's.
-        raw = self.sudo().secret_payload
-        if not raw:
-            return None
-        try:
-            data = json.loads(raw)
-        except (TypeError, ValueError):
-            return None
+        data = self._restore_url_secret()
         machine = data.get("machine")
         login = data.get("login")
         password = data.get("password")
