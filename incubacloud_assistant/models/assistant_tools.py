@@ -455,7 +455,7 @@ class AssistantTools(models.AbstractModel):
     def _run_local(self, spec, args):
         """Run one of the assistant's own tools; return ``(text, is_error)``.
 
-        The answer is cut to 64 KB and its secrets masked, as the MCP's are.
+        The answer is cut to ``MAX_BYTES`` and its secrets masked, as the MCP's are.
         """
         try:
             args = validate(spec.input_schema, args)

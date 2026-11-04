@@ -115,6 +115,15 @@ A tool above the user's role is not listed, and a call to it gets the
 role check's message. Operations that queue a job answer at once with its
 `job_id`, its state and what it waits behind; `get_job` follows it.
 
+`get_job` reads a clean view of the job's log, the same for every kind of
+job; the panel's log stays as it came. Terminal escape codes are taken out,
+and consecutive lines that differ only in their numbers show as the last of
+them with `(+N similar lines)` (`protocol/log_view.py` says what counts as a
+number). Offsets count the lines of that view; the answer always says
+`total` (lines), `total_pages` and `page`, and takes `page` or `offset`. Pages
+are cut from the first line at a fixed size, so a page number names the same
+lines from one call to the next; only the last one grows with the log.
+
 | Tools | Minimum role | Destructive | Approval |
 |---|---|---|---|
 | `panel_overview`, `search`, `list_projects`, `get_project`, `list_instances`, `get_instance`, `list_hosts`, `get_job`, `list_alerts`, `get_pitr` (bridge) | stakeholder | | |
@@ -324,15 +333,18 @@ read and encode a secret of the instance, as with the terminal.
 
 ## Limits and untrusted content
 
-Logs, captured mail and lists come in pages of 64 KB (`truncated`,
+Logs, captured mail and lists come in pages of 20 KB (`truncated`,
 `next_offset`; `offset` and `limit` where a tool pages); a command's output
-is cut (stdout about 54 KB, stderr 8 KB) and says so (`stdout_truncated`,
-`stderr_truncated`). Sizes are measured as the answer serialises them, and
+is cut (stdout about 14 KB, stderr 4 KB) and says so (`stdout_truncated`,
+`stderr_truncated`). 20 KB keeps every answer under the 25,000 tokens Claude
+Code takes from a tool by default: a token stands for at least one byte, so
+an answer of fewer bytes has fewer tokens, whatever it holds. Sizes are
+measured as the answer serialises them, and
 the bytes between entries count. A page's paging keys come on top of its
-64 KB, so the last guard lets an answer through untouched up to 1 KB past
+20 KB, so the last guard lets an answer through untouched up to 1 KB past
 it (`PAGE_SLACK`): cutting a page for its own keys would only shorten it.
 An answer past that — which no tool pages, or a page that masking grew — is
-cut to just under 64 KB (`GUARD_MARGIN` leaves room for `truncated` and the
+cut to just under 20 KB (`GUARD_MARGIN` leaves room for `truncated` and the
 untrusted wrapping), lists first, and says so; a page keeps its first
 entries and its `next_offset` moves back, so none is skipped. A page of
 text — such as a captured mail of `staging_mailbox` (`page_record`) — is

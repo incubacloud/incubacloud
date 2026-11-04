@@ -1,16 +1,23 @@
 """How much one answer may carry, and how the agent asks for the rest.
 
-Logs, mail and lists are cut at 64 KB with ``truncated: true`` and a
+Logs, mail and lists are cut at 20 KB with ``truncated: true`` and a
 ``next_offset`` to continue from; a command's output is only cut, and
 says so. Sizes are measured as the answer serialises them (JSON,
 ``ensure_ascii=False``, UTF-8): escaped quotes and newlines count, and so
 does every byte of an accented letter, no more.
+
+20 KB keeps every answer under what Claude Code takes from a tool by
+default, 25,000 tokens: a token stands for at least one byte of the text,
+so an answer of fewer bytes than that has fewer tokens too, whatever it
+holds (hex, escapes, other scripts). The 1 KB of paging keys a page may
+add (``PAGE_SLACK``) and the untrusted wrapping leave more than 3 KB to
+spare.
 """
 
 import copy
 import json
 
-MAX_BYTES = 64 * 1024
+MAX_BYTES = 20 * 1024
 #: Bytes between two entries of a list, as the answer serialises it: ``, ``.
 SEPARATOR_BYTES = 2
 #: The keys under which a paged answer carries its page of entries.
@@ -107,6 +114,69 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
         "next_offset": following if following < total else None,
     }
     return _too_small(result) if not page and offset < end else result
+
+
+def page_lines(lines, offset=0, limit=None, page=None, max_bytes=MAX_BYTES):
+    """Return one page of *lines*, with how many lines and pages there are.
+
+    The pages are cut from the first line on: each holds the most lines
+    that fit *max_bytes* as a list, *limit* at most; a line longer than a
+    page is a page by itself, cut to fit (``truncated``). *page* returns
+    one of them; *offset* starts at any line instead, and the page then
+    holds as many lines from it as fit, so the next ones follow from
+    ``next_offset`` without a gap. ``page`` says which page holds the
+    first line shown. *lines* is read once, to its end, keeping only the
+    page asked for.
+
+    :param lines: an iterable of strings
+    :param int offset: the first line to show, counted from 0
+    :param limit: at most this many lines a page, or None
+    :param page: the page to show, from 1, instead of *offset*
+    :return: ``{items, offset, page, total, total_pages, truncated,
+        next_offset}``; ``total`` counts the lines; ``page`` is None
+        when *offset* is past the last line
+    """
+    limit = max(1, int(limit)) if limit else None
+    start = None if page else max(0, int(offset or 0))
+    items, size, full, cut = [], 2, False, False
+    pages, page_size, page_count, holder, total = 0, 2, 0, None, 0
+    for index, line in enumerate(lines):
+        total = index + 1
+        cost = _size(line) + SEPARATOR_BYTES
+        if (
+            not pages
+            or page_count == limit
+            or (page_count and page_size + cost > max_bytes)
+        ):
+            pages, page_size, page_count = pages + 1, 2, 0
+            if page and pages == page:
+                start = index
+        page_size += cost
+        page_count += 1
+        if start is None or index < start or full:
+            continue
+        if index == start:
+            holder = pages
+        if items and (len(items) == limit or size + cost > max_bytes):
+            full = True
+            continue
+        if not items and size + cost > max_bytes:
+            # Alone on its page, as the pages are cut: nothing follows it.
+            line, cut, full = _fit(line, max_bytes - size - SEPARATOR_BYTES), True, True
+            cost = _size(line) + SEPARATOR_BYTES
+        items.append(line)
+        size += cost
+    start = total if start is None else start
+    following = start + len(items)
+    return {
+        "items": items,
+        "offset": start,
+        "page": holder,
+        "total": total,
+        "total_pages": pages,
+        "truncated": cut or following < total,
+        "next_offset": following if following < total else None,
+    }
 
 
 def cap_text(text, offset=0, max_bytes=MAX_BYTES):
