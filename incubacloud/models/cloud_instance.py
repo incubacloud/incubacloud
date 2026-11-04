@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -13,7 +14,7 @@ from ..github.http_utils import HTTPBudget
 from ..net.outbound import OutboundError
 from ..net.restore_source import (
     curl_resolve_argument,
-    masked as masked_restore_url,
+    shown_link,
     split_credentials,
     validate as validate_restore_url,
 )
@@ -3391,7 +3392,8 @@ class CloudInstance(models.Model):
         return grant._revoke()
 
     def restore_from_url(self, url, backup_before_restore=False,
-                         neutralize=False, reset_base_url=False):
+                         neutralize=False, reset_base_url=False,
+                         from_agent=False):
         """Have the host download an archive and restore from it.
 
         The URL is checked here rather than on the host: allowed scheme,
@@ -3400,6 +3402,12 @@ class CloudInstance(models.Model):
         download command, so the name cannot answer differently by the
         time the host dials it.
 
+        The link itself is kept encrypted on the restore job
+        (``secret_payload``), with its credential: a presigned link's
+        signature, or a share link's token, downloads the archive by
+        itself, and every member of the project reads the job's
+        payload, which holds its ``shown_link`` only.
+
         :param url: ``https``, ``sftp`` or ``ftp`` source, which may
             carry ``user:password@``.
         :param backup_before_restore: take a safety backup first.
@@ -3407,15 +3415,21 @@ class CloudInstance(models.Model):
             ``neutralize``).
         :param reset_base_url: give the restored database this
             instance's own address (the executor's ``reset_base_url``).
-        :return: id of the restore job.
+        :param from_agent: hold the link to an agent's rules as well
+            (``_check_restore_link``), here and where it is fetched.
+        :return: id of the first job queued (the safety backup's, when
+            one is taken).
         """
         self.ensure_one()
         self.env["cloud.security.mixin"]._check_can_manage_backups()
         clean, username, password = split_credentials(url)
-        try:
-            parts, address, port = validate_restore_url(clean)
-        except OutboundError as exc:
-            raise UserError(_("That link cannot be used: %s.", exc)) from exc
+        if from_agent and (username or password):
+            raise UserError(_(
+                "A link with a user or a password is given in the panel "
+                "(Import, From a link): credentials never pass through an "
+                "agent. Use a presigned or share link instead."
+            ))
+        parts, address, port = self._check_restore_link(clean, from_agent)
         # curl takes the login and the password as one value, split at
         # its first colon (``_curl_config``).
         if ":" in username:
@@ -3423,27 +3437,75 @@ class CloudInstance(models.Model):
                 "That link cannot be used: its user name contains a colon, "
                 "which cannot be sent to the server."
             ))
-        job_id = self._restore_db({
+        payload = {
             "mode": "from_url",
-            "url": clean,
-            "url_display": masked_restore_url(url),
+            "url_display": shown_link(clean),
             "resolve": curl_resolve_argument(parts, address, port),
             "backup_before_restore": bool(backup_before_restore),
             "neutralize": bool(neutralize),
             "reset_base_url": bool(reset_base_url),
-        })
+        }
+        if from_agent:
+            payload["link_policy"] = "agent"
+        job_id = self._restore_db(payload)
+        secret = {"url": clean}
         if username:
-            # Written after the job exists and outside the payload: the
-            # payload is read back into the UI and notifications, and a
-            # password has no business in either.
-            self.env["cloud.job"].browse(job_id).sudo().secret_payload = (
-                json.dumps({
-                    "machine": parts.hostname,
-                    "login": username,
-                    "password": password,
-                })
-            )
+            secret |= {
+                "machine": parts.hostname,
+                "login": username,
+                "password": password,
+            }
+        # Written after the job exists and outside the payload: the
+        # payload is read back into the UI and notifications, and neither
+        # a password nor a link that downloads by itself belongs there.
+        # On the restore's own job, which is not the first of a chain
+        # that takes a safety backup.
+        self._restore_job_of(job_id).sudo().secret_payload = json.dumps(secret)
         return job_id
+
+    def _check_restore_link(self, url, from_agent=False):
+        """Check a link a host of this panel may be told to download.
+
+        A public address, a plain name (``restore_source.validate``).
+        An agent's link besides: ``https`` on port 443 only, as every
+        link the panel itself dials (``net.outbound``), and never an
+        address of a server this panel manages, nor of the panel
+        (``cloud.host._panel_own_networks``) — public addresses, which
+        the first check lets through.
+
+        :param str url: the link, its credentials split off
+        :param bool from_agent: whether an agent gave it
+        :return: ``(parts, pinned_address, port)``
+        :raises UserError: for a link that cannot be used, saying why
+        """
+        try:
+            if from_agent:
+                if urlsplit(url).scheme != "https":
+                    raise OutboundError("an agent gives an https link only")
+                return validate_restore_url(
+                    url, only_port=443,
+                    refused=self.env["cloud.host"]._panel_own_networks(),
+                )
+            return validate_restore_url(url)
+        except OutboundError as exc:
+            raise UserError(_("That link cannot be used: %s.", exc)) from exc
+
+    def _restore_job_of(self, job_id):
+        """Return the restore job of what ``_restore_db`` queued.
+
+        The job itself, or, when a safety backup comes first, the
+        ``restore_instance`` step of its chain.
+
+        :param int job_id: what ``_restore_db`` returned
+        :rtype: cloud.job
+        """
+        job = self.env["cloud.job"].sudo().browse(job_id)
+        if job.job_type_id.code == "restore_instance" or not job.queue_chain_key:
+            return job
+        return job.search([
+            ("queue_chain_key", "=", job.queue_chain_key),
+            ("job_type_id.code", "=", "restore_instance"),
+        ], limit=1) or job
 
     def restore_db(self, payload):
         """Enqueue a restore_instance job with the given payload.

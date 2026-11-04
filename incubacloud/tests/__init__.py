@@ -67,6 +67,7 @@ from . import (
     test_real_ip,
     test_service_states,
     test_restore_upload_paths,
+    test_restore_hardening,
     test_transport,
     test_delete_project,
     test_health_endpoint,

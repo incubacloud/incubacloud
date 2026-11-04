@@ -26,6 +26,13 @@ the sweep removes that directory three days later (``USED_GRANT_DAYS``).
 The private key is generated for the caller, shown once and never stored.
 Losing it costs a new grant, which is cheap; keeping it would mean the
 panel custodying a credential to its own hosts for no reason.
+
+One door per instance at a time: each one is a directory anybody holding
+its key fills, on the disk the host's instances share. Opening one closes
+the caller's own door of the instance, and is refused while another
+person's is open. And a key opens one door ever: every key that opened
+one is kept (``cloud.restore.upload.key``), when the grants themselves
+are purged.
 """
 import logging
 import re
@@ -33,6 +40,8 @@ from datetime import timedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+from ._concurrency import read_committed_cursor
 
 _logger = logging.getLogger(__name__)
 
@@ -70,6 +79,61 @@ GRANT_HOURS = 12
 #: and all (``_gc_grants``), and the host's own sweep of /tmp takes a
 #: directory that job never reached (``upload_dir_sweep``).
 USED_GRANT_DAYS = 3
+
+#: The advisory lock opening a door of an instance takes, next to the
+#: queues' (``cloud.job``): two doors asked for at once are opened one
+#: after the other.
+_DOOR_LOCK_NAMESPACE = 0x0C10D10D
+
+
+class CloudRestoreUploadKey(models.Model):
+    """A public key that opened an upload door, kept so it never opens another.
+
+    A door's grant is purged a month after it closed; the key it held
+    is not, or a key used once would open a door again after that. Its
+    fingerprint is unique in the database, so two doors asked for at
+    once with one key cannot both open: the second insert waits for the
+    first and inserts nothing (``_claim``). Written by the panel alone,
+    read by nobody.
+    """
+
+    _name = "cloud.restore.upload.key"
+    _description = "Public key that opened an upload door"
+
+    _fingerprint_uniq = models.Constraint(
+        "unique (fingerprint)",
+        "That key already opened an upload door: generate a new one for "
+        "each upload.",
+    )
+
+    fingerprint = fields.Char(required=True, readonly=True)
+
+    @api.model
+    def _claim(self, fingerprint):
+        """Record that *fingerprint* opens a door, or refuse if it did.
+
+        One ``INSERT … ON CONFLICT DO NOTHING``: a key recorded before
+        inserts nothing, and one another transaction is recording waits
+        for it — nothing when it commits, a serialization failure Odoo
+        retries the request on when it was committed after this
+        transaction's snapshot.
+
+        :param str fingerprint: ``SHA256:…`` of the key
+        :raises UserError: when the key already opened one
+        """
+        self.env.cr.execute(
+            "INSERT INTO cloud_restore_upload_key"
+            " (fingerprint, create_uid, write_uid, create_date, write_date)"
+            " VALUES (%s, %s, %s, now() AT TIME ZONE 'UTC',"
+            " now() AT TIME ZONE 'UTC')"
+            " ON CONFLICT (fingerprint) DO NOTHING RETURNING id",
+            (fingerprint, self.env.uid, self.env.uid),
+        )
+        if not self.env.cr.fetchone():
+            raise UserError(_(
+                "That key already opened an upload door: generate a new one "
+                "for each upload."
+            ))
 
 
 class CloudRestoreUploadGrant(models.Model):
@@ -256,7 +320,10 @@ class CloudRestoreUploadGrant(models.Model):
         no keypair is made. A key opens one grant only: two lines of
         ``authorized_keys`` with the same key would have sshd pick one
         of their directories for every session, and a key that already
-        held a door is no longer a one-use one.
+        held a door is no longer a one-use one (``cloud.restore.upload.key``).
+        And an instance has one door open at a time
+        (``_doors_to_close``): the doors that went before it are closed
+        once nothing refuses this one.
 
         :param instance: ``cloud.instance`` the archive is destined for.
         :param hours: lifetime of the grant.
@@ -264,8 +331,9 @@ class CloudRestoreUploadGrant(models.Model):
             or None to generate a keypair.
         :return: ``(grant, private_key_pem)`` — the private half exists
             only in this return value; None with *public_key*.
-        :raise UserError: when the instance has no host to open on, or
-            *public_key* is not a key that may open one.
+        :raise UserError: when the instance has no host to open on,
+            another person's door of it is open, or *public_key* is not
+            a key that may open one.
         """
         import secrets
 
@@ -278,14 +346,6 @@ class CloudRestoreUploadGrant(models.Model):
         if public_key:
             public = self._parse_public_key(public_key)
             private = None
-            # Every grant, whoever's: a key is unique on every host.
-            if self.sudo().with_context(active_test=False).search_count(
-                [("fingerprint", "=", self._fingerprint(public))], limit=1,
-            ):
-                raise UserError(_(
-                    "That key already opened an upload door: generate a new "
-                    "one for each upload."
-                ))
         else:
             key = ed25519.Ed25519PrivateKey.generate()
             public = key.public_key().public_bytes(
@@ -297,6 +357,11 @@ class CloudRestoreUploadGrant(models.Model):
                 format=serialization.PrivateFormat.OpenSSH,
                 encryption_algorithm=serialization.NoEncryption(),
             ).decode()
+        closing = self._doors_to_close(instance)
+        # Every key, whoever's and on whatever instance: a key is unique
+        # on every host.
+        self.env["cloud.restore.upload.key"]._claim(self._fingerprint(public))
+        closing._revoke()
         # The panel's own record: people read grants, never write them
         # (``ir.model.access.csv``).
         grant = self.sudo().create({
@@ -308,6 +373,61 @@ class CloudRestoreUploadGrant(models.Model):
             "expires_at": fields.Datetime.now() + timedelta(hours=hours),
         }).with_env(self.env)
         return grant, private
+
+    @api.model
+    def _doors_to_close(self, instance):
+        """Return the doors of *instance* to close before another one opens.
+
+        Under a lock of the instance's doors, held until the transaction
+        ends: two doors asked for at once open one after the other. One
+        whose deadline passed is closed, as the sweep would; the
+        caller's own is closed too (a key lost with the dialog that
+        showed it); another person's is left open, and the new one
+        refused. A door another transaction opened after this one's
+        snapshot is seen by a fresh read, and refused alike.
+
+        :param instance: the ``cloud.instance`` a door is asked for
+        :return: the grants to revoke, in the caller's environment
+        :raises UserError: while another person's door of it is open
+        """
+        self.env.cr.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)",
+            (_DOOR_LOCK_NAMESPACE, instance.id),
+        )
+        now = fields.Datetime.now()
+        open_doors = self.sudo().search([
+            ("instance_id", "=", instance.id),
+            ("state", "=", "granted"),
+        ])
+        expired = open_doors.filtered(lambda g: g.expires_at <= now)
+        others = (open_doors - expired).filtered(
+            lambda g: g.user_id != self.env.user,
+        )
+        if others:
+            raise UserError(_(
+                "An upload door is already open for this instance, opened by "
+                "%(person)s until %(deadline)s UTC: one door at a time. Ask "
+                "them to close it, or wait until it expires.",
+                person=others[0].user_id.name or "",
+                deadline=fields.Datetime.to_string(others[0].expires_at),
+            ))
+        self.env.flush_all()
+        # Not ``cr``: ``_`` reads the language through a local of that
+        # name, and this cursor is closed by the time a refusal is said.
+        with read_committed_cursor(self.env.registry) as fresh_cr:
+            fresh_cr.execute(
+                "SELECT id FROM cloud_restore_upload_grant"
+                " WHERE instance_id = %s AND state = 'granted'"
+                " AND expires_at > now() AT TIME ZONE 'UTC'",
+                (instance.id,),
+            )
+            fresh = {row[0] for row in fresh_cr.fetchall()}
+        if fresh - set(self.sudo().browse(fresh).exists().ids):
+            raise UserError(_(
+                "Another upload door was opened for this instance a moment "
+                "ago: one door at a time. Close it, or wait until it expires."
+            ))
+        return (open_doors - others).with_env(self.env)
 
     @api.model
     def _fingerprint(self, public_key):
