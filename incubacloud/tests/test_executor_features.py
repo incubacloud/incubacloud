@@ -884,13 +884,14 @@ class TestDeleteCommandsWhenInstanceIsGone(TransactionCase):
 
     def test_live_instance_still_gets_torn_down(self):
         # compose down · drop the logrotate config · remove the directory
-        self.assertEqual(len(self._executor().get_commands()), 3)
+        # · empty the build cache
+        self.assertEqual(len(self._executor().get_commands()), 4)
 
     def test_archived_instance_still_gets_torn_down(self):
         """Archived is not gone: the directory is still on the host."""
         self.instance.write({'active': False})
         self.job.invalidate_recordset(['instance_id'])
-        self.assertEqual(len(self._executor().get_commands()), 3)
+        self.assertEqual(len(self._executor().get_commands()), 4)
 
     def test_unlinked_instance_yields_no_commands(self):
         self.instance.unlink()
