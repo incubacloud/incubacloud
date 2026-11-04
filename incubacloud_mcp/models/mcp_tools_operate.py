@@ -30,20 +30,27 @@ _INSTANCE = record_id("The instance.")
 _REPO_MODELS = ("cloud.project.repo", "cloud.instance.repo")
 
 #: The fields a project's and an instance's ``vals`` share.
+_SERIES = [version for version, _label in ODOO_VERSION_SELECTION]
 _COMMON_FIELDS = {
     "name": string("The name."),
-    "odoo_version": string(
-        "The Odoo series.", enum=[version for version, _label in ODOO_VERSION_SELECTION]
-    ),
+    # As text, or as the number the panel's form sends (19 or 19.0): the
+    # routes write it as text.
+    "odoo_version": {
+        **string("The Odoo series, as text (19.0) or as a number.", enum=_SERIES),
+        "type": ["string", "number"],
+        "enum": [*_SERIES, *(float(version) for version in _SERIES)],
+    },
     "odoo_commit_sha": string(
         "Pin Odoo's core to this commit; empty follows the branch."
     ),
     "odoo_initial_lang": nullable(
         record_key(
             "The language installed on the first deploy, by its code (es_ES, "
-            "fr_FR…); null for English.",
+            "fr_FR…) or by the id get_project and get_instance answer; null "
+            "for English.",
             "res.lang",
             "code",
+            or_id=True,
         )
     ),
     "pip_dependencies": string("The pip requirements, one per line."),

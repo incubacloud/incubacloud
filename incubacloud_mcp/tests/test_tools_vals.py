@@ -137,7 +137,11 @@ class TestToolVals(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             ("create_instance", {"vals": {"project_id": "acme", "name": "x"}}),
             (
                 "update_instance",
-                {"instance_id": self.staging.id, "vals": {"odoo_initial_lang": 12}},
+                {"instance_id": self.staging.id, "vals": {"odoo_initial_lang": True}},
+            ),
+            (
+                "update_instance",
+                {"instance_id": self.staging.id, "vals": {"odoo_version": True}},
             ),
         ):
             with self.subTest(args=args):
@@ -154,6 +158,15 @@ class TestToolVals(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         routes = {
             "create_instance": CloudDataLoadController._CREATE_INSTANCE_ALLOWED,
             "update_instance": CloudDataLoadController._SAVE_INSTANCE_ALLOWED,
+            "create_project": CloudDataLoadController._PROJECT_ALLOWED,
+            "update_project": CloudDataLoadController._PROJECT_ALLOWED,
+        }
+        #: What each route reads itself, besides the fields it writes.
+        read = {
+            "create_instance": {"repos", "domains", "domain"},
+            "update_instance": {"repos", "domains", "whitelist", "environment"},
+            "create_project": {"repos", "tag_ids"},
+            "update_project": {"repos", "tag_ids", "member_ids"},
         }
         for name, model in VALS_TOOLS.items():
             spec = Catalog._spec(name)
@@ -170,17 +183,143 @@ class TestToolVals(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                     expected = (
                         "string" if RECORD_KEY in schema else JSON_TYPES[type(field)]
                     )
-                    self.assertEqual(schema["type"], expected)
+                    kinds = schema["type"]
+                    kinds = kinds if isinstance(kinds, list) else [kinds]
+                    # The type a model writes first; null, or a number for
+                    # a version, may follow.
+                    self.assertEqual(kinds[0], expected)
                     if isinstance(field, fields.Selection) and "enum" in schema:
                         self.assertEqual(
-                            set(schema["enum"]),
+                            {v for v in schema["enum"] if isinstance(v, str)},
                             {value for value, _label in field.selection},
                         )
                     if RECORD_KEY in schema:
                         self.assertEqual(
                             schema[RECORD_KEY]["model"], field.comodel_name
                         )
-            if name in routes:
-                self.assertEqual(
-                    routes[name] - secrets - set(vals["properties"]), set(), name
+            declared = set(vals["properties"])
+            self.assertEqual(routes[name] - secrets - declared, set(), name)
+            # And every field declared is one the route takes: none is
+            # dropped without a word.
+            self.assertEqual(declared - routes[name] - read[name], set(), name)
+
+
+@tagged("post_install", "-at_install")
+class TestToolValsRoundTrip(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+    """What an agent reads it can write back: a language by its id, a version
+    as a number, a backup destination when an instance is created."""
+
+    def setUp(self):
+        """A consultant and a developer of the project."""
+        super().setUp()
+        self._resource_here()
+        self._panel_fixture()
+        self.consultant = self._cloud_user(
+            "mcp-trip-consultant", group="group_cloud_consultant"
+        )
+        self.developer = self._cloud_user(
+            "mcp-trip-developer", group="group_cloud_developer"
+        )
+        self.project.member_ids = [(4, self.consultant.id), (4, self.developer.id)]
+        self.key = self._api_key(self.consultant)
+        self.developer_key = self._api_key(self.developer)
+        self.spanish = (
+            self.env["res.lang"]
+            .with_context(active_test=False)
+            .search([("code", "=", "es_ES")])
+        )
+
+    def _ok(self, name, args, key=None):
+        """Call *name*; check it went through; return its answer."""
+        result = self._call_tool(key or self.key, name, args)
+        self.assertFalse(result["isError"], result["content"][-1]["text"][:500])
+        return self._payload(result)
+
+    def test_a_language_read_as_an_id_is_written_back_as_one(self):
+        """get_instance and get_project answer the language's id: written
+        back, it is the same language; an id no language has is refused."""
+        self.staging.odoo_initial_lang = self.spanish
+        self.project.odoo_initial_lang = self.spanish
+        read = self._ok("get_instance", {"instance_id": self.staging.id})
+        self.assertEqual(read["odoo_initial_lang"], self.spanish.id)
+        self.staging.odoo_initial_lang = False
+        self._ok(
+            "update_instance",
+            {"instance_id": self.staging.id,
+             "vals": {"odoo_initial_lang": read["odoo_initial_lang"]}},
+        )
+        self.assertEqual(self.staging.odoo_initial_lang, self.spanish)
+        project = self._ok("get_project", {"project_id": self.project.id})
+        self.project.odoo_initial_lang = False
+        self._ok(
+            "update_project",
+            {"project_id": self.project.id,
+             "vals": {"odoo_initial_lang": project["odoo_initial_lang"]}},
+        )
+        self.assertEqual(self.project.odoo_initial_lang, self.spanish)
+        missing = self.env["res.lang"].with_context(active_test=False).search(
+            [], order="id desc", limit=1,
+        ).id + 1000
+        result = self._call_tool(
+            self.key, "update_instance",
+            {"instance_id": self.staging.id, "vals": {"odoo_initial_lang": missing}},
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn(f"no res.lang has the id {missing}", result["content"][0]["text"])
+
+    def test_a_version_given_as_a_number_is_the_series(self):
+        """19 and 19.0 are the series 19.0, as the panel's form sends them;
+        a number no series has is refused."""
+        series = self.staging.odoo_version
+        project_series = self.project.odoo_version
+        for number in (float(series), int(float(series))):
+            with self.subTest(number=number):
+                self._ok(
+                    "update_instance",
+                    {"instance_id": self.staging.id, "vals": {"odoo_version": number}},
                 )
+                self.assertEqual(self.staging.odoo_version, series)
+                self._ok(
+                    "update_project",
+                    {"project_id": self.project.id,
+                     "vals": {"odoo_version": float(project_series)}},
+                )
+                self.assertEqual(self.project.odoo_version, project_series)
+        result = self._call_tool(
+            self.key, "update_instance",
+            {"instance_id": self.staging.id, "vals": {"odoo_version": 3.5}},
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("must be one of", result["content"][0]["text"])
+
+    def test_a_new_instance_keeps_the_backup_destination_it_is_given(self):
+        """create_instance writes backup_backend_id, under the rule the
+        panel's form is under: a developer chooses it; a consultant is
+        told why not, and nothing is created."""
+        vals = {
+            "name": "mcp-trip-prod",
+            "project_id": self.project.id,
+            "host_id": self.host.id,
+            "environment": "staging",
+            "backup_backend_id": self.backend.id,
+        }
+        result = self._call_tool(self.key, "create_instance", {"vals": vals})
+        self.assertTrue(result["isError"])
+        self.assertIn("Developer", result["content"][-1]["text"])
+        self.assertFalse(
+            self.env["cloud.instance"].search([("name", "=", "mcp-trip-prod")])
+        )
+        self._ok("create_instance", {"vals": vals}, key=self.developer_key)
+        created = self.env["cloud.instance"].search([("name", "=", "mcp-trip-prod")])
+        self.assertEqual(created.backup_backend_id, self.backend)
+
+    def test_the_answers_never_cut_what_an_update_writes_back_whole(self):
+        """The guard knows the fields the update tools replace whole."""
+        whole = self.env["incubacloud.mcp.server"]._replaced_whole()
+        for key in (
+            "repos", "domains", "whitelist", "member_ids", "tag_ids",
+            "pip_dependencies", "apt_dependencies", "odoo_conf",
+        ):
+            with self.subTest(key=key):
+                self.assertIn(key, whole)
+        self.assertNotIn("recentJobs", whole)

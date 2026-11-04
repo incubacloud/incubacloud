@@ -342,8 +342,12 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             payload["log"]["items"],
             [
                 "[stdout] create done",
-                "[stdout] 6e00e0164b46 Extracting 300B (+299 similar lines)",
-                "[stdout] Updating files: 100% (1000/1000) (+99 similar lines)",
+                "[stdout] 6e00e0164b46 Extracting 1B",
+                "(+298 similar lines)",
+                "[stdout] 6e00e0164b46 Extracting 300B",
+                "[stdout] Updating files: 1% (10/1000)",
+                "(+98 similar lines)",
+                "[stdout] Updating files: 100% (1000/1000)",
                 "[stdout] 6e00e0164b46 Pull complete",
                 "[stdout] a1b2c3d4e5f6 Pull complete",
                 "[stdout] Error at step 3",
@@ -351,7 +355,7 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             ],
         )
         self.assertEqual(
-            (payload["log"]["total"], payload["log"]["total_pages"]), (10, 1)
+            (payload["log"]["total"], payload["log"]["total_pages"]), (14, 1)
         )
         chunk.invalidate_recordset(["content"])
         self.assertEqual(chunk.content, content)
@@ -423,6 +427,66 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             for line in range(100)
         ]
         self.assertEqual(seen[3:], expected)
+
+    def test_the_pages_by_number_follow_each_other_whatever_masking_adds(self):
+        """A log whose secrets mask longer than they are, with a long error
+        beside it: no page is cut by the answer's guard, and page N+1
+        starts where page N ended."""
+        secret = "s3cr3t-8"
+        self.host.password = secret
+        self.env["cloud.job.log.chunk"].sudo().create(
+            [
+                {
+                    "job_id": self.job.id,
+                    "source": "stdout",
+                    "content": "\n".join(
+                        f"{_word(chunk * 100 + line)} " + f"{secret} " * 20
+                        for line in range(100)
+                    ),
+                }
+                for chunk in range(10)
+            ]
+        )
+        Job = type(self.env["cloud.job"])
+        with patch.object(
+            Job, "_failure_excerpt", autospec=True, return_value="E" * 5000
+        ):
+            self.job.sudo().state = "failed"
+            first = self._payload(
+                self._call_tool(self.key, "get_job", {"job_id": self.job.id, "page": 1})
+            )
+            seen, number = [], 1
+            while number <= first["log"]["total_pages"]:
+                result = self._call_tool(
+                    self.key, "get_job", {"job_id": self.job.id, "page": number}
+                )
+                payload = self._payload(result)
+                self.assertFalse(payload.get("truncated"))
+                self.assertEqual(payload["log"]["offset"], len(seen))
+                seen.extend(payload["log"]["items"])
+                number += 1
+        self.assertEqual(len(seen), first["log"]["total"])
+        self.assertTrue(all(MASK in line for line in seen[3:]))
+
+    def test_hosts_come_in_pages(self):
+        """list_hosts returns at most the page asked for, with the total."""
+        for index in range(2):
+            self.env["cloud.host"].create({
+                "name": f"mcp-page-host-{index}", "ip_address": f"198.51.100.{60 + index}",
+                "user": "root", "wildcard_domain": f"page{index}.example",
+            })
+        manager = self._api_key(
+            self._cloud_user("mcp-hosts-manager", group="group_cloud_manager")
+        )
+        first = self._payload(self._call_tool(manager, "list_hosts", {"limit": 1}))
+        self.assertEqual(len(first["items"]), 1)
+        self.assertEqual(first["next_offset"], 1)
+        self.assertGreaterEqual(first["total"], 3)
+        second = self._payload(
+            self._call_tool(manager, "list_hosts", {"limit": 1, "offset": 1})
+        )
+        self.assertNotEqual(second["items"][0]["id"], first["items"][0]["id"])
+        self.assertIn("autoassign_enabled", first)
 
     def test_projects_come_in_pages(self):
         """list_projects returns at most the page asked for."""

@@ -197,25 +197,29 @@ def cap_text(text, offset=0, max_bytes=MAX_BYTES):
     }
 
 
-def cap_strings(obj, max_bytes=MAX_BYTES):
+def cap_strings(obj, max_bytes=MAX_BYTES, whole=frozenset()):
     """Cut every string inside *obj* longer than *max_bytes*.
 
     A string is measured as the answer serialises it, without the two
     quotes around it, and cut to its longest prefix that fits.
 
+    :param whole: keys whose values are left whole, however long
     :return: ``(obj with long strings cut, whether any was cut)``
     """
     if isinstance(obj, str):
         cut = _fit(obj, max_bytes + 2)
         return cut, cut != obj
     if isinstance(obj, dict):
-        pairs = {key: cap_strings(item, max_bytes) for key, item in obj.items()}
+        pairs = {
+            key: (item, False) if key in whole else cap_strings(item, max_bytes, whole)
+            for key, item in obj.items()
+        }
         return (
             {key: pair[0] for key, pair in pairs.items()},
             any(pair[1] for pair in pairs.values()),
         )
     if isinstance(obj, (list, tuple)):
-        pairs = [cap_strings(item, max_bytes) for item in obj]
+        pairs = [cap_strings(item, max_bytes, whole) for item in obj]
         return [pair[0] for pair in pairs], any(pair[1] for pair in pairs)
     return obj, False
 
@@ -303,22 +307,88 @@ def page_answer(
     return _too_small(result) if page.get("page_too_small") else result
 
 
-def _head_lists(obj, count):
-    """Return *obj* with every list in it cut to its first *count* entries."""
+#: Lists an answer gives up first, before any other is cut: the jobs
+#: ``get_instance`` lists beside the instance's settings.
+EXPENDABLE_KEYS = frozenset({"recentJobs", "activeJobs"})
+
+
+def _head_lists(obj, count, whole=frozenset(), only=None):
+    """Return *obj* with its lists cut to their first *count* entries.
+
+    A list cut says so beside it, in its dict: ``<key>_truncated``.
+
+    :param whole: keys whose values are left whole
+    :param only: keys of the only lists to cut, or None for every list
+    """
     if isinstance(obj, dict):
-        return {key: _head_lists(item, count) for key, item in obj.items()}
+        result = {}
+        for key, item in obj.items():
+            if key in whole:
+                result[key] = item
+                continue
+            cut_here = isinstance(item, (list, tuple)) and (
+                only is None or key in only
+            )
+            if cut_here:
+                result[key] = [_head_lists(entry, count, whole, only) for entry in item[:count]]
+                if len(item) > count:
+                    result[f"{key}_truncated"] = True
+            else:
+                result[key] = _head_lists(item, count, whole, only)
+        return result
     if isinstance(obj, (list, tuple)):
-        return [_head_lists(item, count) for item in obj[:count]]
+        entries = obj if only is not None else obj[:count]
+        return [_head_lists(item, count, whole, only) for item in entries]
     return obj
 
 
-def _longest_list(obj):
-    """Return the length of the longest list inside *obj*."""
+def _longest_list(obj, whole=frozenset(), only=None):
+    """Return the length of the longest list inside *obj* that may be cut."""
     if isinstance(obj, dict):
-        return max((_longest_list(item) for item in obj.values()), default=0)
+        return max(
+            (
+                max(len(item), _longest_list(item, whole, only))
+                if isinstance(item, (list, tuple)) and (only is None or key in only)
+                else _longest_list(item, whole, only)
+                for key, item in obj.items()
+                if key not in whole
+            ),
+            default=0,
+        )
     if isinstance(obj, (list, tuple)):
-        return max([len(obj), *(_longest_list(item) for item in obj)])
+        inner = max((_longest_list(item, whole, only) for item in obj), default=0)
+        return max(len(obj), inner) if only is None else inner
     return 0
+
+
+def _most_entries(obj, max_bytes, whole=frozenset(), only=None):
+    """Return *obj* with its lists cut to the most entries that fit, or None.
+
+    :return: the cut answer, or None when even empty lists do not fit
+    """
+    if _size(_head_lists(obj, 0, whole, only)) > max_bytes:
+        return None
+    low, high = 0, _longest_list(obj, whole, only)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if _size(_head_lists(obj, middle, whole, only)) <= max_bytes:
+            low = middle
+        else:
+            high = middle - 1
+    return _head_lists(obj, low, whole, only)
+
+
+def _held_whole(obj, whole):
+    """Return the keys of *whole* that *obj* holds, anywhere in it."""
+    found, stack = set(), [obj]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            found.update(key for key in node if key in whole)
+            stack.extend(node.values())
+        elif isinstance(node, (list, tuple)):
+            stack.extend(node)
+    return found
 
 
 def _page_lists(obj):
@@ -454,7 +524,7 @@ def _cap_around_pages(obj):
     return capped
 
 
-def fit_answer(obj, max_bytes=MAX_BYTES):
+def fit_answer(obj, max_bytes=MAX_BYTES, whole=frozenset()):
     """Return ``(obj, False)`` when *obj* fits *max_bytes*, else a cut of it.
 
     The safety net behind the tools that page their answers, which
@@ -462,11 +532,19 @@ def fit_answer(obj, max_bytes=MAX_BYTES):
     last entries and its ``next_offset`` moves back to the first of them:
     nothing is skipped; when what comes with the page is too big by itself,
     its strings are cut to 1 KB first. A page of text, whose offsets count the
-    characters before masking, is left as it is. Any other answer has its
-    lists cut first, every one to the same number of entries, the most
-    that fits; when even empty lists do not make it fit, strings are cut
-    to 1 KB first.
+    characters before masking, is left as it is. Any other answer gives up
+    the lists it can do without first (:data:`EXPENDABLE_KEYS`), then has
+    its lists cut, every one to the same number of entries, the most that
+    fits; when even empty lists do not make it fit, strings are cut to 1 KB
+    first. Each list cut says so beside it (``<key>_truncated``).
 
+    What is under a key of *whole* is never cut, list or string: what an
+    update writes back whole (an instance's repositories, domains,
+    allowed hosts, dependencies), which an agent that rewrote it cut
+    would lose. When the answer does not fit otherwise, it is an error
+    that says so.
+
+    :param whole: keys whose values are never cut
     :return: ``(answer that fits, whether it was cut)``
     """
     if _size(obj) <= max_bytes:
@@ -480,15 +558,22 @@ def fit_answer(obj, max_bytes=MAX_BYTES):
         return {"truncated": True, "error": "The answer is too large to show."}, True
     if _has_next_offset(obj):
         return obj, False
-    for candidate in (obj, cap_strings(obj, _FIELD_BYTES)[0]):
-        if _size(_head_lists(candidate, 0)) > max_bytes:
-            continue
-        low, high = 0, _longest_list(candidate)
-        while low < high:
-            middle = (low + high + 1) // 2
-            if _size(_head_lists(candidate, middle)) <= max_bytes:
-                low = middle
-            else:
-                high = middle - 1
-        return _head_lists(candidate, low), True
+    spared = _most_entries(obj, max_bytes, whole, EXPENDABLE_KEYS)
+    if spared is not None:
+        return spared, True
+    obj = _head_lists(obj, 0, whole, EXPENDABLE_KEYS)
+    for candidate in (obj, cap_strings(obj, _FIELD_BYTES, whole)[0]):
+        cut = _most_entries(candidate, max_bytes, whole)
+        if cut is not None:
+            return cut, True
+    held = sorted(_held_whole(obj, whole))
+    if held:
+        return {
+            "truncated": True,
+            "error": (
+                "The answer is too large to show, and cutting it would cut "
+                f"{', '.join(held)}, which an update writes back whole: ask "
+                "for less at a time."
+            ),
+        }, True
     return {"truncated": True, "error": "The answer is too large to show."}, True

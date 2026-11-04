@@ -468,7 +468,12 @@ class AssistantTools(models.AbstractModel):
             result = getattr(self, spec.handler)(args)
         except (SchemaError, SourceError, UserError) as exc:
             return str(exc), True
-        result, _cut = fit_answer(result)
+        result, cut = fit_answer(result)
+        # A list cannot say it was cut: it comes back under items.
+        if cut and isinstance(result, list):
+            result = {"items": result}
+        if cut:
+            result["truncated"] = True
         scrubbed = self.env["incubacloud.mcp.secrets"]._scrubber().value(result)
         return json.dumps(scrubbed, ensure_ascii=False), False
 

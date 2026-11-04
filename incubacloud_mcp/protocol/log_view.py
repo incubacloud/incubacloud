@@ -8,16 +8,20 @@ it came, and only what an agent reads goes through here.
   three-byte escapes.
 * A run of consecutive lines that are the same once their numbers are
   set aside — ``Extracting 1B``, ``Extracting 2B``…; ``Updating files:
-  12% (120/1000)``… — shows as its last line, followed by
-  ``(+N similar lines)``. A number is a run of digits that does not
+  12% (120/1000)``… — shows as its first line and its last, with
+  ``(+N similar lines)`` between them for the N it hides: where it started
+  and where it ended, which differ when the numbers say something
+  (``expected 3, got 5``; ``10.0.0.5`` and ``10.0.0.6``). A number is a run of digits that does not
   follow a letter, a digit or an underscore, with the digits after a
   ``.``, ``,`` or ``:`` that continue it (``1.5``, ``1,234``,
   ``00:01:23``): the hex of a layer id (``6e00e0164b46``) keeps its
   digits but its first, so two layers do not fold into one.
 
-Folding only joins a line to the run before it: once a line is shown, the
+Folding only joins a line to the run before it: once a run is shown, the
 lines before it keep their place however the log grows, and offsets
-counted on this view stay valid while the job writes on.
+counted on this view stay valid while the job writes on — a run growing
+past three lines changes its count and its last line, not how many lines
+it takes.
 """
 
 import re
@@ -45,12 +49,21 @@ def _shape(line):
     return _NUMBER.sub("0", line)
 
 
-def _folded(line, count):
-    """Return the last *line* of a run of *count*, saying how many it hides."""
+def _folded(first, last, count):
+    """Return the lines a run of *count* shows: its first, its last, and
+    between them how many it hides.
+
+    :param str first: the run's first line
+    :param str last: its last line
+    :param int count: how many lines it has
+    :rtype: list[str]
+    """
     if count == 1:
-        return line
-    hidden = count - 1
-    return f"{line} (+{hidden} similar line{'s' if hidden > 1 else ''})"
+        return [first]
+    if count == 2:
+        return [first, last]
+    hidden = count - 2
+    return [first, f"(+{hidden} similar line{'s' if hidden > 1 else ''})", last]
 
 
 def fold_similar(lines):
@@ -59,17 +72,17 @@ def fold_similar(lines):
     :param lines: an iterable of lines
     :return: a generator of the folded lines
     """
-    last, shape, count = None, None, 0
+    first, last, shape, count = None, None, None, 0
     for line in lines:
         current = _shape(line)
         if count and current == shape:
             last, count = line, count + 1
             continue
         if count:
-            yield _folded(last, count)
-        last, shape, count = line, current, 1
+            yield from _folded(first, last, count)
+        first, last, shape, count = line, line, current, 1
     if count:
-        yield _folded(last, count)
+        yield from _folded(first, last, count)
 
 
 def clean_lines(lines):

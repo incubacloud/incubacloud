@@ -82,6 +82,29 @@ class TestGeminiConnector(BaseCase):
         ]
         self.assertNotIn("parameters", declaration)
 
+    def test_a_property_of_several_types_is_declared_with_one(self):
+        """JSON Schema's type lists, as Gemini's declarations take them: the
+        first type, nullable for null, an enum of strings and no bounds on
+        a string."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "backend": {"type": ["integer", "null"], "minimum": 1},
+                "lang": {"type": ["string", "integer", "null"], "minimum": 1,
+                         "maximum": 9, "description": "A language."},
+                "series": {"type": ["string", "number"], "enum": ["19.0", 19.0]},
+            },
+        }
+        declared = gemini_schema(schema)["properties"]
+        self.assertEqual(
+            declared["backend"], {"type": "integer", "nullable": True, "minimum": 1}
+        )
+        self.assertEqual(
+            declared["lang"],
+            {"type": "string", "nullable": True, "description": "A language."},
+        )
+        self.assertEqual(declared["series"], {"type": "string", "enum": ["19.0"]})
+
     def test_a_free_form_object_travels_as_json_text(self):
         """Gemini cannot declare a free object: it sends JSON text, decoded back."""
         self.assertEqual(gemini_schema(VALS)["type"], "string")
