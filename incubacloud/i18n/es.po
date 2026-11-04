@@ -17154,3 +17154,55 @@ msgstr ""
 #: model:ir.model,name:incubacloud.model_cloud_restore_upload_key
 msgid "Public key that opened an upload door"
 msgstr "Clave pública que abrió una puerta de subida"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"A restore of what arrived through your upload door of this instance is "
+"waiting in the queue: opening another door would close that one and remove "
+"what it holds. Wait until the restore has run, or cancel it, and then open "
+"another door."
+msgstr ""
+"Una restauración de lo que llegó por su puerta de subida de esta instancia "
+"espera en la cola: abrir otra puerta cerraría esa y borraría lo que "
+"contiene. Espere a que la restauración se haya ejecutado, o cancélela, y "
+"abra entonces otra puerta."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.watch_restore_uploads
+msgid ""
+"Measures what the open upload doors of a host hold and the disk free, and "
+"closes a door past its limit, or every door once the disk of the instances "
+"is down to its reserve."
+msgstr ""
+"Mide lo que contienen las puertas de subida abiertas de un servidor y el "
+"disco libre, y cierra una puerta que pase su límite, o todas cuando el disco"
+" de las instancias baja a su reserva."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__upload_limit_bytes
+msgid ""
+"The largest archive the host's disks could restore when the door opened: no "
+"file sent through it is larger, and a door whose directory holds more is "
+"closed."
+msgstr ""
+"El mayor archivo que los discos del servidor podían restaurar cuando se "
+"abrió la puerta: ningún fichero enviado por ella es mayor, y se cierra una "
+"puerta cuyo directorio contiene más."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__upload_limit_bytes
+msgid "Upload Limit Bytes"
+msgstr "Límite de subida (bytes)"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.watch_restore_uploads
+msgid "Watch Restore Upload Doors"
+msgstr "Vigilar las puertas de subida de restauraciones"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_restore_upload_grant_watch_ir_actions_server
+msgid "Watch what the open restore upload doors hold"
+msgstr ""
+"Vigilar lo que contienen las puertas de subida de restauraciones abiertas"

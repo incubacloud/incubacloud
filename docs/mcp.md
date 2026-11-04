@@ -227,15 +227,23 @@ archive is the Import's zip: `dump.sql` and `filestore/` at its root.
 - `restore_from_link` calls `restore_from_url(from_agent=True)`, which checks
   and pins the link. An agent's is `https` on port 443, without a user or a
   password (those, and `sftp`/`ftp`, are given in the panel), and names no
-  server the panel manages nor the panel itself; the host checks it again
-  before it downloads. The job keeps the link encrypted (`secret_payload`),
+  server the panel manages nor the panel itself: it is pinned to an IPv4
+  address, since the panel knows its servers' IPv4 addresses only, and an
+  IPv4-mapped IPv6 address is compared as the IPv4 address it reaches. The
+  host checks it again before it downloads. The job keeps the link encrypted (`secret_payload`),
   its payload only `shown_link`. The audit row and the answer keep the
   link's host and file name, cut (`shown_link`); the approval and the
   assistant's card every segment and every value of the query, cut
   (`told_link`: four characters at each end at most, and always eight or
   more left out), so a look-alike link of the same host does not read the
-  same, and neither form downloads. The download is no larger than the
-  server's free disk leaves (`incubacloud/restore_space.py`).
+  same, and neither form downloads. What tells whose a presigned link is,
+  and is no secret, `told_link` shows whole: the signer's key id
+  (`X-Amz-Credential`, `X-Goog-Credential`, `GoogleAccessId`,
+  `AWSAccessKeyId`, `OSSAccessKeyId`) and, on a path-style storage or a link
+  a storage signed, the bucket; signatures and tokens stay cut. The download
+  is no larger than the server's disks leave (`incubacloud/restore_space.py`):
+  `/tmp`, where it lands, and the disk Docker keeps the instances on, where
+  it is unpacked, are measured each.
 - `restore_from_host_file` calls `restore_db` in `rsync` mode: the one path
   `/tmp/incubacloud-restore-<instance id>.zip`, never one the agent names, and
   only a regular file of the panel's SSH account.
@@ -244,7 +252,12 @@ archive is the Import's zip: `dump.sql` and `filestore/` at its root.
   makes no private key, and a key opens one door ever, also after its grant
   is purged (`cloud.restore.upload.key`). An instance has one door open at a
   time: the caller's own is closed first, another person's refuses the new
-  one. `check_restore_upload` queues the check, which offers nothing the
+  one, and so does the caller's own while a restore of what came through it
+  waits in the queue. No file sent through a door is larger than the largest
+  archive the server's disks could restore when it opened (`ulimit -f` in its
+  key's forced command), and every five minutes a watch measures the open
+  doors (`watch_restore_uploads`): it closes one whose directory holds more
+  than that, or every one once the instances' disk is down to its reserve. `check_restore_upload` queues the check, which offers nothing the
   server's free disk cannot restore; `restore_from_upload` restores what it
   found, `ssh_upload` mode, its approval naming the file and its SHA-256, the
   call bound to it. `revoke_restore_upload` closes a door, without approval:

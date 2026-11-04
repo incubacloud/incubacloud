@@ -8,18 +8,26 @@ actually landed, computed on the host rather than promised by the
 browser that sent it.
 """
 import logging
+import posixpath
 import re
 import shlex
 
 from ..restore_space import (
-    free_space_command,
+    RESERVE_BYTES,
+    described,
+    disks_command,
     in_gib,
-    no_room_message,
-    parse_free,
-    room_needed,
+    largest_archive,
+    parse_disks,
+    room_refusal,
 )
 from .abstract_executor import AbstractSSHExecutor
-from .cloud_restore_upload_grant import RRSYNC, SAFE_UPLOAD_NAME, UPLOAD_ROOT
+from .cloud_restore_upload_grant import (
+    GRANT_TOKEN,
+    RRSYNC,
+    SAFE_UPLOAD_NAME,
+    UPLOAD_ROOT,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -139,11 +147,60 @@ class GrantRestoreUploadKeyExecutor(AbstractSSHExecutor):
             self.job.payload.get("grant_id"),
         )
 
+    #: Why the door cannot open, when the disks leave no room for it.
+    _refusal = ""
+
+    async def before_execute(self, transport):
+        """Measure the host's disks, and set the door's size limit from them.
+
+        The largest archive the disks could restore, with the copy the
+        restore makes of it out of the door (``restore_space``): what no
+        file sent through the door may pass, and what the watch of the
+        doors holds its directory to (``_watch_doors``). Not raised: a
+        door the disks leave no room for is refused by the first step,
+        and ``on_failure`` closes it.
+
+        :param transport: the job's open transport
+        """
+        grant = self._grant()
+        if not grant.exists():
+            return
+        answer = await transport.run(
+            disks_command(posixpath.dirname(UPLOAD_ROOT)),
+        )
+        disks = parse_disks(answer.stdout) if answer.exit_status == 0 else None
+        if disks is None:
+            self._refusal = (
+                "The free disk on the server could not be measured: no "
+                "upload door was opened."
+            )
+            return
+        limit = largest_archive(disks, on_job_disk=2)
+        if not limit:
+            self._refusal = (
+                room_refusal(disks, 1, 1, "an upload")
+                or "Not enough free disk on the server for an upload: no "
+                   "upload door was opened."
+            )
+            return
+        grant.sudo().upload_limit_bytes = limit
+        self._sys(
+            f"An upload through this door may be at most {in_gib(limit)} "
+            f"({described(disks)})."
+        )
+
     def get_commands(self):
         grant = self._grant()
         if not grant.exists():
             return [("Grant is gone", "echo 'grant no longer exists'; false")]
         grant._check_job(self.job)
+        if self._refusal or not grant.upload_limit_bytes:
+            return [(
+                "Measure free disk",
+                f"echo {shlex.quote(self._refusal or 'No upload limit.')} >&2;"
+                " false",
+                {"stop_on_failure": True},
+            )]
         keys = authorized_keys_path()
         line = grant._authorized_keys_line()
         return [
@@ -286,9 +343,9 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             " \"$(sha256sum -- \"$f\" | cut -d' ' -f1)\" \"$f\"; done",
         ), (
             # What a restore of it would have free: the disk the door's
-            # directory is on (``restore_space``).
+            # directory is on, and the instances' (``restore_space``).
             "Measure free disk",
-            f"{free_space_command(grant._directory())} 2>/dev/null",
+            f"{disks_command(grant._directory())} 2>/dev/null",
         )]
 
     async def on_success(self, results):
@@ -335,26 +392,26 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
         # copies it out of the door, then unpacks it (``restore_space``).
         # Forgotten as when nothing arrived, and said, not raised: a
         # failed job would take the forgetting back.
-        free = parse_free(
+        disks = parse_disks(
             results.get("Measure free disk", {}).get("stdout", ""),
         )
-        needed = room_needed(int(size), copies=1)
-        if free is None or free < needed:
+        refusal = disks and room_refusal(
+            disks, int(size), 1, f"{name} ({in_gib(int(size))})",
+        )
+        if disks is None or refusal:
             grant.sudo().write({
                 "received_filename": False,
                 "received_bytes": 0,
                 "received_sha256": False,
             })
-            if free is None:
+            if disks is None:
                 self._sys(
                     f"⚠ {name} arrived ({size} bytes), but the free disk on "
                     "the server could not be measured: it cannot be "
                     "restored. Check again."
                 )
             else:
-                self._sys("⚠ " + no_room_message(
-                    free, needed, f"{name} ({in_gib(int(size))})",
-                ))
+                self._sys("⚠ " + refusal)
             return
         grant.sudo().write({
             "received_filename": name,
@@ -362,6 +419,39 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             "received_sha256": digest,
         })
         self._sys(f"✓ Received {name} — {size} bytes, SHA-256 {digest}")
+
+
+def _revoke_commands(grant, keep_directory=False, label=""):
+    """Return the steps that close *grant*'s door on its host.
+
+    The key's line goes, keyed on the grant's own marker, so an
+    operator's own keys in the same file are untouched; then the whole
+    lines an install before 1.0.200 left when the shell split its line
+    (``_STRAY_LINES``); then, unless *keep_directory*, its directory: a
+    session still open can then create no file there.
+
+    :param grant: the ``cloud.restore.upload.grant``, its shape checked
+    :param bool keep_directory: leave the directory, for a restore that
+        reads it next
+    :param str label: what tells these steps from another door's, in one
+        job that closes several
+    :return: executor command tuples
+    """
+    comment = grant._key_comment()
+    if not re.fullmatch(r"ic-restore-[0-9a-f]{16}", comment):
+        return [(f"Refusing to edit keys{label}", "false")]
+    commands = [(
+        f"Remove the one-use key{label}",
+        f"sed -i -e '/{comment}/d'"
+        + "".join(f" -e '/^{stray}$/d'" for stray in _STRAY_LINES)
+        + f" {authorized_keys_path()} || true",
+    )]
+    if not keep_directory:
+        commands.append((
+            f"Remove the upload directory{label}",
+            f"rm -rf {shlex.quote(grant._directory())} || true",
+        ))
+    return commands
 
 
 class RevokeRestoreUploadKeyExecutor(AbstractSSHExecutor):
@@ -383,28 +473,135 @@ class RevokeRestoreUploadKeyExecutor(AbstractSSHExecutor):
         if not grant.exists():
             return [("Nothing to revoke", "true")]
         grant._check_job(self.job)
-        comment = grant._key_comment()
-        if not re.fullmatch(r"ic-restore-[0-9a-f]{16}", comment):
-            return [("Refusing to edit keys", "false")]
-        commands = [(
-            # Keyed on the grant's own marker, so an operator's own keys
-            # in the same file are untouched. Then the whole lines an
-            # install before 1.0.200 left when the shell split its line
-            # (``_STRAY_LINES``).
-            "Remove the one-use key",
-            f"sed -i -e '/{comment}/d'"
-            + "".join(f" -e '/^{stray}$/d'" for stray in _STRAY_LINES)
-            + f" {authorized_keys_path()} || true",
-        )]
         # A restore consuming the archive revokes the key first and reads
         # the file afterwards, so it asks for the directory to stay. The
         # sweep and the operator do not.
-        if not (self.job.payload or {}).get("keep_directory"):
-            commands.append((
-                "Remove the upload directory",
-                f"rm -rf {shlex.quote(grant._directory())} || true",
-            ))
-        return commands
+        return _revoke_commands(
+            grant, keep_directory=(self.job.payload or {}).get("keep_directory"),
+        )
 
     async def on_success(self, results):
         self._sys("✓ Upload key revoked and directory removed.")
+
+
+class WatchRestoreUploadsExecutor(AbstractSSHExecutor):
+    """Close the open doors of a host that hold too much, or the disk needs.
+
+    The key's file size limit bounds each file a door writes; many files,
+    or the doors of many instances on one host, still add up. Every few
+    minutes (``cloud.restore.upload.grant._watch_doors``) this measures
+    each open door's directory (``du``) and the disks (``restore_space``),
+    and closes, there and then rather than through the instance's queue:
+
+    * a door whose directory holds more than its limit
+      (``upload_limit_bytes``; for a door opened before the limits were
+      kept, the largest upload the disks leave now);
+    * every door of the host, when the doors write on the disk the
+      instances are kept on and it is down to the reserve.
+
+    A door is closed as its revocation does (``_revoke_commands``). What
+    cannot be measured closes nothing: the key's own limit and deadline
+    still hold.
+    """
+
+    _job_type = "watch_restore_uploads"
+
+    #: A line of the measurement: ``door <token> <bytes>``.
+    _DOOR_LINE = re.compile(r"door ([0-9a-f]{16})(?: (\d+))?")
+
+    def _doors(self):
+        """Return the host's open doors whose shape is the panel's own.
+
+        :rtype: cloud.restore.upload.grant
+        """
+        return self.env["cloud.restore.upload.grant"].sudo().search([
+            ("host_id", "=", self.job.host_id.id),
+            ("state", "=", "granted"),
+        ]).filtered(lambda door: GRANT_TOKEN.fullmatch(door.token or ""))
+
+    def _measure_command(self, doors):
+        """Return the shell that prints the disks, then each door's bytes.
+
+        :param doors: the doors to measure
+        :rtype: str
+        """
+        sizes = "".join(
+            f"; printf 'door %s %s\\n' {door.token}"
+            f' "$(du -sb -- {shlex.quote(door._directory())} 2>/dev/null'
+            " | cut -f1)\""
+            for door in doors
+        )
+        return f"{{ {disks_command(posixpath.dirname(UPLOAD_ROOT))}; }} 2>/dev/null{sizes}"
+
+    def _over(self, doors, stdout):
+        """Return the *doors* to close, and why, from what the host printed.
+
+        :param doors: the doors measured
+        :param str stdout: what ``_measure_command`` printed
+        :return: ``{door: reason}``
+        :rtype: dict
+        """
+        lines = (stdout or "").splitlines()
+        held = {}
+        for line in lines:
+            found = self._DOOR_LINE.fullmatch(line.strip())
+            if found:
+                held[found.group(1)] = int(found.group(2) or 0)
+        disks = parse_disks("\n".join(
+            line for line in lines if not line.startswith("door ")
+        ))
+        closing = {}
+        for door in doors:
+            # A door opened before the limits were kept is held to what
+            # the disks leave now.
+            limit = int(door.upload_limit_bytes or 0) or (
+                disks and largest_archive(disks, on_job_disk=2)
+            )
+            used = held.get(door.token)
+            if used is not None and limit is not None and used > limit:
+                closing[door] = (
+                    f"it holds {in_gib(used)}, more than its limit of "
+                    f"{in_gib(limit)}"
+                )
+            elif disks and disks.shared and disks.free() < RESERVE_BYTES:
+                closing[door] = (
+                    f"the disk of the instances has {in_gib(disks.free())} "
+                    f"free, less than the {in_gib(RESERVE_BYTES)} kept for "
+                    "them"
+                )
+        return closing
+
+    async def before_execute(self, transport):
+        """Measure the open doors and the disks; decide which doors close.
+
+        :param transport: the job's open transport
+        """
+        self._closing = {}
+        doors = self._doors()
+        if not doors:
+            return
+        answer = await transport.run(self._measure_command(doors))
+        self._closing = self._over(doors, answer.stdout)
+
+    def get_commands(self):
+        commands = []
+        for door, _reason in getattr(self, "_closing", {}).items():
+            door._check_shape()
+            commands += _revoke_commands(door, label=f" ({door.token})")
+        return commands or [("Nothing to close", "true")]
+
+    async def on_success(self, results):
+        """Record the doors closed, and say why each was."""
+        closing = getattr(self, "_closing", {})
+        for door, reason in closing.items():
+            door.sudo().state = "revoked"
+            _logger.warning(
+                "restore upload door %s of %s closed: %s",
+                door.token, door.instance_id.name, reason,
+            )
+            self._sys(
+                f"✓ Closed the upload door of {door.instance_id.name}: "
+                f"{reason}."
+            )
+        if not closing:
+            self._sys("✓ The open upload doors are within their limits.")

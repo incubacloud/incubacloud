@@ -35,6 +35,7 @@ no error detail to use as an oracle.
 import http.client
 import ipaddress
 import ssl
+
 # Imported by name, not through the module: patching
 # ``socket.getaddrinfo`` reaches the shared stdlib module and takes DNS
 # away from the whole process, test client included. These module-local
@@ -115,7 +116,7 @@ def _reject_address(ip):
     return ''
 
 
-def _resolve_public(host, port):
+def _resolve_public(host, port, version=None):
     """Resolve *host* and return one address safe to dial.
 
     Every address the name resolves to must pass. A name that answers
@@ -125,9 +126,12 @@ def _resolve_public(host, port):
 
     :param host: hostname or IP literal from the URL.
     :param port: TCP port, already validated.
+    :param version: 4 to return an IPv4 address only (an A record, or
+        an IPv4 literal), whatever else the name has; None for the first
+        address of any family.
     :returns: the address string to connect to.
-    :raises OutboundError: the name does not resolve, or any address
-        it resolves to is not public.
+    :raises OutboundError: the name does not resolve, any address it
+        resolves to is not public, or it has none of *version*.
     """
     try:
         infos = getaddrinfo(host, port, proto=IPPROTO_TCP)
@@ -147,7 +151,10 @@ def _resolve_public(host, port):
             raise OutboundError(
                 f'{host!r} resolves to a {reason} address',
             )
-        addresses.append(raw)
+        if version is None or ip.version == version:
+            addresses.append(raw)
+    if not addresses:
+        raise OutboundError(f'{host!r} has no IPv{version} address')
     return addresses[0]
 
 
