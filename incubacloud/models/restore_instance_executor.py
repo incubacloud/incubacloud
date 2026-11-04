@@ -4,6 +4,7 @@ import shlex
 import tempfile
 from contextlib import suppress
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..net.outbound import OutboundError
 from ..net.restore_source import (
@@ -12,6 +13,14 @@ from ..net.restore_source import (
     curl_url,
 )
 from ..net.restore_source import validate as validate_restore_url
+from ..restore_space import (
+    free_space_command,
+    in_gib,
+    largest_download,
+    no_room_message,
+    parse_free,
+    room_needed,
+)
 from ..restore_staging import is_staged_upload
 from ._odoo_versions import script_env
 from .abstract_executor import (
@@ -30,26 +39,55 @@ from .password_utils import merge_secret_key_lines
 from .secret_key_escrow import SecretKeyEscrowMixin
 
 
+def _curl_quoted(value):
+    """Return *value* as a quoted string of a curl config file.
+
+    ``\\``, ``"`` and line breaks escaped: curl has read a config file
+    that way in every release a host may carry.
+
+    :param str value: the option's value
+    :rtype: str
+    """
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"')
+        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
 def _curl_config(login, password):
     """Return the curl config file that logs a download in.
 
-    One ``user`` line, its value a quoted string with ``\\``, ``"`` and
-    line breaks escaped: curl has read a config file that way in every
-    release a host may carry. A netrc file has not: quoted tokens came
-    with curl 7.84, and Ubuntu 22.04 ships 7.81, which read the quotes
-    as part of the password (28-oct-2026). curl splits the value at its
-    first colon, so the login must not hold one (``restore_from_url``
-    refuses it).
+    One ``user`` line, its value a quoted string (``_curl_quoted``). A
+    netrc file would not do: quoted tokens came with curl 7.84, and
+    Ubuntu 22.04 ships 7.81, which read the quotes as part of the
+    password (28-oct-2026). curl splits the value at its first colon, so
+    the login must not hold one (``restore_from_url`` refuses it).
 
     :param str login: the user name
     :param str password: the password, possibly empty
     :rtype: str
     """
-    escaped = (
-        f"{login}:{password}".replace("\\", "\\\\").replace('"', '\\"')
-        .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
-    )
-    return f'user = "{escaped}"\n'
+    return f"user = {_curl_quoted(f'{login}:{password}')}\n"
+
+
+def _curl_url_config(url):
+    """Return the curl config line that names the link to download.
+
+    In the config file, never in the command line: a presigned link's
+    signature, or a share link's token, downloads the archive by itself,
+    and ``ps`` shows a command line to every account of the host.
+
+    :param str url: the link, as ``curl_url`` rebuilt it
+    :rtype: str
+    """
+    return f"url = {_curl_quoted(url)}\n"
+
+
+#: Exit statuses of a download that hit its size limit: curl's own
+#: (``--max-filesize``, 63), and what a write past the shell's file size
+#: limit ends with (curl's write error, 23).
+_DOWNLOAD_TOO_LARGE = (63, 23)
 
 
 def rsync_path(instance_id):
@@ -183,6 +221,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: ``(url, pin)`` of a ``from_url`` restore, once checked here
     #: (``_checked_link``).
     _link = None
+
+    #: The largest archive a ``from_url`` restore may download, from what
+    #: ``before_execute`` measured free on the host (``restore_space``).
+    _download_limit = None
 
     def _inst(self):
         return self.job.instance_id
@@ -469,15 +511,21 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
 
     def _curl_config_content(self):
-        """Return the config a ``from_url`` restore logs in with, or None.
+        """Return the config a ``from_url`` restore downloads with.
 
-        :rtype: str | None
+        The link (``_curl_url_config``) and, when it logs in, its
+        credential (``_curl_config``): both secrets, staged owner-only.
+
+        :rtype: str
+        :raise ValueError: when the link is not one a host may fetch
         """
+        url, _resolve = self._checked_link()
+        config = _curl_url_config(url)
         credential = self.job._restore_url_credential()
-        if not credential:
-            return None
-        _machine, user, password = credential
-        return _curl_config(user, password)
+        if credential:
+            _machine, user, password = credential
+            config += _curl_config(user, password)
+        return config
 
     def _checked_link(self):
         """Return the link to download and the address curl must dial.
@@ -488,16 +536,28 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         is never used. Checked once per run, so every step uses the
         same answer. The link returned is rebuilt from the name checked
         (``curl_url``): its host is the pin's, byte for byte, so curl
-        never looks the name up itself.
+        never looks the name up itself. An agent's link
+        (``link_policy``) is held to its rules again here: port 443, and
+        no server of this panel's — a name may resolve to one by now.
+        The link is read where ``restore_from_url`` keeps it, encrypted
+        (``cloud.job._restore_url_link``).
 
         :return: ``(url, resolve)``, the latter in ``--resolve``'s shape
         :rtype: tuple[str, str]
         :raise ValueError: when the link is not one a host may fetch
         """
         if self._link is None:
-            url = str((self.job.payload or {}).get('url') or '').strip()
+            url = self.job._restore_url_link()
+            options = {}
+            if (self.job.payload or {}).get('link_policy') == 'agent':
+                options = {
+                    'only_port': 443,
+                    'refused': self.env['cloud.host']._panel_own_networks(),
+                }
             try:
-                parts, address, port = validate_restore_url(url)
+                if options and urlsplit(url).scheme != 'https':
+                    raise OutboundError("an agent gives an https link only")
+                parts, address, port = validate_restore_url(url, **options)
             except OutboundError as exc:
                 raise ValueError(
                     f"The link cannot be used: {exc}. Nothing was "
@@ -520,39 +580,56 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         resume. Redirects are *not* followed:
         the address was validated and pinned here, and a redirect is
         precisely how that validation would be escaped. And the
-        credentials, if any, are in a curl config file ``before_execute``
-        staged owner-only in the job's directory, removed when the
-        download ends — a password in the command line would be readable
-        in ``ps`` by anyone on the host. Sent only to the address the
-        link names: no redirect is followed. Every value is one quoted word:
+        link and its credentials, if any, are in a curl config file
+        ``before_execute`` staged owner-only in the job's directory,
+        removed when the download ends — a password, or a link that
+        downloads by itself, in the command line would be readable in
+        ``ps`` by anyone on the host. Sent only to the address the link
+        names: no redirect is followed. Every value is one quoted word:
         the address is the requester's, and a quote in it ended the
         quoting it was written in (28-oct-2026).
+
+        And it writes no more than ``_download_limit``, what the disk
+        free leaves (``restore_space``): curl refuses a larger file it
+        is told the size of (``--max-filesize``), and a file size limit
+        of the shell (``ulimit -f``, in KiB in bash) stops a server that
+        does not say it, or never stops sending, which ``--max-filesize``
+        lets through before curl 8.4 (Ubuntu 22.04 ships 7.81). Past it
+        the write fails rather than the signal killing curl
+        (``trap '' XFSZ``).
 
         :param remote: path the archive must land on.
         :return: an executor command tuple.
         """
-        url, resolve = self._checked_link()
+        _url, resolve = self._checked_link()
+        if self._download_limit is None:
+            raise ValueError(
+                "The free disk on the server was not measured: nothing was "
+                "downloaded."
+            )
+        limit = self._download_limit
         # Only the schemes a link may name, and no redirect but to https
         # should one ever be followed. No globbing: the address is one.
         # An ftp server's PASV answer names the address of its data
         # connection, which before curl 7.74 was dialled as given: any
         # address, past the pin. ``--ftp-skip-pasv-ip`` keeps the data
         # connection on the pinned one (other schemes ignore it).
+        config = self._curl_config_path()
         args = [
+            "bash", "-c", 'trap "" XFSZ; ulimit -f "$1" && shift && exec "$@"',
+            "download", str(limit // 1024 + 1),
             "curl", "-q", "-fsS", "--max-time", "86400", "--globoff",
             "--noproxy", "*", "--ftp-skip-pasv-ip",
             "--proto", "=" + ",".join(ALLOWED_SCHEMES),
             "--proto-redir", "=https",
             "--resolve", resolve,
+            "--max-filesize", str(limit),
+            "--config", config,
+            "-o", remote,
         ]
-        config = self._curl_config_path()
-        credential = self.job._restore_url_credential()
-        if credential:
-            args += ["--config", config]
-        args += ["-o", remote, url]
-        command = shlex.join(args)
-        if credential:
-            command += f"; rc=$?; rm -f {shlex.quote(config)}; exit $rc"
+        command = (
+            f"{shlex.join(args)}; rc=$?; rm -f {shlex.quote(config)}; exit $rc"
+        )
         return (
             "Download the archive",
             command,
@@ -567,6 +644,48 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         return self.env['cloud.restore.upload.grant'].browse(
             int(grant_id),
         ).exists()
+
+    async def _free_bytes(self, transport):
+        """Return the bytes free on the disk of this job's directory.
+
+        :param transport: the job's open transport, its directory made
+        :rtype: int
+        :raise RuntimeError: when the host does not say
+        """
+        answer = await transport.run(free_space_command(self._job_dir()))
+        free = parse_free(answer.stdout) if answer.exit_status == 0 else None
+        if free is None:
+            raise RuntimeError(
+                "The free disk on the server could not be measured: nothing "
+                "was restored."
+            )
+        return free
+
+    async def _check_room(self, transport, archive, copies):
+        """Refuse an archive on the host the disk free cannot restore.
+
+        :param transport: the job's open transport, its directory made
+        :param str archive: the archive's path on the host
+        :param int copies: further copies of it the restore makes
+            (``restore_space.room_needed``)
+        :raise RuntimeError: without room, or when its size or the space
+            free cannot be read
+        """
+        sized = await transport.run(
+            f"stat -c %s -- {shlex.quote(archive)}",
+        )
+        size = parse_free(sized.stdout) if sized.exit_status == 0 else None
+        if size is None:
+            raise RuntimeError(
+                "The size of the archive on the server could not be read: "
+                "not restored."
+            )
+        free = await self._free_bytes(transport)
+        needed = room_needed(size, copies)
+        if free < needed:
+            raise RuntimeError(no_room_message(
+                free, needed, f"an archive of {in_gib(size)}",
+            ))
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -706,6 +825,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     "there as that account and try again."
                 )
             await self._check_regular_file(transport, local)
+            await self._check_room(transport, local, copies=0)
 
         elif mode == 'ssh_upload':
             grant = self._grant()
@@ -761,8 +881,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # it is where its name says, in the grant's directory with no
             # link on the way. Then it must be a file: ``verify-file``
             # hands it to the odoo user with ``sudo``, which would follow
-            # a link to whatever the uploader named.
+            # a link to whatever the uploader named. Not without room for
+            # that copy and what follows (``restore_space``).
             await self._ensure_job_dir(transport)
+            await self._check_room(transport, granted, copies=1)
             local = self._remote_path()
             taken = await transport.run(_take_upload(
                 granted, self._job_path("upload.received"), local,
@@ -779,15 +901,23 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # Before the host is told anything.
             self._checked_link()
             # The download step writes it into the job's directory, and
-            # reads its credential, if any, from a file only this account
-            # can read there.
+            # reads the link and its credential, if any, from a file only
+            # this account can read there. No larger than the disk free
+            # leaves, measured there first.
             await self._ensure_job_dir(transport)
-            config = self._curl_config_content()
-            if config:
-                await self._upload_private_files(
-                    transport, {self._curl_config_path(): config},
-                )
-            self._sys("Downloading the archive on the host…")
+            free = await self._free_bytes(transport)
+            self._download_limit = largest_download(free)
+            if not self._download_limit:
+                raise RuntimeError(no_room_message(
+                    free, room_needed(0), "an archive from a link",
+                ))
+            await self._upload_private_files(
+                transport, {self._curl_config_path(): self._curl_config_content()},
+            )
+            self._sys(
+                "Downloading the archive on the host (at most "
+                f"{in_gib(self._download_limit)}, with {in_gib(free)} free)…"
+            )
 
         else:
             raise ValueError(f"Unknown restore mode: {mode!r}")
@@ -980,6 +1110,16 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 errors.extend(found or [
                     f"'{label}' exited with status {data.get('exit_status')}"
                 ])
+                continue
+            if label == "Download the archive" \
+                    and data.get('exit_status') in _DOWNLOAD_TOO_LARGE:
+                errors.append(
+                    "The download stopped at the largest archive the free "
+                    f"disk of the server takes ({in_gib(self._download_limit or 0)}"
+                    "), or could not write on it (curl status "
+                    f"{data.get('exit_status')}). Nothing was restored: free "
+                    "space on the server, or restore a smaller archive."
+                )
                 continue
             if data.get('exit_status', 1) != 0:
                 errors.append(

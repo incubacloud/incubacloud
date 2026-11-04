@@ -70,6 +70,11 @@ FORBIDDEN_LINKS = (
 PUBLIC_LINK = "https://93.184.216.34/backup.zip"
 PUBLIC_PIN = "93.184.216.34:443:93.184.216.34"
 
+#: What ``df`` prints on a host with room for any archive of these tests,
+#: and the largest download it leaves.
+FREE = f"{100 * 1024 ** 3}\n"
+LIMIT = 10 * 1024 ** 3
+
 #: Internationalised names: Python (IDNA2003) and the hosts' curl
 #: (IDNA2008) would turn each into a different ASCII name.
 NON_ASCII_LINKS = (
@@ -292,13 +297,18 @@ class TestRestoreModeGate(TransactionCase):
                     )
 
     def test_a_from_url_restore_stores_the_credential_apart(self):
-        """Never in the payload: that is read back into the interface."""
+        """Never in the payload: that is read back into the interface. Nor
+        the link, which may download by itself: it is the secret's."""
         job_id = self.instance.restore_from_url(
             "https://93.184.216.34/backup.zip",
         )
         job = self.env["cloud.job"].browse(job_id)
         self.assertEqual(job.payload["mode"], "from_url")
-        self.assertFalse(job.secret_payload)
+        self.assertNotIn("url", job.payload)
+        self.assertEqual(
+            json.loads(job.secret_payload),
+            {"url": "https://93.184.216.34/backup.zip"},
+        )
 
     def test_a_link_restore_says_whether_to_neutralize_and_reset_the_address(self):
         """Off unless asked, as the panel's dialog leaves them; asked for,
@@ -502,9 +512,10 @@ class TestUploadGrant(TransactionCase):
         them to the sweep, which runs soon after it and revokes them the
         usual way. Nothing reaches a host during the upgrade itself."""
         grants = self.env["cloud.restore.upload.grant"]
-        opened, _private = grants._open(self.instance)
+        # One door of an instance at a time: the closed one first.
         closed, _private = grants._open(self.instance)
         closed._revoke()
+        opened, _private = grants._open(self.instance)
         closed_deadline = closed.expires_at
         cron = self.env.ref("incubacloud.cron_cloud_restore_upload_grant_gc")
         # A copy of a database may hold its crons inactive; Odoo drops an
@@ -727,7 +738,9 @@ class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
         transport = MagicMock(spec=SSHTransport)
         # The archive taken is the one that was checked.
         transport.run.side_effect = lambda command, *_a, **_kw: CommandResult(
-            f"{'ab' * 32}  -\n" if command.startswith("sha256sum ") else "", 0,
+            f"{'ab' * 32}  -\n" if command.startswith("sha256sum ")
+            else "5\n" if command.startswith("stat ")
+            else FREE if command.startswith("df ") else "", 0,
         )
         asyncio.run(executor.before_execute(transport))
         self.end_job()
@@ -832,10 +845,14 @@ class TestTheJobSecretIsTheServers(TransactionCase):
             job.with_user(self.developer), self.host,
         )
         transport = MagicMock(spec=SSHTransport)
-        transport.run.return_value = CommandResult("", 0)
+        transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(executor.before_execute(transport))
         transport.upload_text_files.assert_awaited_once_with(
-            {executor._curl_config_path(): 'user = "bob:hunter2"\n'},
+            {
+                executor._curl_config_path():
+                    'url = "https://93.184.216.34/backup.zip"\n'
+                    'user = "bob:hunter2"\n',
+            },
             mode=0o600,
         )
         _label, command, _opts = executor._download_command(
@@ -912,7 +929,7 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
     def _staged(self):
         """Run ``before_execute``; return what it staged owner-only."""
         transport = MagicMock(spec=SSHTransport)
-        transport.run.return_value = CommandResult("", 0)
+        transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(self.executor.before_execute(transport))
         private = {}
         for upload in transport.upload_text_files.await_args_list:
@@ -939,16 +956,18 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
         )
         self.assertEqual(done.returncode, 0)
         argv = Path(self.tmp, "argv").read_text(encoding="utf-8").split("\0")[:-1]
+        limit = self.executor._download_limit
         self.assertEqual(argv, [
             "-q", "-fsS", "--max-time", "86400", "--globoff",
             "--noproxy", "*", "--ftp-skip-pasv-ip",
             "--proto", "=https,sftp,ftp", "--proto-redir", "=https",
             "--resolve", "93.184.216.34:443:93.184.216.34",
+            "--max-filesize", str(limit),
             "--config", self.executor._curl_config_path(),
-            "-o", remote, self.URL,
+            "-o", remote,
         ])
         self.assertFalse(Path(self.tmp, "pwned").exists())
-        self.assertEqual(shlex.split(command)[0], "curl")
+        self.assertEqual(shlex.split(command)[:2], ["bash", "-c"])
 
     def test_lab_curl_reads_back_every_password(self):
         """The real ``curl`` reads the staged file back exactly, whatever
@@ -1015,6 +1034,7 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
         )
         self.assertEqual(
             private[self.executor._curl_config_path()],
+            f'url = "{self.URL}"\n'
             'user = "o\'brien$(touch pwned):'
             'it\'s $(touch pwned) \\"q\\" \\\\x"\n',
         )
@@ -1061,9 +1081,12 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
             self.host.id, instance.id, "restore_instance",
             payload={"mode": "from_url", "url": url, "resolve": resolve},
         )
-        return RestoreInstanceExecutor(
+        executor = RestoreInstanceExecutor(
             self.env["cloud.job"].browse(job_id), self.host,
         )
+        # What ``before_execute`` measures on the host.
+        executor._download_limit = LIMIT
+        return executor
 
     def test_a_forbidden_link_queued_directly_runs_nothing(self):
         for url in FORBIDDEN_LINKS:
@@ -1080,7 +1103,7 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
         """The address curl dials is the one resolved here."""
         executor = self._queued(PUBLIC_LINK, resolve="93.184.216.34:443:10.0.0.1")
         transport = MagicMock(spec=SSHTransport)
-        transport.run.return_value = CommandResult("", 0)
+        transport.run.return_value = CommandResult(FREE, 0)
         asyncio.run(executor.before_execute(transport))
         _label, command, _opts = executor._download_command(
             executor._remote_path(),
@@ -1124,10 +1147,11 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
             executor._remote_path(),
         )
         words = shlex.split(command)
-        self.assertEqual(words[:2], ["curl", "-q"])
+        self.assertEqual(words[words.index("curl") + 1], "-q")
         self.assertEqual(words.count("-q"), 1)
         self.assertEqual(words[words.index("--noproxy") + 1], "*")
-        self.assertLess(words.index("--noproxy"), words.index(PUBLIC_LINK))
+        self.assertLess(words.index("curl"), words.index("--noproxy"))
+        self.assertNotIn(PUBLIC_LINK, command)
         self.assertNotIn("-C", words)
         self.assertNotIn("--continue-at", words)
 
@@ -1153,8 +1177,9 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
             )
         words = shlex.split(command)
         pinned = words[words.index("--resolve") + 1]
-        fetched = words[-1]
-        self.assertEqual(fetched, "https://files.example.com/b.zip")
+        fetched = executor._curl_config_content()
+        self.assertEqual(fetched, 'url = "https://files.example.com/b.zip"\n')
+        fetched = "https://files.example.com/b.zip"
         self.assertEqual(pinned, "files.example.com:443:93.184.216.34")
         self.assertEqual(urlsplit(fetched).netloc, pinned.split(":")[0])
 
@@ -1229,9 +1254,12 @@ class TestPeopleReadGrantsAndNeverWriteThem(TransactionCase):
         verify = VerifyRestoreUploadExecutor(
             self._job("verify_restore_upload"), self.host,
         )
-        asyncio.run(verify.on_success({"Inspect the upload": {
-            "stdout": f"5 {digest} restore.zip\n", "exit_status": 0,
-        }}))
+        asyncio.run(verify.on_success({
+            "Inspect the upload": {
+                "stdout": f"5 {digest} restore.zip\n", "exit_status": 0,
+            },
+            "Measure free disk": {"stdout": FREE, "exit_status": 0},
+        }))
         self.assertEqual(self.grant.received_sha256, digest)
         install = GrantRestoreUploadKeyExecutor(
             self._job("grant_restore_upload_key"), self.host,
@@ -1322,6 +1350,8 @@ class TestAGrantIsReadOnlyByThoseWhoSeeItsInstance(TransactionCase):
                 found.read(["token"])
 
     def test_a_developer_requests_checks_and_revokes_their_grant(self):
+        # One door of an instance at a time: the panel's is closed first.
+        self.grants["a"]._revoke()
         mine = self.instances["a"].with_user(self.users["developer"])
         opened = mine.grant_restore_upload()
         self.assertTrue(opened["fingerprint"])

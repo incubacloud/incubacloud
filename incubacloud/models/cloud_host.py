@@ -1695,6 +1695,34 @@ class CloudHost(models.Model):
         """
         return ""
 
+    @api.model
+    def _panel_own_networks(self):
+        """Return the networks of this panel's own servers.
+
+        The address of every host it manages, whatever its state, and the
+        panel's own (``_hardening_panel_ip``, an address or a network,
+        when a layer knows it). Public addresses all, which a check of
+        public addresses lets through: a link an agent gives must name
+        none of them, or a restore would have one of the panel's servers
+        fetch from another, or from itself.
+
+        :return: ``ipaddress`` networks
+        :rtype: list
+        """
+        given = self.sudo().with_context(active_test=False).search(
+            [("ip_address", "!=", False)],
+        ).mapped("ip_address")
+        given.append(self._hardening_panel_ip() or "")
+        networks = []
+        for value in given:
+            try:
+                network = ipaddress.ip_network(value.strip(), strict=False)
+            except ValueError:
+                continue
+            if not network.is_unspecified:
+                networks.append(network)
+        return networks
+
     def _ssh_closed_by_foreign_edge(self):
         """Return whether a firewall this panel does not govern closes SSH.
 

@@ -17115,3 +17115,42 @@ msgid ""
 "That key already opened an upload door: generate a new one for each upload."
 msgstr ""
 "Esa clave ya abrió una puerta de subida: genere una nueva para cada subida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"A link with a user or a password is given in the panel (Import, From a "
+"link): credentials never pass through an agent. Use a presigned or share "
+"link instead."
+msgstr ""
+"Un enlace con usuario o contraseña se indica en el panel (Importar, Desde un"
+" enlace): las credenciales nunca pasan por un agente. Use en su lugar un "
+"enlace prefirmado o compartido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"An upload door is already open for this instance, opened by %(person)s until"
+" %(deadline)s UTC: one door at a time. Ask them to close it, or wait until "
+"it expires."
+msgstr ""
+"Ya hay una puerta de subida abierta para esta instancia, abierta por "
+"%(person)s hasta las %(deadline)s UTC: una puerta cada vez. Pídale que la "
+"cierre o espere a que caduque."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
+msgid ""
+"Another upload door was opened for this instance a moment ago: one door at a"
+" time. Close it, or wait until it expires."
+msgstr ""
+"Hace un momento se abrió otra puerta de subida para esta instancia: una "
+"puerta cada vez. Ciérrela o espere a que caduque."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_restore_upload_key
+msgid "Public key that opened an upload door"
+msgstr "Clave pública que abrió una puerta de subida"
