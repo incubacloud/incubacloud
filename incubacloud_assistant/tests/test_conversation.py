@@ -282,3 +282,29 @@ class TestConversation(AssistantMixin, TransactionCase):
         self.assertTrue(unpriced)
         rows = Usage_.sudo().search([("user_id", "=", self.dev.id)])
         self.assertEqual(sorted(rows.mapped("input_tokens")), [7, 200])
+
+    def test_a_month_past_2_31_tokens_adds_up(self):
+        """A month of an agent's steps passes 2,147,483,647 tokens of input
+        and of cache reads, and of unpriced tokens on a model without a
+        price: the month's row keeps adding them up (3 and 5 billion)."""
+        Usage_ = self.env["incubacloud.assistant.usage"]
+        for _i in range(2):
+            Usage_._add(
+                self.dev.id, "openai", "local-model",
+                Usage(1_500_000_000, 0, 2_500_000_000), None,
+            )
+        row = Usage_.sudo().search([("user_id", "=", self.dev.id)])
+        self.assertEqual(
+            (row.input_tokens, row.cache_read_tokens, row.unpriced_tokens),
+            (3_000_000_000, 5_000_000_000, 8_000_000_000),
+        )
+        (month,) = [
+            line for line in Usage_.sudo()._usage_table()
+            if line["user_id"] == self.dev.id
+        ]
+        self.assertEqual(
+            (month["input_tokens"], month["cache_read_tokens"],
+             month["unpriced_tokens"]),
+            (3_000_000_000, 5_000_000_000, 8_000_000_000),
+        )
+        self.assertIsInstance(month["cache_read_tokens"], int)

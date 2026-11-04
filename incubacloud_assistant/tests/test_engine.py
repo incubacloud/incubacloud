@@ -44,6 +44,15 @@ class TestEngineStep(EngineMixin, TransactionCase):
         self.assertAlmostEqual(cost, message.cost)
         self.assertAlmostEqual(conversation.cost, message.cost)
 
+    def test_a_conversation_past_2_31_tokens_is_counted(self):
+        """Every step adds its whole context: a long conversation passes
+        2,147,483,647 tokens, which an int4 column could not hold."""
+        self._provider(answer("Still here.", usage=Usage(1_000, 50, 1_000_000_000)))
+        conversation = self._working(self.dev, "Go on")
+        conversation.sudo().input_tokens = 2_000_000_000
+        self._step(conversation)
+        self.assertEqual(conversation.input_tokens, 3_000_001_000)
+
     def test_the_request_is_stable_for_the_prompt_cache(self):
         """Same rules and tools at every step; the screen goes in the message."""
         connector = self._provider(answer("One."), answer("Two."))
