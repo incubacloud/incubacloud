@@ -8,6 +8,8 @@ must be with it. Names and descriptions are English: the model reads them.
 import copy
 from dataclasses import dataclass
 
+from .schema import RECORD_KEY
+
 #: The largest id a record can have: PostgreSQL's ``integer``.
 MAX_RECORD_ID = 2**31 - 1
 
@@ -86,13 +88,26 @@ class ToolSpec:
             "description": description,
             # A copy: what the caller does with the listing must not reach
             # the spec, nor schemas shared between tools (OFFSET, LIMIT).
-            "inputSchema": copy.deepcopy(self.input_schema),
+            "inputSchema": _public(self.input_schema),
             "annotations": {
                 "readOnlyHint": self.read_only,
                 "destructiveHint": self.destructive,
                 "openWorldHint": False,
             },
         }
+
+
+def _public(schema):
+    """Return a copy of *schema* without the server's own keys (``x-…``)."""
+    if isinstance(schema, dict):
+        return {
+            key: _public(value)
+            for key, value in schema.items()
+            if not (isinstance(key, str) and key.startswith("x-"))
+        }
+    if isinstance(schema, list):
+        return [_public(value) for value in schema]
+    return copy.deepcopy(schema)
 
 
 def obj(properties=None, required=(), additional=False):
@@ -135,6 +150,62 @@ def boolean(description):
 def record_id(description):
     """Return the property of a record id (an integer from 1 to 2**31 - 1)."""
     return integer(description, minimum=1, maximum=MAX_RECORD_ID)
+
+
+def nullable(schema):
+    """Return *schema* that also takes null, to clear the field it sets."""
+    return {**schema, "nullable": True}
+
+
+def record_key(description, model, field):
+    """Return the property of a record named by its *field* (a language's code).
+
+    The value is a string; the server turns it into the record's id
+    before the route sees it, and refuses one no record has.
+    """
+    return {**string(description), RECORD_KEY: {"model": model, "field": field}}
+
+
+def array(description, items):
+    """Return an array property whose entries are *items*."""
+    return {"type": "array", "description": description, "items": items}
+
+
+def _type_label(schema):
+    """Return how :func:`describe_fields` names *schema*'s type."""
+    if RECORD_KEY in schema:
+        record = schema[RECORD_KEY]
+        label = f"string, a {record['field']} of {record['model']}"
+    elif "enum" in schema:
+        label = "|".join(map(str, schema["enum"]))
+    elif (
+        schema.get("type") == "integer"
+        and schema.get("minimum") == 1
+        and schema.get("maximum") == MAX_RECORD_ID
+    ):
+        label = "id"
+    elif schema.get("type") == "array":
+        label = f"array of {_type_label(schema.get('items') or {})}"
+    elif schema.get("type") == "object":
+        label = "object: " + ", ".join(
+            f"{name} ({_type_label(item)})"
+            for name, item in schema.get("properties", {}).items()
+        )
+    else:
+        label = schema.get("type") or "any"
+    return f"{label} or null" if schema.get("nullable") else label
+
+
+def describe_fields(schema):
+    """Return the names and types of *schema*'s properties, for a description.
+
+    :param dict schema: an object schema
+    :rtype: str
+    """
+    return "; ".join(
+        f"{name} ({_type_label(item)})"
+        for name, item in schema.get("properties", {}).items()
+    )
 
 
 #: Paging arguments of the tools that return long lists or logs.

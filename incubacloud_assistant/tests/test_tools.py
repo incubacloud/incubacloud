@@ -356,3 +356,16 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
                 )[0]
             )["entries"]
         )
+
+    def test_the_model_sees_the_fields_of_an_update_and_no_server_key(self):
+        """The model is offered the declared fields of an update's vals, a
+        language by its code, without the key only the server reads."""
+        Tools = self.env["incubacloud.assistant.tools"].with_user(self.consultant)
+        update = next(
+            tool for tool in Tools._definitions() if tool.name == "update_instance"
+        )
+        vals = update.schema["properties"]["vals"]
+        self.assertFalse(vals["additionalProperties"])
+        self.assertEqual(vals["properties"]["odoo_initial_lang"]["type"], "string")
+        self.assertIn("odoo_initial_lang (string", update.description)
+        self.assertNotIn("x-record", json.dumps(update.schema))
