@@ -6,7 +6,8 @@ import { Component, useState, useRef, useEffect, useExternalListener } from "@od
  * The default slot holds the entries, usually ``<button>`` elements: each
  * one keeps its own ``t-on-click`` handler, and a click on any of them closes
  * the menu afterwards. Entries rendered conditionally by the caller simply
- * do not appear; with no entry at all the menu renders nothing.
+ * do not appear; with no entry at all the trigger is still drawn and opens
+ * an empty list, so the caller decides whether to render the menu.
  *
  * Keyboard: Enter, Space or Arrow Down on the trigger open it and focus
  * the first entry; Arrow Up/Down, Home and End move between entries; Esc
@@ -43,6 +44,10 @@ export class IcMenu extends Component {
         }
     }
 
+    /**
+     * Set up the open state, the refs, the close on a pointer press outside
+     * and the focus of the first entry when the menu opens.
+     */
     setup() {
         this.state = useState({ open: false });
         this.root = useRef("root");
@@ -109,7 +114,10 @@ export class IcMenu extends Component {
             return;
         }
         if (ev.key === "Tab") {
-            this.close();
+            // The list is hidden on the next render: without taking the
+            // focus back now, Tab lands on an entry that then disappears.
+            ev.preventDefault();
+            this.close(true);
             return;
         }
         const items = this.items;
@@ -127,6 +135,10 @@ export class IcMenu extends Component {
      * @param {MouseEvent} ev
      */
     onListClick(ev) {
-        if (ev.target.closest("button, a")) this.close();
+        if (ev.target.closest("button, a")) {
+            // A keyboard activation keeps the focus on the entry, which is
+            // about to be hidden: give it back to the trigger.
+            this.close(this.list.el.contains(document.activeElement));
+        }
     }
 }
