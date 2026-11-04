@@ -1424,17 +1424,20 @@ class CloudJob(models.Model):
         job stays ``failed`` meanwhile (a failed job cannot be cancelled),
         so nothing but the alert releases the queue.
 
-        Three kinds of job pass a held queue (``_passes_hold``): the
+        Four kinds of job pass a held queue (``_passes_hold``): the
         retry of a failure that holds it, which is what releases it; a
-        delete of the instance (``_get_queue_clearing_job_types``); and
-        the rollback of a move, which is the recovery — a move step that
+        delete of the instance (``_get_queue_clearing_job_types``); the
+        rollback of a move, which is the recovery — a move step that
         fails after the source was stopped leaves the customer's
-        production down until it runs. The rollback's jobs say so as a
-        retry does, on the record: ``move_rollback`` in their payload
-        (``cloud.instance._enqueue_rollback_jobs``; only the platform may
-        ask for it, ``_check_internal_queue_flags``), honoured while their
-        instance's rollback is in progress. None of them closes the
-        alert: an operator dismisses it, or a retry that succeeds does.
+        production down until it runs; and a new attempt at what failed
+        (``_supersedes_hold``: the rebuild of a push with a commit the
+        failed rebuilds were not asked for). The rollback's jobs say so
+        as a retry does, on the record: ``move_rollback`` in their
+        payload (``cloud.instance._enqueue_rollback_jobs``; only the
+        platform may ask for it, ``_check_internal_queue_flags``),
+        honoured while their instance's rollback is in progress. None of
+        them closes the alert: an operator dismisses it, or a retry or a
+        new attempt that succeeds does.
         """
         return self._queue_holding_alerts(instance_id, host_id)[:1]
 
@@ -1462,10 +1465,11 @@ class CloudJob(models.Model):
     def _passes_hold(self, first, holding_jobs):
         """Whether the entry led by *first* is dispatched past a held queue.
 
-        The three kinds of job ``_queue_held_by`` lists: the retry of a
+        The four kinds of job ``_queue_held_by`` lists: the retry of a
         failure that holds the queue, a delete of the instance
-        (``_get_queue_clearing_job_types``) and the rollback of a move
-        while it is in progress.
+        (``_get_queue_clearing_job_types``), the rollback of a move
+        while it is in progress and a new attempt at what failed
+        (``_supersedes_hold``).
 
         :param first: the first step of the entry, a ``cloud.job`` record
         :param holding_jobs: the failed jobs whose alerts hold the queue
@@ -1477,7 +1481,39 @@ class CloudJob(models.Model):
             or first.job_type_id.code in self._get_queue_clearing_job_types()
             or ((first.payload or {}).get("move_rollback")
                 and first.instance_id.move_rollback_in_progress)
+            or self._supersedes_hold(first, holding_jobs)
         )
+
+    @api.model
+    def _supersedes_hold(self, first, holding_jobs):
+        """Whether *first* is a new attempt at the failures holding its queue.
+
+        The type's executor decides (``_supersedes_failure``: a push's
+        rebuild after rebuilds that failed), and only for a hold that is
+        nothing but failed lone jobs with their ``job_failed``: a
+        conflict alert open on one of them (``pip_conflict``,
+        ``addon_conflict``, or a code a layer adds to
+        ``_get_actionable_alert_codes``) asks for a person, and a failed
+        step of a chain left an operation half done.
+
+        :param first: the first step of the waiting entry
+        :param holding_jobs: the failed jobs whose alerts hold the queue
+        :rtype: bool
+        """
+        if not holding_jobs or first.queue_chain_key:
+            return False
+        if any(job.queue_chain_key for job in holding_jobs):
+            return False
+        executor_cls = executor_registry.get(first.job_type_id.code)
+        supersedes = getattr(executor_cls, "_supersedes_failure", None)
+        if not supersedes or not supersedes(first, holding_jobs):
+            return False
+        others = self._queue_holding_alert_codes() - {"job_failed"}
+        return not self.env["cloud.alert"].sudo().search_count([
+            ("job_id", "in", holding_jobs.ids),
+            ("state", "=", "active"),
+            ("code", "in", list(others)),
+        ], limit=1)
 
     @api.model
     def _waiting_domain(self, scope):
@@ -1724,8 +1760,8 @@ class CloudJob(models.Model):
         visible job runs; while the queue is held (``_queue_held_by``)
         only the retry of a failure that holds it, a delete of the
         instance (``_get_queue_clearing_job_types``: it waits for the
-        running job alone) or the rollback of a move passes (see
-        ``_queue_held_by``).
+        running job alone), the rollback of a move or a push's rebuild
+        after failed rebuilds passes (see ``_queue_held_by``).
 
         An entry whose instance is gone, or archived when its type is not
         meant for archived instances (``_runs_on_archived``), is cancelled
@@ -2821,7 +2857,7 @@ class CloudJob(models.Model):
         # before it, and the alert holding the queue, if the job does
         # not pass the hold (it then needs the operator as much as a
         # blocked one does; what passes — a retry, a delete, a move's
-        # rollback — does not).
+        # rollback, a push's rebuild after failed rebuilds — does not).
         places = self._queue_places()
         holding_by_scope, held = {}, {}
         for job_id, (scope, _position, entry) in places.items():
