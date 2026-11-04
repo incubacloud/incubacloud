@@ -482,6 +482,57 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         waiting_job.write({'payload': waiting})
         return True
 
+    @classmethod
+    def _pushed_shas(cls, payload):
+        """Return the commits a push's rebuild was asked for, as pushed.
+
+        The head push and the ones merged into it
+        (``coalesced_pushes``), by the short sha the webhook stores.
+        Nothing for a rebuild no push asked for.
+
+        :param dict payload: a rebuild's payload
+        :rtype: set
+        """
+        payload = payload or {}
+        if payload.get('trigger') not in ('webhook', 'coalesced'):
+            return set()
+        pushes = [payload, *(payload.get('coalesced_pushes') or [])]
+        return {
+            push.get('push_sha') for push in pushes
+            if isinstance(push, dict) and push.get('push_sha')
+        }
+
+    @classmethod
+    def _supersedes_failure(cls, waiting_job, failed_jobs):
+        """A new push replaces the failed rebuilds holding the queue.
+
+        Someone whose push broke the build pushes the fix: its rebuild
+        is a new attempt, not something that would only fail behind the
+        failure, and it starts without anybody dismissing the alert
+        first. Only when every failure holding the queue is a rebuild of
+        the same type (asked for by a push or by hand) and the waiting
+        rebuild carries a commit none of them was asked for: the same
+        push delivered again replaces nothing. A rebuild asked for by
+        hand, and a retry, replace nothing either: the retry passes as
+        one (``cloud.job._passes_hold``), and a person who wants the
+        branch rebuilt as it is retries the failure. Its success
+        resolves the alerts (``cloud.job._dismiss_job_failed_alerts``);
+        its failure refreshes the same ``job_failed``.
+
+        :param waiting_job: a ``queued`` rebuild of the instance
+        :param failed_jobs: the failed jobs whose alerts hold its queue
+        :rtype: bool
+        """
+        if waiting_job.retry_of_id:
+            return False
+        pushed = cls._pushed_shas(waiting_job.payload)
+        if not pushed or not failed_jobs:
+            return False
+        if any(job.job_type_id != waiting_job.job_type_id for job in failed_jobs):
+            return False
+        tried = set().union(*(cls._pushed_shas(job.payload) for job in failed_jobs))
+        return bool(pushed - tried)
+
     async def on_abort(self, exc):
         """A rebuild that ended without an outcome leaves the record alone.
 

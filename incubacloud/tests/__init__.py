@@ -73,6 +73,7 @@ from . import (
     test_queue_job_ext,
     test_rotation_tolerance,
     test_rebuild_push_merge,
+    test_push_after_failed_rebuild,
     test_rebuild_crons_busy,
     test_job_queue,
     test_full_setup_commands,

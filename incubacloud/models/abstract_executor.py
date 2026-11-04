@@ -1828,6 +1828,25 @@ class AbstractExecutor(ABC):
         """
         return False
 
+    @classmethod
+    def _supersedes_failure(cls, waiting_job, failed_jobs):
+        """Whether *waiting_job* replaces the failures holding its queue.
+
+        Asked by ``cloud.job._supersedes_hold`` for the first job of an
+        entry waiting in a held queue, once the hold is known to come
+        from ``job_failed`` alerts alone, of lone jobs (no chain step
+        among them). An override that answers True lets the job past
+        the hold: it is a new attempt at what failed, not something that
+        would only fail behind it. The alerts stay open until it ends
+        ``done``. Core replaces nothing.
+
+        :param waiting_job: a ``queued`` ``cloud.job`` of this type
+        :param failed_jobs: the failed ``cloud.job`` records whose
+            alerts hold the queue
+        :rtype: bool
+        """
+        return False
+
 
 # Backward-compat alias — kept so existing executor imports don't break.
 AbstractSSHExecutor = AbstractExecutor
