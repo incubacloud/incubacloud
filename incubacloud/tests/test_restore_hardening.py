@@ -828,6 +828,26 @@ class TestACheckOffersNothingTheDiskCannotRestore(TransactionCase):
             ("restore.zip", SHA),
         )
 
+    def test_an_upload_past_2_gib_is_offered_with_its_size(self):
+        """An archive of 3 or 5 GiB is kept with its size. The column was
+        an int4: writing past 2,147,483,647 bytes failed the check, in the
+        panel and through an agent, once the write reached the database."""
+        for size in (3 * GIB, 5 * GIB):
+            with self.subTest(size=size):
+                self._report(size, room_needed(size, copies=1))
+                self.env.flush_all()
+                self.grant.invalidate_recordset(["received_bytes"])
+                self.assertEqual(self.grant.received_bytes, size)
+
+    def test_the_size_received_is_a_bigint(self):
+        """The column holds 64 bits."""
+        self.env.cr.execute("""
+            SELECT udt_name FROM information_schema.columns
+             WHERE table_name = 'cloud_restore_upload_grant'
+               AND column_name = 'received_bytes'
+        """)
+        self.assertEqual(self.env.cr.fetchone()[0], "int8")
+
 
 @tagged("-at_install", "post_install")
 class TestOneDoorAtATime(RestoreFixture, TransactionCase):

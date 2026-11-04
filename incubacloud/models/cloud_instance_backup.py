@@ -1,6 +1,8 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
+from .big_integer import BigInteger
+
 
 class CloudInstanceBackup(models.Model):
     _name = 'cloud.instance.backup'
@@ -44,7 +46,8 @@ class CloudInstanceBackup(models.Model):
             'database + filestore as a chain.'
         ),
     )
-    size = fields.Integer(
+    # A backup set past 2 GiB is common: 64 bits (``BigInteger``).
+    size = BigInteger(
         string='Size (bytes)',
         help=(
             'Non-production: the attached ZIP size, captured at create '
