@@ -84,7 +84,7 @@ class TestDeleteInHeader(TransactionCase):
                     f"[contains(@t-on-click, '{handler}')]"
                 ))
                 self.assertFalse([c for c in in_menu if handler in c])
-        for handler in ["openImportBrowser", "hostAction", "trustHostKey"]:
+        for handler in ("openImportBrowser", "hostAction", "trustHostKey"):
             with self.subTest(handler=handler):
                 self.assertTrue([c for c in in_menu if handler in c])
         # The SaaS manager adds its Traefik button before this one.
