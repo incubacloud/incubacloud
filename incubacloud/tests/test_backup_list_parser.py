@@ -5,9 +5,17 @@ Tests _parse_collection_status and _parse_duplicity_date from
 backup_list_executor, plus cloud.instance.backup model sync.
 """
 import unittest
+from unittest.mock import MagicMock, patch
 
+import boto3
+from botocore.client import BaseClient
+from botocore.paginate import Paginator
 
 from odoo.tests.common import TransactionCase, BaseCase
+
+from odoo.addons.incubacloud.models.backup_list_executor import (
+    BackupListExecutor,
+)
 
 
 # ── Tier 1: Pure parser tests ────────────────────────────────────────────────
@@ -216,6 +224,82 @@ class TestBackupRecordSync(TransactionCase):
         att.unlink()
         bk.invalidate_recordset()
         self.assertFalse(bk.attachment_id)
+
+
+class TestBackupSetSizes(TransactionCase):
+    """The size pass writes each production set's bytes, read from the S3
+    listing. A set past 2 GiB is common, and the column was an int4: the
+    write failed with "integer out of range", and with it the job."""
+
+    GIB = 1024 ** 3
+
+    def setUp(self):
+        """A production instance on an S3 backend, two sets listed."""
+        super().setUp()
+        host = self.env['cloud.host'].create({
+            'name': 'bk-size-host', 'ip_address': '198.51.100.61',
+            'user': 'root', 'wildcard_domain': 'bk-size.example',
+        })
+        backend = self.env['cloud.backup.backend'].create({
+            'name': 'bk-size-s3', 's3_bucket': 'bucket',
+            's3_access_key_id': 'AKIAEXAMPLE', 's3_secret_access_key': 'secret',
+        })
+        project = self.env['cloud.project'].create({'name': 'BkSizeProj'})
+        self.inst = self.env['cloud.instance'].create({
+            'name': 'bk-size', 'project_id': project.id, 'host_id': host.id,
+            'environment': 'production', 'backup_backend_id': backend.id,
+        })
+        Backup = self.env['cloud.instance.backup']
+        self.full = Backup.create({
+            'instance_id': self.inst.id, 'backup_type': 'Full',
+            'backup_time': '2026-03-19 16:50:04',
+        })
+        self.inc = Backup.create({
+            'instance_id': self.inst.id, 'backup_type': 'Incremental',
+            'backup_time': '2026-03-20 16:50:04',
+        })
+        job = self.env['cloud.job'].create({
+            'name': 'backup_list', 'host_id': host.id,
+            'instance_id': self.inst.id,
+            'job_type_id': self.env.ref('incubacloud.backup_list').id,
+        })
+        self.executor = BackupListExecutor(job, host)
+
+    def _listing(self, objects):
+        """Return a stand-in S3 client whose one page lists *objects*,
+        as ``(key, bytes)`` pairs."""
+        paginator = MagicMock(spec=Paginator)
+        paginator.paginate.return_value = [{'Contents': [
+            {'Key': f'backups/default/bk-size/{key}', 'Size': size}
+            for key, size in objects
+        ]}]
+        client = MagicMock(spec=BaseClient)
+        client.get_paginator.return_value = paginator
+        return client
+
+    def test_sets_past_2_gib_keep_their_size(self):
+        """A full set of 3 GiB in two volumes and an incremental of 5 GiB."""
+        client = self._listing([
+            ('duplicity-full.20260319T165004Z.vol1.difftar.gpg', 2 * self.GIB),
+            ('duplicity-full.20260319T165004Z.vol2.difftar.gpg', self.GIB),
+            ('duplicity-inc.20260319T165004Z.to.20260320T165004Z'
+             '.vol1.difftar.gpg', 5 * self.GIB),
+        ])
+        with patch.object(boto3, 'client', return_value=client):
+            self.executor._populate_sizes_from_s3()
+        self.env.flush_all()
+        (self.full | self.inc).invalidate_recordset(['size'])
+        self.assertEqual(self.full.size, 3 * self.GIB)
+        self.assertEqual(self.inc.size, 5 * self.GIB)
+
+    def test_the_size_is_a_bigint(self):
+        """The column holds 64 bits."""
+        self.env.cr.execute("""
+            SELECT udt_name FROM information_schema.columns
+             WHERE table_name = 'cloud_instance_backup'
+               AND column_name = 'size'
+        """)
+        self.assertEqual(self.env.cr.fetchone()[0], 'int8')
 
 
 class TestNonProdCreateBackupChain(TransactionCase):
