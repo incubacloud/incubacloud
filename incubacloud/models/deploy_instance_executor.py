@@ -213,6 +213,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     """Deploy a doodba instance via copier copy."""
 
     _job_type = "deploy_instance"
+    # The disk shown is read from metrics as soon as the job ends.
+    _refreshes_host_disk = True
 
     def pre_run_checks(self):
         """Never build a move's destination over the copy a move froze there.
