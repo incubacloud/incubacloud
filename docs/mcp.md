@@ -144,7 +144,7 @@ lines from one call to the next; only the last one grows with the log.
 | `restore_backup`, `refresh_staging` | developer | yes | always |
 | `restore_from_link`, `restore_from_host_file`, `restore_from_upload` | developer | yes | always |
 | `grant_restore_upload` | developer | | always |
-| `check_restore_upload` | developer | | |
+| `check_restore_upload`, `revoke_restore_upload` | developer | | |
 | `get_host`, `get_audit_log`, `get_settings`, `browse_host_dir` | manager | | |
 | `harden_host`, `import_host_instance`, `deploy_monitoring`, `configure_pitr` (bridge) | manager | | |
 | `manage_host` | manager | | a change of the server's trusted proxy ranges |
@@ -152,7 +152,7 @@ lines from one call to the next; only the last one grows with the log.
 | `trust_host_key`, `run_host_command` | manager | | always |
 | `delete_project`, `delete_archived_instance`, `delete_host`, `delete_backup_backend`, `move_instance`, `rollback_move`, `reset_github_app`, `purge_audit_logs`, `pitr_restore` (bridge) | manager | yes | always |
 
-Seventy-two tools with the bridge's three. Security settings of
+Seventy-three tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
 and whatever `get_config` hides on that panel (observability, on a tenant).
@@ -224,19 +224,32 @@ restore ensures the panel's connector. `neutralize` defaults to true except
 on production and `reset_base_url` to true; the call is bound to both. The
 archive is the Import's zip: `dump.sql` and `filestore/` at its root.
 
-- `restore_from_link` calls `restore_from_url`, which checks and pins the
-  link. An agent's is `https`, without a user or a password (those, and
-  `sftp`/`ftp`, are given in the panel). The audit row, the approval and the
-  answer keep the link's host and file name only (`shown_link`): a
-  presigned link's query and a share link's token are not kept.
+- `restore_from_link` calls `restore_from_url(from_agent=True)`, which checks
+  and pins the link. An agent's is `https` on port 443, without a user or a
+  password (those, and `sftp`/`ftp`, are given in the panel), and names no
+  server the panel manages nor the panel itself; the host checks it again
+  before it downloads. The job keeps the link encrypted (`secret_payload`),
+  its payload only `shown_link`. The audit row and the answer keep the
+  link's host and file name, cut (`shown_link`); the approval and the
+  assistant's card every segment and every value of the query, cut
+  (`told_link`: four characters at each end at most, and always eight or
+  more left out), so a look-alike link of the same host does not read the
+  same, and neither form downloads. The download is no larger than the
+  server's free disk leaves (`incubacloud/restore_space.py`).
 - `restore_from_host_file` calls `restore_db` in `rsync` mode: the one path
   `/tmp/incubacloud-restore-<instance id>.zip`, never one the agent names, and
   only a regular file of the panel's SSH account.
 - `grant_restore_upload` opens the one-use door with the agent's own
   `ssh-ed25519` public key (`grant_restore_upload(public_key=…)`): the panel
-  makes no private key, and a key opens one door only. `check_restore_upload`
-  queues the check; `restore_from_upload` restores what it found, `ssh_upload`
-  mode, its approval naming the file and its SHA-256, the call bound to it.
+  makes no private key, and a key opens one door ever, also after its grant
+  is purged (`cloud.restore.upload.key`). An instance has one door open at a
+  time: the caller's own is closed first, another person's refuses the new
+  one. `check_restore_upload` queues the check, which offers nothing the
+  server's free disk cannot restore; `restore_from_upload` restores what it
+  found, `ssh_upload` mode, its approval naming the file and its SHA-256, the
+  call bound to it. `revoke_restore_upload` closes a door, without approval:
+  it only takes access away, and a door whose key may have leaked must not
+  wait for one.
 
 **Sign-in links.** `instance_login_link` without `user_id` lists the
 instance's users; with `user_id` it asks for approval and returns the

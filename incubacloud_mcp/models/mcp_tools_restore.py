@@ -11,13 +11,16 @@ panel's connector ensured.
 
 What the agent names is never trusted further than the dialog trusts
 it. A link is checked and pinned by ``restore_from_url``, and an agent's
-must be ``https`` without a user or a password (decision 6: credentials
-are written in the panel only); the audit, the approval and the answer
-keep its host and its file's name, never its query nor the rest of its
-path, where a signature or a share's token lives. A file on the server
-is read from one path only, fixed per instance, never one the agent
-gives. A door installs the agent's own public key, never one the panel
-makes: no private key passes through an agent.
+must be ``https`` on port 443 without a user or a password (decision 6:
+credentials are written in the panel only), and name no server of the
+panel's (``from_agent``). The job keeps it encrypted. The audit and the
+answer keep its host and its file's name, cut (``shown_link``); the
+approval and the assistant's card every piece of it, cut
+(``told_link``): two links of one host read differently there, and
+neither form suffices to download. A file on the server is read from one
+path only, fixed per instance, never one the agent gives. A door installs
+the agent's own public key, never one the panel makes: no private key
+passes through an agent.
 """
 
 import re
@@ -28,8 +31,7 @@ from odoo.exceptions import UserError
 
 from odoo.addons.incubacloud.models.cloud_restore_upload_grant import GRANT_HOURS
 from odoo.addons.incubacloud.models.restore_instance_executor import rsync_path
-from odoo.addons.incubacloud.net.outbound import OutboundError
-from odoo.addons.incubacloud.net.restore_source import validate as validate_link
+from odoo.addons.incubacloud.net.restore_source import shown_link, told_link
 
 from ..protocol.tool_spec import ToolSpec, boolean, obj, record_id, string
 from .mcp_tools import quoted
@@ -69,29 +71,6 @@ _ANSWER = (
 
 #: A SHA-256 as ``sha256sum`` prints it.
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-
-
-def shown_link(url):
-    """Return a link as the panel keeps or shows it: host and file's name.
-
-    The scheme, the host and the last segment of the path; the rest of
-    the path becomes ``…``, and a query ``?…``. A presigned link carries
-    its signature in the query, a share link its token in the path: the
-    audit, the approval and the answer keep neither. Any user or password
-    goes too.
-
-    :param str url: the link as given
-    :rtype: str
-    """
-    parts = urlsplit((url or "").strip())
-    host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
-    segments = [segment for segment in parts.path.split("/") if segment]
-    path = "/" + (segments[-1] if segments else "")
-    if len(segments) > 1:
-        path = "/…" + path
-    return f"{parts.scheme}://{host}{path}{'?…' if parts.query else ''}"
 
 
 def _restore(name, description, schema, required):
@@ -163,6 +142,19 @@ TOOLS = (
         ),
         handler="_tool_grant_restore_upload",
         confirm="always",
+    ),
+    ToolSpec(
+        "revoke_restore_upload",
+        "Close an upload door before it expires: its key stops being accepted "
+        "and its directory, with whatever was sent through it, is removed from "
+        "the server. For a door that is no longer needed, or whose private key "
+        "may have leaked. A door a restore took is closed already.",
+        _DEVELOPER,
+        obj(
+            {"instance_id": record_id("The instance."), "grant_id": _GRANT},
+            required=("instance_id", "grant_id"),
+        ),
+        handler="_tool_revoke_restore_upload",
     ),
     ToolSpec(
         "check_restore_upload",
@@ -320,31 +312,38 @@ class McpToolsRestore(models.AbstractModel):
 
     @api.model
     def _confirm_restore_from_link(self, args):
-        """Name the instance, the link's host and file, and the options.
+        """Name the instance, every piece of the link, cut, and the options.
 
-        The link is checked as ``restore_from_url`` checks it — a public
-        address, a plain name — before anyone is asked.
+        The link is checked as ``restore_from_url`` checks an agent's — a
+        public address, a plain name, port 443, no server of the
+        panel's — before anyone is asked. It is shown as ``told_link``
+        shows it: a look-alike link of the same host does not read the
+        same.
         """
-        try:
-            validate_link(args["url"])
-        except OutboundError as exc:
-            raise UserError(
-                self.env._("That link cannot be used: %s.", exc)
-            ) from exc
+        self._instance(args["instance_id"])._check_restore_link(
+            args["url"], from_agent=True,
+        )
         return self._restore_message(
             args,
             self.env._(
                 "the archive its server downloads from %s",
-                quoted(shown_link(args["url"])),
+                quoted(told_link(args["url"])),
             ),
         )
 
     @api.model
     def _record_restore_from_link(self, args):
-        """Keep the link's host and file only (``shown_link``)."""
+        """Keep the link's host and file only, cut (``shown_link``)."""
         if not isinstance(args.get("url"), str):
             return args
         return {**args, "url": shown_link(args["url"])}
+
+    @api.model
+    def _show_restore_from_link(self, args):
+        """Show every piece of the link, cut, as the approval does (``told_link``)."""
+        if not isinstance(args.get("url"), str):
+            return args
+        return {**args, "url": told_link(args["url"])}
 
     @api.model
     def _tool_restore_from_link(self, args):
@@ -354,6 +353,7 @@ class McpToolsRestore(models.AbstractModel):
             backup_before_restore=bool(args.get("backup_before_restore")),
             neutralize=bool(args.get("neutralize")),
             reset_base_url=bool(args.get("reset_base_url")),
+            from_agent=True,
         )
         return self._with_job_state(
             {"ok": True, "job_id": job_id, "link": shown_link(args["url"])}
@@ -469,6 +469,26 @@ class McpToolsRestore(models.AbstractModel):
                 ),
             }
         )
+
+    @api.model
+    def _tool_revoke_restore_upload(self, args):
+        """Close the door: ``revoke_restore_upload``, as the panel does.
+
+        Asks nobody: closing a door only takes access away, and one whose
+        key may have leaked must not wait for an approval. What was sent
+        through it goes with it, and is sent again through a new door.
+        """
+        grant = self._grant(args)
+        jobs = grant.instance_id.revoke_restore_upload(grant.id)
+        if not jobs:
+            return {
+                "ok": True,
+                "closed": False,
+                "message": self.env._(
+                    "That door is closed already: nothing to do."
+                ),
+            }
+        return self._with_job_state({"ok": True, "closed": True, "job_id": jobs[0]})
 
     @api.model
     def _tool_check_restore_upload(self, args):

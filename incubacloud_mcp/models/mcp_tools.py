@@ -88,6 +88,21 @@ class McpTools(models.AbstractModel):
         return method(args) if method else args
 
     @api.model
+    def _shown_args(self, spec, args):
+        """Return the arguments as a person approving the call reads them.
+
+        ``_show_<tool name>`` when the group defines one — a link shown
+        piece by piece, cut, so that a look-alike reads otherwise — and
+        what the audit keeps (``_recorded_args``) for any other tool.
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the validated (and prepared) arguments
+        :rtype: dict
+        """
+        method = getattr(self, f"_show_{spec.name}", None)
+        return method(args) if method else self._recorded_args(spec, args)
+
+    @api.model
     def _route(self, path, **params):
         """Call the panel route at *path* (see ``incubacloud.mcp.dispatch``)."""
         return self.env["incubacloud.mcp.dispatch"]._call(path, params)
