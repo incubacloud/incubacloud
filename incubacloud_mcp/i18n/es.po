@@ -775,6 +775,12 @@ msgstr "Indique al menos un repositorio."
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_read.py:0
+msgid "Give either offset or page."
+msgstr "Indique offset o page, solo uno de los dos."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_read.py:0
 msgid "Give either project_id or host_id."
 msgstr "Indique project_id o host_id, solo uno de los dos."
 
@@ -1548,6 +1554,13 @@ msgstr "Esta confirmación se dio para otra acción. Vuelva a pedir la acción."
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
 msgid "This job did not prepare a backup download."
 msgstr "Esta tarea no ha preparado ninguna descarga de backup."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_read.py:0
+msgid "This log has %(pages)s pages: ask for one from 1 to %(pages)s."
+msgstr ""
+"Este log tiene %(pages)s páginas: pida una entre la 1 y la %(pages)s."
 
 #. module: incubacloud_mcp
 #. odoo-javascript

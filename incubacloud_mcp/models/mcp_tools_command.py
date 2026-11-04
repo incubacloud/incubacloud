@@ -40,8 +40,8 @@ _KILL_AFTER = 5
 #: the command is given up on even if ``timeout`` did not end it.
 _CLIENT_TIMEOUT = COMMAND_TIMEOUT + 15
 _SSH_TIMEOUT = _CLIENT_TIMEOUT + 15
-#: What the answer shows of each stream; the two fit in 64 KB.
-_STDERR_BYTES = 8 * 1024
+#: What the answer shows of each stream; the two fit in ``MAX_BYTES``.
+_STDERR_BYTES = 4 * 1024
 _STDOUT_BYTES = MAX_BYTES - _STDERR_BYTES - 2048
 #: Characters kept of each stream while the command runs.
 _KEEP_CHARS = 2 * MAX_BYTES
