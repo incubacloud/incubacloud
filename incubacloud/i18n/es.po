@@ -17079,3 +17079,21 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "More"
 msgstr "Más"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+msgid "Filters"
+msgstr "Filtros"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+msgid "Filters · 1 active"
+msgstr "Filtros · 1 activo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+msgid "Filters · %s active"
+msgstr "Filtros · %s activos"
