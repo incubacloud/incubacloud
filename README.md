@@ -228,6 +228,8 @@ Under the ELv2 you are free to:
 You may **not**:
 - Offer the software (or a product substantially based on it) as a hosted or managed service to third parties
 
+Using IncubaCloud to deploy, run and support Odoo for your own clients is allowed: for example, as an Odoo partner, a freelancer or an agency whose clients pay you for development, support or consulting. That includes giving those clients access to their own projects in the panel, which is what the client roles are for. What the ELv2 does not allow is offering IncubaCloud itself to third parties as a hosted or managed service, such as an Odoo hosting platform built on it.
+
 The third-party software IncubaCloud uses is listed, with its licences, in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Odoo is a trademark of Odoo S.A. IncubaCloud is not affiliated with Odoo S.A.
