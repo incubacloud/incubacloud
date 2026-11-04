@@ -38,7 +38,7 @@ from odoo.addons.incubacloud.net.outbound import OutboundError
 from odoo.addons.incubacloud.net.restore_source import (
     curl_resolve_argument,
     curl_url,
-    masked,
+    shown_link,
     split_credentials,
     validate,
 )
@@ -72,7 +72,8 @@ PUBLIC_PIN = "93.184.216.34:443:93.184.216.34"
 
 #: What ``df`` prints on a host with room for any archive of these tests,
 #: and the largest download it leaves.
-FREE = f"{100 * 1024 ** 3}\n"
+#: What ``restore_space.disks_command`` prints for one disk of 100 GiB free.
+FREE = f"30 {100 * 1024 ** 3}\n30 {100 * 1024 ** 3}\n"
 LIMIT = 10 * 1024 ** 3
 
 #: Internationalised names: Python (IDNA2003) and the hosts' curl
@@ -145,10 +146,11 @@ class TestRestoreSourceUrls(BaseCase):
         self.assertEqual(clean, "https://example.com/b.zip")
         self.assertEqual((user, password), ("", ""))
 
-    def test_the_displayed_form_never_carries_the_password(self):
-        shown = masked("ftp://bob:hunter2@files.example.com/backup.zip")
+    def test_the_displayed_form_never_carries_the_credentials(self):
+        shown = shown_link("ftp://bob:hunter2@files.example.com/backup.zip")
         self.assertNotIn("hunter2", shown)
-        self.assertIn("bob:***@", shown)
+        self.assertNotIn("bob", shown)
+        self.assertEqual(shown, "ftp://files.example.com/backup.zip")
 
     def test_only_three_schemes_are_accepted(self):
         for url in ("file:///etc/passwd", "gopher://x/1",
@@ -410,8 +412,13 @@ class TestUploadGrant(TransactionCase):
         grant, _private = self.env["cloud.restore.upload.grant"]._open(
             self.instance,
         )
+        grant.sudo().upload_limit_bytes = 10 * 1024 ** 3
         line = grant._authorized_keys_line()
-        self.assertIn('command="/usr/bin/rrsync -wo -munge -no-del ', line)
+        self.assertIn(
+            "command=\"exec /bin/bash -c 'ulimit -f 10485760 && exec "
+            "/usr/bin/rrsync -wo -munge -no-del ",
+            line,
+        )
         self.assertIn("restrict", line)
         self.assertIn("expiry-time=", line)
         self.assertIn(grant._key_comment(), line)
@@ -582,6 +589,7 @@ class TestUploadGrant(TransactionCase):
         )
         self.assertIsNone(private)
         self.assertEqual(grant.public_key, public.rsplit(" ", 1)[0])
+        grant.sudo().upload_limit_bytes = 10 * 1024 ** 3
         line = grant._authorized_keys_line()
         self.assertIn("restrict", line)
         self.assertIn("expiry-time=", line)
@@ -642,6 +650,7 @@ class TestUploadGrant(TransactionCase):
             public_key=f'ssh-ed25519 {body}\ncommand="sh",no-pty ssh-ed25519 {body}',
         )
         self.assertEqual(grant.public_key, f"ssh-ed25519 {body}")
+        grant.sudo().upload_limit_bytes = 10 * 1024 ** 3
         self.assertNotIn("\n", grant._authorized_keys_line())
 
 
@@ -740,7 +749,7 @@ class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
         transport.run.side_effect = lambda command, *_a, **_kw: CommandResult(
             f"{'ab' * 32}  -\n" if command.startswith("sha256sum ")
             else "5\n" if command.startswith("stat ")
-            else FREE if command.startswith("df ") else "", 0,
+            else FREE if command.startswith("m() {") else "", 0,
         )
         asyncio.run(executor.before_execute(transport))
         self.end_job()

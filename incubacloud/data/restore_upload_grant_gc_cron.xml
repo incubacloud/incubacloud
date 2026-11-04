@@ -8,4 +8,12 @@
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>
     </record>
+    <record id="cron_cloud_restore_upload_grant_watch" model="ir.cron">
+        <field name="name">Watch what the open restore upload doors hold</field>
+        <field name="model_id" ref="model_cloud_restore_upload_grant"/>
+        <field name="state">code</field>
+        <field name="code">model._watch_doors()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+    </record>
 </odoo>

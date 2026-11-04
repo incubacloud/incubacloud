@@ -18,10 +18,12 @@ These tests pin each answer, attack by attack.
 import asyncio
 import contextlib
 import importlib.util
+import ipaddress
 import json
 import os
 import shlex
 import shutil
+import socket
 import subprocess
 import tempfile
 from datetime import timedelta
@@ -42,15 +44,16 @@ from odoo.addons.incubacloud.models.restore_instance_executor import (
     RestoreInstanceExecutor,
 )
 from odoo.addons.incubacloud.models.restore_upload_key_executors import (
+    GrantRestoreUploadKeyExecutor,
     VerifyRestoreUploadExecutor,
+    WatchRestoreUploadsExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
-from odoo.addons.incubacloud.net import restore_source
+from odoo.addons.incubacloud.net import outbound, restore_source
 from odoo.addons.incubacloud.net.outbound import OutboundError
 from odoo.addons.incubacloud.net.restore_source import (
     cut,
     curl_url,
-    masked,
     shown_link,
     told_link,
     validate,
@@ -59,8 +62,12 @@ from odoo.addons.incubacloud.restore_space import (
     GIB,
     RESERVE_BYTES,
     UNPACK_FACTOR,
+    Disks,
+    largest_archive,
     largest_download,
+    parse_disks,
     room_needed,
+    room_refusal,
 )
 
 #: A presigned link: its query downloads the archive by itself.
@@ -83,18 +90,59 @@ def _resolving_to(address="93.184.216.34"):
     )
 
 
-def _host_answers(free=100 * GIB, size=None, others=None):
+def _dns(*addresses):
+    """Have every name resolve to *addresses*, in that order, without DNS.
+
+    What ``outbound``'s own ``getaddrinfo`` answers: IPv4 and IPv6
+    addresses as the system gives them.
+
+    :return: the patcher, to be used as a context manager
+    """
+    def answer(host, port, *_args, **_kwargs):
+        """Answer as getaddrinfo would, for any *host*."""
+        return [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", (address, port, 0, 0))
+            if ":" in address
+            else (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))
+            for address in addresses
+        ]
+    return patch.object(outbound, "getaddrinfo", autospec=True, side_effect=answer)
+
+
+#: A public IPv6 address no host of these tests has.
+PUBLIC_V6 = "2606:2800:220:1:248:1893:25c8:1946"
+
+
+def _disks_output(free, docker=None):
+    """Return what ``disks_command`` prints for these disks.
+
+    :param int free: bytes free where the job writes, or None for nothing
+    :param int docker: bytes free on Docker's disk, another disk; None for
+        one disk shared
+    :rtype: str
+    """
+    if free is None:
+        return ""
+    if docker is None:
+        return f"30 {free}\n30 {free}\n"
+    return f"41 {free}\n30 {docker}\n"
+
+
+def _host_answers(free=100 * GIB, size=None, others=None, docker=None):
     """Return a ``transport.run`` that answers as a host with *free* bytes free.
 
-    :param int free: what ``df`` prints, or None for nothing
+    :param int free: what the disks print free where the job writes, or
+        None for nothing
     :param int size: what ``stat`` prints, or None for nothing
     :param dict others: ``{command prefix: stdout}`` for other commands
+    :param int docker: bytes free on Docker's own disk, or None when it is
+        the same one
     :rtype: callable
     """
     def run(command, *_args, **_kwargs):
         """Answer *command* as the host would."""
-        if command.startswith("df "):
-            return CommandResult("" if free is None else f"{free}\n", 0)
+        if command.startswith("m() {"):
+            return CommandResult(_disks_output(free, docker), 0)
         if command.startswith("stat "):
             return CommandResult("" if size is None else f"{size}\n", 0)
         for prefix, stdout in (others or {}).items():
@@ -104,13 +152,13 @@ def _host_answers(free=100 * GIB, size=None, others=None):
     return run
 
 
-def _transport(free=100 * GIB, size=None, others=None):
+def _transport(free=100 * GIB, size=None, others=None, docker=None):
     """Return a transport mock whose host has *free* bytes free.
 
     :rtype: MagicMock
     """
     transport = MagicMock(spec=SSHTransport)
-    transport.run.side_effect = _host_answers(free, size, others)
+    transport.run.side_effect = _host_answers(free, size, others, docker)
     return transport
 
 
@@ -222,6 +270,97 @@ class TestTheLinksForms(BaseCase):
                     for value in (part.partition("=")[2] for part in query.split("&")):
                         if len(value) > 8:
                             self.assertNotIn(value, told_link(url))
+
+    def test_a_presigned_link_shows_whole_its_bucket_and_who_signed_it(self):
+        """``acme-backups-prod`` and ``acme-evilish-prod`` cut alike: on a
+        path-style storage, or on any host a storage's query signed, the
+        bucket and the signer's key id are shown whole; the signature and
+        a session token stay cut."""
+        self.assertEqual(cut("acme-backups-prod"), cut("acme-evilish-prod"))
+        token = "session" * 12
+        credential = "AKIAMINE0000000001%2F20261104%2Feu-west-1%2Fs3%2Faws4_request"
+        query = (
+            f"?X-Amz-Credential={credential}&X-Amz-Security-Token={token}"
+            f"&X-Amz-Signature={SIGNATURE}"
+        )
+        for host in (
+            "s3.eu-west-1.amazonaws.com",
+            "s3.amazonaws.com",
+            "s3.dualstack.us-east-1.amazonaws.com",
+            "fsn1.your-objectstorage.com",
+            "minio.acme.example",
+        ):
+            mine = f"https://{host}/acme-backups-prod/tenant-7/backup.zip{query}"
+            bucket = mine.replace("acme-backups-prod", "acme-evilish-prod")
+            signer = mine.replace("AKIAMINE", "AKIAEVIL")
+            with self.subTest(host=host):
+                told = told_link(mine)
+                self.assertIn("/acme-backups-prod/", told)
+                self.assertIn(f"X-Amz-Credential={credential}", told)
+                self.assertNotIn(SIGNATURE, told)
+                self.assertNotIn(token, told)
+                self.assertNotEqual(told, told_link(bucket))
+                self.assertNotEqual(told, told_link(signer))
+        google = (
+            "https://storage.googleapis.com/acme-backups-prod/backup.zip"
+            "?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=backup%40acme"
+            ".iam.gserviceaccount.com%2F20261104%2Fauto%2Fstorage%2Fgoog4_request"
+            f"&X-Goog-Signature={SIGNATURE}"
+        )
+        told = told_link(google)
+        self.assertIn("/acme-backups-prod/", told)
+        self.assertIn("backup%40acme.iam.gserviceaccount.com", told)
+        self.assertNotIn(SIGNATURE, told)
+        v2 = (
+            "https://acme-backups-prod.s3.amazonaws.com/backup.zip"
+            f"?AWSAccessKeyId=AKIAMINE0000000001&Expires=1793836800&Signature={SIGNATURE}"
+        )
+        self.assertIn("AWSAccessKeyId=AKIAMINE0000000001", told_link(v2))
+        self.assertNotIn(SIGNATURE, told_link(v2))
+
+    def test_a_share_link_keeps_its_token_cut(self):
+        """No storage signed it: the first segment of its path is as cut as
+        the rest."""
+        for url, token in (
+            ("https://www.dropbox.com/scl/fi/abcdef123456ghij/backup.zip?dl=1",
+             "abcdef123456ghij"),
+            ("https://cloud.example.com/s/Z8k2LmQ9pR4tW7xY/download", "Z8k2LmQ9pR4tW7xY"),
+            ("https://files.example.com/Z8k2LmQ9pR4tW7xYzz/backup.zip", "Z8k2LmQ9pR4tW7xYzz"),
+        ):
+            with self.subTest(url=url):
+                self.assertNotIn(token, told_link(url))
+
+    def test_an_ipv4_mapped_address_of_a_panel_server_is_refused(self):
+        """``[::ffff:a.b.c.d]`` reaches a.b.c.d: compared as it; and an
+        agent's link names an IPv4 address at all."""
+        panel = [ipaddress.ip_network("93.184.216.40/32")]
+        url = "https://[::ffff:93.184.216.40]/b.zip"
+        with _dns("::ffff:93.184.216.40"):
+            with self.assertRaisesRegex(OutboundError, "server of this panel"):
+                validate(url, refused=panel)
+            with self.assertRaisesRegex(OutboundError, "IPv4"):
+                validate(url, refused=panel, ipv4_only=True)
+        with _dns(PUBLIC_V6), self.assertRaisesRegex(OutboundError, "IPv4"):
+            validate(f"https://[{PUBLIC_V6}]/b.zip", ipv4_only=True)
+
+    def test_an_agent_s_link_pins_an_ipv4_address_only(self):
+        """A name with only an AAAA record — the IPv6 address of a managed
+        host, which the panel does not know — is refused; one with both
+        is pinned to its IPv4 address. The panel's Import keeps IPv6."""
+        with _dns(PUBLIC_V6):
+            with self.assertRaisesRegex(OutboundError, "no IPv4 address"):
+                validate("https://v6only.example.com/b.zip", ipv4_only=True)
+            _parts, address, _port = validate("https://v6only.example.com/b.zip")
+            self.assertEqual(address, PUBLIC_V6)
+        with _dns(PUBLIC_V6, "93.184.216.34"):
+            _parts, address, _port = validate(
+                "https://both.example.com/b.zip", ipv4_only=True,
+            )
+        self.assertEqual(address, "93.184.216.34")
+        with _dns(PUBLIC_V6, "10.0.0.5"), self.assertRaisesRegex(
+            OutboundError, "private",
+        ):
+            validate("https://both.example.com/b.zip", ipv4_only=True)
 
     def test_an_agent_link_keeps_to_port_443_and_off_the_panel_s_servers(self):
         """``only_port`` and ``refused``: what the check of public addresses
@@ -479,6 +618,55 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         )
         self.assertEqual(room_needed(GIB, copies=1), RESERVE_BYTES + 3 * GIB)
 
+    def test_two_disks_are_measured_each_for_what_it_takes(self):
+        """The archive lands in /tmp; it is unpacked and loaded on Docker's
+        disk. A small tmpfs beside a large Docker disk restores what fits
+        in /tmp; a large /tmp beside a nearly full Docker disk restores
+        what Docker's leaves, its reserve kept."""
+        tmpfs = Disks(job=2 * GIB, docker=500 * GIB, shared=False)
+        # Measured as one disk, the 2 GiB of /tmp were less than the reserve.
+        self.assertEqual(largest_download(tmpfs.job), 0)
+        self.assertEqual(largest_archive(tmpfs, on_job_disk=1), 2 * GIB)
+        self.assertEqual(largest_archive(tmpfs, on_job_disk=2), GIB)
+        self.assertEqual(room_refusal(tmpfs, 3 * GIB, 0, "it"), "")
+        self.assertIn("in /tmp", room_refusal(tmpfs, 3 * GIB, 1, "it"))
+        full = Disks(job=500 * GIB, docker=RESERVE_BYTES + GIB, shared=False)
+        self.assertEqual(largest_archive(full, on_job_disk=1), GIB // UNPACK_FACTOR)
+        self.assertIn("instances are kept on", room_refusal(full, GIB, 1, "it"))
+        self.assertEqual(room_refusal(full, GIB // UNPACK_FACTOR, 1, "it"), "")
+        one = Disks(job=RESERVE_BYTES + 3 * GIB, docker=RESERVE_BYTES + 3 * GIB,
+                    shared=True)
+        self.assertEqual(largest_archive(one, 1), largest_download(one.job))
+        self.assertEqual(room_refusal(one, GIB, 0, "it"), "")
+        self.assertIn("Not enough free disk", room_refusal(one, GIB + 1, 1, "it"))
+
+    def test_the_two_disks_are_read_from_what_the_host_prints(self):
+        self.assertEqual(parse_disks("30 100\n30 200\n"), Disks(100, 200, True))
+        self.assertEqual(parse_disks("41 100\n30 200\n"), Disks(100, 200, False))
+        for printed in ("", "30 100\n", "30 100\nx 200\n", "30 100\n30\n"):
+            with self.subTest(printed=printed):
+                self.assertIsNone(parse_disks(printed))
+
+    def test_a_download_is_limited_by_each_disk(self):
+        """A tmpfs of 2 GiB beside 400 GiB for Docker: the archive may take
+        the tmpfs; 400 GiB of /tmp beside 6 GiB for Docker: half of what
+        Docker's disk has above its reserve."""
+        for free, docker, limit in (
+            (2 * GIB, 400 * GIB, 2 * GIB),
+            (400 * GIB, RESERVE_BYTES + GIB, GIB // UNPACK_FACTOR),
+        ):
+            with self.subTest(free=free, docker=docker), _resolving_to():
+                asyncio.run(self.executor.before_execute(
+                    _transport(free=free, docker=docker),
+                ))
+                self.assertEqual(self.executor._download_limit, limit)
+        with _resolving_to(), self.assertRaisesRegex(
+            RuntimeError, "instances are kept on",
+        ):
+            asyncio.run(self.executor.before_execute(
+                _transport(free=400 * GIB, docker=RESERVE_BYTES),
+            ))
+
     def test_a_disk_with_only_the_reserve_free_downloads_nothing(self):
         transport = _transport(free=4 * GIB)
         with _resolving_to(), self.assertRaisesRegex(RuntimeError, "Not enough free disk"):
@@ -612,7 +800,7 @@ class TestACheckOffersNothingTheDiskCannotRestore(TransactionCase):
         """Run the check's end on what the host printed."""
         results = {
             "Inspect the upload": {"stdout": f"{size} {SHA} restore.zip\n"},
-            "Measure free disk": {"stdout": "" if free is None else f"{free}\n"},
+            "Measure free disk": {"stdout": _disks_output(free)},
         }
         asyncio.run(self.executor.on_success(results))
 
@@ -707,6 +895,26 @@ class TestOneDoorAtATime(RestoreFixture, TransactionCase):
         ):
             self.instance.with_user(self.developer).grant_restore_upload()
         self.assertFalse(self._doors())
+
+    def test_a_door_a_waiting_restore_takes_from_is_not_closed(self):
+        """The caller's own door, whose archive a restore waiting in the
+        queue is to take: closing it would remove the archive. The new
+        door is refused; once the restore has run, it opens."""
+        mine = self.instance.with_user(self.developer)
+        first = self.Grant.browse(mine.grant_restore_upload()["grant_id"])
+        restore = self.env["cloud.job"].sudo().create({
+            "name": "restore", "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.env.ref("incubacloud.restore_instance").id,
+            "payload": {"mode": "ssh_upload", "grant_id": first.id},
+            "state": "queued",
+        })
+        with self.assertRaisesRegex(UserError, "waiting in the queue"):
+            mine.grant_restore_upload()
+        self.assertEqual(self._doors(), first.sudo())
+        restore.state = "done"
+        mine.grant_restore_upload()
+        self.assertEqual(first.sudo().state, "revoked")
 
     def test_another_instance_s_door_does_not_count(self):
         self.instance.with_user(self.developer).grant_restore_upload()
@@ -835,7 +1043,7 @@ class TestTheUpgradeMovesTheLinks(TransactionCase):
             "instance_id": instance.id,
             "job_type_id": self.env.ref("incubacloud.restore_instance").id,
             "payload": {
-                "mode": "from_url", "url": SIGNED, "url_display": masked(SIGNED),
+                "mode": "from_url", "url": SIGNED, "url_display": SIGNED,
                 "resolve": "93.184.216.34:443:93.184.216.34", "neutralize": True,
             },
             "secret_payload": secret,
@@ -872,6 +1080,68 @@ class TestTheUpgradeMovesTheLinks(TransactionCase):
         self.assertEqual(url, curl_url(urlsplit(SIGNED)))
         # Run again: nothing left to move.
         self.assertEqual(self.migration._move_restore_links(self.env), 0)
+
+    def _old_chain(self, restore_state, retry_state=None):
+        """A restore with a safety backup first, as 1.0.211 stored it.
+
+        The credential on the backup's job; the restore's step, and a retry
+        of it when *retry_state*, without it.
+
+        :return: ``(backup, restore, retry)``
+        """
+        instance = self.env["cloud.instance"].create({
+            "name": f"upgrade-chain-{self.env['cloud.instance'].search_count([])}",
+            "project_id": self.project.id, "host_id": self.host.id,
+            "odoo_version": "19.0",
+        })
+        key = f"chain-{instance.id}"
+        common = {"host_id": self.host.id, "instance_id": instance.id}
+        backup = self.env["cloud.job"].create({
+            **common, "name": "backup", "queue_chain_key": key, "state": "done",
+            "job_type_id": self.env.ref("incubacloud.backup_create").id,
+            "secret_payload": json.dumps(
+                {"machine": "93.184.216.34", "login": "bob", "password": "pw"},
+            ),
+        })
+        payload = {
+            "mode": "from_url", "url": SIGNED, "url_display": SIGNED,
+            "resolve": "93.184.216.34:443:93.184.216.34",
+        }
+        restore = self.env["cloud.job"].create({
+            **common, "name": "restore", "queue_chain_key": key,
+            "job_type_id": self.env.ref("incubacloud.restore_instance").id,
+            "payload": payload, "state": restore_state,
+        })
+        retry = self.env["cloud.job"]
+        if retry_state:
+            retry = self.env["cloud.job"].create({
+                **common, "name": "restore",
+                "job_type_id": self.env.ref("incubacloud.restore_instance").id,
+                "payload": payload, "state": retry_state,
+                "retry_of_id": restore.id,
+            })
+        return backup, restore, retry
+
+    def test_a_safety_backup_gives_its_credential_to_its_restore(self):
+        """A failed restore step, or the latest retry of it, gets the
+        credential the backup kept; one that ended does not. No backup
+        keeps it, and a second upgrade moves nothing."""
+        failed = self._old_chain("failed")
+        retried = self._old_chain("failed", retry_state="failed")
+        ended = self._old_chain("done")
+        self.env.flush_all()
+        self.migration.migrate(self.env.cr, "1.0.211")
+        self.env.invalidate_all()
+        credential = ("93.184.216.34", "bob", "pw")
+        for backup, _restore, _retry in (failed, retried, ended):
+            self.assertFalse(backup.sudo().secret_payload)
+        self.assertEqual(failed[1]._restore_url_credential(), credential)
+        self.assertEqual(failed[1]._restore_url_link(), SIGNED)
+        self.assertEqual(retried[2]._restore_url_credential(), credential)
+        self.assertEqual(retried[2]._restore_url_link(), SIGNED)
+        self.assertIsNone(retried[1]._restore_url_credential())
+        self.assertIsNone(ended[1]._restore_url_credential())
+        self.assertEqual(self.migration._move_chain_credentials(self.env), 0)
 
     def test_the_upgrade_remembers_the_keys_of_the_doors_stored(self):
         instance = self.env["cloud.instance"].create({
@@ -946,6 +1216,26 @@ class TestAnAgentsLinkRules(RestoreFixture, TransactionCase):
             ):
                 self._agent("https://innocent.example.com/b.zip")
 
+    def test_an_agent_s_link_to_a_server_of_the_panel_over_ipv6_is_refused(self):
+        """Its IPv4-mapped address, or a name with an AAAA record only — a
+        managed host's IPv6 address, which the panel does not know —
+        here, and again where it is fetched."""
+        for url, address, reason in (
+            ("https://[::ffff:93.184.216.40]/b.zip", "::ffff:93.184.216.40", "IPv4"),
+            ("https://v6only.example.com/b.zip", PUBLIC_V6, "IPv4"),
+        ):
+            with (
+                self.subTest(url=url), _dns(address),
+                self.assertRaisesRegex(UserError, reason),
+            ):
+                self._agent(url)
+        with _resolving_to():
+            job = self.env["cloud.job"].browse(
+                self._agent("https://rebind.example.com/b.zip"),
+            )
+        with _dns(PUBLIC_V6), self.assertRaisesRegex(ValueError, "IPv4"):
+            RestoreInstanceExecutor(job, self.host)._checked_link()
+
     def test_an_agent_s_public_link_is_queued_under_its_rules(self):
         with _resolving_to():
             job = self.env["cloud.job"].browse(self._agent(SIGNED))
@@ -995,3 +1285,174 @@ class TestAnAgentsLinkRules(RestoreFixture, TransactionCase):
         self.assertIn(ipaddress.ip_network("93.184.216.40/32"), networks)
         self.assertIn(ipaddress.ip_network("198.51.100.47/32"), networks)
         self.assertNotIn(ipaddress.ip_network("0.0.0.0/32"), networks)
+
+
+@tagged("-at_install", "post_install")
+class TestADoorWritesNoMoreThanTheDisksTake(RestoreFixture, TransactionCase):
+    """Every door of a host writes on the disk the host's instances share,
+    for 12 hours, to whoever holds its key: no file larger than what the
+    disks could restore when it opened, and a door past its limit, or on
+    a disk down to its reserve, is closed within minutes."""
+
+    def setUp(self):
+        super().setUp()
+        self._restore_fixture("198.51.100.48")
+        self.Grant = self.env["cloud.restore.upload.grant"]
+        self.grant, _private = self.Grant._open(self.instance)
+
+    def _job(self, code, instance=True, **vals):
+        """A job of *code* on the fixture's host (and instance)."""
+        return self.env["cloud.job"].sudo().create(vals | {
+            "name": code, "host_id": self.host.id,
+            "instance_id": self.instance.id if instance else False,
+            "job_type_id": self.env.ref(f"incubacloud.{code}").id,
+        })
+
+    def _install(self, free=25 * GIB, docker=None):
+        """Run the key's install up to its commands, on a host with *free*."""
+        executor = GrantRestoreUploadKeyExecutor(
+            self._job("grant_restore_upload_key", payload={"grant_id": self.grant.id}),
+            self.host,
+        )
+        asyncio.run(executor.before_execute(_transport(free=free, docker=docker)))
+        return executor, executor.get_commands()
+
+    def test_the_door_s_limit_is_what_the_disks_could_restore(self):
+        """25 GiB on one disk: the reserve, the upload, its copy and twice
+        it to unpack — 5 GiB. The key's command sets it in KiB."""
+        _executor, commands = self._install(free=25 * GIB)
+        self.assertEqual(self.grant.upload_limit_bytes, 5 * GIB)
+        install = dict((label, command) for label, command, *_ in commands)
+        self.assertIn(
+            f"ulimit -f {5 * GIB // 1024} && exec /usr/bin/rrsync -wo -munge",
+            install["Install the one-use key"],
+        )
+        _executor, _commands = self._install(free=3 * GIB, docker=500 * GIB)
+        self.assertEqual(self.grant.upload_limit_bytes, 3 * GIB // 2)
+
+    def test_a_door_the_disks_leave_no_room_for_never_opens(self):
+        """Nothing free above the reserve, or a disk that cannot be read:
+        the first step refuses, no key is installed, the door is closed."""
+        for free in (RESERVE_BYTES, None):
+            with self.subTest(free=free):
+                self.grant.sudo().write({"state": "granted", "upload_limit_bytes": 0})
+                executor, commands = self._install(free=free)
+                self.assertEqual([c[0] for c in commands], ["Measure free disk"])
+                self.assertIn("false", commands[0][1])
+                asyncio.run(executor.on_failure(
+                    {"Measure free disk": {"exit_status": 1}}, ["refused"],
+                ))
+                self.assertEqual(self.grant.sudo().state, "revoked")
+        with self.assertRaisesRegex(ValueError, "no size limit"):
+            self.grant._authorized_keys_line()
+
+    def _lab_upload(self, shell, limit):
+        """Run the key's forced command under *shell*, a writer standing in
+        for rrsync that sends 1 MiB into the door; return what landed."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        door = Path(tmp, "door")
+        door.mkdir()
+        writer = Path(tmp, "rrsync")
+        writer.write_text(
+            "#!/bin/sh\nfor last; do :; done\n"
+            'head -c 1048576 /dev/zero > "$last/restore.zip"\n',
+            encoding="utf-8",
+        )
+        writer.chmod(0o755)
+        command = cloud_restore_upload_grant.forced_command(
+            str(door), limit, wrapper=str(writer),
+        )
+        subprocess.run(
+            [shell, "-c", command], check=False, capture_output=True,
+            env={"PATH": "/usr/bin:/bin"},
+        )
+        return os.path.getsize(door / "restore.zip")
+
+    def test_lab_no_file_through_the_door_passes_its_limit(self):
+        """sshd runs the command with the account's shell, ``sh`` or
+        ``bash``: either way bash sets the limit, in KiB."""
+        for shell in ("/bin/sh", "/bin/bash"):
+            with self.subTest(shell=shell):
+                self.assertLessEqual(self._lab_upload(shell, 64 * 1024), 64 * 1024)
+        self.assertEqual(self._lab_upload("/bin/sh", 4 * 1024 * 1024), 1024 * 1024)
+
+    def test_the_key_line_holds_no_quote_that_would_end_its_command(self):
+        """``command="…"`` is read by sshd up to the next unescaped double
+        quote: the forced command holds none."""
+        self.grant.sudo().upload_limit_bytes = 5 * GIB
+        line = self.grant._authorized_keys_line()
+        command = line.split('command="', 1)[1].split('",restrict,', 1)[0]
+        self.assertNotIn('"', command)
+        self.assertTrue(command.startswith("exec /bin/bash -c 'ulimit -f "))
+
+    def test_the_cron_watches_the_hosts_with_an_open_door(self):
+        """A watch for each host with an open door; none for a host
+        without."""
+        other = self.env["cloud.host"].create({
+            "name": "no-door-host", "ip_address": "198.51.100.49",
+            "user": "root", "wildcard_domain": "nodoor.example",
+        })
+        Job = self.env["cloud.job"].sudo()
+        self.assertTrue(self.Grant._watch_doors())
+        watches = Job.search([("job_type_id.code", "=", "watch_restore_uploads")])
+        self.assertEqual(watches.host_id, self.host)
+        self.assertNotIn(other, watches.host_id)
+        self.grant.sudo().state = "revoked"
+        self.assertEqual(self.Grant._watch_doors(), [])
+
+    def _watch(self, stdout):
+        """Run a watch whose host prints *stdout*; return the executor."""
+        executor = WatchRestoreUploadsExecutor(
+            self._job("watch_restore_uploads", instance=False), self.host,
+        )
+        transport = MagicMock(spec=SSHTransport)
+        transport.run.return_value = CommandResult(stdout, 0)
+        asyncio.run(executor.before_execute(transport))
+        command = transport.run.await_args.args[0]
+        self.assertIn(f"du -sb -- {self.grant._directory()}", command)
+        return executor
+
+    def test_a_door_past_its_limit_is_closed_there_and_then(self):
+        """Many files, each within the key's limit, add up past it: the
+        door's key and directory go in the watch itself, not behind the
+        instance's queue."""
+        self.grant.sudo().upload_limit_bytes = 5 * GIB
+        disks = _disks_output(100 * GIB)
+        within = self._watch(f"{disks}door {self.grant.token} {5 * GIB}\n")
+        self.assertEqual(
+            [c[0] for c in within.get_commands()], ["Nothing to close"],
+        )
+        past = self._watch(f"{disks}door {self.grant.token} {5 * GIB + 1}\n")
+        labels = [c[0] for c in past.get_commands()]
+        self.assertEqual(labels, [
+            f"Remove the one-use key ({self.grant.token})",
+            f"Remove the upload directory ({self.grant.token})",
+        ])
+        asyncio.run(past.on_success({}))
+        self.assertEqual(self.grant.sudo().state, "revoked")
+
+    def test_every_door_is_closed_when_the_instances_disk_is_at_its_reserve(self):
+        """On the disk the instances share; a tmpfs of its own at its
+        reserve endangers no instance, and a door that cannot be measured
+        is left to its own limit."""
+        self.grant.sudo().upload_limit_bytes = 5 * GIB
+        small = f"door {self.grant.token} {GIB}\n"
+        apart = self._watch(_disks_output(RESERVE_BYTES - 1, docker=100 * GIB) + small)
+        self.assertFalse(apart._closing)
+        unsized = self._watch(_disks_output(RESERVE_BYTES - 1))
+        self.assertIn(self.grant, unsized._closing)
+        nothing = self._watch(f"door {self.grant.token}\n")
+        self.assertFalse(nothing._closing)
+        shared = self._watch(_disks_output(RESERVE_BYTES - 1) + small)
+        self.assertIn("kept for them", shared._closing[self.grant])
+
+    def test_a_door_opened_before_the_limits_is_held_to_the_disks_now(self):
+        self.grant.sudo().upload_limit_bytes = 0
+        disks = _disks_output(25 * GIB)
+        self.assertFalse(self._watch(f"{disks}door {self.grant.token} {GIB}\n")._closing)
+        self.assertIn(
+            self.grant,
+            self._watch(f"{disks}door {self.grant.token} {6 * GIB}\n")._closing,
+        )
+        self.assertFalse(self._watch(f"door {self.grant.token} {6 * GIB}\n")._closing)

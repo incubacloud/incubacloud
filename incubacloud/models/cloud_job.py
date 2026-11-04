@@ -994,7 +994,7 @@ class CloudJob(models.Model):
     # Override _get_hidden_job_types() in submodules to extend this list.
     _hidden_job_types = [
         "host_metrics", "docker_prune", "instance_health", "read_last_login",
-        "capture_secret_key",
+        "capture_secret_key", "watch_restore_uploads",
         # Queued from the transaction that ends a restore, sometimes with
         # the queues' locks held: it must wait for nothing.
         "discard_handoff",
@@ -1065,6 +1065,9 @@ class CloudJob(models.Model):
         # daily cron queues it.
         "capture_secret_key": "group_cloud_manager",
         "host_metrics": "group_cloud_manager",
+        # Closes upload doors of every instance of the host; only the
+        # cron queues it.
+        "watch_restore_uploads": "group_cloud_manager",
         "host_hardening": "group_cloud_manager",
         "full_setup": "group_cloud_manager",
         # Rewrites what the host's proxy does with every request that

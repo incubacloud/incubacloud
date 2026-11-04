@@ -28,10 +28,11 @@ SIGNED = (
     "?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=deadbeefcafe"
 )
 SHOWN = "https://93.184.216.34/…/backup.zip?…"
-#: What the approval and the assistant's card show of it.
+#: What the approval and the assistant's card show of it: who signed it
+#: whole, as the bucket of a link a storage signed; the signature cut.
 TOLD = (
     "https://93.184.216.34/bucket/tenant-7/backup.zip"
-    "?X-Amz-Credential=A…E&X-Amz-Signature=de…fe"
+    "?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=de…fe"
 )
 SHA = "ab" * 32
 
@@ -280,8 +281,8 @@ class TestRestoreTools(
 
     def test_the_approval_shows_every_piece_of_the_link_cut(self):
         """Each segment and each value of the query, cut (``told_link``):
-        the signature and the credential are not in the approval whole; the
-        options and the instance are."""
+        the signature is not in the approval whole; who signed it is, and
+        the options and the instance."""
         with _public_resolution():
             message = self._message(
                 self.dev,
@@ -289,8 +290,8 @@ class TestRestoreTools(
                 {"instance_id": self.staging.id, "url": SIGNED},
             )
         self.assertIn(TOLD, message)
-        for hidden in ("deadbeefcafe", "AKIAEXAMPLE"):
-            self.assertNotIn(hidden, message)
+        self.assertNotIn("deadbeefcafe", message)
+        self.assertIn("X-Amz-Credential=AKIAEXAMPLE&", message)
         self.assertIn('"mcp-acme-staging"', message)
         self.assertIn("neutralized", message)
         self.assertIn("without a safety backup", message)

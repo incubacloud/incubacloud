@@ -14,12 +14,13 @@ from ..net.restore_source import (
 )
 from ..net.restore_source import validate as validate_restore_url
 from ..restore_space import (
-    free_space_command,
+    described,
+    disks_command,
     in_gib,
-    largest_download,
-    no_room_message,
+    largest_archive,
+    parse_disks,
     parse_free,
-    room_needed,
+    room_refusal,
 )
 from ..restore_staging import is_staged_upload
 from ._odoo_versions import script_env
@@ -537,8 +538,9 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         same answer. The link returned is rebuilt from the name checked
         (``curl_url``): its host is the pin's, byte for byte, so curl
         never looks the name up itself. An agent's link
-        (``link_policy``) is held to its rules again here: port 443, and
-        no server of this panel's — a name may resolve to one by now.
+        (``link_policy``) is held to its rules again here: port 443, an
+        IPv4 address, and no server of this panel's — a name may resolve
+        to one by now.
         The link is read where ``restore_from_url`` keeps it, encrypted
         (``cloud.job._restore_url_link``).
 
@@ -553,6 +555,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 options = {
                     'only_port': 443,
                     'refused': self.env['cloud.host']._panel_own_networks(),
+                    'ipv4_only': True,
                 }
             try:
                 if options and urlsplit(url).scheme != 'https':
@@ -645,21 +648,26 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             int(grant_id),
         ).exists()
 
-    async def _free_bytes(self, transport):
-        """Return the bytes free on the disk of this job's directory.
+    async def _disks(self, transport):
+        """Return what is free on the two disks a restore writes on.
+
+        The disk of this job's directory, where the archive lands, and
+        the one Docker keeps the instances on, where it is unpacked and
+        loaded (``restore_space.Disks``): ``/tmp`` may be a small tmpfs
+        on a host whose Docker disk is large, or the other way round.
 
         :param transport: the job's open transport, its directory made
-        :rtype: int
+        :rtype: restore_space.Disks
         :raise RuntimeError: when the host does not say
         """
-        answer = await transport.run(free_space_command(self._job_dir()))
-        free = parse_free(answer.stdout) if answer.exit_status == 0 else None
-        if free is None:
+        answer = await transport.run(disks_command(self._job_dir()))
+        disks = parse_disks(answer.stdout) if answer.exit_status == 0 else None
+        if disks is None:
             raise RuntimeError(
                 "The free disk on the server could not be measured: nothing "
                 "was restored."
             )
-        return free
+        return disks
 
     async def _check_room(self, transport, archive, copies):
         """Refuse an archive on the host the disk free cannot restore.
@@ -680,12 +688,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "The size of the archive on the server could not be read: "
                 "not restored."
             )
-        free = await self._free_bytes(transport)
-        needed = room_needed(size, copies)
-        if free < needed:
-            raise RuntimeError(no_room_message(
-                free, needed, f"an archive of {in_gib(size)}",
-            ))
+        refusal = room_refusal(
+            await self._disks(transport), size, copies,
+            f"an archive of {in_gib(size)}",
+        )
+        if refusal:
+            raise RuntimeError(refusal)
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -905,18 +913,19 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # this account can read there. No larger than the disk free
             # leaves, measured there first.
             await self._ensure_job_dir(transport)
-            free = await self._free_bytes(transport)
-            self._download_limit = largest_download(free)
+            disks = await self._disks(transport)
+            self._download_limit = largest_archive(disks, on_job_disk=1)
             if not self._download_limit:
-                raise RuntimeError(no_room_message(
-                    free, room_needed(0), "an archive from a link",
-                ))
+                raise RuntimeError(room_refusal(
+                    disks, 1, 1, "an archive from a link",
+                ) or "Not enough free disk on the server for an archive "
+                     "from a link: nothing was restored.")
             await self._upload_private_files(
                 transport, {self._curl_config_path(): self._curl_config_content()},
             )
             self._sys(
                 "Downloading the archive on the host (at most "
-                f"{in_gib(self._download_limit)}, with {in_gib(free)} free)…"
+                f"{in_gib(self._download_limit)}, with {described(disks)})…"
             )
 
         else:
