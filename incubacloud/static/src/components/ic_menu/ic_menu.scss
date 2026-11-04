@@ -29,6 +29,13 @@
 
     &[hidden] { display: none; }
 
+    // On a narrow screen the trigger sits near the right edge, so the list
+    // grows to the left from it instead of past the viewport.
+    @media (max-width: 768px) {
+        left: auto;
+        right: 0;
+    }
+
     // Entries read as menu rows, whatever button class the caller gave them.
     > button,
     > a {
