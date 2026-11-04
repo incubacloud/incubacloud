@@ -299,8 +299,13 @@ class AssistantTools(models.AbstractModel):
 
     @api.model
     def _call_detail(self, spec, args):
-        """Return the card's line for a call: the tool and its arguments, quoted."""
-        arguments = json.dumps(args, sort_keys=True, ensure_ascii=False)
+        """Return the card's line for a call: the tool and its arguments, quoted.
+
+        As the MCP records them (``_recorded_args``): a link's credential
+        is not kept in a card either.
+        """
+        recorded = self.env["incubacloud.mcp.tools"]._recorded_args(spec, args)
+        arguments = json.dumps(recorded, sort_keys=True, ensure_ascii=False)
         return self.env._(
             "Run %(tool)s with %(arguments)s.",
             tool=spec.name,

@@ -113,6 +113,21 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
             with self.subTest(spec.name):
                 self.assertTrue(Tools._extra_confirmation(spec, {}))
 
+    def test_a_card_quotes_a_link_as_the_audit_keeps_it(self):
+        """A restore from a link: the card keeps its host and its file, not
+        the signature in its query."""
+        Tools = self.env["incubacloud.assistant.tools"].with_user(self.developer)
+        spec = self.env["incubacloud.mcp.catalog"]._spec("restore_from_link")
+        card = Tools._extra_confirmation(
+            spec,
+            {
+                "instance_id": self.staging.id,
+                "url": "https://93.184.216.34/b/backup.zip?X-Amz-Signature=cafe1234",
+            },
+        )
+        self.assertIn("https://93.184.216.34/…/backup.zip?…", card)
+        self.assertNotIn("cafe1234", card)
+
     def test_production_is_found_by_any_id_of_the_arguments(self):
         """A repository line of production, the server production runs on."""
         Tools = self.env["incubacloud.assistant.tools"].with_user(self.manager)
