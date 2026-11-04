@@ -521,9 +521,13 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         url, resolve = self._checked_link()
         # Only the schemes a link may name, and no redirect but to https
         # should one ever be followed. No globbing: the address is one.
+        # An ftp server's PASV answer names the address of its data
+        # connection, which before curl 7.74 was dialled as given: any
+        # address, past the pin. ``--ftp-skip-pasv-ip`` keeps the data
+        # connection on the pinned one (other schemes ignore it).
         args = [
             "curl", "-q", "-fsS", "--max-time", "86400", "--globoff",
-            "--noproxy", "*",
+            "--noproxy", "*", "--ftp-skip-pasv-ip",
             "--proto", "=" + ",".join(ALLOWED_SCHEMES),
             "--proto-redir", "=https",
             "--resolve", resolve,
