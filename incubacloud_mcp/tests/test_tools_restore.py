@@ -15,6 +15,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
 from odoo.addons.incubacloud.net import restore_source
+from odoo.addons.incubacloud.net.restore_source import told_link
 
 from ..models.mcp_tools_restore import shown_link
 from ..protocol.schema import SchemaError, validate
@@ -27,16 +28,21 @@ SIGNED = (
     "?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=deadbeefcafe"
 )
 SHOWN = "https://93.184.216.34/…/backup.zip?…"
+#: What the approval and the assistant's card show of it.
+TOLD = (
+    "https://93.184.216.34/bucket/tenant-7/backup.zip"
+    "?X-Amz-Credential=A…E&X-Amz-Signature=de…fe"
+)
 SHA = "ab" * 32
 
 
-def _public_resolution():
+def _public_resolution(address="93.184.216.34"):
     """Have every name resolve to one public address, without DNS."""
     return patch.object(
         restore_source,
         "_resolve_public",
         autospec=True,
-        return_value="93.184.216.34",
+        return_value=address,
     )
 
 
@@ -147,6 +153,11 @@ class TestRestoreTools(
             self.assertIn("lost", spec.description)
         self.assertEqual(self._spec("grant_restore_upload").confirm, "always")
         self.assertEqual(self._spec("check_restore_upload").confirm, "never")
+        revoke = self._spec("revoke_restore_upload")
+        self.assertEqual(
+            (revoke.destructive, revoke.read_only, revoke.confirm, revoke.min_group),
+            (False, False, "never", "group_cloud_developer"),
+        )
 
     def test_the_browser_upload_stays_out(self):
         """The routes of the browser's upload are still excluded, and no
@@ -159,7 +170,12 @@ class TestRestoreTools(
             "/cloud/instance/<int:instance_id>/restore/finish",
         ):
             self.assertEqual(policies[route][0], "excluded", route)
-        for name in (*RESTORES, "grant_restore_upload", "check_restore_upload"):
+        for name in (
+            *RESTORES,
+            "grant_restore_upload",
+            "check_restore_upload",
+            "revoke_restore_upload",
+        ):
             self.assertFalse(self._spec(name).route, name)
             self.assertNotIn(("tool", name), policies.values())
 
@@ -262,25 +278,60 @@ class TestRestoreTools(
                 {"instance_id": self.staging.id, "url": "https://rebind.example/b.zip"},
             )
 
-    def test_the_approval_shows_the_link_s_host_and_file_only(self):
-        """The query (a signature) and the path before the file are not in
-        the approval; the options and the instance are."""
+    def test_the_approval_shows_every_piece_of_the_link_cut(self):
+        """Each segment and each value of the query, cut (``told_link``):
+        the signature and the credential are not in the approval whole; the
+        options and the instance are."""
         with _public_resolution():
             message = self._message(
                 self.dev,
                 "restore_from_link",
                 {"instance_id": self.staging.id, "url": SIGNED},
             )
-        self.assertIn(SHOWN, message)
-        for hidden in ("X-Amz-Signature", "deadbeefcafe", "AKIAEXAMPLE", "tenant-7"):
+        self.assertIn(TOLD, message)
+        for hidden in ("deadbeefcafe", "AKIAEXAMPLE"):
             self.assertNotIn(hidden, message)
         self.assertIn('"mcp-acme-staging"', message)
         self.assertIn("neutralized", message)
         self.assertIn("without a safety backup", message)
         self.assertIn("lost", message)
 
+    def test_a_look_alike_link_does_not_read_the_same_in_the_approval(self):
+        """Same host and file's name, another bucket's path or another
+        share's token: the audit's form would read the same, the
+        approval's and the card's do not."""
+        Tools = self.env["incubacloud.mcp.tools"]
+        spec = self._spec("restore_from_link")
+        share = "Z8k2LmQ9pR4tW7xYbC3d"
+        for mine, theirs in (
+            (
+                SIGNED,
+                SIGNED.replace("bucket/tenant-7", "attacker/tenant-7"),
+            ),
+            (
+                f"https://cloud.example.com/s/{share}/download",
+                "https://cloud.example.com/s/Qw3rTy7uIo1pAs5dFg9h/download",
+            ),
+        ):
+            with self.subTest(mine=mine), _public_resolution():
+                told = [
+                    self._message(
+                        self.dev,
+                        "restore_from_link",
+                        {"instance_id": self.staging.id, "url": url},
+                    )
+                    for url in (mine, theirs)
+                ]
+                shown = [
+                    Tools._shown_args(spec, {"url": url})["url"] for url in (mine, theirs)
+                ]
+                self.assertEqual(shown_link(mine), shown_link(theirs))
+                self.assertNotEqual(*told)
+                self.assertNotEqual(*shown)
+                self.assertNotIn(share, told[0] + shown[0])
+
     def test_the_audit_keeps_the_link_s_host_and_file_only(self):
-        """What the audit and the assistant's card record of the call."""
+        """What the audit records of the call: host and file's name, cut."""
         args = self._prepared(
             self.dev, "restore_from_link", {"instance_id": self.staging.id, "url": SIGNED}
         )
@@ -289,6 +340,80 @@ class TestRestoreTools(
         )
         self.assertEqual(recorded["url"], SHOWN)
         self.assertEqual(args["url"], SIGNED)
+
+    def test_a_token_that_ends_the_link_is_not_kept_whole(self):
+        """``we.tl/t-…``: neither the audit nor the answer keeps the token."""
+        share = "t-AbCdEfGhIjKl"
+        url = f"https://we.tl/{share}"
+        args = self._prepared(
+            self.dev, "restore_from_link", {"instance_id": self.staging.id, "url": url}
+        )
+        recorded = self.env["incubacloud.mcp.tools"]._recorded_args(
+            self._spec("restore_from_link"), args
+        )
+        self.assertNotIn(share, recorded["url"])
+        with _public_resolution():
+            answer = self._run(
+                self.dev,
+                "restore_from_link",
+                {"instance_id": self.staging.id, "url": url},
+            )
+        self.assertNotIn(share, str(answer))
+        job = self.env["cloud.job"].sudo().browse(answer["job_id"])
+        self.assertNotIn(share, str(job.payload))
+        self.assertEqual(job._restore_url_link(), url)
+
+    def test_an_agent_s_link_keeps_to_port_443_and_off_the_panel_s_servers(self):
+        """Another port, a server the panel manages, the panel itself, and
+        the IPv6 ranges Python calls global: refused before anyone is
+        asked, nothing queued."""
+        public_host = (
+            self.env["cloud.host"]
+            .sudo()
+            .create(
+                {
+                    "name": "mcp-rst-public-host",
+                    "ip_address": "93.184.216.50",
+                    "user": "root",
+                    "wildcard_domain": "mcp-rst-public.example",
+                }
+            )
+        )
+        before = self._jobs()
+        CloudHost = type(self.env["cloud.host"])
+        for url, address, reason in (
+            ("https://files.example.com:8443/b.zip", "93.184.216.34", "port 443"),
+            ("https://files.example.com/b.zip", public_host.ip_address, "server"),
+            ("https://files.example.com/b.zip", "93.184.216.51", "server"),
+        ):
+            with (
+                self.subTest(url=url, address=address),
+                _public_resolution(address),
+                patch.object(
+                    CloudHost,
+                    "_hardening_panel_ip",
+                    autospec=True,
+                    return_value="93.184.216.51",
+                ),
+                self.assertRaisesRegex(UserError, reason),
+            ):
+                self._message(
+                    self.dev,
+                    "restore_from_link",
+                    {"instance_id": self.staging.id, "url": url},
+                )
+        for url in (
+            "https://[64:ff9b::7f00:1]/b.zip",
+            "https://[::7f00:1]/b.zip",
+            "https://[fec0::1]/b.zip",
+        ):
+            with self.subTest(url=url), self.assertRaises(UserError):
+                self._message(
+                    self.dev,
+                    "restore_from_link",
+                    {"instance_id": self.staging.id, "url": url},
+                )
+        self.assertEqual(self._jobs(), before)
 
     def test_the_options_default_as_the_kind_of_instance_wants(self):
         """A staging is neutralized by default, production is not; both get
@@ -339,7 +464,12 @@ class TestRestoreTools(
         self.assertEqual(url, SIGNED)
         self.assertEqual(
             restore.call_args.kwargs,
-            {"backup_before_restore": False, "neutralize": True, "reset_base_url": True},
+            {
+                "backup_before_restore": False,
+                "neutralize": True,
+                "reset_base_url": True,
+                "from_agent": True,
+            },
         )
 
     def test_a_link_restore_of_production_takes_its_safety_backup_first(self):
@@ -373,6 +503,9 @@ class TestRestoreTools(
         )
         self.assertEqual(len(restore), 1)
         self.assertEqual(restore.payload["mode"], "from_url")
+        self.assertEqual(restore._restore_url_link(), SIGNED)
+        self.assertNotIn("deadbeefcafe", str(restore.payload))
+        self.assertFalse(first.secret_payload)
         self.assertEqual(
             (restore.payload["neutralize"], restore.payload["reset_base_url"]),
             (False, True),
@@ -486,6 +619,35 @@ class TestRestoreTools(
         self._run(self.dev, "grant_restore_upload", args)
         with self.assertRaisesRegex(UserError, "already opened"):
             self._run(self.dev, "grant_restore_upload", args)
+
+    def test_a_door_is_closed_without_approval_and_audited(self):
+        """``revoke_restore_upload`` as the panel's: the key's removal and
+        the directory's queued, the grant closed; nothing to approve; a
+        closed door says so; a door of another instance is not this one's."""
+        grant = self._checked_grant()
+        args = {"instance_id": self.staging.id, "grant_id": grant.id}
+        self.assertIsNone(
+            self._tools(self.dev)._confirmation(self._spec("revoke_restore_upload"), args)
+        )
+        answer = self._run(self.dev, "revoke_restore_upload", args)
+        self.assertEqual((answer["ok"], answer["closed"]), (True, True))
+        job = self.env["cloud.job"].sudo().browse(answer["job_id"])
+        self.assertEqual(job.job_type_id.code, "revoke_restore_upload_key")
+        self.assertNotIn("keep_directory", job.payload)
+        self.assertEqual(grant.state, "revoked")
+        again = self._run(self.dev, "revoke_restore_upload", args)
+        self.assertEqual((again["ok"], again["closed"]), (True, False))
+        self.assertTrue(
+            self._tools(self.dev)._writes(self._spec("revoke_restore_upload"), args)
+        )
+        with self.assertRaisesRegex(UserError, "does not exist"):
+            self._run(
+                self.dev,
+                "revoke_restore_upload",
+                {"instance_id": self.production.id, "grant_id": grant.id},
+            )
+        with self.assertRaises(AccessError):
+            self._run(self.consultant, "revoke_restore_upload", args)
 
     def test_checking_a_door_queues_the_panel_s_check(self):
         """``verify_restore_upload``; a door of another instance is not this
@@ -618,7 +780,12 @@ class TestRestoreToolsOverHttp(
     def test_a_consultant_s_agent_neither_sees_nor_runs_them(self):
         """Not listed, and refused before anything runs."""
         credential = self._api_key(self.consultant)
-        for name in (*RESTORES, "grant_restore_upload", "check_restore_upload"):
+        for name in (
+            *RESTORES,
+            "grant_restore_upload",
+            "check_restore_upload",
+            "revoke_restore_upload",
+        ):
             with self.subTest(name):
                 self.assertNotIn(name, self._tool_names(credential))
         result = self._call_tool(
@@ -639,7 +806,7 @@ class TestRestoreToolsOverHttp(
             self.assertEqual(first["resultType"], "input_required")
             self.assertFalse(self._restores())
             message = first["inputRequests"]["confirm"]["params"]["message"]
-            self.assertIn(SHOWN, message)
+            self.assertIn(TOLD, message)
             self.assertNotIn("deadbeefcafe", message)
             result = self._confirmed_call(self.key, "restore_from_link", arguments)
         self.assertFalse(result.get("isError"), result)
@@ -653,6 +820,8 @@ class TestRestoreToolsOverHttp(
             (job.payload["mode"], job.payload["neutralize"], job.payload["reset_base_url"]),
             ("from_url", True, True),
         )
+        self.assertEqual(job.payload["link_policy"], "agent")
+        self.assertNotIn("deadbeefcafe", str(job.payload))
         row = (
             self.env["cloud.audit.log"]
             .sudo()
