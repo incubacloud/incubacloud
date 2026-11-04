@@ -36,7 +36,7 @@ from .abstract_executor import (
     JobRefused,
     sql_escape_literal,
 )
-from .docker_prune_executor import PROTECT_LABEL
+from .docker_prune_executor import PROTECT_LABEL, build_cache_prune_if_low
 from .secret_key_escrow import SecretKeyEscrowMixin
 
 _logger = logging.getLogger(__name__)
@@ -1712,6 +1712,13 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             (
                 "Remove temp files",
                 f"rm -f {tmp_answers}",
+            ),
+            # 8b. Empty Docker's build cache first when the host's disk
+            #     is low: a build that runs out of disk fails half-way.
+            #     Never fails the deploy.
+            (
+                "Free the build cache if the disk is low",
+                build_cache_prune_if_low(),
             ),
             # 9. Pull images first (may take a while; separated so the
             #    actual start step is always fast).

@@ -25,6 +25,7 @@ from .host_build_lock import HostBuildLockMixin
 
 from .abstract_executor import sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
+from .docker_prune_executor import build_cache_prune_if_low
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
 # executing after its budget: nothing was updated, so the job is worth
@@ -234,6 +235,12 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             ("Remove temp files", f"rm -f {tmp_answers}"),
             # 9. Capture services list for on_success (parsed from stdout).
             ("List services", f"cd {d} && docker compose config --services"),
+            # 9b. Empty Docker's build cache first when the host's disk
+            #     is low, as a deploy does. Never fails the rebuild.
+            (
+                "Free the build cache if the disk is low",
+                build_cache_prune_if_low(),
+            ),
             # 10. Rebuild Odoo image.
             #     Smart rebuild: full (--pull --no-cache) when config that
             #     affects the image has changed; cached otherwise. A cached

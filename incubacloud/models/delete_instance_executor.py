@@ -1,6 +1,7 @@
 import shlex
 
 from .abstract_executor import AbstractSSHExecutor
+from .docker_prune_executor import build_cache_prune
 from .host_build_lock import HostBuildLockMixin
 
 #: Label of the purge step. The failure classifier looks the step up by
@@ -292,6 +293,10 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
                     else shlex.quote(d)
                 ),
             ),
+            # 4. Empty Docker's build cache and drop the images no
+            #    container uses any more, the instance's own among them,
+            #    as the daily prune would. Never fails the teardown.
+            ("Empty the Docker build cache", build_cache_prune()),
         ]
 
     def parse_results(self, results):
