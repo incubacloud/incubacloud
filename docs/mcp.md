@@ -142,6 +142,9 @@ lines from one call to the next; only the last one grows with the log.
 | `repo_create`, `project_connect_repo` | developer | | always |
 | `download_backup` | developer | | for the link |
 | `restore_backup`, `refresh_staging` | developer | yes | always |
+| `restore_from_link`, `restore_from_host_file`, `restore_from_upload` | developer | yes | always |
+| `grant_restore_upload` | developer | | always |
+| `check_restore_upload` | developer | | |
 | `get_host`, `get_audit_log`, `get_settings`, `browse_host_dir` | manager | | |
 | `harden_host`, `import_host_instance`, `deploy_monitoring`, `configure_pitr` (bridge) | manager | | |
 | `manage_host` | manager | | a change of the server's trusted proxy ranges |
@@ -149,7 +152,7 @@ lines from one call to the next; only the last one grows with the log.
 | `trust_host_key`, `run_host_command` | manager | | always |
 | `delete_project`, `delete_archived_instance`, `delete_host`, `delete_backup_backend`, `move_instance`, `rollback_move`, `reset_github_app`, `purge_audit_logs`, `pitr_restore` (bridge) | manager | yes | always |
 
-Sixty-seven tools with the bridge's three. Security settings of
+Seventy-two tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
 and whatever `get_config` hides on that panel (observability, on a tenant).
@@ -213,6 +216,28 @@ answers 410. The file is served under a plain name, `no-store` and
 panel's own `/web/content` link is never given: it needs the browser's
 cookie.
 
+**Restores from an archive.** The Import dialog's ways but the browser's
+upload (`mcp_tools_restore.py`), each through the instance's own method, as
+the user, so with the dialog's role (developer) and record rules and the
+same executor: production always takes its safety backup first, and every
+restore ensures the panel's connector. `neutralize` defaults to true except
+on production and `reset_base_url` to true; the call is bound to both. The
+archive is the Import's zip: `dump.sql` and `filestore/` at its root.
+
+- `restore_from_link` calls `restore_from_url`, which checks and pins the
+  link. An agent's is `https`, without a user or a password (those, and
+  `sftp`/`ftp`, are given in the panel). The audit row, the approval and the
+  answer keep the link's host and file name only (`shown_link`): a
+  presigned link's query and a share link's token are not kept.
+- `restore_from_host_file` calls `restore_db` in `rsync` mode: the one path
+  `/tmp/incubacloud-restore-<instance id>.zip`, never one the agent names, and
+  only a regular file of the panel's SSH account.
+- `grant_restore_upload` opens the one-use door with the agent's own
+  `ssh-ed25519` public key (`grant_restore_upload(public_key=…)`): the panel
+  makes no private key, and a key opens one door only. `check_restore_upload`
+  queues the check; `restore_from_upload` restores what it found, `ssh_upload`
+  mode, its approval naming the file and its SHA-256, the call bound to it.
+
 **Sign-in links.** `instance_login_link` without `user_id` lists the
 instance's users; with `user_id` it asks for approval and returns the
 connect route's one-time link (60 seconds). The user's name and login are
@@ -237,7 +262,7 @@ route without a policy.
 | Routes | Why |
 |---|---|
 | `/cloud/get_secret`, `/cloud/save_github_pat` | Secrets never go in or out. |
-| `/cloud/instance/<id>/restore` and `/restore/begin`, `/part`, `/finish` | Uploads of gigabytes belong in the panel. |
+| `/cloud/instance/<id>/restore` and `/restore/begin`, `/part`, `/finish` | The browser's upload belongs in the panel; `restore_from_link`, `restore_from_host_file` and `restore_from_upload` replace it. |
 | `/cloud/terminal/*` | Interactive PTY; `run_command` replaces it. |
 | `/cloud/host_terminal/*` | Interactive host console; `run_host_command` replaces it. |
 | `/cloud/log/<id>`, `/cloud/log/<id>/download` | A page and a file for a browser; `get_job` replaces them. |

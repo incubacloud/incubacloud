@@ -11,7 +11,10 @@ from odoo import api, models
 
 _EXCLUDED_FOR_THE_BROWSER = "A page or a file for a browser; {tool} replaces it."
 _SPA = "The panel's single-page application."
-_UPLOAD = "Uploads of gigabytes belong in the panel."
+_UPLOAD = (
+    "The browser's upload belongs in the panel; restore_from_link, "
+    "restore_from_host_file and restore_from_upload replace it."
+)
 _TERMINAL = "Interactive terminal (a PTY); run_command replaces it."
 _HOST_TERMINAL = "Interactive host console; run_host_command replaces it."
 _PREFERENCES = "The user's own notification preferences, not the operation."
