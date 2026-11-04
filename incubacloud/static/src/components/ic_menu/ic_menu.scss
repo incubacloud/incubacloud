@@ -1,0 +1,57 @@
+// Dropdown menu (IcMenu): a ghost trigger and a floating list of entries.
+// Entries are plain buttons put in the list by the caller, so a button added
+// by an extension looks like the others.
+
+.ic-menu {
+    position: relative;
+    display: inline-flex;
+}
+
+.ic-menu-caret {
+    font-size: 10px;
+    margin-left: 2px;
+}
+
+.ic-menu .ic-menu-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 1000;
+    min-width: 220px;
+    max-width: calc(100vw - 32px);
+    padding: 6px;
+    display: grid;
+    gap: 2px;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+    &[hidden] { display: none; }
+
+    // Entries read as menu rows, whatever button class the caller gave them.
+    > button,
+    > a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 7px 12px;
+        border: 0;
+        border-radius: 5px;
+        background: none;
+        color: $text-primary;
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        text-align: left;
+        white-space: nowrap;
+        text-decoration: none;
+        cursor: pointer;
+
+        &:hover,
+        &:focus-visible { background: $surface-light; outline: none; }
+        &:focus-visible { box-shadow: inset 0 0 0 1px $primary-blue; }
+        &[disabled] { opacity: 0.5; cursor: default; }
+    }
+}
