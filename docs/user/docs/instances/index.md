@@ -55,6 +55,9 @@ itself when the one ahead of it ends, in the order they were asked for.
     waiting actions show **Action required**, which leads to the failure's
     alert. **Retry** the failed action — once it succeeds the queue moves on —
     or **dismiss** the alert in **Alerts** to let the queue go on as it is.
+    With **Auto-rebuild**, a rebuild that failed does not stop the next
+    push: pushing the fix rebuilds the instance, and once that rebuild
+    succeeds the alert closes by itself.
 
 Deleting an instance does not wait for the actions queued on it: they are
 cancelled, and the deletion starts as soon as the action running now ends.
