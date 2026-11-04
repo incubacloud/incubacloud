@@ -49,6 +49,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from ._concurrency import read_committed_cursor
+from .big_integer import BigInteger
 
 _logger = logging.getLogger(__name__)
 
@@ -225,7 +226,8 @@ class CloudRestoreUploadGrant(models.Model):
              "whose directory holds more is closed.",
     )
     received_filename = fields.Char(readonly=True)
-    received_bytes = fields.Integer(readonly=True)
+    # An archive past 2 GiB is common: 64 bits (``BigInteger``).
+    received_bytes = BigInteger(readonly=True)
     received_sha256 = fields.Char(readonly=True)
     user_id = fields.Many2one(
         comodel_name="res.users",
