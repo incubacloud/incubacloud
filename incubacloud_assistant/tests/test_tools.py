@@ -392,6 +392,10 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
         )
         vals = update.schema["properties"]["vals"]
         self.assertFalse(vals["additionalProperties"])
-        self.assertEqual(vals["properties"]["odoo_initial_lang"]["type"], "string")
+        # Its code first; the id the readers answer, or null, also go.
+        self.assertEqual(
+            vals["properties"]["odoo_initial_lang"]["type"],
+            ["string", "integer", "null"],
+        )
         self.assertIn("odoo_initial_lang (string", update.description)
         self.assertNotIn("x-record", json.dumps(update.schema))

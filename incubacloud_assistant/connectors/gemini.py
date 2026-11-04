@@ -2,7 +2,9 @@
 
 The key goes in the ``x-goog-api-key`` header, never in the URL. Gemini's
 function declarations take a subset of OpenAPI schemas: no
-``additionalProperties``, and an object needs its properties; a free-form
+``additionalProperties``, one type a property (``nullable`` for one that
+also takes null, where JSON Schema lists ``"null"`` among its types), an
+``enum`` of strings only, and an object needs its properties; a free-form
 object (an update's ``vals``) is declared as JSON text and decoded back
 before the tool sees it, and a tool without arguments is declared without
 ``parameters``. A call carries its ``id`` back in its response (Gemini 3
@@ -97,6 +99,8 @@ def gemini_schema(schema):
             "description": f"{description} A JSON object, as text.".strip(),
         }
     converted = {key: value for key, value in schema.items() if key in _KEPT}
+    if isinstance(converted.get("type"), list):
+        _one_type(converted)
     if "properties" in converted:
         converted["properties"] = {
             name: gemini_schema(item) for name, item in converted["properties"].items()
@@ -104,6 +108,31 @@ def gemini_schema(schema):
     if "items" in converted:
         converted["items"] = gemini_schema(converted["items"])
     return converted
+
+
+def _one_type(converted):
+    """Declare a property of several JSON types as Gemini takes it, in place.
+
+    Its first type besides null, ``nullable`` when null is one of them: the
+    tools list the type a model writes first (a language's code before its
+    id, a version as text before a number), and the panel takes either.
+    What belongs to the types left out goes: the numbers of an ``enum``,
+    the bounds of a number on a string.
+
+    :param dict converted: the property, its ``type`` a list
+    """
+    kinds = converted.pop("type")
+    taken = [kind for kind in kinds if kind != "null"]
+    converted["type"] = taken[0] if taken else "string"
+    if "null" in kinds:
+        converted["nullable"] = True
+    if converted["type"] not in ("integer", "number"):
+        converted.pop("minimum", None)
+        converted.pop("maximum", None)
+    if "enum" in converted:
+        converted["enum"] = [
+            value for value in converted["enum"] if isinstance(value, str)
+        ]
 
 
 def _decode_free(schema, args):

@@ -29,9 +29,9 @@ class TestLogView(BaseCase):
             with self.subTest(raw=raw):
                 self.assertEqual(strip_ansi(raw), clean)
 
-    def test_runs_that_differ_only_in_numbers_fold_into_their_last(self):
-        """Download, extraction and checkout progress fold; the count says
-        how many lines the run hid."""
+    def test_runs_that_differ_only_in_numbers_fold_into_their_ends(self):
+        """Download, extraction and checkout progress fold into their first
+        and last lines; the count between says how many the run hid."""
         lines = [
             *(f"6e00e0164b46 Extracting {n}B" for n in range(1, 6)),
             *(f"Downloading 1{n}.5MB/30.1MB" for n in range(3)),
@@ -43,10 +43,17 @@ class TestLogView(BaseCase):
         self.assertEqual(
             list(fold_similar(lines)),
             [
-                "6e00e0164b46 Extracting 5B (+4 similar lines)",
-                "Downloading 12.5MB/30.1MB (+2 similar lines)",
-                "Updating files: 100% (1200/1200) (+2 similar lines)",
-                "Receiving objects: 2,000 of 5,678 at 00:01:24 (+1 similar line)",
+                "6e00e0164b46 Extracting 1B",
+                "(+3 similar lines)",
+                "6e00e0164b46 Extracting 5B",
+                "Downloading 10.5MB/30.1MB",
+                "(+1 similar line)",
+                "Downloading 12.5MB/30.1MB",
+                "Updating files: 10% (120/1200)",
+                "(+1 similar line)",
+                "Updating files: 100% (1200/1200)",
+                "Receiving objects: 1,234 of 5,678 at 00:01:23",
+                "Receiving objects: 2,000 of 5,678 at 00:01:24",
                 "single 7",
             ],
         )
@@ -74,17 +81,33 @@ class TestLogView(BaseCase):
         """The same line repeated folds, coloured or not."""
         self.assertEqual(
             list(clean_lines(["\x1b[33mWaiting\x1b[0m", "Waiting", "Waiting"])),
-            ["Waiting (+2 similar lines)"],
+            ["Waiting", "(+1 similar line)", "Waiting"],
+        )
+
+    def test_a_run_shows_where_its_numbers_started_and_ended(self):
+        """The lines a run hides may differ in what they say: its first and
+        last are both shown, never one standing for the other."""
+        self.assertEqual(
+            list(fold_similar([
+                "expected 3 got 3", "expected 3 got 4", "expected 3 got 5",
+            ])),
+            ["expected 3 got 3", "(+1 similar line)", "expected 3 got 5"],
+        )
+        self.assertEqual(
+            list(fold_similar(["connect 10.0.0.5:5432", "connect 10.0.0.6:5432"])),
+            ["connect 10.0.0.5:5432", "connect 10.0.0.6:5432"],
         )
 
     def test_a_shown_line_keeps_its_place_as_the_log_grows(self):
         """Folding joins a line only to the run before it: the lines before
-        the last stay where they were when more is written."""
-        start = ["a", "step 1", "step 2"]
-        more = [*start, "step 3", "b"]
+        the run stay where they were when more is written, and a run of
+        three lines or more takes three however long it grows."""
+        start = ["a", "step 1", "step 2", "step 3"]
+        more = [*start, "step 4", "b"]
         before, after = list(fold_similar(start)), list(fold_similar(more))
-        self.assertEqual(after[: len(before) - 1], before[:-1])
-        self.assertEqual(after[1], "step 3 (+2 similar lines)")
+        self.assertEqual(after[:2], before[:2])
+        self.assertEqual(len(after), len(before) + 1)
+        self.assertEqual(after[1:4], ["step 1", "(+2 similar lines)", "step 4"])
 
 
 class TestPageLines(BaseCase):

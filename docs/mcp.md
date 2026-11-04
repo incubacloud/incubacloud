@@ -117,12 +117,15 @@ role check's message. Operations that queue a job answer at once with its
 
 `get_job` reads a clean view of the job's log, the same for every kind of
 job; the panel's log stays as it came. Terminal escape codes are taken out,
-and consecutive lines that differ only in their numbers show as the last of
-them with `(+N similar lines)` (`protocol/log_view.py` says what counts as a
-number). Offsets count the lines of that view; the answer always says
-`total` (lines), `total_pages` and `page`, and takes `page` or `offset`. Pages
-are cut from the first line at a fixed size, so a page number names the same
-lines from one call to the next; only the last one grows with the log.
+and consecutive lines that differ only in their numbers show as the first
+and the last of them with `(+N similar lines)` between (`protocol/log_view.py`
+says what counts as a number). Offsets count the lines of that view; the
+answer always says `total` (lines), `total_pages` and `page`, and takes `page`
+or `offset`. Pages are cut from the first line at a fixed size, so a page
+number names the same lines from one call to the next; only the last one
+grows with the log. Lines are masked before they are measured, and the job's
+state beside them is kept short, so the last guard never cuts a page: page
+N+1 starts where page N ended.
 
 | Tools | Minimum role | Destructive | Approval |
 |---|---|---|---|
@@ -397,7 +400,14 @@ it (`PAGE_SLACK`): cutting a page for its own keys would only shorten it.
 An answer past that — which no tool pages, or a page that masking grew — is
 cut to just under 20 KB (`GUARD_MARGIN` leaves room for `truncated` and the
 untrusted wrapping), lists first, and says so; a page keeps its first
-entries and its `next_offset` moves back, so none is skipped. A page of
+entries and its `next_offset` moves back, so none is skipped. An answer
+without pages gives up `get_instance`'s jobs first (`recentJobs`,
+`activeJobs`); each list cut says so beside it (`<key>_truncated`). What an
+`update_…` tool writes back whole — repositories, domains, allowed hosts,
+members, dependencies, `odoo_conf` — is never cut: an agent that wrote a
+cut list back would delete the rest, so an answer that cannot fit without
+cutting one is an error that says so. `list_hosts` comes in pages, as the
+other lists. A page of
 text — such as a captured mail of `staging_mailbox` (`page_record`) — is
 left as it is: its offsets count the characters before masking, and cutting
 it would skip text. A page that cannot show any entry says so too, so an

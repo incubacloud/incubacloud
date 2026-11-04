@@ -585,6 +585,49 @@ class TestLimits(BaseCase):
         rest = cap_text(text, first["next_offset"])
         self.assertEqual(first["text"] + rest["text"], text)
 
+    def test_an_instance_gives_up_its_jobs_before_anything_else(self):
+        """``recentJobs`` and ``activeJobs`` are cut first, and say so; the
+        rest of the answer, which fits without them, is whole."""
+        answer = {
+            "name": "acme",
+            "domains": [{"id": i, "hostname": f"d{i}.example.com"} for i in range(40)],
+            "notes": [f"note {i}" for i in range(40)],
+            "recentJobs": [{"id": i, "name": "j" * 200} for i in range(200)],
+            "activeJobs": [{"id": i, "name": "a" * 200} for i in range(50)],
+        }
+        cut, was_cut = fit_answer(answer, MAX_BYTES, whole=frozenset({"domains"}))
+        self.assertTrue(was_cut)
+        self.assertLessEqual(len(json.dumps(cut, ensure_ascii=False).encode()), MAX_BYTES)
+        self.assertEqual(cut["domains"], answer["domains"])
+        self.assertEqual(cut["notes"], answer["notes"])
+        self.assertLess(len(cut["recentJobs"]), 200)
+        self.assertTrue(cut["recentJobs_truncated"])
+        self.assertTrue(cut["activeJobs_truncated"])
+        self.assertNotIn("notes_truncated", cut)
+
+    def test_what_an_update_writes_back_whole_is_never_cut(self):
+        """A list or a text an update replaces whole stays whole; the others
+        are cut, each saying so; and when it cannot fit whole, the answer
+        is an error naming what it would have cut."""
+        answer = {
+            "domains": [f"d{i}.example.com" for i in range(300)],
+            "pip_dependencies": "\n".join(f"package-{i}==1.0" for i in range(300)),
+            "logs": [f"line {i} " + "x" * 50 for i in range(2000)],
+            "description": "y" * 5000,
+        }
+        whole = frozenset({"domains", "pip_dependencies"})
+        cut, was_cut = fit_answer(answer, MAX_BYTES, whole=whole)
+        self.assertTrue(was_cut)
+        self.assertEqual(cut["domains"], answer["domains"])
+        self.assertEqual(cut["pip_dependencies"], answer["pip_dependencies"])
+        self.assertTrue(cut["logs_truncated"])
+        self.assertLessEqual(len(json.dumps(cut, ensure_ascii=False).encode()), MAX_BYTES)
+        huge = {**answer, "domains": [f"d{i}.example.com" for i in range(3000)]}
+        cut, was_cut = fit_answer(huge, MAX_BYTES, whole=whole)
+        self.assertTrue(was_cut)
+        self.assertIn("domains", cut["error"])
+        self.assertNotIn("logs", cut)
+
     def test_an_answer_too_big_is_cut_lists_first(self):
         """Lists are cut before strings; what fits is left alone."""
         small = {"a": [1, 2], "b": "x"}

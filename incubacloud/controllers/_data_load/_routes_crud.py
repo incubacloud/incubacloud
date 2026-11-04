@@ -1252,18 +1252,22 @@ class CrudMixin:
             ],
         }
 
+    #: The fields of a project the create and save routes write.
+    _PROJECT_ALLOWED = {
+        'name', 'description', 'project_author', 'project_license',
+        'odoo_version', 'odoo_commit_sha', 'odoo_initial_lang',
+        'pip_dependencies', 'apt_dependencies',
+        'backup_backend_id', 'pr_reviews_enabled',
+    }
+
     @http.route(['/cloud/create_project'], type='jsonrpc', auth='user')
     def cloud_create_project(self, vals):
         self._sec()._check_can_create_project()
-        _PROJ_ALLOWED = {
-            'name', 'description', 'project_author', 'project_license',
-            'odoo_version', 'odoo_commit_sha', 'odoo_initial_lang',
-            'pip_dependencies', 'apt_dependencies',
-            'backup_backend_id', 'pr_reviews_enabled',
-        }
         repos = vals.pop('repos', None)
         tag_ids = vals.pop('tag_ids', None)
-        safe = {k: v for k, v in vals.items() if k in _PROJ_ALLOWED}
+        safe = {k: v for k, v in vals.items() if k in self._PROJECT_ALLOWED}
+        if isinstance(safe.get('odoo_version'), (int, float)):
+            safe['odoo_version'] = f"{float(safe['odoo_version']):.1f}"
         # Never override pip_dependencies with an empty string: let the ORM
         # default apply so every new project starts with the base packages.
         if not safe.get('pip_dependencies'):
@@ -1318,13 +1322,9 @@ class CrudMixin:
         repos = vals.pop('repos', None)
         tag_ids = vals.pop('tag_ids', None)
         member_ids = vals.pop('member_ids', None)
-        _PROJ_ALLOWED = {
-            'name', 'description', 'project_author', 'project_license',
-            'odoo_version', 'odoo_commit_sha', 'odoo_initial_lang',
-            'pip_dependencies', 'apt_dependencies',
-            'backup_backend_id', 'pr_reviews_enabled',
-        }
-        safe_vals = {k: v for k, v in vals.items() if k in _PROJ_ALLOWED}
+        safe_vals = {k: v for k, v in vals.items() if k in self._PROJECT_ALLOWED}
+        if isinstance(safe_vals.get('odoo_version'), (int, float)):
+            safe_vals['odoo_version'] = f"{float(safe_vals['odoo_version']):.1f}"
         if tag_ids is not None:
             safe_vals['tag_ids'] = [fields.Command.set(tag_ids)]
         if member_ids is not None:
@@ -1609,6 +1609,9 @@ class CrudMixin:
         'smtp_relay_user', 'smtp_relay_password',
         'odoo_memory_limit', 'odoo_cpus', 'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus', 'smtp_memory_limit', 'smtp_cpus',
+        # The form offers it for a production; who may choose it is the
+        # model's to say (``cloud.instance._check_guarded_vals``).
+        'backup_backend_id',
     }
 
     def _pre_auto_assign_host_hook(self, vals, safe):
