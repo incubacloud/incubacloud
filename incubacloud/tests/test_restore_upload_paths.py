@@ -832,7 +832,7 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
         argv = Path(self.tmp, "argv").read_text(encoding="utf-8").split("\0")[:-1]
         self.assertEqual(argv, [
             "-q", "-fsS", "--max-time", "86400", "--globoff",
-            "--noproxy", "*",
+            "--noproxy", "*", "--ftp-skip-pasv-ip",
             "--proto", "=https,sftp,ftp", "--proto-redir", "=https",
             "--resolve", "93.184.216.34:443:93.184.216.34",
             "--config", self.executor._curl_config_path(),
@@ -993,6 +993,16 @@ class TestALinkIsCheckedAgainWhereItIsFetched(TransactionCase):
         self.assertIn("--globoff", words)
         self.assertNotIn("-L", words)
         self.assertNotIn("--location", words)
+
+    def test_an_ftp_data_connection_stays_on_the_pinned_address(self):
+        """An ftp server's PASV answer names any address for the data
+        connection: curl is told to ignore it and dial the pinned one,
+        which an older curl on the host would not do by itself."""
+        executor = self._queued(PUBLIC_LINK)
+        _label, command, _opts = executor._download_command(
+            executor._remote_path(),
+        )
+        self.assertIn("--ftp-skip-pasv-ip", shlex.split(command))
 
     def test_curl_reads_nothing_the_host_configured(self):
         """No ``~/.curlrc`` (``-q`` works only as the first argument) and
