@@ -5739,7 +5739,7 @@ msgstr "Recolectar alertas descartadas antiguas"
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_host_terminal_route_gc_ir_actions_server
 msgid "Garbage-collect stale host terminal routes"
-msgstr "Recolectar rutas de terminal de host obsoletas"
+msgstr "Limpiar las rutas de terminal de host caducadas"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_terminal_route_gc_ir_actions_server
@@ -10197,7 +10197,7 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__user_id
 msgid "Ownership for quick ACL check on every proxy call."
-msgstr "Propiedad para chequeo ACL rápido en cada llamada al proxy."
+msgstr "Propiedad, para comprobar los permisos rápidamente en cada llamada al proxy."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10496,7 +10496,7 @@ msgstr "Elija el host que debe ejecutarlo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__pid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__pid
 msgid "Pid"
-msgstr "Pid"
+msgstr "PID"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10953,7 +10953,7 @@ msgstr "URL de consulta"
 #: model:ir.model,name:incubacloud.model_queue_job
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__queue_job_id
 msgid "Queue Job"
-msgstr "Tarea en cola"
+msgstr "Trabajo en cola"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__queue_job_uuid
