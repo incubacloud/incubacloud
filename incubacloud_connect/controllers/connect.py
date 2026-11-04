@@ -25,6 +25,41 @@ def _redirect(url):
     return werkzeug.utils.redirect(url, code=303)
 
 
+def _renew_sid(session):
+    """Give *session* a new sid before it is logged in, as Odoo's login does.
+
+    The sid a browser brings to ``/ic/login`` may belong to a session of
+    another user. Logging in on it keeps a sid the browser, or whoever
+    set its cookie, chose (session fixation), and the session token
+    computed for it comes from ``_compute_session_token``'s cache, keyed
+    on the sid alone: a worker that checked the other user's session
+    returns that user's token, the other workers compute the right one
+    and log the session out.
+
+    Odoo 16 and later rotate a session flagged ``should_rotate`` when
+    they save it at the end of the request: the stored session is
+    deleted, a new sid drawn and the session token computed for it.
+    Odoo 8 to 15 rotate a session flagged ``rotate`` the same way, but
+    only 12 to 15 compute the token again, so the sid is renewed here
+    as their ``get_response`` does it, and the caller computes the token
+    for the new sid.
+
+    :param session: the request's session, not yet logged in as the
+        user of the link.
+    :returns: whether Odoo computes the session token itself, at save
+        time (16 and later).
+    :rtype: bool
+    """
+    if _MAJOR >= 16:
+        session.should_rotate = True
+        return True
+    store = http.root.session_store
+    store.delete(session)
+    session.sid = store.generate_key()
+    session.modified = True
+    return False
+
+
 class IncubaCloudConnectController(http.Controller):
 
     @http.route(
@@ -46,7 +81,10 @@ class IncubaCloudConnectController(http.Controller):
         - Single use: token file deleted before doing anything
         - 60-second TTL: expired tokens are rejected
         - Token files are 0o600 in a 0o700 directory
-        - Session token is computed by Odoo itself (v11+; skipped for v7-v10)
+        - Every login gets a new session id (``_renew_sid``): none the
+          browser brought, logged in or not, is reused
+        - Session token is computed by Odoo itself for that new id
+          (v9+; v7-v8 have none)
         """
         if not t or len(t) != 32 or not all(
             c in '0123456789abcdef' for c in t
@@ -78,8 +116,9 @@ class IncubaCloudConnectController(http.Controller):
         if not isinstance(uid, int) or uid <= 0 or not db:
             return Response('Invalid token data.', status=400)
 
-        # Verify user and compute session token using Odoo's own method.
-        # _compute_session_token exists since v11; v7-v10 skip it.
+        # Verify user, renew the sid and compute the session token for
+        # the new sid using Odoo's own method (v16+: at save time).
+        # _compute_session_token exists since v9; v7-v8 skip it.
         try:
             registry = Registry(db)
             with registry.cursor() as cr:
@@ -89,7 +128,9 @@ class IncubaCloudConnectController(http.Controller):
                     return Response('User not found.', status=400)
                 login = user.login
                 session_token = None
-                if hasattr(user, '_compute_session_token'):
+                if not _renew_sid(request.session) and hasattr(
+                    user, '_compute_session_token',
+                ):
                     session_token = user._compute_session_token(
                         request.session.sid
                     )
@@ -111,6 +152,7 @@ class IncubaCloudConnectController(http.Controller):
         )
 
         # Populate session — Odoo saves it automatically at response end
+        # (v16+ rotating it then and computing its session token).
         request.session['uid'] = uid
         request.session['login'] = login
         request.session['db'] = db
