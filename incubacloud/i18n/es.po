@@ -17073,3 +17073,9 @@ msgstr ""
 "La copia antigua de %(name)s en %(host)s no se pudo detener tras su traslado "
 "y puede seguir en marcha. Se elimina el %(until)s UTC, o ahora con «Limpiar "
 "la copia congelada ahora»."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "More"
+msgstr "Más"

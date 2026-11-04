@@ -8,6 +8,7 @@ import { TagSelector } from "../tag_selector/tag_selector";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
+import { IcMenu } from "../ic_menu/ic_menu";
 import { parseUTC } from "../../utils/dates";
 import { ACTIVE_STATES, announceJob, cancelPrompt, jobStateText } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
@@ -65,7 +66,7 @@ export class HostDetail extends Component {
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal,
+        HostHardeningModal, IcMenu,
     };
 
     /** Rows per page for the server-paginated audit log. */
