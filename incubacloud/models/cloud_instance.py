@@ -3471,7 +3471,9 @@ class CloudInstance(models.Model):
         link the panel itself dials (``net.outbound``), and never an
         address of a server this panel manages, nor of the panel
         (``cloud.host._panel_own_networks``) — public addresses, which
-        the first check lets through.
+        the first check lets through. Pinned to an IPv4 address: the
+        panel knows its servers' IPv4 addresses only, and a name with
+        the IPv6 address of one would pass a check of IPv4 ones.
 
         :param str url: the link, its credentials split off
         :param bool from_agent: whether an agent gave it
@@ -3485,6 +3487,7 @@ class CloudInstance(models.Model):
                 return validate_restore_url(
                     url, only_port=443,
                     refused=self.env["cloud.host"]._panel_own_networks(),
+                    ipv4_only=True,
                 )
             return validate_restore_url(url)
         except OutboundError as exc:

@@ -13,13 +13,20 @@ command and a deadline:
 * ``command="rrsync -wo -munge -no-del <dir>"`` — rsync's own restricted
   wrapper, write only, confined to that directory. No shell, no reads,
   nothing else runs; a link it receives is stored munged, so it leads
-  nowhere, and nothing is deleted.
+  nowhere, and nothing is deleted. Under a file size limit
+  (``ulimit -f``): no file it writes is larger than the largest archive
+  the host's disks could restore when the door opened
+  (``upload_limit_bytes``, ``restore_space``).
 * ``restrict`` — no pty, no port or agent forwarding, no user rc.
 * ``expiry-time`` — OpenSSH stops accepting the key by itself, whether or
   not anything remembers to remove it.
 
-Three things revoke it: the restore that consumes the archive, the daily
-sweep, and the operator. The first closes the key and keeps the
+Four things revoke it: the restore that consumes the archive, the daily
+sweep, the operator, and the watch of the open doors, every few minutes
+(``_watch_doors``): a door whose directory holds more than its limit, or
+that writes on the instances' disk once it is down to the reserve, is
+closed there and then — every door of a host shares its disk with the
+host's other instances, whoever's they are. The first closes the key and keeps the
 directory, so a failed restore can be retried without a second upload;
 the sweep removes that directory three days later (``USED_GRANT_DAYS``).
 
@@ -84,6 +91,31 @@ USED_GRANT_DAYS = 3
 #: queues' (``cloud.job``): two doors asked for at once are opened one
 #: after the other.
 _DOOR_LOCK_NAMESPACE = 0x0C10D10D
+
+
+def forced_command(directory, limit_bytes, wrapper=RRSYNC):
+    """Return the command a door's key is forced to run.
+
+    *wrapper* confined to *directory*, under a file size limit of
+    *limit_bytes*. sshd runs it with the account's login shell, whose
+    ``ulimit -f`` counts in blocks of 512 bytes (``sh``, ``dash``) or of
+    1024 (``bash``): the limit is set by ``/bin/bash`` itself, named here,
+    in blocks of 1024 — and were it in POSIX mode, in blocks of 512, half
+    the limit, never more. Past it the kernel stops the write
+    (``SIGXFSZ``). No character of the line needs quoting but the two
+    single quotes around what bash runs: the directory is the panel's
+    own, ``/tmp/incubacloud-restore/<16 hex digits>``.
+
+    :param str directory: the door's directory
+    :param int limit_bytes: the largest file it may write
+    :param str wrapper: the restricted rsync
+    :rtype: str
+    """
+    blocks = max(1, int(limit_bytes) // 1024)
+    return (
+        f"exec /bin/bash -c 'ulimit -f {blocks}"
+        f" && exec {wrapper} -wo -munge -no-del {directory}'"
+    )
 
 
 class CloudRestoreUploadKey(models.Model):
@@ -185,6 +217,13 @@ class CloudRestoreUploadGrant(models.Model):
         required=True,
         index=True,
     )
+    upload_limit_bytes = fields.Float(
+        digits=(20, 0),
+        readonly=True,
+        help="The largest archive the host's disks could restore when the "
+             "door opened: no file sent through it is larger, and a door "
+             "whose directory holds more is closed.",
+    )
     received_filename = fields.Char(readonly=True)
     received_bytes = fields.Integer(readonly=True)
     received_sha256 = fields.Char(readonly=True)
@@ -233,6 +272,14 @@ class CloudRestoreUploadGrant(models.Model):
                 "The upload grant is not one of this job's instance and "
                 "host: nothing was done."
             )
+        self._check_shape()
+
+    def _check_shape(self):
+        """Refuse a grant not of the shape ``_open`` gives, before any command.
+
+        :raise ValueError: when its token or its key is not
+        """
+        self.ensure_one()
         if not GRANT_TOKEN.fullmatch(self.token or "") \
                 or not GRANT_PUBLIC_KEY.fullmatch(self.public_key or ""):
             raise ValueError(
@@ -256,13 +303,27 @@ class CloudRestoreUploadGrant(models.Model):
         session could delete what an earlier one sent. Both exist only
         in the rrsync of rsync 3.2.4 and later, which is why the key is
         installed only where that one is (``_ensure_rrsync``).
+
+        And no file it writes is larger than ``upload_limit_bytes``
+        (``forced_command``): each door of a host fills the disk the
+        host's instances share. A door whose limit was not measured has
+        no line.
+
+        :raise ValueError: when the door has no limit
         """
         self.ensure_one()
+        if not self.upload_limit_bytes or self.upload_limit_bytes < 1:
+            raise ValueError(
+                "The upload door has no size limit measured: no key was "
+                "installed."
+            )
+        limit_bytes = int(self.upload_limit_bytes)
         stamp = fields.Datetime.to_string(
             self.expires_at,
         ).replace("-", "").replace(":", "").replace(" ", "")
+        command = forced_command(self._directory(), limit_bytes)
         return (
-            f'command="{RRSYNC} -wo -munge -no-del {self._directory()}",'
+            f'command="{command}",'
             'restrict,'
             f'expiry-time="{stamp}" {self.public_key} {self._key_comment()}'
         )
@@ -384,7 +445,11 @@ class CloudRestoreUploadGrant(models.Model):
         caller's own is closed too (a key lost with the dialog that
         showed it); another person's is left open, and the new one
         refused. A door another transaction opened after this one's
-        snapshot is seen by a fresh read, and refused alike.
+        snapshot is seen by a fresh read, and refused alike. And a door
+        a restore waiting in the queue is to take its archive from is
+        not closed: closing it removes the archive, and the restore
+        would fail. The new door is refused instead, which keeps one
+        door at a time (``_awaited_by_restore``).
 
         :param instance: the ``cloud.instance`` a door is asked for
         :return: the grants to revoke, in the caller's environment
@@ -411,6 +476,13 @@ class CloudRestoreUploadGrant(models.Model):
                 person=others[0].user_id.name or "",
                 deadline=fields.Datetime.to_string(others[0].expires_at),
             ))
+        if self._awaited_by_restore(instance, open_doors - others):
+            raise UserError(_(
+                "A restore of what arrived through your upload door of this "
+                "instance is waiting in the queue: opening another door would "
+                "close that one and remove what it holds. Wait until the "
+                "restore has run, or cancel it, and then open another door."
+            ))
         self.env.flush_all()
         # Not ``cr``: ``_`` reads the language through a local of that
         # name, and this cursor is closed by the time a refusal is said.
@@ -428,6 +500,35 @@ class CloudRestoreUploadGrant(models.Model):
                 "ago: one door at a time. Close it, or wait until it expires."
             ))
         return (open_doors - others).with_env(self.env)
+
+    @api.model
+    def _awaited_by_restore(self, instance, doors):
+        """Return the *doors* a restore of *instance* waits to take from.
+
+        A restore through a door (``ssh_upload``) names its grant in its
+        payload, and marks it used only once it runs: until then, closing
+        the door would remove the archive it is about to take.
+
+        :param instance: the ``cloud.instance``
+        :param doors: ``cloud.restore.upload.grant`` records of it
+        :return: those of *doors* a waiting or running restore names
+        """
+        Job = self.env["cloud.job"].sudo()
+        restores = Job.search([
+            ("instance_id", "=", instance.id),
+            ("job_type_id.code", "=", "restore_instance"),
+            ("state", "in", Job._active_states),
+        ])
+        awaited = set()
+        for job in restores:
+            payload = job.payload or {}
+            if payload.get("mode") != "ssh_upload":
+                continue
+            try:
+                awaited.add(int(payload.get("grant_id") or 0))
+            except (TypeError, ValueError):
+                continue
+        return doors.filtered(lambda grant: grant.id in awaited)
 
     @api.model
     def _fingerprint(self, public_key):
@@ -477,6 +578,34 @@ class CloudRestoreUploadGrant(models.Model):
                 payload={"grant_id": grant.id},
             ))
             grant.sudo().state = reason
+        return jobs
+
+    @api.model
+    def _watch_doors(self):
+        """Have every host with an open door measure what its doors hold.
+
+        A ``watch_restore_uploads`` job per host (the cron's, every five
+        minutes): it closes a door whose directory holds more than its
+        limit, or every door that writes on the instances' disk once it
+        is down to the reserve (``restore_space``). The key's file size
+        limit bounds each file; this bounds what many files, or many
+        doors, add up to. Hosts without an open door are not reached.
+
+        :return: ids of the jobs queued
+        """
+        hosts = self.sudo().search([("state", "=", "granted")]).host_id
+        jobs = []
+        for host in hosts:
+            try:
+                # A host-level type, gated to managers: the cron is none.
+                jobs.append(self.env["cloud.job"].sudo().enqueue(
+                    host.id, False, "watch_restore_uploads",
+                ))
+            except Exception as exc:  # noqa: BLE001 - one host must not stop the rest
+                _logger.warning(
+                    "Could not queue the watch of the upload doors of %s: %s",
+                    host.name, exc,
+                )
         return jobs
 
     @api.model

@@ -79,7 +79,7 @@ from odoo.addons.incubacloud.models.restore_upload_key_executors import (
     VerifyRestoreUploadExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
-from odoo.addons.incubacloud.restore_space import free_space_command
+from odoo.addons.incubacloud.restore_space import disks_command
 
 from ._certs import make_pair
 
@@ -90,16 +90,24 @@ _JOB_DIR = re.compile(re.escape(JOB_DIR_PREFIX) + r"[0-9a-f]{16}")
 _TMP_PATHS = re.compile(r"/tmp/[^\s'\";]+")
 
 
+#: What the lab's host, which has no Docker, says Docker keeps its data
+#: in when a restore measures its disks (``restore_space.disks_command``).
+_DOCKER_ROOT = "docker() { echo /; }; "
+
+
 def _bash(command, *_args, **_kwargs):
     """Run *command* with bash here, as the host's shell would run it.
 
     The side effect of a lab transport: what the executor sends to the
-    host runs for real, against a directory tree of the test's own.
+    host runs for real, against a directory tree of the test's own. The
+    measure of the disks finds Docker's data on ``/``.
 
     :param str command: the shell command an executor sends
     :return: its stdout and exit status
     :rtype: CommandResult
     """
+    if command.startswith("m() {"):
+        command = _DOCKER_ROOT + command
     done = subprocess.run(
         ["bash", "-c", command], capture_output=True, text=True, check=False,
     )
@@ -109,14 +117,14 @@ def _bash(command, *_args, **_kwargs):
 def _host_reply(command, *_args, **_kwargs):
     """Answer *command* as a host with room for any archive of these tests.
 
-    ``df`` prints 100 GiB free and ``stat`` a 5-byte archive, what a
+    The disks print 100 GiB free, one disk, and ``stat`` a 5-byte archive, what a
     restore measures before it takes one (``restore_space``); every other
     command answers 0, with no output.
 
     :rtype: CommandResult
     """
-    if command.startswith("df "):
-        return CommandResult(f"{100 * 1024 ** 3}\n", 0)
+    if command.startswith("m() {"):
+        return CommandResult(f"30 {100 * 1024 ** 3}\n" * 2, 0)
     if command.startswith("stat "):
         return CommandResult("5\n", 0)
     return CommandResult("", 0)
@@ -716,7 +724,7 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
             f"test -f {local} && ! test -L {local}",
             # Room to restore it (``restore_space``).
             f"stat -c %s -- {local}",
-            free_space_command(executor._job_dir()),
+            disks_command(executor._job_dir()),
         ])
         for _label, command, *_opts in executor.get_commands():
             self.assertNotIn(agreed, command)
@@ -984,6 +992,7 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
             self.inst,
         )
         self.grant.write({
+            "upload_limit_bytes": 10 * 1024 ** 3,
             "received_filename": "restore.zip",
             "received_bytes": 5,
             "received_sha256": hashlib.sha256(b"PK-ok").hexdigest(),
@@ -1236,8 +1245,10 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
             transport.run.side_effect = lambda command, *_a, **_kw: (
                 lambda done: CommandResult(done.stdout, done.returncode)
             )(subprocess.run(
-                ["bash", "-c", command], capture_output=True, text=True,
-                check=False, timeout=30,
+                ["bash", "-c", (
+                    _DOCKER_ROOT + command if command.startswith("m() {")
+                    else command
+                )], capture_output=True, text=True, check=False, timeout=30,
             ))
             with self.assertRaisesRegex(RuntimeError, "could not be taken"):
                 asyncio.run(executor.before_execute(transport))
@@ -1459,11 +1470,12 @@ class TestTheUploadKeyNeedsAModernRrsync(_StagingCase):
     """
 
     def setUp(self):
-        """A grant for the instance."""
+        """A grant for the instance, its size limit measured."""
         super().setUp()
         self.grant, _private = self.env["cloud.restore.upload.grant"]._open(
             self.inst,
         )
+        self.grant.sudo().upload_limit_bytes = 10 * 1024 ** 3
 
     def _wrapper_lab(self, tmp, target=None, sources=(), sudo=True,
                      root=False):
@@ -1529,8 +1541,8 @@ class TestTheUploadKeyNeedsAModernRrsync(_StagingCase):
         session removes what another sent."""
         line = self.grant._authorized_keys_line()
         self.assertIn(
-            f'command="/usr/bin/rrsync -wo -munge -no-del '
-            f'{self.grant._directory()}",restrict,',
+            f"&& exec /usr/bin/rrsync -wo -munge -no-del "
+            f"{self.grant._directory()}'\",restrict,",
             line,
         )
 
@@ -1617,6 +1629,8 @@ class TestTheUploadKeyNeedsAModernRrsync(_StagingCase):
                       "Resolve the restricted rsync wrapper"):
             self.assertTrue(steps[label][2].get("stop_on_failure"), label)
         transport = self._transport()
+        # Room on the disks: the door's limit is measured first.
+        transport.run.side_effect = _host_reply
         transport.execute.side_effect = lambda command, *_a, **_kw: (
             CommandResult("OLD\n", 1) if "-no-del" in command
             and "authorized_keys" not in command else CommandResult("", 0)
@@ -1645,11 +1659,13 @@ class TestTheKeyLineReachesTheFileWhole(_StagingCase):
     )
 
     def setUp(self):
-        """A grant for the instance, and an account's home of the test's own."""
+        """A grant for the instance, its size limit measured, and an
+        account's home of the test's own."""
         super().setUp()
         self.grant, _private = self.env["cloud.restore.upload.grant"]._open(
             self.inst,
         )
+        self.grant.sudo().upload_limit_bytes = 10 * 1024 ** 3
         self.home = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ["rm", "-rf", str(self.home)], check=False)
         self.keys = self.home / ".ssh" / "authorized_keys"
@@ -1706,6 +1722,7 @@ class TestTheKeyLineReachesTheFileWhole(_StagingCase):
         other, _private = self.env["cloud.restore.upload.grant"]._open(
             self.inst,
         )
+        other.sudo().upload_limit_bytes = 10 * 1024 ** 3
         self.keys.parent.mkdir(mode=0o700)
         self.keys.write_text("\n".join([
             self.OPERATOR[0],
