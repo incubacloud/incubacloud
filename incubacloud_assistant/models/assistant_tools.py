@@ -301,11 +301,12 @@ class AssistantTools(models.AbstractModel):
     def _call_detail(self, spec, args):
         """Return the card's line for a call: the tool and its arguments, quoted.
 
-        As the MCP records them (``_recorded_args``): a link's credential
-        is not kept in a card either.
+        As the MCP's approval shows them (``_shown_args``): a link's
+        credential is not kept in a card either, and each piece of it is
+        cut, so that a look-alike link reads otherwise.
         """
-        recorded = self.env["incubacloud.mcp.tools"]._recorded_args(spec, args)
-        arguments = json.dumps(recorded, sort_keys=True, ensure_ascii=False)
+        shown = self.env["incubacloud.mcp.tools"]._shown_args(spec, args)
+        arguments = json.dumps(shown, sort_keys=True, ensure_ascii=False)
         return self.env._(
             "Run %(tool)s with %(arguments)s.",
             tool=spec.name,

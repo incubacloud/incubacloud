@@ -113,20 +113,31 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
             with self.subTest(spec.name):
                 self.assertTrue(Tools._extra_confirmation(spec, {}))
 
-    def test_a_card_quotes_a_link_as_the_audit_keeps_it(self):
-        """A restore from a link: the card keeps its host and its file, not
-        the signature in its query."""
+    def test_a_card_quotes_a_link_as_the_approval_shows_it(self):
+        """A restore from a link: the card shows each piece of it cut, as the
+        MCP's approval does — not the signature in its query whole, and a
+        look-alike link of another bucket reads otherwise."""
         Tools = self.env["incubacloud.assistant.tools"].with_user(self.developer)
         spec = self.env["incubacloud.mcp.catalog"]._spec("restore_from_link")
-        card = Tools._extra_confirmation(
-            spec,
-            {
-                "instance_id": self.staging.id,
-                "url": "https://93.184.216.34/b/backup.zip?X-Amz-Signature=cafe1234",
-            },
+        signature = "cafe1234deadbeef5678"
+        cards = [
+            Tools._extra_confirmation(
+                spec,
+                {
+                    "instance_id": self.staging.id,
+                    "url": f"https://93.184.216.34/{bucket}/backup.zip"
+                    f"?X-Amz-Signature={signature}",
+                },
+            )
+            for bucket in ("acme", "evil")
+        ]
+        self.assertIn(
+            "https://93.184.216.34/acme/backup.zip?X-Amz-Signature=cafe…5678",
+            cards[0],
         )
-        self.assertIn("https://93.184.216.34/…/backup.zip?…", card)
-        self.assertNotIn("cafe1234", card)
+        self.assertIn("/evil/backup.zip", cards[1])
+        for card in cards:
+            self.assertNotIn(signature, card)
 
     def test_production_is_found_by_any_id_of_the_arguments(self):
         """A repository line of production, the server production runs on."""
