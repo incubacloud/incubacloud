@@ -2,7 +2,20 @@
 
 from odoo.tests.common import BaseCase
 
-from odoo.addons.incubacloud_mcp.protocol.schema import SchemaError, validate
+from odoo.addons.incubacloud_mcp.protocol.schema import (
+    RECORD_KEY,
+    SchemaError,
+    resolve,
+    validate,
+)
+from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
+    ToolSpec,
+    describe_fields,
+    nullable,
+    obj,
+    record_id,
+    record_key,
+)
 
 SCHEMA = {
     "type": "object",
@@ -70,4 +83,97 @@ class TestSchema(BaseCase):
         self.assertEqual(
             validate(SCHEMA, {"instance_id": 1, "vals": {"whatever": 1}})["vals"],
             {"whatever": 1},
+        )
+
+
+#: The languages the lookup of these tests knows, by code.
+LANGS = {"en_US": 1, "es_ES": 7}
+
+
+def _lookup(model, field, value):
+    """Answer as the server's lookup does, from :data:`LANGS`."""
+    assert (model, field) == ("res.lang", "code")
+    return sorted(LANGS) if value is None else LANGS.get(value)
+
+
+VALS = obj(
+    {
+        "vals": obj(
+            {
+                "host_id": record_id("A server."),
+                "backup_backend_id": nullable(record_id("A destination.")),
+                "lang": nullable(record_key("A language.", "res.lang", "code")),
+                "langs": {
+                    "type": "array",
+                    "items": record_key("L.", "res.lang", "code"),
+                },
+            }
+        )
+    }
+)
+
+
+class TestFieldsByKey(BaseCase):
+    """Closed fields name the accepted ones; a record is given by its key."""
+
+    def test_an_unknown_field_names_the_accepted_ones(self):
+        """The refusal lists every key the object takes."""
+        with self.assertRaises(SchemaError) as caught:
+            validate(VALS, {"vals": {"odoo_lang": "es_ES"}})
+        self.assertEqual(
+            str(caught.exception),
+            "arguments.vals: unknown argument(s): odoo_lang. "
+            "Accepted: backup_backend_id, host_id, lang, langs.",
+        )
+
+    def test_an_id_field_refuses_text_and_takes_null_only_when_nullable(self):
+        """Text where an id goes is refused; null only where the field allows."""
+        for bad in (
+            {"host_id": "srv-1"},
+            {"host_id": None},
+            {"backup_backend_id": "1"},
+        ):
+            with self.subTest(bad=bad), self.assertRaisesRegex(SchemaError, "integer"):
+                validate(VALS, {"vals": bad})
+        self.assertEqual(
+            validate(VALS, {"vals": {"backup_backend_id": None}}),
+            {"vals": {"backup_backend_id": None}},
+        )
+
+    def test_a_record_by_its_code_becomes_its_id(self):
+        """A language's code turns into its id, in lists too; null stays."""
+        args = validate(
+            VALS, {"vals": {"lang": "es_ES", "langs": ["en_US"], "host_id": 3}}
+        )
+        self.assertEqual(
+            resolve(VALS, args, _lookup),
+            {"vals": {"lang": 7, "langs": [1], "host_id": 3}},
+        )
+        self.assertEqual(
+            resolve(VALS, {"vals": {"lang": None}}, _lookup), {"vals": {"lang": None}}
+        )
+
+    def test_a_code_no_record_has_is_refused_with_the_accepted_ones(self):
+        """An unknown code is refused, listing the codes there are."""
+        for vals, path in (
+            ({"lang": "xx_XX"}, "arguments.vals.lang"),
+            ({"langs": ["es_ES", "es"]}, "arguments.vals.langs[1]"),
+        ):
+            with self.subTest(vals=vals), self.assertRaises(SchemaError) as caught:
+                resolve(VALS, validate(VALS, {"vals": vals}), _lookup)
+            self.assertIn(path, str(caught.exception))
+            self.assertIn("en_US, es_ES", str(caught.exception))
+
+    def test_the_listing_and_the_description_show_the_fields_not_the_key(self):
+        """The listed schema has no server key; the fields' types are named."""
+        spec = ToolSpec("t", "T.", "group_cloud_user", VALS, route="/x")
+        listed = str(spec.listed()["inputSchema"])
+        self.assertNotIn(RECORD_KEY, listed)
+        self.assertIn("nullable", listed)
+        self.assertIn(RECORD_KEY, str(spec.input_schema))
+        self.assertEqual(
+            describe_fields(VALS["properties"]["vals"]),
+            "host_id (id); backup_backend_id (id or null); "
+            "lang (string, a code of res.lang or null); "
+            "langs (array of string, a code of res.lang)",
         )

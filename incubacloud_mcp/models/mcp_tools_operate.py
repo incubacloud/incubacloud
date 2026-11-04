@@ -3,7 +3,23 @@
 from odoo import api, models
 from odoo.exceptions import UserError
 
-from ..protocol.tool_spec import ToolSpec, boolean, integer, obj, record_id, string
+from odoo.addons.incubacloud.models._odoo_versions import (
+    ODOO_VERSION_SELECTION,
+    POSTGRES_MAJORS,
+)
+
+from ..protocol.tool_spec import (
+    ToolSpec,
+    array,
+    boolean,
+    describe_fields,
+    integer,
+    nullable,
+    obj,
+    record_id,
+    record_key,
+    string,
+)
 from .mcp_catalog import tool_policies
 
 _CONSULTANT = "group_cloud_consultant"
@@ -11,28 +27,176 @@ _PROJECT_MANAGER = "group_cloud_project_manager"
 _DEVELOPER = "group_cloud_developer"
 
 _INSTANCE = record_id("The instance.")
-_VALS = {
-    "type": "object",
-    "additionalProperties": True,
-    "description": "Fields to set, as the panel's form sends them. Secrets are "
-    "refused: the user sets them in the panel.",
-}
 _REPO_MODELS = ("cloud.project.repo", "cloud.instance.repo")
+
+#: The fields a project's and an instance's ``vals`` share.
+_COMMON_FIELDS = {
+    "name": string("The name."),
+    "odoo_version": string(
+        "The Odoo series.", enum=[version for version, _label in ODOO_VERSION_SELECTION]
+    ),
+    "odoo_commit_sha": string(
+        "Pin Odoo's core to this commit; empty follows the branch."
+    ),
+    "odoo_initial_lang": nullable(
+        record_key(
+            "The language installed on the first deploy, by its code (es_ES, "
+            "fr_FR…); null for English.",
+            "res.lang",
+            "code",
+        )
+    ),
+    "pip_dependencies": string("The pip requirements, one per line."),
+    "apt_dependencies": string("The system (APT) packages, one per line."),
+    "backup_backend_id": nullable(
+        record_id("The backup destination; null for the default.")
+    ),
+    "tag_ids": array("The tags (manage_tags), all of them.", record_id("A tag.")),
+}
+_REPO = obj(
+    {
+        "id": record_id("The repository row to keep, on an update."),
+        "url": string("The repository's URL."),
+        "branch": string("The branch; main when empty."),
+        "addons": string("The modules to use, comma-separated; empty for all."),
+        "excludes": string("The modules to leave out, comma-separated."),
+        "commit_sha": string("Pin to this commit; empty follows the branch."),
+    }
+)
+_REPOS = array(
+    "The repositories, all of them, in order: the list replaces the current one.",
+    _REPO,
+)
+_PROJECT_FIELDS = _COMMON_FIELDS | {
+    "description": string("A description."),
+    "project_author": string("The author the modules' manifests name."),
+    "project_license": string(
+        "The license of the project's modules.",
+        enum=(
+            "no_license",
+            "Apache-2.0",
+            "BSL-1.0",
+            "AGPL-3.0-or-later",
+            "LGPL-3.0-or-later",
+            "MIT",
+            "OEEL-1.0",
+            "OPL-1.0",
+        ),
+    ),
+    "pr_reviews_enabled": boolean(
+        "Open a preview instance for each pull request of its repositories."
+    ),
+    "repos": _REPOS,
+}
+_ENVIRONMENT = string("Staging or production.", enum=("staging", "production"))
+_DOMAIN = obj(
+    {
+        "id": record_id("The domain row to keep, on an update."),
+        "hostname": string("The hostname."),
+        "redirect_to": string("Redirect to this hostname instead of serving."),
+        "cert_resolver": string("How its certificate is obtained."),
+        "redirect_permanent": boolean("A permanent (301) redirect."),
+    }
+)
+_INSTANCE_FIELDS = (
+    _COMMON_FIELDS
+    | {
+        "host_id": record_id("The server (list_hosts)."),
+        "odoo_proxy": string("The proxy in front of Odoo.", enum=("traefik", "none")),
+        "postgres_version": string("The PostgreSQL major.", enum=POSTGRES_MAJORS),
+        "postgres_dbname": string("The database's name."),
+        "postgres_username": string("The database user."),
+        "smtp_relay_host": string("The outgoing mail relay's host."),
+        "smtp_relay_port": integer("The relay's port.", minimum=1, maximum=65535),
+        "smtp_relay_security": string(
+            "The relay's security.", enum=("none", "starttls", "ssl")
+        ),
+        "smtp_relay_user": string("The relay's user."),
+    }
+    | {
+        f"{service}_memory_limit": string(f"Memory limit of {service}, as 2g or 512m.")
+        for service in ("odoo", "db", "backup", "smtp")
+    }
+    | {
+        f"{service}_cpus": {"type": "number", "description": f"CPUs of {service}."}
+        for service in ("odoo", "db", "backup", "smtp")
+    }
+    | {
+        "repos": _REPOS,
+        "domains": array(
+            "The domains, all of them: the list replaces the current one.", _DOMAIN
+        ),
+    }
+)
+_CREATE_PROJECT = obj(_PROJECT_FIELDS, required=("name",))
+_UPDATE_PROJECT = obj(
+    _PROJECT_FIELDS
+    | {
+        "member_ids": array(
+            "The users assigned to the project, all of them.", record_id("A user.")
+        ),
+    }
+)
+_CREATE_INSTANCE = obj(
+    _INSTANCE_FIELDS
+    | {
+        "project_id": record_id("The project."),
+        "environment": _ENVIRONMENT,
+        "domain": string("One domain, instead of domains."),
+    }
+)
+_UPDATE_INSTANCE = obj(
+    _INSTANCE_FIELDS
+    | {
+        "environment": string(
+            "Chosen when the instance is created: another value is refused.",
+            enum=("staging", "production"),
+        ),
+        "odoo_conf": string("The [options] of the instance's odoo.conf."),
+        "auto_rebuild": boolean("Rebuild on a push to a branch it deploys."),
+        "auto_update": boolean("Update the modules on a rebuild."),
+        "autopurge_exempt": boolean("Keep this staging from the automatic purge."),
+        "whitelist": array(
+            "The hostnames it may reach out to, all of them.", string("A hostname.")
+        ),
+    }
+)
+
+
+def _with_vals(description, vals):
+    """Return the description of a tool that takes *vals*, with its fields.
+
+    :param str description: what the tool does
+    :param dict vals: the schema of its ``vals``
+    """
+    return (
+        f"{description} vals takes these fields, and refuses any other; "
+        f"secrets are set by the user in the panel: {describe_fields(vals)}."
+    )
+
+
+def _vals(schema):
+    """Return the ``vals`` property declared by *schema*, described."""
+    return {
+        **schema,
+        "description": "The fields to set; only those given change.",
+    }
+
 
 TOOLS = (
     ToolSpec(
         "create_project",
-        "Create a project.",
+        _with_vals("Create a project.", _CREATE_PROJECT),
         _PROJECT_MANAGER,
-        obj({"vals": _VALS}, required=("vals",)),
+        obj({"vals": _vals(_CREATE_PROJECT)}, required=("vals",)),
         route="/cloud/create_project",
     ),
     ToolSpec(
         "update_project",
-        "Change a project's settings.",
+        _with_vals("Change a project's settings.", _UPDATE_PROJECT),
         _CONSULTANT,
         obj(
-            {"project_id": record_id("The project."), "vals": _VALS},
+            {"project_id": record_id("The project."), "vals": _vals(_UPDATE_PROJECT)},
             required=("project_id", "vals"),
         ),
         route="/cloud/save_project",
@@ -52,17 +216,18 @@ TOOLS = (
     ),
     ToolSpec(
         "create_instance",
-        "Create an instance in a project.",
+        _with_vals("Create an instance in a project.", _CREATE_INSTANCE),
         _CONSULTANT,
-        obj({"vals": _VALS}, required=("vals",)),
+        obj({"vals": _vals(_CREATE_INSTANCE)}, required=("vals",)),
         route="/cloud/create_instance",
     ),
     ToolSpec(
         "update_instance",
-        "Change an instance's settings.",
+        _with_vals("Change an instance's settings.", _UPDATE_INSTANCE),
         _CONSULTANT,
         obj(
-            {"instance_id": _INSTANCE, "vals": _VALS}, required=("instance_id", "vals")
+            {"instance_id": _INSTANCE, "vals": _vals(_UPDATE_INSTANCE)},
+            required=("instance_id", "vals"),
         ),
         route="/cloud/save_instance",
     ),
