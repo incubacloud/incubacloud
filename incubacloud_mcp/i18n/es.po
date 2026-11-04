@@ -1939,3 +1939,162 @@ msgstr "con el valor"
 #: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
 msgid "· via agent"
 msgstr "· vía agente"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"A link with a user or a password is given in the panel (Import, From a "
+"link): credentials never pass through an agent. Use a presigned or share "
+"link instead."
+msgstr ""
+"Un enlace con usuario o contraseña se indica en el panel (Importar, Desde un"
+" enlace): las credenciales nunca pasan por un agente. Use en su lugar un "
+"enlace prefirmado o compartido."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"An agent gives an https link only: sftp and ftp links are given in the panel"
+" (Import, From a link)."
+msgstr ""
+"Un agente solo puede indicar enlaces https: los enlaces sftp y ftp se "
+"indican en el panel (Importar, Desde un enlace)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "Instance has no host assigned."
+msgstr "La instancia no tiene host asignado."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"Let the key %(key)s upload an archive for the instance %(name)s to the "
+"server %(host)s: into one directory, write only, for %(hours)s hours or "
+"until a restore takes it."
+msgstr ""
+"Permitir que la clave %(key)s suba un archivo para la instancia %(name)s al "
+"servidor %(host)s: a un único directorio, solo escritura, durante %(hours)s "
+"horas o hasta que una restauración lo tome."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"Nothing that can be restored has been found through this door yet: send the "
+"archive as restore.zip, then call check_restore_upload and wait for its job."
+msgstr ""
+"Todavía no se ha encontrado nada restaurable en esta puerta: envíe el "
+"archivo como restore.zip, llame a check_restore_upload y espere a que "
+"termine su trabajo."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"Replace the database and files of %(target)s with %(origin)s (%(how)s). "
+"Everything the instance holds now is lost."
+msgstr ""
+"Sustituir la base de datos y los archivos de %(target)s por %(origin)s "
+"(%(how)s). Se pierde todo lo que la instancia contiene ahora."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "That link cannot be used: %s."
+msgstr "Ese enlace no se puede usar: %s."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "That upload grant does not exist."
+msgstr "Esa concesión de subida no existe."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"This instance has no resolvable backup backend, so a pre-restore safety "
+"backup cannot be taken. Configure a backup backend (instance, project or "
+"global) first."
+msgstr ""
+"Esta instancia no tiene un backend de backup resoluble, por lo que no se "
+"puede tomar un backup de seguridad antes de restaurar. Configure un backend "
+"de backup (de instancia, proyecto o global) primero."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"What arrived has changed since it was shown to you, or the restore did not "
+"say which file it means. Check what arrived again, then restore it."
+msgstr ""
+"Lo recibido ha cambiado desde que se le mostró, o la restauración no indicó "
+"a qué archivo se refiere. Compruebe de nuevo lo recibido y restáurelo "
+"después."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "after a safety backup"
+msgstr "tras un backup de seguridad"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "expected_sha256 is not a SHA-256."
+msgstr "expected_sha256 no es un SHA-256."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "given the instance's own address"
+msgstr "con la dirección propia de la instancia"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "keeping the address it has"
+msgstr "conservando la dirección que trae"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "the archive at %(path)s on the server %(host)s"
+msgstr "el archivo %(path)s del servidor %(host)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "the archive its server downloads from %s"
+msgstr "el archivo que su servidor descarga de %s"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid ""
+"the file %(file)s uploaded through the door (%(bytes)s bytes, SHA-256 "
+"%(sha)s)"
+msgstr ""
+"el archivo %(file)s subido por la puerta (%(bytes)s bytes, SHA-256 %(sha)s)"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "the instance %(name)s (project %(project)s)"
+msgstr "la instancia %(name)s (proyecto %(project)s)"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "the production instance %(name)s (project %(project)s)"
+msgstr "la instancia de producción %(name)s (proyecto %(project)s)"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
+msgid "without a safety backup"
+msgstr "sin backup de seguridad"

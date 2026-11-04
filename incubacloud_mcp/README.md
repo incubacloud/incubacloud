@@ -6,9 +6,10 @@ as the user who connected them.
 
 - **Who:** OAuth access tokens of the configured issuer, or the panel's own
   API keys where allowed. Never the browser's cookie, never the superuser.
-- **What:** sixty-four tools, fifty-eight over the panel's own routes and six
-  on the project's GitHub repository (three more with `incubacloud_mcp_pitr`),
-  listed by role.
+- **What:** sixty-nine tools, fifty-eight over the panel's own routes, five
+  restores from an archive over the instance's own methods (a link, a file on
+  the server, a one-use upload door) and six on the project's GitHub
+  repository (three more with `incubacloud_mcp_pitr`), listed by role.
 - **Code** (developer): `repo_read`, `repo_create_branch`, `repo_write_files`,
   `repo_open_pull_request`, `repo_create`, `project_connect_repo`. Reads only
   repositories of a project or an instance the user reads, writes only to those

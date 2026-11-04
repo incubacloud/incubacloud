@@ -73,6 +73,21 @@ class McpTools(models.AbstractModel):
         return method(args) if method else True
 
     @api.model
+    def _recorded_args(self, spec, args):
+        """Return the arguments as the panel records or shows them.
+
+        The audit keeps them, and the assistant's card quotes them;
+        ``_record_<tool name>`` takes out what neither may keep — a link
+        that carries its own credential — when the group defines one.
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the validated (and prepared) arguments
+        :rtype: dict
+        """
+        method = getattr(self, f"_record_{spec.name}", None)
+        return method(args) if method else args
+
+    @api.model
     def _route(self, path, **params):
         """Call the panel route at *path* (see ``incubacloud.mcp.dispatch``)."""
         return self.env["incubacloud.mcp.dispatch"]._call(path, params)

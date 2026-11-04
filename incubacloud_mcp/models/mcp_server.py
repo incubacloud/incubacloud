@@ -587,8 +587,9 @@ class McpServer(models.AbstractModel):
         :param str outcome: ``''`` when it went through, else why not
         """
         # Masked before JSON escapes a quote or an accent of a secret.
+        recorded = self.env["incubacloud.mcp.tools"]._recorded_args(spec, args)
         detail = json.dumps(
-            scrubber.value(args), sort_keys=True, default=str, ensure_ascii=False
+            scrubber.value(recorded), sort_keys=True, default=str, ensure_ascii=False
         )
         if outcome:
             detail = f"refused: {scrubber.text(outcome)} · {detail}"
