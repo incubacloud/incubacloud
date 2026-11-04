@@ -19,6 +19,8 @@ import requests
 
 from odoo.modules.module import get_module_path
 
+from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES, page_items, size_of
+
 #: Top-level entries of core's repository the assistant reads.
 PUBLIC_ENTRIES = frozenset(
     {
@@ -220,11 +222,23 @@ def search_code(root, text, path, limit):
     return {"matches": matches, "truncated": truncated}
 
 
-def read_source(root, path, start_line, lines):
+#: Room an answer of :func:`read_source` keeps, beside its lines, for its
+#: keys and what masking a secret adds.
+_READ_MARGIN = 1024
+
+
+def read_source(root, path, start_line, lines, max_bytes=MAX_BYTES - _READ_MARGIN):
     """Read *lines* lines of a public file from *start_line*, or list a folder.
 
-    :return: ``{path, lines: ["n: text"], total, next_line}`` for a file,
-        ``{path, entries}`` for a folder (folders end with ``/``)
+    No more lines than fit *max_bytes*: the answer is never cut after it
+    is made, and ``next_line`` follows the last line it holds. A line
+    longer than the room is shown cut, alone, and the answer says
+    ``truncated``.
+
+    :param int max_bytes: what the answer may take
+    :return: ``{path, lines: ["n: text"], total, next_line, truncated}``
+        for a file, ``{path, entries}`` for a folder (folders end with
+        ``/``)
     :raises SourceError: for a path out of the public code, or a file that
         is not text
     """
@@ -246,12 +260,16 @@ def read_source(root, path, start_line, lines):
     first = max(1, int(start_line or 1))
     count = max(1, min(int(lines or 400), 2000))
     chunk = all_lines[first - 1 : first - 1 + count]
-    following = first + len(chunk)
+    numbered = [f"{first + index}: {text}" for index, text in enumerate(chunk)]
+    rest = {"path": relative, "total": len(all_lines), "next_line": None,
+            "truncated": False}
+    page = page_items(numbered, 0, None, max(0, max_bytes - size_of(rest)))
+    following = first + len(page["items"])
     return {
-        "path": relative,
-        "lines": [f"{first + index}: {text}" for index, text in enumerate(chunk)],
-        "total": len(all_lines),
+        **rest,
+        "lines": page["items"],
         "next_line": following if following <= len(all_lines) else None,
+        "truncated": page["truncated"],
     }
 
 

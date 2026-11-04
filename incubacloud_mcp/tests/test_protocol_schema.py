@@ -169,11 +169,69 @@ class TestFieldsByKey(BaseCase):
         spec = ToolSpec("t", "T.", "group_cloud_user", VALS, route="/x")
         listed = str(spec.listed()["inputSchema"])
         self.assertNotIn(RECORD_KEY, listed)
-        self.assertIn("nullable", listed)
+        # JSON Schema's way: null is one of the types, not OpenAPI's key.
+        self.assertIn("'null'", listed)
+        self.assertNotIn("nullable", listed)
         self.assertIn(RECORD_KEY, str(spec.input_schema))
         self.assertEqual(
             describe_fields(VALS["properties"]["vals"]),
             "host_id (id); backup_backend_id (id or null); "
             "lang (string, a code of res.lang or null); "
             "langs (array of string, a code of res.lang)",
+        )
+
+
+class TestTypeLists(BaseCase):
+    """A property of several types takes a value of any of them, and says so."""
+
+    def test_null_is_one_of_the_types(self):
+        """``nullable`` lists null among the types; a boolean is no integer."""
+        schema = nullable(record_id("A destination."))
+        self.assertEqual(schema["type"], ["integer", "null"])
+        self.assertIsNone(validate(schema, None))
+        self.assertEqual(validate(schema, 3.0), 3)
+        for bad in (True, "3", 0):
+            with self.subTest(bad=bad), self.assertRaises(SchemaError):
+                validate(schema, bad)
+
+    def test_a_record_is_named_by_its_code_or_by_its_id(self):
+        """With or_id, the id the readers answer is taken, checked to be a
+        record's; a code still becomes its id."""
+        schema = nullable(record_key("A language.", "res.lang", "code", or_id=True))
+        self.assertEqual(schema["type"], ["string", "integer", "null"])
+
+        def lookup(model, field, value):
+            """Languages 1 and 7, by code and by id."""
+            if field == "id":
+                return value if value in (1, 7) else None
+            return _lookup(model, field, value)
+
+        self.assertEqual(resolve(schema, validate(schema, 7), lookup), 7)
+        self.assertEqual(resolve(schema, validate(schema, "es_ES"), lookup), 7)
+        self.assertIsNone(resolve(schema, validate(schema, None), lookup))
+        with self.assertRaisesRegex(SchemaError, "no res.lang has the id 9"):
+            resolve(schema, validate(schema, 9), lookup)
+        with self.assertRaisesRegex(SchemaError, "string or integer or null"):
+            validate(schema, True)
+        self.assertEqual(
+            describe_fields(obj({"lang": schema})),
+            "lang (string, a code of res.lang, or its id or null)",
+        )
+
+    def test_a_series_is_text_or_a_number(self):
+        """The version's enum holds the series as text and as numbers."""
+        schema = {
+            "type": ["string", "number"],
+            "enum": ["18.0", "19.0", 18.0, 19.0],
+            "description": "The series.",
+        }
+        for value in ("19.0", 19, 19.0):
+            with self.subTest(value=value):
+                self.assertEqual(validate(schema, value), value)
+        for bad in ("19", 20, False):
+            with self.subTest(bad=bad), self.assertRaises(SchemaError):
+                validate(schema, bad)
+        self.assertEqual(
+            describe_fields(obj({"odoo_version": schema})),
+            "odoo_version (18.0|19.0 (or as a number))",
         )

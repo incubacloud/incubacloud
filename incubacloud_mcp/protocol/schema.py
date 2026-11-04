@@ -5,9 +5,10 @@ a warning nobody reads: a misspelt argument would be ignored in silence.
 The tools' schemas are closed (``additionalProperties: false`` unless a
 property says otherwise), so a key the tool does not know is an error the
 agent sees, and so is a value of the wrong type. A deliberately small
-subset of JSON Schema: what the tools' schemas use and nothing else, plus
-``nullable`` (a property that also takes null, as OpenAPI says it) and
-:data:`RECORD_KEY`, a property that names a record by one of its fields.
+subset of JSON Schema: what the tools' schemas use and nothing else — a
+``type`` may be a list of types, ``["integer", "null"]`` for a property
+that also takes null — plus :data:`RECORD_KEY`, a property that names a
+record by one of its fields.
 """
 
 #: The key of a property that names a record by one of its fields:
@@ -18,6 +19,44 @@ RECORD_KEY = "x-record"
 _MAX_LISTED = 200
 
 _PY_TYPES = {"string": str, "boolean": bool, "array": list, "object": dict}
+
+
+def _is_of(kind, value):
+    """Return whether *value* is of the JSON type *kind*.
+
+    An integral float is an integer, as JSON has one kind of number; a
+    boolean is no number.
+
+    :param str kind: a JSON Schema type
+    :param value: the decoded JSON value
+    :rtype: bool
+    """
+    if kind == "null":
+        return value is None
+    if kind in ("integer", "number"):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        return kind == "number" or isinstance(value, int) or value.is_integer()
+    if kind == "boolean":
+        return isinstance(value, bool)
+    return isinstance(value, _PY_TYPES.get(kind, object)) and not isinstance(
+        value, bool
+    )
+
+
+def _one_type(schema, value, path):
+    """Return *schema* with its list of types narrowed to *value*'s.
+
+    :param dict schema: a schema whose ``type`` is a list
+    :param value: the decoded JSON value
+    :param str path: where *value* sits, for the message
+    :raises SchemaError: when *value* is of none of them
+    """
+    kinds = schema["type"]
+    for kind in kinds:
+        if _is_of(kind, value):
+            return {**schema, "type": kind}
+    raise SchemaError(f"{path} must be of type {' or '.join(kinds)}")
 
 
 class SchemaError(ValueError):
@@ -64,15 +103,18 @@ def _check_object(schema, value, path):
 def validate(schema, value, path="arguments"):
     """Return *value* checked against *schema*, with integers coerced.
 
-    :param dict schema: the subset of JSON Schema the tools use: ``type``,
-        ``properties``, ``required``, ``additionalProperties``, ``items``,
-        ``enum``, ``minimum``, ``maximum``, ``maxLength``, ``nullable``
+    :param dict schema: the subset of JSON Schema the tools use: ``type``
+        (one, or a list of them), ``properties``, ``required``,
+        ``additionalProperties``, ``items``, ``enum``, ``minimum``,
+        ``maximum``, ``maxLength``
     :param value: the decoded JSON value
     :param str path: where *value* sits, for the message
     :raises SchemaError: naming the first problem found
     """
-    if value is None and schema.get("nullable"):
-        return None
+    if isinstance(schema.get("type"), list):
+        if value is None and "null" in schema["type"]:
+            return None
+        schema = _one_type(schema, value, path)
     kind = schema.get("type")
     if kind in ("integer", "number"):
         value = _check_number(schema, value, path)
@@ -101,18 +143,25 @@ def resolve(schema, value, lookup, path="arguments"):
     """Return validated *value* with every record named by a field as its id.
 
     Walks *value* along *schema* as :func:`validate` does; a property
-    marked with :data:`RECORD_KEY` is looked up, null left as it is.
+    marked with :data:`RECORD_KEY` is looked up when it is text, an id
+    (an integer, where its schema takes one) checked to be a record's,
+    null left as it is.
 
     :param dict schema: the schema *value* was validated against
     :param value: the validated value
     :param lookup: ``lookup(model, field, text)`` → the id of the record
-        whose *field* is *text*, or None; ``lookup(model, field, None)``
-        → every value of *field*, for the refusal
+        whose *field* is *text*, or None; ``lookup(model, "id", id)`` →
+        *id* when a record has it; ``lookup(model, field, None)`` → every
+        value of *field*, for the refusal
     :param str path: where *value* sits, for the message
     :raises SchemaError: when no record has that value, naming the ones
         accepted
     """
     record = schema.get(RECORD_KEY)
+    if record and isinstance(value, int) and not isinstance(value, bool):
+        if lookup(record["model"], "id", value) is None:
+            raise SchemaError(f"{path}: no {record['model']} has the id {value}.")
+        return value
     if record and value is not None:
         found = lookup(record["model"], record["field"], value)
         if found is None:

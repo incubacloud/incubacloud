@@ -152,18 +152,35 @@ def record_id(description):
     return integer(description, minimum=1, maximum=MAX_RECORD_ID)
 
 
+def _types(schema):
+    """Return the JSON types *schema* takes, as a list."""
+    kind = schema.get("type")
+    return list(kind) if isinstance(kind, list) else [kind] if kind else []
+
+
 def nullable(schema):
-    """Return *schema* that also takes null, to clear the field it sets."""
-    return {**schema, "nullable": True}
+    """Return *schema* that also takes null, to clear the field it sets.
+
+    As JSON Schema says it: ``"type": [<type>, "null"]``.
+    """
+    return {**schema, "type": [*_types(schema), "null"]}
 
 
-def record_key(description, model, field):
+def record_key(description, model, field, or_id=False):
     """Return the property of a record named by its *field* (a language's code).
 
     The value is a string; the server turns it into the record's id
-    before the route sees it, and refuses one no record has.
+    before the route sees it, and refuses one no record has. With
+    *or_id*, the record's id is taken too, as the readers answer it.
     """
-    return {**string(description), RECORD_KEY: {"model": model, "field": field}}
+    schema = {**string(description), RECORD_KEY: {"model": model, "field": field}}
+    if or_id:
+        schema |= {
+            "type": ["string", "integer"],
+            "minimum": 1,
+            "maximum": MAX_RECORD_ID,
+        }
+    return schema
 
 
 def array(description, items):
@@ -173,11 +190,27 @@ def array(description, items):
 
 def _type_label(schema):
     """Return how :func:`describe_fields` names *schema*'s type."""
+    kinds = _types(schema)
+    taken = [kind for kind in kinds if kind != "null"]
+    if len(kinds) > 1 or "null" in kinds:
+        label = _one_label({**schema, "type": taken[0] if taken else None}, taken)
+        return f"{label} or null" if "null" in kinds else label
+    return _one_label(schema, taken)
+
+
+def _one_label(schema, taken):
+    """Return the label of *schema*, of the types *taken* besides null."""
     if RECORD_KEY in schema:
         record = schema[RECORD_KEY]
         label = f"string, a {record['field']} of {record['model']}"
+        if "integer" in taken:
+            label += ", or its id"
     elif "enum" in schema:
-        label = "|".join(map(str, schema["enum"]))
+        label = "|".join(str(value) for value in schema["enum"] if isinstance(value, str))
+        if "number" in taken:
+            label += " (or as a number)"
+        elif not label:
+            label = "|".join(map(str, schema["enum"]))
     elif (
         schema.get("type") == "integer"
         and schema.get("minimum") == 1
@@ -192,8 +225,8 @@ def _type_label(schema):
             for name, item in schema.get("properties", {}).items()
         )
     else:
-        label = schema.get("type") or "any"
-    return f"{label} or null" if schema.get("nullable") else label
+        label = " or ".join(taken) or "any"
+    return label
 
 
 def describe_fields(schema):
