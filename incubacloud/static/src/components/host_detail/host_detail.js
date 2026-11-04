@@ -10,7 +10,7 @@ import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { IcMenu } from "../ic_menu/ic_menu";
 import { parseUTC } from "../../utils/dates";
-import { ACTIVE_STATES, announceJob, cancelPrompt, jobStateText } from "../../utils/job_queue";
+import { ACTIVE_STATES, announceJob, cancelPrompt, jobStateText, jobTone } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
 import { useNavGuard } from "../../utils/use_nav_guard";
@@ -994,6 +994,16 @@ export class HostDetail extends Component {
      */
     jobStateText(job) {
         return jobStateText(job);
+    }
+
+    /**
+     * Colour of a job's state in the recent activity (``job_queue.jobTone``).
+     *
+     * @param {string} state
+     * @returns {string}
+     */
+    jobTone(state) {
+        return jobTone(state);
     }
 
     jobIcon(code) {

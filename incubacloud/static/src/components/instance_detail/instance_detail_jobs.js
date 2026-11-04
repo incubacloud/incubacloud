@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
 import {_t} from "@web/core/l10n/translation";
-import {ACTIVE_STATES, announceJob, cancelPrompt, jobStateText} from "../../utils/job_queue";
+import {ACTIVE_STATES, announceJob, cancelPrompt, jobStateText, jobTone} from "../../utils/job_queue";
 
 /**
  * Job timeline: icons, state classes, cancel/retry and paging.
@@ -28,6 +28,16 @@ export const JobsMixin = (Base) =>
      */
     jobStateText(job) {
       return jobStateText(job);
+    }
+
+    /**
+     * Colour of a job's state in the recent activity (``job_queue.jobTone``).
+     *
+     * @param {string} state
+     * @returns {string}
+     */
+    jobTone(state) {
+      return jobTone(state);
     }
 
     /**

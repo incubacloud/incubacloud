@@ -341,7 +341,7 @@
     &.jst-done      { background: $state-ok; }
     &.jst-failed    { background: $state-error; }
     &.jst-cancelled { background: $text-secondary; }
-    &.jst-running   { background: $primary-blue; }
+    &.jst-running   { background: var(--rl-cyan); }
     &.jst-pending   { background: $text-secondary; }
     &.jst-queued    { background: $state-warning; opacity: 0.6; }
     &.jst-blocked   { background: $state-warning; }
@@ -524,7 +524,7 @@
 .jst-done      { color: $state-ok;      background: rgba(var(--rl-green-rgb), 0.12); }
 .jst-failed    { color: $state-error;   background: rgba(var(--rl-red-rgb), 0.12); }
 .jst-cancelled { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.4); }
-.jst-running   { color: $primary-blue;  background: rgba(var(--rl-green-rgb), 0.12); }
+.jst-running   { color: var(--rl-cyan-text); background: var(--rl-cyan-soft); }
 .jst-pending   { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.3); }
 .jst-queued    { color: $state-warning-text; background: rgba(var(--rl-line-rgb), 0.3); }
 .jst-blocked   { color: $state-warning-text; background: rgba(var(--rl-amber-rgb), 0.12); }

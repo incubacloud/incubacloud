@@ -52,6 +52,26 @@ export function stateLabel(state) {
 }
 
 /**
+ * Colour of a job's state in the recent activity of an instance or a
+ * host: the Relay modifier of its timeline dot (``rl-tl-dot``) and
+ * state pill (``rl-tl-state``).
+ *
+ * Green when done, red when failed, cyan (``running``, pulsing) while
+ * it runs, amber while it waits: ``waiting`` in its target's queue,
+ * ``queued`` for the rest (dispatched to a runner, or blocked on an
+ * alert). A cancelled job has no colour.
+ *
+ * @param {string} state a ``cloud.job`` state, as ``_format`` gives it
+ * @returns {string} "done" | "failed" | "running" | "waiting" | "queued" | ""
+ */
+export function jobTone(state) {
+    return {
+        done: "done", failed: "failed", started: "running",
+        queued: "waiting", cancelled: "",
+    }[state] ?? "queued";
+}
+
+/**
  * Text of a job's state in the job lists and the history: its label,
  * and for a job waiting in its queue how many entries go before it.
  *
@@ -98,21 +118,24 @@ export function cancelPrompt(job) {
  * @param {{state?: string, job_type?: string, queued_behind?: string|false}|null} data
  *     the answer of an endpoint that enqueues (``_job_response``) or of
  *     ``/cloud/get_job_state``
+ * Its colour is the job's: amber (``warning``) while it waits in the
+ * queue, cyan (``info``) once it started.
+ *
  * @returns {{type: string, message: string}|null} the toast to show: its
- *     type (``success`` or ``info``) and text
+ *     type (``warning`` or ``info``) and text
  */
 export function enqueueNotice(data) {
     const state = data?.state;
     if (state === "queued") {
         return {
-            type: "info",
+            type: "warning",
             message: data.queued_behind
                 ? _t("Queued behind %s", data.queued_behind)
                 : _t("Queued"),
         };
     }
     if (RUNNING_STATES.includes(state) || state === "done" || state === "failed") {
-        return { type: "success", message: _t("Started: %s", data.job_type || "") };
+        return { type: "info", message: _t("Started: %s", data.job_type || "") };
     }
     return null;
 }
