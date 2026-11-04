@@ -304,7 +304,7 @@ describe("JobHistory — allStateKeys getter", () => {
 describe("JobHistory — folded filters", () => {
     const count = (filter, props = {}) =>
         Object.getOwnPropertyDescriptor(JobHistory.prototype, "activeFilterCount")
-            .get.call({ state: { filter }, props });
+            .get.call({ state: { applied: filter }, props });
     const base = {
         states: [], host_id: null, instance_id: null, user_id: null,
         date_from: "", date_to: "", job_category: "operational",
@@ -326,6 +326,28 @@ describe("JobHistory — folded filters", () => {
     test("the host the panel was opened for is the scope, not a filter", () => {
         expect(count({ ...base, host_id: 3 }, { host_id: 3 })).toBe(0);
         expect(count({ ...base, instance_id: 5 }, { instance_id: 5 })).toBe(0);
+    });
+
+    test("a filter ticked and not applied does not count until Apply", async () => {
+        const proto = JobHistory.prototype;
+        const self = {
+            props: {},
+            state: {
+                loading: false, jobs: [], hosts: [], applied: {},
+                filter: { ...base, job_category: "operational" },
+            },
+            orm: { call: async () => ({ jobs: [], hosts: [] }) },
+            _buildFilters: proto._buildFilters,
+        };
+        await proto.loadHistory.call(self);
+        expect(count(self.state.applied)).toBe(0);
+
+        self.state.filter.states.push("failed");
+        // Folded without Apply: the draft is not what the list shows.
+        expect(count(self.state.applied)).toBe(0);
+
+        await proto.applyFilter.call({ loadHistory: proto.loadHistory.bind(self) });
+        expect(count(self.state.applied)).toBe(1);
     });
 
     test("the timeline window reads as 1h, 6h, 24h or 7d", () => {
