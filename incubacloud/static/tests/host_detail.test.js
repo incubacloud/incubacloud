@@ -624,7 +624,7 @@ describe("HostDetail — hostAction", () => {
      * @returns {object} the stand-in, with a `calls` log.
      */
     function harness({ confirm = true, fail = false } = {}) {
-        const calls = { enqueue: [], success: [], error: [], refresh: 0, confirm: [] };
+        const calls = { enqueue: [], info: [], error: [], refresh: 0, confirm: [] };
         return {
             calls,
             props: { host_id: 7 },
@@ -637,7 +637,7 @@ describe("HostDetail — hostAction", () => {
             },
             env: {
                 toast: {
-                    success: (msg) => calls.success.push(msg),
+                    info: (msg) => calls.info.push(msg),
                     error: (msg) => calls.error.push(msg),
                 },
             },
@@ -657,7 +657,7 @@ describe("HostDetail — hostAction", () => {
         await h.hostAction({ code: "push_trusted_proxies", name: "Push Trusted Proxy Settings" });
         expect(h.calls.enqueue).toHaveLength(1);
         expect(h.calls.enqueue[0][2]).toEqual([7, false, "push_trusted_proxies"]);
-        expect(h.calls.success.map(String)).toEqual(["Started: Push Trusted Proxy Settings"]);
+        expect(h.calls.info.map(String)).toEqual(["Started: Push Trusted Proxy Settings"]);
         expect(h.calls.error).toHaveLength(0);
     });
 

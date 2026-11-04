@@ -339,8 +339,9 @@ export class JobHistory extends Component {
     /**
      * View-only mapping of a raw job ``state`` to the Relay state-class used by
      * the timeline dot (``rl-tl-dot``) and the bare status pill (``rl-pill``):
-     * ``done`` / ``failed`` / ``queued`` (amber, pending-like) / ``running``,
-     * and ``waiting`` (amber, still) for a job waiting in its queue.
+     * ``done`` / ``failed`` / ``queued`` (amber, waiting on a runner) /
+     * ``running`` (cyan, pulsing), and ``waiting`` (amber) for a job
+     * waiting in its queue.
      * No business logic — purely picks the CSS modifier for the chosen state.
      * @param {string} state raw cloud.job state
      * @returns {string} one of "done" | "failed" | "queued" | "running" | "waiting"
