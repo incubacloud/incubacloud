@@ -19,6 +19,65 @@ from .cloud_restore_upload_grant import UPLOAD_ROOT, USED_GRANT_DAYS
 # is worse than the disease.
 PROTECT_LABEL = "incubacloud.protect=1"
 
+#: Free space, in GB, on the disk Docker keeps its images and build cache
+#: on, under which a deploy or a rebuild first empties the build cache
+#: and the unused images (``build_cache_prune_if_low``): a build that runs
+#: out of disk fails half-way, and the daily prune may be most of a day
+#: away. The single place to change it.
+BUILD_CACHE_MIN_FREE_GB = 8
+
+#: The cleanup the daily prune does for disk, without the containers:
+#: the build cache, and the images no container uses, the labelled ones
+#: spared (see ``PROTECT_LABEL``). Never ``docker system prune``, which
+#: takes networks too (see the playbook).
+_CACHE_PRUNE = (
+    "docker builder prune -af; "
+    f'docker image prune -af --filter "label!={PROTECT_LABEL}"'
+)
+
+
+def build_cache_prune():
+    """The command that empties Docker's build cache and unused images.
+
+    For a step that frees what an instance leaves behind (its image, the
+    cache its builds filled) when it is deleted. It never fails: a
+    cleanup that could not run must not fail the job that asked for it,
+    and the daily prune tries again.
+
+    :return: the shell command, which always exits 0
+    :rtype: str
+    """
+    return f"{{ {_CACHE_PRUNE}; }} 2>&1 || true"
+
+
+def build_cache_prune_if_low(min_free_gb=BUILD_CACHE_MIN_FREE_GB):
+    """The command that runs ``build_cache_prune`` when the disk is low.
+
+    Reads, on the host, the free space of the disk Docker's data lives on
+    (``DockerRootDir``, ``/var/lib/docker`` when it cannot be read), and
+    empties the cache and unused images only under *min_free_gb*. A free
+    space it cannot read leaves everything as it is. It never fails, for
+    the reason ``build_cache_prune`` gives.
+
+    :param int min_free_gb: the threshold, in GB
+    :return: the shell command, which always exits 0
+    :rtype: str
+    """
+    need_kb = int(min_free_gb) * 1024 * 1024
+    return (
+        "{ root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null);"
+        ' free=$(df -Pk "${root:-/var/lib/docker}" 2>/dev/null'
+        " | awk 'NR==2 {print $4}');"
+        ' if [ -z "$free" ]; then echo "Free disk unknown: the build cache is left as it is.";'
+        f' elif [ "$free" -lt {need_kb} ]; then'
+        f' echo "Free disk $((free / 1048576)) GB, under {int(min_free_gb)} GB:'
+        ' emptying the build cache and the unused images.";'
+        f" {_CACHE_PRUNE};"
+        f' else echo "Free disk $((free / 1048576)) GB: the build cache stays."; fi; }}'
+        " 2>&1 || true"
+    )
+
+
 # Alert raised when the post-prune inventory shows that a container the
 # panel manages is gone. With every managed resource labelled this
 # should never fire; it exists precisely because it once did (2026-08:
