@@ -300,3 +300,38 @@ describe("JobHistory — allStateKeys getter", () => {
         expect(ALL_STATES).toInclude("cancelled");
     });
 });
+
+describe("JobHistory — folded filters", () => {
+    const count = (filter, props = {}) =>
+        Object.getOwnPropertyDescriptor(JobHistory.prototype, "activeFilterCount")
+            .get.call({ state: { filter }, props });
+    const base = {
+        states: [], host_id: null, instance_id: null, user_id: null,
+        date_from: "", date_to: "", job_category: "operational",
+    };
+
+    test("no filter set counts zero, the category aside", () => {
+        expect(count({ ...base, job_category: "all" })).toBe(0);
+    });
+
+    test("the states count as one, each date as one", () => {
+        expect(count({ ...base, states: ["done", "failed"] })).toBe(1);
+        expect(count({ ...base, date_from: "2026-11-01T00:00", date_to: "2026-11-02T00:00" })).toBe(2);
+    });
+
+    test("host, instance and user count when picked", () => {
+        expect(count({ ...base, host_id: 3, instance_id: 5, user_id: 2 })).toBe(3);
+    });
+
+    test("the host the panel was opened for is the scope, not a filter", () => {
+        expect(count({ ...base, host_id: 3 }, { host_id: 3 })).toBe(0);
+        expect(count({ ...base, instance_id: 5 }, { instance_id: 5 })).toBe(0);
+    });
+
+    test("the timeline window reads as 1h, 6h, 24h or 7d", () => {
+        const label = (hours) =>
+            Object.getOwnPropertyDescriptor(JobHistory.prototype, "ganttWindowLabel")
+                .get.call({ state: { ganttHours: hours } });
+        expect([1, 6, 24, 168].map(label)).toEqual(["1h", "6h", "24h", "7d"]);
+    });
+});

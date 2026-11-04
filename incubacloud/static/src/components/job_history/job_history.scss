@@ -36,10 +36,50 @@
     background: $surface;
     border: 1px solid $border;
     border-radius: 10px;
-    padding: 14px 16px;
+    padding: 10px 16px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    // The rows keep their height whatever the panel's: the panel scrolls.
+    flex-shrink: 0;
+}
+
+// The category on the left, the toggles on the right; wraps in a narrow panel.
+.jh-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+}
+
+.jh-bar-toggles {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.jh-fold {
+    background: none;
+    border: none;
+    padding: 2px 0;
+    color: $text-secondary;
+    font-family: $font-mono;
+    font-size: 11.5px;
+    cursor: pointer;
+
+    &:hover { color: $text-primary; }
+    &:focus-visible { outline: 1px solid $primary-blue; outline-offset: 2px; border-radius: 4px; }
+}
+
+.jh-fold-caret { margin-left: 3px; }
+
+.jh-filters-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 12px;
+    border-top: 1px solid $border;
 }
 
 .jh-filters-hidden { display: none; }
@@ -149,7 +189,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 13px 16px;
+    padding: 7px 12px;
     border-bottom: 1px solid $border;
 
     .rl-tlh { margin: 0; }
@@ -180,11 +220,11 @@
 }
 
 $gantt-label-w: 240px;
-$gantt-row-h: 44px;
+$gantt-row-h: 36px;
 
 .jh-gantt-axis {
     display: flex;
-    height: 30px;
+    height: 24px;
     border-bottom: 1px solid $border;
     background: $surface-light;
 }
@@ -214,7 +254,7 @@ $gantt-row-h: 44px;
 }
 
 .jh-gantt-body {
-    max-height: 150px;
+    max-height: 2 * $gantt-row-h;
     overflow-y: auto;
 
     &::-webkit-scrollbar { width: 4px; }
@@ -297,8 +337,8 @@ $gantt-row-h: 44px;
 
 .jh-gantt-bar {
     position: absolute;
-    top: 8px;
-    height: calc(#{$gantt-row-h} - 16px);
+    top: 7px;
+    height: calc(#{$gantt-row-h} - 14px);
     border-radius: 5px;
     min-width: 4px;
     cursor: pointer;
@@ -390,6 +430,19 @@ $gantt-row-h: 44px;
         display: inline-flex;
         align-items: center;
         gap: 3px;
+    }
+}
+
+// ── Little height ────────────────────────────────────────────────────────────
+// On a laptop the filters, the timeline and the table's own scroll left a
+// sliver for the jobs. The whole panel scrolls instead, and the list of
+// jobs shows as it opens.
+@media (max-height: 900px) {
+    .ic-job-history {
+        .jh-table-wrap {
+            flex: none;
+            overflow: visible;
+        }
     }
 }
 

@@ -1,8 +1,12 @@
 import { Component, useState } from "@odoo/owl";
+import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
 import { parseUTC } from "../../utils/dates";
 import { ACTIVE_STATES, jobStateText, stateLabel } from "../../utils/job_queue";
 import { SearchSelect } from "../search_select/search_select";
+
+/** Label of each timeline window, by hours. */
+const GANTT_WINDOW_LABELS = { 1: "1h", 6: "6h", 24: "24h", 168: "7d" };
 
 const ALL_STATES = [...ACTIVE_STATES, "done", "failed", "cancelled"];
 
@@ -40,6 +44,11 @@ export class JobHistory extends Component {
                 instance_id: instanceId,
             },
             ganttHours: 24,
+            // The state, host, instance, user and date filters fold under
+            // one row, and the timeline folds away: with little height the
+            // list of jobs is what has to be seen on opening.
+            filtersOpen: false,
+            ganttOpen: true,
         });
 
         this.orm = useService("orm");
@@ -175,6 +184,58 @@ export class JobHistory extends Component {
 
     setGanttWindow(hours) {
         this.state.ganttHours = hours;
+    }
+
+    /** Show or fold the filters under the category row. */
+    toggleFilters() {
+        this.state.filtersOpen = !this.state.filtersOpen;
+    }
+
+    /** Show or fold the timeline. */
+    toggleGantt() {
+        this.state.ganttOpen = !this.state.ganttOpen;
+    }
+
+    /**
+     * How many of the folded filters are set.
+     *
+     * The category is always on view and so is not counted; a host or an
+     * instance that the panel was opened for is the scope, not a filter
+     * picked. The states count as one, each date as one.
+     *
+     * @returns {number}
+     */
+    get activeFilterCount() {
+        const f = this.state.filter;
+        return [
+            f.states.length > 0,
+            f.host_id && f.host_id !== (this.props.host_id || null),
+            f.instance_id && f.instance_id !== (this.props.instance_id || null),
+            f.user_id,
+            f.date_from,
+            f.date_to,
+        ].filter(Boolean).length;
+    }
+
+    /**
+     * Text of the toggle that folds the filters: «Filters», with how many
+     * are set when any is.
+     *
+     * @returns {string}
+     */
+    get filtersLabel() {
+        const n = this.activeFilterCount;
+        if (!n) return _t("Filters");
+        return n === 1 ? _t("Filters · 1 active") : _t("Filters · %s active", n);
+    }
+
+    /**
+     * The timeline's window as it reads on its toggle.
+     *
+     * @returns {string} ``1h``, ``6h``, ``24h`` or ``7d``.
+     */
+    get ganttWindowLabel() {
+        return GANTT_WINDOW_LABELS[this.state.ganttHours] || `${this.state.ganttHours}h`;
     }
 
     // ───────────── Gantt ─────────────
