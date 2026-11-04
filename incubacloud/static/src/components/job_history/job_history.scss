@@ -170,7 +170,7 @@
     &.jh-chip-pending.active,
     &.jh-chip-enqueued.active,
     &.jh-chip-wait_dependencies.active { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning-text; }
-    &.jh-chip-started.active   { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning-text; }
+    &.jh-chip-started.active   { background: var(--rl-cyan-soft); color: var(--rl-cyan-text); }
     &.jh-chip-done.active      { background: $toast-success-bg; color: $state-ok; }
     &.jh-chip-failed.active    { background: rgba(var(--rl-red-rgb), 0.16); color: $state-error; }
     &.jh-chip-cancelled.active { background: rgba(var(--rl-faint-rgb), 0.22); color: $text-secondary; }
@@ -355,9 +355,10 @@ $gantt-row-h: 36px;
     &.jh-gantt-state-wait_dependencies { background: $state-warning; }
     // Waiting in its instance's queue: the time it waits, not a run.
     &.jh-gantt-state-queued { background: $state-warning; opacity: 0.45; }
+    // Running: cyan, apart from the amber of what waits.
     &.jh-gantt-state-started {
-        background: $state-warning;
-        box-shadow: 0 0 6px rgba(var(--rl-amber-rgb), 0.4);
+        background: var(--rl-cyan);
+        box-shadow: 0 0 6px rgba(var(--rl-cyan-rgb), 0.4);
         opacity: 1;
     }
     &.jh-gantt-state-done   { background: $state-ok; }
