@@ -59,6 +59,10 @@ in Settings → Technical → Scheduled Actions.
    yesterday.
 3. Start Odoo and check health as in §2.
 
+The restore loses whatever was written after step 5. Once customers have
+written to the new release (a payment, a signup), go back in place
+instead: [RB-30](RB-30-roll-back-a-release.md).
+
 ## 4. Aftermath
 
 - The bad image stays tagged `prod-bad` — inspect at leisure, then
