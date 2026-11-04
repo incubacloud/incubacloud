@@ -206,14 +206,66 @@ class CloudRestoreUploadGrant(models.Model):
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
     @api.model
-    def _open(self, instance, hours=GRANT_HOURS):
+    def _parse_public_key(self, public_key):
+        """Return the caller's public key in the one shape a grant installs.
+
+        Only an ``ssh-ed25519`` key, read by ``cryptography`` and written
+        back by it: what reaches ``authorized_keys`` is the key alone,
+        never the caller's text — its comment, its options or a line
+        break in it would be part of the key's line. Nothing of what was
+        given is quoted back: a private key pasted by mistake must not
+        end up in an error.
+
+        :param str public_key: ``ssh-ed25519 AAAA… [comment]``
+        :return: ``ssh-ed25519 AAAA…``
+        :rtype: str
+        :raise UserError: for anything that is not such a key
+        """
+        from cryptography.exceptions import UnsupportedAlgorithm
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+
+        refused = UserError(_(
+            "That is not an ed25519 public key: give the line ssh-keygen "
+            "writes to the .pub file (ssh-ed25519 AAAA…)."
+        ))
+        words = (public_key or "").split()
+        if len(words) < 2 or words[0] != "ssh-ed25519":
+            raise refused
+        try:
+            key = serialization.load_ssh_public_key(
+                f"{words[0]} {words[1]}".encode("ascii"),
+            )
+        except (UnicodeEncodeError, ValueError, UnsupportedAlgorithm):
+            raise refused from None
+        if not isinstance(key, ed25519.Ed25519PublicKey):
+            raise refused
+        line = key.public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        ).decode()
+        if not GRANT_PUBLIC_KEY.fullmatch(line):
+            raise refused
+        return line
+
+    @api.model
+    def _open(self, instance, hours=GRANT_HOURS, public_key=None):
         """Create a grant with a fresh keypair and return it with the key.
+
+        With *public_key*, the grant installs the caller's own key and
+        no keypair is made. A key opens one grant only: two lines of
+        ``authorized_keys`` with the same key would have sshd pick one
+        of their directories for every session, and a key that already
+        held a door is no longer a one-use one.
 
         :param instance: ``cloud.instance`` the archive is destined for.
         :param hours: lifetime of the grant.
+        :param str public_key: the caller's ``ssh-ed25519`` public key,
+            or None to generate a keypair.
         :return: ``(grant, private_key_pem)`` — the private half exists
-            only in this return value.
-        :raise UserError: when the instance has no host to open on.
+            only in this return value; None with *public_key*.
+        :raise UserError: when the instance has no host to open on, or
+            *public_key* is not a key that may open one.
         """
         import secrets
 
@@ -223,16 +275,28 @@ class CloudRestoreUploadGrant(models.Model):
         instance.ensure_one()
         if not instance.host_id:
             raise UserError(_("Instance has no host assigned."))
-        key = ed25519.Ed25519PrivateKey.generate()
-        public = key.public_key().public_bytes(
-            encoding=serialization.Encoding.OpenSSH,
-            format=serialization.PublicFormat.OpenSSH,
-        ).decode()
-        private = key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.OpenSSH,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode()
+        if public_key:
+            public = self._parse_public_key(public_key)
+            private = None
+            # Every grant, whoever's: a key is unique on every host.
+            if self.sudo().with_context(active_test=False).search_count(
+                [("fingerprint", "=", self._fingerprint(public))], limit=1,
+            ):
+                raise UserError(_(
+                    "That key already opened an upload door: generate a new "
+                    "one for each upload."
+                ))
+        else:
+            key = ed25519.Ed25519PrivateKey.generate()
+            public = key.public_key().public_bytes(
+                encoding=serialization.Encoding.OpenSSH,
+                format=serialization.PublicFormat.OpenSSH,
+            ).decode()
+            private = key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.OpenSSH,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).decode()
         # The panel's own record: people read grants, never write them
         # (``ir.model.access.csv``).
         grant = self.sudo().create({

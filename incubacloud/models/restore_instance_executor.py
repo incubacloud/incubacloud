@@ -52,6 +52,19 @@ def _curl_config(login, password):
     return f'user = "{escaped}"\n'
 
 
+def rsync_path(instance_id):
+    """Return where an ``rsync`` restore of an instance takes its archive.
+
+    One path per instance, fixed before any job exists, and never one the
+    caller names: whoever asks for the restore copies the archive there
+    as the host's SSH account, and the restore reads no other file.
+
+    :param int instance_id: the instance restored
+    :rtype: str
+    """
+    return f"/tmp/incubacloud-restore-{int(instance_id)}.zip"
+
+
 def _where_its_name_says(path):
     """Return a shell test that *path* exists and resolves to itself.
 
@@ -305,7 +318,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         :rtype: str
         """
-        return f"/tmp/incubacloud-restore-{self._inst().id}.zip"
+        return rsync_path(self._inst().id)
 
     def _curl_config_path(self):
         """Return where a ``from_url`` restore stages its credential.

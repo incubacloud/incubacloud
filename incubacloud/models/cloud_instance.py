@@ -3305,7 +3305,7 @@ class CloudInstance(models.Model):
 
     # ── Large restores: temporary upload key, and fetch-by-URL ────────────
 
-    def grant_restore_upload(self):
+    def grant_restore_upload(self, public_key=None):
         """Open a one-use SSH door for uploading a restore archive here.
 
         Returns the private half of a freshly generated key, which is
@@ -3314,14 +3314,23 @@ class CloudInstance(models.Model):
         deadline OpenSSH enforces by itself. Whoever called this is the
         only holder, and losing it costs another grant, not access.
 
-        :return: dict with the key, where to send the archive, and the
-            job installing it.
+        With *public_key*, the door opens for the caller's own key
+        instead, with the same restrictions: no private key is made, and
+        none is returned. An agent asks this way, so that no private key
+        ever passes through it.
+
+        :param str public_key: the caller's ``ssh-ed25519`` public key,
+            never used for another grant; None to have one generated.
+        :return: dict with the key (only when generated), where to send
+            the archive, and the job installing it.
         """
         self.ensure_one()
         self.env["cloud.security.mixin"]._check_can_manage_backups()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
-        grant, private_key = self.env["cloud.restore.upload.grant"]._open(self)
+        grant, private_key = self.env["cloud.restore.upload.grant"]._open(
+            self, public_key=public_key,
+        )
         job_id = self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
@@ -3335,10 +3344,10 @@ class CloudInstance(models.Model):
             "job_id": job_id,
             "details": grant.fingerprint or "",
         })
-        return {
+        answer = {"private_key": private_key} if private_key else {}
+        return answer | {
             "grant_id": grant.id,
             "job_id": job_id,
-            "private_key": private_key,
             "fingerprint": grant.fingerprint,
             "expires_at": grant.expires_at,
             "user": self.host_id.user or "root",
@@ -3381,7 +3390,8 @@ class CloudInstance(models.Model):
             raise UserError(_("That upload grant does not exist."))
         return grant._revoke()
 
-    def restore_from_url(self, url, backup_before_restore=False):
+    def restore_from_url(self, url, backup_before_restore=False,
+                         neutralize=False, reset_base_url=False):
         """Have the host download an archive and restore from it.
 
         The URL is checked here rather than on the host: allowed scheme,
@@ -3393,6 +3403,10 @@ class CloudInstance(models.Model):
         :param url: ``https``, ``sftp`` or ``ftp`` source, which may
             carry ``user:password@``.
         :param backup_before_restore: take a safety backup first.
+        :param neutralize: restore a neutralized copy (the executor's
+            ``neutralize``).
+        :param reset_base_url: give the restored database this
+            instance's own address (the executor's ``reset_base_url``).
         :return: id of the restore job.
         """
         self.ensure_one()
@@ -3415,6 +3429,8 @@ class CloudInstance(models.Model):
             "url_display": masked_restore_url(url),
             "resolve": curl_resolve_argument(parts, address, port),
             "backup_before_restore": bool(backup_before_restore),
+            "neutralize": bool(neutralize),
+            "reset_base_url": bool(reset_base_url),
         })
         if username:
             # Written after the job exists and outside the payload: the
