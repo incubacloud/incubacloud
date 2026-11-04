@@ -44,6 +44,9 @@ export class JobHistory extends Component {
                 instance_id: instanceId,
             },
             ganttHours: 24,
+            // The filters of the last load: what the list shows, as
+            // against the draft being edited in the filter row.
+            applied: {},
             // The state, host, instance, user and date filters fold under
             // one row, and the timeline folds away: with little height the
             // list of jobs is what has to be seen on opening.
@@ -60,6 +63,15 @@ export class JobHistory extends Component {
     async loadHistory() {
         this.state.loading = true;
         const filters = this._buildFilters();
+        this.state.applied = {
+            ...filters,
+            states: filters.states || [],
+            host_id: filters.host_id || null,
+            instance_id: filters.instance_id || null,
+            user_id: filters.user_id || null,
+            date_from: filters.date_from || "",
+            date_to: filters.date_to || "",
+        };
         const result = await this.orm.call("cloud.job", "load_history", [filters]);
         this.state.jobs = result.jobs;
         this.state.hosts = result.hosts;
@@ -197,7 +209,8 @@ export class JobHistory extends Component {
     }
 
     /**
-     * How many of the folded filters are set.
+     * How many of the folded filters are applied, as of the last load: a
+     * box ticked and not yet applied does not count.
      *
      * The category is always on view and so is not counted; a host or an
      * instance that the panel was opened for is the scope, not a filter
@@ -206,7 +219,7 @@ export class JobHistory extends Component {
      * @returns {number}
      */
     get activeFilterCount() {
-        const f = this.state.filter;
+        const f = this.state.applied;
         return [
             f.states.length > 0,
             f.host_id && f.host_id !== (this.props.host_id || null),
