@@ -95,6 +95,8 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
     """
 
     _job_type = "delete_instance"
+    # The disk shown is read from metrics as soon as the job ends.
+    _refreshes_host_disk = True
 
     # Whether tearing down the remote copy also ends the instance's
     # lifecycle. The move cleanups reuse these teardown commands on a

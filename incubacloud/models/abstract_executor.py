@@ -447,6 +447,12 @@ class AbstractExecutor(ABC):
     # lived, the rollback's teardown removed the live copy (28-oct-2026).
     _pinned_to_host = False
 
+    # Whether the host's specs and disk are read again from metrics as
+    # soon as the job ends, whatever its outcome (``_refresh_host_disk``),
+    # instead of on the next pass of the five-minute cron: a build and a
+    # teardown change the disk, and the host's Check is asked to show it.
+    _refreshes_host_disk = False
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if cls._job_type:
@@ -807,8 +813,31 @@ class AbstractExecutor(ABC):
         logger.debug(
             "[_dispatch_outcome] %s END job_id=%s", hook.__name__, self.job.id,
         )
+        self._refresh_host_disk()
         if errors:
             raise RuntimeError("; ".join(errors))
+
+    def _refresh_host_disk(self):
+        """Read the job's host's disk from metrics again, if this job asks to.
+
+        For executors that set ``_refreshes_host_disk``, once their
+        outcome hook ran: on a durable cursor of its own, so it is
+        committed whatever the job's transaction does. Never raises: the
+        job's outcome is already decided, and a disk that could not be
+        read is the cron's to read in five minutes.
+        """
+        if not self._refreshes_host_disk:
+            return
+        try:
+            with self._durable_env() as env:
+                env["cloud.host"].browse(
+                    self._host().id,
+                ).exists()._refresh_specs_from_metrics_now()
+        except Exception as exc:  # noqa: BLE001 — logged, never fatal
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not refresh the host's disk: %s",
+                self.job.id, exc,
+            )
 
     async def _run_hook_durably(self, hook, *args):
         """Await *hook* with ``self.job``/``self.env`` on a durable cursor.
