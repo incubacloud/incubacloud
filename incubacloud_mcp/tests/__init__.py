@@ -20,6 +20,7 @@ from . import test_tools_call
 from . import test_tools_read
 from . import test_tools_logs
 from . import test_tools_operate
+from . import test_tools_vals
 from . import test_tools_manager
 from . import test_tools_settings
 from . import test_approval

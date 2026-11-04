@@ -103,8 +103,15 @@ Every tool calls the panel route the panel itself uses, resolved in the
 database's routing map (`ir.http.routing_map()`, so a module's override
 applies), and runs inside a savepoint: a refusal (`{ok: false}`) keeps what
 the route wrote, as in the panel; an exception rolls it back. Arguments are
-checked against the tool's schema: an unknown key is an error, not a silent
-drop. A tool above the user's role is not listed, and a call to it gets the
+checked against the tool's schema: an unknown key is an error that names the
+accepted ones, not a silent drop, and so is a value of the wrong type (text
+where an id goes). The `vals` of `create_project`, `update_project`,
+`create_instance` and `update_instance` are declared field by field, and their
+descriptions list the fields and types; a language is given by its code
+(`es_ES`), turned into its `res.lang` id by the server (`x-record` in the
+schema, not listed) and refused with the accepted codes when none matches. A
+secret among the arguments is refused as a secret before its key is checked.
+A tool above the user's role is not listed, and a call to it gets the
 role check's message. Operations that queue a job answer at once with its
 `job_id`, its state and what it waits behind; `get_job` follows it.
 
