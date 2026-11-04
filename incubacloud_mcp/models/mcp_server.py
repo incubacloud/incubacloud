@@ -33,7 +33,7 @@ from ..protocol.errors import (
 from ..protocol.headers import check_modern_headers
 from ..protocol.limits import MAX_BYTES, fit_answer, size_of
 from ..protocol.redact import drop_secret_keys, mask_token_urls
-from ..protocol.schema import SchemaError, validate
+from ..protocol.schema import SchemaError, resolve, validate
 from ..protocol.signing import sign, verify
 from ..protocol.versions import LEGACY, MODERN, SUPPORTED, negotiate_legacy
 
@@ -435,8 +435,14 @@ class McpServer(models.AbstractModel):
             )
         try:
             self.env["cloud.security.mixin"]._check_cloud_group(spec.min_group)
-            args = validate(spec.input_schema, arguments)
-            self.env["incubacloud.mcp.secrets"]._check_arguments(args)
+            # A secret is refused as one before its key can be refused as
+            # unknown to the tool's schema.
+            self.env["incubacloud.mcp.secrets"]._check_arguments(arguments)
+            args = resolve(
+                spec.input_schema,
+                validate(spec.input_schema, arguments),
+                self._record_by_key,
+            )
             tools = self.env["incubacloud.mcp.tools"]
             prepare = getattr(tools, f"_prepare_{spec.name}", None)
             if prepare:
@@ -461,6 +467,26 @@ class McpServer(models.AbstractModel):
         if stop is not None:
             return self.env["incubacloud.mcp.secrets"]._scrubber().value(stop)
         return self._run(spec, args, ctx)
+
+    @api.model
+    def _record_by_key(self, model, field, value):
+        """Return the id of the *model* record whose *field* is *value*.
+
+        The lookup behind the arguments that name a record by a field
+        (``schema.RECORD_KEY``), inactive records included, as the
+        panel's pickers list them; read with the user's rights.
+
+        :param str model: the model, such as ``res.lang``
+        :param str field: the field, such as ``code``
+        :param value: the value; None asks for every value of *field*
+        :return: the id, None when no record has it; with *value* None,
+            the sorted list of the values
+        """
+        Model = self.env[model].with_context(active_test=False)
+        if value is None:
+            return sorted(Model.search([]).mapped(field))
+        found = Model.search([(field, "=", value)], limit=1)
+        return found.id if found else None
 
     @api.model
     def _scrubbed(self, text):
