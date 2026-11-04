@@ -281,7 +281,7 @@
                                 t-att-data-job-id="job.id"
                                 t-on-click="() => this.openLog(job)">
                                 <td>
-                                    <span t-att-class="'rl-pill rl-pill--bare ' + ganttDotClass(job.state)">
+                                    <span t-att-class="'rl-pill rl-pill--bare rl-pill--job ' + ganttDotClass(job.state)">
                                         <span class="rl-d"/>
                                         <t t-esc="rowStateText(job)"/>
                                     </span>

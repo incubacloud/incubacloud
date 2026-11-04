@@ -8,6 +8,7 @@ import { createToastService } from "@incubacloud/toast/toast";
 import {
     announceJob,
     enqueueNotice,
+    jobTone,
     queuedLabel,
     stateLabel,
 } from "@incubacloud/utils/job_queue";
@@ -165,6 +166,21 @@ describe("job queue — labels", () => {
         expect(comp.ganttDotClass("queued")).toBe("waiting");
     });
 
+    test("the recent activity colours a job by its state", () => {
+        expect(jobTone("started")).toBe("running");
+        expect(jobTone("queued")).toBe("waiting");
+        for (const waiting of ["pending", "enqueued", "wait_dependencies", "blocked"]) {
+            expect(jobTone(waiting)).toBe("queued");
+        }
+        expect(jobTone("done")).toBe("done");
+        expect(jobTone("failed")).toBe("failed");
+        expect(jobTone("cancelled")).toBe("");
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            expect(proto.jobTone("started")).toBe("running");
+            expect(proto.jobTone("pending")).toBe("queued");
+        }
+    });
+
     test("a queued job counts as active and has its own state class", () => {
         for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
             expect(proto.isActiveJob("queued")).toBe(true);
@@ -288,18 +304,18 @@ describe("job queue — the notice after a button", () => {
     }
 
     test("a job that started says so, with its type", () => {
-        expect(notice(STARTED)).toEqual(["success", "Started: Deploy Instance"]);
+        expect(notice(STARTED)).toEqual(["info", "Started: Deploy Instance"]);
         expect(notice({ ...STARTED, state: "started" })).toEqual([
-            "success", "Started: Deploy Instance",
+            "info", "Started: Deploy Instance",
         ]);
     });
 
     test("a queued job says what it waits behind", () => {
-        expect(notice(QUEUED)).toEqual(["info", "Queued behind Rebuild Instance"]);
+        expect(notice(QUEUED)).toEqual(["warning", "Queued behind Rebuild Instance"]);
     });
 
     test("a queued job with nothing visible ahead says it is queued", () => {
-        expect(notice(QUEUED_ALONE)).toEqual(["info", "Queued"]);
+        expect(notice(QUEUED_ALONE)).toEqual(["warning", "Queued"]);
     });
 
     test("a blocked, cancelled or unreadable job says nothing", () => {
@@ -312,14 +328,14 @@ describe("job queue — the notice after a button", () => {
     test("announceJob shows the endpoint's answer as it is", async () => {
         const toast = toastService();
         await announceJob(toast, QUEUED);
-        expect(toast.shown()).toEqual([["info", "Queued behind Rebuild Instance"]]);
+        expect(toast.shown()).toEqual([["warning", "Queued behind Rebuild Instance"]]);
     });
 
     test("_enqueueJob shows the notice of every answer it gets", async () => {
         for (const [response, expected] of [
-            [STARTED, ["success", "Started: Deploy Instance"]],
-            [QUEUED, ["info", "Queued behind Rebuild Instance"]],
-            [QUEUED_ALONE, ["info", "Queued"]],
+            [STARTED, ["info", "Started: Deploy Instance"]],
+            [QUEUED, ["warning", "Queued behind Rebuild Instance"]],
+            [QUEUED_ALONE, ["warning", "Queued"]],
         ]) {
             const comp = instanceDetail(response);
             await comp._enqueueJob(() => Promise.resolve(response));
@@ -336,7 +352,7 @@ describe("job queue — no button opens the log", () => {
         const tabs = await recordingTabs(() => comp.deployInstance());
         expect(tabs).toEqual([]);
         expect(comp.options[0].openLog).toBe(undefined);
-        expect(comp.toast.shown()).toEqual([["success", "Started: Deploy Instance"]]);
+        expect(comp.toast.shown()).toEqual([["info", "Started: Deploy Instance"]]);
     });
 
     test("rebuild opens no tab and says it is queued", async () => {
@@ -344,7 +360,7 @@ describe("job queue — no button opens the log", () => {
         const tabs = await recordingTabs(() => comp.rebuildInstance());
         expect(tabs).toEqual([]);
         expect(comp.options[0].openLog).toBe(undefined);
-        expect(comp.toast.shown()).toEqual([["info", "Queued"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued"]]);
     });
 
     test("restore opens no tab and says what it waits behind", async () => {
@@ -353,7 +369,7 @@ describe("job queue — no button opens the log", () => {
         const tabs = await recordingTabs(() => comp.doRestoreBackup());
         expect(tabs).toEqual([]);
         expect(comp.options[0].openLog).toBe(undefined);
-        expect(comp.toast.shown()).toEqual([["info", "Queued behind Rebuild Instance"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued behind Rebuild Instance"]]);
         expect(comp.tabs).toEqual(["overview"]);
         expect(comp.state.restoreBackupModal).toBe(null);
     });
@@ -401,7 +417,7 @@ describe("job queue — every button that enqueues says what became of its job",
     test("a bare job id is read back before it is announced", async () => {
         const toast = toastService();
         await announceJob(toast, 22);
-        expect(toast.shown()).toEqual([["info", "Queued behind Harden Host"]]);
+        expect(toast.shown()).toEqual([["warning", "Queued behind Harden Host"]]);
     });
 
     test("no job, or one that cannot be read, says nothing", async () => {
@@ -415,19 +431,19 @@ describe("job queue — every button that enqueues says what became of its job",
     test("the host's check says it started", async () => {
         const comp = hostDetail(21);
         await comp.runCheck();
-        expect(comp.toast.shown()).toEqual([["success", "Started: Host Probe"]]);
+        expect(comp.toast.shown()).toEqual([["info", "Started: Host Probe"]]);
     });
 
     test("the host's Full Setup says what it waits behind", async () => {
         const comp = hostDetail(22);
         await comp.runFullSetup();
-        expect(comp.toast.shown()).toEqual([["info", "Queued behind Harden Host"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued behind Harden Host"]]);
     });
 
     test("a host action no longer calls a started job queued", async () => {
         const comp = hostDetail(21);
         await comp.hostAction({ code: "host_probe", name: "Host Probe" });
-        expect(comp.toast.shown()).toEqual([["success", "Started: Host Probe"]]);
+        expect(comp.toast.shown()).toEqual([["info", "Started: Host Probe"]]);
     });
 
     /**
@@ -452,13 +468,13 @@ describe("job queue — every button that enqueues says what became of its job",
     test("a move that waits its turn says so, not that it started", async () => {
         const comp = moving({ "/cloud/move_instance": { ok: true, job_id: 23 } });
         await comp.confirmMove();
-        expect(comp.toast.shown()).toEqual([["info", "Queued behind Rebuild Instance"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued behind Rebuild Instance"]]);
     });
 
     test("a rollback says what became of its recovery jobs", async () => {
         const comp = moving({ "/cloud/rollback_move": { ok: true, job_id: 24 } });
         await comp.rollbackMove();
-        expect(comp.toast.shown()).toEqual([["info", "Queued"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued"]]);
     });
 
     /**
@@ -485,7 +501,7 @@ describe("job queue — every button that enqueues says what became of its job",
     test("an upload key whose job waits says so, and so does the dialog", async () => {
         const comp = uploading(25);
         await comp.requestUploadKey();
-        expect(comp.toast.shown()).toEqual([["info", "Queued behind Rebuild Instance"]]);
+        expect(comp.toast.shown()).toEqual([["warning", "Queued behind Rebuild Instance"]]);
         expect(comp.state.restoreDialog.privateKey).toBe("KEY");
         expect(comp.state.restoreDialog.keyQueued).toBe(true);
     });
@@ -493,7 +509,7 @@ describe("job queue — every button that enqueues says what became of its job",
     test("an upload key whose job started leaves the dialog as it was", async () => {
         const comp = uploading(26);
         await comp.requestUploadKey();
-        expect(comp.toast.shown()).toEqual([["success", "Started: Grant Restore Upload Key"]]);
+        expect(comp.toast.shown()).toEqual([["info", "Started: Grant Restore Upload Key"]]);
         expect(comp.state.restoreDialog.keyQueued).toBe(false);
     });
 
