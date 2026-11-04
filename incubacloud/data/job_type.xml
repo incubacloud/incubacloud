@@ -155,6 +155,15 @@
             <field name="description">Reports the name, size and SHA-256 of what arrived through an upload key, computed on the host, so it can be confirmed before it is restored.</field>
         </record>
 
+        <record id="watch_restore_uploads" model="cloud.job.type">
+            <field name="name">Watch Restore Upload Doors</field>
+            <field name="code">watch_restore_uploads</field>
+            <field name="apply_to">host</field>
+            <field name="description">Measures what the open upload doors of a host hold and the disk free, and closes a door past its limit, or every door once the disk of the instances is down to its reserve.</field>
+            <field name="priority_tier">low</field>
+            <field name="queue_collapse">True</field>
+        </record>
+
         <record id="revoke_restore_upload_key" model="cloud.job.type">
             <field name="name">Revoke Restore Upload Key</field>
             <field name="code">revoke_restore_upload_key</field>

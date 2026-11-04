@@ -13,12 +13,21 @@ so retried — keeps its link in ``secret_payload``; one that is done or
 cancelled has no use for it and loses it, as the SaaS manager's pushes
 lost their credentials in its 1.169.
 
+A restore that took a safety backup first kept its credential on the
+chain's first job, the ``backup_create``: that job ended long ago with
+the credential still in its ``secret_payload``, and the restore's own
+step never had it — a retry of a failed one could not log in. The
+credential moves to the restore's step, or to the latest retry of it,
+when that one may still run; otherwise it is only taken off the backup
+(``_move_chain_credentials``).
+
 ``cloud.restore.upload.key`` arrives with this version: a key opens one
 upload door ever, also after its grant is purged. The fingerprints of the
 grants still stored are recorded in it.
 
-Idempotent: a job without a link in its payload is left as it is, and a
-fingerprint already recorded is skipped.
+Idempotent: a job without a link in its payload is left as it is, a
+backup without a credential too, and a fingerprint already recorded is
+skipped.
 """
 import json
 import logging
@@ -46,6 +55,12 @@ def migrate(cr, version):
     moved = _move_restore_links(env)
     if moved:
         _logger.info("incubacloud 1.0.212: %d restore links left their payload", moved)
+    credentials = _move_chain_credentials(env)
+    if credentials:
+        _logger.info(
+            "incubacloud 1.0.212: %d restore credentials left their safety backup",
+            credentials,
+        )
     _remember_door_keys(cr)
 
 
@@ -80,6 +95,93 @@ def _move_restore_links(env):
         job.write(vals)
         moved += 1
     return moved
+
+
+#: The keys of a restore's credential (``restore_from_url`` before 1.0.212).
+_CREDENTIAL_KEYS = ("machine", "login", "password")
+
+
+def _move_chain_credentials(env):
+    """Move each restore's credential off the safety backup that kept it.
+
+    Before 1.0.212 a restore from a link with a safety backup first
+    wrote its credential on the chain's first job, a ``backup_create``.
+    Its restore step — or the latest retry of it, which carries no chain
+    key — gets the credential when it may still run (not done nor
+    cancelled); either way the backup keeps none of it.
+
+    :param env: superuser environment
+    :return: how many backups held one
+    :rtype: int
+    """
+    cr = env.cr
+    # What ``_move_restore_links`` wrote, read back below as stored.
+    env.flush_all()
+    cr.execute(
+        "SELECT job.id, job.secret_payload, job.queue_chain_key FROM cloud_job job"
+        " JOIN cloud_job_type type ON type.id = job.job_type_id"
+        " WHERE type.code = 'backup_create' AND job.queue_chain_key IS NOT NULL"
+        " AND job.secret_payload IS NOT NULL AND job.secret_payload <> ''",
+    )
+    Job = env["cloud.job"]
+    moved = 0
+    for job_id, cipher, chain_key in cr.fetchall():
+        secret = _readable_secret(cipher, env)
+        credential = {
+            key: secret[key] for key in _CREDENTIAL_KEYS if key in secret
+        }
+        if not credential.get("login"):
+            continue
+        restores = Job.search([
+            ("queue_chain_key", "=", chain_key),
+            ("job_type_id.code", "=", "restore_instance"),
+        ])
+        restores = restores.filtered(
+            lambda job: (job.payload or {}).get("mode") == "from_url",
+        )
+        if not restores:
+            continue
+        for restore in restores:
+            latest = _latest_retry(restore)
+            if latest.state not in _ENDED:
+                latest.secret_payload = json.dumps(
+                    _readable_secret(
+                        _stored_secret(cr, latest.id), env,
+                    ) | credential,
+                )
+                latest.flush_recordset(["secret_payload"])
+        rest = {key: value for key, value in secret.items() if key not in credential}
+        Job.browse(job_id).secret_payload = json.dumps(rest) if rest else False
+        moved += 1
+    return moved
+
+
+def _latest_retry(job):
+    """Return the last retry of *job*, or *job* when it has none.
+
+    :param job: a ``cloud.job``
+    :rtype: cloud.job
+    """
+    Job = job.env["cloud.job"]
+    seen = {job.id}
+    while True:
+        retry = Job.search([("retry_of_id", "=", job.id)], order="id desc", limit=1)
+        if not retry or retry.id in seen:
+            return job
+        seen.add(retry.id)
+        job = retry
+
+
+def _stored_secret(cr, job_id):
+    """Return the stored ciphertext of a job's ``secret_payload``.
+
+    :param cr: database cursor
+    :param int job_id: the job
+    :rtype: str
+    """
+    cr.execute("SELECT secret_payload FROM cloud_job WHERE id = %s", (job_id,))
+    row = cr.fetchone()
+    return row[0] if row else None
 
 
 def _readable_secret(cipher, env):
