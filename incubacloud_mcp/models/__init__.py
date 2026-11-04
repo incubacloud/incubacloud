@@ -14,6 +14,7 @@ from . import mcp_tools_operate
 from . import mcp_tools_manager
 from . import mcp_tools_settings
 from . import mcp_tools_destructive
+from . import mcp_tools_restore
 from . import mcp_tools_guarded
 from . import mcp_tools_command
 from . import mcp_agent_branch
