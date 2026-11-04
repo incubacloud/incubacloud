@@ -82,6 +82,31 @@ class TestRejectedAddresses(BaseCase):
         reason = _reject_address(ipaddress.ip_address('::ffff:127.0.0.1'))
         self.assertIn('loopback', reason)
 
+    def test_ipv6_ranges_python_calls_global_are_refused(self):
+        """NAT64's well-known prefix reaches any IPv4 address the gateway
+        does (64:ff9b::7f00:1 is 127.0.0.1), an IPv4-compatible address is
+        the IPv4 address it ends with, and site-local is private to a
+        site: Python 3.12 calls some of them global, the guard does not."""
+        for raw, expected in (
+            ('64:ff9b::7f00:1', 'NAT64'),
+            ('64:ff9b::a00:5', 'NAT64'),
+            ('64:ff9b::5db8:d822', 'NAT64'),     # 93.184.216.34, public
+            ('::7f00:1', 'IPv4-compatible'),
+            ('::5db8:d822', 'IPv4-compatible'),
+            ('fec0::1', 'site-local'),
+            ('feff:ffff::1', 'site-local'),
+        ):
+            with self.subTest(raw=raw):
+                # An earlier family (private, reserved) may name it first,
+                # depending on the Python release: refused either way.
+                reason = _reject_address(ipaddress.ip_address(raw))
+                self.assertTrue(reason, f'{raw} was allowed')
+                if ipaddress.ip_address(raw).is_global:
+                    self.assertEqual(reason, expected)
+        self.assertEqual(
+            _reject_address(ipaddress.ip_address('2606:4700::1111')), '',
+        )
+
     def test_carrier_grade_nat_is_refused_though_it_is_not_private(self):
         """100.64/10 is neither private nor global. Fail closed."""
         self.assertTrue(_reject_address(ipaddress.ip_address('100.64.0.1')))

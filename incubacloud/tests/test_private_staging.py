@@ -79,6 +79,7 @@ from odoo.addons.incubacloud.models.restore_upload_key_executors import (
     VerifyRestoreUploadExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+from odoo.addons.incubacloud.restore_space import free_space_command
 
 from ._certs import make_pair
 
@@ -103,6 +104,22 @@ def _bash(command, *_args, **_kwargs):
         ["bash", "-c", command], capture_output=True, text=True, check=False,
     )
     return CommandResult(done.stdout, done.returncode)
+
+
+def _host_reply(command, *_args, **_kwargs):
+    """Answer *command* as a host with room for any archive of these tests.
+
+    ``df`` prints 100 GiB free and ``stat`` a 5-byte archive, what a
+    restore measures before it takes one (``restore_space``); every other
+    command answers 0, with no output.
+
+    :rtype: CommandResult
+    """
+    if command.startswith("df "):
+        return CommandResult(f"{100 * 1024 ** 3}\n", 0)
+    if command.startswith("stat "):
+        return CommandResult("5\n", 0)
+    return CommandResult("", 0)
 
 
 async def _stage_one_secret(executor, transport):
@@ -653,6 +670,7 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
                     executor._remote_path(), executor._job_path("restore.zip"),
                 )
         transport = self._transport()
+        transport.run.side_effect = _host_reply
         asyncio.run(executor.before_execute(transport))
         transport.run.assert_any_await(f"mkdir -m 700 {executor._job_dir()}")
         for _label, command, *_opts in executor.get_commands():
@@ -688,6 +706,7 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
         local = executor._job_path("restore.zip")
         self.assertEqual(executor._remote_path(), local)
         transport = self._transport()
+        transport.run.side_effect = _host_reply
         asyncio.run(executor.before_execute(transport))
         runs = [c.args[0] for c in transport.run.await_args_list]
         self.assertEqual(runs, [
@@ -695,6 +714,9 @@ class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
             f"test -f {agreed} && ! test -L {agreed} && test -O {agreed}"
             f" && mv -fT -- {agreed} {local}",
             f"test -f {local} && ! test -L {local}",
+            # Room to restore it (``restore_space``).
+            f"stat -c %s -- {local}",
+            free_space_command(executor._job_dir()),
         ])
         for _label, command, *_opts in executor.get_commands():
             self.assertNotIn(agreed, command)
@@ -972,8 +994,9 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
         """Return the host link; the archive's digest is the one checked."""
         transport = super()._transport()
         digest = self.grant.received_sha256
-        transport.run.side_effect = lambda command, *_a, **_kw: CommandResult(
-            f"{digest}  -\n" if command.startswith("sha256sum ") else "", 0,
+        transport.run.side_effect = lambda command, *_a, **_kw: (
+            CommandResult(f"{digest}  -\n", 0) if command.startswith("sha256sum ")
+            else _host_reply(command)
         )
         return transport
 
@@ -1026,10 +1049,10 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
 
         :param executor: a ``VerifyRestoreUploadExecutor``
         """
-        ((label, command),) = executor.get_commands()
-        asyncio.run(executor.on_success(
-            {label: {"stdout": _bash(command).stdout, "exit_status": 0}},
-        ))
+        asyncio.run(executor.on_success({
+            label: {"stdout": _bash(command).stdout, "exit_status": 0}
+            for label, command in executor.get_commands()
+        }))
 
     def test_the_upload_is_taken_into_the_job_directory(self):
         """Checked where it is, moved, checked again; every step reads the
@@ -1076,8 +1099,9 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
         """``sudo chown`` would follow it to whatever it names."""
         executor = self._restore()
         transport = self._transport()
-        transport.run.side_effect = lambda command, *_a, **_kw: CommandResult(
-            "", 1 if command.startswith("test -f ") else 0,
+        transport.run.side_effect = lambda command, *_a, **_kw: (
+            CommandResult("", 1) if command.startswith("test -f ")
+            else _host_reply(command)
         )
         with self.assertRaisesRegex(RuntimeError, "not a regular file"):
             asyncio.run(executor.before_execute(transport))
@@ -1396,7 +1420,7 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
 
     def test_the_upload_check_reports_no_link(self):
         """A link is not a file that arrived."""
-        ((_label, command),) = self._verify().get_commands()
+        (_label, command), _measure = self._verify().get_commands()
         self.assertIn('[ -L "$f" ]', command)
 
 

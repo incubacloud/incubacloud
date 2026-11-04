@@ -11,6 +11,13 @@ import logging
 import re
 import shlex
 
+from ..restore_space import (
+    free_space_command,
+    in_gib,
+    no_room_message,
+    parse_free,
+    room_needed,
+)
 from .abstract_executor import AbstractSSHExecutor
 from .cloud_restore_upload_grant import RRSYNC, SAFE_UPLOAD_NAME, UPLOAD_ROOT
 
@@ -277,6 +284,11 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             " echo -; continue ;; esac;"
             " printf '%s %s %s\\n' \"$(stat -c %s -- \"$f\")\""
             " \"$(sha256sum -- \"$f\" | cut -d' ' -f1)\" \"$f\"; done",
+        ), (
+            # What a restore of it would have free: the disk the door's
+            # directory is on (``restore_space``).
+            "Measure free disk",
+            f"{free_space_command(grant._directory())} 2>/dev/null",
         )]
 
     async def on_success(self, results):
@@ -319,6 +331,31 @@ class VerifyRestoreUploadExecutor(AbstractSSHExecutor):
             self._sys("Nothing that can be restored has arrived yet.")
             return
         size, digest, name = rows[-1]
+        # Not offered for a restore the disk cannot take: the restore
+        # copies it out of the door, then unpacks it (``restore_space``).
+        # Forgotten as when nothing arrived, and said, not raised: a
+        # failed job would take the forgetting back.
+        free = parse_free(
+            results.get("Measure free disk", {}).get("stdout", ""),
+        )
+        needed = room_needed(int(size), copies=1)
+        if free is None or free < needed:
+            grant.sudo().write({
+                "received_filename": False,
+                "received_bytes": 0,
+                "received_sha256": False,
+            })
+            if free is None:
+                self._sys(
+                    f"⚠ {name} arrived ({size} bytes), but the free disk on "
+                    "the server could not be measured: it cannot be "
+                    "restored. Check again."
+                )
+            else:
+                self._sys("⚠ " + no_room_message(
+                    free, needed, f"{name} ({in_gib(int(size))})",
+                ))
+            return
         grant.sudo().write({
             "received_filename": name,
             "received_bytes": int(size),
