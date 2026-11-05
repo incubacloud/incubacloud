@@ -155,7 +155,7 @@ class McpCatalog(models.AbstractModel):
         unless its file declares it here, checks that each route declared
         is still written in that file and that each has a policy.
         """
-        return dict(CORE_DYNAMIC_CALLS)
+        return CORE_DYNAMIC_CALLS.copy()
 
     @api.model
     def _call_wrappers(self):
