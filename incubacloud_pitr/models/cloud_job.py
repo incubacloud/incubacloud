@@ -28,3 +28,11 @@ class CloudJob(models.Model):
         return super()._get_health_blocking_job_types() | {
             "pitr_enable", "pitr_disable", "pitr_restore",
         }
+
+    @api.model
+    def _get_state_refresh_job_types(self):
+        """Switching and restoring rebuild the database: probe the instance
+        as soon as they end."""
+        return super()._get_state_refresh_job_types() | {
+            "pitr_enable", "pitr_disable", "pitr_restore",
+        }

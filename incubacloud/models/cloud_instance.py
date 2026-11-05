@@ -3816,6 +3816,37 @@ class CloudInstance(models.Model):
                     e,
                 )
 
+    def _refresh_state_now(self):
+        """Probe each of these instances now, as ``cron_instance_health`` does.
+
+        What the panel shows of an instance — running or not, the state of
+        each of its services, its health — is what the probe last read.
+        After something has just acted on it (a job that starts, stops,
+        restores or moves it; a command an agent ran in it or on its
+        server), the probe runs now instead of at its next turn. Only the
+        deployed instances on a server; one that cannot be queued is
+        logged and skipped, never raised: the caller's work is done.
+
+        :return: the probes' job ids
+        :rtype: list[int]
+        """
+        jobs = []
+        for inst in self.sudo().exists():
+            if not inst.deployed or not inst.host_id:
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    jobs.append(
+                        self.env["cloud.job"].sudo().enqueue(
+                            inst.host_id.id, inst.id, "instance_health",
+                        )
+                    )
+            except Exception as e:  # the caller's work stands
+                _logger.warning(
+                    "Could not probe %s now: %s", inst.name, e,
+                )
+        return jobs
+
     @api.model
     def _cron_autopurge_stagings(self):
         """Walk every staging one step along the expiry ladder.
