@@ -286,6 +286,8 @@ export class InstanceDetail extends JobsMixin(
     this.state = useState({
       tab: "overview",
       loading: true,
+      // The job whose "Action required" says why, opened by a click.
+      holdOpen: null,
       // Each offered series' card (PostgreSQL range and default), from
       // the backend: the picker never hard-codes a version.
       versionFacts: {},

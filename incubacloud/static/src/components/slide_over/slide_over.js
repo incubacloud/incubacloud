@@ -10,6 +10,8 @@ export class SlideOver extends Component {
         panel: { type: String },
         instanceId: { type: [Number, Boolean], optional: true },
         hostId: { type: [Number, Boolean], optional: true },
+        // The alert the alerts panel opens on.
+        alertId: { type: [Number, Boolean], optional: true },
         expanded: { type: Boolean, optional: true },
         onClose: { type: Function },
         onToggleSize: { type: Function },
