@@ -341,7 +341,9 @@ TOOLS = (
         obj(
             {
                 "instance_id": _INSTANCE,
-                "with_filestore": boolean("Include the filestore."),
+                "with_filestore": boolean(
+                    "Include the filestore (default true)."
+                ),
             },
             required=("instance_id",),
         ),
@@ -526,13 +528,14 @@ class McpToolsOperate(models.AbstractModel):
         """Queue the backup; answer the job that takes it and the chain's last.
 
         The route answers the chain's last job, the listing that records the
-        copy; the copy's own job is the chain's ``backup_create``.
+        copy; the copy's own job is the chain's ``backup_create``. Without
+        ``with_filestore`` the copy keeps the filestore, as the panel's does.
         """
         result = self._with_job_state(
             self._route(
                 "/cloud/create_backup",
                 instance_id=args["instance_id"],
-                with_filestore=bool(args.get("with_filestore")),
+                with_filestore=bool(args.get("with_filestore", True)),
             )
         )
         if not isinstance(result, dict) or not result.get("job_id"):
