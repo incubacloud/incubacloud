@@ -73,6 +73,7 @@ TOOLS = (
         confirm="conditional",
         untrusted=True,
         audit=False,
+        requires="a deployed, running instance with an odoo service.",
     ),
     ToolSpec(
         "run_host_command",
@@ -91,6 +92,10 @@ TOOLS = (
         confirm="always",
         untrusted=True,
         audit=False,
+        requires=(
+            "a server the panel reaches by SSH with a trusted key "
+            "(trust_host_key)."
+        ),
     ),
 )
 

@@ -30,6 +30,7 @@ TOOLS = (
         obj({"host_id": record_id("The server.")}, required=("host_id",)),
         handler="_tool_trust_host_key",
         confirm="always",
+        requires="a server that answers on its SSH port.",
     ),
     ToolSpec(
         "instance_login_link",
@@ -46,6 +47,7 @@ TOOLS = (
         ),
         handler="_tool_instance_login_link",
         confirm="conditional",
+        requires="a deployed, running instance; user_id from its list of users.",
     ),
     ToolSpec(
         "purge_audit_logs",
@@ -84,6 +86,11 @@ TOOLS = (
         ),
         handler="_tool_download_backup",
         confirm="conditional",
+        requires=(
+            "a deployed instance with a backup destination and a time "
+            "list_backups gives; for the link, a finished download job, or a "
+            "finished export_instance job."
+        ),
     ),
 )
 
