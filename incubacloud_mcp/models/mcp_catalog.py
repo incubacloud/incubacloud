@@ -108,6 +108,14 @@ CORE_CALLS = {
 #: Core's calls whose route is a variable: per file of the bundle, the
 #: expression the call passes and the paths it reaches.
 CORE_DYNAMIC_CALLS = {
+    # The actions the pages offer from data (``show_as_action``): every job
+    # type offered so has a policy of its own.
+    "/incubacloud/static/src/components/host_detail/host_detail.js": {
+        "action.code": frozenset(),
+    },
+    "/incubacloud/static/src/components/instance_detail/instance_detail.js": {
+        "action.code": frozenset(),
+    },
     "/incubacloud/static/src/components/instance_detail/instance_detail_restore.js": {
         "`/cloud/instance/${this.props.instance_id}/restore/${path}`": frozenset(
             {
