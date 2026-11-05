@@ -217,6 +217,30 @@ class TestOperateAnswers(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCas
         )
         self.assertEqual(Job.browse(payload["job_id"]).job_type_id.code, "backup_list")
 
+    def test_a_backup_keeps_the_filestore_unless_told_not_to(self):
+        """Without with_filestore the copy takes it, as the panel's route does."""
+        self.staging._transition("deploying")
+        self.staging._transition("deployed")
+        Job = self.env["cloud.job"]
+        kept = self._payload(
+            self._call_tool(
+                self.key, "create_backup", {"instance_id": self.staging.id}
+            )
+        )
+        dropped = self._payload(
+            self._call_tool(
+                self.key,
+                "create_backup",
+                {"instance_id": self.staging.id, "with_filestore": False},
+            )
+        )
+        self.assertIs(
+            Job.browse(kept["backup_job_id"]).payload["with_filestore"], True
+        )
+        self.assertIs(
+            Job.browse(dropped["backup_job_id"]).payload["with_filestore"], False
+        )
+
     def test_a_save_without_repositories_answers_the_project_s(self):
         """The repositories the project holds, not an empty list."""
         self.env["cloud.project.repo"].create(
