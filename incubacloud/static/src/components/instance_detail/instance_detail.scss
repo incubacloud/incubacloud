@@ -488,6 +488,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    font: inherit;
+    line-height: 1.5;
     font-size: 0.625rem;
     font-weight: 600;
     color: $state-warning-text;
@@ -504,6 +506,80 @@
     &:hover {
         background: rgba(var(--rl-amber-rgb), 0.2);
         border-color: rgba(var(--rl-amber-rgb), 0.6);
+    }
+}
+
+// Why a job reads "Action required": shown while the chip is hovered or
+// has the focus, and kept open by a click (``toggleHold``), with a link
+// to the alert that keeps the job.
+.ic-hold {
+    position: relative;
+    display: inline-flex;
+
+    .ic-tl-alert-badge:focus-visible {
+        outline: 2px solid var(--rl-amber);
+        outline-offset: 2px;
+    }
+}
+
+.ic-hold-pop {
+    display: none;
+    position: absolute;
+    inset-block-start: calc(100% + 6px);
+    inset-inline-start: 0;
+    z-index: 20;
+    inline-size: max-content;
+    max-inline-size: min(300px, calc(100vw - 48px));
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--rl-line2);
+    background: var(--rl-surf2);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    color: var(--rl-fg);
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.45;
+    text-transform: none;
+    white-space: normal;
+    cursor: default;
+
+    // Bridges the gap to the chip, so the pointer reaches the link.
+    &::before {
+        content: "";
+        position: absolute;
+        inset-inline: 0;
+        inset-block-start: -8px;
+        block-size: 8px;
+    }
+}
+
+.ic-hold:hover .ic-hold-pop,
+.ic-hold:focus-within .ic-hold-pop,
+.ic-hold-pop.open {
+    display: flex;
+}
+
+.ic-hold-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--rl-amber-text);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+
+    &:focus-visible {
+        outline: 2px solid var(--rl-amber);
+        outline-offset: 2px;
+        border-radius: 3px;
     }
 }
 

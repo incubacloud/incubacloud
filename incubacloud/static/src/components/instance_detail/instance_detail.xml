@@ -734,13 +734,19 @@
                                 t-esc="jobStateText(job)"
                               />
                                                         <t t-if="job.requires_action">
-                                                            <span
-                                  class="ic-tl-alert-badge"
-                                  t-on-click.stop="() => env.toggleSlideOver('alerts')"
-                                >
-                                                                <t
-                                    t-out="env.icon('alert', 13)"
-                                  /> Action required
+                                                            <span class="ic-hold" t-on-click.stop="() => {}" t-on-keydown="onHoldKeydown">
+                                                                <button type="button" class="ic-tl-alert-badge"
+                                                                        t-att-aria-expanded="state.holdOpen === job.id ? 'true' : 'false'"
+                                                                        t-att-aria-describedby="'ic-hold-reason-' + job.id"
+                                                                        t-on-click.stop="() => this.toggleHold(job)">
+                                                                    <t t-out="env.icon('alert', 13)"/> Action required
+                                                                </button>
+                                                                <span t-att-class="'ic-hold-pop' + (state.holdOpen === job.id ? ' open' : '')">
+                                                                    <span class="ic-hold-reason" t-att-id="'ic-hold-reason-' + job.id" t-esc="holdReason(job)"/>
+                                                                    <button type="button" class="ic-hold-link" t-on-click.stop="() => this.openHoldAlert(job)">
+                                                                        <t t-out="env.icon('alert', 12)"/> Open the alert
+                                                                    </button>
+                                                                </span>
                                                             </span>
                                                         </t>
                                                         <span class="rl-tl-loghint"><t
