@@ -170,6 +170,7 @@ from . import test_instance_addon_hooks
 from . import test_staging_autopurge_cron
 from . import test_staging_autopurge_panel
 from . import test_form_field_width
+from . import test_host_key_file_input
 from . import test_mailbox_commands
 from . import test_mailbox_routes
 from . import test_instance_whitelist

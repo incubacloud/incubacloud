@@ -433,7 +433,7 @@ export class HostDetail extends Component {
     }
 
     onKeyFileChange(ev) {
-        const file = ev.target.files[0];
+        const file = ev.target.files?.[0];
         if (!file) {
             this.state.form.key_file = null;
             return;
