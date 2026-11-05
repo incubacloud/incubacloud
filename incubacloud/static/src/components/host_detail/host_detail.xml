@@ -594,7 +594,7 @@
                                 <t t-else="">
                                     <div class="rl-frow rl-full">
                                         <label>SSH Private Key <span class="rl-req">*</span></label>
-                                        <input
+                                        <input type="file" accept=".pem,.key,.txt"
                                                t-on-change="onKeyFileChange"/>
                                         <t t-if="!isNew and state.has_key_file and !state.form.key_file">
                                             <span class="ic-form-note ic-form-note--set">
