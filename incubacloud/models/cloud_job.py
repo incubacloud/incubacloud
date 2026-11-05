@@ -2229,8 +2229,10 @@ class CloudJob(models.Model):
         Done or failed: either way the instance may not be what the panel
         last read. A job cancelled before it ran changed nothing, and one
         cancelled while it ran ends through its executor as failed or
-        done. The probe is the one the cron queues
-        (``cloud.instance._refresh_state_now``).
+        done. The probe reads the state alone and grades nothing
+        (``cloud.instance._refresh_state_now``). It is a hidden job,
+        outside the queues: asking for it here, with the queue's locks
+        of the job that ended taken, waits for none.
 
         :param str new_state: ``done``, ``failed`` or ``cancelled``
         """

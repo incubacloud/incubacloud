@@ -3817,28 +3817,51 @@ class CloudInstance(models.Model):
                 )
 
     def _refresh_state_now(self):
-        """Probe each of these instances now, as ``cron_instance_health`` does.
+        """Read now what each of these instances is: running, its services.
 
         What the panel shows of an instance — running or not, the state of
-        each of its services, its health — is what the probe last read.
-        After something has just acted on it (a job that starts, stops,
+        each of its services — is what the probe last read. After
+        something has just acted on it (a job that starts, stops,
         restores or moves it; a command an agent ran in it or on its
-        server), the probe runs now instead of at its next turn. Only the
-        deployed instances on a server; one that cannot be queued is
-        logged and skipped, never raised: the caller's work is done.
+        server), a state-only probe reads it now instead of at the next
+        turn of ``cron_instance_health``. It grades nothing: the streaks
+        and alerts count that cron's cycles, five minutes apart, and a
+        reading right after a restart or between two commands would
+        raise them early (``InstanceHealthExecutor._state_only``).
+
+        Only the deployed instances on a server that the periodic crons
+        may touch (``_periodic_maintenance_domain``), and not one whose
+        state-only probe still waits to start: that one reads it too.
+        The probe is a hidden job, outside the queues, so asking for it
+        takes no lock and never waits behind the caller's. One that
+        cannot be queued is logged and skipped, never raised: the
+        caller's work is done.
 
         :return: the probes' job ids
         :rtype: list[int]
         """
         jobs = []
-        for inst in self.sudo().exists():
-            if not inst.deployed or not inst.host_id:
-                continue
+        Job = self.env["cloud.job"].sudo()
+        instances = self.sudo().exists().filtered_domain(
+            [("deployed", "=", True), ("host_id", "!=", False)]
+            + self._periodic_maintenance_domain()
+        )
+        waiting = Job.search(
+            [
+                ("instance_id", "in", instances.ids),
+                ("job_type_id.code", "=", "instance_health"),
+                ("state", "in", ("pending", "enqueued", "wait_dependencies")),
+            ]
+        ).filtered(lambda job: (job.payload or {}).get("state_only"))
+        for inst in instances - waiting.instance_id:
             try:
                 with self.env.cr.savepoint():
                     jobs.append(
-                        self.env["cloud.job"].sudo().enqueue(
-                            inst.host_id.id, inst.id, "instance_health",
+                        Job.enqueue(
+                            inst.host_id.id,
+                            inst.id,
+                            "instance_health",
+                            payload={"state_only": True},
                         )
                     )
             except Exception as e:  # the caller's work stands
