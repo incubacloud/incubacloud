@@ -46,7 +46,8 @@ HEADS_TIMEOUT=20
 # nothing. Credentials go only to https://github.com itself: a URL
 # that carries them to any other host, port or scheme is not asked at
 # all, nor one with a ? # or \ before its path (5-nov-2026). Returns
-# git's status, 124 when it ran out of time, 1 for such a URL.
+# git's status, 124 (137 if KILL ended it) when it ran out of time,
+# 1 for such a URL.
 remote_ref_head() {
     local home="$1" url="$2" ref="$3" auth="" authority out
     local wanted=("refs/heads/$ref" "refs/tags/$ref")
@@ -274,7 +275,9 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             elif [ -n "$url" ]; then
                 rc=0
                 sha="$(remote_ref_head "$git_home" "$url" "$ref")" || rc=$?
-                if [ "$rc" -eq 124 ]; then
+                # 124: timeout's own; 137: git ignored TERM and -k's KILL
+                # ended it.
+                if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
                     timed_out=1
                     ic_warn "the head of $alias ($ref) did not arrive within ${HEADS_TIMEOUT}s: the rest are not asked"
                 fi
