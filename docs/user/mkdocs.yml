@@ -113,6 +113,7 @@ nav:
   - Instances:
     - instances/index.md
     - Logs: instances/logs.md
+    - Memory and resources: instances/resources.md
   - Hosts:
     - hosts/index.md
     - Connect your own VPS: hosts/connect.md

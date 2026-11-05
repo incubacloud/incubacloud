@@ -99,12 +99,17 @@ class TestSmtpUpdateCheckDisabled(_SmtpOverrideCase):
 
     def test_no_other_service_gets_an_environment_block(self):
         """odoo and db take their environment from doodba's env_files;
-        an ``environment:`` here would merge into them for no reason."""
+        an ``environment:`` here would merge into them for no reason.
+        The one exception is db's ``CONF_EXTRA``, sized to its memory
+        (``test_instance_memory_settings``)."""
         _raw, data = self._override(
             self._executor(DeployInstanceExecutor, "deploy_instance")
         )
         for svc, entry in data["services"].items():
             if svc == "smtp":
+                continue
+            if svc == "db":
+                self.assertEqual(list(entry.get("environment", {})), ["CONF_EXTRA"])
                 continue
             self.assertNotIn(
                 "environment", entry,

@@ -10,7 +10,10 @@ from odoo import fields as odoo_fields
 from .abstract_executor import NOT_ONEOFF, AbstractSSHExecutor
 
 # Alert thresholds
-_MEM_WARN_PCT = 85.0      # memory % that triggers a warning once sustained
+# 95 % for 30 min: a panel's Odoo plateaued at 87-92 % of its limit for
+# days and raised the alert with nothing wrong (5-Nov-2026). See
+# docs/architecture.md, "Memory an instance is deployed with".
+_MEM_WARN_PCT = 95.0      # memory % that triggers a warning once sustained
 _CPU_WARN_PCT = 90.0      # CPU %    that triggers a warning once sustained
 _ERROR_GROUPS_WARN = 1    # number of distinct ERROR fingerprints since last check
 _ERROR_LINES_HEAD = 1500  # cap raw log lines fetched (headers + context)
@@ -105,12 +108,18 @@ _NEWEST_ARCHIVE = (
 )
 _ERROR_CONTEXT_CHARS = 4000  # hard cap on the context stored per group
 
-# Hysteresis: how many consecutive cycles must stay above the CPU/memory
-# threshold before we surface the alert. With the cron firing every 5 min,
-# a value of 2 means "the symptom was there twice in 10 min". Single-cycle
-# spikes (deploys we missed gating on, GC pauses, transient bursts) are
-# dropped on the floor.
+# Hysteresis: how many consecutive cycles must stay above the CPU
+# threshold (and fail HTTP) before we surface the alert. With the cron
+# firing every 5 min, a value of 2 means "the symptom was there twice in
+# 10 min". Single-cycle spikes (deploys we missed gating on, GC pauses,
+# transient bursts) are dropped on the floor.
 _STREAK_REQUIRED = 2
+
+# Memory has a streak of its own: six cycles, 30 minutes. Odoo's memory
+# rises in steps and stays up until its workers recycle, so a reading
+# above the threshold for ten minutes says little; half an hour says the
+# workers are not coming down. See docs/architecture.md.
+_MEM_STREAK_REQUIRED = 6
 
 # Job types that legitimately drive CPU / memory / log noise on the
 # instance and would produce false-positive alerts if the health probe
@@ -199,7 +208,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     3. CPU / memory snapshot — one ``docker stats --no-stream`` reading.
        Combined with a per-instance streak counter, an alert is only
        raised after ``_STREAK_REQUIRED`` consecutive cycles above the
-       threshold — single-cycle spikes are intentionally ignored.
+       threshold for CPU and ``_MEM_STREAK_REQUIRED`` for memory —
+       single-cycle spikes are intentionally ignored.
     4. Error logs — fetch up to ``_ERROR_LINES_HEAD`` ERROR lines since
        the last check and dedupe them into fingerprint groups. The
        alert payload carries the groups so the operator does not need
@@ -1165,7 +1175,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         mem_over = self._mem_current >= _MEM_WARN_PCT
         new_mem_streak = (inst.mem_over_threshold_streak + 1) if mem_over else 0
         inst.write({'mem_over_threshold_streak': new_mem_streak})
-        if mem_over and new_mem_streak >= _STREAK_REQUIRED:
+        if mem_over and new_mem_streak >= _MEM_STREAK_REQUIRED:
             issues.append(f'mem:{self._mem_current:.0f}%')
             self._inst_alert(
                 'instance_high_memory',
@@ -1176,7 +1186,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             )
             self._sys(
                 f"⚠ Memory: {self._mem_current:.0f}% "
-                f"(streak {new_mem_streak}/{_STREAK_REQUIRED})"
+                f"(streak {new_mem_streak}/{_MEM_STREAK_REQUIRED})"
             )
         elif not mem_over:
             self._resolve_inst_alert('instance_high_memory')

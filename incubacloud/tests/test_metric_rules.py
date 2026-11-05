@@ -172,6 +172,26 @@ class TestSeededRules(TransactionCase):
         self.assertEqual((rule.comparator, rule.threshold), ("gt", 0))
         self.assertGreaterEqual(rule.confirm_cycles, 2, "a recreated proxy is gone for seconds")
 
+    def test_an_oom_kill_in_an_instance_is_critical(self):
+        """5-Nov-2026: a panel's smtp counted 36 kills in a month, unseen.
+
+        Counted over a window of its own, so one sample is the verdict,
+        per instance and for the three containers that have a memory
+        limit of the panel's.
+        """
+        rule = self._rule("metric_rule_instance_oom")
+        self.assertEqual(rule.scope, "instance")
+        self.assertEqual(rule.level, "critical")
+        self.assertEqual(rule.confirm_cycles, 1)
+        self.assertEqual((rule.comparator, rule.threshold), ("gt", 0))
+        self.assertIn("increase(container_oom_events_total{", rule.expression)
+        self.assertIn('instance_id!=""', rule.expression)
+        self.assertIn(
+            'container_label_com_docker_compose_service=~"odoo|db|smtp"',
+            rule.expression,
+        )
+        self.assertIn("by (instance_id, instance)", rule.expression)
+
     def test_no_seeded_rule_aggregates_its_own_label_away(self):
         """A rule must not lose the label its alert is attributed by.
 
@@ -473,6 +493,7 @@ class TestRuleConfirmation(MetricRuleCase):
         self.assertEqual(ref("incubacloud.metric_rule_load_high").confirm_cycles, 2)
         self.assertEqual(ref("incubacloud.metric_rule_instance_down").confirm_cycles, 2)
         self.assertEqual(ref("incubacloud.metric_rule_instance_errors").confirm_cycles, 1)
+        self.assertEqual(ref("incubacloud.metric_rule_instance_oom").confirm_cycles, 1)
 
 
 class TestAlertApi(TransactionCase):
@@ -786,6 +807,22 @@ class TestInstanceScopedRules(MetricRuleCase):
         self.rule._sync_alerts(self._sample(600.0))
         self.assertFalse(self._alerts())
 
+
+    def test_an_oom_kill_raises_against_the_instance(self):
+        """The shipped OOM rule, judged on one answer: a kill alerts, none clears."""
+        rule = self.env.ref("incubacloud.metric_rule_instance_oom")
+        sample = {"instance_id": str(self.instance.id), "instance": "prod"}
+        rule._sync_alerts([(sample, 2.0)])
+        alert = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "metrics_instance_oom"), ("state", "=", "active"),
+        ])
+        self.assertEqual(alert.instance_id, self.instance)
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("killed 2 process(es)", alert.message)
+        rule._sync_alerts([(sample, 0.0)])
+        self.assertFalse(self.env["cloud.alert"].sudo().search([
+            ("code", "=", "metrics_instance_oom"), ("state", "=", "active"),
+        ]))
 
 class TestRuleCodeUniqueness(TransactionCase):
     """BUG-002 — ``code`` is the alert's identity, so it has to be unique.

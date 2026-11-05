@@ -382,6 +382,55 @@ The result on the host mirrors what a comparable hosting platform shows: `odoo.l
 
 Traefik writes one JSON line per request to `/var/log/traefik/access.log` on the host (mounted into the proxy at the same path). Full Setup installs its rotation (`scripts/proxy_access_log.sh`): daily, or past 100 MB — looked at every ten minutes by a timer of its own (`incubacloud-traefik-logrotate.timer`), because the distro's daily run alone would let a flooded host fill its disk between two runs — compressed, removed after 30 days by age so a busy host rotating several times a day still keeps the full month; the proxy is sent `USR1` to reopen the file, so no line is lost. It used to go to stdout, where Docker kept 30 MB in all and the path changed with every recreate of the container. The panel's "Recent requests" reads the file, together with the end of the previous one so the page is not empty right after the nightly rotation (falling back to `docker logs` on a host not set up since), the log collector ships it, and the host's web-login jail watches it.
 
+## Memory an instance is deployed with
+
+Besides the containers' `mem_limit`, every deploy, rebuild and warm claim sizes the memory settings of Odoo and PostgreSQL from the instance's own limits (`odoo_memory_limit` and `db_memory_limit`, the **Resources** tab). Nothing is stored: the values are computed when `odoo.conf` and `docker-compose.override.yml` are rendered (`DeployInstanceExecutor._conf_content` and `_resource_override_content`), so the instance's fields and its saved configuration stay as the user wrote them.
+
+| Setting | Written to | Formula | Bounds |
+|---|---|---|---|
+| `limit_memory_soft` | `odoo.conf`, `[options]` | 60 % of the Odoo limit | at least 640 MiB, at most 2048 MiB |
+| `limit_memory_hard` | `odoo.conf`, `[options]` | 150 % of the Odoo limit | at least 1536 MiB, at most 2560 MiB |
+| `shared_buffers` | `CONF_EXTRA` of `db` in the override | 1/4 of the database limit | at least 16 MB |
+| `work_mem` | same | 1/16 | at least 4 MB |
+| `effective_cache_size` | same | 1/2 | at least 32 MB |
+
+The constants are `_ODOO_MEMORY_SHARES` and `_PG_MEMORY_SHARES` in `models/deploy_instance_executor.py`, and `tests/test_instance_memory_settings.py` pins every size below.
+
+| Odoo limit | soft | hard | | Database limit | shared_buffers | work_mem | effective_cache_size |
+|---|---:|---:|---|---|---:|---:|---:|
+| 640m | 640 MiB | 1536 MiB | | 192m | 48MB | 12MB | 96MB |
+| 1024m | 640 MiB | 1536 MiB | | 256m | 64MB | 16MB | 128MB |
+| 1280m | 768 MiB | 1920 MiB | | 512m | 128MB | 32MB | 256MB |
+| 2g (core's default) | 1228 MiB | 2560 MiB | | 1g (core's default) | 256MB | 64MB | 512MB |
+| 4g and above | 2048 MiB | 2560 MiB | | 4g | 1024MB | 256MB | 2048MB |
+
+An instance without a limit gets none of this: Odoo keeps its own defaults and PostgreSQL the template's settings.
+
+### Where the numbers come from
+
+Measured on 5-Nov-2026 on production panels whose Odoo had 896 MiB, three HTTP workers and a cron worker, with `/proc` inside the container and the cgroup's `memory.stat`:
+
+- **Per process (PSS):** prefork master 82 MB, HTTP workers 112-152 MB after days of use (88 MB 34 hours after a start), gevent 132 MB, queue_job's jobrunner 102 MB, cron worker 79 MB. The fixed part (master, gevent, jobrunner) is 260-320 MiB; each HTTP or cron worker costs about 85 MiB when it starts and 110-150 MiB after days. The memory was real, not cache: 767 MB anonymous, 38 MB of file cache.
+- **Nothing recycled a worker.** The panel set no `limit_memory_*`, so Odoo's defaults applied: 2 GiB soft and 2.5 GiB hard per worker, in a container of 896 MiB. No worker was ever recycled for memory. Python does not give memory back, so each worker grew in steps, mostly during the nightly jobs (02-04 UTC), until a deploy restarted the container: one panel went from 540 to 780 MiB in ten days and settled at 87-92 % of its limit. The only ceiling was the container's, and a peak on that plateau ends in the kernel killing a worker.
+- **`limit_memory_soft` is checked against a worker's virtual size**, not its resident memory (`memory_info` in `odoo/service/server.py` returns VMS on Linux). Workers days old sat at 480-500 MB of VMS, so the soft limit never goes below 640 MiB: about 140 MB of margin, enough to recycle the workers that keep growing without recycling one on every request. Past it, a worker finishes its request and is replaced.
+- **`limit_memory_hard` is an `RLIMIT_AS`** set on each worker and inherited by what it starts, wkhtmltopdf among them. Below 1.5 GiB of address space a PDF report fails, so the hard limit never goes lower; the container's limit is the real hard limit, and this one only stops a runaway worker in a large container.
+- **The ceilings are Odoo's own defaults:** the panel tightens the limits, it never loosens them.
+- **PostgreSQL ran the template's `work_mem = 512MB`** (doodba-copier-template's `CONF_EXTRA`), with `shared_buffers` at 128MB and `effective_cache_size` at 4GB, whatever the container. One sort may take 512 MB and one hash 1 GiB (`hash_mem_multiplier` is 2), more than most databases the panel deploys are given (1g by default): the kernel kills that backend and PostgreSQL restarts every connection. A database of 256 MiB used 130-135 MB of its own memory; the rest of its usage was page cache. The fractions are those the manager's own database was given on 27-Oct-2026 (1 GiB, `work_mem = 64MB`).
+- **Out-of-memory kills went unseen.** cAdvisor's `container_oom_events_total` counted kills in the panels' `smtp` containers (36 in a month on one of them) and no alert said so.
+
+### Alerts
+
+- **`instance_high_memory`** (the SSH health probe, every 5 minutes): 95 % of the container's limit for six checks in a row, 30 minutes (`_MEM_WARN_PCT` and `_MEM_STREAK_REQUIRED` in `models/instance_health_executor.py`). It was 85 % for two checks, with the streak shared with the CPU: with no ceiling on the workers, any instance awake for a few days sat on its plateau and kept it open with nothing wrong. The CPU keeps 90 % for two checks.
+- **`metrics_instance_oom`** (a metric rule, `data/metric_rule_data.xml`, critical): any process killed for lack of memory in the `odoo`, `db` or `smtp` container of an instance in the last 15 minutes. A kill is the fact that matters. The database has no alert by percentage: its usage is mostly cache and always reads 90-95 %.
+
+### Changing them
+
+- **When they apply.** On the instance's next deploy or rebuild (or warm claim); saving the instance changes nothing on the host and does not mark its configuration as changed, since the values derive from fields already in the snapshot. A new `odoo.conf` restarts Odoo. A new `CONF_EXTRA` recreates the `db` container: the database restarts (seconds) and Odoo reconnects.
+- **Raising or lowering the Odoo limit** moves both per-process limits within their bounds. Below about 1 GiB the floors apply, and the container's limit is the one that bites first. With `workers = 0` (threaded mode) Odoo applies the hard limit to its single process, and so do one-shot `odoo … --stop-after-init` runs under such a configuration; with workers, the prefork master is never limited, only its workers.
+- **Overriding Odoo's.** Write `limit_memory_soft` or `limit_memory_hard` (bytes; `0` turns a limit off) in the instance's configuration (**Config** tab, `odoo_conf`). If either is there, the panel adds neither, so a hard limit of the panel's never sits under a soft one of the user's. A layer on top may set its own after core's: the SaaS manager writes its plans' values, which win.
+- **Overriding PostgreSQL's.** `ALTER SYSTEM SET work_mem = '128MB'` (and `SELECT pg_reload_conf()`, or a restart for `shared_buffers`) inside the instance's database: `postgresql.auto.conf` lives in the data volume, survives rebuilds and wins over `postgresql.conf`, where `CONF_EXTRA` lands. `ALTER SYSTEM RESET work_mem` goes back to the panel's value. An addon's override fragment cannot replace `CONF_EXTRA`: fragments never overwrite what the platform rendered.
+- **Changing a formula** is a change of the constants above and of their tests. It reaches every instance on its next rebuild, which restarts its database too.
+
 ## Odoo series: one card each
 
 `models/_odoo_versions.py` is the one place an Odoo series is described, and nothing else in the panel decides on a version by itself. Each series has a card: whether it is `offered` (in the pickers and accepted by the importer), the PostgreSQL range and default (`postgres`), the tool that dumps and loads its database (`db_tool`) and the lowest doodba template able to render it (`template_min`). A series being prepared lands with `offered=False`, so the code that supports it ships before a customer can deploy it; a series that needs something new gets a field on the card, not an `if version` somewhere.
