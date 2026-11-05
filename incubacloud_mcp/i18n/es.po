@@ -571,12 +571,14 @@ msgstr ""
 "proyecto %(project)s (rama main)."
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__create_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__create_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__create_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__create_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__create_date
 msgid "Created on"
@@ -675,6 +677,7 @@ msgstr "Borrar el proyecto %(name)s. No se puede deshacer."
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_settings__display_name
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auth__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_catalog__display_name
@@ -861,6 +864,7 @@ msgstr "Manejadores de las herramientas MCP"
 #: code:addons/incubacloud_mcp/models/mcp_tools_command.py:0
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
 msgid "Host not found"
 msgstr "Host no encontrado"
 
@@ -875,6 +879,7 @@ msgstr "Cómo trabajan los agentes con el panel"
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_settings__id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auth__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_catalog__id
@@ -920,6 +925,7 @@ msgstr "Ajustes de IncubaCloud"
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_command.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
 msgid "Instance has no host"
 msgstr "La instancia no tiene host"
 
@@ -984,6 +990,7 @@ msgstr "Trabajo ejecutado remotamente en un host"
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
 #: code:addons/incubacloud_mcp/models/mcp_tools_read.py:0
 msgid "Job not found"
 msgstr "Tarea no encontrada"
@@ -999,12 +1006,14 @@ msgstr ""
 "después Añadir, e inicie sesión."
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__write_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__write_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__write_uid
 msgid "Last Updated by"
 msgstr "Última actualización por"
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__write_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__write_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__write_date
 msgid "Last Updated on"
@@ -1067,6 +1076,15 @@ msgid ""
 msgstr ""
 "Mover la instancia de producción %(name)s al servidor %(host)s. No estará "
 "disponible durante el traslado."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Mute every project you see: no job notification reaches you for any of them."
+msgstr ""
+"Silenciar todos los proyectos que usted ve: no le llegará ninguna "
+"notificación de trabajos de ninguno de ellos."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1241,6 +1259,7 @@ msgstr "Las instancias de producción no se pueden refrescar desde producción."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "Project not found"
 msgstr "Proyecto no encontrado"
@@ -1390,6 +1409,14 @@ msgid "Send your API key in the header"
 msgstr "Envíe su clave API en el encabezado"
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Send your Telegram notifications to the chat %(chat)s (now %(current)s)."
+msgstr ""
+"Enviar sus notificaciones de Telegram al chat %(chat)s (ahora %(current)s)."
+
+#. module: incubacloud_mcp
 #: model:ir.model.fields,help:incubacloud_mcp.field_cloud_audit_log__via_client
 msgid ""
 "Set when the action came through the MCP endpoint: the verified client id of"
@@ -1456,6 +1483,12 @@ msgid ""
 msgstr ""
 "Detener la instancia de producción %(name)s (proyecto %(project)s). No "
 "estará disponible hasta que se vuelva a arrancar."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Stop your notification emails."
+msgstr "Dejar de enviarle las notificaciones por correo electrónico."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -1721,8 +1754,7 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_read.py:0
 msgid "This log has %(pages)s pages: ask for one from 1 to %(pages)s."
-msgstr ""
-"Este log tiene %(pages)s páginas: pida una entre la 1 y la %(pages)s."
+msgstr "Este log tiene %(pages)s páginas: pida una entre la 1 y la %(pages)s."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1914,6 +1946,7 @@ msgid "Used At"
 msgstr "Usado el"
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__user_id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__user_id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__user_id
 msgid "User"
@@ -1928,6 +1961,7 @@ msgstr "VS Code"
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__via_client
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__via_client
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__via_client
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__via_client
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__via_client
 msgid "Via Client"
@@ -2052,6 +2086,7 @@ msgstr "su último backup"
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
 msgid "neutralized"
 msgstr "neutralizada"
 
@@ -2064,6 +2099,7 @@ msgstr "ninguna"
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
 msgid "not neutralized"
 msgstr "sin neutralizar"
 
@@ -2174,12 +2210,6 @@ msgid ""
 msgstr ""
 "Sustituir la base de datos y los archivos de %(target)s por %(origin)s "
 "(%(how)s). Se pierde todo lo que la instancia contiene ahora."
-
-#. module: incubacloud_mcp
-#. odoo-python
-#: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
-msgid "That link cannot be used: %s."
-msgstr "Ese enlace no se puede usar: %s."
 
 #. module: incubacloud_mcp
 #. odoo-python
