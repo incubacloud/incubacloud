@@ -93,3 +93,28 @@ class TestDeployRetriesTheFailedDeploy(_QueueCase):
         self.Job._create_job_failed_alert(second, exc_message="boom again")
         job = self.Job.browse(self.draft.deploy())
         self.assertEqual(job.retry_of_id, second)
+
+    def test_conflicting_pip_dependencies_take_the_new_deploy_s_checks(self):
+        """Markers in pip_dependencies: the new deploy waits for its
+        pip_conflict alert, as any deploy does; a retry would skip it."""
+        failed, _alert = self._failed_with_alert("deploy_instance", inst=self.draft)
+        self.draft.sudo().pip_dependencies = (
+            "<<<<<<< existing\nlibx==1.0\n=======\nlibx==2.0\n>>>>>>> repo-a\n"
+        )
+        job = self.Job.browse(self.draft.deploy())
+        self.assertFalse(job.retry_of_id)
+        self.assertNotEqual(job, failed)
+        self.assertEqual(job.blocked_alert_id.code, "pip_conflict")
+        self.assertEqual(self.draft.state, "draft")
+
+    def test_a_conflict_open_on_the_instance_takes_the_new_deploy_s_checks(self):
+        """An addon_conflict raised by a save, on no job: the new deploy
+        waits for it."""
+        failed, _alert = self._failed_with_alert("deploy_instance", inst=self.draft)
+        conflict = self.env["cloud.alert"].sudo().raise_alert(
+            "addon_conflict", "conflict", level="critical", instance=self.draft,
+        )
+        job = self.Job.browse(self.draft.deploy())
+        self.assertFalse(job.retry_of_id)
+        self.assertNotEqual(job, failed)
+        self.assertEqual(job.blocked_alert_id, conflict)
