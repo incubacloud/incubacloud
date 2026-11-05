@@ -2,6 +2,7 @@
 Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
+import http.client
 import shlex
 from unittest import mock
 
@@ -776,6 +777,51 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
         self.assertIn(
             f"core\tpin\t{self._PINNED}\t",
             ex._repo_heads_spec(text, pinned).splitlines(),
+        )
+
+    def test_a_row_of_another_host_takes_no_token_to_the_build(self):
+        """repos.yaml and the heads spec carry the token to github.com only.
+
+        A row stored before its URL was checked, naming ``github.com``
+        only in its path, was rendered with the panel's token, which
+        the build's clone and ``record-heads`` then sent to that host
+        (5-nov-2026). An old spelling of a github.com repository still
+        gets it, on the canonical URL.
+        """
+        repos = [
+            SimpleNamespace(
+                url="https://evil.example/github.com/x.git",
+                branch="main", commit_sha=False,
+            ),
+            SimpleNamespace(
+                url="www.github.com/acme/legacy",
+                branch="main", commit_sha=False,
+            ),
+        ]
+        ex = _make_deploy_executor()
+        inst = ex._inst()
+        inst.odoo_commit_sha = False
+        inst.repo_ids = repos
+        opened = mock.MagicMock(spec=http.client.HTTPResponse)
+        opened.__enter__.return_value = opened
+        with mock.patch.object(
+            ex, "_get_github_tokens", return_value=(self._TOKEN, ""),
+        ), mock.patch(
+            "odoo.addons.incubacloud.models.deploy_instance_executor.safe_urlopen",
+            autospec=True, return_value=opened,
+        ) as urlopen:
+            text = ex._repos_yaml_content(set())
+        spec = ex._repo_heads_spec(text, set()).splitlines()
+        self.assertEqual(spec[1], "x\tref\tmain\thttps://evil.example/github.com/x.git")
+        self.assertEqual(
+            spec[2],
+            f"legacy\tref\tmain\thttps://x-access-token:{self._TOKEN}@github.com/acme/legacy",
+        )
+        self.assertEqual(text.count(self._TOKEN), 1)
+        # GitHub's API was asked about the github.com repository alone.
+        self.assertEqual(
+            [c.args[0].full_url for c in urlopen.call_args_list],
+            ["https://api.github.com/repos/acme/legacy"],
         )
 
     def test_no_command_names_the_token(self):

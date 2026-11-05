@@ -20,11 +20,13 @@ from ._repo_requirements import (
     _apply_excludes,
     _parse_repo_addons,
     _repo_alias,
+    canonical_repo_url,
     create_pip_conflict_alert,
     detect_addon_conflicts,
     detect_pip_conflicts,
     fetch_repo_addons,
     fetch_requirements_txt_with_client,
+    is_safe_repo_url,
     merge_pip_requirements,
     resolve_github_client,
 )
@@ -120,8 +122,6 @@ _IC_CONNECT_MODULE = os.path.realpath(
 _ICP_RESYNC = "incubacloud.requirements_resync_enabled"
 
 
-_SSH_RE = re.compile(r"^git@github\.com:(.+?)(?:\.git)?$")
-
 _ADDONS_CONFLICT_RE = re.compile(
     r"AddonsConfigError: Addon (\w+) defined in several repos \{([^}]+)\}"
 )
@@ -130,27 +130,23 @@ _ADDONS_CONFLICT_RE = re.compile(
 def _github_authed_url(url, token):
     """Normalize a GitHub repo URL to HTTPS and inject a token if available.
 
-    Converts SSH URLs (git@github.com:org/repo.git) to HTTPS so the remote
-    server doesn't need an SSH key for GitHub.  Then injects the token for
-    private repos when one is available.
+    Converts SSH URLs (git@github.com:org/repo.git) and the other
+    spellings of a github.com repository to the canonical HTTPS form
+    (``canonical_repo_url``) so the remote server doesn't need an SSH
+    key for GitHub. Then injects the token for private repos, only
+    into a URL whose host is exactly ``github.com`` over https
+    (``is_safe_repo_url``): a host that merely contained the text, as
+    ``https://evil.example/github.com/x.git``, was handed the token
+    (5-nov-2026).
     """
     if not url:
         return url
-    url = url.strip()
-    # Convert SSH → HTTPS
-    m = _SSH_RE.match(url)
-    if m:
-        url = f"https://github.com/{m.group(1)}.git"
+    url = canonical_repo_url(url)
     # Ensure HTTPS scheme
     if not url.startswith(("https://", "http://")):
         url = f"https://{url}"
-    # Inject token into HTTPS URLs
-    if token and "github.com" in url:
-        url = url.replace(
-            "https://",
-            f"https://x-access-token:{token}@",
-            1,
-        )
+    if token and is_safe_repo_url(url):
+        url = f"https://x-access-token:{token}@{url.removeprefix('https://')}"
     return url
 
 
@@ -263,16 +259,15 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         App first, PAT fallback. Caches results by owner to avoid
         repeated API calls for repos in the same org.
-        Returns the working token or None.
+        Returns the working token or None: always None for a URL that
+        is not a github.com repository (``is_safe_repo_url`` once
+        ``canonical_repo_url`` spelled it), which used to get the App's
+        token or the PAT on the chance it needed one (5-nov-2026).
         """
-        url = (repo_url or "").strip()
-        if not url:
+        url = canonical_repo_url((repo_url or "").strip())
+        if not is_safe_repo_url(url):
             return None
-
-        try:
-            owner, repo = _parse_github_repo_path(url)
-        except ValueError:
-            return app_token or pat
+        owner, repo = _parse_github_repo_path(url)
 
         # Check cache by owner — repos in the same org use the same token
         if owner in cache:

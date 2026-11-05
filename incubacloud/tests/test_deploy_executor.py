@@ -58,6 +58,43 @@ class TestGithubAuthedUrl(BaseCase):
         url = self.fn("  git@github.com:OCA/web.git  ", "tok")
         self.assertIn("github.com", url)
 
+    def test_token_only_for_the_github_com_host_itself(self):
+        """A URL that merely contains ``github.com`` gets no token.
+
+        ``"github.com" in url`` gave the token to
+        ``https://evil.example/github.com/x.git`` (5-nov-2026): the
+        host has to be ``github.com`` exactly, over https, with no
+        user or port of its own.
+        """
+        for url in (
+            "https://evil.example/github.com/x.git",
+            "https://evil.example/?github.com",
+            "https://github.com.evil.example/org/repo.git",
+            "https://evil.example#github.com/org/repo",
+            "https://user@github.com/org/repo.git",
+            "https://github.com@evil.example/org/repo.git",
+            "https://github.com:8443/org/repo.git",
+            "ftp://github.com/org/repo.git",
+            "https://github.com/org/repo.git?x=1",
+            "https://github.com/org/repo\nhttps://evil.example/a",
+        ):
+            with self.subTest(url=url):
+                self.assertNotIn("tok", self.fn(url, "tok"))
+
+    def test_github_spellings_get_the_token_on_the_canonical_url(self):
+        """Every spelling of a github.com repository is cloned from
+        ``https://github.com/<owner>/<repo>``, with the token."""
+        for url, expected in (
+            ("http://github.com/org/repo.git", "org/repo.git"),
+            ("www.github.com/org/repo", "org/repo"),
+            ("https://GitHub.com/Org/Repo/", "Org/Repo"),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(
+                    self.fn(url, "tok"),
+                    f"https://x-access-token:tok@github.com/{expected}",
+                )
+
 
 # ── Tier 1: _get_token_for_repo (mocked HTTP) ───────────────────────────────
 
@@ -144,17 +181,41 @@ class TestGetTokenForRepo(BaseCase):
         result = executor._get_token_for_repo("", "a", "b", cache)
         self.assertIsNone(result)
 
-    def test_non_github_url_returns_best_effort(self):
-        """URLs that can't be parsed fall back to app_token or pat."""
+    @patch(_PATCH_PATH)
+    def test_a_url_of_another_host_gets_no_token(self, mock_urlopen):
+        """A URL that is not a github.com repository gets no token at all.
+
+        It used to get the App's token or the PAT on the chance it
+        needed one, and ``_github_authed_url`` put it in the URL
+        (5-nov-2026).
+        """
         executor = self._make_executor()
-        cache = {}
-        result = executor._get_token_for_repo(
+        for url in (
             "https://gitlab.com/group/repo.git",
+            "https://evil.example/github.com/x.git",
+            "https://github.com.evil.example/org/repo.git",
+            "https://github.com:8443/org/repo.git",
+        ):
+            with self.subTest(url=url):
+                cache = {}
+                self.assertIsNone(
+                    executor._get_token_for_repo(url, "app_tok", "pat_tok", cache),
+                )
+                self.assertEqual(cache, {})
+        mock_urlopen.assert_not_called()
+
+    @patch(_PATCH_PATH)
+    def test_an_ssh_spelled_github_repo_still_gets_its_token(self, mock_urlopen):
+        """``git@github.com:`` is the saas layer's own spelling of its repo."""
+        mock_urlopen.return_value.__enter__ = lambda s: s
+        mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        executor = self._make_executor()
+        self.assertEqual(
+            executor._get_token_for_repo(
+                "git@github.com:incubacloud/saas.git", "app_tok", "pat_tok", {},
+            ),
             "app_tok",
-            "pat_tok",
-            cache,
         )
-        self.assertEqual(result, "app_tok")
 
 
 # ── Tier 2: _build_answers domain format ─────────────────────────────────────
