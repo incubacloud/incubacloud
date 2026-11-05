@@ -4,7 +4,7 @@ import { Component, useState, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { announceJob } from "../../utils/job_queue";
-import { parseUTC } from "../../utils/dates";
+import { parseUTC, userLocale } from "../../utils/dates";
 import { IcModal } from "../ic_modal/ic_modal";
 import { IcPager } from "../ic_pager/ic_pager";
 
@@ -278,7 +278,7 @@ export class AlertHistory extends Component {
     formatDate(dateStr) {
         if (!dateStr) return "—";
         const d = parseUTC(dateStr);
-        return d.toLocaleString([], {
+        return d.toLocaleString(userLocale(), {
             month: "2-digit", day: "2-digit",
             hour: "2-digit", minute: "2-digit",
         });

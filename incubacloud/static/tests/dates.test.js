@@ -1,5 +1,7 @@
-import { describe, expect, test } from "@odoo/hoot";
-import { parseUTC } from "@incubacloud/utils/dates";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { user } from "@web/core/user";
+import { agoText, parseUTC, userLocale } from "@incubacloud/utils/dates";
 
 describe("parseUTC", () => {
 
@@ -110,5 +112,37 @@ describe("parseUTC", () => {
         const d1 = parseUTC("2026-01-01 00:00:00");
         const d2 = parseUTC("2026-01-01 01:00:00");
         expect(d2.getTime()).toBe(d1.getTime() + 3600 * 1000);
+    });
+});
+
+describe("userLocale", () => {
+    test("dates are written in the Odoo user's language, not the browser's", () => {
+        patchWithCleanup(user, { get lang() { return "es-ES"; } });
+        expect(userLocale()).toBe("es-ES");
+        const day = parseUTC("2026-10-18 12:00:00").toLocaleDateString(
+            userLocale(), { year: "numeric", month: "short", day: "numeric" });
+        expect(day).toBe("18 oct 2026");
+    });
+
+    test("a user without a language falls back to the browser's", () => {
+        patchWithCleanup(user, { get lang() { return ""; } });
+        expect(userLocale()).toBe(undefined);
+    });
+});
+
+describe("agoText", () => {
+    beforeEach(() => allowTranslations());
+
+    test("under a minute is just now", () => {
+        expect(String(agoText(0))).toBe("just now");
+        expect(String(agoText(59))).toBe("just now");
+    });
+
+    test("minutes, hours and days, rounded down", () => {
+        expect(String(agoText(60))).toBe("1m ago");
+        expect(String(agoText(3599))).toBe("59m ago");
+        expect(String(agoText(3600))).toBe("1h ago");
+        expect(String(agoText(86399))).toBe("23h ago");
+        expect(String(agoText(86400 * 6 + 5))).toBe("6d ago");
     });
 });
