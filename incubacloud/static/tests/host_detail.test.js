@@ -777,3 +777,13 @@ describe("HostDetail — the SSH list after a hardening", () => {
         expect(unticked.refreshes).toBe(1);
     });
 });
+
+describe("HostDetail — onKeyFileChange", () => {
+    test("a change without files does not throw and clears the key", () => {
+        const ctx = { state: { form: { key_file: "old" } } };
+        HostDetail.prototype.onKeyFileChange.call(ctx, { target: { files: null } });
+        expect(ctx.state.form.key_file).toBe(null);
+        HostDetail.prototype.onKeyFileChange.call(ctx, { target: { files: [] } });
+        expect(ctx.state.form.key_file).toBe(null);
+    });
+});
