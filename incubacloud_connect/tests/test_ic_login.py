@@ -136,6 +136,41 @@ class TestIcLogin(HttpCase):
             new_sid = self._open_link()
         self._assert_logged_in_as_b(new_sid)
 
+    def test_the_session_takes_the_context_of_the_user_of_the_link(self):
+        """Logged in as A in Spanish, the link for B gives B's own context.
+
+        The session kept A's context (language, timezone, uid): B saw the
+        panel in A's language and dates in A's timezone. It is now what
+        Odoo's own login gives B: ``context_get`` as B.
+        """
+        self.env['res.lang']._activate_lang('es_ES')
+        self.user_a.write({'lang': 'es_ES', 'tz': 'Europe/Madrid'})
+        self.user_b.write({'lang': 'en_US', 'tz': 'America/New_York'})
+        session_a = self.authenticate('ic_login_a', 'ic_login_a')
+        self.assertEqual(session_a.context.get('lang'), 'es_ES')
+
+        new_sid = self._open_link()
+
+        session = http.root.session_store.get(new_sid)
+        expected = dict(self.user_b.with_user(self.user_b).context_get())
+        self.assertEqual(session.context, expected)
+        self.assertEqual(session.context['lang'], 'en_US')
+        self.assertEqual(session.context['tz'], 'America/New_York')
+        self.assertEqual(session.context['uid'], self.user_b.id)
+        self._assert_logged_in_as_b(new_sid)
+        info = self.make_jsonrpc_request('/web/session/get_session_info')
+        self.assertEqual(info['user_context']['lang'], 'en_US')
+        self.assertEqual(info['user_context']['tz'], 'America/New_York')
+
+    def test_the_context_is_the_one_odoo_s_login_gives(self):
+        """The same as ``Session.finalize`` of this version stores."""
+        self.user_b.write({'tz': 'Asia/Tokyo'})
+        env_b = self.env(user=self.user_b)
+        self.assertEqual(
+            connect._user_context(env_b, self.user_b.id, None),
+            dict(env_b['res.users'].context_get()),
+        )
+
     def test_the_link_still_works_once(self):
         """The fix keeps the token single-use."""
         self.authenticate(None, None)
