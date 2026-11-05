@@ -312,6 +312,42 @@ class TestCommandTools(
         for name in ("run_command", "run_host_command"):
             self.assertIn("background", catalog._spec(name).listed()["description"])
 
+    def test_the_descriptions_point_at_the_tools_a_command_would_skip(self):
+        """Stopping, starting, restoring or deploying have tools of their own."""
+        catalog = self.env["incubacloud.mcp.catalog"]
+        for name in ("run_command", "run_host_command"):
+            description = catalog._spec(name).listed()["description"]
+            for tool in ("run_instance_action", "restore_backup", "deploy_instance"):
+                self.assertIn(tool, description)
+
+    def _probes(self, instance):
+        """The health probes queued for *instance*."""
+        return self.env["cloud.job"].search(
+            [
+                ("instance_id", "=", instance.id),
+                ("job_type_id.code", "=", "instance_health"),
+            ]
+        )
+
+    def test_a_command_has_its_instance_probed_when_it_ends(self):
+        """run_command probes its instance; run_host_command, each instance of
+        its server."""
+        self._call_tool(
+            self.key,
+            "run_command",
+            {"instance_id": self.staging.id, "command": "true"},
+        )
+        self.assertEqual(len(self._probes(self.staging)), 1)
+        self.assertFalse(self._probes(self.production))
+        manager_key = self._api_key(
+            self._cloud_user("mcp-cmd-probe-mgr", group="group_cloud_manager")
+        )
+        self._confirmed_call(
+            manager_key, "run_host_command", {"host_id": self.host.id, "command": "true"}
+        )
+        self.assertEqual(len(self._probes(self.staging)), 2)
+        self.assertEqual(len(self._probes(self.production)), 1)
+
     def test_a_server_that_does_not_answer_in_time_is_not_a_timed_out_command(
         self,
     ):
