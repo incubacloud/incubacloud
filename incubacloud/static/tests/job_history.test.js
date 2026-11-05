@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { patchTranslations } from "@web/../tests/web_test_helpers";
-import { JobHistory } from "@incubacloud/components/job_history/job_history";
+import { JobHistory, ganttStepCount } from "@incubacloud/components/job_history/job_history";
 
 /**
  * JobHistory uses useService("orm") for cloud.job.load_history.
@@ -355,5 +355,58 @@ describe("JobHistory — folded filters", () => {
             Object.getOwnPropertyDescriptor(JobHistory.prototype, "ganttWindowLabel")
                 .get.call({ state: { ganttHours: hours } });
         expect([1, 6, 24, 168].map(label)).toEqual(["1h", "6h", "24h", "7d"]);
+    });
+});
+
+describe("JobHistory — timeline marks by the axis's width", () => {
+    test("an axis not measured keeps every step", () => {
+        expect(ganttStepCount(24)).toBe(12);
+        expect(ganttStepCount(6)).toBe(6);
+        expect(ganttStepCount(1)).toBe(1);
+        expect(ganttStepCount(168)).toBe(12);
+    });
+
+    test("a wide axis keeps every step", () => {
+        expect(ganttStepCount(24, 1200)).toBe(12);
+    });
+
+    test("a narrower axis keeps fewer, dividing the full count", () => {
+        // The slide-over at 1440 (about 575 px) and at 768 (about 478 px).
+        expect(ganttStepCount(24, 575)).toBe(6);
+        expect(ganttStepCount(24, 478)).toBe(6);
+        expect(ganttStepCount(24, 300)).toBe(4);
+        expect(ganttStepCount(6, 300)).toBe(3);
+    });
+
+    test("a phone's axis keeps its two ends", () => {
+        expect(ganttStepCount(24, 100)).toBe(1);
+        expect(ganttStepCount(24, 10)).toBe(1);
+    });
+
+    test("the marks shipped follow the width measured", () => {
+        const ticks = (hours, width) => Object.getOwnPropertyDescriptor(
+            JobHistory.prototype, "ganttTicks",
+        ).get.call({ state: { ganttHours: hours, ganttAxisWidth: width } });
+        expect(ticks(24, 0).length).toBe(13);
+        expect(ticks(24, 575).length).toBe(7);
+        expect(ticks(24, 100).map((t) => t.pct)).toEqual(["0.0", "100.0"]);
+        // Wide enough apart for their labels.
+        const pcts = ticks(24, 478).map((t) => Number(t.pct));
+        expect((pcts[1] - pcts[0]) * 478 / 100).toBeGreaterThan(63);
+    });
+});
+
+describe("JobHistory — instance column", () => {
+    const instanceText = JobHistory.prototype.instanceText;
+
+    test("a host's job reads as a dash", () => {
+        expect(instanceText({ instance_name: "" })).toBe("\u2014");
+        expect(instanceText({})).toBe("\u2014");
+    });
+
+    test("the name may break after its slash and reads the same", () => {
+        const text = instanceText({ instance_name: "incubacloud/production" });
+        expect(text).toBe("incubacloud/\u200bproduction");
+        expect(text.replace("\u200b", "")).toBe("incubacloud/production");
     });
 });
