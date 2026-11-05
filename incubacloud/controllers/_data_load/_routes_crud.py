@@ -115,14 +115,7 @@ class CrudMixin:
         """
         perms = self._sec()._get_user_permissions()
         user = request.env.user
-        # Sidebar count badges. search_count honours record rules, so each
-        # number reflects only what this user may see (and we gate by the
-        # same permission flags that gate the nav items themselves).
-        nav_counts = {'projects': request.env['cloud.project'].search_count([])}
-        if perms.get('can_manage_hosts'):
-            nav_counts['hosts'] = request.env['cloud.host'].search_count([])
-        if perms.get('can_manage_settings'):
-            nav_counts['backups'] = request.env['cloud.backup.backend'].search_count([])
+        nav_counts = self._nav_counts(perms)
         Settings = request.env['cloud.settings'].sudo()
         return {
             'features': {
@@ -148,6 +141,39 @@ class CrudMixin:
                 ),
             },
         }
+
+    def _nav_counts(self, perms):
+        """The sidebar's count badges, for the user of this request.
+
+        ``search_count`` honours record rules, so each number reflects
+        only what this user may see, and each is gated by the same
+        permission flag that gates its nav item.
+
+        :param dict perms: ``_get_user_permissions()``
+        :return: ``{'projects': n, 'hosts': n, 'backups': n}``, each key
+            present only when its item is shown
+        :rtype: dict
+        """
+        nav_counts = {'projects': request.env['cloud.project'].search_count([])}
+        if perms.get('can_manage_hosts'):
+            nav_counts['hosts'] = request.env['cloud.host'].search_count([])
+        if perms.get('can_manage_settings'):
+            nav_counts['backups'] = request.env['cloud.backup.backend'].search_count([])
+        return nav_counts
+
+    @http.route(['/cloud/get_nav_counts'], type='jsonrpc', auth='user')
+    def cloud_get_nav_counts(self):
+        """The sidebar's count badges alone, as ``/cloud/get_config`` gives them.
+
+        Asked again by the panel when it moves between the sidebar's
+        sections, after a project, a host or a backup destination is
+        created or deleted, and when a job ends, so the badges do not
+        wait for a reload.
+
+        :return: ``{'nav_counts': {...}}`` (``_nav_counts``)
+        :rtype: dict
+        """
+        return {'nav_counts': self._nav_counts(self._sec()._get_user_permissions())}
 
     @http.route(['/cloud/global_search'], type='jsonrpc', auth='user')
     def cloud_global_search(self, query=''):
