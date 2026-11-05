@@ -331,10 +331,15 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         private, public = self._uploads(transport)
         answers, backup = executor._tmp("answers.yml"), executor._tmp("backup.env")
         repos = executor._tmp("repos.yaml")
-        self.assertEqual(set(private), {answers, backup, repos})
+        heads = executor._tmp("repo-heads.tsv")
+        self.assertEqual(set(private), {answers, backup, repos, heads})
         self.assertIn("postgres_password", private[answers])
         self.assertEqual(private[backup], _BACKUP_ENV)
         self.assertEqual(private[repos], executor._repos_yaml_content())
+        self.assertEqual(
+            private[heads],
+            executor._repo_heads_spec(executor._repos_yaml_content()),
+        )
         self.assertEqual(
             set(public),
             {executor._tmp(name) for name in (
@@ -367,7 +372,7 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         self.assertEqual(
             set(private),
             {executor._tmp(name) for name in (
-                "answers.yml", "backup.env", "repos.yaml",
+                "answers.yml", "backup.env", "repos.yaml", "repo-heads.tsv",
             )},
         )
         for _label, command, *_opts in executor.get_commands():
@@ -382,7 +387,9 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         private, public = self._uploads(transport)
         self.assertEqual(
             set(private),
-            {executor._tmp("answers.yml"), executor._tmp("repos.yaml")},
+            {executor._tmp(name) for name in (
+                "answers.yml", "repos.yaml", "repo-heads.tsv",
+            )},
         )
         self.assertNotIn(executor._tmp("backup.env"), public)
 
@@ -417,7 +424,7 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         self.assertIsInstance(exc, RuntimeError)
         failure.assert_called_once()
         transport.execute.assert_not_awaited()
-        for name in ("answers.yml", "backup.env", "repos.yaml"):
+        for name in ("answers.yml", "backup.env", "repos.yaml", "repo-heads.tsv"):
             self.assertTrue(self._gone(transport, executor._tmp(name)), name)
 
     def test_a_staging_that_fails_half_way_still_cleans_up(self):
