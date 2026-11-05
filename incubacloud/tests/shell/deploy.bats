@@ -395,6 +395,32 @@ HEADS_PLAIN_URL="https://github.com/acme/addons.git"
     [ -z "$(ls -A "$TMP/tmpdir")" ]
 }
 
+@test "record-heads sends no credentials to any host but github.com" {
+    # A URL that names github.com elsewhere than as its host, a port, plain
+    # http, or credentials git would send as they are: not asked at all,
+    # and the build clones it again (5-nov-2026).
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\tmain\t%s\n' \
+        path "https://x-access-token:${HEADS_TOKEN}@evil.example/github.com/x.git" \
+        suffix "https://x-access-token:${HEADS_TOKEN}@github.com.evil.example/a.git" \
+        port "https://x-access-token:${HEADS_TOKEN}@github.com:8443/acme/a.git" \
+        http "http://x-access-token:${HEADS_TOKEN}@github.com/acme/a.git" \
+        second "https://x-access-token:${HEADS_TOKEN}@github.com@evil.example/a.git" \
+        query "https://x-access-token:${HEADS_TOKEN}@github.com?@evil.example/a.git" \
+        encoded "https://x-access-token:${HEADS_TOKEN}%41@evil.example/a.git" \
+        scp "x-access-token:${HEADS_TOKEN}@evil.example:a.git" \
+        > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    ! grep -q ls-remote "$CALLS"
+    [ ! -s "$CALLS.headers" ]
+    [[ "$output" != *"$HEADS_TOKEN"* ]]
+    [ "$(grep -c ' main unknown-' "$DIR/odoo/custom/incubacloud-heads.txt")" -eq 8 ]
+}
+
 @test "record-heads asks a public URL without any header" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"

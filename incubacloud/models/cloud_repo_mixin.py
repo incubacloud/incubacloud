@@ -12,11 +12,31 @@ from odoo.exceptions import ValidationError
 
 from ._repo_requirements import (
     apply_requirements_content,
+    canonical_repo_url,
     fetch_requirements_txt,
     is_safe_git_ref,
     is_safe_git_sha,
     is_safe_repo_url,
 )
+
+
+def _with_canonical_url(vals):
+    """Return *vals* with its ``url``, if any, in the canonical form.
+
+    Every way a repository line is written (panel routes, MCP, the
+    assistant, imports, the SaaS layer) ends in ``create`` or
+    ``write``, so a github.com repository spelled otherwise is stored
+    as ``https://github.com/<owner>/<repo>`` before the constraint
+    checks it (5-nov-2026).
+
+    :param dict vals: the values being written
+    :return: *vals* itself, or a copy with ``url`` rewritten
+    :rtype: dict
+    """
+    url = vals.get('url')
+    if not isinstance(url, str):
+        return vals
+    return {**vals, 'url': canonical_repo_url(url)}
 
 
 class CloudRepoMixin(models.AbstractModel):
@@ -137,12 +157,12 @@ class CloudRepoMixin(models.AbstractModel):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super().create(vals_list)
+        records = super().create([_with_canonical_url(v) for v in vals_list])
         records._apply_requirements()
         return records
 
     def write(self, vals):
-        result = super().write(vals)
+        result = super().write(_with_canonical_url(vals))
         if 'url' in vals or 'branch' in vals:
             self._apply_requirements()
         return result

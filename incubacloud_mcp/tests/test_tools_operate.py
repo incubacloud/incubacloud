@@ -106,6 +106,48 @@ class TestOperateTools(
         self.assertFalse(result["isError"], result)
         self.assertTrue(self.staging.auto_update)
 
+    def test_update_instance_keeps_a_repository_to_its_canonical_url(self):
+        """An agent's repository line ends in the model's check (5-nov-2026).
+
+        A URL the build would have cloned with the panel's token from
+        somewhere else is refused; another spelling of a github.com
+        repository is stored as ``https://github.com/<owner>/<repo>``.
+        """
+        developer = self._cloud_user("mcp-op-developer", group="group_cloud_developer")
+        self.project.member_ids = [(4, developer.id)]
+        key = self._api_key(developer)
+        lines = self.staging.repo_ids.read(["url", "branch"])
+        with patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts", autospec=True
+        ):
+            refused = self._call_tool(
+                key,
+                "update_instance",
+                {
+                    "instance_id": self.staging.id,
+                    "vals": {"repos": [{"url": "https://github.com/acme/x?y=1"}]},
+                },
+            )
+            self.assertTrue(refused["isError"], refused)
+            self.assertIn(
+                "is not a recognised GitHub URL", refused["content"][0]["text"]
+            )
+            self.env.invalidate_all()
+            self.assertEqual(self.staging.repo_ids.read(["url", "branch"]), lines)
+            kept = self._call_tool(
+                key,
+                "update_instance",
+                {
+                    "instance_id": self.staging.id,
+                    "vals": {"repos": [{"url": "git@github.com:acme/x.git"}]},
+                },
+            )
+        self.assertFalse(kept["isError"], kept)
+        self.env.invalidate_all()
+        self.assertEqual(
+            self.staging.repo_ids.mapped("url"), ["https://github.com/acme/x.git"]
+        )
+
     def test_tags_are_listed_and_created(self):
         """A tag is created, then listed."""
         created = self._payload(
