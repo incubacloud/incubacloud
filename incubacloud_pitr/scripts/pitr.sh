@@ -177,7 +177,11 @@ case "$op" in
             # switched on at once.
             part="$(mktemp "$cache/.part.XXXXXX")"
             trap 'rm -f "$part"' EXIT
-            curl -fsSL --retry 3 -o "$part" \
+            # A passing GitHub error (a 504) must not fail the install: it
+            # holds the instance's queue. --retry-all-errors needs curl 7.71
+            # (Debian 12 and Ubuntu 22.04 ship 7.88 and 7.81).
+            curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors \
+                --connect-timeout 20 --max-time 300 -o "$part" \
                 "https://github.com/wal-g/wal-g/releases/download/$version/wal-g-pg-20.04-$arch"
             echo "$sha  $part" | sha256sum -c --status \
                 || ic_die "wal-g checksum mismatch: refusing it"
