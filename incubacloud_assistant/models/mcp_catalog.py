@@ -1,9 +1,16 @@
-"""The assistant's routes are the panel's own: no agent's tool calls them."""
+"""The assistant's chat is the panel's own: no agent's tool calls its routes.
+
+Its settings are read and changed through ``mcp_tools_assistant``, but for
+the trial of a new key.
+"""
 
 from odoo import api, models
 
 _CHAT = "The assistant's chat, for the person in the panel."
-_SETTINGS = "The assistant's settings, for a manager in the panel."
+_KEY = (
+    "Tries a provider's key typed in the panel: a secret, which agents never "
+    "send (decision 6)."
+)
 
 ASSISTANT_EXCLUDED = {
     **{
@@ -22,15 +29,22 @@ ASSISTANT_EXCLUDED = {
             "delete",
         )
     },
-    **{
-        f"/cloud/assistant/{name}": _SETTINGS
-        for name in (
-            "get_settings",
-            "save_settings",
-            "refresh_models",
-            "read_models",
-            "usage",
-        )
+    "/cloud/assistant/read_models": _KEY,
+}
+
+
+#: The chat calls these through a variable (``_call(route)``, ``rpc(route)``):
+#: the routes it takes, for the inventory test.
+DYNAMIC_CALLS = {
+    "/incubacloud_assistant/static/src/panel/assistant_panel.js": {
+        "route": frozenset(
+            {
+                "/cloud/assistant/stop",
+                "/cloud/assistant/retry",
+                "/cloud/assistant/confirm",
+                "/cloud/assistant/cancel",
+            }
+        ),
     },
 }
 
@@ -50,3 +64,8 @@ class McpCatalogAssistant(models.AbstractModel):
                 for route, reason in ASSISTANT_EXCLUDED.items()
             },
         }
+
+    @api.model
+    def _dynamic_calls(self):
+        """Declare the chat's calls through a variable route."""
+        return {**super()._dynamic_calls(), **DYNAMIC_CALLS}

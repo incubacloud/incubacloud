@@ -1,10 +1,17 @@
-"""The registry: every tool, and what becomes of every route of the panel.
+"""The registry: every tool, and what becomes of every action of the panel.
 
 Each module adds its own: this one core's, the PITR bridge PITR's, the
 tenant panel its routes. ``_route_policies`` maps each rule of the routing
 map (its string, as ``ir.http.routing_map()`` holds it) to
 ``("tool", <name>)`` or ``("excluded", <reason>)``; the inventory test
 fails on a ``/cloud/*`` route nobody classified.
+
+``_call_policies`` does the same for what the panel's screens ask of the
+models directly: ``orm:<model>.<method>`` for an ``orm`` call, and
+``job:<code>`` for a job they queue with ``cloud.job.enqueue``. The
+inventory test reads the panel's bundle for those calls, and fails on one
+nobody classified. ``_dynamic_calls`` and ``_call_wrappers`` declare the
+calls whose route is not a literal the test can read.
 """
 
 from odoo import api, models
@@ -17,7 +24,6 @@ _UPLOAD = (
 )
 _TERMINAL = "Interactive terminal (a PTY); run_command replaces it."
 _HOST_TERMINAL = "Interactive host console; run_host_command replaces it."
-_PREFERENCES = "The user's own notification preferences, not the operation."
 _FORMS = "Serves the panel's own forms only."
 _GITHUB_APP = "Installs the GitHub App in a browser."
 _PUBLIC = "Public endpoint, not an action of the user."
@@ -28,10 +34,6 @@ CORE_EXCLUDED = {
     "/cloud/<path:subpath>": _SPA,
     "/cloud/get_secret": "Secrets never leave through an agent (decision 6).",
     "/cloud/save_github_pat": "Credentials are only written in the panel (decision 6).",
-    "/cloud/clean_frozen_copy": (
-        "Removes a move's frozen copy: the panel's button alone, once the new host "
-        "is checked."
-    ),
     "/cloud/instance/<int:instance_id>/restore": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/begin": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/part": _UPLOAD,
@@ -58,18 +60,16 @@ CORE_EXCLUDED = {
     "/cloud/instance/<int:instance_id>/log_archive/<string:name>": (
         _EXCLUDED_FOR_THE_BROWSER.format(tool="read_logs")
     ),
-    "/cloud/get_user_preferences": _PREFERENCES,
-    "/cloud/save_user_preferences": _PREFERENCES,
-    "/cloud/telegram_detect_chat_id": _PREFERENCES,
-    "/cloud/telegram_send_test": _PREFERENCES,
     "/cloud/ping": _FORMS,
-    "/cloud/get_langs": _FORMS,
     "/cloud/get_nav_counts": (
         "The sidebar's count badges; the list tools count the same records."
     ),
-    "/cloud/get_users": _FORMS,
-    "/cloud/host_defaults": _FORMS,
-    "/cloud/fetch_odoojs_submodules": _FORMS,
+    "/cloud/host_defaults": (
+        "The defaults of the new server form; manage_host applies the same ones."
+    ),
+    "/cloud/fetch_odoojs_submodules": (
+        "No screen calls it; import_project reads the submodules itself."
+    ),
     "/cloud/github/setup": _GITHUB_APP,
     "/cloud/github/callback": _GITHUB_APP,
     "/cloud/github/webhook": _PUBLIC,
@@ -82,8 +82,46 @@ CORE_EXCLUDED = {
 }
 
 
+#: What core's screens queue or call on the models, and the tool that does it.
+CORE_CALLS = {
+    "orm:cloud.job.load_jobs": "get_job",
+    "orm:cloud.job.get_instance_jobs": "list_jobs",
+    "orm:cloud.job.get_host_jobs": "list_jobs",
+    "orm:cloud.job.load_history": "list_jobs",
+    "orm:cloud.job.cancel_job": "cancel_job",
+    "orm:cloud.job.retry_job": "retry_job",
+    "orm:cloud.instance.grant_restore_upload": "grant_restore_upload",
+    "orm:cloud.instance.verify_restore_upload": "check_restore_upload",
+    "orm:cloud.restore.upload.grant.read": "check_restore_upload",
+    "orm:cloud.instance.restore_db": "restore_from_upload",
+    "orm:cloud.instance.restore_from_url": "restore_from_link",
+    "job:start_instance": "run_instance_action",
+    "job:stop_instance": "run_instance_action",
+    "job:restart_instance": "run_instance_action",
+    "job:export_instance": "export_instance",
+    "job:delete_instance": "delete_instance",
+    "job:host_probe": "run_host_action",
+    "job:full_setup": "run_host_action",
+    "job:push_trusted_proxies": "run_host_action",
+    "job:sync_direct_path": "run_host_action",
+}
+#: Core's calls whose route is a variable: per file of the bundle, the
+#: expression the call passes and the paths it reaches.
+CORE_DYNAMIC_CALLS = {
+    "/incubacloud/static/src/components/instance_detail/instance_detail_restore.js": {
+        "`/cloud/instance/${this.props.instance_id}/restore/${path}`": frozenset(
+            {
+                "/cloud/instance/1/restore/begin",
+                "/cloud/instance/1/restore/part",
+                "/cloud/instance/1/restore/finish",
+            }
+        ),
+    },
+}
+
+
 def tool_policies(mapping):
-    """Return ``{route: ("tool", name)}`` for a ``{route: name}`` mapping."""
+    """Return ``{key: ("tool", name)}`` for a ``{route or call key: name}`` mapping."""
     return {route: ("tool", name) for route, name in mapping.items()}
 
 
@@ -102,6 +140,29 @@ class McpCatalog(models.AbstractModel):
     def _route_policies(self):
         """Return ``{route rule: ("tool", name) | ("excluded", reason)}``."""
         return {route: ("excluded", reason) for route, reason in CORE_EXCLUDED.items()}
+
+    @api.model
+    def _call_policies(self):
+        """Return ``{orm:<model>.<method> | job:<code>: ("tool", name) |
+        ("excluded", reason)}``: what the screens ask of the models."""
+        return tool_policies(CORE_CALLS)
+
+    @api.model
+    def _dynamic_calls(self):
+        """Return ``{bundle file: {expression: routes}}``: calls of a variable route.
+
+        The inventory test refuses a call whose route it cannot read
+        unless its file declares it here, checks that each route declared
+        is still written in that file and that each has a policy.
+        """
+        return dict(CORE_DYNAMIC_CALLS)
+
+    @api.model
+    def _call_wrappers(self):
+        """Return ``{function: route prefix}``: helpers that call ``rpc`` for a
+        route named by their first argument (a module's, such as the
+        tenant's ``_bff``)."""
+        return {}
 
     @api.model
     def _spec(self, name):
