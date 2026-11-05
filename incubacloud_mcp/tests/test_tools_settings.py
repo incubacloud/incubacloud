@@ -238,6 +238,19 @@ class TestSettingsTools(
                 self.assertIn("security settings", text)
                 self.assertIn(line, text)
 
+    def test_fewer_hours_for_a_move_s_frozen_copy_ask(self):
+        """Lowered, the copies a move froze go sooner (0: at the next pass);
+        raised or kept, nothing asks."""
+        self.settings.write({"move_frozen_source_hours": 48})
+        self.authenticate("mcp-set-mgr", "mcp-set-mgr")
+        text = self._approval_text("general", {"move_frozen_source_hours": 0})
+        self.assertIn('"move_frozen_source_hours": 48 → 0', text)
+        for hours in (48, "48", 72):
+            with self.subTest(hours=hours):
+                self.assertIsNone(
+                    self._approval_text("general", {"move_frozen_source_hours": hours})
+                )
+
     def test_an_unknown_setting_is_refused_before_anyone_is_asked(self):
         """A setting a section does not have is refused before any approval,
         and named quoted, so it cannot pass for the panel's words."""

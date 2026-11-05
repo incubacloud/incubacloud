@@ -76,6 +76,10 @@ MCP_RATE_KEY = "rate_limit_mcp_user_per_min"
 MCP_KEYS = ("mcp_oauth_issuer", "mcp_resource")
 #: General settings that always ask for approval (D2).
 SENSITIVE_GENERAL = ("audit_log_retention_days", "trusted_proxy_ranges")
+#: General settings that ask for approval when lowered: with fewer hours the
+#: copies a move froze on their old servers are removed sooner (0: at the
+#: next hourly pass), and what they hold with them.
+LOWERED_ASKS_GENERAL = ("move_frozen_source_hours",)
 #: General settings that ask for approval where the panel hides them.
 OBSERVABILITY_FIELDS = (
     "metrics_enabled",
@@ -339,9 +343,10 @@ class McpToolsSettings(models.AbstractModel):
 
         D2: the audit retention, the trusted proxy ranges, every rate
         limit, the agents' issuer and MCP URL, and what ``get_config``
-        hides on this panel (observability, on a tenant). A value equal
-        to the one held once normalised (:func:`normalized_setting`) is
-        no change.
+        hides on this panel (observability, on a tenant); and the hours a
+        move's frozen copy is kept, when lowered (``LOWERED_ASKS_GENERAL``).
+        A value equal to the one held once normalised
+        (:func:`normalized_setting`) is no change.
         """
         section, values = args["section"], args.get("values") or {}
         if section == "general":
@@ -361,12 +366,35 @@ class McpToolsSettings(models.AbstractModel):
             sensitive = set(values)
         else:
             return []
-        return [
+        changes = [
             (key, current.get(key), values[key])
             for key in sorted(sensitive & set(values))
             if normalized_setting(key, values[key], current.get(key))
             != normalized_setting(key, current.get(key), current.get(key))
         ]
+        if section == "general":
+            changes += [
+                (key, current.get(key), values[key])
+                for key in LOWERED_ASKS_GENERAL
+                if key in values and self._lowered(values[key], current.get(key))
+            ]
+        return changes
+
+    @api.model
+    def _lowered(self, value, current):
+        """Return whether *value* is below the number *current*.
+
+        A value that is not a number counts as lowered: the route refuses
+        or reads it, and the approval shows it as given.
+
+        :param value: the value given
+        :param current: the value held
+        :rtype: bool
+        """
+        try:
+            return int(value) < int(current or 0)
+        except (TypeError, ValueError):
+            return True
 
     @api.model
     def _confirm_update_settings(self, args):
