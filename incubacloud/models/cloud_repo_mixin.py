@@ -130,6 +130,33 @@ class CloudRepoMixin(models.AbstractModel):
                     "Repo %(url)s: module(s) in both Addons and Exclude Addons: %(modules)s",
                 ) % {'url': repo.url, 'modules': ', '.join(sorted(overlap))})
 
+    def _write_with_legacy_urls_canonical(self, vals):
+        """Write *vals*, storing a line's old spelling of its URL canonical.
+
+        A line stored before 5-nov-2026 may keep a github.com URL in
+        another spelling (``github.com/o/r``, ``http://``, ``www.``, a
+        final slash, ``git@github.com:o/r.git``). The constraint checks
+        the URL whenever the branch or the pin is written, so pinning,
+        unpinning, a pull request's branch or the SaaS layer's core pin
+        would fail on such a line although nobody touched its URL. Each
+        line whose URL :func:`canonical_repo_url` rewrites into a safe
+        one is written with that URL too, on its own; the rest go in
+        one write. A URL that cannot be made canonical is left for the
+        constraint to refuse.
+
+        :param dict vals: the values being written, with no ``url``
+        :return: what ``write`` returns
+        :rtype: bool
+        """
+        plain = self.browse()
+        for repo in self:
+            canonical = canonical_repo_url(repo.url)
+            if canonical != repo.url and is_safe_repo_url(canonical):
+                super(CloudRepoMixin, repo).write({**vals, 'url': canonical})
+            else:
+                plain |= repo
+        return super(CloudRepoMixin, plain).write(vals)
+
     # ── Requirements sync ──────────────────────────────────────────────────
 
     def _apply_requirements(self):
@@ -162,7 +189,11 @@ class CloudRepoMixin(models.AbstractModel):
         return records
 
     def write(self, vals):
-        result = super().write(_with_canonical_url(vals))
+        vals = _with_canonical_url(vals)
+        if 'url' in vals:
+            result = super().write(vals)
+        else:
+            result = self._write_with_legacy_urls_canonical(vals)
         if 'url' in vals or 'branch' in vals:
             self._apply_requirements()
         return result

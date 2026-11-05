@@ -16,6 +16,7 @@ from odoo import http as odoo_http
 from odoo.exceptions import ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
+from odoo.tools import SQL
 
 from odoo.addons.incubacloud.controllers._data_load import (
     _routes_crud,
@@ -23,6 +24,10 @@ from odoo.addons.incubacloud.controllers._data_load import (
     _routes_ops,
 )
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
+from odoo.addons.incubacloud.models._repo_requirements import (
+    canonical_repo_url,
+    is_safe_repo_url,
+)
 
 #: Accepted by the old check, which matched ``[^/]+`` after the owner.
 _ONCE_ACCEPTED = (
@@ -219,4 +224,127 @@ class TestRepoUrlHost(TransactionCase):
             )
         self.assertFalse(
             self.env["cloud.project"].search([("name", "=", "Refused host import")]),
+        )
+
+    def _store_as_before(self, line, url):
+        """Give *line* the *url* a row kept from before 5-nov-2026.
+
+        Written in SQL, as such a row was stored: neither ``write``'s
+        rewrite nor the constraint see it.
+
+        :param line: a repository line
+        :param str url: the URL the row keeps
+        """
+        self.env.cr.execute(SQL(
+            "UPDATE %s SET url = %s WHERE id = %s",
+            SQL.identifier(line._table), url, line.id,
+        ))
+        line.invalidate_recordset(["url"])
+
+    def test_an_old_spelling_is_stored_canonical_when_its_pin_or_branch_is_written(self):
+        """Pinning, unpinning, a pull request's branch and the SaaS core
+        pin write ``commit_sha`` or ``branch`` alone, and the constraint
+        checks the URL then: a row's old spelling of a github.com
+        repository is stored canonical, and the write goes through."""
+        for model, field, owner in self.models:
+            for url, stored in (
+                ("github.com/acme/addons", "https://github.com/acme/addons"),
+                ("http://github.com/acme/addons", "https://github.com/acme/addons"),
+                ("https://www.github.com/acme/addons", "https://github.com/acme/addons"),
+                ("https://github.com/acme/addons/", "https://github.com/acme/addons"),
+                ("git@github.com:acme/addons.git", "https://github.com/acme/addons.git"),
+            ):
+                with self.subTest(model=model, url=url):
+                    line = self._new(model, field, owner, "https://github.com/acme/addons")
+                    self._store_as_before(line, url)
+                    line.write({"commit_sha": "a" * 40})
+                    self.assertEqual((line.url, line.commit_sha), (stored, "a" * 40))
+                    self._store_as_before(line, url)
+                    line.write({"branch": "feature/x", "commit_sha": False})
+                    self.assertEqual((line.url, line.branch), (stored, "feature/x"))
+                    self.assertFalse(line.commit_sha)
+
+    def test_a_batch_write_stores_each_old_spelling_canonical(self):
+        """``cloud_freeze_all_repos`` writes every line of an instance at once."""
+        for model, field, owner in self.models:
+            with self.subTest(model=model):
+                old = self._new(model, field, owner, "https://github.com/acme/old")
+                kept = self._new(model, field, owner, "https://github.com/acme/kept.git")
+                self._store_as_before(old, "git@github.com:acme/old.git")
+                (old | kept).write({"commit_sha": "b" * 40})
+                self.assertEqual(
+                    (old | kept).mapped("url"),
+                    ["https://github.com/acme/old.git", "https://github.com/acme/kept.git"],
+                )
+                self.assertEqual((old | kept).mapped("commit_sha"), ["b" * 40] * 2)
+
+    def test_an_old_url_that_cannot_be_canonical_still_fails_clearly(self):
+        """No canonical github.com URL for it: the write is refused, naming
+        the URL and the form it should take."""
+        for model, field, owner in self.models:
+            line = self._new(model, field, owner, "https://github.com/acme/addons")
+            self._store_as_before(line, "https://evil.example/github.com/x.git")
+            for vals in ({"commit_sha": "c" * 40}, {"branch": "dev"}):
+                with self.subTest(model=model, vals=vals), self.assertRaisesRegex(
+                    ValidationError,
+                    r"'https://evil\.example/github\.com/x\.git' is not a "
+                    r"recognised GitHub URL.*https://github\.com/<owner>/<repo>",
+                ), self.env.cr.savepoint():
+                    line.write(vals)
+            self.assertEqual(line.url, "https://evil.example/github.com/x.git")
+
+    def test_a_host_that_only_folds_to_github_in_unicode_is_not_github(self):
+        """``gıthub.com`` (dotless i) and ``GİTHUB.com`` (dotted capital I)
+        match ``github.com`` only under Unicode case folding: they are left
+        as they are, and refused."""
+        for url in ("https://gıthub.com/acme/addons", "https://GİTHUB.com/acme/addons"):
+            with self.subTest(url=url):
+                self.assertEqual(canonical_repo_url(url), url)
+                self.assertFalse(is_safe_repo_url(canonical_repo_url(url)))
+        for model, field, owner in self.models:
+            with self.subTest(model=model), self.assertRaises(
+                ValidationError,
+            ), self.env.cr.savepoint():
+                self._new(model, field, owner, "https://gıthub.com/acme/addons")
+
+    def _import_from_host(self, remote, name):
+        """Import a host's project whose repos.yaml names *remote*.
+
+        :param str remote: the repository's remote in repos.yaml
+        :param str name: the project's name in its copier answers
+        :return: what the route answers
+        """
+        host = self.env["cloud.host"].create({
+            "name": f"repo-url-{name.lower().replace(' ', '-')}",
+            "ip_address": "192.0.2.83", "user": "ubuntu",
+            "wildcard_domain": "repo-url-ssh.example.com",
+        })
+        repos_yaml = (
+            "addons:\n"
+            f"  remotes:\n    addons: '{remote}'\n"
+            "  target: addons main\n"
+        )
+        reads = [(f"project_name: {name}\n", ""), (repos_yaml, "")]
+        reads += [("", "")] * 11
+        with patch.object(
+            _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
+            return_value=reads,
+        ):
+            return self._serve(
+                _routes_ops, _routes_ops.OpsMixin(), "cloud_import_host_instance",
+                host_id=host.id, path=f"/srv/{name.lower().replace(' ', '-')}",
+            )
+
+    def test_a_host_import_keeps_a_github_ssh_remote_and_refuses_another_host(self):
+        """The import used to turn any ``git@<host>:x/y.git`` into
+        ``https://github.com/x/y.git``: a GitLab remote became a GitHub
+        repository of the same path, cloned with the panel's token."""
+        answer = self._import_from_host("git@github.com:acme/addons.git", "SSH github")
+        self.assertTrue(answer["ok"], answer)
+        project = self.env["cloud.project"].browse(answer["project_id"])
+        self.assertEqual(project.repo_ids.mapped("url"), ["https://github.com/acme/addons.git"])
+        with self.assertRaises(ValidationError), self.env.cr.savepoint():
+            self._import_from_host("git@gitlab.com:acme/addons.git", "SSH gitlab")
+        self.assertFalse(
+            self.env["cloud.project"].search([("name", "=", "SSH gitlab")]),
         )

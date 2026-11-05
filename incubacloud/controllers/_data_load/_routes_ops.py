@@ -18,6 +18,7 @@ from odoo import _, http
 from odoo.exceptions import UserError
 from odoo.http import request
 
+from ...models._repo_requirements import canonical_repo_url
 from .._rate_limit import Rule, rate_gate_json
 from .._safe_error import safe_error_response
 from ..async_utils import run_async
@@ -774,16 +775,10 @@ class OpsMixin:
         smtp_env = _parse_env(smtp_env_raw)
         backup_env = _parse_env(backup_env_raw)
 
-        # Parse repos.yaml + addons.yaml (reuse helpers from import_project)
-        _SSH_RE = re.compile(r"^git@[^:]+:(.+?)(?:\.git)?$")
-
-        def _ssh_to_https(u):
-            u = (u or "").strip()
-            m = _SSH_RE.match(u)
-            if m:
-                return f"https://github.com/{m.group(1)}.git"
-            return u
-
+        # Parse repos.yaml + addons.yaml (reuse helpers from import_project).
+        # A remote is stored as canonical_repo_url spells it: a github.com
+        # one in https, any other left for the line's check to refuse
+        # (git@gitlab.com:x/y.git once became https://github.com/x/y.git).
         odoo_version = copier.get("odoo_version", "")
         repos_data = []
         if repos_raw.strip():
@@ -808,7 +803,7 @@ class OpsMixin:
                         continue
                     remotes = cfg.get("remotes", {})
                     repo_url = next(iter(remotes.values()), "") if remotes else ""
-                    repo_url = _ssh_to_https(repo_url)
+                    repo_url = canonical_repo_url(repo_url or "")
                     target = cfg.get("target", "")
                     branch_val = ""
                     if target:
