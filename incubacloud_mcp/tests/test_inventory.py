@@ -158,6 +158,43 @@ class TestRouteInventory(TransactionCase):
                     self.assertTrue(value)
 
 
+@tagged("post_install", "-at_install")
+class TestToolRequirements(TransactionCase):
+    """A tool that needs something first says what, in its listing."""
+
+    #: Tools that act on a record in a given state, or after another tool.
+    STATEFUL = (
+        "deploy_instance",
+        "rebuild_instance",
+        "create_instance",
+        "clone_to_staging",
+        "create_backup",
+        "restore_backup",
+        "refresh_staging",
+        "move_instance",
+        "rollback_move",
+        "run_command",
+        "run_instance_action",
+        "export_instance",
+        "run_host_action",
+        "retry_job",
+        "download_backup",
+        "restore_from_upload",
+    )
+
+    def test_stateful_tools_say_what_they_require(self):
+        """Each says it after its description, beside its fields' types."""
+        catalog = self.env["incubacloud.mcp.catalog"]
+        for name in self.STATEFUL:
+            with self.subTest(tool=name):
+                listed = catalog._spec(name).listed()["description"]
+                self.assertIn("Requires: ", listed)
+        listed = catalog._spec("deploy_instance").listed()["description"]
+        self.assertIn("a production instance needs a backup destination", listed)
+        listed = catalog._spec("create_instance").listed()["description"]
+        self.assertIn("vals takes these fields", listed)
+
+
 class TestJsCalls(BaseCase):
     """The reader of the screens finds the calls, and nothing in a comment."""
 

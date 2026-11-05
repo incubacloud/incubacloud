@@ -45,6 +45,10 @@ TOOLS = (
             required=("instance_id", "action"),
         ),
         handler="_tool_configure_pitr",
+        requires=(
+            "a deployed production instance on PostgreSQL 12 or later with an "
+            "S3 backup destination, and no job running on it."
+        ),
     ),
     ToolSpec(
         "pitr_restore",
@@ -65,6 +69,10 @@ TOOLS = (
         handler="_tool_pitr_restore",
         destructive=True,
         confirm="always",
+        requires=(
+            "continuous recovery switched on (get_pitr), and a moment inside "
+            "its window."
+        ),
     ),
 )
 

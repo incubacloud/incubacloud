@@ -40,6 +40,7 @@ TOOLS = (
         _MANAGER,
         obj({"project_id": record_id("The project.")}, required=("project_id",)),
         route="/cloud/delete_project",
+        requires="no instances left in it, archived ones included.",
     ),
     _destructive(
         "delete_instance",
@@ -59,6 +60,7 @@ TOOLS = (
             required=("instance_id",),
         ),
         handler="_tool_delete_instance",
+        requires="for keep_in_panel, an instance that was deployed.",
     ),
     _destructive(
         "delete_archived_instance",
@@ -66,6 +68,7 @@ TOOLS = (
         _MANAGER,
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         handler="_tool_delete_archived_instance",
+        requires="an archived instance.",
     ),
     _destructive(
         "delete_host",
@@ -74,6 +77,7 @@ TOOLS = (
         obj({"host_id": record_id("The server.")}, required=("host_id",)),
         route="/cloud/delete_host",
         enqueues=True,
+        requires="no instances left on the server.",
     ),
     _destructive(
         "delete_backup_backend",
@@ -84,6 +88,7 @@ TOOLS = (
             required=("backend_id",),
         ),
         route="/cloud/delete_backup_backend",
+        requires="no project, instance or setting using the destination.",
     ),
     _destructive(
         "restore_backup",
@@ -99,6 +104,10 @@ TOOLS = (
         ),
         route="/cloud/restore_backup",
         enqueues=True,
+        requires=(
+            "a deployed production instance with a backup destination, and a "
+            "time list_backups gives."
+        ),
     ),
     _destructive(
         "refresh_staging",
@@ -117,6 +126,11 @@ TOOLS = (
         ),
         route="/cloud/refresh_from_production",
         enqueues=True,
+        requires=(
+            "a deployed staging and a production instance of the same project; "
+            "source=backup needs a backup destination on production (otherwise "
+            "a dump is taken now)."
+        ),
     ),
     _destructive(
         "move_instance",
@@ -128,6 +142,11 @@ TOOLS = (
         ),
         route="/cloud/move_instance",
         enqueues=True,
+        requires=(
+            "a deployed instance with no move in progress, and another server "
+            "that is compatible and has its proxy (Traefik) deployed "
+            "(list_hosts)."
+        ),
     ),
     _destructive(
         "rollback_move",
@@ -136,6 +155,7 @@ TOOLS = (
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/rollback_move",
         enqueues=True,
+        requires="a move of the instance that failed before its cutover.",
     ),
     _destructive(
         "reset_github_app",
@@ -143,6 +163,7 @@ TOOLS = (
         _MANAGER,
         obj(),
         route="/cloud/reset_github_app",
+        requires="the panel's GitHub App set up.",
     ),
 )
 
