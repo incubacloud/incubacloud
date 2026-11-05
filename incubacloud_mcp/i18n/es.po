@@ -2308,3 +2308,17 @@ msgstr "sin backup de seguridad"
 #: code:addons/incubacloud_mcp/models/mcp_tools_restore.py:0
 msgid "That door is closed already: nothing to do."
 msgstr "Esa puerta ya está cerrada: no hay nada que hacer."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Stop every notification: no job notification reaches you at the level none."
+msgstr ""
+"Dejar de enviarle todas las notificaciones: ninguna notificación de tareas "
+"le llegará con el nivel «ninguna»."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Stop your Telegram notifications."
+msgstr "Dejar de enviarle las notificaciones por Telegram."
