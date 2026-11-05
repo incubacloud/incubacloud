@@ -893,17 +893,21 @@ class AbstractExecutor(ABC):
         Never raises: the caller is re-raising *exc*, and a failure here
         must not take its place. Logged instead.
 
+        The host's disk is read again afterwards, as after an outcome
+        (``_refresh_host_disk``): a build or a teardown that stopped half
+        way changed it too.
+
         :param Exception exc: what stopped the run
         """
-        if not self._handles_abort():
-            return  # nothing to do, so no cursor to open
-        try:
-            await self._run_hook_durably(self.on_abort, exc)
-        except Exception:
-            logging.getLogger("AbstractExecutor").exception(
-                "[_dispatch_abort] on_abort failed for job %s",
-                getattr(getattr(self, "job", None), "id", None),
-            )
+        if self._handles_abort():
+            try:
+                await self._run_hook_durably(self.on_abort, exc)
+            except Exception:
+                logging.getLogger("AbstractExecutor").exception(
+                    "[_dispatch_abort] on_abort failed for job %s",
+                    getattr(getattr(self, "job", None), "id", None),
+                )
+        self._refresh_host_disk()
 
     def _unlink_after_job_commit(self, inst, sudo=False):
         """Unlink *inst* once this job's own transaction has committed.

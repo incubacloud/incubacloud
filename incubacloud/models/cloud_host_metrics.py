@@ -25,12 +25,30 @@ _logger = logging.getLogger(__name__)
 _GIB = 1024 ** 3
 
 # One query per fact, keyed by the field it feeds.
+# Each is the metric, its own label matchers, and what wraps the selector
+# (``{}``); ``_query`` writes it, for some hosts only when asked.
 _QUERIES = {
-    "cpu_cores": 'count by (host_id) (node_cpu_seconds_total{mode="idle"})',
-    "ram_total_gb": "node_memory_MemTotal_bytes",
-    "disk_free_gb": 'node_filesystem_avail_bytes{mountpoint="/"}',
-    "_disk_size": 'node_filesystem_size_bytes{mountpoint="/"}',
+    "cpu_cores": ("node_cpu_seconds_total", 'mode="idle"', "count by (host_id) ({})"),
+    "ram_total_gb": ("node_memory_MemTotal_bytes", "", "{}"),
+    "disk_free_gb": ("node_filesystem_avail_bytes", 'mountpoint="/"', "{}"),
+    "_disk_size": ("node_filesystem_size_bytes", 'mountpoint="/"', "{}"),
 }
+
+
+def _query(key, host_ids=None):
+    """Return the PromQL expression of the fact *key*, for *host_ids* only.
+
+    :param str key: a key of ``_QUERIES``
+    :param host_ids: the hosts to ask about; every host when empty
+    :rtype: str
+    """
+    metric, matchers, around = _QUERIES[key]
+    parts = [matchers] if matchers else []
+    if host_ids:
+        ids = "|".join(str(int(host_id)) for host_id in sorted(host_ids))
+        parts.append(f'host_id=~"{ids}"')
+    selector = metric + ("{" + ",".join(parts) + "}" if parts else "")
+    return around.format(selector)
 
 
 class CloudHost(models.Model):
@@ -69,9 +87,10 @@ class CloudHost(models.Model):
             env["cloud.host"]._write_specs_from_metrics(readings, now)
 
     @api.model
-    def _read_specs_from_metrics(self):
-        """Ask the metrics backend what it knows of every host.
+    def _read_specs_from_metrics(self, host_ids=None):
+        """Ask the metrics backend what it knows of every host, or of some.
 
+        :param host_ids: the hosts to ask about; every host when empty
         :return: ``{host_id: {field: value}}``, or ``None`` when there is
             nothing to read (metrics off, no central) or the backend did
             not answer; logged, never raised.
@@ -87,9 +106,9 @@ class CloudHost(models.Model):
 
         readings = {}
         try:
-            for key, expression in _QUERIES.items():
+            for key in _QUERIES:
                 for labels, value in promql_query(
-                    base, expression, token=token, user=user,
+                    base, _query(key, host_ids), token=token, user=user,
                 ):
                     raw = (labels or {}).get("host_id")
                     if not raw:
@@ -110,7 +129,7 @@ class CloudHost(models.Model):
         """Read these hosts' specs and disk from metrics now, not in 5 minutes.
 
         What ``_cron_refresh_specs_from_metrics`` does, for these hosts
-        only, when something just changed their disk or someone asked to
+        only (the backend is asked about them alone), when something just changed their disk or someone asked to
         see it: the host's Check, the end of a build or of a teardown.
         Written on the caller's cursor, inside a savepoint: the caller is
         a job's hook on its durable cursor, which may hold these rows
@@ -121,7 +140,7 @@ class CloudHost(models.Model):
         if not self:
             return
         try:
-            readings = self.env["cloud.host"]._read_specs_from_metrics()
+            readings = self.env["cloud.host"]._read_specs_from_metrics(self.ids)
             if not readings:
                 return
             mine = {hid: readings[hid] for hid in self.ids if hid in readings}
