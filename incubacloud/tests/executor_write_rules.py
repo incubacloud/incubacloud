@@ -84,6 +84,7 @@ HOOK_HELPERS = {
     "_stamp_tenant_module_commit": "stamps the tenant module a run shipped",
     "_record_rehome": "warns when a moved panel kept its old host admitted",
     "_grade_reachability": "the health probe's verdict on whether Odoo is reached",
+    "_record_state": "the state-only health probe's reading of the instance",
 }
 
 #: Calls named like a write that do not touch the database, keyed by
