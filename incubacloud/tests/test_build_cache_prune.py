@@ -60,7 +60,7 @@ def _run_with_fake_docker(command, docker_fails=False):
             encoding="utf-8",
         )
         fake.chmod(0o755)
-        env = dict(os.environ, PATH=f"{tmp}:{os.environ.get('PATH', '')}")
+        env = os.environ | {"PATH": f"{tmp}:{os.environ.get('PATH', '')}"}
         done = subprocess.run(
             ["bash", "-c", command], capture_output=True, text=True,
             env=env, timeout=30, check=False,
