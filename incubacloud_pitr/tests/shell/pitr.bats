@@ -81,6 +81,23 @@ STUB
     [ -z "$(find "$HOME/.cache/incubacloud/walg" -name '.part.*')" ]
 }
 
+@test "install downloads wal-g retrying every kind of error, with time limits" {
+    cat > "$TMP/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+echo "curl $*" >> "$CALLS"
+while [ "$#" -gt 0 ]; do [ "$1" = "-o" ] && { echo tampered > "$2"; }; shift; done
+STUB
+    chmod +x "$TMP/bin/curl"
+    sha=0000000000000000000000000000000000000000000000000000000000000000
+    run bash "$SCRIPT" install "$DIR" v3.0.9 "$sha" "$sha"
+    line="$(grep '^curl ' "$CALLS")"
+    [[ "$line" == *"--retry 6"* ]]
+    [[ "$line" == *"--retry-delay 10"* ]]
+    [[ "$line" == *"--retry-all-errors"* ]]
+    [[ "$line" == *"--connect-timeout 20"* ]]
+    [[ "$line" == *"--max-time 300"* ]]
+}
+
 @test "enable refuses a timeout that is not a number" {
     run bash "$SCRIPT" enable "$DIR" odoo '60; reboot'
     [ "$status" -ne 0 ]
