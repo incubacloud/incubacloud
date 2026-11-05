@@ -60,6 +60,39 @@ def _renew_sid(session):
     return False
 
 
+def _user_context(env, uid, session):
+    """Return the session context Odoo's own login gives *uid*.
+
+    The session the link logs in may carry the context of whoever used
+    it before (their language, their timezone, their ``uid``): Odoo's
+    login replaces it, and so does this, the way each version does.
+
+    - 16 and later (``Session.finalize``; ``odoo.http.session.finalize``
+      in 20): ``dict(res.users.context_get())`` as the user, which since
+      17 carries ``uid`` itself.
+    - 8 to 15 (``OpenERPSession.get_context``): the same with ``uid``
+      added and the language passed through the session's
+      ``_fix_lang``. 8 and 9 call ``context_get`` the old way, as their
+      ``get_context`` does.
+
+    :param env: an environment of the link's database as *uid*.
+    :param int uid: the user the link logs in.
+    :param session: the request's session, for ``_fix_lang`` (8 to 15).
+    :returns: the context to store in the session.
+    :rtype: dict
+    """
+    if _MAJOR < 10:
+        context = dict(env.registry['res.users'].context_get(env.cr, uid) or {})
+    else:
+        context = dict(env['res.users'].context_get() or {})
+    if _MAJOR < 16:
+        context['uid'] = uid
+        fix_lang = getattr(session, '_fix_lang', None)
+        if fix_lang:
+            fix_lang(context)
+    return context
+
+
 class IncubaCloudConnectController(http.Controller):
 
     @http.route(
@@ -85,6 +118,8 @@ class IncubaCloudConnectController(http.Controller):
           browser brought, logged in or not, is reused
         - Session token is computed by Odoo itself for that new id
           (v9+; v7-v8 have none)
+        - The session's context is the user's own (``_user_context``,
+          v8+): nothing of the session's previous user is kept
         """
         if not t or len(t) != 32 or not all(
             c in '0123456789abcdef' for c in t
@@ -127,6 +162,15 @@ class IncubaCloudConnectController(http.Controller):
                 if not user.exists() or not user.active:
                     return Response('User not found.', status=400)
                 login = user.login
+                # The user's own language and timezone, not those of
+                # whoever used the browser's session before (8+).
+                context = (
+                    _user_context(
+                        odoo.api.Environment(cr, uid, {}), uid,
+                        request.session,
+                    )
+                    if _MAJOR >= 8 else None
+                )
                 session_token = None
                 if not _renew_sid(request.session) and hasattr(
                     user, '_compute_session_token',
@@ -158,6 +202,8 @@ class IncubaCloudConnectController(http.Controller):
         request.session['db'] = db
         if session_token is not None:
             request.session['session_token'] = session_token
+        if context is not None:
+            request.session['context'] = context
 
         # Redirect admins to /odoo (v18+), everyone else to /web
         if _MAJOR >= 18:
