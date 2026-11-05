@@ -331,13 +331,15 @@ class TestCommandTools(
 
     def test_a_command_has_its_instance_probed_when_it_ends(self):
         """run_command probes its instance; run_host_command, each instance of
-        its server."""
+        its server, but not one whose probe still waits to start: that one
+        reads what both commands left. The probe reads the state alone."""
         self._call_tool(
             self.key,
             "run_command",
             {"instance_id": self.staging.id, "command": "true"},
         )
         self.assertEqual(len(self._probes(self.staging)), 1)
+        self.assertEqual(self._probes(self.staging).payload, {"state_only": True})
         self.assertFalse(self._probes(self.production))
         manager_key = self._api_key(
             self._cloud_user("mcp-cmd-probe-mgr", group="group_cloud_manager")
@@ -345,7 +347,7 @@ class TestCommandTools(
         self._confirmed_call(
             manager_key, "run_host_command", {"host_id": self.host.id, "command": "true"}
         )
-        self.assertEqual(len(self._probes(self.staging)), 2)
+        self.assertEqual(len(self._probes(self.staging)), 1)
         self.assertEqual(len(self._probes(self.production)), 1)
 
     def test_a_server_that_does_not_answer_in_time_is_not_a_timed_out_command(

@@ -17,9 +17,10 @@ worker that dies while it runs leaves it audited and its approval spent,
 and the request holds no lock on the instance while it runs.
 
 A command may have stopped, started or changed what it ran in: when it
-ends, the instance (or every instance of the server) is probed at once,
-as a job that changes an instance has it probed
-(``cloud.instance._refresh_state_now``).
+ends, the state of the instance (or of every instance of the server) is
+read at once, as a job that changes an instance has it read
+(``cloud.instance._refresh_state_now``). That reading grades nothing, so
+commands in a row raise no alert of their own.
 """
 
 import asyncio
