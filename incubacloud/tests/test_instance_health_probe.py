@@ -385,6 +385,106 @@ class TestUnresponsiveHysteresis(TransactionCase):
         self.assertIn("4 consecutive", alerts.message)
 
 
+
+class TestMemoryHysteresis(TransactionCase):
+    """``instance_high_memory`` waits for 95 % over six probes (30 min).
+
+    It had 85 % over two probes, the streak it shared with the CPU. A
+    panel's Odoo sat at 87-92 % of its limit for days with nothing wrong
+    (5-Nov-2026): its memory climbs in steps and stays up until the
+    workers recycle, so the alert stood for days and meant nothing.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.project = self.env["cloud.project"].create({"name": "Mem Proj"})
+        self.host = self.env["cloud.host"].create({
+            "name": "mem-host",
+            "ip_address": "192.0.2.65",
+            "user": "ubuntu",
+            "wildcard_domain": "mem.example.com",
+        })
+        self.instance = self.env["cloud.instance"].create({
+            "name": "meminst",
+            "project_id": self.project.id,
+            "environment": "production",
+            "host_id": self.host.id,
+        })
+        self.job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "instance_health")], limit=1,
+        )
+
+    def _states(self):
+        """Every service the instance expects, running."""
+        return "\n".join(
+            f"{svc}\trunning" for svc in self.instance.expected_services()
+        )
+
+    def _usage(self, cpu, mem):
+        """Probe once, answering, with this CPU and memory reading.
+
+        :param float cpu: the CPU percentage ``docker stats`` reports
+        :param float mem: the memory percentage it reports
+        """
+        job = self.env["cloud.job"].create({
+            "name": "Health",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.job_type.id,
+        })
+        executor = InstanceHealthExecutor(job, self.host)
+        executor._skipped = False
+        results = {
+            "container_state": {"stdout": self._states()},
+            "cpu_mem_snapshot": {"stdout": f"{cpu}\t{mem}"},
+            "http_health": {"stdout": "exit:0"},
+            "error_lines": {"stdout": ""},
+        }
+        executor.parse_results(results)
+        asyncio.run(executor.on_success(results))
+
+    def _code_alert(self, code):
+        """Return the active alert of *code* on the instance."""
+        return self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", code),
+            ("state", "=", "active"),
+        ])
+
+    def test_the_old_plateau_raises_nothing(self):
+        """92 % for an hour is a plateau, not an incident."""
+        for _ in range(12):
+            self._usage(0.0, 92.0)
+        self.assertFalse(self._code_alert("instance_high_memory"))
+        self.assertEqual(self.instance.mem_over_threshold_streak, 0)
+
+    def test_95_percent_alerts_on_the_sixth_probe(self):
+        for _ in range(5):
+            self._usage(0.0, 96.0)
+        self.assertFalse(self._code_alert("instance_high_memory"))
+        self.assertEqual(self.instance.mem_over_threshold_streak, 5)
+        self._usage(0.0, 96.0)
+        alert = self._code_alert("instance_high_memory")
+        self.assertEqual(len(alert), 1)
+        self.assertIn("6 consecutive", alert.message)
+        self.assertIn("threshold 95%", alert.message)
+
+    def test_one_reading_below_starts_the_count_over(self):
+        for _ in range(5):
+            self._usage(0.0, 96.0)
+        self._usage(0.0, 80.0)
+        self._usage(0.0, 96.0)
+        self.assertFalse(self._code_alert("instance_high_memory"))
+        self.assertEqual(self.instance.mem_over_threshold_streak, 1)
+
+    def test_the_cpu_keeps_its_own_two_probes(self):
+        """Separating the streaks must not slow the CPU alert down."""
+        self._usage(95.0, 0.0)
+        self._usage(95.0, 0.0)
+        self.assertTrue(self._code_alert("instance_high_cpu"))
+        self.assertFalse(self._code_alert("instance_high_memory"))
+
 class TestRunningWhileMetricsOwnIt(TransactionCase):
     """An odoo the probe sees answering is running, whoever owns the flag.
 

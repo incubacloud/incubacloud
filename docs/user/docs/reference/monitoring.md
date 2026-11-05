@@ -43,7 +43,13 @@ Both views need the `developer` role or above.
 Rules are data, not code: thresholds can be tuned without a release.
 Shipped rules cover a host that stopped reporting, a disk almost full,
 memory nearly exhausted, sustained CPU saturation, an instance that
-stopped reporting containers, and an instance returning server errors.
+stopped reporting containers, an instance returning server errors, and
+a process of an instance's Odoo, database or mail container killed for
+lack of memory. The last one is critical.
+
+Each instance is also checked every five minutes: its Odoo above 95 %
+of its memory limit for thirty minutes raises a warning. See [Memory and resources](../instances/resources.md)
+for what the panel sets so that Odoo stays below its limit.
 
 Alerts arrive through the same channels as everything else — in-app,
 email, Telegram or webhook, as configured.

@@ -112,7 +112,7 @@
 
     <!-- ── Instance-scoped rules ──────────────────────────────────────
          These raise against the instance, so the alert lands on its own
-         page instead of being buried in its host's. Both depend on the
+         page instead of being buried in its host's. All depend on the
          agents' relabelling attaching ``instance_id``.
 
          Note what is deliberately NOT here: a disk-usage rule per
@@ -163,6 +163,29 @@
         <field name="threshold">0.5</field>
         <field name="level">warning</field>
         <field name="message">Instance %(host)s is returning %(value)s server errors per second.</field>
+    </record>
+
+    <record id="metric_rule_instance_oom" model="cloud.metric.rule">
+        <field name="name">Instance container out of memory</field>
+        <field name="sequence">60</field>
+        <field name="code">metrics_instance_oom</field>
+        <!-- Measures over its own window: one sample is already a verdict. -->
+        <field name="confirm_cycles">1</field>
+        <field name="scope">instance</field>
+        <!-- Processes the kernel killed for lack of memory in the odoo,
+             db or smtp container, over fifteen minutes (three ticks of
+             the cron, so none falls between two evaluations). A kill is
+             the fact that matters, and nothing reported one: on
+             5-Nov-2026 a panel's smtp counted 36 in a month with no
+             alert. The memory percentage cannot stand in for it: a
+             database's usage is mostly cache and always reads 90-95 %.
+             See docs/architecture.md, "Memory an instance is deployed
+             with". -->
+        <field name="expression">sum by (instance_id, instance) (increase(container_oom_events_total{instance_id!="", container_label_com_docker_compose_service=~"odoo|db|smtp"}[15m]))</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">0</field>
+        <field name="level">critical</field>
+        <field name="message">Instance %(host)s ran out of memory: the kernel killed %(value)s process(es) of its odoo, db or smtp container in the last 15 minutes.</field>
     </record>
 
     <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">
