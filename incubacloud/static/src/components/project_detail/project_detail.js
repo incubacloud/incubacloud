@@ -560,6 +560,7 @@ export class ProjectDetail extends Component {
             };
             if (this.isCreate) {
                 const result = await rpc("/cloud/create_project", { vals });
+                this.env.refreshNavCounts?.();
                 // Clear the dirty baseline before navigating so the
                 // nav guard doesn't fire on this programmatic
                 // transition (matches the pattern HostDetail.save()
@@ -885,6 +886,7 @@ export class ProjectDetail extends Component {
                 this.env.toast?.error(res.error);
                 return;
             }
+            this.env.refreshNavCounts?.();
             this.env.navigate("projects");
         } catch {
             this.env.toast?.error(_t("Failed to delete project."));
