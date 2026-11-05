@@ -4476,23 +4476,27 @@ class CloudInstance(models.Model):
         """A series the panel does not offer is chosen by an administrator only.
 
         The pickers only show offered series, but the value also arrives
-        by RPC; see ``_odoo_versions.may_choose``.
+        by RPC; see ``_odoo_versions.may_choose``. The refusal lists the
+        series the panel offers.
         """
         pin = _odoo_versions.pinned_template_ref(self.env)
         for inst in self:
             if inst.odoo_version and not _odoo_versions.may_choose(
                 inst.odoo_version, self.env.user, pin,
             ):
+                offered = _("This panel offers: %s.", ", ".join(
+                    _odoo_versions.offered_versions(pin),
+                ))
                 # Offered, but not by this panel: its pin is too old.
                 if _odoo_versions.card(inst.odoo_version)["offered"]:
                     raise ValidationError(_(
                         "Odoo %(version)s is not offered on this panel.",
                         version=inst.odoo_version,
-                    ))
+                    ) + " " + offered)
                 raise ValidationError(_(
                     "Odoo %(version)s is not offered yet.",
                     version=inst.odoo_version,
-                ))
+                ) + " " + offered)
 
     @api.constrains("odoo_version", "postgres_version")
     def _check_postgres_version_for_series(self):
