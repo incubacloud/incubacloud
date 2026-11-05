@@ -34,7 +34,7 @@
                             host_id="props.hostId || false"/>
             </t>
             <t t-if="props.panel === 'alerts'">
-                <AlertHistory embedded="true"/>
+                <AlertHistory embedded="true" focusAlertId="props.alertId || false"/>
             </t>
         </div>
 

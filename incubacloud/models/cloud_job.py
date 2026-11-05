@@ -2840,21 +2840,18 @@ class CloudJob(models.Model):
         # (``job_failed``, …) don't count — a failed job only needs a
         # Retry, so flagging it "Action required" would be misleading.
         actionable_codes = list(self._get_actionable_alert_codes())
-        action_job_ids = (
-            set(
-                self.env["cloud.alert"]
-                .search(
-                    [
-                        ("job_id", "in", self.ids),
-                        ("state", "=", "active"),
-                        ("code", "in", actionable_codes),
-                    ]
-                )
-                .mapped("job_id.id")
-            )
-            if self.ids
-            else set()
-        )
+        action_alerts = {}
+        if self.ids:
+            for alert in self.env["cloud.alert"].search(
+                [
+                    ("job_id", "in", self.ids),
+                    ("state", "=", "active"),
+                    ("code", "in", actionable_codes),
+                ],
+                order="id desc",
+            ):
+                action_alerts.setdefault(alert.job_id.id, alert)
+        action_job_ids = set(action_alerts)
 
         # What a waiting job's queue looks like: how many entries go
         # before it, and the alert holding the queue, if the job does
@@ -2869,6 +2866,25 @@ class CloudJob(models.Model):
             alerts = holding_by_scope[scope]
             if alerts and not self._passes_hold(entry[:1], alerts.mapped("job_id")):
                 held[job_id] = alerts[:1]
+
+        def action_fields(job):
+            """Why *job* reads "Action required", for the chip to say so.
+
+            The alert it needs a person for — what blocks it, what holds
+            its queue, or a conflict of its own — its code, and the type
+            of the job it is on (the failure holding the queue). Read
+            with ``sudo``: the job is the reader's, and so is the alert
+            that keeps it.
+            """
+            alert = (
+                job.blocked_alert_id or held.get(job.id)
+                or action_alerts.get(job.id) or self.env["cloud.alert"]
+            ).sudo()
+            return {
+                "action_alert_id": alert.id or None,
+                "action_alert_code": alert.code or None,
+                "action_job_type_code": alert.job_id.job_type_id.code or None,
+            }
 
         return [
             {
@@ -2893,6 +2909,7 @@ class CloudJob(models.Model):
                 "queue_held_alert_id": (
                     held[job.id].id if held.get(job.id) else None
                 ),
+                **action_fields(job),
                 "create_date": job.create_date,
                 "last_system_message": job._get_last_system_message(),
                 "download_url": (

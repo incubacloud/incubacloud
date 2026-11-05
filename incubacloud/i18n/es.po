@@ -17206,3 +17206,67 @@ msgstr "Vigilar las puertas de subida de restauraciones"
 msgid "Watch what the open restore upload doors hold"
 msgstr ""
 "Vigilar lo que contienen las puertas de subida de restauraciones abiertas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "A module is in more than one repository. Resolve its alert to go on."
+msgstr ""
+"Un módulo está en más de un repositorio. Resuelva su alerta para continuar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "An alert needs you first. Resolve it to go on."
+msgstr "Una alerta requiere antes su atención. Resuélvala para continuar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Open the alert"
+msgstr "Abrir la alerta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "The Python dependencies conflict. Resolve its alert to go on."
+msgstr ""
+"Las dependencias de Python están en conflicto. Resuelva su alerta para "
+"continuar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Waiting: an earlier job failed. Retry it or resolve its alert."
+msgstr ""
+"En espera: falló una tarea anterior. Reinténtela o resuelva su alerta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Waiting: the previous delete failed. Retry it or resolve its alert."
+msgstr ""
+"En espera: falló la eliminación anterior. Reinténtela o resuelva su alerta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Waiting: the previous deploy failed. Retry it or resolve its alert."
+msgstr ""
+"En espera: falló el despliegue anterior. Reinténtelo o resuelva su alerta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Waiting: the previous rebuild failed. Retry it or resolve its alert."
+msgstr ""
+"En espera: falló la reconstrucción anterior. Reinténtela o resuelva su "
+"alerta."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Waiting: the previous restore failed. Retry it or resolve its alert."
+msgstr ""
+"En espera: falló la restauración anterior. Reinténtela o resuelva su alerta."

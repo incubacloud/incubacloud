@@ -13,6 +13,8 @@ export class AlertHistory extends Component {
     static components = { IcModal, IcPager };
     static props = {
         embedded: { type: Boolean, optional: true },
+        // An alert to bring into view and open, once the list is loaded.
+        focusAlertId: { type: [Number, Boolean], optional: true },
     };
 
     setup() {
@@ -28,6 +30,7 @@ export class AlertHistory extends Component {
             addonConflictModal: null, // { alert }
             dismissAllModal: false,  // bulk-dismiss confirmation
             expanded: {},            // { [alertId]: bool } — controls payload reveal
+            focusedId: null,         // the alert asked for (focusAlertId), highlighted
         });
         this.loadAlerts();
     }
@@ -68,6 +71,26 @@ export class AlertHistory extends Component {
         this.state.total = data.total;
         this.state.loading = false;
         this.env.refreshAlertCount();
+        this._focusAlert();
+    }
+
+    /**
+     * Bring the alert asked for (``focusAlertId``) into view, open, once.
+     *
+     * Marked ``focused`` for its highlight and expanded; scrolled to
+     * after the list renders. One the page does not list is left alone.
+     */
+    _focusAlert() {
+        const id = this.props.focusAlertId;
+        if (!id || this._focused === id) return;
+        if (!this.state.alerts.some((a) => a.id === id)) return;
+        this._focused = id;
+        this.state.focusedId = id;
+        this.state.expanded[id] = true;
+        requestAnimationFrame(() => {
+            document.querySelector(`.ah-card[data-alert-id="${id}"]`)
+                ?.scrollIntoView({ block: "nearest" });
+        });
     }
 
     setFilter(f) {
