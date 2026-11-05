@@ -621,8 +621,8 @@ class McpToolsJobs(models.AbstractModel):
         """Ask before the notifications go elsewhere or stop reaching the user.
 
         A save that changes the Telegram chat (the notifications would go
-        to another chat), turns the emails off, or mutes every project the
-        user sees asks; any other save, and the Telegram checks, do not.
+        to another chat, or stop with it empty), sets the level to none,
+        turns the emails off, or mutes every project the user sees asks; any other save, and the Telegram checks, do not.
 
         :return: what the user approves, or None
         """
@@ -632,7 +632,11 @@ class McpToolsJobs(models.AbstractModel):
         asks = []
         if "telegram_chat_id" in args:
             chat = (args["telegram_chat_id"] or "").strip()
-            if chat != (user.cloud_telegram_chat_id or ""):
+            if chat == (user.cloud_telegram_chat_id or ""):
+                pass
+            elif not chat:
+                asks.append(self.env._("Stop your Telegram notifications."))
+            else:
                 asks.append(
                     self.env._(
                         "Send your Telegram notifications to the chat %(chat)s "
@@ -641,6 +645,16 @@ class McpToolsJobs(models.AbstractModel):
                         current=quoted(user.cloud_telegram_chat_id or ""),
                     )
                 )
+        if (
+            args.get("notification_level") == "none"
+            and user.cloud_notification_level != "none"
+        ):
+            asks.append(
+                self.env._(
+                    "Stop every notification: no job notification reaches you "
+                    "at the level none."
+                )
+            )
         if args.get("email_enabled") is False and user.cloud_email_enabled:
             asks.append(self.env._("Stop your notification emails."))
         if "muted_project_ids" in args:

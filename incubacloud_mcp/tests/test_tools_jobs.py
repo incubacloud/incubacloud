@@ -275,6 +275,25 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
             with self.subTest(args=args):
                 self.assertIsNone(self._ask(self.consultant, name, args)[1])
 
+    def test_silencing_everything_or_emptying_the_chat_says_so(self):
+        """Level none and an empty chat get their own text; level none already
+        set, and an empty chat when none was set, do not ask."""
+        name = "update_notification_preferences"
+        self.consultant.sudo().write(
+            {"cloud_telegram_chat_id": "1111", "cloud_notification_level": "all"}
+        )
+        _args, message = self._ask(self.consultant, name, {"notification_level": "none"})
+        self.assertIn("Stop every notification", message or "")
+        _args, message = self._ask(self.consultant, name, {"telegram_chat_id": " "})
+        self.assertIn("Stop your Telegram notifications", message or "")
+        self.assertNotIn("(now", message or "")
+        self.consultant.sudo().write(
+            {"cloud_telegram_chat_id": False, "cloud_notification_level": "none"}
+        )
+        for args in ({"notification_level": "none"}, {"telegram_chat_id": ""}):
+            with self.subTest(args=args):
+                self.assertIsNone(self._ask(self.consultant, name, args)[1])
+
     # ── list_jobs ─────────────────────────────────────────────────────────
 
     def test_jobs_are_listed_as_the_user_may_see_them(self):
