@@ -24,6 +24,57 @@ op="$1"
 dir="$(ic_expand_home "$2")"
 shift 2
 
+# Seconds one ``git ls-remote`` may take in record-heads. GitHub answers
+# in well under a second; a host that cannot reach it should not hold
+# the build for minutes (5-nov-2026).
+HEADS_TIMEOUT=20
+
+# Print the commit(s) <ref> names at <url>, space-separated, or nothing.
+#
+# Usage: remote_ref_head <git_home> <url> <ref>
+#   <git_home>  an empty owner-only directory, git's HOME for the call
+#   <url>       the repository, as repos.yaml names it (token included)
+#   <ref>       a branch or tag name, or a full ``refs/...`` name
+#
+# A plain name is asked exactly as ``refs/heads/<ref>`` and
+# ``refs/tags/<ref>``: a bare pattern also matches ``refs/heads/x/main``
+# or ``refs/pull/*/head``. Both are kept when both exist, since a
+# fetch prefers the tag. An https URL's credentials travel as an
+# ``Authorization`` header in that HOME's config, not in git's command
+# line, which every user of the host can read. git runs without the
+# host's configuration (see record-heads), says nothing, and asks
+# nothing. Returns git's status, 124 when it ran out of time.
+remote_ref_head() {
+    local home="$1" url="$2" ref="$3" auth="" out
+    local wanted=("refs/heads/$ref" "refs/tags/$ref")
+    [[ "$ref" != refs/* ]] || wanted=("$ref")
+    if [[ "$url" =~ ^(https?://)([^/@]+)@(.+)$ ]] \
+        && [[ "${BASH_REMATCH[2]}" != *%* ]]; then
+        auth="$(printf '%s' "${BASH_REMATCH[2]}" | base64 -w0)"
+        url="${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
+    fi
+    (
+        umask 077
+        if [ -n "$auth" ]; then
+            printf '[http]\n\textraHeader = Authorization: Basic %s\n' "$auth"
+        fi > "$home/.gitconfig"
+    )
+    out="$(
+        cd "$home" && env -u GIT_CONFIG_GLOBAL -u GIT_CONFIG_SYSTEM \
+            -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_DIR \
+            -u GIT_ASKPASS -u SSH_ASKPASS \
+            HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+            GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+            GIT_CEILING_DIRECTORIES="$(dirname "$home")" \
+            timeout -k 5 "$HEADS_TIMEOUT" \
+            git -c credential.helper= -c protocol.version=2 \
+                ls-remote -- "$url" "${wanted[@]}" 2>/dev/null </dev/null
+    )" || return
+    awk -v a="${wanted[0]}" -v b="${wanted[1]:-}" \
+        '$2 == a || ($2 == b && b != "") {print $1}' <<< "$out" \
+        | sort -u | paste -sd ' '
+}
+
 case "$op" in
     teardown-previous)
         # Full teardown of any leftover from a previous failed deploy, so
@@ -179,25 +230,42 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         # now: a branch that moved changes it and the build clones again;
         # with none moved the build stays cached.
         #
-        # <spec_file>: one ``<alias>TAB<ref>TAB<url>`` line per merge of
-        # repos.yaml, with the same URL (and token) the build clones
-        # from. A ref that is a commit is its own head; anything else is
-        # asked to the remote. Neither URL nor git's own messages are
-        # printed: they carry the token.
+        # <spec_file>: one ``<alias>TAB<kind>TAB<ref>TAB<url>`` line per
+        # merge of repos.yaml, with the same URL (and token) the build
+        # clones from. <kind> is ``pin`` for a commit the panel pinned,
+        # its own head; ``ref`` for a branch or tag, asked to the remote.
+        # The executor says which, from where the ref came: a branch can
+        # be named like a commit (``cafebabe``, ``20261105``). Neither URL
+        # nor git's own messages are printed: they carry the token.
         heads="$dir/odoo/custom/incubacloud-heads.txt"
         tmp_heads="$heads.ic-tmp"
         : > "$tmp_heads"
-        while IFS=$'\t' read -r alias ref url; do
+        # git asks from a HOME of its own, without the system's config,
+        # so no credential helper of the host's user (store, cache,
+        # libsecret, a credential manager) is ever handed the token
+        # (5-nov-2026). Variables rather than GIT_CONFIG_GLOBAL, which
+        # git before 2.32 ignores.
+        git_home="$(mktemp -d)"
+        trap 'rm -rf "$git_home"' EXIT
+        timed_out=""
+        while IFS=$'\t' read -r alias kind ref url; do
             [ -n "$alias" ] || continue
-            if [[ "$ref" =~ ^[0-9a-f]{7,64}$ ]]; then
+            sha=""
+            if [ "$kind" = pin ]; then
                 sha="$ref"
-            elif [ -n "$url" ] && sha="$(
-                GIT_TERMINAL_PROMPT=0 timeout 60 \
-                    git ls-remote -- "$url" "$ref" 2>/dev/null </dev/null \
-                    | awk '{print $1}' | sort -u | tr '\n' ' '
-            )" && [ -n "$sha" ]; then
-                sha="${sha% }"
-            else
+            elif [ -n "$timed_out" ]; then
+                # One remote that did not answer in time: the rest are
+                # not waited for, the build clones them all again anyway.
+                :
+            elif [ -n "$url" ]; then
+                rc=0
+                sha="$(remote_ref_head "$git_home" "$url" "$ref")" || rc=$?
+                if [ "$rc" -eq 124 ]; then
+                    timed_out=1
+                    ic_warn "the head of $alias ($ref) did not arrive within ${HEADS_TIMEOUT}s: the rest are not asked"
+                fi
+            fi
+            if [ -z "$sha" ]; then
                 # Unknown is never taken as unchanged: a value of its own
                 # makes this build clone every repository again, which
                 # is slower but cannot ship old code. If GitHub is really

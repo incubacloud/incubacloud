@@ -191,50 +191,77 @@ STUB
 }
 
 # A git whose ``ls-remote`` answers from $LS_REMOTE_OUT, or fails the way
-# git does at a remote it cannot read (a message naming the URL, token
-# included, on stderr) when $LS_REMOTE_FAIL is set. Everything else is
-# the real git.
+# git does at a remote it cannot read (a message naming its arguments on
+# stderr) when $LS_REMOTE_FAIL is set. Before answering it does what git
+# does once a remote took the credentials of its URL: ``git credential
+# approve``, with the real git, the options given before ``ls-remote``
+# and the environment of the call, so a credential helper the call can
+# see stores them. It also records the ``http.extraHeader`` the call
+# sees in $CALLS.headers. Everything else is the real git.
 _stub_git() {
     local real
     real="$(command -v git)"
     cat > "$TMP/bin/git" <<STUB
 #!/usr/bin/env bash
-if [ "\$1" = ls-remote ]; then
-    echo "git \$*" >> "\$CALLS"
+pre=()
+while [ "\$#" -gt 0 ] && [ "\$1" != ls-remote ]; do pre+=("\$1"); shift; done
+if [ "\${1:-}" = ls-remote ]; then
+    echo "git \${pre[*]} \$*" >> "\$CALLS"
+    "$real" "\${pre[@]}" config --get-all http.extraHeader >> "\$CALLS.headers"
     if [ -n "\${LS_REMOTE_FAIL:-}" ]; then
-        echo "fatal: unable to access '\$3': Could not resolve host" >&2
+        echo "fatal: unable to access '\$*': Could not resolve host" >&2
         exit 128
+    fi
+    url="\$3"
+    if [[ "\$url" =~ ^https://([^:@/]+):([^@/]+)@([^/]+)/ ]]; then
+        printf 'protocol=https\nhost=%s\nusername=%s\npassword=%s\n\n' \
+            "\${BASH_REMATCH[3]}" "\${BASH_REMATCH[1]}" "\${BASH_REMATCH[2]}" \
+            | "$real" "\${pre[@]}" credential approve
     fi
     printf '%s' "\${LS_REMOTE_OUT:-}"
     exit 0
 fi
-exec "$real" "\$@"
+exec "$real" "\${pre[@]}"
 STUB
     chmod +x "$TMP/bin/git"
+}
+
+# A timeout that runs its command, or behaves as a command that ran out
+# of time (status 124, nothing run) when $LS_REMOTE_HANG is set.
+_stub_timeout() {
+    cat > "$TMP/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+echo "timeout $*" >> "$CALLS"
+[ -z "${LS_REMOTE_HANG:-}" ] || exit 124
+while [ "$#" -gt 0 ] && [ "$1" != git ]; do shift; done
+exec "$@"
+STUB
+    chmod +x "$TMP/bin/timeout"
 }
 
 HEADS_TOKEN="ghs_tokenOfTheHour"
 HEADS_URL="https://x-access-token:${HEADS_TOKEN}@github.com/acme/addons.git"
 HEADS_SHA="1111111111111111111111111111111111111111"
 PIN_SHA="2222222222222222222222222222222222222222"
+HEADS_PLAIN_URL="https://github.com/acme/addons.git"
 
 @test "record-heads names the head of each branch in the build context" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
     export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
 "
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
     [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "addons main $HEADS_SHA" ]
-    [[ "$(cat "$CALLS")" == *"ls-remote -- $HEADS_URL main"* ]]
+    [[ "$(cat "$CALLS")" == *"ls-remote -- https://github.com/acme/addons.git refs/heads/main refs/tags/main"* ]]
     [[ "$output" == *"head of addons (main): $HEADS_SHA"* ]]
 }
 
 @test "record-heads changes the file when a branch moves, and not otherwise" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
     export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
 "
     bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
@@ -250,7 +277,7 @@ PIN_SHA="2222222222222222222222222222222222222222"
 @test "record-heads takes a pinned commit as it is and asks nothing" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    printf 'pinned\tpin\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
     [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "pinned $PIN_SHA $PIN_SHA" ]
@@ -260,7 +287,7 @@ PIN_SHA="2222222222222222222222222222222222222222"
 @test "record-heads never prints the token, even when git does" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
     export LS_REMOTE_FAIL=1
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
@@ -277,7 +304,7 @@ PIN_SHA="2222222222222222222222222222222222222222"
 @test "record-heads that cannot read a head breaks the cache and warns" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
     export LS_REMOTE_FAIL=1
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
@@ -292,7 +319,7 @@ PIN_SHA="2222222222222222222222222222222222222222"
 @test "record-heads treats a branch the remote does not have as unknown" {
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'addons\tgone\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    printf 'addons\tref\tgone\t%s\n' "$HEADS_URL" > "$TMP/spec"
     export LS_REMOTE_OUT=""
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
@@ -304,7 +331,7 @@ PIN_SHA="2222222222222222222222222222222222222222"
     _stub_git
     mkdir -p "$DIR/odoo/custom"
     git init -q "$DIR"
-    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    printf 'pinned\tpin\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -eq 0 ]
     grep -qxF "/odoo/custom/incubacloud-heads.txt" "$DIR/.git/info/exclude"
@@ -317,14 +344,128 @@ PIN_SHA="2222222222222222222222222222222222222222"
     # reaches ``COPY ./custom``.
     _stub_git
     mkdir -p "$DIR/odoo/custom"
-    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    printf 'pinned\tpin\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
     bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ -f "$DIR/odoo/custom/incubacloud-heads.txt" ]
     [ ! -e "$DIR/odoo/custom/src/incubacloud-heads.txt" ]
 }
 
 @test "record-heads fails when the build context is not there" {
-    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    printf 'pinned\tpin\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
     run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
     [ "$status" -ne 0 ]
+}
+
+@test "record-heads hands the token to no credential helper of the host" {
+    # The SSH user of a host can have a helper that keeps whatever
+    # credentials git uses (store, cache, libsecret, a credential
+    # manager): the hour's token was found in ~/.git-credentials.
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    git config --global credential.helper store
+    # The second URL's credentials are percent-encoded, so they stay in
+    # it: git itself has them, and still no helper of the host's.
+    printf '%s\tref\tmain\t%s\n' \
+        addons "$HEADS_URL" \
+        encoded "https://x-access-token:${HEADS_TOKEN}%41@github.com/acme/b.git" \
+        > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" == "addons main $HEADS_SHA"$'\n'"encoded main $HEADS_SHA" ]]
+    [ ! -e "$HOME/.git-credentials" ]
+}
+
+@test "record-heads keeps the token out of git's command line" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    ! grep -q "$HEADS_TOKEN" "$CALLS"
+    basic="$(printf 'x-access-token:%s' "$HEADS_TOKEN" | base64 -w0)"
+    [ "$(cat "$CALLS.headers")" = "Authorization: Basic $basic" ]
+    # git's own HOME, the header in its config, is gone with the run.
+    mkdir "$TMP/tmpdir"
+    TMPDIR="$TMP/tmpdir" run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$TMP/tmpdir")" ]
+}
+
+@test "record-heads asks a public URL without any header" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'odoo\tref\t19.0\t%s\n' "https://github.com/odoo/odoo.git" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/19.0
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "odoo 19.0 $HEADS_SHA" ]
+    [ ! -s "$CALLS.headers" ]
+}
+
+@test "record-heads reads the branch itself, not a ref that ends like it" {
+    # Real git, on a repository that has every look-alike of ``main``:
+    # a branch under a folder, a tag, and pull request refs.
+    remote="$TMP/remote"
+    git init -q -b main "$remote"
+    git -C "$remote" -c user.name=t -c user.email=t@t commit -q --allow-empty -m main
+    main="$(git -C "$remote" rev-parse HEAD)"
+    git -C "$remote" -c user.name=t -c user.email=t@t commit -q --allow-empty -m other
+    other="$(git -C "$remote" rev-parse HEAD)"
+    git -C "$remote" update-ref refs/heads/main "$main"
+    git -C "$remote" update-ref refs/heads/x/main "$other"
+    git -C "$remote" update-ref refs/pull/1/head "$other"
+    git -C "$remote" update-ref refs/pull/1/merge "$other"
+    git -C "$remote" tag v1 "$main"
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\t%s\tfile://%s\n' \
+        addons main "$remote" \
+        tagged v1 "$remote" \
+        head head "$remote" \
+        pr refs/pull/1/head "$remote" > "$TMP/spec"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    [[ "$heads" == *"addons main $main"$'\n'* ]]
+    [[ "$heads" == *"tagged v1 $main"$'\n'* ]]
+    [[ "$heads" == *"head head unknown-"* ]]
+    [[ "$heads" == *"pr refs/pull/1/head $other" ]]
+}
+
+@test "record-heads asks a branch named like a commit" {
+    # ``cafebabe`` and ``20261105`` are branch names too: only the
+    # executor knows a ref was pinned, and says so with ``pin``.
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tref\tcafebabe\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/cafebabe
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "addons cafebabe $HEADS_SHA" ]
+    [[ "$(cat "$CALLS")" == *"refs/heads/cafebabe"* ]]
+}
+
+@test "record-heads asks for a short while, and no more after one runs out" {
+    _stub_git
+    _stub_timeout
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\tmain\t%s\n' \
+        one "$HEADS_URL" two "$HEADS_URL" three "$HEADS_URL" > "$TMP/spec"
+    printf 'pinned\tpin\t%s\t\n' "$PIN_SHA" >> "$TMP/spec"
+    export LS_REMOTE_HANG=1
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^timeout ' "$CALLS")" -eq 1 ]
+    [[ "$(cat "$CALLS")" == *"timeout -k 5 20 git"*"protocol.version=2"* ]]
+    [[ "$output" == *"did not arrive within 20s"* ]]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    for alias in one two three; do
+        [[ "$heads" == *"$alias main unknown-"* ]]
+    done
+    [[ "$heads" == *"pinned $PIN_SHA $PIN_SHA" ]]
 }

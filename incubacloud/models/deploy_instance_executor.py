@@ -25,7 +25,6 @@ from ._repo_requirements import (
     detect_pip_conflicts,
     fetch_repo_addons,
     fetch_requirements_txt_with_client,
-    is_safe_git_sha,
     merge_pip_requirements,
     resolve_github_client,
 )
@@ -423,18 +422,30 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """
         return repo.commit_sha or branch
 
-    def _repos_yaml_content(self):
+    def _repos_yaml_content(self, pinned=None):
         """Build repos.yaml: odoo first, then the instance's git repos.
 
         For each repo, verifies which token (App or PAT) has access
         and injects the correct one into the URL.
+
+        :param set pinned: when given, receives the alias of every
+            repository whose merge is a commit the panel pinned
+            (``odoo_commit_sha``, ``commit_sha``, a layer's release pin)
+            rather than its branch. Only the origin says so: a branch
+            can be named like a commit (``cafebabe``, ``20261105``).
+        :return: the file's text
+        :rtype: str
         """
         inst = self._inst()
         data = {}
         app_token, pat = self._get_github_tokens()
+        if pinned is None:
+            pinned = set()
 
         # odoo is always first — public, no token needed
         odoo_merge = inst.odoo_commit_sha or "$ODOO_VERSION"
+        if inst.odoo_commit_sha:
+            pinned.add("odoo")
         data["odoo"] = {
             "defaults": {"depth": "$DEPTH_DEFAULT"},
             "remotes": {"odoo": "https://github.com/odoo/odoo.git"},
@@ -458,6 +469,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             )
             url = _github_authed_url(raw_url, token)
             merge_ref = self._repo_merge_ref(repo, branch)
+            # _repo_merge_ref answers a commit or the branch itself; a
+            # repository that replaces an alias replaces its pin too.
+            if merge_ref != branch:
+                pinned.add(alias)
+            else:
+                pinned.discard(alias)
             data[alias] = {
                 "defaults": {"depth": "$DEPTH_DEFAULT"},
                 "merges": [f"{alias} {merge_ref}"],
@@ -475,17 +492,21 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: The staged list of what ``deploy.sh record-heads`` resolves.
     _HEADS_SPEC = "repo-heads.tsv"
 
-    def _repo_heads_spec(self, repos_yaml):
+    def _repo_heads_spec(self, repos_yaml, pinned):
         """Return what ``deploy.sh record-heads`` resolves, from *repos_yaml*.
 
-        One ``<alias>TAB<ref>TAB<url>`` line per merge of the file the
-        build clones from, read back from its rendered text so whatever
-        a layer renders into it (a release pin) is what gets resolved.
-        ``$ODOO_VERSION`` is expanded as the build expands it. A ref that
-        is a commit carries no URL: it is its own head, and its token
-        need not travel twice.
+        One ``<alias>TAB<kind>TAB<ref>TAB<url>`` line per merge of the
+        file the build clones from, read back from its rendered text so
+        whatever a layer renders into it is what gets resolved.
+        ``$ODOO_VERSION`` is expanded as the build expands it. *kind* is
+        ``pin`` for a repository in *pinned*, whose ref is its own head
+        and carries no URL (its token need not travel twice), and
+        ``ref`` for a branch or tag, asked to the remote. Whether a ref
+        is a pin comes from where it came from, never from its shape
+        (5-nov-2026).
 
         :param str repos_yaml: the rendered ``repos.yaml``
+        :param set pinned: the aliases ``_repos_yaml_content`` pinned
         :return: the lines, for a file staged owner-only (the URLs carry
             the repositories' tokens)
         :rtype: str
@@ -499,8 +520,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ref = string.Template(ref.strip()).safe_substitute(
                     ODOO_VERSION=version,
                 )
-                url = "" if is_safe_git_sha(ref) else remotes.get(remote, "")
-                lines.append(f"{alias}\t{ref}\t{url}")
+                if alias in pinned:
+                    lines.append(f"{alias}\tpin\t{ref}\t")
+                else:
+                    url = remotes.get(remote, "")
+                    lines.append(f"{alias}\tref\t{ref}\t{url}")
         return "".join(f"{line}\n" for line in lines)
 
     def _record_heads_command(self, d):
@@ -1268,11 +1292,14 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # repos.yaml and the heads spec the repositories' tokens in their
         # URLs, and backup.env the bucket's keys: owner-only, and removed
         # when the job ends whether or not a step got to move them.
-        repos_yaml = self._repos_yaml_content()
+        pinned = set()
+        repos_yaml = self._repos_yaml_content(pinned)
         private = {
             self._tmp("answers.yml"): answers_yml,
             self._tmp("repos.yaml"): repos_yaml,
-            self._tmp(self._HEADS_SPEC): self._repo_heads_spec(repos_yaml),
+            self._tmp(self._HEADS_SPEC): self._repo_heads_spec(
+                repos_yaml, pinned,
+            ),
         }
         files = {
             self._tmp("addons.yaml"): await self._addons_yaml_content(),
