@@ -824,3 +824,111 @@ class TestJobsThatStopTheDatabase(TransactionCase):
         )
         self._job(self.HOST_STOP, self.host)
         self.assertFalse(self._skips())
+
+
+class TestStateOnlyProbe(TransactionCase):
+    """The probe a job's end or an agent's command asks for reads, never grades.
+
+    Asked for right after a restart, or once per command an agent runs,
+    it would otherwise move the streaks the cron's five-minute cycles
+    count: the restart caught mid-boot plus the next cycle raised
+    ``instance_unresponsive``, and two commands in a row a CPU alert.
+    """
+
+    def setUp(self):
+        """An instance whose last cycle saw Odoo not answering once."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        project = self.env["cloud.project"].create({"name": "State Proj"})
+        self.host = self.env["cloud.host"].create({
+            "name": "state-host",
+            "ip_address": "192.0.2.65",
+            "user": "ubuntu",
+            "wildcard_domain": "state.example.com",
+        })
+        self.checked = fields.Datetime.now() - timedelta(minutes=3)
+        self.instance = self.env["cloud.instance"].create({
+            "name": "stateinst",
+            "project_id": project.id,
+            "environment": "production",
+            "host_id": self.host.id,
+            "running": True,
+            "status": "warning",
+            "http_fail_streak": 1,
+            "cpu_over_threshold_streak": 1,
+            "last_health_check": self.checked,
+        })
+        self.job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "instance_health")], limit=1,
+        )
+
+    def _probe(self, container_state, http_exit, cpu="99.0"):
+        """Run a state-only probe that read *container_state* and *http_exit*.
+
+        :return: the executor, after its ``on_success``
+        """
+        job = self.env["cloud.job"].create({
+            "name": "Health",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.job_type.id,
+            "payload": {"state_only": True},
+        })
+        executor = InstanceHealthExecutor(job, self.host)
+        executor._skipped = False
+        results = {
+            "container_state": {"stdout": container_state},
+            "cpu_mem_snapshot": {"stdout": f"{cpu}\t99.0"},
+            "http_health": {"stdout": f"exit:{http_exit}"},
+        }
+        executor.parse_results(results)
+        asyncio.run(executor.on_success(results))
+        return executor
+
+    def _graded(self):
+        """The alerts and suspicions the probe could have raised."""
+        domain = [("instance_id", "=", self.instance.id)]
+        return (
+            self.env["cloud.alert"].search(domain),
+            self.env["cloud.alert.suspicion"].search(domain),
+        )
+
+    def test_it_runs_only_the_state_commands(self):
+        """No log window, no resource snapshot: nothing it would grade."""
+        job = self.env["cloud.job"].create({
+            "name": "Health",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.job_type.id,
+            "payload": {"state_only": True},
+        })
+        executor = InstanceHealthExecutor(job, self.host)
+        executor._skipped = False
+        self.assertEqual(
+            [name for name, _command in executor.get_commands()],
+            ["container_state", "http_health"],
+        )
+
+    def test_odoo_not_answering_moves_no_streak(self):
+        """Mid-boot after a restart: no streak, alert, status nor timestamp."""
+        self._probe("odoo\trunning\ndb\trunning", http_exit=7)
+        self.assertEqual(self.instance.http_fail_streak, 1)
+        self.assertEqual(self.instance.cpu_over_threshold_streak, 1)
+        self.assertEqual(self.instance.status, "warning")
+        self.assertEqual(self.instance.last_health_check, self.checked)
+        self.assertEqual(self._graded(), (
+            self.env["cloud.alert"], self.env["cloud.alert.suspicion"],
+        ))
+        self.assertEqual(
+            self.instance.service_states, {"odoo": "running", "db": "running"},
+        )
+
+    def test_a_stopped_odoo_is_written_stopped_and_graded_later(self):
+        """Its services and ``running``, nothing else."""
+        self._probe("odoo\texited\ndb\trunning", http_exit=1)
+        self.assertFalse(self.instance.running)
+        self.assertEqual(self.instance.status, "warning")
+        self.assertEqual(self.instance.service_states["odoo"], "exited")
+        self.assertEqual(self._graded(), (
+            self.env["cloud.alert"], self.env["cloud.alert.suspicion"],
+        ))

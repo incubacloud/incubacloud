@@ -264,6 +264,22 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     def _inst(self):
         return self.job.instance_id
 
+    def _state_only(self):
+        """Whether this probe only reads what the instance is now.
+
+        Asked for by ``cloud.instance._refresh_state_now`` when something
+        has just acted on the instance: it reads its containers and
+        whether Odoo answers, and writes what the panel shows of them
+        (``service_states``, ``running``). It leaves the streaks, the
+        alerts, ``status`` and ``last_health_check`` to the cycle of
+        ``cron_instance_health``: their hysteresis counts cycles five
+        minutes apart, and a probe right after a restart or between two
+        commands is not one of them.
+
+        :returns: True for a probe whose payload asks for ``state_only``
+        """
+        return bool((self.job.payload or {}).get('state_only'))
+
     def _is_blocked_by_active_job(self):
         """True iff another active job on the same instance would make
         the resource snapshot meaningless (deploy/rebuild/etc.), or a
@@ -547,7 +563,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 )
         cutoff = cutoff_at.strftime('%Y-%m-%d %H:%M:%S')
 
-        return [
+        commands = [
             # 1. Container state. ``-a`` includes stopped containers so
             #    a present-but-exited service (a Sablier-slept tenant)
             #    can be told apart from a *missing* one (pruned or never
@@ -618,6 +634,14 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             [("gatekeeper_network", self._gatekeeper_network_command(d))]
             if 'gatekeeper' in inst.expected_services() else []
         )
+        if self._state_only():
+            # The containers and whether Odoo answers: what the panel
+            # shows of the instance, and all a state-only probe writes.
+            return [
+                (name, command) for name, command in commands
+                if name in ("container_state", "http_health")
+            ]
+        return commands
 
     def _gatekeeper_network_command(self, d):
         """Return the command that reads the routes ``odoo`` has.
@@ -981,6 +1005,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     async def on_success(self, results):
         inst = self._inst()
 
+        if self._state_only():
+            self._record_state(inst)
+            return
+
         # We just ran commands over SSH, so the host is reachable: clear any
         # stale host-unreachable alert left by a previous outage.
         self._resolve_alert('host_unreachable')
@@ -1215,6 +1243,38 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 f"CPU {self._cpu_current:.0f}% · Mem {self._mem_current:.0f}%"
                 f"{unchecked}"
             )
+
+    def _record_state(self, inst):
+        """Write what a state-only probe read; grade nothing.
+
+        ``service_states`` always, and ``running`` under the rule of the
+        full cycle: this probe owns it while the metrics are stale, and
+        an Odoo seen running and answering is running either way. No
+        streak, alert, suspicion, ``status`` nor ``last_health_check``
+        is written (``_state_only``). Skipped like the full cycle while
+        a job that stops the instance runs.
+
+        :param inst: the ``cloud.instance`` probed
+        """
+        if getattr(self, '_skipped', False):
+            self._pass(
+                "Skipped — a job that stops the instance is running; its "
+                "state is read when it ends."
+            )
+            return
+        inst.write({'service_states': self._service_states})
+        owns_running = not inst._liveness_covered_by_metrics()
+        if not self._container_running:
+            if owns_running:
+                inst.write({'running': False})
+            self._pass(f"State read: '{inst.name}' is not running.")
+            return
+        if owns_running or (self._http_ok and not inst.running):
+            inst.write({'running': True})
+        self._pass(
+            f"State read: '{inst.name}' is running"
+            + ("." if self._http_ok else ", Odoo not answering yet.")
+        )
 
     def _grade_reachability(self, inst, issues):
         """Grade whether visitors reach Odoo; append to *issues* while not.
