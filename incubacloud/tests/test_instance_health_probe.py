@@ -419,11 +419,13 @@ class TestMemoryHysteresis(TransactionCase):
             f"{svc}\trunning" for svc in self.instance.expected_services()
         )
 
-    def _usage(self, cpu, mem):
+    def _usage(self, cpu, mem, recycles=None):
         """Probe once, answering, with this CPU and memory reading.
 
         :param float cpu: the CPU percentage ``docker stats`` reports
         :param float mem: the memory percentage it reports
+        :param int recycles: what the recycle count prints, None for a
+            probe without that reading
         """
         job = self.env["cloud.job"].create({
             "name": "Health",
@@ -439,6 +441,8 @@ class TestMemoryHysteresis(TransactionCase):
             "http_health": {"stdout": "exit:0"},
             "error_lines": {"stdout": ""},
         }
+        if recycles is not None:
+            results["memory_recycles"] = {"stdout": f"{recycles}\n"}
         executor.parse_results(results)
         asyncio.run(executor.on_success(results))
 
@@ -482,6 +486,31 @@ class TestMemoryHysteresis(TransactionCase):
         self._usage(95.0, 0.0)
         self.assertTrue(self._code_alert("instance_high_cpu"))
         self.assertFalse(self._code_alert("instance_high_memory"))
+
+    def test_workers_recycled_too_often_raise_a_warning(self):
+        """Review of 5-Nov-2026: the 640 MiB floor recycled in silence.
+
+        More than twelve in an hour says the floor is too low for the
+        instance; the instance works, so its status stays ``ok``.
+        """
+        self._usage(0.0, 50.0, recycles=13)
+        alert = self._code_alert("instance_memory_recycling")
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("13 worker(s)", alert.message)
+        self.assertEqual(alert.payload, {"recycles_last_hour": 13})
+        self.assertEqual(self.instance.status, "ok")
+
+    def test_a_few_recycles_are_the_limit_doing_its_job(self):
+        self._usage(0.0, 50.0, recycles=13)
+        self._usage(0.0, 50.0, recycles=12)
+        self.assertFalse(self._code_alert("instance_memory_recycling"))
+
+    def test_a_probe_without_the_reading_grades_no_recycles(self):
+        """A probe in flight during the upgrade has no such step."""
+        self._usage(0.0, 50.0, recycles=13)
+        self._usage(0.0, 50.0)
+        self.assertTrue(self._code_alert("instance_memory_recycling"))
 
 class TestRunningWhileMetricsOwnIt(TransactionCase):
     """An odoo the probe sees answering is running, whoever owns the flag.

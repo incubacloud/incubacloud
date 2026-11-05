@@ -16,6 +16,14 @@ currently `v10.0.8`). Pinning means upstream improvements arrive when
 > in `deploy_instance_executor.py` — otherwise staging silently keeps
 > the old worker settings.
 
+> **And the `db` service's `CONF_EXTRA`.** The override replaces the
+> template's whole `CONF_EXTRA` with the memory settings sized to the
+> database's limit (`_db_conf_extra`, since core 1.0.212); in v10.0.8
+> its only line is `work_mem = 512MB`. If the candidate tag adds lines
+> to it (`grep -A3 CONF_EXTRA /tmp/render-check/*.yaml` after step 2),
+> the override drops them silently: add what still applies to
+> `_PG_MEMORY_SHARES` or to the override in the same release.
+
 ## 1. Pick the candidate tag
 
 ```bash
