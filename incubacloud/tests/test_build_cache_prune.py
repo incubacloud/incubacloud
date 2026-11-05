@@ -20,6 +20,7 @@ from pathlib import Path
 from odoo.tests.common import BaseCase
 
 from ..models.docker_prune_executor import (
+    BUILD_CACHE_KEEP,
     BUILD_CACHE_MIN_FREE_GB,
     PROTECT_LABEL,
     build_cache_prune,
@@ -32,6 +33,11 @@ from .test_executor_features import (
 )
 
 _LOW_DISK_STEP = "Free the build cache if the disk is low"
+#: What the stand-in ``docker`` records of the cleanup, call by call.
+_CLEANUP_CALLS = [
+    "builder prune -af --filter until=1h",
+    f"image prune -af --filter label!={PROTECT_LABEL} --filter until=1h",
+]
 _DELETE_STEP = "Empty the Docker build cache"
 
 
@@ -73,8 +79,12 @@ class TestTheCleanupCommands(BaseCase):
 
     def test_the_cleanup_is_the_daily_prunes_without_networks(self):
         command = build_cache_prune()
-        self.assertIn("docker builder prune -af", command)
-        self.assertIn(f'docker image prune -af --filter "label!={PROTECT_LABEL}"', command)
+        self.assertIn('docker builder prune -af --filter "until=1h"', command)
+        self.assertIn(
+            f'docker image prune -af --filter "label!={PROTECT_LABEL}"'
+            ' --filter "until=1h"',
+            command,
+        )
         self.assertNotIn("system prune", command)
         self.assertNotIn("network", command)
         self.assertNotIn("container prune", command)
@@ -84,10 +94,12 @@ class TestTheCleanupCommands(BaseCase):
             with self.subTest(docker_fails=fails):
                 status, _out, calls = _run_with_fake_docker(build_cache_prune(), fails)
                 self.assertEqual(status, 0)
-                self.assertEqual(calls, [
-                    "builder prune -af",
-                    f"image prune -af --filter label!={PROTECT_LABEL}",
-                ])
+                self.assertEqual(calls, _CLEANUP_CALLS)
+
+    def test_what_the_last_hour_built_or_used_stays(self):
+        """A deploy holds no build lock: its cleanup, or a delete's, may run
+        beside a build, whose cache and fresh image are that recent."""
+        self.assertEqual(BUILD_CACHE_KEEP, "1h")
 
     def test_the_threshold_is_eight_gigabytes(self):
         self.assertEqual(BUILD_CACHE_MIN_FREE_GB, 8)
@@ -98,10 +110,7 @@ class TestTheCleanupCommands(BaseCase):
         status, out, calls = _run_with_fake_docker(build_cache_prune_if_low(10 ** 6))
         self.assertEqual(status, 0)
         self.assertIn("emptying the build cache", out)
-        self.assertEqual(calls, [
-            "builder prune -af",
-            f"image prune -af --filter label!={PROTECT_LABEL}",
-        ])
+        self.assertEqual(calls, _CLEANUP_CALLS)
 
     def test_a_disk_over_the_threshold_is_left_alone(self):
         status, out, calls = _run_with_fake_docker(build_cache_prune_if_low(0))
