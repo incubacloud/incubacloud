@@ -13,6 +13,9 @@ import { Component, useState, useRef, useEffect, useExternalListener } from "@od
  * the first entry; Arrow Up/Down, Home and End move between entries; Esc
  * closes it and returns the focus to the trigger; Tab leaves it and
  * closes it. A click outside also closes it.
+ *
+ * The list opens on the side of the trigger that has room for it, and
+ * never past the viewport (``IcMenu.place``).
  */
 export class IcMenu extends Component {
     static template = "incubacloud.IcMenu";
@@ -45,8 +48,38 @@ export class IcMenu extends Component {
     }
 
     /**
-     * Set up the open state, the refs, the close on a pointer press outside
-     * and the focus of the first entry when the menu opens.
+     * Where the list goes, in viewport pixels, for a trigger at a given
+     * place.
+     *
+     * It starts at the trigger's left edge and grows to the right; when
+     * that would pass the viewport, it ends at the trigger's right edge
+     * and grows to the left; when neither fits, it is pushed back inside.
+     * It is never wider than the viewport less its margins.
+     *
+     * @param {Object} geometry
+     * @param {number} geometry.triggerLeft left edge of the trigger.
+     * @param {number} geometry.triggerRight right edge of the trigger.
+     * @param {number} geometry.width the list's own width.
+     * @param {number} geometry.viewport the viewport's width.
+     * @param {number} [geometry.margin=16] room kept on each side.
+     * @returns {{left: number, maxWidth: number}} the list's left edge
+     *   and its widest.
+     */
+    static place({ triggerLeft, triggerRight, width, viewport, margin = 16 }) {
+        const maxWidth = Math.max(0, viewport - 2 * margin);
+        const w = Math.min(width, maxWidth);
+        let left = triggerLeft;
+        if (left + w > viewport - margin) {
+            left = triggerRight - w;
+        }
+        left = Math.min(Math.max(left, margin), viewport - margin - w);
+        return { left, maxWidth };
+    }
+
+    /**
+     * Set up the open state, the refs, the close on a pointer press outside,
+     * the placement and the focus of the first entry when the menu opens,
+     * and the placement again when the window is resized while open.
      */
     setup() {
         this.state = useState({ open: false });
@@ -58,14 +91,42 @@ export class IcMenu extends Component {
                 this.state.open = false;
             }
         }, { capture: true });
-        // On opening, the entries get their ARIA role and the first
-        // one takes the focus.
+        useExternalListener(window, "resize", () => {
+            if (this.state.open) this.position();
+        });
+        // On opening, the list is placed, the entries get their ARIA role
+        // and the first one takes the focus.
         useEffect((open) => {
             if (!open) return;
+            this.position();
             const items = this.items;
             items.forEach((el) => el.setAttribute("role", "menuitem"));
             items[0]?.focus();
         }, () => [this.state.open]);
+    }
+
+    /**
+     * Place the open list beside its trigger, inside the viewport
+     * (``IcMenu.place``). The list is positioned against the menu's root,
+     * so the left edge computed in the viewport is made relative to it.
+     */
+    position() {
+        const list = this.list.el;
+        const trigger = this.trigger.el;
+        const root = this.root.el;
+        if (!list || !trigger || !root) return;
+        // Measured at its natural width, before any earlier placement.
+        list.style.left = "0px";
+        list.style.maxWidth = "";
+        const t = trigger.getBoundingClientRect();
+        const { left, maxWidth } = IcMenu.place({
+            triggerLeft: t.left,
+            triggerRight: t.right,
+            width: list.getBoundingClientRect().width,
+            viewport: document.documentElement.clientWidth,
+        });
+        list.style.maxWidth = `${maxWidth}px`;
+        list.style.left = `${left - root.getBoundingClientRect().left}px`;
     }
 
     /** @returns {HTMLElement[]} the entries that can take the focus. */

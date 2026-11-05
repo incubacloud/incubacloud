@@ -15,6 +15,8 @@
 .ic-menu .ic-menu-list {
     position: absolute;
     top: calc(100% + 6px);
+    // The side it opens to and its widest are set on opening
+    // (``IcMenu.position``), from the room around the trigger.
     left: 0;
     z-index: 1000;
     min-width: 220px;
@@ -28,13 +30,6 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 
     &[hidden] { display: none; }
-
-    // On a narrow screen the trigger sits near the right edge, so the list
-    // grows to the left from it instead of past the viewport.
-    @media (max-width: 768px) {
-        left: auto;
-        right: 0;
-    }
 
     // Entries read as menu rows, whatever button class the caller gave them.
     > button,
