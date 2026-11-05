@@ -1295,6 +1295,17 @@ button:active:not(:disabled),
         max-width: 100%;
     }
 
+    // Recent activity of an instance or a host: who, when and the
+    // buttons shared one line, and the date folded into a tower of four
+    // lines beside two buttons. The date keeps its line; the buttons go
+    // under it when they do not fit.
+    .ic-app .rl-tl-foot {
+        flex-wrap: wrap;
+        row-gap: 6px;
+
+        .rl-when { white-space: nowrap; }
+    }
+
     // ── Lists become cards ──────────────────────────────────────────
     // A table cannot be read on a phone: its columns carry their own
     // intrinsic width, so a row either widens the page or wraps every
@@ -1338,36 +1349,74 @@ button:active:not(:disabled),
 
     // 3. Jobs — outcome and what ran, then where, then who and when.
     //    Seven columns would make a seven-line card; two metadata lines
-    //    keep the history scannable without dropping any of them.
+    //    keep the history scannable without dropping any of them. A
+    //    flex row, not a grid: the instance and the host share their
+    //    line side by side (a grid stacks two cells given one area), and
+    //    each piece takes the width its text needs. The pseudo-elements
+    //    are zero-height breaks between the lines.
     .ic-app .rl-table--jobs tr,
     .ic-slideover-panel .rl-table--jobs tr {
-        grid-template-columns: auto 1fr auto;
-        grid-template-areas:
-            "state job   duration"
-            "where where where"
-            "who   who   when";
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
 
-        td:nth-child(1) { grid-area: state; }
-        td:nth-child(2) { grid-area: job; font-weight: 600; font-size: 13.5px; }
-        td:nth-child(3),
-        td:nth-child(4) {
-            grid-area: where;
-            display: inline;
-            color: var(--rl-muted);
-            font-size: 12px;
+        &::before,
+        &::after {
+            content: "";
+            flex-basis: 100%;
+            height: 0;
         }
-        td:nth-child(5) { grid-area: who; color: var(--rl-muted); font-size: 12px; }
-        td:nth-child(6) {
-            grid-area: when;
-            color: var(--rl-muted);
-            font-size: 12px;
-            text-align: right;
+        &::before { order: 4; }
+        &::after { order: 7; }
+
+        td:nth-child(1) { order: 1; flex: none; }
+        td:nth-child(2) {
+            order: 2;
+            flex: 1 1 0;
+            font-weight: 600;
+            font-size: 13.5px;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
         td:nth-child(7) {
-            grid-area: duration;
+            order: 3;
+            flex: none;
+            margin-left: auto;
             font-family: var(--rl-fm);
             font-size: 12px;
             text-align: right;
+        }
+        td:nth-child(3),
+        td:nth-child(4) {
+            order: 5;
+            flex: 0 1 auto;
+            color: var(--rl-muted);
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        td:nth-child(4) { order: 6; }
+        // No instance: the host stands alone, without the dash.
+        td.jh-col-none { display: none; }
+        td.jh-col-inst:not(.jh-col-none) + td::before {
+            content: "·";
+            margin-right: 10px;
+        }
+        td:nth-child(5) { order: 8; color: var(--rl-muted); font-size: 12px; }
+        td:nth-child(6) {
+            order: 9;
+            margin-left: auto;
+            color: var(--rl-muted);
+            font-size: 12px;
+            text-align: right;
+        }
+        // The whole card opens the log: the hover hint has no place here.
+        .jh-log-hint { display: none; }
+
+        // On a phone the state and the duration fill the first line: the
+        // job's name gets a line of its own instead of a sliver between.
+        @media (max-width: 480px) {
+            &::before { display: none; }
+            td:nth-child(2) { order: 4; flex-basis: 100%; }
         }
     }
 
