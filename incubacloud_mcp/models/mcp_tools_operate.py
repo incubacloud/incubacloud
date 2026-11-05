@@ -204,13 +204,17 @@ TOOLS = (
     ),
     ToolSpec(
         "update_project",
-        _with_vals("Change a project's settings.", _UPDATE_PROJECT),
+        _with_vals(
+            "Change a project's settings. Answers the project's repositories as "
+            "they are once saved.",
+            _UPDATE_PROJECT,
+        ),
         _CONSULTANT,
         obj(
             {"project_id": record_id("The project."), "vals": _vals(_UPDATE_PROJECT)},
             required=("project_id", "vals"),
         ),
-        route="/cloud/save_project",
+        handler="_tool_update_project",
         requires=(
             "a project the user is a member of; member_ids from find_users; a "
             "series this panel offers."
@@ -235,7 +239,12 @@ TOOLS = (
     ),
     ToolSpec(
         "create_instance",
-        _with_vals("Create an instance in a project.", _CREATE_INSTANCE),
+        _with_vals(
+            "Create an instance in a project. Its name is 1 to 63 lowercase "
+            "letters, digits, hyphens and underscores, starting with a letter or "
+            "a digit, and unique in the project, archived instances included.",
+            _CREATE_INSTANCE,
+        ),
         _CONSULTANT,
         obj({"vals": _vals(_CREATE_INSTANCE)}, required=("vals",)),
         route="/cloud/create_instance",
@@ -324,7 +333,10 @@ TOOLS = (
     ),
     ToolSpec(
         "create_backup",
-        "Back up an instance now.",
+        "Back up an instance now. Answers backup_job_id, the job that takes the "
+        "copy, and job_id, the last job of its chain, which lists the "
+        "instance's backups once the copy is taken: when job_id is done, "
+        "list_backups shows the new backup.",
         _DEVELOPER,
         obj(
             {
@@ -333,8 +345,7 @@ TOOLS = (
             },
             required=("instance_id",),
         ),
-        route="/cloud/create_backup",
-        enqueues=True,
+        handler="_tool_create_backup",
         requires=(
             "a deployed instance on a server; a production one needs a backup "
             "destination."
@@ -481,6 +492,63 @@ class McpToolsOperate(models.AbstractModel):
     """Handlers of the operating tools that choose between routes."""
 
     _inherit = "incubacloud.mcp.tools"
+
+    @api.model
+    def _tool_update_project(self, args):
+        """Save the project; answer its repositories as saved, all of them.
+
+        The route answers the rows it wrote, and none when the call sent no
+        repositories: the agent reads what the project holds either way.
+        """
+        result = self._route(
+            "/cloud/save_project", project_id=args["project_id"], vals=args["vals"]
+        )
+        if not isinstance(result, dict) or result.get("ok") is False:
+            return result
+        project = self.env["cloud.project"].browse(args["project_id"])
+        return {
+            **result,
+            "repos": [
+                {
+                    "id": repo.id,
+                    "url": repo.url,
+                    "branch": repo.branch or "",
+                    "addons": repo.addons or "",
+                    "excludes": repo.excludes or "",
+                    "commit_sha": repo.commit_sha or "",
+                }
+                for repo in project.repo_ids
+            ],
+        }
+
+    @api.model
+    def _tool_create_backup(self, args):
+        """Queue the backup; answer the job that takes it and the chain's last.
+
+        The route answers the chain's last job, the listing that records the
+        copy; the copy's own job is the chain's ``backup_create``.
+        """
+        result = self._with_job_state(
+            self._route(
+                "/cloud/create_backup",
+                instance_id=args["instance_id"],
+                with_filestore=bool(args.get("with_filestore")),
+            )
+        )
+        if not isinstance(result, dict) or not result.get("job_id"):
+            return result
+        Job = self.env["cloud.job"]
+        last = Job.browse(result["job_id"])
+        backup = Job.search(
+            [
+                ("instance_id", "=", args["instance_id"]),
+                ("job_type_id.code", "=", "backup_create"),
+                ("id", "<", last.id),
+            ],
+            order="id desc",
+            limit=1,
+        )
+        return {**result, "backup_job_id": backup.id or None}
 
     @api.model
     def _tool_resolve_conflict(self, args):

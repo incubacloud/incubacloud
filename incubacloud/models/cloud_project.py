@@ -202,23 +202,27 @@ class CloudProject(models.Model):
         """A series the panel does not offer is chosen by an administrator only.
 
         The pickers only show offered series, but the value also arrives
-        by RPC and by import; see ``_odoo_versions.may_choose``.
+        by RPC and by import; see ``_odoo_versions.may_choose``. The
+        refusal lists the series the panel offers.
         """
         pin = _odoo_versions.pinned_template_ref(self.env)
         for project in self:
             if project.odoo_version and not _odoo_versions.may_choose(
                 project.odoo_version, self.env.user, pin,
             ):
+                offered = _("This panel offers: %s.", ", ".join(
+                    _odoo_versions.offered_versions(pin),
+                ))
                 # Offered, but not by this panel: its pin is too old.
                 if _odoo_versions.card(project.odoo_version)["offered"]:
                     raise ValidationError(_(
                         "Odoo %(version)s is not offered on this panel.",
                         version=project.odoo_version,
-                    ))
+                    ) + " " + offered)
                 raise ValidationError(_(
                     "Odoo %(version)s is not offered yet.",
                     version=project.odoo_version,
-                ))
+                ) + " " + offered)
 
     @api.constrains('remote_folder')
     def _check_remote_folder_shell_safe(self):

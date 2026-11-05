@@ -278,8 +278,9 @@ export class ProjectDetail extends Component {
                 this.state.form = {
                     name: "",
                     description: "",
-                    project_author: "IncubaCloud",
-                    project_license: "BSL-1.0",
+                    // The model's defaults, which a layer may change.
+                    project_author: defs.project_author ?? "IncubaCloud",
+                    project_license: defs.project_license || "BSL-1.0",
                     odoo_version: defs.odoo_version || this.state.odooVersions.at(-1),
                     odoo_initial_lang: null,
                     backup_backend_id: null,
