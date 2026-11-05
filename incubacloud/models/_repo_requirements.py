@@ -101,11 +101,13 @@ _CANONICAL_REPO_URL_RE = re.compile(
 )
 
 # The spellings of a repository on github.com that
-# :func:`canonical_repo_url` rewrites into the canonical form.
+# :func:`canonical_repo_url` rewrites into the canonical form. ASCII
+# case only: Unicode folding would take ``gıthub.com`` and
+# ``GİTHUB.com`` for github.com (5-nov-2026).
 _GH_SPELLING_RE = re.compile(
     r'(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:)'
     r'([^/]+)/([^/]+?)/?',
-    re.IGNORECASE,
+    re.IGNORECASE | re.ASCII,
 )
 
 
