@@ -1559,6 +1559,11 @@ class CloudInstance(models.Model):
         fixed in GitHub — and refused while it is not. A deploy that ends
         blocked at once leaves the instance in 'draft'.
 
+        When the last deploy failed and its ``job_failed`` alert holds the
+        queue, Deploy retries it (``_failed_deploy_to_retry``) instead of
+        queueing a new one that would wait behind the hold: the retry
+        passes it, and its success resolves the alert.
+
         :return: the id of the ``cloud.job`` that deploys
         :raises UserError: no host, already deployed, or a deploy waits
             for an alert that is still open
@@ -1595,6 +1600,20 @@ class CloudInstance(models.Model):
                 ))
             waiting.unblock_and_enqueue()
             return waiting.id
+        failed = self._failed_deploy_to_retry()
+        if failed:
+            # The retry is the deploy: 'deploying' as for a new one, back
+            # to 'draft' if it fails or is cancelled while it waits.
+            self._transition("deploying")
+            job_id = failed.retry_job()
+            # The Deploy pressed is recorded, as ``enqueue`` records one.
+            self.env["cloud.audit.log"].sudo().create({
+                "action": failed.job_type_id.with_context(lang="en_US").name,
+                "instance_id": self.id,
+                "host_id": failed.host_id.id,
+                "job_id": job_id,
+            })
+            return job_id
         # Enter 'deploying' before enqueuing: the transition map is what
         # rejects a second deploy while the first is still in flight.
         self._transition("deploying")
@@ -1608,6 +1627,33 @@ class CloudInstance(models.Model):
             # dispatched, so nothing is deploying.
             self._transition("draft")
         return job_id
+
+    def _failed_deploy_to_retry(self):
+        """The failed deploy a press of Deploy retries, if there is one.
+
+        This instance's last deploy, when it failed and its ``job_failed``
+        alert still holds the instance's queue. A new deploy would only
+        wait behind that hold; retrying is what releases it. Not when the
+        last deploy did not fail, nor when a conflict alert is open on it,
+        beside its ``job_failed`` or in its place: a person has to resolve
+        that first, as for a push's rebuild (``cloud.job._supersedes_hold``).
+
+        :return: the failed ``cloud.job``, or an empty recordset
+        """
+        self.ensure_one()
+        Job = self.env["cloud.job"]
+        last = Job.sudo().search([
+            ("instance_id", "=", self.id),
+            ("job_type_id.code", "=", "deploy_instance"),
+        ], order="id desc", limit=1)
+        if last.state != "failed":
+            return Job
+        on_last = Job._queue_holding_alerts(self.id, self.host_id.id).filtered(
+            lambda alert: alert.job_id == last,
+        )
+        if set(on_last.mapped("code")) == {"job_failed"}:
+            return Job.browse(last.id)
+        return Job
 
     def _check_addon_conflicts(self, seconds=None):
         """Compare this instance's repositories now, not at the next deploy.
