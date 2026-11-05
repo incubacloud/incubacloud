@@ -932,3 +932,22 @@ class TestStateOnlyProbe(TransactionCase):
         self.assertEqual(self._graded(), (
             self.env["cloud.alert"], self.env["cloud.alert.suspicion"],
         ))
+
+    def test_a_running_container_resolves_the_open_down_alert(self):
+        """The restart that ended the outage closes ``instance_down`` now;
+        a container still stopped leaves it open."""
+        Alert = self.env["cloud.alert"]
+        Alert.raise_alert(
+            "instance_down", "down", level="critical", instance=self.instance,
+            confirm_after=1, confirm_window=60,
+        )
+        domain = [
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", "instance_down"),
+            ("state", "=", "active"),
+        ]
+        self.assertTrue(Alert.search(domain))
+        self._probe("odoo\texited\ndb\trunning", http_exit=1)
+        self.assertTrue(Alert.search(domain))
+        self._probe("odoo\trunning\ndb\trunning", http_exit=7)
+        self.assertFalse(Alert.search(domain))
