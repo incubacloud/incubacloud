@@ -1250,8 +1250,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         ``service_states`` always, and ``running`` under the rule of the
         full cycle: this probe owns it while the metrics are stale, and
         an Odoo seen running and answering is running either way. No
-        streak, alert, suspicion, ``status`` nor ``last_health_check``
-        is written (``_state_only``). Skipped like the full cycle while
+        streak, new alert, suspicion, ``status`` nor ``last_health_check``
+        is written (``_state_only``); only an open ``instance_down`` is
+        resolved once the container is seen running. Skipped like the full cycle while
         a job that stops the instance runs.
 
         :param inst: the ``cloud.instance`` probed
@@ -1271,6 +1272,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             return
         if owns_running or (self._http_ok and not inst.running):
             inst.write({'running': True})
+        # A container seen running ends the outage ``instance_down`` told
+        # of; resolving has no hysteresis, and without this the alert
+        # stayed open until the next full cycle.
+        self._resolve_inst_alert('instance_down')
         self._pass(
             f"State read: '{inst.name}' is running"
             + ("." if self._http_ok else ", Odoo not answering yet.")
