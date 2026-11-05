@@ -181,6 +181,93 @@ def _half_memory(limit):
     return f"{int(half)}{'' if unit == 'b' else unit}"
 
 
+_MIB = 1024 * 1024
+_UNIT_BYTES = {
+    "": 1, "b": 1, "k": 1024, "m": _MIB, "g": 1024 * _MIB, "t": 1024**2 * _MIB,
+}
+
+#: PostgreSQL's memory settings as a share of the ``db`` container's
+#: limit — (setting, divisor, floor in MiB): ``shared_buffers`` 1/4,
+#: ``work_mem`` 1/16, ``effective_cache_size`` 1/2. Scaled the way the
+#: manager's own database was fixed (1 GiB, 64MB of work_mem, 27-Oct-2026);
+#: the template's 512MB of work_mem lets one hash take 1 GiB. The floors
+#: keep a tiny database usable (4MB is PostgreSQL's own work_mem). See
+#: docs/architecture.md, "Memory an instance is deployed with".
+_PG_MEMORY_SHARES = (
+    ("shared_buffers", 4, 16),
+    ("work_mem", 16, 4),
+    ("effective_cache_size", 2, 32),
+)
+
+#: Odoo's per-process memory limits as a share of the ``odoo``
+#: container's limit — (option, share, floor, ceiling), in MiB.
+#: ``limit_memory_soft`` is checked against a worker's virtual size
+#: (VMS), which sat at 480-500 MB on workers days old (measured
+#: 5-Nov-2026), so it never goes below 640 MiB or every request would
+#: recycle one. ``limit_memory_hard`` is an ``RLIMIT_AS`` the children
+#: inherit (wkhtmltopdf), so it never goes below 1536 MiB. Neither goes
+#: above Odoo's own default (2048 and 2560 MiB): the panel only tightens.
+#: See docs/architecture.md, "Memory an instance is deployed with".
+_ODOO_MEMORY_SHARES = (
+    ("limit_memory_soft", 0.6, 640, 2048),
+    ("limit_memory_hard", 1.5, 1536, 2560),
+)
+
+
+def _memory_bytes(limit):
+    """Return a compose memory value in bytes.
+
+    :param str limit: a ``mem_limit`` value (``1g``, ``896m``, ``512000k``)
+    :return: the bytes, 0 when *limit* is empty or not a memory value
+    :rtype: int
+    """
+    match = _MEMORY_RE.match(str(limit or "").strip())
+    if not match:
+        return 0
+    return int(float(match.group(1)) * _UNIT_BYTES[match.group(2).lower()])
+
+
+def _db_conf_extra(limit):
+    """Return the ``CONF_EXTRA`` a database with this memory limit runs with.
+
+    One line per setting of ``_PG_MEMORY_SHARES``, in whole MB, which
+    PostgreSQL reads as MiB: 256m gives ``shared_buffers = 64MB``,
+    ``work_mem = 16MB`` and ``effective_cache_size = 128MB``.
+
+    :param str limit: the instance's ``db_memory_limit``
+    :return: the text, '' when the database has no limit (the template's
+        own settings then apply)
+    :rtype: str
+    """
+    total = _memory_bytes(limit) // _MIB
+    if not total:
+        return ""
+    return "".join(
+        f"{name} = {max(total // divisor, floor)}MB\n"
+        for name, divisor, floor in _PG_MEMORY_SHARES
+    )
+
+
+def _odoo_memory_limits(limit):
+    """Return the per-process memory limits for an Odoo with this limit.
+
+    ``1024m`` gives 640 MiB and 1536 MiB (60 % and 150 %, both at their
+    floor); ``2g`` gives 1228 MiB and 2560 MiB.
+
+    :param str limit: the instance's ``odoo_memory_limit``
+    :return: ``{option: bytes}`` for ``odoo.conf``, empty when the
+        container has no limit (Odoo's defaults then apply)
+    :rtype: dict
+    """
+    total = _memory_bytes(limit) // _MIB
+    if not total:
+        return {}
+    return {
+        name: min(max(int(total * share), floor), ceiling) * _MIB
+        for name, share, floor, ceiling in _ODOO_MEMORY_SHARES
+    }
+
+
 #: Compose keys whose list an addon fragment may add entries to. Any
 #: other list (``command``, ``entrypoint``) is one value, never appended.
 _ADDITIVE_LISTS = frozenset({"volumes", "env_file", "depends_on"})
@@ -890,6 +977,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         logrotate, which is the copy that survives a rebuild. See
         :meth:`_odoo_command` for why the flag rides on the command.
 
+        The ``db`` service gets a ``CONF_EXTRA`` sized to its memory limit
+        (:func:`_db_conf_extra`): the template's ``work_mem = 512MB`` lets
+        one hash take 1 GiB, more than most databases the panel deploys
+        are given.
+
         The ``smtp`` service gets ``ENABLE_UPDATE_CHECK=0``. It belongs
         in the override rather than in ``.docker/smtp.env`` or the
         compose files because ``copier update`` regenerates all three on
@@ -981,6 +1073,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 if cpus:
                     entry["cpus"] = cpus
                 services[svc] = entry
+        # PostgreSQL's memory follows the database's limit. The override
+        # replaces the template's whole CONF_EXTRA (its only line is
+        # ``work_mem = 512MB``), and the template's files stay untouched.
+        db_conf = _db_conf_extra(inst.db_memory_limit) if "db" in allowed else ""
+        if db_conf:
+            services.setdefault("db", {})["environment"] = {"CONF_EXTRA": db_conf}
         for svc in ("odoo", "db"):
             if svc in allowed:
                 services.setdefault(svc, {}).update(
@@ -1099,6 +1197,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         per-IP rate-limit attribution. The platform enforces it here
         so a future copier-template change or a user-supplied
         ``odoo_conf`` value cannot silently disable it.
+
+        It also gives each Odoo process a memory limit sized to the
+        container's (:func:`_odoo_memory_limits`), unless the instance's
+        ``odoo_conf`` sets either of them, in which case the user's
+        settings stand alone: Odoo's defaults (2 and 2.5 GiB per worker)
+        never recycle a worker in a container of 1 GiB.
         """
         raw = self._inst().odoo_conf or (
             f"# Generated by IncubaCloud for instance {self._inst().name}\n[options]\n"
@@ -1108,6 +1212,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if not cp.has_section("options"):
             cp.add_section("options")
         cp.set("options", "proxy_mode", "True")
+        # Both or neither: a hard limit of ours under a soft one of the
+        # user's would fail allocations before any worker recycled.
+        limits = _odoo_memory_limits(self._inst().odoo_memory_limit)
+        if not any(cp.has_option("options", option) for option in limits):
+            for option, value in limits.items():
+                cp.set("options", option, str(value))
         # Which header states the visitor, whose word to take for it,
         # and which container is the proxy that relays it. Together or
         # not at all: a header believed from anywhere is one any visitor
