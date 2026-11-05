@@ -6,7 +6,7 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
-from .common import McpHttpMixin, McpUsersMixin, PanelFixtureMixin
+from .common import ConfirmMixin, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
 
 def _job_state(_tools, result):
@@ -234,11 +234,46 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
         with self.assertRaises(UserError):
             self._ask(self.consultant, "retry_job", {"job_id": done.id})
 
+    def test_retrying_a_project_s_delete_asks(self):
+        """It removes the project again, as the first run would have."""
+        delete = self._job("delete_project", "failed", instance=self.staging)
+        _args, message = self._ask(self.manager, "retry_job", {"job_id": delete.id})
+        self.assertIn(f"#{delete.id}", message)
+
     def test_retrying_a_job_of_a_higher_role_is_refused(self):
         """A consultant may not retry a developer's restore."""
         restore = self._job("restore_instance", "failed", instance=self.staging)
         with self.assertRaises(AccessError):
             self._ask(self.consultant, "retry_job", {"job_id": restore.id})
+
+    # ── update_notification_preferences ───────────────────────────────────
+
+    def test_a_preference_that_sends_notifications_elsewhere_asks(self):
+        """Another Telegram chat, the emails off or every project muted ask;
+        the same chat, a level or one project of several do not."""
+        self.consultant.sudo().write(
+            {"cloud_telegram_chat_id": "1111", "cloud_email_enabled": True}
+        )
+        other = self.env["cloud.project"].create({"name": "mcp-jobs-other"})
+        other.member_ids = [(4, self.consultant.id)]
+        name = "update_notification_preferences"
+        for args, asked in (
+            ({"telegram_chat_id": "2222"}, '"2222"'),
+            ({"email_enabled": False}, "emails"),
+            ({"muted_project_ids": [self.project.id, other.id]}, "every project"),
+        ):
+            with self.subTest(args=args):
+                _args, message = self._ask(self.consultant, name, args)
+                self.assertIn(asked, message or "")
+        for args in (
+            {"telegram_chat_id": " 1111 "},
+            {"email_enabled": True},
+            {"notification_level": "all"},
+            {"muted_project_ids": [self.project.id]},
+            {"action": "detect_telegram_chat"},
+        ):
+            with self.subTest(args=args):
+                self.assertIsNone(self._ask(self.consultant, name, args)[1])
 
     # ── list_jobs ─────────────────────────────────────────────────────────
 
@@ -302,7 +337,9 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
 
 
 @tagged("post_install", "-at_install")
-class TestJobToolsOverHttp(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+class TestJobToolsOverHttp(
+    PanelFixtureMixin, McpUsersMixin, McpHttpMixin, ConfirmMixin, HttpCase
+):
     """The roles reach the agent, and the reads answer what the forms need."""
 
     def setUp(self):
@@ -340,7 +377,7 @@ class TestJobToolsOverHttp(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpC
         self.consultant.sudo().write(
             {"cloud_notification_level": "all", "cloud_notification_mode": "daily_digest"}
         )
-        result = self._call_tool(
+        result = self._confirmed_call(
             self.key,
             "update_notification_preferences",
             {"muted_project_ids": [self.project.id]},

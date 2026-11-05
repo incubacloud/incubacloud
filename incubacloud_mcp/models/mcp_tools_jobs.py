@@ -55,6 +55,7 @@ RETRY_ASKS = frozenset(
         "stop_instance",
         "restart_instance",
         "delete_instance",
+        "delete_project",
         "delete_host",
         "backup_restore",
         "restore_instance",
@@ -252,7 +253,8 @@ TOOLS = (
         "given change), or with action detect_telegram_chat read the chat of the "
         "last message sent to their Telegram bot, or with send_telegram_test "
         "send it a test message. The bot token and the webhook are set by the "
-        "user in the panel.",
+        "user in the panel. A save that changes the Telegram chat, turns the "
+        "emails off or mutes every project asks the user.",
         _USER,
         obj(
             {
@@ -275,6 +277,7 @@ TOOLS = (
             }
         ),
         handler="_tool_update_notification_preferences",
+        confirm="conditional",
         requires=(
             "for the Telegram actions, the bot token set by the user in the "
             "panel, and for send_telegram_test the chat id too."
@@ -612,6 +615,44 @@ class McpToolsJobs(models.AbstractModel):
     def _writes_update_notification_preferences(self, args):
         """Detecting the Telegram chat writes nothing: only the rest is audited."""
         return args.get("action") != "detect_telegram_chat"
+
+    @api.model
+    def _confirm_update_notification_preferences(self, args):
+        """Ask before the notifications go elsewhere or stop reaching the user.
+
+        A save that changes the Telegram chat (the notifications would go
+        to another chat), turns the emails off, or mutes every project the
+        user sees asks; any other save, and the Telegram checks, do not.
+
+        :return: what the user approves, or None
+        """
+        if (args.get("action") or "save") != "save":
+            return None
+        user = self.env.user
+        asks = []
+        if "telegram_chat_id" in args:
+            chat = (args["telegram_chat_id"] or "").strip()
+            if chat != (user.cloud_telegram_chat_id or ""):
+                asks.append(
+                    self.env._(
+                        "Send your Telegram notifications to the chat %(chat)s "
+                        "(now %(current)s).",
+                        chat=quoted(chat),
+                        current=quoted(user.cloud_telegram_chat_id or ""),
+                    )
+                )
+        if args.get("email_enabled") is False and user.cloud_email_enabled:
+            asks.append(self.env._("Stop your notification emails."))
+        if "muted_project_ids" in args:
+            visible = self.env["cloud.project"].search([])
+            if visible and not visible - visible.browse(args["muted_project_ids"]):
+                asks.append(
+                    self.env._(
+                        "Mute every project you see: no job notification "
+                        "reaches you for any of them."
+                    )
+                )
+        return " ".join(asks) or None
 
     @api.model
     def _tool_update_notification_preferences(self, args):
