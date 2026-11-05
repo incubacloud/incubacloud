@@ -15,6 +15,11 @@ transactions of their own: the buckets, the approval it uses, its audit
 row (the whole command, secrets masked) and the staging's clock. A
 worker that dies while it runs leaves it audited and its approval spent,
 and the request holds no lock on the instance while it runs.
+
+A command may have stopped, started or changed what it ran in: when it
+ends, the instance (or every instance of the server) is probed at once,
+as a job that changes an instance has it probed
+(``cloud.instance._refresh_state_now``).
 """
 
 import asyncio
@@ -60,7 +65,13 @@ TOOLS = (
         "Run one non-interactive shell command in an instance's odoo container "
         "(60 seconds at most) and get stdout, stderr and the exit code. The "
         "minute stops the command, not what it leaves running in the "
-        "background. On production the user approves each command.",
+        "background. On production the user approves each command. To stop, "
+        "start or restart the instance use run_instance_action, to restore it "
+        "restore_backup or the restore_from_* tools, to deploy it "
+        "deploy_instance or rebuild_instance: a command skips what they do — "
+        "the backup before a restore, the neutralization of a copy, the "
+        "panel's record of the instance's state. When it ends, the panel "
+        "probes the instance again.",
         "group_cloud_developer",
         obj(
             {
@@ -79,7 +90,13 @@ TOOLS = (
         "run_host_command",
         "Run one non-interactive shell command on a server, as its SSH user (60 "
         "seconds at most; what it leaves running in the background is not "
-        "stopped). The user approves each command.",
+        "stopped). The user approves each command. To stop, start or restart "
+        "an instance use run_instance_action, to restore one restore_backup or "
+        "the restore_from_* tools, to deploy one deploy_instance, and "
+        "run_host_action for the server's own setup: a command skips what "
+        "they do — the backup before a restore, the neutralization of a copy, "
+        "the panel's record of the instances' state. When it ends, the panel "
+        "probes the server's instances again.",
         "group_cloud_manager",
         obj(
             {
@@ -233,7 +250,9 @@ class McpToolsCommand(models.AbstractModel):
             f"cd {safe_dir} && timeout -k {_KILL_AFTER} {_CLIENT_TIMEOUT} "
             f"docker compose -f {compose} exec -T odoo {_limited(args['command'])}"
         )
-        return self._ssh_capture(instance.host_id, command)
+        result = self._ssh_capture(instance.host_id, command)
+        instance._refresh_state_now()
+        return result
 
     @api.model
     def _tool_run_host_command(self, args):
@@ -257,7 +276,9 @@ class McpToolsCommand(models.AbstractModel):
         self._before_command(
             {"action": "Agent: run_host_command", "host_id": host.id}, args["command"]
         )
-        return self._ssh_capture(host, _limited(args["command"]))
+        result = self._ssh_capture(host, _limited(args["command"]))
+        host.sudo().instance_ids._refresh_state_now()
+        return result
 
     @api.model
     def _ssh_capture(self, host, command):
