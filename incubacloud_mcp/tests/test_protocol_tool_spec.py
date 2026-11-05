@@ -42,6 +42,15 @@ class TestToolSpec(BaseCase):
         self.assertEqual(listed["inputSchema"]["required"], ["instance_id"])
         self.assertFalse(listed["inputSchema"]["additionalProperties"])
 
+    def test_what_a_tool_requires_is_listed_before_its_role(self):
+        """A tool's prerequisites follow its description, before its role."""
+        listed = self._spec(requires="A deployed instance.").listed()
+        self.assertIn(
+            "Delete an instance. Requires: A deployed instance. Minimum role:",
+            listed["description"],
+        )
+        self.assertNotIn("Requires:", self._spec().listed()["description"])
+
     def test_a_destructive_tool_says_so_and_that_it_asks(self):
         """A destructive tool says so, that it asks, and is hinted so."""
         listed = self._spec(destructive=True, confirm="always").listed()

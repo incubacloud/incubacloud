@@ -197,6 +197,10 @@ TOOLS = (
         _PROJECT_MANAGER,
         obj({"vals": _vals(_CREATE_PROJECT)}, required=("vals",)),
         route="/cloud/create_project",
+        requires=(
+            "a series this panel offers (panel_overview lists odoo_versions); a "
+            "backup destination id from panel_overview's backup_destinations."
+        ),
     ),
     ToolSpec(
         "update_project",
@@ -207,6 +211,10 @@ TOOLS = (
             required=("project_id", "vals"),
         ),
         route="/cloud/save_project",
+        requires=(
+            "a project the user is a member of; member_ids from find_users; a "
+            "series this panel offers."
+        ),
     ),
     ToolSpec(
         "import_project",
@@ -220,6 +228,10 @@ TOOLS = (
             required=("url",),
         ),
         route="/cloud/import_project",
+        requires=(
+            "a GitHub repository the panel's GitHub App or token can read, laid "
+            "out by Doodba's copier (its .copier-answers.yml)."
+        ),
     ),
     ToolSpec(
         "create_instance",
@@ -227,6 +239,13 @@ TOOLS = (
         _CONSULTANT,
         obj({"vals": _vals(_CREATE_INSTANCE)}, required=("vals",)),
         route="/cloud/create_instance",
+        requires=(
+            "a project the user can change, and a server from list_hosts; a "
+            "production instance needs a backup destination (its own "
+            "backup_backend_id, its project's or the panel's default) before it "
+            "is deployed; one production instance per project; the series one "
+            "the panel offers."
+        ),
     ),
     ToolSpec(
         "update_instance",
@@ -237,6 +256,10 @@ TOOLS = (
             required=("instance_id", "vals"),
         ),
         route="/cloud/save_instance",
+        requires=(
+            "an instance the user can see; the environment chosen at creation "
+            "cannot change."
+        ),
     ),
     ToolSpec(
         "keep_staging",
@@ -244,6 +267,7 @@ TOOLS = (
         _CONSULTANT,
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/keep_instance",
+        requires="a staging instance.",
     ),
     ToolSpec(
         "revive_instance",
@@ -255,6 +279,7 @@ TOOLS = (
         ),
         route="/cloud/revive_instance",
         enqueues=True,
+        requires="an archived instance (list_instances with archived=true).",
     ),
     ToolSpec(
         "deploy_instance",
@@ -263,6 +288,12 @@ TOOLS = (
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/deploy_instance",
         enqueues=True,
+        requires=(
+            "a server on the instance (host_id); not deployed yet (a deployed "
+            "one is rebuilt with rebuild_instance); a production instance needs "
+            "a backup destination; a deploy held by a dependency conflict "
+            "starts once resolve_conflict resolves it."
+        ),
     ),
     ToolSpec(
         "rebuild_instance",
@@ -271,6 +302,7 @@ TOOLS = (
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/rebuild_instance",
         enqueues=True,
+        requires="a deployed instance on a server.",
     ),
     ToolSpec(
         "clone_to_staging",
@@ -285,6 +317,10 @@ TOOLS = (
         ),
         route="/cloud/clone_to_staging",
         enqueues=True,
+        requires=(
+            "a deployed production instance, and a staging name not used in the "
+            "project."
+        ),
     ),
     ToolSpec(
         "create_backup",
@@ -299,6 +335,10 @@ TOOLS = (
         ),
         route="/cloud/create_backup",
         enqueues=True,
+        requires=(
+            "a deployed instance on a server; a production one needs a backup "
+            "destination."
+        ),
     ),
     ToolSpec(
         "resolve_conflict",
@@ -314,6 +354,10 @@ TOOLS = (
             required=("alert_id", "kind", "resolutions"),
         ),
         handler="_tool_resolve_conflict",
+        requires=(
+            "an active pip or addon conflict alert (list_alerts) and a choice "
+            "among the ones it lists."
+        ),
     ),
     ToolSpec(
         "apply_config",
@@ -327,6 +371,7 @@ TOOLS = (
             required=("instance_id", "actions"),
         ),
         route="/cloud/apply_sync",
+        requires="the actions compare_config proposed for this instance, unchanged.",
     ),
     ToolSpec(
         "dismiss_alerts",
@@ -360,6 +405,10 @@ TOOLS = (
             required=("model", "repo_ids"),
         ),
         handler="_tool_freeze_repos",
+        requires=(
+            "repositories of a project or an instance the user can change, with "
+            "a branch to read the commit of."
+        ),
     ),
     ToolSpec(
         "manage_tags",
@@ -381,6 +430,7 @@ TOOLS = (
         _DEVELOPER,
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/instance_mailbox_clear",
+        requires="a deployed staging instance.",
     ),
 )
 

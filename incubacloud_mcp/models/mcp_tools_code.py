@@ -76,6 +76,10 @@ TOOLS = (
         handler="_tool_repo_read",
         read_only=True,
         untrusted=True,
+        requires=(
+            "a repository of the user's projects or instances, readable by the "
+            "panel's GitHub App or token."
+        ),
     ),
     ToolSpec(
         "repo_create_branch",
@@ -90,6 +94,10 @@ TOOLS = (
         ),
         handler="_tool_repo_create_branch",
         confirm="conditional",
+        requires=(
+            "a repository of the user's projects or instances the panel's "
+            "GitHub App or token may write to."
+        ),
     ),
     ToolSpec(
         "repo_write_files",
@@ -123,6 +131,10 @@ TOOLS = (
         ),
         handler="_tool_repo_write_files",
         confirm="conditional",
+        requires=(
+            "a branch of a repository of the user's projects or instances the "
+            "panel's GitHub App or token may write to."
+        ),
     ),
     ToolSpec(
         "repo_open_pull_request",
@@ -143,6 +155,10 @@ TOOLS = (
         ),
         handler="_tool_repo_open_pull_request",
         confirm="conditional",
+        requires=(
+            "a branch of a repository of the user's projects or instances the "
+            "panel's GitHub App or token may write to."
+        ),
     ),
     ToolSpec(
         "repo_create",
@@ -165,6 +181,10 @@ TOOLS = (
         ),
         handler="_tool_repo_create",
         confirm="always",
+        requires=(
+            "the panel's personal access token, allowed to create repositories; "
+            "a project the user can change."
+        ),
     ),
     ToolSpec(
         "project_connect_repo",
@@ -185,6 +205,10 @@ TOOLS = (
         ),
         handler="_tool_project_connect_repo",
         confirm="always",
+        requires=(
+            "a repository the panel's GitHub App or token can read, and a "
+            "project the user can change."
+        ),
     ),
 )
 
