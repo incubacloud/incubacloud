@@ -529,7 +529,8 @@
     inset-inline-start: 0;
     z-index: 20;
     inline-size: max-content;
-    max-inline-size: min(300px, calc(100vw - 48px));
+    // Interpolated: libsass would evaluate a bare min() as its own.
+    max-inline-size: #{"min(300px, calc(100vw - 48px))"};
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
