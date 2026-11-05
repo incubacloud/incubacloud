@@ -9,7 +9,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { IcMenu } from "../ic_menu/ic_menu";
-import { parseUTC } from "../../utils/dates";
+import { agoText, parseUTC } from "../../utils/dates";
 import { ACTIVE_STATES, announceJob, cancelPrompt, holdReason, jobStateText, jobTone } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
@@ -958,14 +958,24 @@ export class HostDetail extends Component {
         return gb % 1 === 0 ? `${gb} GB` : `${gb.toFixed(1)} GB`;
     }
 
+    /**
+     * A number of CPU cores, as the host's overview reads it.
+     *
+     * @param {number} n the cores.
+     * @returns {string} "4 cores"
+     */
+    coresLabel(n) {
+        return _t("%s cores", n);
+    }
+
     diskExtra() {
         const h = this.state.host;
         const free = h.disk_free_gb;
         const pct = h.disk;
         if (!free && !pct) return '';
-        if (!pct || pct <= 0 || pct >= 100) return `${free} GB free`;
+        if (!pct || pct <= 0 || pct >= 100) return _t("%s GB free", free);
         const total = Math.round(free * 100 / (100 - pct));
-        return `${free} GB free / ${total} GB`;
+        return _t("%(free)s GB free / %(total)s GB", { free, total });
     }
 
     formatDate(dateStr) {
@@ -977,13 +987,7 @@ export class HostDetail extends Component {
 
     timeAgo(dateStr) {
         if (!dateStr) return "";
-        const secs = Math.floor((Date.now() - parseUTC(dateStr).getTime()) / 1000);
-        if (secs < 60) return _t("just now");
-        const mins = Math.floor(secs / 60);
-        if (mins < 60) return `${mins}m ago`;
-        const hrs = Math.floor(mins / 60);
-        if (hrs < 24) return `${hrs}h ago`;
-        return `${Math.floor(hrs / 24)}d ago`;
+        return agoText(Math.floor((Date.now() - parseUTC(dateStr).getTime()) / 1000));
     }
 
     isActiveJob(state) {

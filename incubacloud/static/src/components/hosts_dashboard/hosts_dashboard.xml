@@ -81,7 +81,7 @@
                             <div class="rl-rmeta ic-host-card-meta">
                                 <t t-if="host.ip_address"><code t-esc="host.ip_address"/></t>
                                 <t t-if="hasMetrics(host)">
-                                    <t t-if="host.ip_address"> · </t><t t-esc="host.cpu_cores"/> cores
+                                    <t t-if="host.ip_address"> · </t><t t-esc="coresLabel(host.cpu_cores)"/>
                                     · <t t-esc="formatRam(host.ram_total_gb)"/> RAM
                                 </t>
                                 <t t-if="host.region"> · <t t-esc="host.region"/></t>

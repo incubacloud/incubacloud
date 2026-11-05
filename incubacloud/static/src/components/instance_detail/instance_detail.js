@@ -11,7 +11,7 @@ import {rpc} from "@web/core/network/rpc";
 import {useService} from "@web/core/utils/hooks";
 import {_t} from "@web/core/l10n/translation";
 import {RepoEditor} from "../repo_editor/repo_editor";
-import {parseUTC} from "../../utils/dates";
+import {agoText, parseUTC} from "../../utils/dates";
 import {useSafePoll} from "../../utils/use_safe_poll";
 import {useVisibilityRefresh} from "../../utils/use_visibility_refresh";
 import {useDebouncedBus, refreshesOn} from "../../utils/use_debounced_bus";
@@ -468,16 +468,17 @@ export class InstanceDetail extends JobsMixin(
 
   timeAgo(dateStr) {
     if (!dateStr) return "";
-    const now = new Date();
-    const d = parseUTC(dateStr);
-    const secs = Math.floor((now - d) / 1000);
-    if (secs < 60) return "just now";
-    const mins = Math.floor(secs / 60);
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
+    return agoText(Math.floor((new Date() - parseUTC(dateStr)) / 1000));
+  }
+
+  /**
+   * How many aliases the instance has besides its main domain.
+   *
+   * @param {number} n the aliases.
+   * @returns {string} "1 additional", "3 additional"
+   */
+  aliasesLabel(n) {
+    return n === 1 ? _t("1 additional") : _t("%s additional", n);
   }
 
   formatDate(dateStr) {
