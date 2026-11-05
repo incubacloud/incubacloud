@@ -187,3 +187,53 @@ class TestOperateTools(
             self.key, "revive_instance", {"instance_id": self.staging.id}
         )
         self.assertIn("group_cloud_developer", result["content"][0]["text"])
+
+
+@tagged("post_install", "-at_install")
+class TestOperateAnswers(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+    """What a backup and a project's save answer the agent."""
+
+    def setUp(self):
+        """A developer member of the project, with an API key."""
+        super().setUp()
+        self._resource_here()
+        self._panel_fixture()
+        self.developer = self._cloud_user("mcp-op-answers-dev")
+        self.project.member_ids = [(4, self.developer.id)]
+        self.key = self._api_key(self.developer)
+
+    def test_a_backup_answers_its_own_job_and_its_chain_s_last(self):
+        """backup_job_id takes the copy; job_id lists the backups after it."""
+        self.staging._transition("deploying")
+        self.staging._transition("deployed")
+        payload = self._payload(
+            self._call_tool(
+                self.key, "create_backup", {"instance_id": self.staging.id}
+            )
+        )
+        Job = self.env["cloud.job"]
+        self.assertEqual(
+            Job.browse(payload["backup_job_id"]).job_type_id.code, "backup_create"
+        )
+        self.assertEqual(Job.browse(payload["job_id"]).job_type_id.code, "backup_list")
+
+    def test_a_save_without_repositories_answers_the_project_s(self):
+        """The repositories the project holds, not an empty list."""
+        self.env["cloud.project.repo"].create(
+            {
+                "project_id": self.project.id,
+                "url": "https://github.com/acme/addons",
+                "branch": "19.0",
+            }
+        )
+        payload = self._payload(
+            self._call_tool(
+                self.key,
+                "update_project",
+                {"project_id": self.project.id, "vals": {"description": "x"}},
+            )
+        )
+        self.assertEqual(
+            [(repo["url"], repo["branch"]) for repo in payload["repos"]],
+            [("https://github.com/acme/addons", "19.0")],
+        )

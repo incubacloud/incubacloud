@@ -422,6 +422,16 @@ class TestThePickersRoute(TransactionCase):
                     answer["project_defaults"]["odoo_version"], expected,
                 )
 
+    def test_the_new_project_form_opens_on_the_model_s_author_and_licence(self):
+        """The form's author and licence are the fields' defaults, which a
+        layer may change: the form does not write them itself."""
+        defaults = self._serve("cloud_get_tags", scope="project")["project_defaults"]
+        expected = self.env["cloud.project"].default_get(
+            ["project_author", "project_license"],
+        )
+        self.assertEqual(defaults["project_author"], expected["project_author"])
+        self.assertEqual(defaults["project_license"], expected["project_license"])
+
 
 class TestOnlyAnAdministratorChoosesASeriesNotOffered(CloudSecurityBase):
     """``may_choose``: the pickers hide a series, and RPC cannot reach it.
@@ -446,7 +456,14 @@ class TestOnlyAnAdministratorChoosesASeriesNotOffered(CloudSecurityBase):
         Project = self.env["cloud.project"].with_user(self.manager)
         with self.assertRaises(ValidationError) as caught:
             Project.create({"name": "Too soon", "odoo_version": "20.0"})
-        self.assertEqual(str(caught.exception), "Odoo 20.0 is not offered yet.")
+        offered = ", ".join(versions.offered_versions(
+            versions.pinned_template_ref(self.env),
+        ))
+        self.assertEqual(
+            str(caught.exception),
+            f"Odoo 20.0 is not offered yet. This panel offers: {offered}.",
+        )
+        self.assertNotIn("20.0", offered)
         Project.create({"name": "Fine", "odoo_version": "19.0"})
 
     def test_a_manager_cannot_move_an_instance_to_it(self):
@@ -479,8 +496,11 @@ class TestOnlyAnAdministratorChoosesASeriesItsPinCannotRender(CloudSecurityBase)
         Project = self.env["cloud.project"].with_user(self.manager)
         with self.assertRaises(ValidationError) as caught:
             Project.create({"name": "Too old a pin", "odoo_version": "20.0"})
-        self.assertEqual(
-            str(caught.exception), "Odoo 20.0 is not offered on this panel.",
+        self.assertTrue(
+            str(caught.exception).startswith(
+                "Odoo 20.0 is not offered on this panel. This panel offers: ",
+            ),
+            caught.exception,
         )
         project = Project.create({"name": "Default"})
         self.assertEqual(project.odoo_version, "19.0")

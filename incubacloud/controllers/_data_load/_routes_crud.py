@@ -260,13 +260,18 @@ class CrudMixin:
         # new_project form. Other scopes don't need it.
         if scope == 'project':
             defaults = request.env['cloud.project'].default_get(
-                ['pip_dependencies', 'odoo_version']
+                ['pip_dependencies', 'odoo_version', 'project_author',
+                 'project_license']
             )
             payload['project_defaults'] = {
                 'pip_dependencies': defaults.get('pip_dependencies', ''),
                 # The field's default: the newest series this panel's
                 # pin renders (``_odoo_versions.new_record_default``).
                 'odoo_version': defaults.get('odoo_version', ''),
+                # The fields' defaults, which a layer may set (a tenant
+                # panel names the tenant and imposes no licence).
+                'project_author': defaults.get('project_author', ''),
+                'project_license': defaults.get('project_license', ''),
             }
         return payload
 
