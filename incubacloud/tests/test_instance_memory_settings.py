@@ -56,7 +56,9 @@ class TestMemoryFormulas(BaseCase):
             "512m": ("128MB", "32MB", "256MB"),
             "768m": ("192MB", "48MB", "384MB"),
             "1g": ("256MB", "64MB", "512MB"),
-            "4g": ("1024MB", "256MB", "2048MB"),
+            # work_mem stops at the manager's own 64MB: it is per sort or
+            # hash of every connection, the other two once per server.
+            "4g": ("1024MB", "64MB", "2048MB"),
         }
         for limit, (shared, work, cache) in expected.items():
             with self.subTest(limit=limit):
@@ -198,10 +200,24 @@ class TestMemoryRendered(TransactionCase):
         self.assertEqual(options["limit_memory_soft"], "3221225472")
         self.assertNotIn("limit_memory_hard", options)
 
-    def test_an_empty_configuration_gets_them_too(self):
-        self.instance.odoo_conf = False
-        options = self._options(self._executor())
+    def test_a_threaded_odoo_gets_none(self):
+        """Without workers the soft limit is measured on the whole server,
+        past 640 MiB from the start, and Odoo would reload in a loop."""
+        for conf in (False, "[options]\nworkers = 0\n", "[options]\nworkers = x\n"):
+            with self.subTest(conf=conf):
+                self.instance.odoo_conf = conf
+                options = self._options(self._executor())
+                self.assertNotIn("limit_memory_soft", options)
+                self.assertNotIn("limit_memory_hard", options)
+
+    def test_a_staging_runs_workers_from_its_command(self):
+        """``--workers=3`` on staging's command wins over the configuration."""
+        self.instance.write({"environment": "staging", "odoo_conf": False})
+        executor = self._executor()
+        self.assertIn("--workers=3", executor._odoo_command())
+        options = self._options(executor)
         self.assertEqual(options["limit_memory_soft"], str(640 * _MIB))
+        self.assertEqual(options["limit_memory_hard"], str(1536 * _MIB))
 
     def test_an_odoo_without_a_limit_gets_none(self):
         self.instance.odoo_memory_limit = False

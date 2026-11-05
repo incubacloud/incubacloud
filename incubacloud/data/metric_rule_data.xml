@@ -180,8 +180,19 @@
              alert. The memory percentage cannot stand in for it: a
              database's usage is mostly cache and always reads 90-95 %.
              See docs/architecture.md, "Memory an instance is deployed
-             with". -->
-        <field name="expression">sum by (instance_id, instance) (increase(container_oom_events_total{instance_id!="", container_label_com_docker_compose_service=~"odoo|db|smtp"}[15m]))</field>
+             with".
+
+             increase_prometheus, not increase (review of 5-Nov-2026):
+             VictoriaMetrics' increase takes a series that appears inside
+             the window as starting from 0, so a series that appears, or
+             comes back after a gap in its samples, with a counter that
+             already reads 1 to 5 counted that many kills just now;
+             checked against v1.102.0, the central's version, on
+             5-Nov-2026. increase_prometheus reads only the samples
+             inside the window: it still sees a kill after a counter
+             reset, and misses only one before a series' first two
+             samples. -->
+        <field name="expression">sum by (instance_id, instance) (increase_prometheus(container_oom_events_total{instance_id!="", container_label_com_docker_compose_service=~"odoo|db|smtp"}[15m]))</field>
         <field name="comparator">gt</field>
         <field name="threshold">0</field>
         <field name="level">critical</field>

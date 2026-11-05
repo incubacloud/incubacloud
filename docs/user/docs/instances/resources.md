@@ -15,13 +15,16 @@ its memory limits:
 | Odoo `limit_memory_soft` | Odoo's memory limit | 60 %, between 640 MiB and 2048 MiB |
 | Odoo `limit_memory_hard` | Odoo's memory limit | 150 %, between 1536 MiB and 2560 MiB |
 | PostgreSQL `shared_buffers` | the database's memory limit | a quarter, at least 16 MB |
-| PostgreSQL `work_mem` | the database's memory limit | a sixteenth, at least 4 MB |
+| PostgreSQL `work_mem` | the database's memory limit | a sixteenth, between 4 MB and 64 MB |
 | PostgreSQL `effective_cache_size` | the database's memory limit | half, at least 32 MB |
 
 For example, with the defaults (Odoo 2g, database 1g): each Odoo process is
 recycled past 1228 MiB and stopped at 2560 MiB, and PostgreSQL runs with
 `shared_buffers = 256MB`, `work_mem = 64MB` and `effective_cache_size = 512MB`.
 An instance with no memory limit keeps Odoo's and PostgreSQL's own defaults.
+The Odoo limits are set only when Odoo runs workers (`workers` above 0 in
+**Config**; a staging always runs three): without workers Odoo measures the
+soft limit on the whole server and would restart itself over and over.
 
 **Why.** Odoo's own defaults (2 GiB soft and 2.5 GiB hard per worker) are more
 than a whole container usually has, so no worker was ever recycled: each one
@@ -48,11 +51,18 @@ its settings change: a few seconds, after which Odoo reconnects by itself.
 - **PostgreSQL:** run `ALTER SYSTEM SET work_mem = '128MB';` and then
   `SELECT pg_reload_conf();` in the instance's database (`shared_buffers` needs
   a restart of the instance). It is kept in the database's own data and survives
-  rebuilds. `ALTER SYSTEM RESET work_mem;` goes back to the panel's value.
+  rebuilds, but not a move to another server nor a restore into another
+  instance, which copy the database and not its server settings: set it again
+  there. `ALTER SYSTEM RESET work_mem;` goes back to the panel's value.
 
 ## Alerts about memory
 
 - **High memory:** Odoo's container above 95 % of its limit for 30 minutes.
+- **Workers recycled for memory:** more than 12 Odoo workers replaced in an
+  hour for passing `limit_memory_soft`. The instance works, but its workers
+  reach the limit as soon as they warm up and requests often land on a fresh
+  one: raise Odoo's memory limit in **Resources**, or set a higher
+  `limit_memory_soft` in **Config**.
 - **Out of memory:** the system killed a process in the Odoo, database or mail
   container for lack of memory. This one is critical: something was stopped
   mid-way. Raise the container's limit in **Resources**, or look for the

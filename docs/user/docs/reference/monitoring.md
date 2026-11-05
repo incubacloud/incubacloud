@@ -48,7 +48,8 @@ a process of an instance's Odoo, database or mail container killed for
 lack of memory. The last one is critical.
 
 Each instance is also checked every five minutes: its Odoo above 95 %
-of its memory limit for thirty minutes raises a warning. See [Memory and resources](../instances/resources.md)
+of its memory limit for thirty minutes raises a warning, and so do more
+than twelve Odoo workers recycled for memory in an hour. See [Memory and resources](../instances/resources.md)
 for what the panel sets so that Odoo stays below its limit.
 
 Alerts arrive through the same channels as everything else — in-app,
