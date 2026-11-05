@@ -6,7 +6,8 @@ methods ``orm`` calls, and the job types ``cloud.job.enqueue`` queues.
 Comments are blanked first by a tokenizer that respects strings, template
 literals and regular expressions: a call quoted in a comment or a JSDoc
 example is not one. A call whose route or job type is not a literal comes
-back as ``dynamic``, for the test to find it declared.
+back as ``dynamic`` (``data_job`` for a job type), for the test to find it
+declared.
 """
 
 import re
@@ -26,6 +27,8 @@ _ORM_METHODS = (
     "write",
     "unlink",
     "read",
+    "search",
+    "nameSearch",
     "searchRead",
     "webSearchRead",
     "searchCount",
@@ -52,9 +55,10 @@ class Call:
     ``kind`` is ``rpc`` (a JSON-RPC route), ``page`` (a page or a file
     opened), ``orm`` (``<model>.<method>``), ``job`` (a job type's code)
     or ``dynamic`` (an ``rpc`` or ``orm`` call whose target is not a
-    literal: ``value`` is the expression); ``data_job`` is a job type
-    queued from data (``action.code``), which the server's job types
-    answer for.
+    literal: ``value`` is the expression); ``data_job`` is a
+    ``cloud.job.enqueue`` whose job type is not a literal (``action.code``):
+    like ``dynamic``, its file declares the expression, and the job types
+    offered from data answer for what it queues.
     """
 
     kind: str
