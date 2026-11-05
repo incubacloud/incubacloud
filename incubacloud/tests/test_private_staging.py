@@ -335,10 +335,10 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         self.assertEqual(set(private), {answers, backup, repos, heads})
         self.assertIn("postgres_password", private[answers])
         self.assertEqual(private[backup], _BACKUP_ENV)
-        self.assertEqual(private[repos], executor._repos_yaml_content())
+        pinned = set()
+        self.assertEqual(private[repos], executor._repos_yaml_content(pinned))
         self.assertEqual(
-            private[heads],
-            executor._repo_heads_spec(executor._repos_yaml_content()),
+            private[heads], executor._repo_heads_spec(private[repos], pinned),
         )
         self.assertEqual(
             set(public),

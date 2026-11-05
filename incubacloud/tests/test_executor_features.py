@@ -3,6 +3,7 @@ Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
 import shlex
+from unittest import mock
 
 from odoo.tests.common import BaseCase, TransactionCase
 
@@ -683,16 +684,18 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
             )
 
     def test_the_spec_asks_branches_and_takes_pins_as_they_are(self):
-        """A branch travels with its URL; a commit, the build's own
+        """A branch travels with its URL; a pin, the build's own
         expansion of ``$ODOO_VERSION`` aside, carries none."""
-        spec = _make_deploy_executor()._repo_heads_spec(self._repos_yaml())
+        spec = _make_deploy_executor()._repo_heads_spec(
+            self._repos_yaml(), {"pinned"},
+        )
         auth = f"https://x-access-token:{self._TOKEN}@github.com/acme"
         self.assertEqual(
             spec.splitlines(),
             [
-                "odoo\t19.0\thttps://github.com/odoo/odoo.git",
-                f"addons\tmain\t{auth}/addons.git",
-                f"pinned\t{self._PINNED}\t",
+                "odoo\tref\t19.0\thttps://github.com/odoo/odoo.git",
+                f"addons\tref\tmain\t{auth}/addons.git",
+                f"pinned\tpin\t{self._PINNED}\t",
             ],
         )
 
@@ -700,13 +703,85 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
         yaml_text = self._repos_yaml().replace(
             "  - odoo $ODOO_VERSION", f"  - odoo {self._PINNED}",
         )
-        spec = _make_deploy_executor()._repo_heads_spec(yaml_text)
-        self.assertEqual(spec.splitlines()[0], f"odoo\t{self._PINNED}\t")
+        spec = _make_deploy_executor()._repo_heads_spec(
+            yaml_text, {"odoo", "pinned"},
+        )
+        self.assertEqual(spec.splitlines()[0], f"odoo\tpin\t{self._PINNED}\t")
+
+    def test_a_branch_named_like_a_commit_is_asked(self):
+        """``cafebabe`` or ``20261105`` is a branch unless it was pinned."""
+        for branch in ("cafebabe", "20261105"):
+            yaml_text = self._repos_yaml().replace(
+                "  - addons main", f"  - addons {branch}",
+            )
+            spec = _make_deploy_executor()._repo_heads_spec(yaml_text, set())
+            self.assertIn(
+                f"addons\tref\t{branch}\thttps://x-access-token:",
+                spec.splitlines()[1],
+            )
+
+    def _render(self, ex, repos, odoo_commit_sha=False):
+        """Render *ex*'s repos.yaml for *repos*; return ``(text, pinned)``."""
+        inst = ex._inst()
+        inst.odoo_commit_sha = odoo_commit_sha
+        inst.repo_ids = repos
+        pinned = set()
+        with mock.patch.object(
+            ex, "_get_github_tokens", return_value=("", ""),
+        ), mock.patch.object(
+            ex, "_get_token_for_repo", return_value=self._TOKEN,
+        ):
+            text = ex._repos_yaml_content(pinned)
+        return text, pinned
+
+    def test_the_render_says_what_was_pinned_by_where_it_came_from(self):
+        """``odoo_commit_sha`` and ``commit_sha`` pin; a hex branch name
+        without either does not."""
+        repos = [
+            SimpleNamespace(
+                url="https://github.com/acme/hexbranch.git",
+                branch="cafebabe", commit_sha=False,
+            ),
+            SimpleNamespace(
+                url="https://github.com/acme/fixed.git",
+                branch="main", commit_sha=self._PINNED,
+            ),
+        ]
+        ex = _make_deploy_executor()
+        text, pinned = self._render(ex, repos)
+        self.assertEqual(pinned, {"fixed"})
+        kinds = [line.split("\t")[:3] for line in
+                 ex._repo_heads_spec(text, pinned).splitlines()]
+        self.assertEqual(kinds, [
+            ["odoo", "ref", "19.0"],
+            ["hexbranch", "ref", "cafebabe"],
+            ["fixed", "pin", self._PINNED],
+        ])
+        _text, pinned = self._render(ex, repos, odoo_commit_sha=self._PINNED)
+        self.assertEqual(pinned, {"odoo", "fixed"})
+
+    def test_a_layers_release_pin_is_a_pin(self):
+        """A subclass answering ``_repo_merge_ref`` with a commit the row
+        does not hold (the tenant's release pointer) pins it too."""
+        repo = SimpleNamespace(
+            url="https://github.com/acme/core.git",
+            branch="19.0", commit_sha=False,
+        )
+        ex = _make_deploy_executor()
+        with mock.patch.object(
+            ex, "_repo_merge_ref", return_value=self._PINNED,
+        ):
+            text, pinned = self._render(ex, [repo])
+        self.assertEqual(pinned, {"core"})
+        self.assertIn(
+            f"core\tpin\t{self._PINNED}\t",
+            ex._repo_heads_spec(text, pinned).splitlines(),
+        )
 
     def test_no_command_names_the_token(self):
         """The URLs stay in the staged spec: the steps name paths."""
         for ex in (_make_deploy_executor(), _make_rebuild_executor()):
-            ex._repo_heads_spec(self._repos_yaml())
+            ex._repo_heads_spec(self._repos_yaml(), set())
             for label, command, *_opts in ex.get_commands():
                 self.assertNotIn(self._TOKEN, command, label)
 
