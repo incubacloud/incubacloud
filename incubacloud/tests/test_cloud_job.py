@@ -1420,6 +1420,38 @@ class TestDuplicityFilenameParser(TransactionCase):
             '20260320T020000Z',
         )
 
+    def _iso(self, key):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            _duplicity_filename_to_iso,
+        )
+        return _duplicity_filename_to_iso(key)
+
+    def test_prefixed_names_from_the_backup_image(self):
+        """Names as the image writes them, with the per-host file prefixes."""
+        host = 'backup.tenant.example.io'
+        self.assertEqual(self._iso(
+            f'archive-{host}-duplicity-full.20261025T010009Z.vol1.difftar.gpg',
+        ), '20261025T010009Z')
+        self.assertEqual(self._iso(
+            f'manifest-{host}-duplicity-full.20261011T010008Z.manifest.gpg',
+        ), '20261011T010008Z')
+        self.assertEqual(self._iso(
+            f'signature-{host}-duplicity-full-signatures.'
+            '20261004T010006Z.sigtar.gpg',
+        ), '20261004T010006Z')
+        self.assertEqual(self._iso(
+            f'archive-{host}-duplicity-inc.20261009T020016Z.to.'
+            '20261010T020014Z.vol1.difftar.gpg',
+        ), '20261010T020014Z')
+        self.assertEqual(self._iso(
+            f'manifest-{host}-duplicity-inc.20261009T020016Z.to.'
+            '20261010T020014Z.manifest.gpg',
+        ), '20261010T020014Z')
+        self.assertEqual(self._iso(
+            f'signature-{host}-duplicity-new-signatures.20261009T020016Z.to.'
+            '20261010T020014Z.sigtar.gpg',
+        ), '20261010T020014Z')
+
     def test_unrelated_filename_yields_none(self):
         from odoo.addons.incubacloud.models.backup_list_executor import (
             _duplicity_filename_to_iso,
