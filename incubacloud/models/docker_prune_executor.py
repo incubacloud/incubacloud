@@ -26,13 +26,24 @@ PROTECT_LABEL = "incubacloud.protect=1"
 #: away. The single place to change it.
 BUILD_CACHE_MIN_FREE_GB = 8
 
+#: How recent what a job's cleanup keeps is: the build cache used and the
+#: images made within it. A delete or a rebuild holds the host's build lock
+#: (``HostBuildLockMixin``), but a deploy holds none, so the cleanup of one
+#: may run while the other builds: the cache that build is filling, and the
+#: image it has just built and not started yet, are that recent.
+BUILD_CACHE_KEEP = "1h"
+
 #: The cleanup the daily prune does for disk, without the containers:
 #: the build cache, and the images no container uses, the labelled ones
-#: spared (see ``PROTECT_LABEL``). Never ``docker system prune``, which
-#: takes networks too (see the playbook).
+#: spared (see ``PROTECT_LABEL``), what is more recent than
+#: ``BUILD_CACHE_KEEP`` spared too. An image is dated by when it was built,
+#: so one a deploy has just pulled may go before its stack starts: its
+#: ``docker compose up`` pulls it again. Never ``docker system prune``,
+#: which takes networks too (see the playbook).
 _CACHE_PRUNE = (
-    "docker builder prune -af; "
+    f'docker builder prune -af --filter "until={BUILD_CACHE_KEEP}"; '
     f'docker image prune -af --filter "label!={PROTECT_LABEL}"'
+    f' --filter "until={BUILD_CACHE_KEEP}"'
 )
 
 
