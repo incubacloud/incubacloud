@@ -25,9 +25,13 @@ when that one may still run; otherwise it is only taken off the backup
 upload door ever, also after its grant is purged. The fingerprints of the
 grants still stored are recorded in it.
 
+``cron_cloud_restore_upload_grant_watch`` arrives too and, like every
+cron of this module on an existing database, lands owned by uid 1: it is
+put on the platform bot, as in 1.0.211.
+
 Idempotent: a job without a link in its payload is left as it is, a
-backup without a credential too, and a fingerprint already recorded is
-skipped.
+backup without a credential too, a fingerprint already recorded is
+skipped, and the assignment skips crons that already point at the bot.
 """
 import json
 import logging
@@ -44,7 +48,8 @@ _ENDED = ("done", "cancelled")
 
 
 def migrate(cr, version):
-    """Move the links out of the restores' payloads; remember the door keys.
+    """Move the links out of the restores' payloads; remember the door keys;
+    give the new cron to the cron bot.
 
     :param cr: database cursor
     :param version: module version being upgraded from
@@ -62,6 +67,10 @@ def migrate(cr, version):
             credentials,
         )
     _remember_door_keys(cr)
+    env["res.users"]._incubacloud_ensure_cron_bot()
+    env["res.users"]._incubacloud_assign_cron_user_id(
+        module_name="incubacloud",
+    )
 
 
 def _move_restore_links(env):
