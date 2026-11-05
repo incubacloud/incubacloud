@@ -133,6 +133,7 @@ from . import test_host_handoff
 from . import test_docker_prune_executor
 from . import test_build_cache_prune
 from . import test_host_disk_refresh
+from . import test_nav_counts_route
 from . import test_deploy_override_protect
 from . import test_instance_health_probe
 from . import test_instance_health_log

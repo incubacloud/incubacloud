@@ -244,6 +244,7 @@ export class BackupBackendDetail extends Component {
       const vals = {...this.state.form};
       if (this.isNew) {
         const result = await rpc("/cloud/create_backup_backend", {vals});
+        this.env.refreshNavCounts?.();
         this._snapshotForm();
         this.env.navigate("backup_backend_detail", {backend_id: result.id});
       } else {
@@ -306,6 +307,7 @@ export class BackupBackendDetail extends Component {
       if (result.error) {
         this.env.toast?.error(result.error);
       } else {
+        this.env.refreshNavCounts?.();
         this.env.navigate("backup_backends");
       }
     } catch {

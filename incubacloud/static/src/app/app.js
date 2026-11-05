@@ -128,6 +128,22 @@ export function _buildUrl(route, params = {}) {
     }
 }
 
+/**
+ * Whether a move from *fromUrl* to *toUrl* asks the sidebar's count
+ * badges again: when it changes section (the first segment after
+ * ``/cloud``: projects, hosts, backup-backends, settings, …) or lands
+ * on a section's own page, as a click on a sidebar entry does.
+ *
+ * @param {string} fromUrl the panel's address before the move
+ * @param {string} toUrl the address it moves to
+ * @returns {boolean}
+ */
+export function _refreshesNavCounts(fromUrl, toUrl) {
+    const path = (url) => (url || "").split("?")[0].replace(/\/+$/, "");
+    const section = (url) => path(url).split("/")[2] || "";
+    return section(fromUrl) !== section(toUrl) || path(toUrl) === `${_BASE}/${section(toUrl)}`;
+}
+
 export class Chrome extends Component {
     static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, Monitoring, SlideOver, MainComponentsContainer, ToastContainer };
 
@@ -234,6 +250,20 @@ export class Chrome extends Component {
                 this.state.alertCount = data.count;
             } catch (_e) { console.debug("Alert count fetch skipped:", _e); }
         };
+        /**
+         * Ask the sidebar's count badges again (``/cloud/get_nav_counts``)
+         * and merge them in: a badge the answer leaves out (one an addon
+         * counts only in ``/cloud/get_config``) keeps its value.
+         */
+        this._refreshNavCounts = async () => {
+            try {
+                const data = await rpc('/cloud/get_nav_counts', {});
+                this.state.navCounts = { ...this.state.navCounts, ...(data?.nav_counts || {}) };
+            } catch (_e) { console.debug("Nav counts fetch skipped:", _e); }
+        };
+        // Coalesced: a create that navigates, or a burst of jobs ending,
+        // asks once.
+        const triggerNavCounts = useDebouncedBus(() => this._refreshNavCounts());
         this._busService = useService("bus_service");
         // Debounce overview invalidations: a burst of alert mutations
         // (e.g. dismiss-all-selected) would otherwise trigger as many
@@ -261,6 +291,8 @@ export class Chrome extends Component {
         this._onJobEvent = async (payload) => {
             const { id, state } = payload || {};
             if (!id || (state !== "done" && state !== "failed")) return;
+            // A job that ended may have removed a host or a project.
+            triggerNavCounts();
             const key = `${id}:${state}`;
             if (this._toastedJobs.has(key)) return;
             if (this._toastedJobs.size > 500) this._toastedJobs.clear();
@@ -321,9 +353,13 @@ export class Chrome extends Component {
                     return;
                 }
             }
+            const prev = this._lastAcceptedRoute;
             this.state.route = parsed.route;
             this.state.params = parsed.params;
             this._lastAcceptedRoute = parsed;
+            if (_refreshesNavCounts(_buildUrl(prev.route, prev.params), window.location.pathname)) {
+                triggerNavCounts();
+            }
         };
 
         this._onGlobalKeydown = (ev) => this.onGlobalKeydown(ev);
@@ -390,6 +426,9 @@ export class Chrome extends Component {
             },
             setProjectName: (name) => { appState.projectName = name; },
             refreshAlertCount: () => pollAlertCount(),
+            // After a project, a host or a backup destination is created
+            // or deleted: the sidebar's badges, asked again.
+            refreshNavCounts: () => triggerNavCounts(),
             toggleSlideOver: (panel, instanceId = false, hostId = false) => {
                 if (appState.slideOver && appState.slideOver.panel === panel) {
                     appState.slideOver = null;
@@ -418,7 +457,9 @@ export class Chrome extends Component {
                     if (!ok) return;
                 }
                 const url = _buildUrl(route, params);
+                const fromUrl = window.location.pathname;
                 history.pushState(null, "", url);
+                if (_refreshesNavCounts(fromUrl, url)) triggerNavCounts();
                 appState.route = route;
                 appState.params = params;
                 // Picking a destination closes the off-canvas menu, so

@@ -150,6 +150,7 @@ export class ImportProjectModal extends Component {
                 return;
             }
 
+            this.env.refreshNavCounts?.();
             this._addMessage(_t("Detected: %s project").replace('%s', result.repo_type));
             if (result.repo_count) {
                 this._addMessage(_t("%s repositories imported").replace('%s', result.repo_count));

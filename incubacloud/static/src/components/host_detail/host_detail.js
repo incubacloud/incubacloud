@@ -746,6 +746,7 @@ export class HostDetail extends Component {
 
             if (this.isNew) {
                 const result = await rpc("/cloud/create_host", { vals });
+                this.env.refreshNavCounts?.();
                 // Clear the dirty baseline before navigating so the
                 // guard doesn't fire on the programmatic transition.
                 this._snapshotForm();
@@ -840,6 +841,7 @@ export class HostDetail extends Component {
                 // A deployed host is torn down by a job; one where
                 // nothing was deployed is gone already and answers none.
                 await announceJob(this.env.toast, result.job_id);
+                this.env.refreshNavCounts?.();
                 this.env.navigate("hosts");
             }
         } catch (e) {
