@@ -71,7 +71,8 @@
         <t t-else="">
             <div class="ah-list">
                 <t t-foreach="state.alerts" t-as="alert" t-key="alert.id">
-                    <div t-att-class="'rl-sevban ah-card ' + levelClass(alert.level)">
+                    <div t-att-class="'rl-sevban ah-card ' + levelClass(alert.level) + (state.focusedId === alert.id ? ' ah-card--focus' : '')"
+                         t-att-data-alert-id="alert.id">
                         <span class="rl-si2"><t t-out="env.icon(levelIcon(alert.level), 18)"/></span>
                         <div class="ah-card-body">
                             <div class="ah-card-header">

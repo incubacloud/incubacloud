@@ -439,6 +439,11 @@ export class Chrome extends Component {
             closeSlideOver: () => {
                 appState.slideOver = null;
             },
+            // The alerts panel, open on one alert (what keeps a job that
+            // reads "Action required"); all of them without an id.
+            openAlert: (alertId) => {
+                appState.slideOver = { panel: "alerts", alertId: alertId || false, expanded: false };
+            },
             // Read back as a prop (AppHeader) or off this.state (the
             // shell), so only the setter belongs on env.
             toggleSidebar: () => {

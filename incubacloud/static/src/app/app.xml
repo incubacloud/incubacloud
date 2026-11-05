@@ -160,6 +160,7 @@
             <SlideOver panel="state.slideOver.panel"
                        instanceId="state.slideOver.instanceId || false"
                        hostId="state.slideOver.hostId || false"
+                       alertId="state.slideOver.alertId || false"
                        expanded="state.slideOver.expanded || false"
                        onClose="() => this.closeSlideOver()"
                        onToggleSize="() => this.toggleSlideOverSize()"/>

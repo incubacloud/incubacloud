@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
 import {_t} from "@web/core/l10n/translation";
-import {ACTIVE_STATES, announceJob, cancelPrompt, jobStateText, jobTone} from "../../utils/job_queue";
+import {ACTIVE_STATES, announceJob, cancelPrompt, holdReason, jobStateText, jobTone} from "../../utils/job_queue";
 
 /**
  * Job timeline: icons, state classes, cancel/retry and paging.
@@ -38,6 +38,47 @@ export const JobsMixin = (Base) =>
      */
     jobTone(state) {
       return jobTone(state);
+    }
+
+    /**
+     * Why a job reads "Action required" (``job_queue.holdReason``).
+     *
+     * @param {object} job a ``_format`` row
+     * @returns {string}
+     */
+    holdReason(job) {
+      return holdReason(job);
+    }
+
+    /**
+     * Open or close the reason of *job*'s "Action required".
+     *
+     * @param {{id: number}} job
+     */
+    toggleHold(job) {
+      this.state.holdOpen = this.state.holdOpen === job.id ? null : job.id;
+    }
+
+    /**
+     * Close the reason on Escape, and give the focus back to its chip.
+     *
+     * @param {KeyboardEvent} ev
+     */
+    onHoldKeydown(ev) {
+      if (ev.key !== "Escape" || this.state.holdOpen === null) return;
+      ev.stopPropagation();
+      this.state.holdOpen = null;
+      ev.currentTarget.querySelector(".ic-tl-alert-badge")?.focus();
+    }
+
+    /**
+     * Open the alert that keeps *job*, in the alerts panel.
+     *
+     * @param {{action_alert_id?: number|null}} job
+     */
+    openHoldAlert(job) {
+      this.state.holdOpen = null;
+      this.env.openAlert(job.action_alert_id || false);
     }
 
     /**

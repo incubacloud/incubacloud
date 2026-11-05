@@ -84,6 +84,40 @@ export function jobStateText(job) {
 }
 
 /**
+ * Why a job reads "Action required", in a sentence for its chip.
+ *
+ * Told by the code of the alert it needs a person for
+ * (``action_alert_code`` of ``_format``): a failure holding its queue
+ * (``job_failed``) names what failed, by its type
+ * (``action_job_type_code``); a conflict says which; any other alert
+ * reads the same generic sentence.
+ *
+ * @param {{action_alert_code?: string|null, action_job_type_code?: string|null}} job
+ *     a ``_format`` row
+ * @returns {string}
+ */
+export function holdReason(job) {
+    const code = job?.action_alert_code;
+    if (code === "job_failed") {
+        return {
+            deploy_instance: _t("Waiting: the previous deploy failed. Retry it or resolve its alert."),
+            rebuild_instance: _t("Waiting: the previous rebuild failed. Retry it or resolve its alert."),
+            restore_instance: _t("Waiting: the previous restore failed. Retry it or resolve its alert."),
+            backup_restore: _t("Waiting: the previous restore failed. Retry it or resolve its alert."),
+            delete_instance: _t("Waiting: the previous delete failed. Retry it or resolve its alert."),
+        }[job.action_job_type_code]
+            || _t("Waiting: an earlier job failed. Retry it or resolve its alert.");
+    }
+    if (code === "pip_conflict") {
+        return _t("The Python dependencies conflict. Resolve its alert to go on.");
+    }
+    if (code === "addon_conflict") {
+        return _t("A module is in more than one repository. Resolve its alert to go on.");
+    }
+    return _t("An alert needs you first. Resolve it to go on.");
+}
+
+/**
  * The question asked before cancelling a job from a list.
  *
  * A job waiting in its queue has not started: cancelling it takes it

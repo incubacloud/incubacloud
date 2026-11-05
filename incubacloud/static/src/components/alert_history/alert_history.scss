@@ -75,6 +75,13 @@
     align-items: flex-start;
 }
 
+// The alert a job's "Action required" led to.
+.ah-card--focus {
+    box-shadow: 0 0 0 2px var(--rl-amber-soft);
+    border-block-color: var(--rl-amber);
+    border-inline-end-color: var(--rl-amber);
+}
+
 .ah-card-body {
     flex: 1;
     min-width: 0;

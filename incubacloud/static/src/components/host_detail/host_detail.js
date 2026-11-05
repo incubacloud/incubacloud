@@ -10,7 +10,7 @@ import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { IcMenu } from "../ic_menu/ic_menu";
 import { parseUTC } from "../../utils/dates";
-import { ACTIVE_STATES, announceJob, cancelPrompt, jobStateText, jobTone } from "../../utils/job_queue";
+import { ACTIVE_STATES, announceJob, cancelPrompt, holdReason, jobStateText, jobTone } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
 import { useNavGuard } from "../../utils/use_nav_guard";
@@ -82,6 +82,8 @@ export class HostDetail extends Component {
 
         this.state = useState({
             tab: this.isNew ? "general" : "overview",
+            // The job whose "Action required" says why, opened by a click.
+            holdOpen: null,
             // Derived server-side and read-only: the ranges the host is
             // actually filtered against, where they come from, and what
             // its Traefik was last given. Kept out of `form` so they are
@@ -1006,6 +1008,47 @@ export class HostDetail extends Component {
      */
     jobTone(state) {
         return jobTone(state);
+    }
+
+    /**
+     * Why a job reads "Action required" (``job_queue.holdReason``).
+     *
+     * @param {object} job a ``_format`` row
+     * @returns {string}
+     */
+    holdReason(job) {
+        return holdReason(job);
+    }
+
+    /**
+     * Open or close the reason of *job*'s "Action required".
+     *
+     * @param {{id: number}} job
+     */
+    toggleHold(job) {
+        this.state.holdOpen = this.state.holdOpen === job.id ? null : job.id;
+    }
+
+    /**
+     * Close the reason on Escape, and give the focus back to its chip.
+     *
+     * @param {KeyboardEvent} ev
+     */
+    onHoldKeydown(ev) {
+        if (ev.key !== "Escape" || this.state.holdOpen === null) return;
+        ev.stopPropagation();
+        this.state.holdOpen = null;
+        ev.currentTarget.querySelector(".ic-tl-alert-badge")?.focus();
+    }
+
+    /**
+     * Open the alert that keeps *job*, in the alerts panel.
+     *
+     * @param {{action_alert_id?: number|null}} job
+     */
+    openHoldAlert(job) {
+        this.state.holdOpen = null;
+        this.env.openAlert(job.action_alert_id || false);
     }
 
     jobIcon(code) {
