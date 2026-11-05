@@ -41,6 +41,9 @@ class ToolSpec:
     ``always`` or ``conditional`` (a ``_confirm_<name>`` method decides);
     never ``never`` for a destructive tool.
     ``audit`` is False for tools that write their own audit row.
+    ``requires`` says what must hold before the tool can work — the state
+    of the records it acts on, a setting, another tool to call first —
+    and is listed with its description.
     """
 
     name: str
@@ -55,6 +58,7 @@ class ToolSpec:
     enqueues: bool = False
     untrusted: bool = False
     audit: bool = True
+    requires: str = ""
 
     def __post_init__(self):
         """Refuse a declaration the server could not honour safely.
@@ -72,7 +76,10 @@ class ToolSpec:
 
         :rtype: dict
         """
-        description = f"{self.description} Minimum role: {ROLE_LABELS[self.min_group]}."
+        description = self.description
+        if self.requires:
+            description += f" Requires: {self.requires}"
+        description += f" Minimum role: {ROLE_LABELS[self.min_group]}."
         if self.destructive:
             description += " Destructive."
         if self.confirm == "always":

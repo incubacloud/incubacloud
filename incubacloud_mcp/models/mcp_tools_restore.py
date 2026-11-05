@@ -73,7 +73,7 @@ _ANSWER = (
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
-def _restore(name, description, schema, required):
+def _restore(name, description, schema, required, **kwargs):
     """Return the spec of a restore tool: destructive, always approved."""
     return ToolSpec(
         name,
@@ -83,6 +83,7 @@ def _restore(name, description, schema, required):
         handler=f"_tool_{name}",
         destructive=True,
         confirm="always",
+        **kwargs,
     )
 
 
@@ -95,6 +96,7 @@ TOOLS = (
         "From a link).",
         {"url": string("The archive's https link.", max_length=4096)},
         ("instance_id", "url"),
+        requires="a deployed instance on a server, and a link its server can reach.",
     ),
     _restore(
         "restore_from_host_file",
@@ -105,6 +107,7 @@ TOOLS = (
         "and put back if the restore fails.",
         {},
         ("instance_id",),
+        requires="a deployed instance on a server, and the archive at that path.",
     ),
     _restore(
         "restore_from_upload",
@@ -119,6 +122,10 @@ TOOLS = (
             ),
         },
         ("instance_id", "grant_id"),
+        requires=(
+            "a deployed instance, and a door (grant_restore_upload) whose file "
+            "check_restore_upload has checked."
+        ),
     ),
     ToolSpec(
         "grant_restore_upload",
@@ -142,6 +149,10 @@ TOOLS = (
         ),
         handler="_tool_grant_restore_upload",
         confirm="always",
+        requires=(
+            "a deployed instance on a server, and an ed25519 key pair of the "
+            "agent's own."
+        ),
     ),
     ToolSpec(
         "revoke_restore_upload",
@@ -167,6 +178,7 @@ TOOLS = (
             required=("instance_id", "grant_id"),
         ),
         handler="_tool_check_restore_upload",
+        requires="a door of grant_restore_upload through which a file was sent.",
     ),
 )
 

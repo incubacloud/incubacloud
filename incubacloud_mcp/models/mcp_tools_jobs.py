@@ -102,6 +102,7 @@ TOOLS = (
         ),
         handler="_tool_run_instance_action",
         confirm="conditional",
+        requires="an instance on a server; deployed, for start, stop and restart.",
     ),
     ToolSpec(
         "export_instance",
@@ -112,6 +113,7 @@ TOOLS = (
         _DEVELOPER,
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         handler="_tool_export_instance",
+        requires="a deployed instance on a server.",
     ),
     ToolSpec(
         "run_host_action",
@@ -134,6 +136,11 @@ TOOLS = (
         ),
         handler="_tool_run_host_action",
         confirm="conditional",
+        requires=(
+            "a server the panel reaches by SSH with a trusted key "
+            "(trust_host_key); for an action, one get_host lists in "
+            "custom_actions."
+        ),
     ),
     ToolSpec(
         "list_jobs",
@@ -188,6 +195,7 @@ TOOLS = (
         obj({"job_id": _JOB}, required=("job_id",)),
         handler="_tool_cancel_job",
         confirm="always",
+        requires="a job that waits or runs, and the role of every job it ends.",
     ),
     ToolSpec(
         "retry_job",
@@ -198,6 +206,10 @@ TOOLS = (
         obj({"job_id": _JOB}, required=("job_id",)),
         handler="_tool_retry_job",
         confirm="conditional",
+        requires=(
+            "a failed job that does not wait for an alert, of a type the user "
+            "may queue."
+        ),
     ),
     ToolSpec(
         "clean_frozen_copy",
@@ -210,6 +222,10 @@ TOOLS = (
         destructive=True,
         confirm="always",
         enqueues=True,
+        requires=(
+            "a move of the instance that ended, its copy still frozen on the "
+            "old server."
+        ),
     ),
     ToolSpec(
         "find_users",
@@ -259,6 +275,10 @@ TOOLS = (
             }
         ),
         handler="_tool_update_notification_preferences",
+        requires=(
+            "for the Telegram actions, the bot token set by the user in the "
+            "panel, and for send_telegram_test the chat id too."
+        ),
     ),
 )
 

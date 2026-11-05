@@ -107,6 +107,7 @@ TOOLS = (
         ),
         handler="_tool_list_instances",
         read_only=True,
+        requires="project_id or host_id, one of the two.",
     ),
     ToolSpec(
         "get_instance",
@@ -175,6 +176,7 @@ TOOLS = (
         handler="_tool_get_job",
         read_only=True,
         untrusted=True,
+        requires="a job the user can see (list_jobs).",
     ),
     ToolSpec(
         "list_alerts",
@@ -232,6 +234,7 @@ TOOLS = (
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
         route="/cloud/compare_sync",
         read_only=True,
+        requires="an instance of a project.",
     ),
     ToolSpec(
         "github_repo_info",
@@ -252,6 +255,10 @@ TOOLS = (
         handler="_tool_github_repo_info",
         read_only=True,
         untrusted=True,
+        requires=(
+            "a repository the panel's GitHub App or token can read; branch for "
+            "all but branches."
+        ),
     ),
     ToolSpec(
         "list_backups",
@@ -269,6 +276,10 @@ TOOLS = (
         ),
         handler="_tool_list_backups",
         read_only=True,
+        requires=(
+            "a deployed instance with a backup destination; job_id from a "
+            "listing this tool queued."
+        ),
     ),
     ToolSpec(
         "read_access_log",
@@ -286,6 +297,7 @@ TOOLS = (
         handler="_tool_read_access_log",
         read_only=True,
         untrusted=True,
+        requires="a deployed instance behind the panel's proxy.",
     ),
 )
 

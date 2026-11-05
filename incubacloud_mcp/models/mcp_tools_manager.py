@@ -34,6 +34,10 @@ TOOLS = (
         ),
         handler="_tool_manage_host",
         confirm="conditional",
+        requires=(
+            "for a server's SSH credentials, the user in the panel; for "
+            "setup_whitelist, a server already set up."
+        ),
     ),
     ToolSpec(
         "harden_host",
@@ -49,6 +53,11 @@ TOOLS = (
             required=("host_id",),
         ),
         handler="_tool_harden_host",
+        requires=(
+            "a server the panel reaches by SSH with a trusted key "
+            "(trust_host_key); apply after a preflight that found nothing "
+            "blocking."
+        ),
     ),
     ToolSpec(
         "browse_host_dir",
@@ -74,6 +83,7 @@ TOOLS = (
             required=("host_id", "path"),
         ),
         route="/cloud/import_host_instance",
+        requires="a directory found with browse_host_dir holding a Doodba instance.",
     ),
     ToolSpec(
         "deploy_monitoring",
@@ -82,6 +92,7 @@ TOOLS = (
         obj({"host_id": _HOST}, required=("host_id",)),
         route="/cloud/monitoring/deploy_central",
         enqueues=True,
+        requires="a server the panel has set up (run_host_action full_setup).",
     ),
 )
 
