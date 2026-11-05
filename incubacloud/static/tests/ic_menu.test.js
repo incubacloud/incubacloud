@@ -94,3 +94,65 @@ describe("IcMenu focus", () => {
         expect(".ic-menu-list").not.toBeVisible();
     });
 });
+
+describe("IcMenu placement", () => {
+    test("opens to the right of the trigger when it fits", () => {
+        expect(IcMenu.place({ triggerLeft: 40, triggerRight: 110, width: 220, viewport: 768 }))
+            .toEqual({ left: 40, maxWidth: 736 });
+    });
+
+    test("opens to the left when the right has no room", () => {
+        // English at 768: the trigger near the right edge.
+        expect(IcMenu.place({ triggerLeft: 680, triggerRight: 750, width: 220, viewport: 768 }))
+            .toEqual({ left: 530, maxWidth: 736 });
+    });
+
+    test("is pushed back inside when neither side has room", () => {
+        // The trigger wrapped to the left edge of a narrow screen, with a
+        // list wider than what lies on either side of it.
+        const { left } = IcMenu.place({ triggerLeft: 36, triggerRight: 110, width: 300, viewport: 320 });
+        expect(left).toBe(16);
+        const right = IcMenu.place({ triggerLeft: 250, triggerRight: 300, width: 280, viewport: 320 });
+        expect(right.left).toBe(20);
+        expect(right.left + 280).toBeLessThan(320 - 15);
+    });
+
+    test("is never wider than the viewport less its margins", () => {
+        expect(IcMenu.place({ triggerLeft: 36, triggerRight: 110, width: 900, viewport: 390 }))
+            .toEqual({ left: 16, maxWidth: 358 });
+    });
+
+    // The panel's styles are not in the test bundle: the list is laid
+    // out here as ``ic_menu.scss`` lays it out.
+    class EdgePage extends Component {
+        static template = xml`
+            <style>
+                .ic-menu { position: relative; display: inline-flex; }
+                .ic-menu .ic-menu-list { position: absolute; top: 100%; left: 0; min-width: 220px; display: grid; }
+                .ic-menu .ic-menu-list > button { white-space: nowrap; }
+                .ic-menu .ic-menu-list[hidden] { display: none; }
+            </style>
+            <div t-att-style="'position:fixed; top:10px; ' + props.side + ':4px'">
+                <IcMenu label="'More'">
+                    <button type="button">Import an existing instance from this host</button>
+                    <button type="button">Traefik proxy settings</button>
+                </IcMenu>
+            </div>`;
+        static components = { IcMenu };
+        static props = { side: String };
+    }
+
+    for (const side of ["left", "right"]) {
+        test(`a trigger at the ${side} edge opens a list inside the viewport`, async () => {
+            patchWithCleanup(rpc, { _rpc: () => Promise.resolve(false) });
+            await mountWithCleanup(EdgePage, { noMainContainer: true, props: { side } });
+            await click(".ic-menu-trigger");
+            await animationFrame();
+            const el = document.querySelector(".ic-menu-list");
+            const list = el.getBoundingClientRect();
+            const viewport = document.documentElement.clientWidth;
+            expect(list.left).toBeGreaterThan(15);
+            expect(list.right).toBeLessThan(viewport - 15);
+        });
+    }
+});
