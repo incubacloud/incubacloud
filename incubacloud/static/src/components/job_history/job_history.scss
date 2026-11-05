@@ -404,6 +404,12 @@ $gantt-row-h: 36px;
 }
 
 .jh-table {
+    // Seven columns in the slide-over's 816 px: with the 16 px sides of a
+    // Relay table and an instance's "project/name" kept on one line, the
+    // last one (Duration) ran past the right edge. The name may break
+    // after its slash (``instanceText``).
+    th, td { padding-inline: 12px; }
+
     .jh-col-name   { color: $text-primary; font-weight: 500; }
 
     .jh-col-trigger {
@@ -420,15 +426,16 @@ $gantt-row-h: 36px;
 
     tbody tr:hover .jh-log-hint { opacity: 1; }
 
+    // Under the duration, not beside it: beside, the hidden hint widened
+    // the last column by its own width.
     .jh-log-hint {
         font-family: $font-mono;
         font-size: 10.5px;
         color: rgba(var(--rl-muted-rgb), 0.55);
-        margin-left: 8px;
         opacity: 0;
         transition: opacity 0.15s;
         white-space: nowrap;
-        display: inline-flex;
+        display: flex;
         align-items: center;
         gap: 3px;
     }

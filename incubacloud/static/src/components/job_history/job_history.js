@@ -1,7 +1,7 @@
-import { Component, useState } from "@odoo/owl";
+import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
-import { parseUTC } from "../../utils/dates";
+import { parseUTC, userLocale } from "../../utils/dates";
 import { ACTIVE_STATES, jobStateText, stateLabel } from "../../utils/job_queue";
 import { SearchSelect } from "../search_select/search_select";
 
@@ -9,6 +9,37 @@ import { SearchSelect } from "../search_select/search_select";
 const GANTT_WINDOW_LABELS = { 1: "1h", 6: "6h", 24: "24h", 168: "7d" };
 
 const ALL_STATES = [...ACTIVE_STATES, "done", "failed", "cancelled"];
+
+/** Widest the timeline's axis cuts its window into, in steps. */
+const GANTT_MAX_STEPS = 12;
+
+/**
+ * Least room between two labels of the timeline's axis, in pixels: an
+ * ``HH:MM`` label takes about 32 px, and the first and last ones sit
+ * against the ends rather than centred on their mark.
+ */
+const GANTT_TICK_MIN_PX = 64;
+
+/**
+ * How many steps the timeline's axis is cut into: as many as the window
+ * has hours, up to ``GANTT_MAX_STEPS``, and fewer when the axis is too
+ * narrow for their labels. A smaller count divides the larger one, so
+ * the marks kept are some of the ones a wide axis shows.
+ *
+ * @param {number} hours the window, in hours.
+ * @param {number} [width=0] the axis's width in pixels; 0 when not
+ *   measured, which keeps every step.
+ * @returns {number} the number of steps, 1 or more (one more mark).
+ */
+export function ganttStepCount(hours, width = 0) {
+    const steps = Math.max(1, Math.min(hours, GANTT_MAX_STEPS));
+    if (!width) return steps;
+    const fit = Math.max(1, Math.floor(width / GANTT_TICK_MIN_PX));
+    for (let n = Math.min(steps, fit); n > 1; n--) {
+        if (steps % n === 0) return n;
+    }
+    return 1;
+}
 
 export class JobHistory extends Component {
     static template = "incubacloud.JobHistory";
@@ -52,9 +83,23 @@ export class JobHistory extends Component {
             // list of jobs is what has to be seen on opening.
             filtersOpen: false,
             ganttOpen: true,
+            // Width of the timeline's axis, in pixels: how many of its
+            // marks fit. 0 until measured.
+            ganttAxisWidth: 0,
         });
 
         this.orm = useService("orm");
+        // The axis comes and goes with the timeline and its jobs: it is
+        // watched while it is on screen.
+        this.ganttAxis = useRef("ganttAxis");
+        useEffect((el) => {
+            if (!el) return;
+            const observer = new ResizeObserver(() => {
+                this.state.ganttAxisWidth = Math.round(el.getBoundingClientRect().width);
+            });
+            observer.observe(el);
+            return () => observer.disconnect();
+        }, () => [this.ganttAxis.el]);
         this.loadHistory();
     }
 
@@ -277,8 +322,15 @@ export class JobHistory extends Component {
             .slice(0, 50);
     }
 
+    /**
+     * The marks of the timeline's axis, as many as its width has room for
+     * (``ganttStepCount``).
+     *
+     * @returns {{pct: string, label: string}[]} each mark's place, as a
+     *   percentage of the axis, and its ``HH:MM``.
+     */
     get ganttTicks() {
-        const count = Math.min(this.state.ganttHours, 12);
+        const count = ganttStepCount(this.state.ganttHours, this.state.ganttAxisWidth);
         const step = this.state.ganttHours / count;
         const now = Date.now();
         const ticks = [];
@@ -308,10 +360,22 @@ export class JobHistory extends Component {
     formatDate(dateStr) {
         if (!dateStr) return "—";
         const d = parseUTC(dateStr);
-        return d.toLocaleString([], {
+        return d.toLocaleString(userLocale(), {
             month: "2-digit", day: "2-digit",
             hour: "2-digit", minute: "2-digit",
         });
+    }
+
+    /**
+     * A job's instance as its column shows it: "project/name", free to
+     * break after the slash (a zero-width space) so a narrow table wraps
+     * it there rather than widening; a dash for a host's job.
+     *
+     * @param {{instance_name?: string}} job a ``_format_history`` row
+     * @returns {string}
+     */
+    instanceText(job) {
+        return job.instance_name ? job.instance_name.split("/").join("/\u200b") : "—";
     }
 
     /**

@@ -178,7 +178,7 @@
                 <!-- X-axis ticks -->
                 <div class="jh-gantt-axis">
                     <div class="jh-gantt-label-col"/>
-                    <div class="jh-gantt-track-col">
+                    <div class="jh-gantt-track-col" t-ref="ganttAxis">
                         <t t-foreach="ganttTicks" t-as="tick" t-key="tick.pct">
                             <span class="jh-gantt-tick"
                                   t-att-style="'left:' + tick.pct + '%'">
@@ -292,7 +292,8 @@
                                         <span class="jh-col-trigger"><i class="fa fa-github"/> <t t-esc="job.push_sha"/> <t t-esc="job.push_message"/></span>
                                     </t>
                                 </td>
-                                <td t-esc="job.instance_name || '—'"/>
+                                <td t-att-class="'jh-col-inst' + (job.instance_name ? '' : ' jh-col-none')"
+                                    t-esc="instanceText(job)"/>
                                 <td class="rl-mono" t-esc="job.host"/>
                                 <td t-esc="job.user_name || '—'"/>
                                 <td class="rl-mono jh-col-date" t-esc="formatDate(job.create_date)"/>
