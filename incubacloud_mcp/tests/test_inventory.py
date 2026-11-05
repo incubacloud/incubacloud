@@ -336,9 +336,10 @@ class TestCallInventory(TransactionCase):
             elif call.kind in ("orm", "job"):
                 if f"{call.kind}:{call.value}" not in self.calls:
                     missing.append(f"{where} {call.kind}:{call.value}")
-            elif call.kind == "dynamic" and call.source not in self.dynamic.get(
-                path, {}
-            ):
+            elif call.kind in (
+                "dynamic",
+                "data_job",
+            ) and call.source not in self.dynamic.get(path, {}):
                 missing.append(f"{where} a variable call: {call.source}")
         return missing
 
@@ -368,11 +369,17 @@ class TestCallInventory(TransactionCase):
             "rpc('/cloud/no_such_route', {});\n"
             "rpc(someRoute, {});\n"
             "this.orm.call('cloud.job', 'cancel_job', [1]);\n"
+            "this.orm.call('cloud.job', 'enqueue', [h, i, someCode]);\n"
+            "this.orm.search('cloud.instance', []);\n"
+            "this.orm.nameSearch('cloud.host', 'x');\n"
         )
         missing = self._unclassified({path: text})
-        self.assertEqual(len(missing), 4, missing)
+        self.assertEqual(len(missing), 7, missing)
         self.assertIn(f"{path}:1 orm:cloud.job.purge_everything", missing)
         self.assertIn(f"{path}:2 job:wipe_disk", missing)
+        self.assertIn(f"{path}:6 a variable call: someCode", missing)
+        self.assertIn(f"{path}:7 orm:cloud.instance.search", missing)
+        self.assertIn(f"{path}:8 orm:cloud.host.nameSearch", missing)
 
     def test_every_job_type_offered_as_an_action_is_classified(self):
         """The job types the pages offer from data (``show_as_action``),
