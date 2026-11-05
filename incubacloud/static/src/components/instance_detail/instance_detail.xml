@@ -576,7 +576,7 @@
                                                 <t t-if="state.inst.last_deploy_state">
                                                     <span
                             t-att-class="'ic-ov-deploy-state ' + jobStateClass(state.inst.last_deploy_state)"
-                            t-esc="state.inst.last_deploy_state"
+                            t-esc="jobStateText({state: state.inst.last_deploy_state})"
                           />
                                                 </t>
                                             </span>
@@ -620,7 +620,7 @@
                                             <span class="rl-l">Aliases</span>
                                             <span
                         class="rl-v"
-                        t-esc="(state.form.domains.length - 1) + ' additional'"
+                        t-esc="aliasesLabel(state.form.domains.length - 1)"
                       />
                                         </div>
                                     </t>
