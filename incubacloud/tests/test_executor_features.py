@@ -612,6 +612,105 @@ class TestEveryHostnameIsCapped(BaseCase):
             self.assertLess(copier, labels.index("Cap container hostnames"))
 
 
+class TestTheBuildFollowsTheBranchHeads(BaseCase):
+    """A push reaches the image even when Docker could reuse its cache.
+
+    The image clones the repositories inside its build, so with nothing
+    in the build context changed the clone came from the cache: on
+    5-nov-2026 a second push within the hour of the GitHub token (the
+    one thing in ``repos.yaml`` that changed) was rebuilt "done" in a
+    minute, every layer CACHED, the old code still running. The heads
+    file ``deploy.sh record-heads`` writes into the context is what
+    changes now; its own behaviour is covered by ``tests/shell/deploy.bats``.
+    """
+
+    _TOKEN = "ghs_secretTokenOfTheHour"
+    _PINNED = "0123456789abcdef0123456789abcdef01234567"
+
+    def _repos_yaml(self):
+        """A rendered repos.yaml: odoo on its series, one branch, one pin."""
+        auth = f"https://x-access-token:{self._TOKEN}@github.com/acme"
+        return (
+            "odoo:\n"
+            "  remotes:\n    odoo: https://github.com/odoo/odoo.git\n"
+            "  target: odoo $ODOO_VERSION\n"
+            "  merges:\n  - odoo $ODOO_VERSION\n"
+            "addons:\n"
+            f"  merges:\n  - addons main\n"
+            f"  remotes:\n    addons: {auth}/addons.git\n"
+            "  target: addons main\n"
+            "pinned:\n"
+            f"  merges:\n  - pinned {self._PINNED}\n"
+            f"  remotes:\n    pinned: {auth}/pinned.git\n"
+            "  target: pinned main\n"
+        )
+
+    def _argv(self, command):
+        """The words of the ``record-heads`` call at the start of *command*."""
+        words = shlex.split(command.split(" && ", 1)[0])
+        self.assertTrue(words[1].endswith("/deploy.sh"), words)
+        return words[2:]
+
+    def test_a_rebuild_records_the_heads_before_it_builds(self):
+        """Cached or not, the lookup runs in the build's own step."""
+        for last in ("fp1", "fp0"):
+            ex = _make_rebuild_executor(last_rebuild_fingerprint=last)
+            build = _find_cmd(ex.get_commands(), "Rebuild Odoo image")[1]
+            self.assertEqual(
+                self._argv(build),
+                ["record-heads", "~/projects/test-inst",
+                 ex._tmp("repo-heads.tsv")],
+            )
+            self.assertLess(
+                build.index("record-heads"), build.index("docker compose build"),
+            )
+
+    def test_a_deploy_records_them_before_the_image_is_built(self):
+        """The first ``docker compose run`` builds it; a move's ``up``."""
+        for moving in (False, True):
+            cmds = _make_deploy_executor(
+                move_origin_host_id=moving,
+            ).get_commands()
+            labels = [c[0] for c in cmds]
+            self.assertIn("Record repository heads", labels, moving)
+            heads = labels.index("Record repository heads")
+            self.assertLess(labels.index("Write repos.yaml"), heads)
+            self.assertLess(heads, labels.index("Start instance"))
+            if not moving:
+                self.assertLess(heads, labels.index("Initialize database"))
+            self.assertEqual(
+                self._argv(cmds[heads][1])[0], "record-heads",
+            )
+
+    def test_the_spec_asks_branches_and_takes_pins_as_they_are(self):
+        """A branch travels with its URL; a commit, the build's own
+        expansion of ``$ODOO_VERSION`` aside, carries none."""
+        spec = _make_deploy_executor()._repo_heads_spec(self._repos_yaml())
+        auth = f"https://x-access-token:{self._TOKEN}@github.com/acme"
+        self.assertEqual(
+            spec.splitlines(),
+            [
+                "odoo\t19.0\thttps://github.com/odoo/odoo.git",
+                f"addons\tmain\t{auth}/addons.git",
+                f"pinned\t{self._PINNED}\t",
+            ],
+        )
+
+    def test_a_pinned_odoo_is_its_own_head(self):
+        yaml_text = self._repos_yaml().replace(
+            "  - odoo $ODOO_VERSION", f"  - odoo {self._PINNED}",
+        )
+        spec = _make_deploy_executor()._repo_heads_spec(yaml_text)
+        self.assertEqual(spec.splitlines()[0], f"odoo\t{self._PINNED}\t")
+
+    def test_no_command_names_the_token(self):
+        """The URLs stay in the staged spec: the steps name paths."""
+        for ex in (_make_deploy_executor(), _make_rebuild_executor()):
+            ex._repo_heads_spec(self._repos_yaml())
+            for label, command, *_opts in ex.get_commands():
+                self.assertNotIn(self._TOKEN, command, label)
+
+
 # ---------------------------------------------------------------------------
 # Class 10: TestDeleteCommandsWhenInstanceIsGone
 # ---------------------------------------------------------------------------

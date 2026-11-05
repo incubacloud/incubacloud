@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import re
+import string
 import urllib.error
 import urllib.request
 from contextlib import suppress
@@ -24,6 +25,7 @@ from ._repo_requirements import (
     detect_pip_conflicts,
     fetch_repo_addons,
     fetch_requirements_txt_with_client,
+    is_safe_git_sha,
     merge_pip_requirements,
     resolve_github_client,
 )
@@ -468,6 +470,52 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             default_flow_style=False,
             sort_keys=False,
             allow_unicode=True,
+        )
+
+    #: The staged list of what ``deploy.sh record-heads`` resolves.
+    _HEADS_SPEC = "repo-heads.tsv"
+
+    def _repo_heads_spec(self, repos_yaml):
+        """Return what ``deploy.sh record-heads`` resolves, from *repos_yaml*.
+
+        One ``<alias>TAB<ref>TAB<url>`` line per merge of the file the
+        build clones from, read back from its rendered text so whatever
+        a layer renders into it (a release pin) is what gets resolved.
+        ``$ODOO_VERSION`` is expanded as the build expands it. A ref that
+        is a commit carries no URL: it is its own head, and its token
+        need not travel twice.
+
+        :param str repos_yaml: the rendered ``repos.yaml``
+        :return: the lines, for a file staged owner-only (the URLs carry
+            the repositories' tokens)
+        :rtype: str
+        """
+        version = self._inst().odoo_version or ""
+        lines = []
+        for alias, repo in (yaml.safe_load(repos_yaml) or {}).items():
+            remotes = repo.get("remotes") or {}
+            for merge in repo.get("merges") or ():
+                remote, _sep, ref = str(merge).strip().partition(" ")
+                ref = string.Template(ref.strip()).safe_substitute(
+                    ODOO_VERSION=version,
+                )
+                url = "" if is_safe_git_sha(ref) else remotes.get(remote, "")
+                lines.append(f"{alias}\t{ref}\t{url}")
+        return "".join(f"{line}\n" for line in lines)
+
+    def _record_heads_command(self, d):
+        """Return the command that writes the build context's heads file.
+
+        ``deploy.sh record-heads`` names, under ``odoo/custom/``, the
+        commit each repository of the image is at, so a branch that moved
+        invalidates Docker's cache of the clone (5-nov-2026). The URLs it
+        asks stay in the staged spec: the command names only paths.
+
+        :param str d: the instance's directory on the host
+        :rtype: str
+        """
+        return self.run_script(
+            "deploy.sh", ["record-heads", d, self._tmp(self._HEADS_SPEC)],
         )
 
     async def _addons_yaml_content(self):
@@ -1217,12 +1265,14 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             allow_unicode=True,
         )
         # The answers hold the database, admin and SMTP passwords,
-        # repos.yaml the repositories' tokens in its URLs, and backup.env
-        # the bucket's keys: owner-only, and removed when the job ends
-        # whether or not a step got to move them.
+        # repos.yaml and the heads spec the repositories' tokens in their
+        # URLs, and backup.env the bucket's keys: owner-only, and removed
+        # when the job ends whether or not a step got to move them.
+        repos_yaml = self._repos_yaml_content()
         private = {
             self._tmp("answers.yml"): answers_yml,
-            self._tmp("repos.yaml"): self._repos_yaml_content(),
+            self._tmp("repos.yaml"): repos_yaml,
+            self._tmp(self._HEADS_SPEC): self._repo_heads_spec(repos_yaml),
         }
         files = {
             self._tmp("addons.yaml"): await self._addons_yaml_content(),
@@ -1607,6 +1657,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "Write repos.yaml",
                 f"mv {tmp_repos} {src}/repos.yaml",
             ),
+            # 4b. Name each repository's head in the build context: the
+            #     image is built by the first ``docker compose run`` (or
+            #     ``up``), and Docker's cache of the clone has to follow
+            #     the branches, not the token in repos.yaml.
+            ("Record repository heads", self._record_heads_command(d)),
             # 5. Copy incubacloud_connect into the private src tree so Odoo
             #    can find and install it at init time.
             (

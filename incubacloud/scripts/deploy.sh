@@ -8,6 +8,7 @@
 #   deploy.sh inject-secret-env  <dir>
 #   deploy.sh cap-hostnames      <dir>
 #   deploy.sh set-system-params  <dir> <pg_user> <dbname> <base_url_sql> <report_url>
+#   deploy.sh record-heads       <dir> <spec_file>
 #
 # The executor keeps each deploy step as its own labelled command (so
 # tenant/warm subclasses can still splice by label); this script only
@@ -164,6 +165,52 @@ table_schema='public' AND table_name='ir_config_parameter') THEN \
 INSERT INTO ir_config_parameter (key,value) VALUES \
 ('web.base.url','$base_url_sql'),('report.url','$report_url') \
 ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
+        ;;
+
+    record-heads)
+        ic_require_args 1 "$#" "deploy.sh record-heads <dir> <spec_file>"
+        spec="$1"
+        # The image clones every repository inside its build (doodba's
+        # ONBUILD gitaggregate, after ``COPY ./custom``), so the build
+        # context alone decides whether Docker reuses its cache: with
+        # nothing in it changed, a branch that moved was not cloned again
+        # and a push went live as the old code (5-nov-2026). This file,
+        # inside that context, names the commit each branch points at
+        # now: a branch that moved changes it and the build clones again;
+        # with none moved the build stays cached.
+        #
+        # <spec_file>: one ``<alias>TAB<ref>TAB<url>`` line per merge of
+        # repos.yaml, with the same URL (and token) the build clones
+        # from. A ref that is a commit is its own head; anything else is
+        # asked to the remote. Neither URL nor git's own messages are
+        # printed: they carry the token.
+        heads="$dir/odoo/custom/incubacloud-heads.txt"
+        tmp_heads="$heads.ic-tmp"
+        : > "$tmp_heads"
+        while IFS=$'\t' read -r alias ref url; do
+            [ -n "$alias" ] || continue
+            if [[ "$ref" =~ ^[0-9a-f]{7,64}$ ]]; then
+                sha="$ref"
+            elif [ -n "$url" ] && sha="$(
+                GIT_TERMINAL_PROMPT=0 timeout 60 \
+                    git ls-remote -- "$url" "$ref" 2>/dev/null </dev/null \
+                    | awk '{print $1}' | sort -u | tr '\n' ' '
+            )" && [ -n "$sha" ]; then
+                sha="${sha% }"
+            else
+                # Unknown is never taken as unchanged: a value of its own
+                # makes this build clone every repository again, which
+                # is slower but cannot ship old code. If GitHub is really
+                # out of reach, that clone fails the build instead.
+                sha="unknown-$(date +%s%N)-$$-$RANDOM"
+                ic_warn "could not read the head of $alias ($ref): the image is built again without the cache of its repositories"
+            fi
+            ic_log "head of $alias ($ref): $sha"
+            printf '%s %s %s\n' "$alias" "$ref" "$sha" >> "$tmp_heads"
+        done < "$spec"
+        mv "$tmp_heads" "$heads"
+        # Rewritten by every build: kept out of the instance's history.
+        ic_git_exclude "$dir" odoo/custom/incubacloud-heads.txt
         ;;
 
     *)
