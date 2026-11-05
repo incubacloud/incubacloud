@@ -100,10 +100,29 @@ class TestOneHostIsReadNow(HostMetricsHandoverCase):
 
     def test_the_cron_still_reads_every_host(self):
         with patch(_PROMQL, autospec=True,
-                   side_effect=self._backend({self.host: 60, self.other: 70})):
+                   side_effect=self._backend({self.host: 60, self.other: 70})) as promql:
             self._cron()
         self.assertEqual(self.host.disk_free_gb, 60.0)
         self.assertEqual(self.other.disk_free_gb, 70.0)
+        for call in promql.call_args_list:
+            self.assertNotIn("host_id=~", call.args[1])
+
+    def test_the_backend_is_asked_about_that_host_only(self):
+        """Every query carries the host's own matcher, beside its own."""
+        with patch(_PROMQL, autospec=True,
+                   side_effect=self._backend({self.host: 60})) as promql:
+            self.host._refresh_specs_from_metrics_now()
+        expressions = [call.args[1] for call in promql.call_args_list]
+        self.assertEqual(len(expressions), 4)
+        for expression in expressions:
+            self.assertIn(f'host_id=~"{self.host.id}"', expression)
+        self.assertIn(
+            f'node_filesystem_avail_bytes{{mountpoint="/",host_id=~"{self.host.id}"}}',
+            expressions,
+        )
+        self.assertIn(
+            f'node_memory_MemTotal_bytes{{host_id=~"{self.host.id}"}}', expressions,
+        )
 
 
 class TestWhichJobsReadIt(BaseCase):
@@ -169,6 +188,16 @@ class TestTheReadComesAfterTheOutcome(HostMetricsHandoverCase):
         refresh, raised = self._dispatch([], hook_raises=True)
         self.assertEqual(str(raised), "hook")
         refresh.assert_not_called()
+
+    def test_a_run_that_aborted_reads_it_too(self):
+        """Ended before its outcome: a build stopped half way changed the
+        disk as well."""
+        ex = self._executor()
+        with patch.object(CloudHost, "_refresh_specs_from_metrics_now",
+                          autospec=True) as refresh:
+            asyncio.run(ex._dispatch_abort(RuntimeError("lost")))
+        refresh.assert_called_once()
+        self.assertEqual(refresh.call_args.args[0].ids, [self.host.id])
 
     def test_a_read_that_cannot_open_its_cursor_does_not_fail_the_job(self):
         ex = self._executor()
