@@ -36,8 +36,11 @@ SAVE_GENERAL_PARAMS = (
     "log_search_timeout_s",
     "trusted_proxy_ranges",
     "metrics_central_public_host",
+    "metrics_central_direct_host",
     "metrics_central_operator_sources",
     "metrics_ship_security_logs",
+    "move_frozen_source_hours",
+    "move_cut_alert_seconds",
 )
 #: What ``save_general_settings`` writes even when it is not sent, from its
 #: own defaults: sent with the value held. The rest it writes only when
@@ -82,6 +85,7 @@ OBSERVABILITY_FIELDS = (
     "metrics_ship_security_logs",
     "grafana_base_url",
     "metrics_central_public_host",
+    "metrics_central_direct_host",
     "metrics_central_operator_sources",
 )
 

@@ -41,12 +41,17 @@ LOG_PAGE_BYTES = MAX_BYTES - 4 * 1024
 #: their keys, well within the 4 KB the page leaves them, so the answer's
 #: last guard never cuts a page of the log (``_tool_get_job``).
 _JOB_FIELD_BYTES = 256
+#: The Traefik files of a server, which ``get_host`` answers only when asked.
+_TRAEFIK_FILES = ("traefik_yml", "traefik_config_yml", "traefik_inverseproxy_yaml")
 
 TOOLS = (
     ToolSpec(
         "panel_overview",
         "What this panel holds at a glance: the user's role and permissions, counts, "
-        "recent jobs, active alerts and the Odoo versions it can deploy.",
+        "recent jobs, active alerts, the Odoo versions it can deploy, the "
+        "languages an instance can be installed in (odoo_initial_lang takes the "
+        "code) and the backup destinations a project or an instance can use "
+        "(backup_backend_id takes the id).",
         _USER,
         obj(),
         handler="_tool_panel_overview",
@@ -122,10 +127,21 @@ TOOLS = (
     ),
     ToolSpec(
         "get_host",
-        "One server: address, state, resources, hardening and its SSH key fingerprint.",
+        "One server: address, state, resources, hardening, its SSH key "
+        "fingerprint, the actions its page offers (custom_actions, for "
+        "run_host_action) and, while a job runs or waits on it, that job "
+        "(active_job: its type, state and last step). Its three Traefik files "
+        "(traefik_yml, traefik_config_yml, traefik_inverseproxy_yaml) only with "
+        "include_traefik_files=true.",
         _MANAGER,
-        obj({"host_id": record_id("The server.")}, required=("host_id",)),
-        route="/cloud/get_host",
+        obj(
+            {
+                "host_id": record_id("The server."),
+                "include_traefik_files": boolean("Also return its Traefik files."),
+            },
+            required=("host_id",),
+        ),
+        handler="_tool_get_host",
         read_only=True,
     ),
     ToolSpec(
@@ -288,6 +304,7 @@ ROUTES = {
     "/cloud/get_instance": "get_instance",
     "/cloud/get_hosts": "list_hosts",
     "/cloud/get_host": "get_host",
+    "/cloud/get_langs": "panel_overview",
     "/cloud/get_job_state": "get_job",
     "/cloud/get_job_brief": "get_job",
     "/cloud/get_alert_history": "list_alerts",
@@ -335,13 +352,25 @@ class McpToolsRead(models.AbstractModel):
 
     @api.model
     def _tool_panel_overview(self, args):
-        """Role and permissions, dashboard, alert count and Odoo versions."""
+        """Role and permissions, dashboard, alert count, Odoo versions, the
+        languages and the backup destinations' names, as the forms list them."""
         config = self._route("/cloud/get_config")
+        backends = self._route("/cloud/get_backup_backends")
         overview = {
             "role": config.get("role"),
             "permissions": config.get("permissions"),
             "active_alerts": self._route("/cloud/get_alert_count").get("count"),
             "odoo_versions": self._route("/cloud/get_odoo_versions"),
+            "languages": [
+                {"code": lang.get("code"), "name": lang.get("name")}
+                for lang in self._route("/cloud/get_langs") or []
+                if isinstance(lang, dict)
+            ],
+            "backup_destinations": [
+                {"id": row.get("id"), "name": row.get("name")}
+                for row in (backends.get("items") or [])
+                if isinstance(row, dict)
+            ],
         }
         # The dashboard's alerts get what the rest leaves of 64 KB; all of
         # them are in list_alerts.
@@ -352,6 +381,62 @@ class McpToolsRead(models.AbstractModel):
         dashboard["alerts"] = alerts["alerts"]
         dashboard["truncated"] = bool(dashboard.get("truncated") or alerts["truncated"])
         return {**overview, "dashboard": dashboard}
+
+    @api.model
+    def _tool_get_host(self, args):
+        """A server as its page reads it, with the job it runs or waits for.
+
+        Its Traefik files are left out unless asked for: three YAML files
+        weigh more than the rest of the answer, and an agent rarely needs
+        them.
+        """
+        host = self._route("/cloud/get_host", host_id=args["host_id"])
+        if not isinstance(host, dict) or host.get("ok") is False:
+            return host
+        if not args.get("include_traefik_files"):
+            for key in _TRAEFIK_FILES:
+                host.pop(key, None)
+        host["active_job"] = self._host_active_job(args["host_id"])
+        return host
+
+    @api.model
+    def _host_active_job(self, host_id):
+        """Return the server's own job that runs, or else the first that waits.
+
+        Its type, state and last step as the panel's log says it, and, for a
+        step of a chain (a VPS's provisioning: order, hardening, setup),
+        which step of how many.
+
+        :return: a dict, or None when no job of the server is active
+        """
+        Job = self.env["cloud.job"]
+        domain = [
+            ("host_id", "=", host_id),
+            ("instance_id", "=", False),
+            ("state", "in", Job._active_states),
+            ("job_type_id.code", "not in", Job._get_hidden_job_types()),
+        ]
+        job = Job.search(
+            domain + [("state", "!=", "queued")], order="id", limit=1
+        ) or Job.search(domain, order="id", limit=1)
+        if not job:
+            return None
+        active = {
+            "job_id": job.id,
+            "job_type": job.job_type_id.code,
+            "name": job.job_type_id.name or job.name,
+            "state": "blocked" if job.blocked_alert_id else job.state,
+            "step": job._get_last_system_message() or "",
+        }
+        if job.queue_chain_key:
+            chain = Job.sudo().search(
+                [("queue_chain_key", "=", job.queue_chain_key)], order="id"
+            )
+            active["chain"] = {
+                "position": chain.ids.index(job.id) + 1,
+                "steps": [step.job_type_id.code for step in chain],
+            }
+        return active
 
     @api.model
     def _tool_list_alerts(self, args):

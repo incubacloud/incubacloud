@@ -17,8 +17,8 @@ from .mcp_tools import quoted
 _USER = "group_cloud_user"
 _DEVELOPER = "group_cloud_developer"
 _MANAGER = "group_cloud_manager"
-#: The jobs that prepare a backup for download.
-_DOWNLOAD_JOBS = ("backup_download", "backup_download_neutralized")
+#: The jobs that prepare a file for download: a backup, or an export.
+_DOWNLOAD_JOBS = ("backup_download", "backup_download_neutralized", "export_instance")
 
 TOOLS = (
     ToolSpec(
@@ -59,8 +59,9 @@ TOOLS = (
     ToolSpec(
         "download_backup",
         "Without job_id, prepare a download of a backup as a job (neutralized=true "
-        "for a neutralized copy). With the job_id of a finished download, get a "
-        "single-use link, valid 15 minutes, which the user approves.",
+        "for a neutralized copy). With the job_id of a finished download, or of "
+        "a finished export_instance, get a single-use link, valid 15 minutes, "
+        "which the user approves.",
         _DEVELOPER,
         obj(
             {
@@ -283,7 +284,9 @@ class McpToolsGuarded(models.AbstractModel):
         self.env["cloud.security.mixin"]._check_can_manage_backups()
         job = self._record("cloud.job", job_id, self.env._("Job not found"))
         if job.job_type_id.code not in _DOWNLOAD_JOBS:
-            raise UserError(self.env._("This job did not prepare a backup download."))
+            raise UserError(
+                self.env._("This job did not prepare a backup download nor an export.")
+            )
         attachment = (
             self.env["ir.attachment"]
             .sudo()
