@@ -292,6 +292,29 @@ class TestBackupSetSizes(TransactionCase):
         self.assertEqual(self.full.size, 3 * self.GIB)
         self.assertEqual(self.inc.size, 5 * self.GIB)
 
+    def test_prefixed_objects_of_the_backup_image_count(self):
+        """The image writes ``archive-``/``manifest-``/``signature-`` host
+        prefixes: every file of a set is added to that set's size."""
+        host = 'backup.tenant.example.io'
+        client = self._listing([
+            (f'archive-{host}-duplicity-full.20260319T165004Z'
+             '.vol1.difftar.gpg', 2 * self.GIB),
+            (f'manifest-{host}-duplicity-full.20260319T165004Z'
+             '.manifest.gpg', 1000),
+            (f'signature-{host}-duplicity-full-signatures.'
+             '20260319T165004Z.sigtar.gpg', 5000),
+            (f'archive-{host}-duplicity-inc.20260319T165004Z.to.'
+             '20260320T165004Z.vol1.difftar.gpg', 700),
+            (f'signature-{host}-duplicity-new-signatures.'
+             '20260319T165004Z.to.20260320T165004Z.sigtar.gpg', 300),
+        ])
+        with patch.object(boto3, 'client', return_value=client):
+            self.executor._populate_sizes_from_s3()
+        self.env.flush_all()
+        (self.full | self.inc).invalidate_recordset(['size'])
+        self.assertEqual(self.full.size, 2 * self.GIB + 6000)
+        self.assertEqual(self.inc.size, 1000)
+
     def test_the_size_is_a_bigint(self):
         """The column holds 64 bits."""
         self.env.cr.execute("""
