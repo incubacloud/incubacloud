@@ -105,6 +105,7 @@ path and write into the copy being kept.
 - Rebuild after pushing changes to your repo (Instance detail → Rebuild)
 - [View logs](logs.md) (Instance detail → Logs). Odoo's log is kept one file per day and survives rebuilds: pick a day, search every day at once, or download one
 - Open a shell on the container (Instance detail → Shell)
+- [Size its memory and CPU](resources.md) (Instance detail → Resources), and what the panel derives from them
 - [Restore from a backup](../backups/restore.md)
 - [Refresh a staging with production data](#refresh-from-production)
 - [Get a preview instance for every pull request](#pull-request-previews)

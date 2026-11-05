@@ -234,3 +234,4 @@ from . import test_direct_migration
 from . import test_direct_identity
 from . import test_direct_settings_screen
 from . import test_state_refresh
+from . import test_instance_memory_settings
