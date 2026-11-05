@@ -22,7 +22,11 @@ from ..restore_staging import purge_stale
 from . import _odoo_versions
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
-from ._repo_requirements import _normalize_url, detect_addon_conflicts
+from ._repo_requirements import (
+    _normalize_url,
+    detect_addon_conflicts,
+    detect_pip_conflicts,
+)
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -1637,6 +1641,11 @@ class CloudInstance(models.Model):
         last deploy did not fail, nor when a conflict alert is open on it,
         beside its ``job_failed`` or in its place: a person has to resolve
         that first, as for a push's rebuild (``cloud.job._supersedes_hold``).
+        Nor when the instance's pip dependencies hold conflict markers, or
+        an ``addon_conflict`` or ``pip_conflict`` alert is open on the
+        instance: the new deploy ``enqueue`` queues then is the one that
+        checks them and waits for that alert, as any deploy does. A retry
+        would skip those checks.
 
         :return: the failed ``cloud.job``, or an empty recordset
         """
@@ -1647,6 +1656,17 @@ class CloudInstance(models.Model):
             ("job_type_id.code", "=", "deploy_instance"),
         ], order="id desc", limit=1)
         if last.state != "failed":
+            return Job
+        if detect_pip_conflicts(self.pip_dependencies) or self.env[
+            "cloud.alert"
+        ].sudo().search_count(
+            [
+                ("instance_id", "=", self.id),
+                ("code", "in", ("addon_conflict", "pip_conflict")),
+                ("state", "=", "active"),
+            ],
+            limit=1,
+        ):
             return Job
         on_last = Job._queue_holding_alerts(self.id, self.host_id.id).filtered(
             lambda alert: alert.job_id == last,
