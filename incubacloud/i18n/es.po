@@ -14290,6 +14290,13 @@ msgstr ""
 "permitirla."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_project.py:0
+msgid "This panel offers: %s."
+msgstr "Este panel ofrece: %s."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
 msgid ""
