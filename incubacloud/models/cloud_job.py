@@ -1017,6 +1017,23 @@ class CloudJob(models.Model):
         }
     )
 
+    # Job types whose end changes what their instance is: when one ends,
+    # its instance is probed at once (``_refresh_instance_state``). Extend
+    # by overriding ``_get_state_refresh_job_types()`` in child modules.
+    _state_refresh_job_types = frozenset(
+        {
+            "start_instance",
+            "stop_instance",
+            "restart_instance",
+            "deploy_instance",
+            "rebuild_instance",
+            "restore_instance",
+            "backup_restore",
+            "move_cutover",
+            "move_rollback_cleanup",
+        }
+    )
+
     # Minimum cloud role required to enqueue each job type. ``enqueue``
     # and ``enqueue_chain`` are public @api.model methods reachable via
     # the stock ``call_kw`` JSON-RPC endpoint by anyone with create-ACL on
@@ -2175,9 +2192,11 @@ class CloudJob(models.Model):
     def _after_job_terminal(self, new_state):
         """Called once *self* reached a terminal state, before the queue moves.
 
-        Core does nothing. A layer overrides it to react to how a job
-        ended (the SaaS manager reverts a tenant whose deploy failed or
-        was cancelled before it started); call super(). Runs in the
+        Core refreshes the state of the instance a job that changes it
+        has just acted on (``_refresh_instance_state``). A layer overrides
+        it to react to how a job ended (the SaaS manager reverts a tenant
+        whose deploy failed or was cancelled before it started); call
+        super(). Runs in the
         transaction that recorded the end: the runner's for a job that
         ran, the request's for one cancelled while it waited (blocked
         twins dropped by ``unblock_and_enqueue`` included), the
@@ -2191,6 +2210,36 @@ class CloudJob(models.Model):
 
         :param str new_state: ``done``, ``failed`` or ``cancelled``
         """
+        self._refresh_instance_state(new_state)
+
+    @api.model
+    def _get_state_refresh_job_types(self):
+        """Return the job types whose end changes what their instance is.
+
+        Started, stopped, restarted, deployed, rebuilt, restored or moved:
+        the panel reads the instance again as soon as one ends, instead of
+        waiting for the next probe. Override in child modules and call
+        super() to extend (PITR adds its restore).
+        """
+        return set(self._state_refresh_job_types)
+
+    def _refresh_instance_state(self, new_state):
+        """Probe the instance *self* acted on now, when its type changes it.
+
+        Done or failed: either way the instance may not be what the panel
+        last read. A job cancelled before it ran changed nothing, and one
+        cancelled while it ran ends through its executor as failed or
+        done. The probe is the one the cron queues
+        (``cloud.instance._refresh_state_now``).
+
+        :param str new_state: ``done``, ``failed`` or ``cancelled``
+        """
+        if new_state not in ("done", "failed"):
+            return
+        codes = self._get_state_refresh_job_types()
+        self.filtered(
+            lambda job: job.instance_id and job.job_type_id.code in codes
+        ).instance_id._refresh_state_now()
 
     @api.model
     def _on_holding_alert_closed(self, alerts):
