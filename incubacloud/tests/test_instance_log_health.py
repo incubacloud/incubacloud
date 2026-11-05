@@ -280,6 +280,36 @@ class TestProbeReadsRegularFilesOnly(TransactionCase):
             groups[0]["context"][-1], "ValueError: still in the container",
         )
 
+    def test_the_recycle_count_reads_odoo_s_line_within_the_hour(self):
+        """Only the line of a worker recycled for memory, since the cutoff.
+
+        The threaded server's warning is another line, and a log that
+        quotes the pattern itself (the probe's command, echoed into a
+        panel's log) does not count.
+        """
+        line = (
+            "2026-08-19 {} 1 INFO ? odoo.service.server: Worker ({}) "
+            "virtual memory limit (712000000) reached.\n"
+        )
+        executor = self._executor()
+        (self.logs / "odoo.log").write_text(
+            line.format("08:00:00,000", 11)
+            + line.format("09:00:00,000", 12)
+            + line.format("09:01:00,000", 13)
+            + "2026-08-19 09:02:00,000 1 WARNING ? odoo.service.server: "
+            "Server memory limit (712000000) reached.\n"
+            + "2026-08-19 09:03:00,000 1 INFO ? asyncssh: "
+            + executor._memory_recycles_command("/x", "2000-01-01") + "\n",
+            encoding="utf-8",
+        )
+        proc = subprocess.run(
+            ["sh", "-c", executor._memory_recycles_command(
+                self.root, "2026-08-19 08:30:00",
+            )],
+            capture_output=True, timeout=60, check=False,
+        )
+        self.assertEqual(proc.stdout.decode().strip(), "2", proc.stderr)
+
     def test_the_stdout_count_sees_the_container_lines(self):
         """The ``fallback`` alert exists for Odoo writing to the
         container instead of the file; its counter has read zero since

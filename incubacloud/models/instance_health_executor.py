@@ -115,6 +115,25 @@ _ERROR_CONTEXT_CHARS = 4000  # hard cap on the context stored per group
 # transient bursts) are dropped on the floor.
 _STREAK_REQUIRED = 2
 
+# Workers recycled for memory. Odoo logs this line at INFO when a worker
+# passes ``limit_memory_soft`` and is replaced after its request
+# (``Worker.check_limits`` in ``odoo/service/server.py``). The panel's
+# soft limit never goes below 640 MiB of virtual size and a worn worker
+# measured 480-500 MB (5-Nov-2026): a few recycles a day are the limit
+# doing its job, but more than ``_RECYCLE_WARN_PER_HOUR`` in an hour —
+# one every five minutes — means the workers cross it as soon as they
+# warm up, the floor is too low for that instance's work, and each
+# request after a recycle starts on a cold worker. Silent until the
+# review of 5-Nov-2026; see docs/architecture.md, "Memory an instance is
+# deployed with". The digits in parentheses keep the probe's own command,
+# echoed into a panel's log, from matching.
+_RECYCLE_GREP = (
+    r'odoo\.service\.server: Worker \(\d+\) virtual memory limit '
+    r'\(\d+\) reached'
+)
+_RECYCLE_WINDOW_MIN = 60
+_RECYCLE_WARN_PER_HOUR = 12
+
 # Memory has a streak of its own: six cycles, 30 minutes. Odoo's memory
 # rises in steps and stays up until its workers recycle, so a reading
 # above the threshold for ten minutes says little; half an hour says the
@@ -218,6 +237,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
        of the gatekeeper running now, that is, has it a route through an
        interface other than its loopback? Graded with the HTTP check,
        which runs inside odoo's network and cannot tell.
+    6. Memory recycles — how many workers Odoo replaced for passing
+       ``limit_memory_soft`` in the last hour; more than
+       ``_RECYCLE_WARN_PER_HOUR`` raises ``instance_memory_recycling``.
 
     Skipped entirely when an intrusive job (deploy / rebuild / restore /
     full setup) is in flight on the same instance, or a host job that
@@ -233,7 +255,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     - All clear       → ``running=True``,  ``status='ok'``
 
     Instance-scoped alert codes: ``instance_down``, ``instance_unresponsive``,
-    ``instance_high_cpu``, ``instance_high_memory``, ``instance_error_logs``.
+    ``instance_high_cpu``, ``instance_high_memory``, ``instance_error_logs``,
+    ``instance_memory_recycling``.
     """
 
     _job_type = "instance_health"
@@ -511,6 +534,36 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             f"| head -{_ERROR_LINES_HEAD} || true"
         )
 
+    def _memory_recycles_command(self, d, cutoff):
+        """Return the command that counts the workers recycled for memory.
+
+        Counts Odoo's ``Worker (…) virtual memory limit (…) reached``
+        lines logged at or after *cutoff*, from the same sources as the
+        ERROR scrape (:meth:`_error_lines_command`): the live file and
+        the newest archive, regular files only, or the container's
+        output for an instance not rebuilt since file logging shipped.
+
+        :param str d: remote instance directory
+        :param str cutoff: ``YYYY-MM-DD HH:MM:SS`` lower bound, an hour
+            back (``_RECYCLE_WINDOW_MIN``)
+        :return: the shell command; it prints one number
+        """
+        awk_since = (
+            f'awk -v c={shlex.quote(cutoff)} {shlex.quote(_AWK_SINCE_PROG)}'
+        )
+        return (
+            f"cd {d} && "
+            f"{{ if {_LIVE_LOG_IS_REGULAR}; then "
+            f"{{ {_NEWEST_ARCHIVE} "
+            f"| xargs -r zcat -f 2>/dev/null | tail -n {_LOG_ARCHIVE_TAIL}; "
+            f"tail -n {_LOG_LIVE_TAIL} logs/odoo.log 2>/dev/null; }} "
+            f"| {awk_since}; "
+            f"else docker compose logs --no-color --no-log-prefix "
+            f"--since {_RECYCLE_WINDOW_MIN}m odoo 2>&1; "
+            f"fi; }} "
+            f"| grep -acP {shlex.quote(_RECYCLE_GREP)} || true"
+        )
+
     def _log_health_command(self, d):
         """Return the command that reports the state of the log archive.
 
@@ -572,6 +625,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                     '%Y-%m-%dT%H:%M:%SZ',
                 )
         cutoff = cutoff_at.strftime('%Y-%m-%d %H:%M:%S')
+        # The recycles are a rate: always the last hour, whatever the
+        # window of the errors.
+        recycle_cutoff = (
+            odoo_fields.Datetime.now() - timedelta(minutes=_RECYCLE_WINDOW_MIN)
+        ).strftime('%Y-%m-%d %H:%M:%S')
 
         commands = [
             # 1. Container state. ``-a`` includes stopped containers so
@@ -638,8 +696,13 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 "log_health",
                 self._log_health_command(d),
             ),
+            # 6. Workers recycled for memory in the last hour.
+            (
+                "memory_recycles",
+                self._memory_recycles_command(d, recycle_cutoff),
+            ),
         ] + (
-            # 6. Which network odoo runs in, for a stack whose network
+            # 7. Which network odoo runs in, for a stack whose network
             #    is the gatekeeper's. No other stack reads it.
             [("gatekeeper_network", self._gatekeeper_network_command(d))]
             if 'gatekeeper' in inst.expected_services() else []
@@ -741,7 +804,15 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             results.get("log_health", {}).get("stdout", ""),
         )
 
-        # 6. Whether odoo runs in the gatekeeper's network of now.
+        # 6. Workers recycled for memory in the last hour; None when the
+        #    reading is absent (a probe already in flight during an
+        #    upgrade) or unreadable, which grades nothing.
+        self._memory_recycles = None
+        recycles_out = results.get("memory_recycles", {}).get("stdout", "")
+        with suppress(ValueError, IndexError):
+            self._memory_recycles = int(recycles_out.split()[-1])
+
+        # 7. Whether odoo runs in the gatekeeper's network of now.
         self._gatekeeper_network = self._parse_gatekeeper_network(
             results.get("gatekeeper_network"),
         )
@@ -860,6 +931,38 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             self._sys("⚠ logs/odoo.log is not being rotated.")
         else:
             self._resolve_inst_alert('instance_logs_unhealthy')
+
+    def _grade_memory_recycles(self, inst):
+        """Say when Odoo's workers are recycled for memory too often.
+
+        More than ``_RECYCLE_WARN_PER_HOUR`` in the last hour raises
+        ``instance_memory_recycling``, a warning that leaves the
+        instance's status alone: the instance works, and recycling is
+        the soft limit doing its job, only too often. Fewer closes it.
+        A reading that is missing grades nothing.
+
+        :param inst: the ``cloud.instance`` being probed
+        """
+        recycles = getattr(self, '_memory_recycles', None)
+        if recycles is None:
+            return
+        if recycles <= _RECYCLE_WARN_PER_HOUR:
+            self._resolve_inst_alert('instance_memory_recycling')
+            return
+        self._inst_alert(
+            'instance_memory_recycling',
+            (
+                f"Odoo on '{inst.name}' recycled {recycles} worker(s) for "
+                f"memory in the last hour (more than "
+                f"{_RECYCLE_WARN_PER_HOUR}): its workers pass "
+                f"limit_memory_soft soon after they start. Raise the Odoo "
+                f"memory limit in Resources, or set limit_memory_soft in "
+                f"its configuration."
+            ),
+            level='warning',
+            payload={'recycles_last_hour': recycles},
+        )
+        self._sys(f"⚠ {recycles} worker(s) recycled for memory in the last hour.")
 
     # ── Error log dedupe ──────────────────────────────────────────────────
 
@@ -1190,6 +1293,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             )
         elif not mem_over:
             self._resolve_inst_alert('instance_high_memory')
+
+        self._grade_memory_recycles(inst)
 
         # CPU — with hysteresis
         cpu_over = self._cpu_current >= _CPU_WARN_PCT

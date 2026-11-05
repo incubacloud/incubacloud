@@ -184,7 +184,16 @@ class TestSeededRules(TransactionCase):
         self.assertEqual(rule.level, "critical")
         self.assertEqual(rule.confirm_cycles, 1)
         self.assertEqual((rule.comparator, rule.threshold), ("gt", 0))
-        self.assertIn("increase(container_oom_events_total{", rule.expression)
+        self.assertIn(
+            "increase_prometheus(container_oom_events_total{", rule.expression,
+        )
+        self.assertNotIn(
+            " (increase(", rule.expression,
+            "VictoriaMetrics' increase() counts the value a series "
+            "appears with as an increase: a series back after a gap with "
+            "a counter of 2 read as two kills (checked on v1.102.0, "
+            "5-Nov-2026)",
+        )
         self.assertIn('instance_id!=""', rule.expression)
         self.assertIn(
             'container_label_com_docker_compose_service=~"odoo|db|smtp"',
