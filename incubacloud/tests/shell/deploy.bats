@@ -189,3 +189,142 @@ STUB
     [[ "$(cat "$CALLS")" == *"--vcs-ref v3.2.1"* ]]
     [[ "$output" == *"v3.2.1"* ]]
 }
+
+# A git whose ``ls-remote`` answers from $LS_REMOTE_OUT, or fails the way
+# git does at a remote it cannot read (a message naming the URL, token
+# included, on stderr) when $LS_REMOTE_FAIL is set. Everything else is
+# the real git.
+_stub_git() {
+    local real
+    real="$(command -v git)"
+    cat > "$TMP/bin/git" <<STUB
+#!/usr/bin/env bash
+if [ "\$1" = ls-remote ]; then
+    echo "git \$*" >> "\$CALLS"
+    if [ -n "\${LS_REMOTE_FAIL:-}" ]; then
+        echo "fatal: unable to access '\$3': Could not resolve host" >&2
+        exit 128
+    fi
+    printf '%s' "\${LS_REMOTE_OUT:-}"
+    exit 0
+fi
+exec "$real" "\$@"
+STUB
+    chmod +x "$TMP/bin/git"
+}
+
+HEADS_TOKEN="ghs_tokenOfTheHour"
+HEADS_URL="https://x-access-token:${HEADS_TOKEN}@github.com/acme/addons.git"
+HEADS_SHA="1111111111111111111111111111111111111111"
+PIN_SHA="2222222222222222222222222222222222222222"
+
+@test "record-heads names the head of each branch in the build context" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "addons main $HEADS_SHA" ]
+    [[ "$(cat "$CALLS")" == *"ls-remote -- $HEADS_URL main"* ]]
+    [[ "$output" == *"head of addons (main): $HEADS_SHA"* ]]
+}
+
+@test "record-heads changes the file when a branch moves, and not otherwise" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    first="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "$first" ]
+    export LS_REMOTE_OUT="3333333333333333333333333333333333333333	refs/heads/main
+"
+    bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" != "$first" ]
+}
+
+@test "record-heads takes a pinned commit as it is and asks nothing" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "pinned $PIN_SHA $PIN_SHA" ]
+    [ ! -s "$CALLS" ]
+}
+
+@test "record-heads never prints the token, even when git does" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_FAIL=1
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"$HEADS_TOKEN"* ]]
+    ! grep -q "$HEADS_TOKEN" "$DIR/odoo/custom/incubacloud-heads.txt"
+    unset LS_REMOTE_FAIL
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [[ "$output" != *"$HEADS_TOKEN"* ]]
+    ! grep -q "$HEADS_TOKEN" "$DIR/odoo/custom/incubacloud-heads.txt"
+}
+
+@test "record-heads that cannot read a head breaks the cache and warns" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_FAIL=1
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING: could not read the head of addons (main)"* ]]
+    first="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    [[ "$first" == "addons main unknown-"* ]]
+    # Never the same value twice: an unknown head is never "unchanged".
+    bash "$SCRIPT" record-heads "$DIR" "$TMP/spec" 2>/dev/null
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" != "$first" ]
+}
+
+@test "record-heads treats a branch the remote does not have as unknown" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'addons\tgone\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT=""
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"WARNING"* ]]
+    [[ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" == "addons gone unknown-"* ]]
+}
+
+@test "record-heads keeps the file out of the instance's history" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    git init -q "$DIR"
+    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    grep -qxF "/odoo/custom/incubacloud-heads.txt" "$DIR/.git/info/exclude"
+    [ -z "$(git -C "$DIR" status --porcelain -- odoo/custom/incubacloud-heads.txt)" ]
+}
+
+@test "record-heads writes where the template's .dockerignore lets it in" {
+    # doodba's odoo/.dockerignore (template v10.0.8) leaves out
+    # custom/src/* but its dotted files, and auto: odoo/custom/ itself
+    # reaches ``COPY ./custom``.
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ -f "$DIR/odoo/custom/incubacloud-heads.txt" ]
+    [ ! -e "$DIR/odoo/custom/src/incubacloud-heads.txt" ]
+}
+
+@test "record-heads fails when the build context is not there" {
+    printf 'pinned\t%s\t\n' "$PIN_SHA" > "$TMP/spec"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -ne 0 ]
+}

@@ -236,10 +236,15 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             ("List services", f"cd {d} && docker compose config --services"),
             # 10. Rebuild Odoo image.
             #     Smart rebuild: full (--pull --no-cache) when config that
-            #     affects the image has changed; cached otherwise.
+            #     affects the image has changed; cached otherwise. A cached
+            #     one still clones a branch that moved: the heads file
+            #     written first is in the build context (5-nov-2026). One
+            #     step with the build, so a layer that drops the build
+            #     drops the lookup with it.
             (
                 "Rebuild Odoo image",
-                f"cd {d} && " + _build_retried_once(
+                f"{self._record_heads_command(d)} && cd {d} && "
+                + _build_retried_once(
                     "docker compose build --pull --no-cache odoo"
                     if needs_full_rebuild else "docker compose build odoo"
                 ),
