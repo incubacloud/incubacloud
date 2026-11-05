@@ -15,11 +15,18 @@ _S3_LISTING_CAP = 10000
 # Match duplicity object names so we can attribute bytes to a specific
 # backup set.  Both forms (data + signature files) carry the timestamp
 # of the set they belong to as a UTC compact string ``YYYYMMDDThhmmssZ``.
+# The backup image passes ``--file-prefix-archive/-manifest/-signature``
+# (``archive-<host>-``, ``manifest-<host>-``, ``signature-<host>-``), so
+# the real names read ``archive-<host>-duplicity-full.<ts>.vol1.difftar.gpg``;
+# the prefix is optional so names written without it still match.
+_FILE_PREFIX = r'(?:(?:archive|manifest|signature)-.+-)?'
 _FULL_FILE_RE = re.compile(
-    r'^duplicity-full(?:-signatures)?\.(\d{8}T\d{6}Z)\..+$'
+    r'^' + _FILE_PREFIX
+    + r'duplicity-full(?:-signatures)?\.(\d{8}T\d{6}Z)\..+$'
 )
 _INC_FILE_RE = re.compile(
-    r'^duplicity(?:-new-signatures|-inc)\.'
+    r'^' + _FILE_PREFIX
+    + r'duplicity(?:-new-signatures|-inc)\.'
     r'\d{8}T\d{6}Z\.to\.(\d{8}T\d{6}Z)\..+$'
 )
 
