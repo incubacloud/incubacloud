@@ -17,6 +17,7 @@ from . import mcp_tools_destructive
 from . import mcp_tools_restore
 from . import mcp_tools_guarded
 from . import mcp_tools_command
+from . import mcp_tools_jobs
 from . import mcp_agent_branch
 from . import mcp_tools_code
 from . import mcp_secrets

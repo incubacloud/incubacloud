@@ -19,3 +19,4 @@ from . import test_ui_settings
 from . import test_ui_panel
 from . import test_terms_12a
 from . import test_assistant_prompt
+from . import test_mcp_settings_tools

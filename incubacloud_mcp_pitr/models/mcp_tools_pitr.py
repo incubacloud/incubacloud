@@ -76,6 +76,21 @@ ROUTES = {
     "/cloud/pitr/restore": "pitr_restore",
 }
 
+#: The PITR panel calls its routes through ``_run(route)``: the routes that
+#: variable takes, for the inventory test.
+DYNAMIC_CALLS = {
+    "/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js": {
+        "route": frozenset(
+            {
+                "/cloud/pitr/enable",
+                "/cloud/pitr/disable",
+                "/cloud/pitr/set_objective",
+                "/cloud/pitr/restore",
+            }
+        ),
+    },
+}
+
 
 class McpCatalogPitr(models.AbstractModel):
     """The continuous recovery tools, and the routes they call."""
@@ -91,6 +106,11 @@ class McpCatalogPitr(models.AbstractModel):
     def _route_policies(self):
         """Classify the continuous recovery routes."""
         return {**super()._route_policies(), **tool_policies(ROUTES)}
+
+    @api.model
+    def _dynamic_calls(self):
+        """Declare the PITR panel's calls through a variable route."""
+        return {**super()._dynamic_calls(), **DYNAMIC_CALLS}
 
 
 class McpToolsPitr(models.AbstractModel):
