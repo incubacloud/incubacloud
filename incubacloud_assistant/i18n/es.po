@@ -306,6 +306,16 @@ msgstr ""
 "el proyecto usan la nueva lista."
 
 #. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/mcp_tools_assistant.py:0
+msgid ""
+"Change these settings of the panel's assistant, which decide what it may spend at the AI provider and who uses it:\n"
+"%(changes)s"
+msgstr ""
+"Cambiar estos ajustes del asistente del panel, que deciden cuánto puede gastar en el proveedor de IA y quién lo usa:\n"
+"%(changes)s"
+
+#. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__channel
 msgid "Channel"
 msgstr "Canal"
@@ -557,6 +567,12 @@ msgid "False once summarized away."
 msgstr "Falso una vez que se resume."
 
 #. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/mcp_tools_assistant.py:0
+msgid "Give the settings to change (values)."
+msgstr "Indique los ajustes que cambian (values)."
+
+#. module: incubacloud_assistant
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
 msgid "Go on"
@@ -572,6 +588,11 @@ msgstr "Continúe."
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__google
 msgid "Google Gemini"
 msgstr "Google Gemini"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_mcp_tools
+msgid "Handlers of the MCP tools"
+msgstr "Manejadores de las herramientas MCP"
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1237,6 +1258,16 @@ msgid ""
 msgstr ""
 "Encender el asistente exige marcar la casilla de reconocimiento, cada vez. El "
 "panel registra cuándo, quién y desde qué dirección."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/mcp_tools_assistant.py:0
+msgid ""
+"Switching the assistant on records your acceptance of its terms: do it in "
+"the panel, Settings → Assistant."
+msgstr ""
+"Encender el asistente registra su aceptación de sus condiciones: hágalo en "
+"el panel, Configuración → Asistente."
 
 #. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__tainted

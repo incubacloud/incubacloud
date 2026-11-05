@@ -22,6 +22,19 @@ msgstr " y %s más"
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "#%(id)s %(type)s (%(target)s)"
+msgstr "n.º %(id)s %(type)s (%(target)s)"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "%(action)s on the instance %(name)s (project %(project)s). %(warning)s"
+msgstr ""
+"%(action)s en la instancia %(name)s (proyecto %(project)s). %(warning)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid ""
 "%s is not a GitHub repository address (https://github.com/<owner>/<name>)."
@@ -363,6 +376,12 @@ msgstr "Llama a las rutas del panel para las herramientas MCP"
 #: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
 msgid "Cancel"
 msgstr "Cancelar"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Cancel the job %(job)s."
+msgstr "Cancelar la tarea %(job)s."
 
 #. module: incubacloud_mcp
 #: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_approval__state__cancelled
@@ -935,10 +954,22 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "It also ends: %(jobs)s."
+msgstr "También termina: %(jobs)s."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid "It is a public repository too: anyone can read what is written."
 msgstr ""
 "Es también un repositorio público: cualquiera puede leer lo que se escribe."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "It is running: what it has done so far stays as it is."
+msgstr "Está en curso: lo que ya ha hecho se queda como está."
 
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__job_id
@@ -1060,6 +1091,12 @@ msgid "Name the branch."
 msgstr "Indique la rama."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "No such action: %(action)s."
+msgstr "No existe la acción %(action)s."
+
+#. module: incubacloud_mcp
 #: model:ir.model,name:incubacloud_mcp.model_auth_oauth_provider
 msgid "OAuth2 provider"
 msgstr "Proveedor OAuth2"
@@ -1115,6 +1152,18 @@ msgstr "Un commit escribe como máximo %s caracteres: divídalo en varios."
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid "One commit writes from 1 to %s files."
 msgstr "Un commit escribe de 1 a %s archivos."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Only active jobs can be cancelled."
+msgstr "Solo se pueden cancelar las tareas activas."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Only failed jobs can be retried."
+msgstr "Solo se pueden reintentar las tareas fallidas."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1198,6 +1247,16 @@ msgstr "Proyecto no encontrado"
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Remove the frozen copy of the instance %(name)s from its old server "
+"%(host)s. Its move can then no longer be undone by going back to that copy."
+msgstr ""
+"Borrar la copia congelada de la instancia %(name)s de su servidor anterior "
+"%(host)s. Su traslado ya no se podrá deshacer volviendo a esa copia."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid ""
 "Remove the server %(name)s (%(ip)s) from the panel and take the panel's "
@@ -1233,6 +1292,16 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Restart the production instance %(name)s (project %(project)s). It is "
+"unavailable while it restarts."
+msgstr ""
+"Reiniciar la instancia de producción %(name)s (proyecto %(project)s). No "
+"estará disponible mientras se reinicia."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid ""
 "Restore the production instance %(name)s from its backup of %(time)s. What "
@@ -1247,6 +1316,31 @@ msgstr ""
 #: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
 msgid "Retry"
 msgstr "Reintentar"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Retry the failed job %(job)s: it does again what it was doing."
+msgstr ""
+"Reintentar la tarea fallida %(job)s: vuelve a hacer lo que estaba haciendo."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Run %(action)s on the server %(name)s (%(ip)s)."
+msgstr "Ejecutar %(action)s en el servidor %(name)s (%(ip)s)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Run the full setup of the server %(name)s (%(ip)s): it checks the system, "
+"reinstalls the panel's tooling and redeploys its proxy. Every instance on it"
+" may be unreachable for a while."
+msgstr ""
+"Ejecutar la configuración completa del servidor %(name)s (%(ip)s): comprueba"
+" el sistema, reinstala las herramientas del panel y vuelve a desplegar su "
+"proxy. Todas sus instancias pueden quedar inaccesibles durante un rato."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -1352,6 +1446,40 @@ msgstr "Enlace de descarga de backup de un solo uso para un agente"
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__state
 msgid "State"
 msgstr "Estado"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"Stop the production instance %(name)s (project %(project)s). It is "
+"unavailable until it is started again."
+msgstr ""
+"Detener la instancia de producción %(name)s (proyecto %(project)s). No "
+"estará disponible hasta que se vuelva a arrancar."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
+msgid ""
+"Take the instance %(name)s (project %(project)s) off its server, with its "
+"database and files there. It stays in the panel as a draft that can be "
+"deployed again."
+msgstr ""
+"Retirar la instancia %(name)s (proyecto %(project)s) de su servidor, con su "
+"base de datos y sus ficheros allí. Se queda en el panel como borrador que se"
+" puede volver a desplegar."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
+msgid ""
+"Take the production instance %(name)s (project %(project)s) off its server, "
+"with its database and files there. It stays in the panel as a draft that can"
+" be deployed again."
+msgstr ""
+"Retirar la instancia de producción %(name)s (proyecto %(project)s) de su "
+"servidor, con su base de datos y sus ficheros allí. Se queda en el panel "
+"como borrador que se puede volver a desplegar."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -1471,6 +1599,12 @@ msgstr "La sección %(section)s no tiene la acción %(action)s."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "The server %(name)s does not offer %(action)s."
+msgstr "El servidor %(name)s no ofrece %(action)s."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
 msgid "The server presented no SSH key."
 msgstr "El servidor no ha presentado ninguna clave SSH."
@@ -1551,9 +1685,37 @@ msgstr "Esta confirmación se dio para otra acción. Vuelva a pedir la acción."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "This instance has no frozen copy to clean."
+msgstr "Esta instancia no tiene ninguna copia congelada que limpiar."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
+msgid ""
+"This instance was never deployed: there is nothing to take off its server. "
+"Delete it without keep_in_panel."
+msgstr ""
+"Esta instancia nunca se ha desplegado: no hay nada que retirar de su "
+"servidor. Bórrela sin keep_in_panel."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
-msgid "This job did not prepare a backup download."
-msgstr "Esta tarea no ha preparado ninguna descarga de backup."
+msgid "This job did not prepare a backup download nor an export."
+msgstr ""
+"Esta tarea no ha preparado ninguna descarga de backup ni ninguna "
+"exportación."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid ""
+"This job waits for an alert and starts by itself once it is resolved. "
+"Resolve it in Alerts."
+msgstr ""
+"Esta tarea espera a una alerta y arranca sola en cuanto se resuelve. "
+"Resuélvala en Alertas."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -1877,6 +2039,12 @@ msgstr "en Claude Code para iniciar sesión."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "instance %(name)s"
+msgstr "instancia %(name)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "its last backup"
 msgstr "su último backup"
@@ -1921,6 +2089,12 @@ msgstr "privado"
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid "public"
 msgstr "público"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "server %(name)s"
+msgstr "servidor %(name)s"
 
 #. module: incubacloud_mcp
 #. odoo-python

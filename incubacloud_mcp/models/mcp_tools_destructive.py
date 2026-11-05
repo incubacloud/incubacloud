@@ -45,9 +45,19 @@ TOOLS = (
         "delete_instance",
         "Delete an instance with its stack and data. A production one needs a "
         "manager. A deployed one is taken off its server by a job: answers the "
-        "job_id; follow it with get_job.",
+        "job_id; follow it with get_job. With keep_in_panel=true a deployed one "
+        "is only taken off its server, and stays in the panel as a draft that "
+        "can be deployed again.",
         _CONSULTANT,
-        obj({"instance_id": _INSTANCE}, required=("instance_id",)),
+        obj(
+            {
+                "instance_id": _INSTANCE,
+                "keep_in_panel": boolean(
+                    "Keep it in the panel as a draft (false by default)."
+                ),
+            },
+            required=("instance_id",),
+        ),
         handler="_tool_delete_instance",
     ),
     _destructive(
@@ -202,9 +212,11 @@ class McpToolsDestructive(models.AbstractModel):
 
         A deployed instance is taken off its server by a ``delete_instance``
         job and leaves the panel when it ends, as the panel's Remove does
-        without keeping it; the route deletes only one never deployed.
+        without keeping it, or stays in it as a draft with
+        ``keep_in_panel`` (the panel's "Keep in panel"); the route deletes
+        only one never deployed.
 
-        :param dict args: ``instance_id``
+        :param dict args: ``instance_id`` and ``keep_in_panel``
         :return: the route's answer, or the job's id and state
         :rtype: dict
         """
@@ -216,7 +228,7 @@ class McpToolsDestructive(models.AbstractModel):
             instance.host_id.id,
             instance.id,
             "delete_instance",
-            {"keep_in_panel": False},
+            {"keep_in_panel": bool(args.get("keep_in_panel"))},
         )
         return self._with_job_state({"ok": True, "job_id": job_id})
 
@@ -244,11 +256,39 @@ class McpToolsDestructive(models.AbstractModel):
 
     @api.model
     def _confirm_delete_instance(self, args):
-        """Name the instance and say whether it is production."""
+        """Name the instance, say whether it is production, and whether it
+        stays in the panel.
+
+        Keeping one never deployed is refused before anyone is asked:
+        nothing of it is on a server.
+        """
         sec = self.env["cloud.security.mixin"]
         sec._check_cloud_group(_CONSULTANT)
         instance = self._instance(args["instance_id"])
         sec._check_can_delete_instance(instance)
+        if args.get("keep_in_panel"):
+            if not instance.deployed:
+                raise UserError(
+                    self.env._(
+                        "This instance was never deployed: there is nothing to "
+                        "take off its server. Delete it without keep_in_panel."
+                    )
+                )
+            if instance.environment == "production":
+                return self.env._(
+                    "Take the production instance %(name)s (project %(project)s) "
+                    "off its server, with its database and files there. It stays "
+                    "in the panel as a draft that can be deployed again.",
+                    name=quoted(instance.name),
+                    project=quoted(instance.project_id.name or ""),
+                )
+            return self.env._(
+                "Take the instance %(name)s (project %(project)s) off its server, "
+                "with its database and files there. It stays in the panel as a "
+                "draft that can be deployed again.",
+                name=quoted(instance.name),
+                project=quoted(instance.project_id.name or ""),
+            )
         if instance.environment == "production":
             return self.env._(
                 "Delete the production instance %(name)s (project %(project)s). "

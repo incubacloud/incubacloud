@@ -1,21 +1,36 @@
-"""Every /cloud route has a policy, and no read tool leaks a secret.
+"""Every /cloud route and every call of the screens has a policy; no read
+tool leaks a secret.
 
 A route added to core, to PITR or to a module built on the MCP (the
-tenant panel's) without a policy fails here — in saas's CI too.
+tenant panel's) without a policy fails here — in saas's CI too. So does a
+call the panel's screens make that no route policy covers: an ``orm``
+call to a model's method, or a job type they queue, read from the files
+of the panel's bundle (``js_calls``).
 """
 
 import json
+from pathlib import Path
 from unittest.mock import patch
+
+from werkzeug.exceptions import HTTPException
 
 from odoo import Command
 from odoo.tests import tagged
-from odoo.tests.common import HttpCase, TransactionCase
+from odoo.tests.common import BaseCase, HttpCase, TransactionCase
 
+from . import js_calls
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
-#: Read tools that reach GitHub rather than a route of the panel; what they
-#: answer is masked like any answer (test_tools_code.py checks it).
-NO_ROUTE_READS = frozenset({"repo_read"})
+#: The bundle of the panel's single-page application.
+PANEL_BUNDLE = "incubacloud.assets_prod"
+#: The rule that serves the application itself: a path that falls on it is
+#: no route of the panel.
+SPA_RULE = "/cloud/<path:subpath>"
+
+#: Read tools that reach GitHub, or a model's method, rather than a route of
+#: the panel; what they answer is masked like any answer (test_tools_code.py
+#: checks it for GitHub, test_tools_jobs.py reads the jobs' history).
+NO_ROUTE_READS = frozenset({"repo_read", "list_jobs"})
 
 
 def declaring_addons(endpoint):
@@ -43,6 +58,27 @@ def declaring_addons(endpoint):
     return addons
 
 
+def watched_modules(env):
+    """Return core, PITR, the MCP and every installed module built on it,
+    directly or through another one (the bridge's, the tenant's).
+
+    :rtype: set[str]
+    """
+    dependents = (
+        env["ir.module.module"]
+        .sudo()
+        .search([("name", "=", "incubacloud_mcp")])
+        .downstream_dependencies()
+        .filtered(lambda module: module.state == "installed")
+    )
+    return {
+        "incubacloud",
+        "incubacloud_pitr",
+        "incubacloud_mcp",
+        *dependents.mapped("name"),
+    }
+
+
 @tagged("post_install", "-at_install")
 class TestRouteInventory(TransactionCase):
     """The registry classifies every route of the panel.
@@ -53,21 +89,8 @@ class TestRouteInventory(TransactionCase):
     """
 
     def _watched(self):
-        """Core, PITR, the MCP and every installed module built on it,
-        directly or through another one (the bridge's, the tenant's)."""
-        dependents = (
-            self.env["ir.module.module"]
-            .sudo()
-            .search([("name", "=", "incubacloud_mcp")])
-            .downstream_dependencies()
-            .filtered(lambda module: module.state == "installed")
-        )
-        return {
-            "incubacloud",
-            "incubacloud_pitr",
-            "incubacloud_mcp",
-            *dependents.mapped("name"),
-        }
+        """The modules whose routes are checked (:func:`watched_modules`)."""
+        return watched_modules(self.env)
 
     def test_a_module_on_top_of_a_module_on_top_is_watched(self):
         """A module that reaches the MCP through another one — on top of the
@@ -133,6 +156,246 @@ class TestRouteInventory(TransactionCase):
                     self.assertIn(value, names)
                 else:
                     self.assertTrue(value)
+
+
+class TestJsCalls(BaseCase):
+    """The reader of the screens finds the calls, and nothing in a comment."""
+
+    def test_comments_and_strings(self):
+        """A call in a comment or a JSDoc example is not one; a ``//`` in a
+        string or a regular expression starts no comment."""
+        text = (
+            "// rpc('/cloud/in_a_comment')\n"
+            "/* orm.call('cloud.job', 'in_a_block', []) */\n"
+            "const url = 'http://x//y'; rpc('/cloud/real', {});\n"
+            "const re = /\\/\\//g; orm.call('cloud.job', 'cancel_job', [1]);\n"
+        )
+        calls = js_calls.script_calls(text)
+        self.assertEqual(
+            [(call.kind, call.value) for call in calls],
+            [("rpc", "/cloud/real"), ("orm", "cloud.job.cancel_job")],
+        )
+
+    def test_enqueue_names_the_job_type(self):
+        """``cloud.job.enqueue`` counts by the job type it queues, written
+        on several lines; one from data says so."""
+        text = (
+            "await this.orm.call(\n  'cloud.job',\n  'enqueue',\n"
+            "  [host, inst, 'export_instance', {a: [1, 2]}],\n);\n"
+            "this.orm.call('cloud.job', 'enqueue', [h, false, action.code]);\n"
+        )
+        self.assertEqual(
+            [(call.kind, call.value) for call in js_calls.script_calls(text)],
+            [("job", "export_instance"), ("data_job", "action.code")],
+        )
+
+    def test_templates_wrappers_and_variables(self):
+        """A template's value counts as any value, a wrapper's literal as its
+        route, and a variable route as dynamic."""
+        text = (
+            "rpc(`/cloud/instance/${this.props.id}/x`);\n"
+            "this._bff('plan_list', {});\n"
+            "rpc(route, {});\n"
+            "window.open(`/cloud/log/${job.id}`, '_blank');\n"
+        )
+        calls = js_calls.script_calls(text, {"_bff": "/cloud/billing/"})
+        self.assertEqual(
+            sorted((call.kind, call.value) for call in calls),
+            [
+                ("dynamic", "route"),
+                ("page", "/cloud/log/1"),
+                ("rpc", "/cloud/billing/plan_list"),
+                ("rpc", "/cloud/instance/1/x"),
+            ],
+        )
+
+    def test_template_actions(self):
+        """An OWL template's ``instanceAction({code})`` names its job type;
+        one in an XML comment does not."""
+        text = (
+            "<!-- instanceAction({ code: 'old' }) -->\n"
+            "<button t-on-click=\"() => this.instanceAction({ code: 'stop_instance' })\"/>"
+        )
+        self.assertEqual(
+            [call.value for call in js_calls.template_calls(text)], ["stop_instance"]
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestCallInventory(TransactionCase):
+    """Every call of the panel's screens has a tool or a reason.
+
+    The screens are the files of the panel's bundle from the watched
+    modules (``watched_modules``): not their tests, the website's bundle,
+    nor the master's, which no MCP serves.
+    """
+
+    def setUp(self):
+        """The registry, the routing map and the screens' files."""
+        super().setUp()
+        catalog = self.env["incubacloud.mcp.catalog"]
+        self.routes = catalog._route_policies()
+        self.calls = catalog._call_policies()
+        self.dynamic = catalog._dynamic_calls()
+        self.wrappers = catalog._call_wrappers()
+        self.adapter = self.env["ir.http"].routing_map().bind("localhost")
+
+    def _files(self):
+        """Return ``{bundle path: text}`` of the screens' scripts and templates."""
+        watched = watched_modules(self.env)
+        files = {}
+        for path, full_path, *_rest in self.env["ir.asset"]._get_asset_paths(
+            PANEL_BUNDLE, {}
+        ):
+            if path.split("/")[1] in watched and path.endswith((".js", ".xml")):
+                files[path] = Path(full_path).read_text(encoding="utf-8")
+        return files
+
+    def _found(self, files):
+        """Return ``[(bundle path, Call)]`` of every call in *files*."""
+        found = []
+        for path, text in files.items():
+            reader = (
+                js_calls.template_calls(text)
+                if path.endswith(".xml")
+                else js_calls.script_calls(text, self.wrappers)
+            )
+            found.extend((path, call) for call in reader)
+        return found
+
+    def _rule(self, path, json_only=False):
+        """Return the rule of the routing map *path* falls on, or None.
+
+        The application's own rule is none of the panel's routes; with
+        *json_only*, nor is a rule that does not answer JSON-RPC.
+        """
+        for method in ("POST", "GET"):
+            try:
+                rule, _args = self.adapter.match(path, method=method, return_rule=True)
+            except HTTPException:
+                continue
+            if rule.rule == SPA_RULE:
+                return None
+            if json_only and rule.endpoint.routing.get("type") != "jsonrpc":
+                return None
+            return rule
+        return None
+
+    def _unclassified(self, files):
+        """Return what the screens in *files* call without a policy, as text.
+
+        :rtype: list[str]
+        """
+        missing = []
+        for path, call in self._found(files):
+            where = f"{path}:{call.line}"
+            if call.kind in ("rpc", "page"):
+                rule = self._rule(call.value, json_only=call.kind == "rpc")
+                if rule is not None:
+                    if rule.rule not in self.routes:
+                        missing.append(f"{where} route {rule.rule}")
+                elif call.source not in self.dynamic.get(path, {}):
+                    missing.append(f"{where} no route of the panel: {call.value}")
+            elif call.kind in ("orm", "job"):
+                if f"{call.kind}:{call.value}" not in self.calls:
+                    missing.append(f"{where} {call.kind}:{call.value}")
+            elif call.kind == "dynamic" and call.source not in self.dynamic.get(
+                path, {}
+            ):
+                missing.append(f"{where} a variable call: {call.source}")
+        return missing
+
+    def test_every_call_of_the_screens_is_classified(self):
+        """A route, a model's method or a job type the screens call has a
+        tool or a reason (``_route_policies``, ``_call_policies``), and a
+        variable route is declared (``_dynamic_calls``)."""
+        files = self._files()
+        found = self._found(files)
+        # The reader finds what it must: the check is not empty.
+        kinds = {call.kind for _path, call in found}
+        self.assertTrue({"rpc", "orm", "job", "page"} <= kinds, kinds)
+        self.assertEqual(
+            self._unclassified(files),
+            [],
+            "Give these calls a tool or a reason in a module's _call_policies "
+            "(or _route_policies), or declare them in _dynamic_calls",
+        )
+
+    def test_a_new_call_without_a_policy_fails(self):
+        """A screen that calls a method, queues a job type or reaches a route
+        no policy covers is reported, each once."""
+        path = "/incubacloud/static/src/components/probe/probe.js"
+        text = (
+            "this.orm.call('cloud.job', 'purge_everything', [1]);\n"
+            "this.orm.call('cloud.job', 'enqueue', [h, i, 'wipe_disk']);\n"
+            "rpc('/cloud/no_such_route', {});\n"
+            "rpc(someRoute, {});\n"
+            "this.orm.call('cloud.job', 'cancel_job', [1]);\n"
+        )
+        missing = self._unclassified({path: text})
+        self.assertEqual(len(missing), 4, missing)
+        self.assertIn(f"{path}:1 orm:cloud.job.purge_everything", missing)
+        self.assertIn(f"{path}:2 job:wipe_disk", missing)
+
+    def test_every_job_type_offered_as_an_action_is_classified(self):
+        """The job types the pages offer from data (``show_as_action``),
+        which the reader cannot see, are classified too."""
+        offered = self.env["cloud.job.type"].search([("show_as_action", "=", True)])
+        self.assertTrue(offered)
+        missing = sorted(
+            f"job:{code}"
+            for code in offered.mapped("code")
+            if f"job:{code}" not in self.calls
+        )
+        self.assertEqual(missing, [])
+
+    def test_every_call_policy_is_used_and_names_a_tool_or_a_reason(self):
+        """A policy names a tool that exists or says why; and something still
+        makes the call it classifies, so the list does not rot."""
+        names = {spec.name for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()}
+        used = {
+            f"{call.kind}:{call.value}"
+            for _path, call in self._found(self._files())
+            if call.kind in ("orm", "job")
+        } | {
+            f"job:{code}"
+            for code in self.env["cloud.job.type"]
+            .search([("show_as_action", "=", True)])
+            .mapped("code")
+        }
+        for key, (kind, value) in self.calls.items():
+            with self.subTest(key=key):
+                self.assertIn(kind, ("tool", "excluded"))
+                self.assertTrue(value)
+                if kind == "tool":
+                    self.assertIn(value, names)
+                self.assertIn(key, used, "no screen makes this call any more")
+
+    def test_declared_variable_calls_still_hold(self):
+        """Each variable call declared is still in its file, and each path it
+        reaches is still written there and has a route policy."""
+        files = self._files()
+        sources = {
+            (path, call.source) for path, call in self._found(files) if call.source
+        }
+        for path, expressions in self.dynamic.items():
+            with self.subTest(path=path):
+                self.assertIn(path, files, "declared for a file the bundle lacks")
+                for expression, reached in expressions.items():
+                    self.assertIn((path, expression), sources)
+                    for target in reached:
+                        name = target.rstrip("/").rsplit("/", 1)[-1]
+                        self.assertTrue(
+                            any(
+                                f"{quote}{text}{quote}" in files[path]
+                                for quote in "\"'"
+                                for text in (target, name)
+                            ),
+                            f"{target} is no longer written in {path}",
+                        )
+                        rule = self._rule(target)
+                        self.assertIsNotNone(rule, target)
+                        self.assertIn(rule.rule, self.routes)
 
 
 @tagged("post_install", "-at_install")

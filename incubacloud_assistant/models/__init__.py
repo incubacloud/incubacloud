@@ -10,4 +10,5 @@ from . import assistant_tools
 from . import mcp_confirm
 from . import res_users
 from . import mcp_catalog
+from . import mcp_tools_assistant
 from . import cloud_job
