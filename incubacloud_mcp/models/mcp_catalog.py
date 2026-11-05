@@ -64,6 +64,9 @@ CORE_EXCLUDED = {
     "/cloud/telegram_send_test": _PREFERENCES,
     "/cloud/ping": _FORMS,
     "/cloud/get_langs": _FORMS,
+    "/cloud/get_nav_counts": (
+        "The sidebar's count badges; the list tools count the same records."
+    ),
     "/cloud/get_users": _FORMS,
     "/cloud/host_defaults": _FORMS,
     "/cloud/fetch_odoojs_submodules": _FORMS,
