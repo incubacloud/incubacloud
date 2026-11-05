@@ -301,7 +301,7 @@ def template_calls(text):
     :rtype: list[Call]
     """
     code = re.sub(
-        r"<!--.*?-->", lambda m: re.sub(r"[^\n]", " ", m.group()), text, flags=re.S
+        r"<!--.*?-->", lambda m: re.sub(r"[^\n]", " ", m.group()), text, flags=re.DOTALL
     )
     return [
         Call("job", match.group(1), _line(code, match.start()))
