@@ -45,16 +45,21 @@ HEADS_TIMEOUT=20
 # host's configuration (see record-heads), says nothing, and asks
 # nothing. Credentials go only to https://github.com itself: a URL
 # that carries them to any other host, port or scheme is not asked at
-# all (5-nov-2026). Returns git's status, 124 when it ran out of time,
-# 1 for such a URL.
+# all, nor one with a ? # or \ before its path (5-nov-2026). Returns
+# git's status, 124 when it ran out of time, 1 for such a URL.
 remote_ref_head() {
     local home="$1" url="$2" ref="$3" auth="" authority out
     local wanted=("refs/heads/$ref" "refs/tags/$ref")
     [[ "$ref" != refs/* ]] || wanted=("$ref")
     authority="${url#*://}"
     authority="${authority%%/*}"
+    # A ? # or \ before the first / may end the host before the last @,
+    # as in ``TOK@evil.example?@github.com/x``, whose host is evil.example
+    # for curl: parsers do not agree on it, so credentials with one of
+    # them there are not sent at all (5-nov-2026).
     if [[ "$authority" == *@* ]] \
-        && [[ "$url" != https://* || "${authority##*@}" != github.com ]]; then
+        && [[ "$url" != https://* || "${authority##*@}" != github.com \
+            || "$authority" == *[?#\\]* ]]; then
         return 1
     fi
     if [[ "$url" =~ ^(https://)([^/@]+)@(.+)$ ]] \
