@@ -227,12 +227,13 @@ STUB
 }
 
 # A timeout that runs its command, or behaves as a command that ran out
-# of time (status 124, nothing run) when $LS_REMOTE_HANG is set.
+# of time (status 124, or $LS_REMOTE_HANG_STATUS, nothing run) when
+# $LS_REMOTE_HANG is set.
 _stub_timeout() {
     cat > "$TMP/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
 echo "timeout $*" >> "$CALLS"
-[ -z "${LS_REMOTE_HANG:-}" ] || exit 124
+[ -z "${LS_REMOTE_HANG:-}" ] || exit "${LS_REMOTE_HANG_STATUS:-124}"
 while [ "$#" -gt 0 ] && [ "$1" != git ]; do shift; done
 exec "$@"
 STUB
@@ -498,4 +499,21 @@ HEADS_PLAIN_URL="https://github.com/acme/addons.git"
         [[ "$heads" == *"$alias main unknown-"* ]]
     done
     [[ "$heads" == *"pinned $PIN_SHA $PIN_SHA" ]]
+}
+
+@test "record-heads also stops asking when git had to be killed (status 137)" {
+    _stub_git
+    _stub_timeout
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\tmain\t%s\n' \
+        one "$HEADS_URL" two "$HEADS_URL" three "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_HANG=1 LS_REMOTE_HANG_STATUS=137
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^timeout ' "$CALLS")" -eq 1 ]
+    [[ "$output" == *"did not arrive within 20s"* ]]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    for alias in one two three; do
+        [[ "$heads" == *"$alias main unknown-"* ]]
+    done
 }
