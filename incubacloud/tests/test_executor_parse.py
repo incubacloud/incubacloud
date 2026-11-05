@@ -26,6 +26,9 @@ class TestInstanceHealthParseResults(BaseCase):
     def setUp(self):
         from odoo.addons.incubacloud.models.instance_health_executor import InstanceHealthExecutor
         self.executor = _make_executor(InstanceHealthExecutor)
+        # A cycle of the cron's: no ``state_only`` in its payload (a
+        # MagicMock's would read as one, and ask for two readings only).
+        self.executor.job.payload = {}
         # ``get_commands`` asks the ORM when the last job that stopped
         # the database ended; there is no ORM here, and no such job.
         self.startPatcher(patch.object(
