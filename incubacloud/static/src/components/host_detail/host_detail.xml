@@ -224,7 +224,7 @@
                                 <div class="rl-ovrow">
                                     <span class="rl-l">CPU</span>
                                     <span class="rl-v">
-                                        <t t-if="state.host.cpu_cores" t-esc="state.host.cpu_cores + ' cores'"/>
+                                        <t t-if="state.host.cpu_cores" t-esc="coresLabel(state.host.cpu_cores)"/>
                                         <t t-else="">—</t>
                                     </span>
                                 </div>

@@ -92,6 +92,13 @@ msgid "%(first)s and %(count)s more"
 msgstr "%(first)s y %(count)s más"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "%(free)s GB free / %(total)s GB"
+msgstr "%(free)s GB libres / %(total)s GB"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host_direct.py:0
 msgid ""
@@ -175,6 +182,19 @@ msgstr "%s (archivada)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "%s GB free"
+msgstr "%s GB libres"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "%s additional"
+msgstr "%s adicionales"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.js:0
 msgid "%s alert(s) dismissed"
 msgstr "%s alerta(s) descartada(s)"
@@ -184,6 +204,13 @@ msgstr "%s alerta(s) descartada(s)"
 #: code:addons/incubacloud/static/src/app/app.js:0
 msgid "%s completed"
 msgstr "%s completado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "%s cores"
+msgstr "%s núcleos"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -214,6 +241,24 @@ msgstr "%s en %s falló: %s"
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
 msgid "%s repositories imported"
 msgstr "%s repositorios importados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/dates.js:0
+msgid "%sd ago"
+msgstr "hace %s d"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/dates.js:0
+msgid "%sh ago"
+msgstr "hace %s h"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/dates.js:0
+msgid "%sm ago"
+msgstr "hace %s min"
 
 #. module: incubacloud
 #. odoo-python
@@ -395,6 +440,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "0 = no quota (usage still tracked)."
 msgstr "0 = sin cuota (el uso se sigue midiendo)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "1 additional"
+msgstr "1 adicional"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8171,7 +8222,7 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Log"
-msgstr "Log"
+msgstr "Registro"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__log_chunk_ids
@@ -16231,16 +16282,6 @@ msgstr "config.yml es obligatorio"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "configured"
 msgstr "configurado"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
-msgid ""
-"cores\n"
-"                                    ·"
-msgstr ""
-"núcleos\n"
-"                                    ·"
 
 #. module: incubacloud
 #. odoo-javascript

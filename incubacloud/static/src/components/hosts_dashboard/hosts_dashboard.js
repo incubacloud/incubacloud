@@ -4,7 +4,7 @@ import { useDebounced } from "@web/core/utils/timing";
 import { rpc } from '@web/core/network/rpc';
 import { _t } from "@web/core/l10n/translation";
 import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
-import { parseUTC } from "../../utils/dates";
+import { agoText, parseUTC } from "../../utils/dates";
 import { TruncationBanner } from "../truncation_banner/truncation_banner";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
@@ -183,9 +183,19 @@ export class HostsDashboard extends Component {
         const free = host.disk_free_gb;
         const pct  = host.disk;
         if (!free && !pct) return '';
-        if (!pct || pct <= 0 || pct >= 100) return `${free} GB free`;
+        if (!pct || pct <= 0 || pct >= 100) return _t("%s GB free", free);
         const total = Math.round(free * 100 / (100 - pct));
-        return `${free} GB free / ${total} GB`;
+        return _t("%(free)s GB free / %(total)s GB", { free, total });
+    }
+
+    /**
+     * A number of CPU cores, as a host's card reads it.
+     *
+     * @param {number} n the cores.
+     * @returns {string} "4 cores"
+     */
+    coresLabel(n) {
+        return _t("%s cores", n);
     }
 
     usagePct(host) {
@@ -214,11 +224,7 @@ export class HostsDashboard extends Component {
 
     timeAgo(dateStr) {
         if (!dateStr) return null;
-        const diff = Math.floor((Date.now() - parseUTC(dateStr).getTime()) / 1000);
-        if (diff < 60) return `${diff}s ago`;
-        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-        return `${Math.floor(diff / 86400)}d ago`;
+        return agoText(Math.floor((Date.now() - parseUTC(dateStr).getTime()) / 1000));
     }
 }
 
