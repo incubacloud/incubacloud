@@ -89,6 +89,25 @@ _GH_URL_RE = re.compile(
     r'([^/]+)/([^/]+)$'
 )
 
+# The one form a repository line keeps, and the only one the GitHub
+# token travels with (5-nov-2026): https, the host exactly
+# ``github.com`` (no ``www.``, user, password or port), an owner as
+# GitHub names them and a repository name, ``.git`` or not. A host
+# found anywhere else in the URL, as in
+# ``https://evil.example/github.com/x.git``, matches nothing.
+_CANONICAL_REPO_URL_RE = re.compile(
+    r'https://github\.com/[A-Za-z0-9][A-Za-z0-9_-]{0,38}/'
+    r'(?!\.{0,2}(?:\.git)?$)[A-Za-z0-9._-]{1,100}'
+)
+
+# The spellings of a repository on github.com that
+# :func:`canonical_repo_url` rewrites into the canonical form.
+_GH_SPELLING_RE = re.compile(
+    r'(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:)'
+    r'([^/]+)/([^/]+?)/?',
+    re.IGNORECASE,
+)
+
 
 # ── Git ref / SHA validation ───────────────────────────────────────────────
 #
@@ -126,18 +145,43 @@ def is_safe_git_sha(value):
 
 
 def is_safe_repo_url(value):
-    """Return True if ``value`` is a known-safe repo URL.
+    """Return True if ``value`` is a repository URL in the canonical form.
 
-    Only GitHub URLs that match ``_GH_URL_RE`` are accepted. The
-    project does not currently support GitLab/BitBucket; the pip and
-    apt requirement fetchers also assume GitHub. Tightening here also
-    closes the H-MOD-6 vector where ``github.com`` would match inside
-    ``github.com.attacker.tld`` (the regex is anchored at both ends).
+    Only ``https://github.com/<owner>/<repo>`` and its ``.git`` form,
+    exactly (``_CANONICAL_REPO_URL_RE``): the build clones it with the
+    panel's GitHub token, so a URL that could name another host, a
+    user, a port or plain http is refused (5-nov-2026). The project
+    does not support GitLab/BitBucket; the pip and apt requirement
+    fetchers also assume GitHub. Other spellings of a github.com
+    repository are rewritten by :func:`canonical_repo_url` first.
+    """
+    return isinstance(value, str) and bool(
+        _CANONICAL_REPO_URL_RE.fullmatch(value)
+    )
+
+
+def canonical_repo_url(value):
+    """Return *value* in the canonical form when it names a github.com repo.
+
+    ``git@github.com:``, ``http://``, no scheme, ``www.``, any case of
+    the host, a final slash and surrounding blanks all become
+    ``https://github.com/<owner>/<repo>``, keeping ``.git`` when it
+    was there. Anything else comes back stripped and otherwise as it
+    was, for :func:`is_safe_repo_url` to refuse.
+
+    :param str value: a repository URL as a user, an import or a
+        caller spelled it
+    :return: the canonical URL, or *value* stripped
+    :rtype: str
     """
     if not isinstance(value, str):
-        return False
-    cleaned = value.strip().rstrip('/').removesuffix('.git')
-    return bool(_GH_URL_RE.fullmatch(cleaned))
+        return value
+    text = value.strip()
+    match = _GH_SPELLING_RE.fullmatch(text)
+    if not match:
+        return text
+    candidate = f'https://github.com/{match.group(1)}/{match.group(2)}'
+    return candidate if is_safe_repo_url(candidate) else text
 
 
 def _parse_github_repo_path(url):

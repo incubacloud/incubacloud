@@ -43,12 +43,21 @@ HEADS_TIMEOUT=20
 # ``Authorization`` header in that HOME's config, not in git's command
 # line, which every user of the host can read. git runs without the
 # host's configuration (see record-heads), says nothing, and asks
-# nothing. Returns git's status, 124 when it ran out of time.
+# nothing. Credentials go only to https://github.com itself: a URL
+# that carries them to any other host, port or scheme is not asked at
+# all (5-nov-2026). Returns git's status, 124 when it ran out of time,
+# 1 for such a URL.
 remote_ref_head() {
-    local home="$1" url="$2" ref="$3" auth="" out
+    local home="$1" url="$2" ref="$3" auth="" authority out
     local wanted=("refs/heads/$ref" "refs/tags/$ref")
     [[ "$ref" != refs/* ]] || wanted=("$ref")
-    if [[ "$url" =~ ^(https?://)([^/@]+)@(.+)$ ]] \
+    authority="${url#*://}"
+    authority="${authority%%/*}"
+    if [[ "$authority" == *@* ]] \
+        && [[ "$url" != https://* || "${authority##*@}" != github.com ]]; then
+        return 1
+    fi
+    if [[ "$url" =~ ^(https://)([^/@]+)@(.+)$ ]] \
         && [[ "${BASH_REMATCH[2]}" != *%* ]]; then
         auth="$(printf '%s' "${BASH_REMATCH[2]}" | base64 -w0)"
         url="${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
