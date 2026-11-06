@@ -520,10 +520,9 @@ class QueueJob(models.Model):
         """
         if vals.get("state") != "pending":
             return
-        jobs = self.env["cloud.job"].sudo().search(
+        ticking = self.env["cloud.job"].sudo().search(
             [("queue_job_uuid", "in", self.mapped("uuid"))],
-        )
-        ticking = jobs.filtered(lambda job: getattr(
+        ).filtered(lambda job: getattr(
             executor_registry.get(job.job_type_id.code),
             "_postpones_between_ticks", False,
         ))
