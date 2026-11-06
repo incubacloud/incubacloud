@@ -13915,6 +13915,16 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
+"The process running this job died and queue_job gave up on it; closed by "
+"the reconciliation of lost jobs."
+msgstr ""
+"El proceso que ejecutaba este trabajo murió y queue_job lo dio por perdido; "
+"lo cerró la conciliación de trabajos perdidos."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
 "The process running this job was lost and its queue_job record is gone: it "
 "is closed as failed."
 msgstr ""

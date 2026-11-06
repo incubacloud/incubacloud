@@ -144,6 +144,22 @@ class TestALostWorkerIsReconciled(_LostJobCase):
             (self.inst.id, None) in call.args[1] for call in dispatch.call_args_list
         ), "the instance's queue is served once the job is closed")
 
+    def test_its_end_is_written_in_the_language_of_the_pass(self):
+        """What the job ended on, in its queue.job and its alert, is
+        translated as its log line is."""
+        self.env["res.lang"]._activate_lang("es_ES")
+        self._age(self.job)
+        self._die()
+        with patch.object(DeployInstanceExecutor, "on_abort", autospec=True):
+            self.assertEqual(
+                self.Job.with_context(lang="es_ES")._cron_reconcile_lost_jobs(),
+                1,
+            )
+        self.env.invalidate_all()
+        spanish = "El proceso que ejecutaba este trabajo murió y queue_job"
+        self.assertTrue(self.qjob.exc_message.startswith(spanish))
+        self.assertIn(spanish, self._failures().message)
+
     def test_its_hook_puts_the_instance_back(self):
         """Unpatched: the deploy's own ``on_abort`` takes it out of
         'deploying', as for any failure before its steps."""
