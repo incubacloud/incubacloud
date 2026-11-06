@@ -11,7 +11,11 @@ from datetime import timedelta
 
 from odoo import fields
 
-from .abstract_executor import AbstractSSHExecutor, JobRefused
+from .abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    AbstractSSHExecutor,
+    JobRefused,
+)
 
 #: Label of the count of what runs inside the instance.
 QUIET_LABEL = "Count what runs inside the instance"
@@ -352,6 +356,22 @@ class MoveFreezeSourceExecutor(AbstractSSHExecutor):
             host=host,
             instance=inst,
         )
+
+    async def on_cancelled_running(self, results, exc):
+        """A freeze stopped by hand is closed as a failed one, alert included.
+
+        Before its step or during it, the old copy may still run beside
+        the moved instance, and the alert is the one word that says so:
+        it is not a failure the person who stopped the job is told of,
+        but what the stop left. Raised although a cancelled job raises
+        none (``ic_job_cancelled``).
+
+        :param results: what the step answered, or None before it
+        :param JobCancelled exc: the stop
+        """
+        self.job = self.job.with_context(ic_job_cancelled=False)
+        self.env = self.job.env
+        await self.on_failure(results or {}, [CANCELLED_WHILE_RUNNING])
 
     def _record_frozen_copy(self):
         """Record the old copy on this job's host as frozen, until its time.
