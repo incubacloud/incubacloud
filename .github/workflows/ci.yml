@@ -499,8 +499,16 @@ jobs:
       # becomes the gate. ``requirements-ci.txt`` mirrors pip.txt
       # (minus the openupgradelib git URL, which pip-audit cannot
       # resolve against PyPI).
+      # PYSEC-2026-3458 (ansible-core 2.17.14, 6-nov-2026) is ignored on
+      # this 18.0 branch on purpose: the 2.17 series has no fix and 2.18+
+      # needs Python >= 3.11, while Odoo 18's image ships 3.10. It only
+      # affects `ansible-galaxy role install`, which the panel never runs;
+      # test_no_ansible_galaxy.py fails the build if that ever changes.
+      # Remove the --ignore-vuln when a 2.17.x with the fix appears, or
+      # when the Odoo 18 image moves to Python >= 3.11. See the "Known
+      # advisory: ansible-core" section of docs/architecture.md.
       - name: Run pip-audit
-        run: pip-audit --strict -r requirements-ci.txt
+        run: pip-audit --strict --ignore-vuln PYSEC-2026-3458 -r requirements-ci.txt
 
   gitleaks:
     name: Secret scan (gitleaks)

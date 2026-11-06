@@ -481,6 +481,16 @@ Merging upstream on every rebuild only works because each package remembers who 
 
 Ownership is keyed by repo URL, not branch, so switching branches does not hand a package back to the operator. Writing `pip_dependencies` outside the managed paths prunes the entries whose spec no longer appears verbatim (the edit makes those lines the operator's); the managed paths — the requirements merge and `/cloud/resolve_pip_conflict` — pass `pip_provenance_managed` in the context and set the map themselves. Resolving a conflict in favour of the repo's spec hands the line back to it; any other answer makes it operator-owned. Set `incubacloud.requirements_resync_enabled=0` to restore the old frozen behaviour.
 
+## Known advisory: ansible-core (PYSEC-2026-3458)
+
+On the 18.0 branch the panel pins `ansible-core==2.17.14`, which carries advisory **PYSEC-2026-3458**. It affects `ansible-galaxy role install`. The 2.17 series has no fixed release and 2.18+ requires Python >= 3.11, while the Odoo 18 image ships Python 3.10.22, so the pin cannot move. Decision of the owner, 6-nov-2026: keep 2.17.14 and ignore this one advisory (`--ignore-vuln PYSEC-2026-3458` in the `pip-audit` job of `.github/workflows/ci.yml`, which `invoke ci-local` reads too).
+
+The exception holds only because the panel uses ansible solely to run its own playbooks (through ansible-runner) and never runs `ansible-galaxy role install`.
+
+**Rule on this branch: do not use `ansible-galaxy role install`, and do not install roles from Galaxy** (a `roles:` section in a requirements file included). `ansible-galaxy collection install` is a different command and is not affected. `incubacloud/tests/test_no_ansible_galaxy.py` fails the build if `ansible-galaxy` (other than `collection`) appears in the code, scripts or playbooks of the addons.
+
+Lift the exception (drop the `--ignore-vuln` and, if no longer needed, the test) when a 2.17.x with the fix is released, or when the Odoo 18 image moves to Python >= 3.11 and ansible-core can be upgraded.
+
 ## Endpoints that enqueue
 
 No endpoint refuses a job because the instance is busy: the job waits in its queue ([The job queue](#the-job-queue)). The deploy and rebuild endpoints answer through `_job_response` (`controllers/_data_load/_helpers.py`, reusable by an inheriting controller — the SaaS manager's rebuild uses it): `{job_id, state, job_type, queued_behind}`, where `state` is `queued` when the job waits and the state its `queue.job` reached when it started (`pending` at first), `job_type` is the visible name of its type and `queued_behind` the visible name of the type of the job running on its target (`False` when it started, or when nothing visible runs — a queue held by a failure). A job that waits on a conflict alert answers `{job_id, state: 'blocked', blocked: true, alert_id, alert_code, message, conflicts}` instead. What a job's type allows can still refuse it: a second job of an exclusive type, a sixth entry, a role gate — as `{ok: false, error}` or an RPC error, as before.
