@@ -19,7 +19,7 @@ from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tools.misc import file_path
 
-from ..models.abstract_executor import JobRefused
+from ..models.abstract_executor import CANCELLED_WHILE_RUNNING, JobCancelled, JobRefused
 from ..models.deploy_instance_executor import DeployInstanceExecutor, _half_memory
 from ..models.move_steps_executor import parse_fingerprint
 from ..models.registry import executor_registry
@@ -630,6 +630,30 @@ class TestTheOldCopyIsFrozen(_MoveCase):
         asyncio.run(self._executor(cleanup).on_success({}))
         self.assertFalse(self.inst.move_frozen_source_host_id)
         self.assertEqual(alert.state, "dismissed")
+
+    def test_a_freeze_cancelled_while_it_ran_still_records_the_copy_and_alerts(self):
+        """Stopped by hand, before its step or during it: the copy may run
+        all the same, and its alert is the one word that says so, raised
+        although a cancelled job's alerts are not (``ic_job_cancelled``)."""
+        self.registry_enter_test_mode()
+        for results in (None, {}):
+            with self.subTest(started=results is not None):
+                executor = self._executor(self._job("move_freeze_source", self.source))
+                executor._step_results = results
+                asyncio.run(executor._dispatch_cancel(
+                    JobCancelled(CANCELLED_WHILE_RUNNING),
+                ))
+                self.inst.invalidate_recordset()
+                self.assertEqual(self.inst.move_frozen_source_host_id, self.source)
+                alert = self.env["cloud.alert"].search([
+                    ("instance_id", "=", self.inst.id),
+                    ("code", "=", "move_freeze_failed"),
+                    ("state", "=", "active"),
+                ])
+                self.assertEqual(alert.level, "warning")
+                self.env["cloud.alert"].resolve_alert(
+                    "move_freeze_failed", instance=self.inst,
+                )
 
     def test_the_instances_delete_removes_the_copy_first(self):
         self._frozen(until_hours=5)
