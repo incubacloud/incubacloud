@@ -538,7 +538,9 @@ class TestCodeTools(
         )
         # Refused before anyone is asked to approve it.
         self.assertTrue(result["isError"])
-        self.assertIn("no project has the id 999999", result["content"][0]["text"])
+        self.assertIn(
+            "no project you can reach has the id 999999", result["content"][0]["text"],
+        )
         self.assertFalse([c for c in self.github.calls if c[1] == "/user/repos"])
 
     def test_a_repository_is_created_private_and_connected_after_approval(self):
