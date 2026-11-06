@@ -406,6 +406,11 @@ class AbstractExecutor(ABC):
     _outcome_dispatched = False
     # Set when that hook raised instead: a defect, whatever the exception.
     _hook_raised = False
+    # What the steps answered so far, set when the first one starts
+    # (``_run_steps``): None while the run has not reached them. A run a
+    # person cancels is closed by ``on_failure`` with it, or by
+    # ``on_abort`` while it is None (``on_cancelled_running``).
+    _step_results = None
 
     # Connection-retry opt-in. When True, a transient connection failure
     # (see ``is_transient_connection_error``) does not fail the job on the
@@ -574,15 +579,36 @@ class AbstractExecutor(ABC):
                 exc = main_task.exception()
                 if exc is not None:
                     raise exc
-            except BaseException:
+            except BaseException as exc:
                 # Cancel the running task if we abandon the loop
                 # (e.g. _check_cancel raised because the job was
                 # cancelled out-of-band). Wait for it to honour the
                 # CancelledError before closing the loop.
-                if not main_task.done():
+                stopped = not main_task.done()
+                if stopped:
                     main_task.cancel()
                     with contextlib.suppress(BaseException):
                         self._loop.run_until_complete(main_task)
+                # The stop, when it is what ended the run: a run that
+                # ended by itself as the flag was read had its hook.
+                if isinstance(exc, JobCancelled) and (
+                    stopped
+                    or (not main_task.cancelled() and main_task.exception() is exc)
+                ):
+                    # The task is gone, and with it whatever it had not
+                    # cleaned up: a deploy left in 'deploying' could be
+                    # neither deployed again nor deleted (issue #2).
+                    self._loop.run_until_complete(self._dispatch_cancel(exc))
+                    # What it wrote to the job log; a failure here must
+                    # not turn the cancellation into another error.
+                    try:
+                        self._flush_logs()
+                        self._publish_bus()
+                    except Exception:  # noqa: BLE001 — logged, never fatal
+                        logger.warning(
+                            "[job %s] could not write the cancellation's log",
+                            self.job.id, exc_info=True,
+                        )
                 raise
         finally:
             try:
@@ -654,7 +680,8 @@ class AbstractExecutor(ABC):
                     "%s: %s", type(e).__name__, e,
                 )
             elif cancelled:
-                # A person asked for it; ``queue_job_ext`` records it.
+                # A person asked for it; ``queue_job_ext`` records it, and
+                # ``run`` closes the job (``_dispatch_cancel``).
                 logger.info("[_async_entry] Job cancelled: %s", e)
             elif self._outcome_dispatched or (
                 _is_refusal(e) and not self._hook_raised
@@ -668,7 +695,7 @@ class AbstractExecutor(ABC):
                 logger.warning("[_async_entry] Job failed: %s", e)
             else:
                 logger.exception("[_async_entry] Exception: %s", e)
-            if not (aborting and self._handles_abort()):
+            if not (cancelled or (aborting and self._handles_abort())):
                 self._sys(f"✗ {type(e).__name__}: {e}")
             if aborting:
                 await self._dispatch_abort(e)
@@ -714,7 +741,9 @@ class AbstractExecutor(ABC):
             off (empty when everything ran).
         """
         logger = logging.getLogger("AbstractExecutor")
-        results = {}
+        # Shared with ``_step_results``: a cancellation halfway hands
+        # ``on_failure`` what had run.
+        results = self._step_results = {}
         for index, item in enumerate(commands):
             label, command = item[0], item[1]
             opts = item[2] if len(item) == 3 else {}
@@ -907,6 +936,41 @@ class AbstractExecutor(ABC):
                     "[_dispatch_abort] on_abort failed for job %s",
                     getattr(getattr(self, "job", None), "id", None),
                 )
+        self._refresh_host_disk()
+
+    async def _dispatch_cancel(self, exc):
+        """Close a run a person cancelled as a failure would close it.
+
+        Nothing else would: the job ends ``cancelled`` (``queue_job_ext``)
+        with neither ``on_failure`` nor ``on_abort`` run, and a deploy
+        stayed in 'deploying' for good, refused by every deploy after it
+        and by its delete (issue #2, 6-nov-2026). ``on_cancelled_running``
+        runs on a durable cursor like the other terminal hooks, with
+        ``ic_job_cancelled`` in its context: ``cloud.alert.raise_alert``
+        raises nothing there, as a person asked for the stop. Not after
+        an outcome hook returned: that one closed the job already.
+
+        Never raises: the caller is re-raising *exc*. The host's disk is
+        read again afterwards, as after an outcome.
+
+        :param JobCancelled exc: the stop
+        """
+        if self._outcome_dispatched:
+            return
+        orig_job = self.job
+        self.job = orig_job.with_context(ic_job_cancelled=True)
+        self.env = self.job.env
+        try:
+            await self._run_hook_durably(
+                self.on_cancelled_running, self._step_results, exc,
+            )
+        except Exception:
+            logging.getLogger("AbstractExecutor").exception(
+                "[_dispatch_cancel] on_cancelled_running failed for job %s",
+                orig_job.id,
+            )
+        finally:
+            self.job, self.env = orig_job, orig_job.env
         self._refresh_host_disk()
 
     def _unlink_after_job_commit(self, inst, sudo=False):
@@ -1289,7 +1353,7 @@ class AbstractExecutor(ABC):
         with self._durable_env() as env:
             job = env['cloud.job'].browse(self.job.id)
             if job.state == 'cancelled':
-                raise JobCancelled("Job cancelled")
+                raise JobCancelled(CANCELLED_WHILE_RUNNING)
 
     # ===============================
     # STREAM HANDLERS (OVERRIDABLE)
@@ -1777,12 +1841,39 @@ class AbstractExecutor(ABC):
         connection, an exception in ``before_execute`` or between two
         steps, a terminal hook that raised: ``on_failure`` only follows
         steps that ran to their end. Runs on a durable cursor like the
-        other terminal hooks. Not called for a run that will be retried
-        nor for a cancellation. An override writes *exc* to the job log
+        other terminal hooks. Not called for a run that will be retried;
+        for one cancelled before its steps, through
+        ``on_cancelled_running``. An override writes *exc* to the job log
         (``_handles_abort``).
 
         :param Exception exc: what stopped the run
         """
+
+    async def on_cancelled_running(self, results, exc):
+        """Called when a person cancelled the job while it ran.
+
+        For what the job leaves behind, a cancellation is a failure: the
+        same hook closes it, so whatever an executor puts back when it
+        fails — an instance out of 'deploying', a host out of 'checking'
+        — is put back too. ``on_failure`` with what the steps answered
+        once they started, with ``CANCELLED_WHILE_RUNNING`` as the error;
+        ``on_abort`` before them. Unlike a failure, the job ends
+        ``cancelled`` and no alert is raised (``ic_job_cancelled``). An
+        executor whose failure path does what a stop must not — follow
+        work a person stopped, read a verdict into an unfinished run —
+        overrides this. Runs on a durable cursor like the other terminal
+        hooks.
+
+        :param results: ``{label: {'stdout', 'exit_status'}}`` of the
+            steps that ran, or None when the run had not reached them
+        :param JobCancelled exc: the stop
+        """
+        if results is not None:
+            await self.on_failure(results, [CANCELLED_WHILE_RUNNING])
+        elif self._handles_abort():
+            await self.on_abort(exc)
+        else:
+            self._sys(f"✗ {CANCELLED_WHILE_RUNNING}")
 
     def blocking_alert(self):
         """Return the alert this job must wait for, before anything runs.
