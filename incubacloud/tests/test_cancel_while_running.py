@@ -12,13 +12,24 @@ now returns the stop instead.
 """
 from unittest.mock import patch
 
+from psycopg2 import OperationalError
+
 from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
+
+from odoo.addons.queue_job.job import Job
 
 from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     JobCancelled,
 )
 from odoo.addons.incubacloud.models.host_probe_executor import HostProbeExecutor
+
+
+class _Conflict(OperationalError):
+    """A serialization failure, as PostgreSQL reports one."""
+
+    pgcode = "40001"
 
 
 class TestCancelWhileRunning(TransactionCase):
@@ -294,3 +305,61 @@ class TestCancelWhileRunning(TransactionCase):
         self._run_with_entry(entry)
         self.cjob.invalidate_recordset(['succeeded_before_cancel'])
         self.assertFalse(self.cjob.succeeded_before_cancel)
+
+    def _chained_head_and_tail(self):
+        """A started head and a step waiting on it, in one graph.
+
+        :return: ``(head queue.job, tail queue.job)``
+        """
+        cjob, qjob = self._started('uuid-head-deps', graph_uuid='graph-deps')
+        _tail, tail_q = self._started(
+            'uuid-tail-deps', graph_uuid='graph-deps', state='wait_dependencies',
+        )
+        # A job queue_job can load: what it runs is the cloud job's own.
+        qjob.with_context(_job_edit_sentinel=qjob.EDIT_SENTINEL).write({
+            'method_name': 'execute', 'records': cjob,
+            'dependencies': {
+                'depends_on': [], 'reverse_depends_on': [tail_q.uuid],
+            },
+        })
+        tail_q.dependencies = {
+            'depends_on': [qjob.uuid], 'reverse_depends_on': [],
+        }
+        self.cjob, self.qjob = cjob, qjob
+        self._succeeded_then_cancelled()
+        return qjob, tail_q
+
+    def test_the_steps_after_a_success_are_set_going_after_a_conflict(self):
+        """Setting them going meets a serialization failure once: it is
+        tried again, as queue_job tries it after any done."""
+        qjob, tail_q = self._chained_head_and_tail()
+        real = Job.enqueue_waiting
+        calls = []
+
+        def enqueue_waiting(job):
+            calls.append(job.uuid)
+            if len(calls) == 1:
+                raise _Conflict()
+            return real(job)
+
+        with patch.object(
+            Job, 'enqueue_waiting', autospec=True, side_effect=enqueue_waiting,
+        ), patch('odoo.addons.queue_job.controllers.main.time.sleep'):
+            qjob.write({'state': 'pending', 'eta': '2026-11-06 08:12:30'})
+        self.assertEqual(calls, [qjob.uuid, qjob.uuid])
+        self.assertEqual(qjob.state, 'done')
+        self.assertEqual(tail_q.state, 'pending')
+
+    def test_steps_that_cannot_be_set_going_leave_the_success_done(self):
+        """The tries run out: logged, and the job is still stored done."""
+        qjob, tail_q = self._chained_head_and_tail()
+        with patch.object(
+            Job, 'enqueue_waiting', autospec=True, side_effect=_Conflict(),
+        ), patch(
+            'odoo.addons.queue_job.controllers.main.time.sleep',
+        ), mute_logger('odoo.addons.queue_job.controllers.main'), self.assertLogs(
+            'odoo.addons.incubacloud.models.queue_job_ext', level='ERROR',
+        ):
+            qjob.write({'state': 'pending', 'eta': '2026-11-06 08:12:30'})
+        self.assertEqual(qjob.state, 'done')
+        self.assertEqual(tail_q.state, 'wait_dependencies')
