@@ -644,6 +644,12 @@ class AbstractExecutor(ABC):
                 exc = main_task.exception()
                 if exc is not None:
                     raise exc
+                if self._outcome_dispatched:
+                    # Again, at the very end of a run that succeeded: a
+                    # stop committed since ``on_success`` returned —
+                    # while the staging was discarded, the transport
+                    # closed — still found the job unmarked.
+                    self._mark_success_before_cancel()
             except BaseException as exc:
                 # Cancel the running task if we abandon the loop
                 # (e.g. _check_cancel raised because the job was
@@ -929,10 +935,13 @@ class AbstractExecutor(ABC):
         stores ``done`` instead.
 
         Written only on a job already cancelled: on any other, a write of
-        its row from this cursor would make that same store fail. A stop
-        committed after this read, before the job is stored, still ends it
-        cancelled. The mark is cleared when the job starts again
-        (``queue_job_ext``). Never raises: the outcome is decided.
+        its row from this cursor would make that same store fail. Called
+        once ``on_success`` returns and again at the end of ``run``, so a
+        stop committed while the staging was discarded or the transport
+        closed is marked too; only one committed after ``run`` returned,
+        before the job is stored, still ends it cancelled. Idempotent. The
+        mark is cleared when the job starts again (``queue_job_ext``).
+        Never raises: the outcome is decided.
         """
         try:
             with self._durable_env() as env:
