@@ -2463,12 +2463,21 @@ class CloudJob(models.Model):
     #: first job's clean-up always runs, the rest are the next pass's,
     #: five minutes later (6-nov-2026).
     _RECONCILE_HOOK_BUDGET_S = 60
-    #: What a job closed as failed by the reconciliation says it ended on:
-    #: the ``exc_message`` of its queue.job and its ``job_failed`` alert.
-    _WORKER_LOST_MESSAGE = (
-        "The process running this job died and queue_job gave up on it;"
-        " closed by the reconciliation of lost jobs."
-    )
+
+    @staticmethod
+    def _worker_lost_message(env):
+        """Return what a job closed as failed by the reconciliation ended on.
+
+        The ``exc_message`` of its queue.job, which its ``job_failed``
+        alert quotes, and the ``JobWorkerLost`` its ``on_abort`` gets.
+
+        :param env: the environment whose language it is written in
+        :rtype: str
+        """
+        return env._(
+            "The process running this job died and queue_job gave up on it;"
+            " closed by the reconciliation of lost jobs."
+        )
 
     @api.model
     def _cron_reconcile_lost_jobs(self):
@@ -2782,7 +2791,7 @@ class CloudJob(models.Model):
                 elif case == "failed":
                     hooked = True
                     asyncio.run(executor._dispatch_abort(
-                        JobWorkerLost(self._WORKER_LOST_MESSAGE),
+                        JobWorkerLost(self._worker_lost_message(runner.env)),
                     ))
                 elif case in ("stopped", "cancelled_running") and not (
                     runner.sudo().succeeded_before_cancel
@@ -2831,7 +2840,8 @@ class CloudJob(models.Model):
             qjob = env["queue.job"].sudo().browse(queue_row["id"])
             if case == "failed":
                 qjob.write({
-                    "state": "failed", "exc_message": self._WORKER_LOST_MESSAGE,
+                    "state": "failed",
+                    "exc_message": self._worker_lost_message(env),
                 })
             elif case == "stopped":
                 # Stored failed, which ``queue_job_ext`` turns into the
@@ -2864,7 +2874,9 @@ class CloudJob(models.Model):
         Job = env["cloud.job"].sudo()
         job = Job.browse(job_id)
         job.with_context(ic_skip_state_hook=True).write({"state": "failed"})
-        Job._create_job_failed_alert(job, exc_message=self._WORKER_LOST_MESSAGE)
+        Job._create_job_failed_alert(
+            job, exc_message=self._worker_lost_message(env),
+        )
         Job._broadcast_job_update(job.id, state="failed")
         job._on_state_changed("failed")
         _logger.info(
