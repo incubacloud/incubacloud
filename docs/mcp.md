@@ -132,8 +132,11 @@ and an agent that reads "ok" tells its user the work is done. So:
   `mcp_tools.RECORD_ARGS`) that does not exist is refused before the tool
   runs, archived records included as existing: a filter that matched nothing
   and a setting saved while the record named was ignored had answered as if
-  they had worked. Whether the user may see or change the record is the
-  route's to say, as in the panel.
+  they had worked. One the user cannot read, on a model they read, is refused
+  with the same words ("no instance you can reach has the id N"), so the
+  answer does not tell that it exists, as the connect-as route answers.
+  Whether the user may change the record is the route's to say, as in the
+  panel.
 - A write that is given nothing to write is refused (`vals` or `values`
   empty, preferences none, values for an action that takes none, a backup
   destination for another section). `update_instance`, `update_project`,

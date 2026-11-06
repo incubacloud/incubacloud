@@ -150,11 +150,16 @@ class McpTools(models.AbstractModel):
 
     @api.model
     def _check_records(self, args):
-        """Refuse a call that names a record that does not exist.
+        """Refuse a call that names a record the user cannot reach.
 
         For the arguments of :data:`RECORD_ARGS`, at the top of the call:
-        archived records exist. Whether the user may see or change the
-        record is the route's to say, as in the panel.
+        archived records exist. One that exists but that the user may not
+        read, on a model they read, gets the same words as one that does
+        not exist, so the answer does not tell it is there (as
+        ``controllers/connect.py`` answers). On a model the user reads
+        none of, only its existence is checked: the route says the rest.
+        Whether the user may change the record is the route's to say, as
+        in the panel.
 
         :raises SchemaError: naming the argument and the id, as the
             arguments' other checks do
@@ -163,11 +168,13 @@ class McpTools(models.AbstractModel):
             value = args.get(name)
             if not isinstance(value, int) or isinstance(value, bool):
                 continue
-            record = self.env[model].sudo().with_context(active_test=False)
-            if not record.browse(value).exists():
+            records = self.env[model].with_context(active_test=False)
+            record = records.sudo().browse(value).exists().with_env(records.env)
+            if record and records.has_access("read"):
+                record = record._filtered_access("read")
+            if not record:
                 raise SchemaError(
-                    f"arguments.{name}: no {label} has the id {value}; it does "
-                    "not exist, or was deleted."
+                    f"arguments.{name}: no {label} you can reach has the id {value}."
                 )
 
     @api.model
