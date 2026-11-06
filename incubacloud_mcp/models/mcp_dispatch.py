@@ -30,6 +30,15 @@ class McpDispatch(models.AbstractModel):
 
         :raises UserError: when *path* is not a JSON-RPC route here
         """
+        endpoint, path_args = self._endpoint(path)
+        return endpoint(**path_args, **params)
+
+    @api.model
+    def _endpoint(self, path):
+        """Return the JSON-RPC endpoint Odoo serves at *path*, and its path args.
+
+        :raises UserError: when *path* is not a JSON-RPC route here
+        """
         adapter = self.env["ir.http"].routing_map().bind("localhost")
         try:
             rule, path_args = adapter.match(path, method="POST", return_rule=True)
@@ -37,4 +46,17 @@ class McpDispatch(models.AbstractModel):
             raise UserError(self.env._("The panel has no route %s.", path)) from exc
         if rule.endpoint.routing.get("type") != "jsonrpc":
             raise UserError(self.env._("The panel has no route %s.", path))
-        return rule.endpoint(**path_args, **params)
+        return rule.endpoint, path_args
+
+    @api.model
+    def _controller(self, path):
+        """Return the controller that serves *path*, the most derived one.
+
+        What a tool reads from it — the fields a route writes — is then
+        what the route itself goes by, saas's additions included.
+
+        :raises UserError: when *path* is not a JSON-RPC route here
+        """
+        endpoint, _path_args = self._endpoint(path)
+        # ``functools.partial`` of the bound method (``http._generate_routing_rules``).
+        return endpoint.func.__self__
