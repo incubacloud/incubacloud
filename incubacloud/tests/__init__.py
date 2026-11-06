@@ -206,6 +206,7 @@ from . import test_staging_needs_production
 from . import test_mail_layout
 from . import test_cancel_while_running
 from . import test_cancel_running_cleanup
+from . import test_success_before_cancel
 from . import test_github_setup_state
 from . import test_repo_url_not_a_repo
 from . import test_repo_url_host

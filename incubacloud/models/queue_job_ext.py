@@ -2,6 +2,8 @@ import logging
 
 from odoo import _, fields, models
 
+from odoo.addons.queue_job.job import Job
+
 from .abstract_executor import BLOCKED_BY_ALERT, CANCELLED_WHILE_RUNNING
 from .registry import executor_registry
 
@@ -107,6 +109,62 @@ class QueueJob(models.Model):
         )
         return self.browse([row[0] for row in self.env.cr.fetchall()])
 
+    def _succeeded_before_cancel(self):
+        """The jobs of ``self`` whose ``on_success`` returned before a stop.
+
+        ``AbstractExecutor._mark_success_before_cancel`` records it on the
+        cloud job, on a cursor of its own, when that job was already
+        cancelled; read from the row, not the cache, as the flag is.
+
+        :return: the ``queue.job`` records concerned
+        """
+        if not self.ids:
+            return self.browse()
+        self.env.cr.execute(
+            "SELECT q.id FROM queue_job q"
+            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " WHERE q.id IN %s AND c.succeeded_before_cancel",
+            (tuple(self.ids),),
+        )
+        return self.browse([row[0] for row in self.env.cr.fetchall()])
+
+    def _store_success_before_cancel(self, vals):
+        """Store ``self`` done, whatever end queue_job was storing.
+
+        queue_job was putting it back in the queue (the store of ``done``
+        failed to serialize against the stop's write) or storing a
+        failure that came after the success. Neither path lets queue_job
+        start the steps that wait on it, so they are set going here, as
+        ``button_done`` sets them going.
+
+        :param dict vals: what queue_job was writing
+        :return: the result of ``write``
+        """
+        done = {
+            key: value for key, value in vals.items()
+            # The run's own start, which a postpone clears.
+            if key not in ("date_started", "exec_time")
+        } | {
+            "state": "done",
+            "date_done": fields.Datetime.now(),
+            "date_cancelled": False,
+            "eta": False,
+            "result": False,
+            "exc_name": False,
+            "exc_message": False,
+            "exc_info": False,
+        }
+        result = self.write(done)
+        self.flush_recordset(["state"])
+        for qjob in self:
+            if (qjob.dependencies or {}).get("reverse_depends_on"):
+                Job.load(self.env, qjob.uuid).enqueue_waiting()
+        _logger.info(
+            "[queue_job_ext] queue jobs %s succeeded before their stop: done",
+            self.ids,
+        )
+        return result
+
     def write(self, vals):
         # A job a person cancelled while it ran ends cancelled, as one
         # cancelled before it started does: queue_job stores the stop as
@@ -135,6 +193,14 @@ class QueueJob(models.Model):
         else:
             candidates = self.browse()
         if candidates:
+            # Its ``on_success`` had returned when the stop arrived: the
+            # job is done, and its chain goes on. Stored cancelled, a
+            # cutover that had cut over cancelled the freeze of its
+            # source; put back in the queue, it would run again.
+            succeeded = candidates._succeeded_before_cancel()
+            if succeeded:
+                (self - succeeded).write(vals)
+                return succeeded._store_success_before_cancel(vals)
             stopped = candidates._cancelled_while_running()
             if stopped:
                 (self - stopped).write(vals)
@@ -175,9 +241,12 @@ class QueueJob(models.Model):
             # — the operator who cancels a queued job has no write on
             # queue jobs — and without the state hook: the end is acted
             # on below, once its alerts are recorded.
-            cjob.sudo().with_context(ic_skip_state_hook=True).write(
-                {"state": new_state},
-            )
+            mirror = {"state": new_state}
+            if new_state == "started" and cjob.succeeded_before_cancel:
+                # A new attempt, in the transaction that commits before it
+                # runs: what an earlier one recorded is not its own.
+                mirror["succeeded_before_cancel"] = False
+            cjob.sudo().with_context(ic_skip_state_hook=True).write(mirror)
             # To the row now: ``_check_cancel`` and the stop detection
             # above read it with SQL, from other transactions and from
             # this one.

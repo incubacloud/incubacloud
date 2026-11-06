@@ -1,0 +1,174 @@
+"""A run whose ``on_success`` returned before a stop ends ``done``.
+
+The stop is not read once the outcome hook started, but ``cancel_job``
+had already committed the flag on the job's ``cloud_job`` row, in a
+transaction of its own. queue_job stores the job ``done`` in the job's
+REPEATABLE READ transaction, whose snapshot predates the flag: the mirror
+of that state on the row fails to serialize, queue_job puts the job back
+in the queue from a cursor of its own (``retry_postpone``), and
+``queue_job_ext`` read the flag there and stored it cancelled. Its chain
+ended with it: a cutover that had cut over cancelled the freeze of its
+source (6-nov-2026).
+
+The transactions here are real, as in ``test_move_own_job_row``: a
+fixture is committed (and removed after), the job's transaction takes its
+snapshot, a person's cancel commits on another cursor, the outcome is
+dispatched as ``AbstractExecutor.run`` dispatches it, and the job is
+stored as queue_job's runner stores it.
+"""
+import asyncio
+from unittest.mock import patch
+
+from psycopg2.errors import SerializationFailure
+
+from odoo import SUPERUSER_ID, api
+from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
+
+from odoo.addons.queue_job.job import Job
+
+from ..models.host_probe_executor import HostProbeExecutor
+
+
+class TestSuccessBeforeCancelUnderRealTransactions(TransactionCase):
+    """A probe and the step that waits on it, run by real cursors."""
+
+    def setUp(self):
+        """Commit a host, a started job and the step of its chain after it."""
+        super().setUp()
+        self.registry = self.env.registry
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            host = env["cloud.host"].create({
+                "name": "before-cancel-host", "ip_address": "192.0.2.92",
+                "port": 22, "user": "root", "login_type": "ssh_key",
+                "wildcard_domain": "before-cancel-host.example.com",
+                "status": "compatible",
+            })
+            job_type = env["cloud.job.type"].search(
+                [("code", "=", "host_probe")], limit=1,
+            )
+            head, tail = env["cloud.job"].create([
+                {"name": name, "host_id": host.id, "job_type_id": job_type.id}
+                for name in ("before-cancel-head", "before-cancel-tail")
+            ])
+            head_job, tail_job = Job(head.execute), Job(tail.execute)
+            tail_job.add_depends({head_job})
+            head_job.graph_uuid = tail_job.graph_uuid = "graph-before-cancel"
+            head_job.state = "started"
+            head_job.store()
+            tail_job.store()
+            head.write({"queue_job_uuid": head_job.uuid})
+            tail.write({"queue_job_uuid": tail_job.uuid})
+            self.host_id = host.id
+            self.job_ids = (head.id, tail.id)
+            self.uuids = (head_job.uuid, tail_job.uuid)
+            cr.commit()
+        self.addCleanup(self._remove_fixture)
+
+    def _remove_fixture(self):
+        """Delete the committed rows, children first."""
+        with self.registry.cursor() as cr:
+            ids, uuids = self.job_ids, self.uuids
+            cr.execute(
+                "DELETE FROM queue_job_lock WHERE queue_job_id IN"
+                " (SELECT id FROM queue_job WHERE uuid IN %s)", (uuids,),
+            )
+            for table in ("cloud_job_log_chunk", "cloud_audit_log", "cloud_alert"):
+                cr.execute(f"DELETE FROM {table} WHERE job_id IN %s", (ids,))
+            cr.execute("DELETE FROM cloud_job WHERE id IN %s", (ids,))
+            cr.execute("DELETE FROM queue_job WHERE uuid IN %s", (uuids,))
+            for table in ("cloud_alert", "cloud_audit_log", "cloud_host_whitelist"):
+                cr.execute(
+                    f"DELETE FROM {table} WHERE host_id = %s", (self.host_id,),
+                )
+            cr.execute("DELETE FROM cloud_host WHERE id = %s", (self.host_id,))
+            cr.commit()
+
+    def _cancel(self):
+        """A person's cancel of the head, committed on a cursor of its own."""
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            env["cloud.job"].browse(self.job_ids[0]).cancel_job()
+            cr.commit()
+
+    def _run_and_store_done(self, cancel_during_run):
+        """Run the head's outcome well, then store it done as the runner does.
+
+        :param bool cancel_during_run: commit a cancel after the job's
+            snapshot and before its success hook
+        :raises SerializationFailure: when the store of ``done`` conflicts
+        """
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            job = env["cloud.job"].browse(self.job_ids[0])
+            # The snapshot, as ``job.lock()`` takes it.
+            cr.execute("SELECT state FROM cloud_job WHERE id = %s", (job.id,))
+            if cancel_during_run:
+                self._cancel()
+            executor = HostProbeExecutor(job, job.host_id)
+            with patch.object(
+                HostProbeExecutor, "parse_results", autospec=True, return_value=[],
+            ), patch.object(
+                HostProbeExecutor, "on_success", autospec=True,
+            ), patch.object(
+                HostProbeExecutor, "_refresh_host_disk", autospec=True,
+            ):
+                asyncio.run(executor._dispatch_outcome({}))
+            # ``cloud.job.execute`` clears the environment; the runner's
+            # ``_try_perform_job`` stores the end.
+            env.clear()
+            stored = Job.load(env, self.uuids[0])
+            stored.set_done()
+            stored.store()
+            env.flush_all()
+            cr.commit()
+
+    def _postpone(self, message):
+        """What queue_job's ``retry_postpone`` stores, on a cursor of its own.
+
+        :param str message: the error the store of the end met
+        """
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            stored = Job.load(env, self.uuids[0])
+            stored.postpone(result=message, seconds=5)
+            stored.set_pending(reset_retry=False)
+            stored.store()
+            cr.commit()
+
+    def _states(self):
+        """``(head cloud job, head queue job, tail queue job)`` states."""
+        with self.registry.cursor() as cr:
+            cr.execute(
+                "SELECT state FROM cloud_job WHERE id = %s", (self.job_ids[0],),
+            )
+            head = cr.fetchone()[0]
+            cr.execute(
+                "SELECT uuid, state FROM queue_job WHERE uuid IN %s", (self.uuids,),
+            )
+            queue = dict(cr.fetchall())
+        return head, queue[self.uuids[0]], queue[self.uuids[1]]
+
+    def test_a_success_the_cancel_reached_late_ends_done_with_its_chain(self):
+        """The store meets the conflict, the postpone stores ``done``, and
+        the step after it is set going instead of cancelled."""
+        with mute_logger("odoo.sql_db"), self.assertRaises(SerializationFailure) as caught:
+            self._run_and_store_done(cancel_during_run=True)
+        self._postpone(str(caught.exception))
+        head, head_queue, tail_queue = self._states()
+        self.assertEqual(head_queue, "done")
+        self.assertEqual(head, "done")
+        self.assertEqual(tail_queue, "pending")
+
+    def test_a_success_nobody_cancelled_writes_nothing_aside(self):
+        """No mark on a job nobody cancelled: its store meets no conflict."""
+        self._run_and_store_done(cancel_during_run=False)
+        head, head_queue, _tail = self._states()
+        self.assertEqual((head, head_queue), ("done", "done"))
+        with self.registry.cursor() as cr:
+            cr.execute(
+                "SELECT succeeded_before_cancel FROM cloud_job WHERE id = %s",
+                (self.job_ids[0],),
+            )
+            self.assertFalse(cr.fetchone()[0])
