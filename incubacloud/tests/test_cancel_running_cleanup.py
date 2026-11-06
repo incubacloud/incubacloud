@@ -276,7 +276,9 @@ class TestAStopThatCameTooLate(_DeployJobCase):
     def test_a_run_that_ended_as_the_flag_was_read_stays_done(self):
         """The loop read the flag on the tick the run ended in: a cutover
         that had cut over ended cancelled, and the freeze of the source
-        after it with it, so the old copy went on running."""
+        after it with it, so the old copy went on running. The stop comes
+        while the run prepares: one before ``execute`` is a stop before
+        the attempt began, which does not run (6-nov-2026)."""
         head = self.job
         head.queue_job_id.graph_uuid = "graph-ended-well"
         tail = self._deploy_job("uuid-after")
@@ -284,9 +286,14 @@ class TestAStopThatCameTooLate(_DeployJobCase):
             "state": "wait_dependencies", "graph_uuid": "graph-ended-well",
         })
         self.env["cloud.job"].invalidate_model(["state"])
-        head.cancel_job()
         self.env.flush_all()
-        with self._finishing_run() as (success, failure):
+
+        def _stop_now(*_args):
+            """A person cancels the job while it prepares."""
+            head.cancel_job()
+            head.env.flush_all()
+
+        with self._finishing_run(before_execute=_stop_now) as (success, failure):
             result = head.execute()
         self.assertIsNone(result)
         success.assert_awaited_once()
