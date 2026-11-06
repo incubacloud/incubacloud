@@ -66,7 +66,8 @@ teardown() {
 fake_restore() {
     mkdir -p "$DIR/.walg/restore"
     echo "$1" > "$DIR/.walg/restore/lock"
-    bash -c "trap 'echo TERM >> \"$TMP/term\"' TERM; while :; do sleep 0.2; done" &
+    bash -c "trap 'echo TERM >> \"$TMP/term\"' TERM; while :; do sleep 0.2; done" \
+        restore-run "$DIR" user "$1" &
     echo "$!" > "$DIR/.walg/restore/pid"
     touch "$DIR/.walg/restore/armed"
 }
@@ -390,6 +391,24 @@ STUB
     run bash "$SCRIPT" restore-cancel "$DIR" 9 60
     [ "$status" -eq 0 ]
     [[ "$output" == *"IC_PITR_RESTORE state=lost"* ]]
+}
+
+@test "a cancel does not signal a pid that is not the restore of its job" {
+    mkdir -p "$DIR/.walg/restore"
+    echo 9 > "$DIR/.walg/restore/lock"
+    touch "$DIR/.walg/restore/armed"
+    # A process of someone else, on a pid the dead restore left behind.
+    bash -c 'trap "echo TERM >> \"$1/term\"" TERM; while :; do sleep 0.2; done' x "$TMP" &
+    other=$!
+    echo "$other" > "$DIR/.walg/restore/pid"
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 0
+    sleep 1
+    alive=0; kill -0 "$other" 2>/dev/null && alive=1
+    kill -KILL "$other" 2>/dev/null || true
+    [ "$status" -eq 0 ]
+    [ "$alive" -eq 1 ]
+    [ ! -e "$TMP/term" ]
+    [[ "$output" == *"is not the restore of job 9"* ]]
 }
 
 @test "a cancel while another job's restore holds the instance says whose it is, and stops nothing" {
