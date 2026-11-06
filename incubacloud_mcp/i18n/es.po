@@ -1115,6 +1115,38 @@ msgid "No such action: %(action)s."
 msgstr "No existe la acción %(action)s."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Not muted, as you cannot see them: projects %s."
+msgstr "No se han silenciado, porque usted no puede verlos: proyectos %s."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+#: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
+msgid "Nothing changed: every value given was already set."
+msgstr "No ha cambiado nada: cada valor indicado ya estaba así."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "Nothing to change: give the preferences to change."
+msgstr "Nada que cambiar: indique las preferencias que cambian."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools.py:0
+msgid "Nothing to change: vals is empty."
+msgstr "Nada que cambiar: vals está vacío."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
+msgid "Nothing to change: values is empty."
+msgstr "Nada que cambiar: values está vacío."
+
+#. module: incubacloud_mcp
 #: model:ir.model,name:incubacloud_mcp.model_auth_oauth_provider
 msgid "OAuth2 provider"
 msgstr "Proveedor OAuth2"
@@ -1543,6 +1575,18 @@ msgstr "El token de acceso no es válido para este panel."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
+msgid "The action %s changes no preference: give it without them."
+msgstr "La acción %s no cambia ninguna preferencia: indíquela sin ellas."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
+msgid "The action %s changes no setting: give it without values."
+msgstr "La acción %s no cambia ningún ajuste: indíquela sin values."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/cloud_settings.py:0
 msgid ""
 "The agents' issuer must be an https URL, such as https://login.example.com."
@@ -1919,6 +1963,13 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_manager.py:0
+msgid "Unknown server field(s): %(keys)s. Accepted: %(accepted)s."
+msgstr ""
+"Campos del servidor desconocidos: %(keys)s. Se aceptan: %(accepted)s."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_command.py:0
 msgid "Unknown service"
 msgstr "Servicio desconocido"
@@ -2058,6 +2109,12 @@ msgstr "Su usuario en este panel está inactivo."
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "a dump taken now"
 msgstr "un volcado hecho ahora"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
+msgid "backend_id is for the backup_backend section, not %s."
+msgstr "backend_id es de la sección backup_backend, no de %s."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
