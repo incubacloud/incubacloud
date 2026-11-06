@@ -406,6 +406,9 @@ class AbstractExecutor(ABC):
     _outcome_dispatched = False
     # Set when that hook raised instead: a defect, whatever the exception.
     _hook_raised = False
+    # Set as that hook starts (``_dispatch_outcome``): the run is closing,
+    # and ``run`` no longer reads the cancel flag.
+    _outcome_started = False
     # What the steps answered so far, set when the first one starts
     # (``_run_steps``): None while the run has not reached them. A run a
     # person cancels is closed by ``on_failure`` with it, or by
@@ -569,7 +572,14 @@ class AbstractExecutor(ABC):
                     # fallback poll.
                     if self._flush_logs():
                         self._publish_bus()
-                    self._check_cancel()
+                    # Not once the run has ended: one that ended well as
+                    # the flag was set ended cancelled, and its chain with
+                    # it — a cutover that had cut over, then the freeze of
+                    # its source. Nor once its outcome hook has started:
+                    # cut off there, what the hook wrote was undone and
+                    # ``on_failure`` closed steps that had all passed.
+                    if not (main_task.done() or self._outcome_started):
+                        self._check_cancel()
                 # Drain anything written between the last tick and
                 # the final await inside _async_entry. Published
                 # unconditionally: this is the last word on the job, so
@@ -589,8 +599,8 @@ class AbstractExecutor(ABC):
                     main_task.cancel()
                     with contextlib.suppress(BaseException):
                         self._loop.run_until_complete(main_task)
-                # The stop, when it is what ended the run: a run that
-                # ended by itself as the flag was read had its hook.
+                # The stop, when it is what ended the run: the task was
+                # stopped here, or raised the stop itself.
                 if isinstance(exc, JobCancelled) and (
                     stopped
                     or (not main_task.cancelled() and main_task.exception() is exc)
@@ -829,6 +839,9 @@ class AbstractExecutor(ABC):
             "[_dispatch_outcome] %s START job_id=%s errors=%s",
             hook.__name__, self.job.id, errors,
         )
+        # From here the run is closing: a stop is no longer read
+        # (``run``). ``after_commands`` above can still be stopped.
+        self._outcome_started = True
         try:
             await self._run_hook_durably(hook, *args)
         except Exception:
