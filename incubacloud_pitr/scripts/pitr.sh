@@ -11,6 +11,7 @@
 #   pitr.sh drain         <dir> <pg_user> <timeout_s>
 #   pitr.sh restore-start <dir> <pg_user> <job> <cluster> <base> <timeline> <target_utc> <since_day>
 #   pitr.sh restore-wait  <dir> <job> <max_s>   (0 also while it still runs)
+#   pitr.sh restore-cancel <dir> <job> <max_s>
 #   pitr.sh disable       <dir> <pg_user>
 #
 # Two pieces run in the instance's stack, both from ``<dir>/.walg``:
@@ -32,6 +33,11 @@
 # in .walg/restore/, puts the previous data back if the restored copy does
 # not come up, starts the instance again however it ends, and records how
 # it ended in .walg/restore/result.
+#
+# ``restore-cancel`` stops it: a TERM to that process, which puts back what
+# it changed, and a wait for the result. Up to the promotion of the
+# restored database; from there it goes on to the end, since a database
+# that has replaced the previous one cannot be taken back (6-nov-2026).
 #
 # IC_PITR_HOME and IC_PITR_ENV name another directory and environment
 # (default .walg and .docker/pitr.env) for a second stack in the same
@@ -150,6 +156,45 @@ bases_line() {
 restore_info() {
     [ -f "$RESTORE/result" ] || return 0
     sed 's/^/restore_/' "$RESTORE/result" | tr '\n' ' '
+}
+
+# Follow the restore of a job: print its log's new lines until its result
+# is written, for up to a number of seconds.
+#   $1  job
+#   $2  seconds to wait at most (0: look once)
+#   $3  lines of the log already shown
+# Returns 0 once a result names the job, 3 when its process still runs at
+# the end of the wait, 4 when no process of the job runs and no result
+# names it (it never started, or it is lost).
+follow_restore() {
+    local job="$1" max="$2" shown="$3" waited=0 lines pid
+    while :; do
+        if [ -f "$RESTORE/log" ]; then
+            lines="$(wc -l < "$RESTORE/log")"
+            if [ "$lines" -gt "$shown" ]; then
+                sed -n "$((shown + 1)),${lines}p" "$RESTORE/log"
+                shown="$lines"
+            fi
+        fi
+        grep -qx "job=$job" "$RESTORE/result" 2>/dev/null && return 0
+        pid="$(cat "$RESTORE/pid" 2>/dev/null || true)"
+        if [ "$(cat "$RESTORE/lock" 2>/dev/null)" != "$job" ] \
+                || ! { [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; }; then
+            # Read once more: it may have ended between the two checks.
+            grep -qx "job=$job" "$RESTORE/result" 2>/dev/null && return 0
+            return 4
+        fi
+        if [ "$waited" -ge "$max" ]; then
+            return 3
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+}
+
+# The restore's result as one ``IC_PITR_RESTORE`` line.
+result_line() {
+    echo "IC_PITR_RESTORE $(tr '\n' ' ' < "$RESTORE/result")"
 }
 
 case "$op" in
@@ -417,7 +462,14 @@ EOF
         [ -x "$W/run" ] || ic_die "continuous recovery is not installed here"
         running "$AGENT" || ic_die "the pitr agent is not running"
         echo "$job" > "$RESTORE/lock"
-        rm -f "$RESTORE/result"
+        # Read after the lock is written, as restore-cancel writes its
+        # mark before it reads the lock: a cancel that comes while this
+        # starts is seen by one of the two.
+        if [ "$(cat "$RESTORE/cancel" 2>/dev/null)" = "$job" ]; then
+            rm -f "$RESTORE/lock"
+            ic_die "the restore of job $job was cancelled before it started; nothing was changed"
+        fi
+        rm -f "$RESTORE/result" "$RESTORE/armed"
         # The process runs from copies: the job's script directory goes
         # when the job ends.
         rm -rf "${RESTORE:?}/bin"
@@ -439,9 +491,43 @@ EOF
         # variables.
         user="$1"; job="$2"; cluster="$3"; backup="$4"; timeline="$5"; target="$6"; since="$7"
         recovery="pitr-recovery-$job"
+        fetcher="pitr-fetch-$job"
         stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-        state=starting; swapped=0; promoted=0; new_timeline=""; promoted_at=0; fs=no
+        state=starting; staged=0; promoted=0; new_timeline=""; promoted_at=0; fs=no
+        # The step running in the background (``background``), if any.
+        child=""
         say() { printf '[incubacloud] %s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+        # Run a long step in the background, in a process group of its
+        # own, and wait for it. bash runs a trap only once the command in
+        # the foreground ends: a cancel (TERM) would wait for the end of a
+        # fetch of hours, or of a drain of five minutes. A ``wait`` is cut
+        # short by it, and ``finish`` takes the step down (``stop_step``).
+        #   $@  the command
+        background() {
+            local rc=0
+            set -m
+            "$@" &
+            child=$!
+            set +m
+            wait "$child" || rc=$?
+            child=""
+            return "$rc"
+        }
+        # Take down the step running in the background and whatever it
+        # started (the drain's docker compose exec): its whole process
+        # group, gone before anything else touches the stack. Up to 10 s
+        # for them to end on the TERM, then killed.
+        stop_step() {
+            [ -n "$child" ] || return 0
+            kill -TERM -- "-$child" 2>/dev/null
+            for _ in $(seq 1 50); do
+                kill -0 -- "-$child" 2>/dev/null || break
+                sleep 0.2
+            done
+            kill -KILL -- "-$child" 2>/dev/null
+            wait "$child" 2>/dev/null
+            child=""
+        }
         # A script on the data directory, in a container of the db
         # service, as root, with $PGDATA set.
         #   $1     the script
@@ -459,8 +545,12 @@ EOF
             in_db '
                 set -eu
                 D="$PGDATA"; old="$D/.pre-pitr-$IC_STAMP"; bad="$D/.pitr-failed-$IC_STAMP"
-                # Nothing was moved yet: the data is as it was.
-                [ -d "$old" ] || exit 0
+                # Nothing was moved yet: the data is as it was, and what
+                # was fetched beside it goes.
+                if [ ! -d "$old" ]; then
+                    rm -rf "$D/.pitr-new"
+                    exit 0
+                fi
                 mkdir "$bad"
                 for f in "$D"/* "$D"/.[!.]*; do
                     [ -e "$f" ] || continue
@@ -474,16 +564,29 @@ EOF
                 rmdir "$old"; rm -rf "$bad"' -e "IC_STAMP=$stamp"
         }
         finish() {
-            local rc=$? stopped_at="$state"
+            local rc=$? stopped_at="$state" cancelled=0
             set +e
-            docker rm -f "$recovery" >/dev/null 2>&1
+            # Nothing cuts the clean-up short: a second cancel is noted.
+            trap 'say "a cancel came as the restore ends: it ends as it is"' TERM HUP INT
+            # The containers first (their clients then end), then the step
+            # in the background and what it started: none of it may still
+            # write to the data or call compose once the stack comes up.
+            docker rm -f "$recovery" "$fetcher" >/dev/null 2>&1
+            stop_step
+            if [ "$(cat "$RESTORE/cancel" 2>/dev/null)" = "$job" ]; then
+                cancelled=1
+            fi
             if [ "$state" != "done" ] && [ "$state" != "db-only" ]; then
-                say "the restore stopped at '$state' (exit $rc)"
+                if [ "$cancelled" -eq 1 ]; then
+                    say "the restore was cancelled at '$state'"
+                else
+                    say "the restore stopped at '$state' (exit $rc)"
+                fi
                 if [ "$promoted" -eq 1 ]; then
                     # The restored database is in place; what came after
                     # it did not finish.
                     state=db-only
-                elif [ "$swapped" -eq 1 ]; then
+                elif [ "$staged" -eq 1 ]; then
                     if rollback; then state="failed"; else state="failed-unknown"; fi
                 else
                     state=failed
@@ -499,8 +602,12 @@ EOF
                 echo "timeline=$new_timeline"
                 echo "promoted_at=$promoted_at"
                 echo "filestore=$fs"
+                echo "cancelled=$cancelled"
             } > "$RESTORE/result"
-            rm -f "$RESTORE/lock" "$RESTORE/pid"
+            rm -f "$RESTORE/lock" "$RESTORE/pid" "$RESTORE/armed"
+            if [ "$cancelled" -eq 1 ]; then
+                rm -f "$RESTORE/cancel"
+            fi
             say "restore ended: $state"
         }
         trap finish EXIT
@@ -508,6 +615,9 @@ EOF
         trap 'exit 130' INT
         trap 'exit 143' TERM
         echo "$$" > "$RESTORE/pid"
+        # restore-cancel sends its TERM once this is here: before the
+        # traps, a TERM would end the process without a word.
+        touch "$RESTORE/armed"
 
         say "restoring to $target UTC from $backup (cluster $cluster, timeline $timeline)"
         state=stopping-odoo
@@ -516,20 +626,23 @@ EOF
         # What the database has not handed over yet is archived too, so
         # the present can be gone back to as well. Odoo is stopped first:
         # nothing is written after it.
-        bash "$0" drain "$dir" "$user" 300
+        background bash "$0" drain "$dir" "$user" 300
         state=fetching
         docker compose stop db
         # From here a failure puts back whatever was moved, however far
-        # the swap got (nothing, when it had not started).
-        swapped=1
+        # the swap got, and drops what was fetched beside the data.
+        staged=1
         # Fetched beside the current data, then swapped in: wal-g only
         # fetches into an empty directory, and the current data stays
         # whole until the restored copy has come up. Room for a second
-        # copy of the data as it is now, and a margin.
+        # copy of the data as it is now, and a margin. In the background,
+        # in a container with a name of its own that only writes
+        # .pitr-new: a cancel stops it at once.
+        docker rm -f "$fetcher" >/dev/null 2>&1 || true
         # shellcheck disable=SC2016  # expanded in the container
-        in_db '
+        background in_db '
             set -eu
-            D="$PGDATA"; new="$D/.pitr-new"; old="$D/.pre-pitr-$IC_STAMP"
+            D="$PGDATA"; new="$D/.pitr-new"
             for f in "$D"/.pre-pitr-*; do
                 [ -e "$f" ] || continue
                 echo "[incubacloud] ERROR: $f is left from an earlier restore; check it and remove it by hand" >&2
@@ -549,7 +662,16 @@ EOF
             rm -rf "$new"; mkdir "$new"; chown postgres:postgres "$new"; chmod 700 "$new"
             if ! su postgres -s /bin/sh -c "/opt/walg/run backup-fetch $new $IC_BACKUP"; then
                 rm -rf "$new"; exit 1
-            fi
+            fi' \
+            --name "$fetcher" -v "$dir/$ENVF:/run/pitr.env:ro" \
+            -e "IC_CLUSTER=$cluster" -e "IC_BACKUP=$backup"
+        # The swap only renames, in the foreground: a cancel waits for it
+        # (a moment) and never finds it half done.
+        state=swapping
+        # shellcheck disable=SC2016  # expanded in the container
+        in_db '
+            set -eu
+            D="$PGDATA"; new="$D/.pitr-new"; old="$D/.pre-pitr-$IC_STAMP"
             mkdir "$old"
             for f in "$D"/* "$D"/.[!.]*; do
                 [ -e "$f" ] || continue
@@ -560,9 +682,7 @@ EOF
                 [ -e "$f" ] || continue
                 mv "$f" "$D/"
             done
-            rmdir "$new"' \
-            -v "$dir/$ENVF:/run/pitr.env:ro" \
-            -e "IC_STAMP=$stamp" -e "IC_CLUSTER=$cluster" -e "IC_BACKUP=$backup"
+            rmdir "$new"' -e "IC_STAMP=$stamp"
         say "restored copy in place; the previous data is kept until it comes up"
         state=recovering
         # Recovery settings for this start only; reset once promoted.
@@ -598,6 +718,10 @@ EOF
             st="$(docker exec "$recovery" psql -U "$user" -d postgres -Atqc \
                 "SELECT pg_is_in_recovery()" 2>/dev/null || true)"
             if [ "$st" = "f" ]; then
+                # From here a cancel undoes nothing: the restore goes on to
+                # the end, filestore included, rather than leave files half
+                # restored behind a database that replaced the previous one.
+                trap 'say "a cancel came once the restored database was up: the restore goes on to the end"' TERM
                 promoted=1
                 break
             fi
@@ -648,37 +772,79 @@ EOF
         job="$1"; max="$2"
         [[ "$job" =~ ^[0-9]+$ ]] || ic_die "bad job: $job"
         [[ "$max" =~ ^[0-9]+$ ]] || ic_die "bad wait: $max"
-        shown=0; waited=0
-        while :; do
-            if [ -f "$RESTORE/log" ]; then
-                lines="$(wc -l < "$RESTORE/log")"
-                if [ "$lines" -gt "$shown" ]; then
-                    sed -n "$((shown + 1)),${lines}p" "$RESTORE/log"
-                    shown="$lines"
-                fi
-            fi
-            grep -qx "job=$job" "$RESTORE/result" 2>/dev/null && break
-            pid="$(cat "$RESTORE/pid" 2>/dev/null || true)"
-            if [ "$(cat "$RESTORE/lock" 2>/dev/null)" != "$job" ] \
-                    || ! { [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; }; then
-                # Read once more: it may have ended between the two checks.
-                grep -qx "job=$job" "$RESTORE/result" 2>/dev/null && break
-                echo "IC_PITR_RESTORE state=lost"
-                ic_die "no restore of job $job is running here, and none ended: see $dir/$RESTORE/log"
-            fi
-            if [ "$waited" -ge "$max" ]; then
+        rc=0
+        follow_restore "$job" "$max" 0 || rc=$?
+        case "$rc" in
+            3)
                 # Not a failure: the next job follows it.
                 echo "IC_PITR_RESTORE state=running"
-                exit 0
-            fi
-            sleep 5
-            waited=$((waited + 5))
-        done
-        echo "IC_PITR_RESTORE $(tr '\n' ' ' < "$RESTORE/result")"
+                exit 0 ;;
+            4)
+                # Whose lock is left, if any: the job's own is a restore
+                # that is lost, another's or none says nothing of it ran.
+                echo "IC_PITR_RESTORE state=lost lock=$(cat "$RESTORE/lock" 2>/dev/null || echo none)"
+                ic_die "no restore of job $job is running here, and none ended: see $dir/$RESTORE/log" ;;
+        esac
+        result_line
         case "$(sed -n 's/^state=//p' "$RESTORE/result")" in
             done) exit 0 ;;
             db-only) exit 2 ;;
             *) exit 1 ;;
+        esac
+        ;;
+
+    restore-cancel)
+        ic_require_args 2 "$#" "pitr.sh restore-cancel <dir> <job> <max_s>"
+        job="$1"; max="$2"
+        [[ "$job" =~ ^[0-9]+$ ]] || ic_die "bad job: $job"
+        [[ "$max" =~ ^[0-9]+$ ]] || ic_die "bad wait: $max"
+        mkdir -p "$RESTORE"
+        shown=0
+        if [ -f "$RESTORE/log" ]; then
+            shown="$(wc -l < "$RESTORE/log")"
+        fi
+        # The mark first, the lock read after it: restore-start does the
+        # other way round, so a restore starting now sees the mark and
+        # refuses, or this sees its lock.
+        echo "$job" > "$RESTORE/cancel"
+        printf '[incubacloud] %s cancel asked (job %s)\n' "$(date -u +%H:%M:%S)" "$job" >> "$RESTORE/log"
+        if [ "$(cat "$RESTORE/lock" 2>/dev/null)" = "$job" ]; then
+            # A restore that just started sets its traps a moment after
+            # its lock (``armed``).
+            for _ in $(seq 1 10); do
+                [ -e "$RESTORE/armed" ] && break
+                pid="$(cat "$RESTORE/pid" 2>/dev/null || true)"
+                if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+                    break
+                fi
+                sleep 1
+            done
+            # To the process alone: it stops what it runs and puts back
+            # what it changed (``finish``). Its group would take the
+            # containers' clients down before it could.
+            pid="$(cat "$RESTORE/pid" 2>/dev/null || true)"
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                kill -TERM "$pid" 2>/dev/null || true
+            fi
+        fi
+        rc=0
+        follow_restore "$job" "$max" "$shown" || rc=$?
+        case "$rc" in
+            0) result_line ;;
+            # Still undoing when the wait ended: the next job follows it.
+            3) echo "IC_PITR_RESTORE state=running" ;;
+            *)
+                holder="$(cat "$RESTORE/lock" 2>/dev/null || true)"
+                if [ "$holder" = "$job" ]; then
+                    # Its process is gone and it wrote no result.
+                    echo "IC_PITR_RESTORE state=lost"
+                elif [ -n "$holder" ]; then
+                    # Another job's restore holds the instance: this one
+                    # never started, and that one goes on.
+                    echo "IC_PITR_RESTORE state=none held_by=$holder"
+                else
+                    echo "IC_PITR_RESTORE state=none"
+                fi ;;
         esac
         ;;
 
