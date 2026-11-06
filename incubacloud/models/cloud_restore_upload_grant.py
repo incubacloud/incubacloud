@@ -133,11 +133,14 @@ class CloudRestoreUploadKey(models.Model):
     _name = "cloud.restore.upload.key"
     _description = "Public key that opened an upload door"
 
-    _fingerprint_uniq = models.Constraint(
-        "unique (fingerprint)",
-        "That key already opened an upload door: generate a new one for "
-        "each upload.",
-    )
+    _sql_constraints = [
+        (
+            'fingerprint_uniq',
+            "unique (fingerprint)",
+            "That key already opened an upload door: generate a new one for "
+            "each upload.",
+        ),
+    ]
 
     fingerprint = fields.Char(required=True, readonly=True)
 

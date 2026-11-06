@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { user } from "@web/core/user";
 import { agoText, parseUTC, userLocale } from "@incubacloud/utils/dates";
 
@@ -131,7 +131,7 @@ describe("userLocale", () => {
 });
 
 describe("agoText", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("under a minute is just now", () => {
         expect(String(agoText(0))).toBe("just now");

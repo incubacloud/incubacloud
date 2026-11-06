@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { MultiSelect } from "@incubacloud/components/multi_select/multi_select";
 
 /**
@@ -48,7 +48,7 @@ function key(name) {
 }
 
 describe("MultiSelect", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("is generic: options, values and a change callback", () => {
         expect(MultiSelect.template).toBe("incubacloud.MultiSelect");

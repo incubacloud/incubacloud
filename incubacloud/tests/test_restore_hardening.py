@@ -391,7 +391,8 @@ class TestTheLinkLeavesThePayload(RestoreFixture, TransactionCase):
     def setUp(self):
         """The fixture, and a production with a backup destination."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self._restore_fixture()
         self.production = self._instance(
             "hardening-prod", environment="production",
@@ -1192,7 +1193,8 @@ class TestAnAgentsLinkRules(RestoreFixture, TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self._restore_fixture("198.51.100.47")
         self.managed = self.env["cloud.host"].create({
             "name": "managed-public", "ip_address": "93.184.216.40",

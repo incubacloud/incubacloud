@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { AssistantSettingsTab } from "@incubacloud_assistant/settings/assistant_settings_tab";
 
@@ -80,7 +80,7 @@ function server(answers) {
 }
 
 describe("Settings → Assistant", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     describe("the switch", () => {
         test("waits for a key, its models, the models chosen and the box", () => {

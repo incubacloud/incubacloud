@@ -24,7 +24,7 @@ class TestNavCountsRoute(HttpCase):
         ):
             self.env['res.users'].create({
                 'name': login, 'login': login, 'password': login,
-                'group_ids': [(6, 0, [self.env.ref(g).id for g in groups])],
+                'groups_id': [(6, 0, [self.env.ref(g).id for g in groups])],
             })
 
     def _call(self, route):

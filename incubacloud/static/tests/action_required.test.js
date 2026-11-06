@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
 import { AlertHistory } from "@incubacloud/components/alert_history/alert_history";
@@ -24,14 +24,14 @@ const HELD_BY_DEPLOY = {
 
 describe("Action required — the reason", () => {
     test("a failed deploy holding the queue says so", () => {
-        allowTranslations();
+        patchTranslations();
         expect(String(holdReason(HELD_BY_DEPLOY))).toBe(
             "Waiting: the previous deploy failed. Retry it or resolve its alert.",
         );
     });
 
     test("each failure that holds a queue is named, any other is generic", () => {
-        allowTranslations();
+        patchTranslations();
         const failed = (type) => String(holdReason({
             action_alert_code: "job_failed", action_job_type_code: type,
         }));
@@ -46,7 +46,7 @@ describe("Action required — the reason", () => {
     });
 
     test("a conflict says which, and any other alert reads the same", () => {
-        allowTranslations();
+        patchTranslations();
         expect(String(holdReason({ action_alert_code: "pip_conflict" }))).toMatch(/Python dependencies/);
         expect(String(holdReason({ action_alert_code: "addon_conflict" }))).toMatch(/more than one repository/);
         expect(String(holdReason({ action_alert_code: "cert_expiring" }))).toBe(
@@ -56,7 +56,7 @@ describe("Action required — the reason", () => {
     });
 
     test("both job lists say it the same way", () => {
-        allowTranslations();
+        patchTranslations();
         for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
             expect(String(proto.holdReason(HELD_BY_DEPLOY))).toBe(String(holdReason(HELD_BY_DEPLOY)));
         }

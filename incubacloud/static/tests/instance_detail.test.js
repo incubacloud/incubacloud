@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import {
     newestSeries,
@@ -1014,7 +1014,7 @@ describe("InstanceDetail — Recent requests table", () => {
     });
 
     test("the count says N, or N of M once something is filtered out", () => {
-        allowTranslations();
+        patchTranslations();
         const cmp = build();
         expect(String(cmp.requestsCountLabel)).toBe("120 requests");
         cmp.setRequestsClass("5");
@@ -1022,7 +1022,7 @@ describe("InstanceDetail — Recent requests table", () => {
     });
 
     test("a single request is counted in the singular", () => {
-        allowTranslations();
+        patchTranslations();
         const cmp = build();
         cmp.state.accessLog.entries = response.entries.slice(0, 1);
         expect(String(cmp.requestsCountLabel)).toBe("1 request");

@@ -13,7 +13,7 @@ registry or repository, and none of its code is changed.
 
 | Component | Author | Licence | How IncubaCloud uses it | Project |
 |---|---|---|---|---|
-| Odoo Community 19.0 | Odoo S.A. | [LGPL-3.0](https://www.gnu.org/licenses/lgpl-3.0.html) | The framework the panel runs on. IncubaCloud's modules are Odoo addons that depend on and extend it; Odoo is not included in this repository. | [odoo/odoo](https://github.com/odoo/odoo) |
+| Odoo Community 18.0 | Odoo S.A. | [LGPL-3.0](https://www.gnu.org/licenses/lgpl-3.0.html) | The framework the panel runs on. IncubaCloud's modules are Odoo addons that depend on and extend it; Odoo is not included in this repository. | [odoo/odoo](https://github.com/odoo/odoo) |
 | queue_job | Odoo Community Association (OCA) | [LGPL-3.0](https://www.gnu.org/licenses/lgpl-3.0.html) | Required addon for background jobs, installed unmodified from OCA's repository. | [OCA/queue](https://github.com/OCA/queue) |
 | Doodba | Tecnativa | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Base image of the panel's Odoo image and of every instance it deploys, pulled unmodified from `ghcr.io/tecnativa/doodba`. | [Tecnativa/doodba](https://github.com/Tecnativa/doodba) |
 | doodba-copier-template | Tecnativa | [BSL-1.0](https://www.boost.org/LICENSE_1_0.txt) | Template each instance's project is generated from: Copier fetches it from GitHub on the host at deploy time, at the version set in the panel's settings. | [Tecnativa/doodba-copier-template](https://github.com/Tecnativa/doodba-copier-template) |

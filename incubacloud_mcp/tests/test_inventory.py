@@ -313,7 +313,7 @@ class TestCallInventory(TransactionCase):
                 continue
             if rule.rule == SPA_RULE:
                 return None
-            if json_only and rule.endpoint.routing.get("type") != "jsonrpc":
+            if json_only and rule.endpoint.routing.get("type") != "json":
                 return None
             return rule
         return None

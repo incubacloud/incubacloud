@@ -397,7 +397,8 @@ class TestMemoryHysteresis(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Mem Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "mem-host",
@@ -967,7 +968,8 @@ class TestStateOnlyProbe(TransactionCase):
     def setUp(self):
         """An instance whose last cycle saw Odoo not answering once."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         project = self.env["cloud.project"].create({"name": "State Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "state-host",

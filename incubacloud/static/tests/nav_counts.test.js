@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { _refreshesNavCounts } from "@incubacloud/app/app";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
@@ -78,7 +78,7 @@ describe("nav counts — when a move asks them again", () => {
 
 describe("nav counts — a create or a delete asks them again", () => {
     test("a project created", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/create_project": { id: 9 } });
         const comp = standIn(ProjectDetail, {
             props: { project_id: false },
@@ -94,7 +94,7 @@ describe("nav counts — a create or a delete asks them again", () => {
     });
 
     test("a project deleted", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/delete_project": { ok: true } });
         const comp = standIn(ProjectDetail, {
             props: { project_id: 9 }, state: { form: { name: "Shop" } },
@@ -105,7 +105,7 @@ describe("nav counts — a create or a delete asks them again", () => {
     });
 
     test("a project that could not be deleted asks nothing", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/delete_project": { error: "It has instances." } });
         const comp = standIn(ProjectDetail, {
             props: { project_id: 9 }, state: { form: { name: "Shop" } },
@@ -115,7 +115,7 @@ describe("nav counts — a create or a delete asks them again", () => {
     });
 
     test("a host deleted", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/delete_host": { ok: true, job_id: false } });
         const comp = standIn(HostDetail, {
             props: { host_id: 2 },
@@ -127,7 +127,7 @@ describe("nav counts — a create or a delete asks them again", () => {
     });
 
     test("a backup destination deleted", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/delete_backup_backend": { ok: true } });
         const comp = standIn(BackupBackendDetail, {
             props: { backend_id: 3 }, state: { deleting: false },
@@ -138,7 +138,7 @@ describe("nav counts — a create or a delete asks them again", () => {
     });
 
     test("a backup destination created", async () => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/create_backup_backend": { id: 5 } });
         const comp = standIn(BackupBackendDetail, {
             props: { backend_id: false }, state: { form: { name: "R2" }, saving: false },
