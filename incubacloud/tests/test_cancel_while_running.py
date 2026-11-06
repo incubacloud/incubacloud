@@ -256,14 +256,28 @@ class TestCancelWhileRunning(TransactionCase):
         self.cjob.invalidate_recordset(['succeeded_before_cancel'])
         self.assertFalse(self.cjob.succeeded_before_cancel)
 
-    def test_a_new_attempt_clears_the_mark(self):
-        """A retry runs again from the start: what the attempt before it
-        recorded is not its own."""
+    def test_a_new_attempt_is_done_without_running_again(self):
+        """Its worker died after the success and queue_job put it back in
+        the queue: it starts still cancelled and marked, does not run
+        again, and is stored done (6-nov-2026). It ran again from the
+        start before, its mark cleared."""
         self._succeeded_then_cancelled()
         self.qjob.write({'state': 'started'})
         self.cjob.invalidate_recordset()
-        self.assertEqual(self.cjob.state, 'started')
-        self.assertFalse(self.cjob.succeeded_before_cancel)
+        self.assertEqual(self.cjob.state, 'cancelled')
+        self.assertTrue(self.cjob.succeeded_before_cancel)
+        with patch.object(
+            HostProbeExecutor, 'run', autospec=True,
+        ) as run, patch.object(
+            HostProbeExecutor, '_publish_bus', autospec=True,
+        ):
+            result = self.cjob.execute()
+        run.assert_not_called()
+        self.assertEqual(result, CANCELLED_WHILE_RUNNING)
+        self.qjob.write({'state': 'done', 'result': result})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'done')
+        self.assertEqual(self.cjob.state, 'done')
 
     def _run_with_entry(self, entry):
         """Run a probe's ``run`` with *entry* in place of its workflow.
