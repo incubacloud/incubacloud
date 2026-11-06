@@ -42,6 +42,20 @@ RESTORE_WAIT_S = 3000
 RESTORE_FOLLOW_MAX = 8
 #: Jobs that follow a restore without reaching the host, before giving up.
 RESTORE_UNREACHABLE_MAX = 8
+#: How long a cancel waits on the host for the restore to stop and put
+#: back what it changed, in the job's own run (a worker of the job runner):
+#: a phase stops in seconds and a rollback only renames, so most cancels
+#: end within it; one that does not is followed by the next job.
+CANCEL_WAIT_S = 300
+#: The same wait outside the job's run: the reconciliation of lost jobs
+#: (``cloud.job._cron_reconcile_lost_jobs``) runs it in the cron thread
+#: the other crons wait for, and stops starting clean-ups once a pass
+#: took 60 s (``_RECONCILE_HOOK_BUDGET_S``). Within that budget, with the
+#: connection and the upload; a longer undo is followed by the next job.
+CANCEL_WAIT_OUTSIDE_RUN_S = 30
+#: What the connection, the upload and the host's first wait for the
+#: process (up to 10 s) add to a cancel's wait.
+CANCEL_SSH_MARGIN_S = 120
 
 _CLUSTER_RE = re.compile(r"^IC_PITR_CLUSTER (\d+)", re.MULTILINE)
 _BASES_RE = re.compile(r"^IC_PITR_BASES (\d+) (\[.*\])\s*$", re.MULTILINE)
@@ -637,6 +651,11 @@ class PitrRestoreExecutor(_PitrExecutor):
     #: Set by ``before_execute``: this job's restore already runs, or ran,
     #: on the host (the job is running again), so it only follows it.
     _rejoined = False
+    #: Set by ``before_execute`` once the host said no restore of this job
+    #: is there. Unset with no plan, the run never learnt whether one was
+    #: started: an executor built anew for a lost job
+    #: (``JobWorkerLost``), or a run whose question to the host failed.
+    _probed = False
 
     def _target(self):
         """The payload's target, checked (naive UTC)."""
@@ -669,6 +688,9 @@ class PitrRestoreExecutor(_PitrExecutor):
             self._rejoined = True
             self._sys("This job's restore is already on the host: following it.")
             return
+        # A lock of its own with no process is a restore of this job that
+        # was lost: not "nothing there".
+        self._probed = known.get("lock") != str(self.job.id)
         command = self.run_script("pitr.sh", ["list", d, user])
         result = await transport.run(command, timeout=300)
         cluster, bases = parse_bases(result.stdout)
@@ -788,15 +810,33 @@ class PitrRestoreExecutor(_PitrExecutor):
             return
         self._restored(result)
         self._pitr_resolve(ALERT_FAILING)
+        if result.get("cancelled") == "1":
+            self._sys(
+                "The cancel came once the restored database was up: the "
+                "restore had already been applied, and went on to the end."
+            )
         self._sys(f"✓ '{inst.name}' restored to {self._target()} UTC.")
 
     async def on_failure(self, results, errors):
-        """Say what state the instance was left in, which the host recorded."""
+        """Say what state the instance was left in, which the host recorded.
+
+        A restore a person cancelled and the host put back (``cancelled=1``)
+        ended as asked: its database is as it was, and no alert is raised.
+        """
         self._log_errors(errors)
         inst = self._inst()
         result = parse_restore(_stdout(results))
         state = result.get("state")
         when = self._target()
+        if state == "failed" and result.get("cancelled") == "1":
+            inst.sudo().write(inst._running_confirmed_vals())
+            self._sys(
+                f"✓ The restore of '{inst.name}' was cancelled at "
+                f"'{result.get('stopped_at', '?')}' and undone: its database "
+                f"is as it was and it runs again."
+            )
+            self._pitr_resolve(ALERT_FAILING)
+            return
         if state == "db-only":
             self._restored(result)
             message = (
@@ -825,35 +865,228 @@ class PitrRestoreExecutor(_PitrExecutor):
             )
         self._pitr_alert(ALERT_FAILING, message, level="critical")
 
-    async def on_cancelled_running(self, results, exc):
-        """Stop following the restore, which goes on on the host if it started.
+    def _in_own_run(self):
+        """Whether a hook runs inside the job's own run (``run``).
 
-        The failure path would queue another job to follow it
-        (``on_abort``) or read a verdict into a wait cut short
-        (``on_failure``); a person stopped the following. The restore,
-        once started, runs on the host on its own, and the watch records
-        how it ends.
+        Not for an executor built anew by the reconciliation of lost jobs
+        (``cloud.job._cron_reconcile_lost_jobs``), nor for a job closed
+        before its attempt began (``cloud.job._close_stopped_before_run``):
+        both call the hook through ``asyncio.run``, outside ``run``'s loop.
+
+        :rtype: bool
+        """
+        return self._loop is not None
+
+    async def _live_line(self, line):
+        """Log a line of the host's answer and write it to the job log now.
+
+        A terminal hook runs outside ``run``'s ticks, which write the log
+        while the steps run: the person who cancelled sees the host undo
+        the restore as it does.
+
+        :param str line: a line of the command's output, stripped
+        """
+        await self.on_stdout(line)
+        if self._flush_logs():
+            self._publish_bus()
+
+    async def _ask_host(self, args, timeout):
+        """Run ``pitr.sh <args>`` on the job's host, on a connection of its own.
+
+        A terminal hook after a stop finds the run's connection closed and
+        its directory removed, or there never was one (an executor built
+        anew): a new directory, the scripts uploaded to it, and everything
+        removed once the host answered.
+
+        :param list args: the arguments of ``pitr.sh``
+        :param int timeout: seconds the command may take
+        :return: the command's ``CommandResult``
+        :raise Exception: whatever the connection or the command raised
+        """
+        self._job_dir_path = None
+        self._job_dir_created = False
+        self._scripts_uploaded = False
+        command = self.run_script("pitr.sh", args)
+        async with self._host_record.get_transport() as transport:
+            try:
+                await self._upload_scripts(transport)
+                return await transport.execute(
+                    command, self._live_line, self._live_line, timeout=timeout,
+                )
+            finally:
+                await self._discard_staging(transport)
+
+    async def on_cancelled_running(self, results, exc):
+        """Stop the restore on the host and wait for it to put back what it did.
+
+        Always asked of the host, whatever the run reached: the restore
+        runs there on its own, and an executor built anew (the
+        reconciliation, a job stopped before its attempt) knows nothing of
+        the run that started it. ``restore-cancel`` sends the restore's
+        process a TERM, which stops the phase it is in and puts the
+        previous data back, and waits for its result; it answers ``none``
+        when nothing of this job's started, and asks again of a restore it
+        already stopped. From the promotion of the restored database the
+        restore goes on to the end instead (``done``).
+
+        The hook holds the job's queue while it waits (``_scope_busy``
+        counts a cancelled job whose queue.job runs). One the host has not
+        finished undoing within the wait, or that could not be asked, is
+        handed to a job of the same type, which follows it to its end
+        (``_follow_on``). Alerts are raised again, for what the stop left
+        (``ic_job_cancelled``).
+
+        :param results: what the steps answered, or None before them
+        :param JobCancelled exc: the stop
         """
         self._sys(f"✗ {CANCELLED_WHILE_RUNNING}")
-        following = (self.job.payload or {}).get("follow") or self._rejoined
-        # Once the steps began, the first may have started it.
-        if following or results is not None:
+        self.job = self.job.with_context(ic_job_cancelled=False)
+        self.env = self.job.env
+        inst = self._inst()
+        d, _user = self._common()
+        wait = CANCEL_WAIT_S if self._in_own_run() else CANCEL_WAIT_OUTSIDE_RUN_S
+        self._sys(
+            f"Asking the host to stop the restore of '{inst.name}' and put "
+            f"back what it changed; waiting up to {wait} s."
+        )
+        self._flush_logs()
+        try:
+            answer = await self._ask_host(
+                ["restore-cancel", d, self._followed(), wait],
+                timeout=wait + CANCEL_SSH_MARGIN_S,
+            )
+        except Exception as err:  # noqa: BLE001 — said, and followed
+            self._cancel_unanswered(f"{type(err).__name__}: {err}")
+            return
+        result = parse_restore(answer.stdout)
+        if not result.get("state"):
+            self._cancel_unanswered(f"exit {answer.exit_status}, no answer")
+            return
+        self._judge_cancel(result)
+
+    def _cancel_unanswered(self, why):
+        """The host could not be told to stop the restore, or did not answer.
+
+        Whether it got the stop is unknown: the next job follows the
+        restore to its end, and the alert says not to touch the instance.
+
+        :param str why: what went wrong, for the log
+        """
+        inst = self._inst()
+        self._sys(f"✗ The host could not be told to stop the restore: {why}.")
+        followed = self._follow_on(reached=False)
+        self._pitr_alert(
+            ALERT_FAILING,
+            f"The restore of '{inst.name}' was cancelled, but its host could "
+            f"not be asked to stop it: it may still be running"
+            f"{', and the next job follows it' if followed else ''}. Check "
+            f".walg/restore/log there before touching the instance.",
+            level="critical",
+        )
+
+    def _judge_cancel(self, result):
+        """Record how a cancelled restore ended on the host, and say so.
+
+        :param dict result: the ``IC_PITR_RESTORE`` fields of
+            ``restore-cancel``
+        """
+        inst = self._inst()
+        state = result.get("state")
+        when = self._target()
+        if state == "failed":
+            # ``finish`` started the stack again: a stop the metrics cron
+            # reads now is the restart.
+            inst.sudo().write(inst._running_confirmed_vals())
+            self._pitr_resolve(ALERT_FAILING)
+            if result.get("cancelled") == "1":
+                self._sys(
+                    f"✓ The restore was stopped at "
+                    f"'{result.get('stopped_at', '?')}' and undone: the "
+                    f"database of '{inst.name}' is as it was before it, and "
+                    f"the instance runs again."
+                )
+            else:
+                self._sys(
+                    f"The restore had already failed at "
+                    f"'{result.get('stopped_at', '?')}' on its own: the "
+                    f"database of '{inst.name}' is as it was, and the "
+                    f"instance runs again."
+                )
+        elif state == "none":
+            self._sys("The restore had not started on the host: nothing changed.")
+            if result.get("held_by"):
+                self._sys(
+                    f"Another restore (job {result['held_by']}) holds the "
+                    f"instance there, and goes on."
+                )
+        elif state == "done":
+            self._restored(result)
+            self._pitr_resolve(ALERT_FAILING)
             self._sys(
-                "A restore started on the host goes on: no job follows it, "
-                "the watch records how it ends. Check .walg/restore/log there "
-                "before touching the instance."
+                f"The restore had already been applied when the cancel came: "
+                f"'{inst.name}' is restored to {when} UTC, its files with it."
+            )
+        elif state == "db-only":
+            self._restored(result)
+            self._sys("The restore had already been applied when the cancel came.")
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"'{inst.name}' was restored to {when} UTC before its cancel "
+                f"came, but not its files: attachments may be missing. See "
+                f"the job's log.",
+                level="critical",
+            )
+        elif state == "running":
+            self._follow_on()
+            self._sys(
+                "The host is still undoing the restore; the next job follows "
+                "it to its end."
+            )
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"The cancelled restore of '{inst.name}' is still being "
+                f"undone on its host; a job follows it to its end. Do not "
+                f"touch the instance meanwhile.",
+            )
+        elif state == "lost":
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"The cancelled restore of '{inst.name}' stopped without "
+                f"finishing: its process is gone and its lock is left. The "
+                f"instance may be stopped. Check .walg/restore/log on its "
+                f"host, then remove .walg/restore/lock there.",
+                level="critical",
+            )
+        else:
+            # ``failed-unknown``: the previous data could not be put back.
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"The cancelled restore of '{inst.name}' ended in an unknown "
+                f"state ({state}): the previous data could not be put back. "
+                f"Do not touch the instance: read .walg/restore/log on its "
+                f"host, and look for .pre-pitr-* and .pitr-failed-* in its "
+                f"database's data directory, which hold the data from "
+                f"before the restore and the restored copy.",
+                level="critical",
             )
 
     async def on_abort(self, exc):
         """No base copy, or the job stopped while following the restore.
 
-        Before anything started (no plan, not following) nothing changed.
-        Otherwise the restore may still be running on the host: another
-        job follows it, or the alert says to look.
+        Before anything started (no plan, not following, the host said
+        nothing of this job was there) nothing changed. Otherwise the
+        restore may still be running on the host: another job follows it,
+        or the alert says to look.
+
+        An executor that never asked the host — built anew for a job whose
+        worker died (``JobWorkerLost``), or whose question failed — asks it
+        now (``_abort_unknown``).
         """
         self._sys(f"✗ {type(exc).__name__}: {exc}")
         following = (self.job.payload or {}).get("follow") or self._rejoined
         if not (self._plan or following):
+            if not self._probed:
+                await self._abort_unknown()
             return
         inst = self._inst()
         if self._follow_on(reached=False):
@@ -866,3 +1099,48 @@ class PitrRestoreExecutor(_PitrExecutor):
             f"check .walg/restore/log there before touching the instance.",
             level="critical",
         )
+
+    async def _abort_unknown(self):
+        """Ask the host what became of this job's restore, and act on it.
+
+        For a job that ended without knowing whether its restore started:
+        one still running is followed by the next job, one that ended is
+        recorded as a wait for it would have, and nothing is done when no
+        restore of this job is there. A host that cannot be asked leaves
+        the restore to the next job, which gives it up in the end.
+        """
+        d, _user = self._common()
+        try:
+            answer = await self._ask_host(
+                ["restore-wait", d, self._followed(), 0], timeout=120,
+            )
+        except Exception as err:  # noqa: BLE001 — said, and followed
+            self._sys(
+                f"✗ The host could not be asked whether this job's restore "
+                f"started: {type(err).__name__}: {err}."
+            )
+            if self._follow_on(reached=False):
+                self._sys("The restore may go on on the host; the next job follows it.")
+            return
+        result = parse_restore(answer.stdout)
+        state = result.get("state")
+        if not state:
+            self._sys(
+                f"✗ The host gave no answer about this job's restore "
+                f"(exit {answer.exit_status})."
+            )
+            if self._follow_on(reached=False):
+                self._sys("The restore may go on on the host; the next job follows it.")
+        elif state == "running":
+            self._follow_on()
+            self._sys("This job's restore goes on on the host; the next job follows it.")
+        elif state == "lost" and result.get("lock") != str(self._followed()):
+            self._sys("No restore of this job is on the host: nothing changed.")
+        else:
+            results = {"Wait for the restore": {
+                "stdout": answer.stdout, "exit_status": answer.exit_status,
+            }}
+            if answer.exit_status == 0:
+                await self.on_success(results)
+            else:
+                await self.on_failure(results, [])
