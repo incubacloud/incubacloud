@@ -444,6 +444,7 @@ class McpServer(models.AbstractModel):
                 self._record_by_key,
             )
             tools = self.env["incubacloud.mcp.tools"]
+            tools._check_records(args)
             prepare = getattr(tools, f"_prepare_{spec.name}", None)
             if prepare:
                 args = prepare(args)

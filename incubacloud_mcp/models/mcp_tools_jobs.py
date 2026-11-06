@@ -74,6 +74,16 @@ RETRY_ASKS = frozenset(
 )
 #: What ``save_user_preferences`` takes besides its secrets, by the names
 #: the tool gives them.
+def _preference(preferences, field):
+    """Return one preference as ``get_user_preferences`` answers it, to compare.
+
+    The muted projects come back as records, compared by their ids.
+    """
+    if field == "cloud_muted_project_ids":
+        return sorted(p["id"] for p in preferences.get("cloud_muted_projects") or [])
+    return preferences.get(field)
+
+
 PREFERENCE_FIELDS = {
     "notification_level": "cloud_notification_level",
     "notification_mode": "cloud_notification_mode",
@@ -670,22 +680,58 @@ class McpToolsJobs(models.AbstractModel):
 
     @api.model
     def _tool_update_notification_preferences(self, args):
-        """Save the preferences given, keeping the rest; or run a Telegram check."""
+        """Save the preferences given, keeping the rest; or run a Telegram check.
+
+        A save answers ``changed``, the preferences now otherwise, and
+        ``not_muted``, the projects asked for that the route leaves out
+        (those the user cannot see); one given none is refused.
+        """
         action = args.get("action") or "save"
+        given = {
+            name: field for name, field in PREFERENCE_FIELDS.items() if name in args
+        }
+        if action != "save" and given:
+            raise UserError(
+                self.env._(
+                    "The action %s changes no preference: give it without them.",
+                    action,
+                )
+            )
         if action == "detect_telegram_chat":
             return self._route("/cloud/telegram_detect_chat_id")
         if action == "send_telegram_test":
             return self._route("/cloud/telegram_send_test")
+        if not given:
+            raise UserError(
+                self.env._("Nothing to change: give the preferences to change.")
+            )
         current = self._route("/cloud/get_user_preferences")
         params = {
             "cloud_notification_level": current.get("cloud_notification_level"),
             "cloud_notification_mode": current.get("cloud_notification_mode"),
         }
-        params.update(
-            {
-                field: args[name]
-                for name, field in PREFERENCE_FIELDS.items()
-                if name in args
-            }
+        params.update({field: args[name] for name, field in given.items()})
+        result = self._route("/cloud/save_user_preferences", **params)
+        if not isinstance(result, dict) or result.get("ok") is False:
+            return result
+        saved = self._route("/cloud/get_user_preferences")
+        changed = sorted(
+            name
+            for name, field in given.items()
+            if _preference(current, field) != _preference(saved, field)
         )
-        return self._route("/cloud/save_user_preferences", **params)
+        result = {**result, "changed": changed}
+        if "muted_project_ids" in given:
+            muted = _preference(saved, "cloud_muted_project_ids")
+            left = sorted(set(args["muted_project_ids"]) - set(muted))
+            if left:
+                result["not_muted"] = left
+                result["message"] = self.env._(
+                    "Not muted, as you cannot see them: projects %s.",
+                    ", ".join(map(str, left)),
+                )
+        if not changed and "message" not in result:
+            result["message"] = self.env._(
+                "Nothing changed: every value given was already set."
+            )
+        return result

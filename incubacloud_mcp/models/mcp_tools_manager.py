@@ -141,9 +141,37 @@ class McpToolsManager(models.AbstractModel):
             )
         if not args.get("vals"):
             raise UserError(self.env._("Give the server's fields (vals)."))
+        route = "/cloud/save_host" if host_id else "/cloud/create_host"
+        self._only_host_fields(route, args["vals"])
         if host_id:
-            return self._route("/cloud/save_host", host_id=host_id, vals=args["vals"])
-        return self._route("/cloud/create_host", vals=args["vals"])
+            return self._route(route, host_id=host_id, vals=args["vals"])
+        return self._route(route, vals=args["vals"])
+
+    @api.model
+    def _only_host_fields(self, route, vals):
+        """Refuse a field of *vals* that *route* does not write.
+
+        The routes keep the fields they know and drop the rest without a
+        word, so a misspelt field answered ok and changed nothing. What
+        they know is read from the controller that serves them, saas's
+        additions included; ``whitelist`` is written by a save only.
+
+        :raises UserError: naming the unknown fields and the accepted ones
+        """
+        controller = self.env["incubacloud.mcp.dispatch"]._controller(route)
+        allowed = set(controller._HOST_ALLOWED)
+        if route == "/cloud/save_host":
+            allowed.add("whitelist")
+        unknown = sorted(set(vals) - allowed)
+        if unknown:
+            secrets = self.env["incubacloud.mcp.secrets"]._field_names()
+            raise UserError(
+                self.env._(
+                    "Unknown server field(s): %(keys)s. Accepted: %(accepted)s.",
+                    keys=", ".join(unknown),
+                    accepted=", ".join(sorted(allowed - set(secrets))),
+                )
+            )
 
     @api.model
     def _confirm_manage_host(self, args):
