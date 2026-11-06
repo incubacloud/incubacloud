@@ -26,6 +26,7 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
+from odoo.addons.incubacloud.models.abstract_executor import JobCancelled
 from odoo.addons.incubacloud.models.delete_instance_executor import (
     DeleteInstanceExecutor,
 )
@@ -1413,6 +1414,16 @@ class TestARestore(_PitrCase):
         with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
             asyncio.run(executor.on_abort(TimeoutError("ssh")))
         self.assertEqual(enqueue.call_args.kwargs["payload"]["follow"], executor.job.id)
+
+    def test_a_restore_cancelled_while_followed_is_followed_no_more(self):
+        """A person stopped the following: no job takes it over and no
+        alert is raised; the log says the restore goes on on the host."""
+        self.registry_enter_test_mode()
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            asyncio.run(executor._dispatch_cancel(JobCancelled()))
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
 
     def test_a_restore_whose_process_runs_is_followed_however_long(self):
         """No job holding the instance would let a rebuild start a second
