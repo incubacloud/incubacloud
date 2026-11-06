@@ -46,6 +46,12 @@ minutes. The job's log shows every step; if the restored database does
 not come up, the previous data is put back and the instance started
 again, and the job says so.
 
+**Cancelling it.** **Cancel** on the restore in **Recent activity** stops it
+where it is, the previous data is put back and the instance is started
+again; the job's log says so, usually within a minute. Once the restored
+database is up, the last step, the restore is no longer undone: it
+finishes, files included, and the log says it had already been applied.
+
 !!! warning "A restore undoes everything after the moment"
     Orders, invoices, messages, anything written after the moment chosen
     is gone from the instance, though it is still in the backup taken
