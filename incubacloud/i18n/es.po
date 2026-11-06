@@ -13227,6 +13227,11 @@ msgid "Subject"
 msgstr "Asunto"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__succeeded_before_cancel
+msgid "Succeeded Before the Cancel"
+msgstr "Terminó bien antes de la cancelación"
+
+#. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.sync_direct_path
 msgid "Sync Direct Path"
 msgstr "Sincronizar camino directo"
@@ -13931,6 +13936,18 @@ msgstr ""
 "La carpeta remota de un proyecto debe ser única, sin distinguir mayúsculas "
 "de minúsculas: los directorios de sus instancias en los hosts llevan su "
 "nombre. Elija otra carpeta remota."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__succeeded_before_cancel
+msgid ""
+"The run's success hook had returned when a person's cancel reached it: the "
+"job is stored done, not cancelled (AbstractExecutor."
+"_mark_success_before_cancel). Cleared when the job starts again."
+msgstr ""
+"El hook de éxito de la ejecución ya había terminado cuando le llegó la "
+"cancelación de una persona: el trabajo se guarda como hecho, no como "
+"cancelado (AbstractExecutor._mark_success_before_cancel). Se borra cuando "
+"el trabajo vuelve a empezar."
 
 #. module: incubacloud
 #. odoo-javascript

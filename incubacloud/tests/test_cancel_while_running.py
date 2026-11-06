@@ -188,3 +188,67 @@ class TestCancelWhileRunning(TransactionCase):
         self.env['cloud.job'].invalidate_model(['state'])
         self.assertEqual(self.qjob.state, 'done')
         self.assertEqual(self.cjob.state, 'done')
+
+    def _succeeded_then_cancelled(self):
+        """``on_success`` returned, and the cancel had reached the job."""
+        self.cjob.cancel_job()
+        self.env.flush_all()
+        HostProbeExecutor(self.cjob, self.host)._mark_success_before_cancel()
+        self.cjob.invalidate_recordset(['succeeded_before_cancel'])
+        self.assertTrue(self.cjob.succeeded_before_cancel)
+
+    def test_a_success_put_back_in_the_queue_ends_done(self):
+        """The store of ``done`` collided with the flag's write: queue_job
+        postponed it, and the stop stored over it ended its chain."""
+        self._succeeded_then_cancelled()
+        self.qjob.write({
+            'state': 'pending',
+            'eta': '2026-11-06 08:12:30',
+            'date_started': False,
+            'result': 'could not serialize access due to concurrent update',
+        })
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'done')
+        self.assertTrue(self.qjob.date_done)
+        self.assertFalse(self.qjob.eta)
+        self.assertFalse(self.qjob.date_cancelled)
+        self.assertFalse(self.qjob.result)
+        self.assertEqual(self.cjob.state, 'done')
+
+    def test_a_failure_stored_after_a_success_ends_done(self):
+        """Something raised once ``on_success`` had returned: done, with no
+        failure alert."""
+        self._succeeded_then_cancelled()
+        self._queue_job_stores_the_stop(self.qjob)
+        self.assertEqual(self.qjob.state, 'done')
+        self.assertFalse(self.qjob.exc_info)
+        self.assertEqual(self.cjob.state, 'done')
+        self.assertFalse(self._failure_alerts(self.cjob))
+
+    def test_what_waits_on_a_success_is_not_cancelled(self):
+        cjob, qjob = self._started('uuid-head-ok', graph_uuid='graph-ok')
+        waiting, _waiting_q = self._started(
+            'uuid-tail-ok', graph_uuid='graph-ok', state='wait_dependencies',
+        )
+        self.cjob, self.qjob = cjob, qjob
+        self._succeeded_then_cancelled()
+        qjob.write({'state': 'pending', 'eta': '2026-11-06 08:12:30'})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(qjob.state, 'done')
+        self.assertEqual(waiting.state, 'wait_dependencies')
+
+    def test_a_success_nobody_cancelled_is_not_marked(self):
+        """The mark is written on a cancelled job alone: on another, the
+        write of its row aside would make the store of ``done`` fail."""
+        HostProbeExecutor(self.cjob, self.host)._mark_success_before_cancel()
+        self.cjob.invalidate_recordset(['succeeded_before_cancel'])
+        self.assertFalse(self.cjob.succeeded_before_cancel)
+
+    def test_a_new_attempt_clears_the_mark(self):
+        """A retry runs again from the start: what the attempt before it
+        recorded is not its own."""
+        self._succeeded_then_cancelled()
+        self.qjob.write({'state': 'started'})
+        self.cjob.invalidate_recordset()
+        self.assertEqual(self.cjob.state, 'started')
+        self.assertFalse(self.cjob.succeeded_before_cancel)

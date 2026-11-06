@@ -857,9 +857,42 @@ class AbstractExecutor(ABC):
         logger.debug(
             "[_dispatch_outcome] %s END job_id=%s", hook.__name__, self.job.id,
         )
+        if not errors:
+            self._mark_success_before_cancel()
         self._refresh_host_disk()
         if errors:
             raise RuntimeError("; ".join(errors))
+
+    def _mark_success_before_cancel(self):
+        """Record that ``on_success`` returned on a job a person cancelled.
+
+        The run is not stopped once its outcome hook started, but the stop
+        flag ``cancel_job`` committed on the job's row while it ran still
+        made the store of ``done`` fail to serialize: queue_job put the job
+        back in the queue, ``queue_job_ext`` read the flag there and stored
+        it cancelled, and ``_end_chain_after`` cancelled what followed — a
+        cutover that had cut over, then the freeze of its source
+        (6-nov-2026). With ``succeeded_before_cancel`` set, ``queue_job_ext``
+        stores ``done`` instead.
+
+        Written only on a job already cancelled: on any other, a write of
+        its row from this cursor would make that same store fail. A stop
+        committed after this read, before the job is stored, still ends it
+        cancelled. The mark is cleared when the job starts again
+        (``queue_job_ext``). Never raises: the outcome is decided.
+        """
+        try:
+            with self._durable_env() as env:
+                env.cr.execute(
+                    "UPDATE cloud_job SET succeeded_before_cancel = TRUE"
+                    " WHERE id = %s AND state = 'cancelled'",
+                    (self.job.id,),
+                )
+        except Exception as exc:  # noqa: BLE001 — logged, never fatal
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not record its success before the stop: %s",
+                self.job.id, exc,
+            )
 
     def _refresh_host_disk(self):
         """Read the job's host's disk from metrics again, if this job asks to.
