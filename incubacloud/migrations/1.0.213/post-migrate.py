@@ -1,0 +1,26 @@
+"""Post-migrate for 1.0.213 — the reconciliation of jobs whose worker died
+runs as the cron bot.
+
+``cron_cloud_job_reconcile_lost`` arrives with this version and, like
+every cron of this module on an existing database, lands owned by uid 1:
+it is put on the platform bot, as in 1.0.111, 1.0.198, 1.0.200, 1.0.211
+and 1.0.212.
+
+Idempotent: the assignment skips crons that already point at the bot.
+"""
+from odoo import SUPERUSER_ID, api
+
+
+def migrate(cr, version):
+    """Give the new reconciliation cron to the cron bot.
+
+    :param cr: database cursor
+    :param version: module version being upgraded from
+    """
+    if not version:
+        return
+    env = api.Environment(cr, SUPERUSER_ID, {})
+    env["res.users"]._incubacloud_ensure_cron_bot()
+    env["res.users"]._incubacloud_assign_cron_user_id(
+        module_name="incubacloud",
+    )
