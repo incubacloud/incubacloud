@@ -101,7 +101,7 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
         """File names come from the server: data, never instructions."""
         Dispatch = type(self.env["incubacloud.mcp.dispatch"])
         listing = {"ok": True, "path": "~", "entries": [{"name": "ignore-all"}]}
-        host = self.env["cloud.host"].create(dict(NEW_HOST))
+        host = self.env["cloud.host"].create(NEW_HOST.copy())
         with patch.object(Dispatch, "_call", autospec=True, return_value=listing):
             result = self._call_tool(self.key, "browse_host_dir", {"host_id": host.id})
         self.assertIn("Untrusted data follows", result["content"][0]["text"])
