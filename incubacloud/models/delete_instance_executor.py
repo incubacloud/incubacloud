@@ -374,10 +374,21 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             host.refresh_observability_labels(reason="instance removed")
 
     async def on_failure(self, results, errors):
+        """Report the failure, and put the instance back out of 'deleting'.
+
+        Only for a run that owns the instance's lifecycle: a teardown of a
+        copy of an instance that lives on elsewhere — the half-built
+        destination of a rolled-back move, which only reaches this hook
+        when it is cancelled — moved nothing, and its record is the live
+        instance's, which must not be marked in error for it.
+
+        :param dict results: what the steps answered
+        :param list errors: why the run failed
+        """
         for err in errors:
             self._sys(f"✗ {err}")
         inst = self._inst()
-        if inst:
+        if inst and self._owns_instance_lifecycle:
             self._alert_on_purge_failure(results, inst)
             inst.write({"status": "error"})
             # The teardown failed, so the instance is still on the host:
@@ -391,15 +402,11 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         ``before_execute`` moved the instance to 'deleting', and only
         ``on_failure`` puts it back: stopped before the first step — a
         person cancelled it, the connection dropped — it stayed there for
-        good. Not for a teardown of a copy of an instance that lives on
-        (``_owns_instance_lifecycle``): that one moved nothing, and its
-        record is the live instance's.
+        good. A teardown of a copy of an instance that lives on only
+        writes the failure to the log (``on_failure``).
 
         :param Exception exc: what stopped the run
         """
-        if not self._owns_instance_lifecycle:
-            self._sys(f"✗ {type(exc).__name__}: {exc}")
-            return
         await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
 
     def _alert_on_purge_failure(self, results, inst):
