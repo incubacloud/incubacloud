@@ -253,3 +253,45 @@ class TestCancelWhileRunning(TransactionCase):
         self.cjob.invalidate_recordset()
         self.assertEqual(self.cjob.state, 'started')
         self.assertFalse(self.cjob.succeeded_before_cancel)
+
+    def _run_with_entry(self, entry):
+        """Run a probe's ``run`` with *entry* in place of its workflow.
+
+        :param entry: coroutine function of the executor, run as
+            ``_async_entry``
+        :return: the executor
+        """
+        executor = HostProbeExecutor(self.cjob, self.host)
+        executor.sleep_interval = 0.01
+        with patch.object(
+            HostProbeExecutor, "_flush_logs", autospec=True, return_value=False,
+        ), patch.object(HostProbeExecutor, "_publish_bus", autospec=True):
+            executor._async_entry = entry.__get__(executor)
+            executor.run()
+        return executor
+
+    def test_a_stop_after_the_success_mark_is_marked_at_the_run_s_end(self):
+        """``on_success`` returned and found nothing to mark; the stop came
+        while the staging was discarded. The end of ``run`` marks it."""
+        cjob = self.cjob
+
+        async def entry(executor):
+            executor._outcome_started = executor._outcome_dispatched = True
+            cjob.cancel_job()
+            cjob.env.flush_all()
+
+        self._run_with_entry(entry)
+        self.cjob.invalidate_recordset(['succeeded_before_cancel'])
+        self.assertTrue(self.cjob.succeeded_before_cancel)
+
+    def test_a_run_whose_outcome_was_not_dealt_with_is_not_marked(self):
+        """Stopped before its outcome hook returned: no success to keep."""
+        cjob = self.cjob
+
+        async def entry(executor):
+            cjob.cancel_job()
+            cjob.env.flush_all()
+
+        self._run_with_entry(entry)
+        self.cjob.invalidate_recordset(['succeeded_before_cancel'])
+        self.assertFalse(self.cjob.succeeded_before_cancel)
