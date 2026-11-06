@@ -201,7 +201,9 @@ All remote operations are modelled as `cloud.job` records and executed asynchron
    → A run a person cancels (the flag, polled between ticks) calls
      on_cancelled_running(): on_failure() with what the steps answered,
      or on_abort() before them, without raising alerts
-     (ic_job_cancelled); the job still ends cancelled (issue #2)
+     (ic_job_cancelled); the job still ends cancelled (issue #2). The
+     flag is not read once the run has ended, nor once its outcome hook
+     has started: what ended or began to close keeps its own outcome
 
 4. Frontend (OWL)
    → Listens on bus channels cloud_jobs / cloud_overview
