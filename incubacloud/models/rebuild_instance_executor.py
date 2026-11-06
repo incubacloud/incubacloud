@@ -23,7 +23,7 @@ from odoo import fields
 from odoo.addons.queue_job.exception import RetryableJobError
 from .host_build_lock import HostBuildLockMixin
 
-from .abstract_executor import sql_escape_literal
+from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
 from .docker_prune_executor import build_cache_prune_if_low
 
@@ -41,6 +41,11 @@ _CRONS_BUSY_PATIENCE = timedelta(minutes=30)
 _CRONS_BUSY_RETRY_S = 300
 #: What a failed image build waits before its one repetition, in seconds.
 _BUILD_RETRY_WAIT_S = 60
+#: The step that rewrites the stack's files on the host, and the one that
+#: puts what they describe in service (``on_cancelled_running``).
+_LABEL_COPIER = "Update with copier"
+_LABEL_BUILD = "Rebuild Odoo image"
+_LABEL_RESTART = "Restart instance"
 
 
 def _build_retried_once(build):
@@ -128,7 +133,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             ),
             # 2. Run copier update — regenerates all config files.
             (
-                "Update with copier",
+                _LABEL_COPIER,
                 self.run_script(
                     "rebuild.sh",
                     ["copier-update", d, tmp_answers,
@@ -249,7 +254,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     step with the build, so a layer that drops the build
             #     drops the lookup with it.
             (
-                "Rebuild Odoo image",
+                _LABEL_BUILD,
                 f"{self._record_heads_command(d)} && cd {d} && "
                 + _build_retried_once(
                     "docker compose build --pull --no-cache odoo"
@@ -332,7 +337,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     corresponding service from the instance config) so they
             #     don't linger.
             (
-                "Restart instance",
+                _LABEL_RESTART,
                 f"cd {d} && docker compose up -d --remove-orphans",
             ),
             # 13. Set web.base.url and report.url in ir.config_parameter
@@ -551,9 +556,110 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         Most often nothing ran (a refused check, a host that did not
         answer) and the instance still runs its last build: the deploy's
         ``on_abort`` would mark it in error. The job log says what
-        happened; the next probe says how the instance is.
+        happened, and what an attempt that got further left on the host
+        (``_warn_unapplied``) — a run whose worker died, closed by the
+        reconciliation; the next probe says how the instance is.
         """
         self._sys(f"✗ {type(exc).__name__}: {exc}")
+        self._warn_unapplied(None)
+
+    async def on_cancelled_running(self, results, exc):
+        """A rebuild stopped by hand leaves the instance's status alone.
+
+        Until its restart step the instance runs its last build: the image
+        build and the boot test touch no live container, so the failure's
+        ``status: error`` said something untrue of a working instance
+        (6-nov-2026). What was left on the host is written to the log
+        instead (``_warn_unapplied``), and the instance's state is read
+        again now (``_refresh_state_now``): ``cloud.job`` asks for no
+        probe after a cancellation, and one that came after the restart
+        started has changed it.
+
+        :param results: what the steps answered, or None before them
+        :param JobCancelled exc: the stop
+        """
+        ran = list(results or ())
+        self._sys(
+            f"✗ {CANCELLED_WHILE_RUNNING} Steps run: {', '.join(ran)}."
+            if ran else f"✗ {CANCELLED_WHILE_RUNNING}"
+        )
+        if not self._warn_unapplied(results):
+            self._sys(
+                "The instance's status is unchanged; its state is read"
+                " again now."
+            )
+        inst = self._inst()
+        if inst:
+            inst._refresh_state_now()
+
+    def _warn_unapplied(self, results):
+        """Say in the log what a rebuild that ended unapplied left on the host.
+
+        ``copier update`` rewrites the stack's files in place — the
+        compose files and their link, the Odoo conf, ``repos.yaml``,
+        ``addons.yaml``, ``pip.txt``, the env files, the override — and
+        «Rebuild Odoo image» retags the image, which neither the boot test
+        nor «Update changed modules» has passed yet. Ended between the
+        first and «Restart instance», the instance runs its previous
+        build, but whatever recreates its containers (``docker compose up``:
+        a Start, a restore, a move) would start them with those files and
+        that image. Only a warning, decided on 6-nov-2026: a rebuild that
+        fails at the same point (the build, the boot test) leaves the
+        same, and a block that covers both belongs on the host, where
+        ``compose_op.sh up`` would honour it whatever closed the job.
+
+        :param results: what the steps answered, or None
+        :return: whether there was something to say
+        :rtype: bool
+        """
+        left = self._left_unapplied(results)
+        if left == _LABEL_BUILD:
+            self._sys(
+                "⚠ This rebuild rewrote the instance's files on its server"
+                " (copier) and may have rebuilt its image, which was neither"
+                " boot-tested nor applied to its database's modules; it"
+                " ended before restarting the instance, which runs its"
+                " previous build. Starting or restoring the instance would"
+                " recreate its containers with them: rebuild it first."
+            )
+        elif left == _LABEL_COPIER:
+            self._sys(
+                "⚠ This rebuild rewrote the instance's files on its server"
+                " (copier) and ended before restarting it: the instance runs"
+                " its previous build. Starting or restoring it would"
+                " recreate its containers with the rewritten files: rebuild"
+                " it first."
+            )
+        return bool(left)
+
+    def _left_unapplied(self, results):
+        """Return how far a rebuild got past copier without a restart after.
+
+        The last of «Update with copier», «Rebuild Odoo image» and
+        «Restart instance» that any attempt of the job started, read from
+        the job log's "Running:" lines (each attempt's, a step cut off
+        included), unless *results* holds the restart.
+
+        :param results: what the steps answered, or None
+        :return: ``_LABEL_BUILD`` or ``_LABEL_COPIER``, or None when
+            nothing is left unapplied
+        """
+        if results and _LABEL_RESTART in results:
+            return None
+        lines = {f"Running: {label}": label for label in (
+            _LABEL_COPIER, _LABEL_BUILD, _LABEL_RESTART,
+        )}
+        last = self.env["cloud.job.log.chunk"].sudo().search(
+            [("job_id", "=", self.job.id), ("content", "in", list(lines))],
+            order="id desc", limit=1,
+        )
+        label = lines.get(last.content)
+        if label == _LABEL_RESTART:
+            return None
+        if label is None and results and _LABEL_COPIER in results:
+            # The log was capped before the line.
+            return _LABEL_BUILD if _LABEL_BUILD in results else _LABEL_COPIER
+        return label
 
     async def on_failure(self, results, errors):
         for err in errors:

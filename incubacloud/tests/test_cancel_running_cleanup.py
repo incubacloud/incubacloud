@@ -15,6 +15,7 @@ from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     JobCancelled,
     JobRefused,
+    JobWorkerLost,
 )
 from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.delete_instance_executor import (
@@ -52,10 +53,23 @@ async def _answer(*_args, **_kwargs):
 class TestACancelledRunIsClosed(_DeployJobCase):
     """``run`` hands the stop to the executor's failure path."""
 
-    def _transport(self):
-        """An open connection whose commands run until they are stopped."""
+    def _transport(self, answered=0):
+        """An open connection whose commands run until they are stopped.
+
+        :param int answered: how many commands end at once, and well,
+            before the one that runs until the stop
+        """
         transport = MagicMock(spec=SSHTransport)
-        transport.execute.side_effect = _hang
+        calls = []
+
+        async def _execute(*args, **kwargs):
+            """End the first *answered* commands at once; hang on the next."""
+            calls.append(args)
+            if len(calls) <= answered:
+                return await _answer()
+            return await _hang()
+
+        transport.execute.side_effect = _execute
 
         @contextlib.asynccontextmanager
         async def _connect(_host):
@@ -63,23 +77,29 @@ class TestACancelledRunIsClosed(_DeployJobCase):
 
         return _connect
 
-    def _cancelled_run(self, executor_cls=DeployInstanceExecutor, before_steps=False):
+    def _cancelled_run(
+        self, executor_cls=DeployInstanceExecutor, before_steps=False,
+        commands=(("Initialize database", "true"),),
+    ):
         """Cancel the job, then run *executor_cls* until it sees the flag.
 
         :param bool before_steps: stop it while it prepares, before the
             first step
+        :param commands: the run's steps; all but the last end at once,
+            the last runs until the stop
         """
         self.job.cancel_job()
         self.env.flush_all()
         executor = executor_cls(self.job, self.host, sleep_interval=0.01)
         with patch.object(
-            CloudHost, "get_transport", autospec=True, side_effect=self._transport(),
+            CloudHost, "get_transport", autospec=True,
+            side_effect=self._transport(answered=len(commands) - 1),
         ), patch.object(
             executor_cls, "before_execute", autospec=True,
             side_effect=_hang if before_steps else None,
         ), patch.object(
             executor_cls, "get_commands", autospec=True,
-            return_value=[("Initialize database", "true")],
+            return_value=list(commands),
         ), patch.object(
             executor_cls, "_refresh_host_disk", autospec=True,
         ):
@@ -115,15 +135,79 @@ class TestACancelledRunIsClosed(_DeployJobCase):
         self.assertEqual(self.inst.state, "draft")
         self.assertIn(CANCELLED_WHILE_RUNNING, self._log())
 
-    def test_a_rebuild_cancelled_halfway_is_closed_as_its_failure(self):
-        """It leaves its run with ``on_failure``: the instance stays
-        deployed, marked in error until the next rebuild or probe."""
+    def _cancelled_rebuild(self, commands):
+        """A deployed instance whose rebuild is stopped on its last step.
+
+        :return: the mock of the state probe the hook asks for
+        """
         self.inst._transition("deployed")
         self.inst.status = "ok"
         self.env.flush_all()
-        self._cancelled_run(RebuildInstanceExecutor)
+        with patch.object(
+            type(self.env["cloud.instance"]), "_refresh_state_now", autospec=True,
+        ) as probe:
+            self._cancelled_run(RebuildInstanceExecutor, commands=commands)
+        return probe
+
+    def test_a_rebuild_cancelled_halfway_leaves_the_status_alone(self):
+        """Stopped before copier, it touched nothing the instance runs on:
+        it is not marked in error (6-nov-2026), and its state is read
+        again."""
+        probe = self._cancelled_rebuild([("Commit dirty files", "true")])
         self.assertEqual(self.inst.state, "deployed")
-        self.assertEqual(self.inst.status, "error")
+        self.assertEqual(self.inst.status, "ok")
+        probe.assert_called_once()
+        self.assertIn("status is unchanged", self._log())
+        self.assertNotIn("rewrote the instance's files", self._log())
+
+    def test_a_rebuild_stopped_after_copier_says_what_it_left(self):
+        """copier rewrote the stack's files and nothing restarted it."""
+        self._cancelled_rebuild([
+            ("Update with copier", "true"), ("Rebuild Odoo image", "true"),
+        ])
+        self.assertEqual(self.inst.status, "ok")
+        self.assertIn("may have rebuilt its image", self._log())
+
+    def test_a_rebuild_stopped_after_its_restart_says_nothing_of_it(self):
+        self._cancelled_rebuild([
+            ("Update with copier", "true"), ("Restart instance", "true"),
+            ("Set system parameters", "true"),
+        ])
+        self.assertNotIn("rewrote the instance's files", self._log())
+
+    def _rebuild_closed_by(self, dispatch, exc):
+        """Close a rebuild whose earlier attempt logged copier, no results.
+
+        :param str dispatch: ``_dispatch_cancel`` or ``_dispatch_abort``
+        :param Exception exc: what it is closed with
+        """
+        self.inst._transition("deployed")
+        self.inst.status = "ok"
+        self.env["cloud.job.log.chunk"].create([
+            {"job_id": self.job.id, "source": "system", "content": line}
+            for line in ("Running: Commit dirty files", "Running: Update with copier")
+        ])
+        self.env.flush_all()
+        executor = RebuildInstanceExecutor(self.job, self.host)
+        with patch.object(
+            type(self.env["cloud.instance"]), "_refresh_state_now", autospec=True,
+        ), patch.object(
+            RebuildInstanceExecutor, "_refresh_host_disk", autospec=True,
+        ), patch.object(RebuildInstanceExecutor, "_publish_bus", autospec=True):
+            asyncio.run(getattr(executor, dispatch)(exc))
+            executor._flush_logs()
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.status, "ok")
+        self.assertIn("rewrote the instance's files", self._log())
+        self.assertNotIn("may have rebuilt its image", self._log())
+
+    def test_a_rebuild_handed_no_results_reads_its_log(self):
+        """A stop whose worker died: the steps an earlier attempt logged."""
+        self._rebuild_closed_by("_dispatch_cancel", JobCancelled("stop"))
+
+    def test_a_rebuild_whose_worker_was_lost_says_what_it_left(self):
+        """Closed by the reconciliation: ``on_abort``, with the same word."""
+        self._rebuild_closed_by("_dispatch_abort", JobWorkerLost("lost"))
 
     def test_a_cancelled_run_raises_no_alert(self):
         """What its failure path would raise — here the addon conflict the
