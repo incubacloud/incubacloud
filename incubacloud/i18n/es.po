@@ -1261,6 +1261,16 @@ msgstr "Un backup de archivo no puede pertenecer a una cadena de duplicity."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"An earlier pass took this job up and stopped before closing it: what the "
+"lost run left may not all have been put back."
+msgstr ""
+"Una pasada anterior retomó este trabajo y se detuvo antes de cerrarlo: puede"
+" que no se haya deshecho todo lo que dejó la ejecución perdida."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 #: code:addons/incubacloud/controllers/connect.py:0
@@ -2637,6 +2647,11 @@ msgstr "Motivo de cierre"
 #: model:ir.actions.server,name:incubacloud.cron_resolve_readable_secrets_ir_actions_server
 msgid "Close alerts on secrets that read again"
 msgstr "Cerrar las alertas de secretos que vuelven a leerse"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_job_reconcile_lost_ir_actions_server
+msgid "Close jobs whose worker died (reconciliation)"
+msgstr "Cerrar los trabajos cuyo proceso murió (conciliación)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13887,6 +13902,26 @@ msgid "The previous direct list stays in force on this host."
 msgstr "La lista directa anterior sigue vigente en este host."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"The process running this job died and queue_job gave up on it "
+"(JobFoundDead): it is closed as failed."
+msgstr ""
+"El proceso que ejecutaba este trabajo murió y queue_job lo dio por perdido "
+"(JobFoundDead): se cierra como fallido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"The process running this job was lost and its queue_job record is gone: it "
+"is closed as failed."
+msgstr ""
+"Se perdió el proceso que ejecutaba este trabajo y ya no existe su registro "
+"de queue_job: se cierra como fallido."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__trusted_proxies_shipped
 msgid ""
 "The proxy ranges this host's Traefik was last given. Written by the jobs "
@@ -14284,6 +14319,24 @@ msgid ""
 msgstr ""
 "Esta tarea espera a que se resuelva una alerta y empezará sola en cuanto se "
 "resuelva. Resuélvala en Alertas."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"This job was cancelled while it ran, and the process running it died before "
+"it stopped (queue_job: JobFoundDead): it is closed as cancelled."
+msgstr ""
+"Este trabajo se canceló mientras se ejecutaba, y el proceso que lo ejecutaba"
+" murió antes de detenerse (queue_job: JobFoundDead): se cierra como "
+"cancelado."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "This job was cancelled before this attempt of it began: it is not run."
+msgstr ""
+"Este trabajo se canceló antes de que empezara este intento: no se ejecuta."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15738,6 +15791,18 @@ msgstr ""
 "sistema, no en esta fila: cambia en cada sondeo."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__worker_lost_at
+msgid ""
+"When the reconciliation took up this job, whose worker died for good "
+"(_cron_reconcile_lost_jobs): it has put back what the lost run left, or is "
+"doing so, and closes the job next. Cleared when the job starts again."
+msgstr ""
+"Fecha en que la conciliación retomó este trabajo, cuyo proceso murió "
+"definitivamente (_cron_reconcile_lost_jobs): ha deshecho lo que dejó la "
+"ejecución perdida, o lo está haciendo, y después cierra el trabajo. Se borra"
+" cuando el trabajo vuelve a empezar."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_cut_started_at
 msgid ""
 "When the stop of the source began to drain its traffic, during a move: the "
@@ -15992,6 +16057,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Without filestore"
 msgstr "Sin filestore"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__worker_lost_at
+msgid "Worker Lost At"
+msgstr "Proceso perdido el"
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_direct_state__ok
@@ -16801,6 +16871,26 @@ msgstr "psql"
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "psql -U odoo -d <dbname>"
 msgstr "psql -U odoo -d <dbname>"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"queue_job recorded this job as done, but its end was never acted on: it is "
+"closed as done."
+msgstr ""
+"queue_job registró este trabajo como terminado, pero su final nunca se "
+"procesó: se cierra como terminado."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"queue_job recorded this job as cancelled, but its end was never acted on: it"
+" is closed as cancelled."
+msgstr ""
+"queue_job registró este trabajo como cancelado, pero su final nunca se "
+"procesó: se cierra como cancelado."
 
 #. module: incubacloud
 #. odoo-javascript
