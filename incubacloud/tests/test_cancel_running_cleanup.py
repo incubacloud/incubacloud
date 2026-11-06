@@ -238,10 +238,11 @@ class TestAStopThatCameTooLate(_DeployJobCase):
     """What ended, or began to close, before the stop was read is not stopped."""
 
     @contextlib.contextmanager
-    def _finishing_run(self, on_success=None):
+    def _finishing_run(self, on_success=None, before_execute=None):
         """Run the deploy's one step at once and well, its ``on_success`` mocked.
 
         :param on_success: what the mocked ``on_success`` does, if anything
+        :param before_execute: what the mocked ``before_execute`` does
         :return: the mocked ``on_success`` and ``on_failure``
         """
         transport = MagicMock(spec=SSHTransport)
@@ -257,6 +258,7 @@ class TestAStopThatCameTooLate(_DeployJobCase):
             CloudHost, "get_transport", autospec=True, side_effect=_connect,
         ), patch.object(
             DeployInstanceExecutor, "before_execute", autospec=True,
+            side_effect=before_execute,
         ), patch.object(
             DeployInstanceExecutor, "get_commands", autospec=True,
             return_value=[("Initialize database", "true")],
@@ -314,12 +316,48 @@ class TestAStopThatCameTooLate(_DeployJobCase):
         )
         failure.assert_not_awaited()
 
+    def test_a_stop_during_on_abort_lets_it_finish(self):
+        """A run that failed before its steps is closing: a stop read
+        while ``on_abort`` awaited cut it off, undid what it wrote, and
+        ran it again as the cancellation's, with no alert."""
+        reached = []
+
+        async def _slow_abort(executor, exc):
+            if not reached:
+                executor.job.cancel_job()
+                executor.env.flush_all()
+            await asyncio.sleep(0.2)
+            reached.append(exc)
+
+        executor = DeployInstanceExecutor(self.job, self.host, sleep_interval=0.01)
+        with self._finishing_run(
+            before_execute=RuntimeError("the host refused the files"),
+        ), patch.object(
+            DeployInstanceExecutor, "on_abort", autospec=True,
+            side_effect=_slow_abort,
+        ) as on_abort:
+            # Not ``assertRaises``: it rolls back what the block wrote.
+            try:
+                executor.run()
+            except RuntimeError as exc:
+                raised = exc
+            else:
+                self.fail("the run did not fail")
+        self.assertEqual(str(raised), "the host refused the files")
+        on_abort.assert_awaited_once()
+        self.assertEqual(reached, [raised])
+
 
 class TestATeardownCancelledBeforeItsSteps(_DeployJobCase):
-    """A job that moved its record before its first step puts it back."""
+    """A job that moved its record before its first step puts it back, and
+    one that does not own the record leaves it alone."""
 
-    def _cancel_before_steps(self, executor):
-        """Close *executor*'s run as a stop before its first step closes it."""
+    def _cancel_before_steps(self, executor, results=None):
+        """Close *executor*'s run as a stop before its first step closes it.
+
+        :param results: what the steps answered, for a stop halfway
+        """
+        executor._step_results = results
         with patch.object(type(executor), "_refresh_host_disk", autospec=True):
             asyncio.run(executor._dispatch_cancel(JobCancelled(CANCELLED_WHILE_RUNNING)))
 
@@ -355,6 +393,20 @@ class TestATeardownCancelledBeforeItsSteps(_DeployJobCase):
         self._cancel_before_steps(MoveRollbackCleanupExecutor(
             self._job_of("move_rollback_cleanup"), self.host,
         ))
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.state, "deployed")
+        self.assertEqual(self.inst.status, "ok")
+
+    def test_a_rollback_cleanup_cancelled_halfway_leaves_the_live_instance_alone(self):
+        """Stopped during its teardown, it closes through the delete's
+        ``on_failure``, which marked the instance on the source, live, in
+        error: the record is not this teardown's."""
+        self.inst._transition("deployed")
+        self.inst.status = "ok"
+        self.env.flush_all()
+        self._cancel_before_steps(MoveRollbackCleanupExecutor(
+            self._job_of("move_rollback_cleanup"), self.host,
+        ), results={"Stop containers": {"stdout": "", "exit_status": 0}})
         self.inst.invalidate_recordset()
         self.assertEqual(self.inst.state, "deployed")
         self.assertEqual(self.inst.status, "ok")

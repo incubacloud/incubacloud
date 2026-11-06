@@ -406,8 +406,9 @@ class AbstractExecutor(ABC):
     _outcome_dispatched = False
     # Set when that hook raised instead: a defect, whatever the exception.
     _hook_raised = False
-    # Set as that hook starts (``_dispatch_outcome``): the run is closing,
-    # and ``run`` no longer reads the cancel flag.
+    # Set as that hook starts (``_dispatch_outcome``), or ``on_abort``
+    # (``_dispatch_abort``): the run is closing, and ``run`` no longer
+    # reads the cancel flag.
     _outcome_started = False
     # What the steps answered so far, set when the first one starts
     # (``_run_steps``): None while the run has not reached them. A run a
@@ -575,9 +576,10 @@ class AbstractExecutor(ABC):
                     # Not once the run has ended: one that ended well as
                     # the flag was set ended cancelled, and its chain with
                     # it — a cutover that had cut over, then the freeze of
-                    # its source. Nor once its outcome hook has started:
-                    # cut off there, what the hook wrote was undone and
-                    # ``on_failure`` closed steps that had all passed.
+                    # its source. Nor once its outcome hook, or
+                    # ``on_abort``, has started: cut off there, what the
+                    # hook wrote was undone, and ``on_failure`` closed
+                    # steps that had all passed.
                     if not (main_task.done() or self._outcome_started):
                         self._check_cancel()
                 # Drain anything written between the last tick and
@@ -942,6 +944,10 @@ class AbstractExecutor(ABC):
         :param Exception exc: what stopped the run
         """
         if self._handles_abort():
+            # The run is closing, as once an outcome hook starts: a stop
+            # read now would cut this hook off, undo what it wrote and
+            # run it a second time (``_dispatch_cancel``).
+            self._outcome_started = True
             try:
                 await self._run_hook_durably(self.on_abort, exc)
             except Exception:
