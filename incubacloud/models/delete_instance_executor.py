@@ -378,9 +378,12 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
 
         Only for a run that owns the instance's lifecycle: a teardown of a
         copy of an instance that lives on elsewhere — the half-built
-        destination of a rolled-back move, which only reaches this hook
-        when it is cancelled — moved nothing, and its record is the live
-        instance's, which must not be marked in error for it.
+        destination of a rolled-back move — moved nothing, and its record
+        is the live instance's, which must not be marked in error for it.
+        Its ``parse_results`` never fails, but it reaches this hook all
+        the same: cancelled during its teardown, and through ``on_abort``
+        — it gave up because the cutover already completed, or its
+        ``on_success`` raised — while the instance is in 'deleting'.
 
         :param dict results: what the steps answered
         :param list errors: why the run failed
@@ -397,17 +400,27 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
                 inst._transition("deployed")
 
     async def on_abort(self, exc):
-        """A run that ended before its steps failed like one whose steps did.
+        """Close a run that ended before its steps, by the instance's state.
 
-        ``before_execute`` moved the instance to 'deleting', and only
-        ``on_failure`` puts it back: stopped before the first step — a
-        person cancelled it, the connection dropped — it stayed there for
-        good. A teardown of a copy of an instance that lives on only
-        writes the failure to the log (``on_failure``).
+        ``before_execute`` moves the instance to 'deleting', and only
+        ``on_failure`` puts it back: stopped after that and before the
+        first step — a person cancelled it, the connection dropped — it
+        stayed there for good. A run that ended before ``before_execute``
+        — refused, no connection — left the instance as it was: a live
+        one, ``deployed``, is not marked in error, and the failure is only
+        written to the log (6-nov-2026). A teardown of a copy of an
+        instance that lives on only writes it to the log too
+        (``on_failure``). The state is read on the hook's durable cursor,
+        which sees what ``before_execute`` committed.
 
         :param Exception exc: what stopped the run
         """
-        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
+        error = f"{type(exc).__name__}: {exc}"
+        inst = self._inst()
+        if inst and inst.state == "deleting":
+            await self.on_failure({}, [error])
+        else:
+            self._sys(f"✗ {error}")
 
     def _alert_on_purge_failure(self, results, inst):
         """Raise the alert that names why the backups could not be cleared.

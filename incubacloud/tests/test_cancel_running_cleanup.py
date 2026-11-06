@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     JobCancelled,
+    JobRefused,
 )
 from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.delete_instance_executor import (
@@ -349,8 +350,9 @@ class TestAStopThatCameTooLate(_DeployJobCase):
 
 
 class TestATeardownCancelledBeforeItsSteps(_DeployJobCase):
-    """A job that moved its record before its first step puts it back, and
-    one that does not own the record leaves it alone."""
+    """A job that moved its record before its first step puts it back, one
+    that ended before moving it leaves it as it was, and one that does not
+    own the record leaves it alone."""
 
     def _cancel_before_steps(self, executor, results=None):
         """Close *executor*'s run as a stop before its first step closes it.
@@ -423,3 +425,121 @@ class TestATeardownCancelledBeforeItsSteps(_DeployJobCase):
         self.assertFalse(self.env["cloud.alert"].search([
             ("code", "=", "setup_failed"), ("host_id", "=", self.host.id),
         ]))
+
+    # A delete or a setup that ended before ``before_execute`` — refused,
+    # no connection, cancelled while it connected — leaves its record as
+    # it was: only the state ``before_execute`` sets is put back.
+
+    def _abort_before_steps(self, executor, exc):
+        """Close *executor*'s run as one that ended before its steps.
+
+        :param Exception exc: what ended it
+        """
+        with patch.object(type(executor), "_refresh_host_disk", autospec=True):
+            asyncio.run(executor._dispatch_abort(exc))
+        # As ``run`` writes the log once the run ended.
+        executor._flush_logs()
+
+    def _setup_alerts(self):
+        """The ``setup_failed`` alerts of the host."""
+        return self.env["cloud.alert"].search([
+            ("code", "=", "setup_failed"), ("host_id", "=", self.host.id),
+        ])
+
+    def test_a_setup_refused_on_a_working_server_leaves_it_working(self):
+        """Marked unsupported, it was no destination of moves or
+        placements any more, and a critical alert said the setup failed."""
+        self.host.status = "compatible"
+        self.env.flush_all()
+        job = self._job_of("full_setup")
+        self._abort_before_steps(
+            FullSetupExecutor(job, self.host),
+            JobRefused("The proxy's compose file has no 443 line."),
+        )
+        self.host.invalidate_recordset()
+        self.assertEqual(self.host.status, "compatible")
+        self.assertFalse(self._setup_alerts())
+        self.assertIn("443 line", "\n".join(
+            self.env["cloud.job.log.chunk"]
+            .search([("job_id", "=", job.id)])
+            .mapped("content")
+        ))
+
+    def test_a_setup_cancelled_while_it_connected_leaves_the_server_working(self):
+        """Stopped before ``before_execute``: nothing of the server changed."""
+        self.host.status = "compatible"
+        self.env.flush_all()
+        self._cancel_before_steps(
+            FullSetupExecutor(self._job_of("full_setup"), self.host),
+        )
+        self.host.invalidate_recordset()
+        self.assertEqual(self.host.status, "compatible")
+        self.assertFalse(self._setup_alerts())
+
+    def test_a_setup_that_lost_its_server_once_checking_still_fails(self):
+        """After ``before_execute``: unsupported, with the alert."""
+        self.host.status = "checking"
+        self.env.flush_all()
+        self._abort_before_steps(
+            FullSetupExecutor(self._job_of("full_setup"), self.host),
+            ConnectionError("the upload of the proxy's files dropped"),
+        )
+        self.host.invalidate_recordset()
+        self.assertEqual(self.host.status, "unsupported")
+        self.assertTrue(self._setup_alerts())
+
+    def test_a_delete_that_could_not_connect_leaves_the_instance_live(self):
+        """A deployed instance was marked in error by a delete that never
+        reached its host."""
+        self.inst._transition("deployed")
+        self.inst.status = "ok"
+        self.env.flush_all()
+        job = self._job_of("delete_instance")
+        self._abort_before_steps(
+            DeleteInstanceExecutor(job, self.host),
+            ConnectionError("the host did not answer"),
+        )
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.state, "deployed")
+        self.assertEqual(self.inst.status, "ok")
+        self.assertIn("the host did not answer", "\n".join(
+            self.env["cloud.job.log.chunk"]
+            .search([("job_id", "=", job.id)])
+            .mapped("content")
+        ))
+
+    def test_a_delete_that_lost_its_host_once_deleting_goes_back(self):
+        """After ``before_execute``: back to deployed, in error."""
+        self.inst._transition("deployed")
+        self.inst._transition("deleting")
+        self.env.flush_all()
+        self._abort_before_steps(
+            DeleteInstanceExecutor(self._job_of("delete_instance"), self.host),
+            ConnectionError("the connection dropped"),
+        )
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.state, "deployed")
+        self.assertEqual(self.inst.status, "error")
+
+    def test_a_delete_whose_steps_failed_still_marks_the_instance_in_error(self):
+        """The teardown ran and failed: the instance is still on the host."""
+        self.inst._transition("deployed")
+        self.inst._transition("deleting")
+        self.inst.status = "ok"
+        self.env.flush_all()
+        executor = DeleteInstanceExecutor(self._job_of("delete_instance"), self.host)
+        with patch.object(
+            DeleteInstanceExecutor, "_refresh_host_disk", autospec=True,
+        ):
+            # Not ``assertRaises``: it rolls back what the block wrote.
+            try:
+                asyncio.run(executor._dispatch_outcome(
+                    {"Stop containers": {"stdout": "", "exit_status": 1}},
+                ))
+            except RuntimeError:
+                pass
+            else:
+                self.fail("the failed teardown was not a failure")
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.state, "deployed")
+        self.assertEqual(self.inst.status, "error")
