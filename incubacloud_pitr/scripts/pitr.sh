@@ -824,7 +824,24 @@ EOF
             # containers' clients down before it could.
             pid="$(cat "$RESTORE/pid" 2>/dev/null || true)"
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                kill -TERM "$pid" 2>/dev/null || true
+                # The pid may be left from a restore that died without
+                # cleaning up and reused since: only this job's
+                # restore-run (``restore-run <dir> <user> <job> ...``,
+                # arguments split by NUL) gets the signal.
+                args=()
+                mapfile -d '' -t args < "/proc/$pid/cmdline" 2>/dev/null || true
+                ours=0
+                for i in "${!args[@]}"; do
+                    if [ "${args[$i]}" = restore-run ] && [ "${args[$((i + 3))]:-}" = "$job" ]; then
+                        ours=1
+                        break
+                    fi
+                done
+                if [ "$ours" = 1 ]; then
+                    kill -TERM "$pid" 2>/dev/null || true
+                else
+                    ic_log "pid $pid is not the restore of job $job: nothing sent, the restore is taken as gone"
+                fi
             fi
         fi
         rc=0
