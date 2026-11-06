@@ -385,6 +385,23 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             if inst.state == "deleting":
                 inst._transition("deployed")
 
+    async def on_abort(self, exc):
+        """A run that ended before its steps failed like one whose steps did.
+
+        ``before_execute`` moved the instance to 'deleting', and only
+        ``on_failure`` puts it back: stopped before the first step — a
+        person cancelled it, the connection dropped — it stayed there for
+        good. Not for a teardown of a copy of an instance that lives on
+        (``_owns_instance_lifecycle``): that one moved nothing, and its
+        record is the live instance's.
+
+        :param Exception exc: what stopped the run
+        """
+        if not self._owns_instance_lifecycle:
+            self._sys(f"✗ {type(exc).__name__}: {exc}")
+            return
+        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
+
     def _alert_on_purge_failure(self, results, inst):
         """Raise the alert that names why the backups could not be cleared.
 

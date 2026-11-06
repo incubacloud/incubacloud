@@ -702,6 +702,18 @@ class FullSetupExecutor(
                 "reconciliation cron will retry."
             )
 
+    async def on_abort(self, exc):
+        """A run that ended before its steps failed like one whose steps did.
+
+        ``before_execute`` marks the server 'checking', and only
+        ``on_failure`` moves it on: stopped before the first step — a
+        person cancelled it, the connection dropped — it stayed there for
+        good.
+
+        :param Exception exc: what stopped the run
+        """
+        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
+
     async def on_failure(self, results, errors):
         self._sys(f"Setup failed with {len(errors)} error(s):")
         for err in errors:
