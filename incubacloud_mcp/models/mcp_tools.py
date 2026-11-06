@@ -8,6 +8,55 @@ handlers and ``incubacloud.mcp.catalog`` with its specs. A spec with a
 import json
 
 from odoo import api, models
+from odoo.exceptions import UserError
+
+from ..protocol.schema import SchemaError
+
+#: The arguments that name a record, any tool's: the record's model, and
+#: how a refusal names it. Checked before the tool runs
+#: (:meth:`McpTools._check_records`), so that a record that does not
+#: exist is said to be missing whatever the tool would have done with it
+#: — a filter that matched nothing, a setting saved while the record it
+#: named was ignored (6-nov-2026).
+RECORD_ARGS = {
+    "instance_id": ("cloud.instance", "instance"),
+    "source_instance_id": ("cloud.instance", "instance"),
+    "project_id": ("cloud.project", "project"),
+    "host_id": ("cloud.host", "server"),
+    "target_host_id": ("cloud.host", "server"),
+    "job_id": ("cloud.job", "job"),
+    "alert_id": ("cloud.alert", "alert"),
+    "backend_id": ("cloud.backup.backend", "backup destination"),
+    "grant_id": ("cloud.restore.upload.grant", "upload door"),
+}
+
+#: The update tools that change one record through ``vals``: the
+#: argument naming it, its model. Their answer says which of the fields
+#: given changed (:meth:`McpTools._invoke`): an update whose every value
+#: was already there answered ``{"ok": true}`` as one that changed them.
+TRACKED_UPDATES = {
+    "update_instance": ("instance_id", "cloud.instance"),
+    "update_project": ("project_id", "cloud.project"),
+    "manage_host": ("host_id", "cloud.host"),
+}
+
+#: The keys of ``vals`` that replace a list of lines, the field holding
+#: the lines and the fields that make one up.
+LINE_KEYS = {
+    "repos": ("repo_ids", ("url", "branch", "addons", "excludes", "commit_sha")),
+    "domains": (
+        "domain_ids",
+        ("hostname", "redirect_to", "cert_resolver", "redirect_permanent"),
+    ),
+    "whitelist": ("whitelist_ids", ("hostname",)),
+}
+
+
+def _plain(value):
+    """Return a field's value as something to compare: records by their ids."""
+    if isinstance(value, models.BaseModel):
+        return tuple(sorted(value.ids))
+    return value
 
 
 def quoted(value):
@@ -37,11 +86,89 @@ class McpTools(models.AbstractModel):
 
     @api.model
     def _invoke(self, spec, args):
-        """Run tool *spec* with its validated *args*; return its answer."""
+        """Run tool *spec* with its validated *args*; return its answer.
+
+        An update of :data:`TRACKED_UPDATES` answers which of the fields
+        it was given changed, under ``changed``, and says so when none
+        did; it is refused when given no field at all.
+        """
+        tracked = TRACKED_UPDATES.get(spec.name)
+        record = vals = None
+        if tracked and args.get(tracked[0]) and "vals" in args:
+            vals = args["vals"]
+            if not vals:
+                raise UserError(self.env._("Nothing to change: vals is empty."))
+            record = (
+                self.env[tracked[1]]
+                .sudo()
+                .with_context(active_test=False)
+                .browse(args[tracked[0]])
+            )
+            before = self._snapshot(record, vals)
         if spec.handler:
-            return getattr(self, spec.handler)(args)
-        result = self._route(spec.route, **args)
-        return self._with_job_state(result) if spec.enqueues else result
+            result = getattr(self, spec.handler)(args)
+        else:
+            result = self._route(spec.route, **args)
+            result = self._with_job_state(result) if spec.enqueues else result
+        if record is not None and isinstance(result, dict) and result.get("ok"):
+            after = self._snapshot(record, vals)
+            changed = sorted(key for key in before if before[key] != after.get(key))
+            result = {**result, "changed": changed}
+            if not changed:
+                result["message"] = self.env._(
+                    "Nothing changed: every value given was already set."
+                )
+        return result
+
+    @api.model
+    def _snapshot(self, record, vals):
+        """Return what *record* holds for each key of *vals*, to compare.
+
+        A key the record has no field for is left out of what is
+        compared, and so is never said to have changed or not.
+
+        :param record: the record an update tool writes, with ``sudo``
+        :param dict vals: the tool's ``vals``
+        :rtype: dict
+        """
+        self.env.flush_all()
+        record.invalidate_recordset()
+        if not record.exists():
+            return {}
+        values = {}
+        for key in vals:
+            if key in LINE_KEYS:
+                field, line_fields = LINE_KEYS[key]
+                if field in record._fields:
+                    values[key] = [
+                        tuple(_plain(line[name]) for name in line_fields)
+                        for line in record[field]
+                    ]
+            elif key in record._fields:
+                values[key] = _plain(record[key])
+        return values
+
+    @api.model
+    def _check_records(self, args):
+        """Refuse a call that names a record that does not exist.
+
+        For the arguments of :data:`RECORD_ARGS`, at the top of the call:
+        archived records exist. Whether the user may see or change the
+        record is the route's to say, as in the panel.
+
+        :raises SchemaError: naming the argument and the id, as the
+            arguments' other checks do
+        """
+        for name, (model, label) in RECORD_ARGS.items():
+            value = args.get(name)
+            if not isinstance(value, int) or isinstance(value, bool):
+                continue
+            record = self.env[model].sudo().with_context(active_test=False)
+            if not record.browse(value).exists():
+                raise SchemaError(
+                    f"arguments.{name}: no {label} has the id {value}; it does "
+                    "not exist, or was deleted."
+                )
 
     @api.model
     def _confirmation(self, spec, args):

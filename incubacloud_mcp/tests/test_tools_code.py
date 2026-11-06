@@ -530,10 +530,15 @@ class TestCodeTools(
     def test_no_repository_is_created_for_a_project_out_of_reach(self):
         """The project is checked before GitHub: nothing is left orphaned there."""
         self.env["cloud.settings"]._get_system().github_pat = "ghp_panel-pat-0001"
-        result = self._confirmed_call(
-            self.key, "repo_create", {"project_id": 999_999, "name": "acme-code"}
+        result = self._call_tool(
+            self.key,
+            "repo_create",
+            {"project_id": 999_999, "name": "acme-code"},
+            FORM_CAPABILITIES,
         )
+        # Refused before anyone is asked to approve it.
         self.assertTrue(result["isError"])
+        self.assertIn("no project has the id 999999", result["content"][0]["text"])
         self.assertFalse([c for c in self.github.calls if c[1] == "/user/repos"])
 
     def test_a_repository_is_created_private_and_connected_after_approval(self):
