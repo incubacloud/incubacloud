@@ -21,7 +21,10 @@ import psycopg2
 
 from odoo import fields
 
-from odoo.addons.incubacloud.models.abstract_executor import AbstractSSHExecutor
+from odoo.addons.incubacloud.models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    AbstractSSHExecutor,
+)
 
 from ._constants import WALG_SHA256, WALG_VERSION
 
@@ -821,6 +824,25 @@ class PitrRestoreExecutor(_PitrExecutor):
                 f"on its host. The instance may be stopped."
             )
         self._pitr_alert(ALERT_FAILING, message, level="critical")
+
+    async def on_cancelled_running(self, results, exc):
+        """Stop following the restore, which goes on on the host if it started.
+
+        The failure path would queue another job to follow it
+        (``on_abort``) or read a verdict into a wait cut short
+        (``on_failure``); a person stopped the following. The restore,
+        once started, runs on the host on its own, and the watch records
+        how it ends.
+        """
+        self._sys(f"✗ {CANCELLED_WHILE_RUNNING}")
+        following = (self.job.payload or {}).get("follow") or self._rejoined
+        # Once the steps began, the first may have started it.
+        if following or results is not None:
+            self._sys(
+                "A restore started on the host goes on: no job follows it, "
+                "the watch records how it ends. Check .walg/restore/log there "
+                "before touching the instance."
+            )
 
     async def on_abort(self, exc):
         """No base copy, or the job stopped while following the restore.
