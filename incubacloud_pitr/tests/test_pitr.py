@@ -1419,7 +1419,8 @@ class TestARestore(_PitrCase):
     def test_a_restore_cancelled_while_followed_is_followed_no_more(self):
         """A person stopped the following: no job takes it over and no
         alert is raised; the log says the restore goes on on the host."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         executor = self._planned()
         with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
             asyncio.run(executor._dispatch_cancel(JobCancelled()))

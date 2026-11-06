@@ -444,7 +444,8 @@ class TestRestoreVerifies(_MoveCase):
 class TestTheCutIsMeasured(_MoveCase):
 
     def test_the_sources_stop_stamps_the_start_of_the_cut(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_cut": True,
         })
@@ -453,7 +454,8 @@ class TestTheCutIsMeasured(_MoveCase):
         self.assertTrue(self.inst.move_cut_started_at)
 
     def test_another_stop_stamps_nothing(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         stop = self._job("stop_instance", self.source, payload={
             "services": ["odoo"], "move_target": True,
         })
@@ -635,7 +637,8 @@ class TestTheOldCopyIsFrozen(_MoveCase):
         """Stopped by hand, before its step or during it: the copy may run
         all the same, and its alert is the one word that says so, raised
         although a cancelled job's alerts are not (``ic_job_cancelled``)."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         for results in (None, {}):
             with self.subTest(started=results is not None):
                 executor = self._executor(self._job("move_freeze_source", self.source))

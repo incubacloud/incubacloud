@@ -754,7 +754,8 @@ class TestTheNightlySweepOfOrphanedNetworks(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "sweep-host", "ip_address": "192.0.2.64",
             "user": "ubuntu", "wildcard_domain": "sweep.example.com",

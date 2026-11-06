@@ -26,7 +26,7 @@ def _run_after_commit(env):
     on a cursor of their own; a test's transaction never commits, so the
     test runs it. The writes are flushed first, as a commit would, and
     the cache is dropped after. The test must be in registry test mode
-    (``registry_enter_test_mode``): outside it that cursor is a real
+    (``registry.enter_test_mode``): outside it that cursor is a real
     connection, which sees nothing of the test and waits for its locks.
     """
     env.flush_all()

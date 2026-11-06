@@ -44,7 +44,8 @@ class HostMetricsHandoverCase(TransactionCase):
         # The cron writes on a READ COMMITTED cursor of its own: in test
         # mode it rides on this transaction, outside it would be a real
         # connection that sees nothing of the test and waits for its locks.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({
             "metrics_enabled": True,

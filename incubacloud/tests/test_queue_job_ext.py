@@ -82,7 +82,8 @@ class TestQueueJobExtFailureAlert(TransactionCase):
         super().setUp()
         # A success dismisses the earlier failures on a cursor of its
         # own after the commit: in test mode it shares this transaction.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'alert-host',
             'ip_address': '10.0.0.43',
@@ -655,7 +656,8 @@ class TestJobFailedAlertDedup(TransactionCase):
     def setUp(self):
         super().setUp()
         # Successes dismiss on a cursor of their own after the commit.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'dedup-job-host',
             'ip_address': '10.0.0.45',

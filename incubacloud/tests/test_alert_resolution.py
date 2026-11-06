@@ -91,7 +91,8 @@ class TestAlertResolution(TransactionCase):
     def test_a_later_success_resolves_the_failure_and_says_so(self, urlopen):
         # The dismissal runs on a cursor of its own after the commit: in
         # test mode that cursor shares this transaction.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         failed, qfailed = self._job("rebuild_instance", "uuid-resolution-a")
         qfailed.write({"state": "failed", "exc_message": "Connection lost"})
         alert = self.env["cloud.alert"].search([
@@ -172,7 +173,8 @@ class TestAResolutionThatLosesTheRow(TransactionCase):
         super().setUp()
         # The alert is read again on a cursor of its own: in test mode
         # it rides on this transaction.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "lost-row-host",
             "ip_address": "10.0.0.62",
