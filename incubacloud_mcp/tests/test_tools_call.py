@@ -451,7 +451,8 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         )
 
     def test_the_audit_row_points_at_the_record_named_in_the_arguments(self):
-        """``host_id`` in the arguments sets the row's host, if it exists."""
+        """``host_id`` in the arguments sets the row's host; one that does
+        not exist is refused before the call, which leaves no row."""
         host = self._probe_host()
         self._call_tool(
             self.key,
@@ -466,8 +467,9 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         row = self.env["cloud.audit.log"].search(
             [("action", "=", "Agent: probe_deny_quoting")], limit=1
         )
-        self.assertTrue(row)
-        self.assertFalse(row.host_id)
+        # A server that does not exist is refused before the call
+        # (``_check_records``): nothing ran, and nothing is recorded.
+        self.assertFalse(row)
 
     def test_no_answer_passes_64_kb(self):
         """An answer far over 64 KB that no tool pages is cut, and says so."""

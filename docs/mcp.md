@@ -115,6 +115,33 @@ A tool above the user's role is not listed, and a call to it gets the
 role check's message. Operations that queue a job answer at once with its
 `job_id`, its state and what it waits behind; `get_job` follows it.
 
+**A tool answers what it did (rule of 6-nov-2026).** In every case the MCP
+answers what it actually did, and when it cannot find or cannot do what it
+was asked, a message that says so. The reason: `update_instance` with
+`{"state": "draft"}` answered `{"ok": true}` and changed nothing (issue #2),
+and an agent that reads "ok" tells its user the work is done. So:
+
+- A field a tool does not take is refused, naming it and the accepted ones:
+  by the schema for the closed objects, and against the route's own list for
+  the two that stay open, `manage_host`'s `vals` and the `backup_backend`
+  section of `update_settings` (read from the controller that serves the
+  route, a module's additions included). `whitelist` is a field of a saved
+  server only.
+- An argument that names a record (`instance_id`, `project_id`, `host_id`,
+  `job_id`, `alert_id`, `backend_id`, `grant_id` and the like,
+  `mcp_tools.RECORD_ARGS`) that does not exist is refused before the tool
+  runs, archived records included as existing: a filter that matched nothing
+  and a setting saved while the record named was ignored had answered as if
+  they had worked. Whether the user may see or change the record is the
+  route's to say, as in the panel.
+- A write that is given nothing to write is refused (`vals` or `values`
+  empty, preferences none, values for an action that takes none, a backup
+  destination for another section). `update_instance`, `update_project`,
+  `manage_host` on a server, the saves of `update_settings` and
+  `update_notification_preferences` answer `changed`, the fields given whose
+  value is now another, and `message` when none is; a project the user
+  cannot see, asked to be muted, comes back under `not_muted`.
+
 `get_job` reads a clean view of the job's log, the same for every kind of
 job; the panel's log stays as it came. Terminal escape codes are taken out,
 and consecutive lines that differ only in their numbers show as the first

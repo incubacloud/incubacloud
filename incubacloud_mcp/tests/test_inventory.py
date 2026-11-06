@@ -457,10 +457,18 @@ class TestNoReadToolLeaks(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCa
         key = self._api_key(
             self._cloud_user("mcp-inv-mgr", group="group_cloud_manager")
         )
+        # Records that exist: one that does not is refused before any
+        # route is called (``_check_records``).
+        job_type = self.env["cloud.job.type"].search([], limit=1)
+        job = self.env["cloud.job"].create({
+            "name": "inventory", "host_id": self.host.id, "job_type_id": job_type.id,
+        })
         ids = {
             "instance_id": self.production.id,
             "project_id": self.project.id,
             "host_id": self.host.id,
+            "job_id": job.id,
+            "backend_id": self.backend.id,
         }
 
         def canned(_self, path, params):

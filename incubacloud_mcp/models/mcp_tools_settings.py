@@ -269,7 +269,14 @@ class McpToolsSettings(models.AbstractModel):
 
     @api.model
     def _tool_update_settings(self, args):
-        """Change one section, keeping every value not given."""
+        """Change one section, keeping every value not given; say what changed.
+
+        Refused when it would do nothing it was asked for: a save without
+        values, values or a backup destination that the action does not
+        use. A save answers ``changed``, the keys whose value is now
+        another, and says so when there is none: one that changed nothing
+        answered ``{"ok": true}`` as one that did (6-nov-2026).
+        """
         section, values = args["section"], args.get("values") or {}
         action = args.get("action") or "save"
         if action not in _ACTIONS[section]:
@@ -280,6 +287,55 @@ class McpToolsSettings(models.AbstractModel):
                     action=action,
                 )
             )
+        if args.get("backend_id") and section != "backup_backend":
+            raise UserError(
+                self.env._(
+                    "backend_id is for the backup_backend section, not %s.", section
+                )
+            )
+        if action == "save" and not values:
+            raise UserError(self.env._("Nothing to change: values is empty."))
+        if action != "save" and values:
+            raise UserError(
+                self.env._(
+                    "The action %s changes no setting: give it without values.",
+                    action,
+                )
+            )
+        # An action, or a destination being created: nothing to compare.
+        creating = section == "backup_backend" and not args.get("backend_id")
+        if action != "save" or creating:
+            return self._save_settings(section, values, action, args)
+        before = self._settings_section(section, args.get("backend_id"))
+        result = self._save_settings(section, values, action, args)
+        if not isinstance(result, dict) or result.get("ok") is False:
+            return result
+        after = self._settings_section(section, args.get("backend_id"))
+        changed = sorted(
+            key for key in values if key not in before or before[key] != after.get(key)
+        )
+        result = {**result, "changed": changed}
+        if not changed:
+            result["message"] = self.env._(
+                "Nothing changed: every value given was already set."
+            )
+        return result
+
+    @api.model
+    def _settings_section(self, section, backend_id=None):
+        """Return the values of *section* as ``get_settings`` reads them.
+
+        :param str section: one of the sections of ``update_settings``
+        :param int backend_id: the backup destination, for ``backup_backend``
+        :rtype: dict
+        """
+        read = self._tool_get_settings({"backend_id": backend_id} if backend_id else {})
+        key = "backup_backend" if section == "backup_backend" else section
+        return read.get(key) or {}
+
+    @api.model
+    def _save_settings(self, section, values, action, args):
+        """Run *action* on *section* with *values*; return the route's answer."""
         if section == "general":
             self._only(section, values, SAVE_GENERAL_PARAMS)
             current = self._route("/cloud/get_general_settings")
@@ -308,6 +364,14 @@ class McpToolsSettings(models.AbstractModel):
             self._only(section, values, MCP_KEYS)
             return self._route("/cloud/mcp/save_settings", vals=values)
         if section == "backup_backend":
+            if action == "save":
+                controller = self.env["incubacloud.mcp.dispatch"]._controller(
+                    "/cloud/save_backup_backend"
+                )
+                secrets = self.env["incubacloud.mcp.secrets"]._field_names()
+                self._only(
+                    section, values, set(controller._BACKUP_BACKEND_ALLOWED) - secrets
+                )
             return self._update_backup_backend(args.get("backend_id"), values, action)
         if action == "detect_installation":
             return self._route("/cloud/detect_github_installation")
