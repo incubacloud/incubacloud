@@ -85,10 +85,26 @@ class TestToolsSayWhatTheyDid(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, Ht
                 text = self._error(spec.name, args)
                 self.assertRegex(
                     text,
-                    rf"arguments\.\w+_id: no [a-z ]+ has the id {MAX_RECORD_ID};",
+                    rf"arguments\.\w+_id: no [a-z ]+ you can reach has the id "
+                    rf"{MAX_RECORD_ID}\.",
                 )
             tools += 1
         self.assertGreater(tools, 40)
+
+    def test_a_record_out_of_reach_is_refused_as_one_that_does_not_exist(self):
+        """A consultant outside the project asks for one of its instances:
+        the answer is the one an id that does not exist gets, so it does
+        not tell the instance is there (as ``connect.py`` answers)."""
+        key = self._api_key(
+            self._cloud_user("mcp-truth-outsider", group="group_cloud_consultant"),
+        )
+        texts = []
+        for value in (self.staging.id, MAX_RECORD_ID):
+            result = self._call_tool(key, "get_instance", {"instance_id": value})
+            self.assertTrue(result.get("isError"), result)
+            texts.append(result["content"][0]["text"].replace(str(value), "N"))
+        self.assertEqual(texts[0], texts[1])
+        self.assertIn("no instance you can reach has the id N", texts[0])
 
     def test_a_field_an_update_does_not_take_is_refused_by_name(self):
         """The issue's call: refused naming state, and nothing changes."""
