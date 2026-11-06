@@ -22,7 +22,8 @@ Everything below is under the instance's directory on its host
 ```
 .walg/                 wal-g and its loader; run, archive
 .walg/spool/           done/<segment> marks; fs-ok, the last filestore copy that worked
-.walg/restore/         lock, pid, log, result of the restore under way or last run
+.walg/restore/         lock, pid, armed, log, result of the restore under way or last run;
+                       cancel, the job a cancel was asked for
 .docker/pitr.env       the agent's credentials (0600): never printed
 ```
 
@@ -43,6 +44,9 @@ db$ SELECT i.name, a.code, a.level, a.message, a.create_date
 | `pitr_failing` | *agent … is not running* | The `pitr` container is down: nothing uploads. |
 | `pitr_failing` | *cannot upload its database log* | Uploads fail (`N failures, M segments waiting`): bucket, credentials or network. PostgreSQL keeps the segments and retries. |
 | `pitr_failing` | *A restore … stopped without finishing* | The restore's process is gone and its lock is left. See §3. |
+| `pitr_failing` | *The cancelled restore … ended in an unknown state* | A cancel could not put the previous data back. See §3a. |
+| `pitr_failing` | *… was cancelled, but its host could not be asked to stop it* | The cancel never reached the host; the next job follows the restore. See §3a. |
+| `pitr_failing` (warning) | *The cancelled restore … is still being undone* | The host had not finished undoing within the job's wait; a job follows it. Leave the instance alone until it ends. |
 | `pitr_archive_lagging` | *is behind archiving* | The log or the files are more than three objectives late. Usually transient. |
 | `pitr_base_missing` | *first base copy failed* / *no base copy for 36 h* | Nothing (or nothing recent) to restore from. |
 
@@ -104,6 +108,32 @@ stopped.
 
 Never remove the lock while `pid` names a live process: `ps -p $(cat
 .walg/restore/pid)` first.
+
+## 3a. A cancelled restore
+
+Cancelling a restore stops it and puts back what it changed (6-nov-2026).
+The job runs `pitr.sh restore-cancel`, which writes `.walg/restore/cancel`
+and sends a TERM to the process in `pid`; the process puts the previous
+data back, starts the stack and writes `result` with `cancelled=1`. Once
+the restored database is promoted the restore is no longer undone: it
+goes on to the end, and the job says it had already been applied.
+
+- **Unknown state** (`state=failed-unknown`): the previous data could not
+  be put back. Do not start or rebuild the instance. Read
+  `.walg/restore/log`, then look in the database's data directory
+  (`docker compose run --rm --no-deps -u root --entrypoint sh db -c 'ls -a "$PGDATA"'`):
+  `.pre-pitr-<stamp>` holds the data from before the restore,
+  `.pitr-failed-<stamp>` the restored copy moved aside, `.pitr-new` a copy
+  fetched and never swapped in. With the database stopped, move the files
+  of `.pre-pitr-<stamp>` back to the top of the data directory (what is
+  there now aside first), then `docker compose up -d`.
+- **The host could not be asked**: whether it got the TERM is unknown. A
+  job follows the restore (*Wait for the restore*); if the host stays
+  away, the alert stays. Once it is back, `cat .walg/restore/result` says
+  how it ended, or run the cancel by hand (it is safe to run again):
+  `bash .walg/restore/bin/pitr.sh restore-cancel "$PWD" <job> 300`.
+- A cancel that came before the restore started on the host leaves only
+  `.walg/restore/cancel`: harmless, and the start of that job refuses.
 
 ## 4. An instance that moved host or changed backend
 
