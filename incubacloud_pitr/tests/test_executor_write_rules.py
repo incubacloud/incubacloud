@@ -26,6 +26,9 @@ _HOOK_HELPERS = {
     "_restored": "records a restore and queues its full base copy",
     "_follow_up_restore": "queues a restore's full base copy, tells the addons",
     "_follow_on": "hands a running restore to the next job",
+    "_cancel_unanswered": "a cancel the host did not answer: followed, alerted",
+    "_judge_cancel": "records how a cancelled restore ended on the host",
+    "_abort_unknown": "records what a lost job's restore became on the host",
     "_pitr_alert": "raises a continuous recovery alert on the instance",
     "_pitr_resolve": "closes continuous recovery alerts on the instance",
 }

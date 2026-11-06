@@ -10,6 +10,7 @@ records.
 """
 import asyncio
 import base64
+import contextlib
 import os
 import shutil
 import subprocess
@@ -26,7 +27,11 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
-from odoo.addons.incubacloud.models.abstract_executor import JobCancelled
+from odoo.addons.incubacloud.models.abstract_executor import (
+    JobCancelled,
+    JobWorkerLost,
+)
+from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.delete_instance_executor import (
     DeleteInstanceExecutor,
 )
@@ -1416,17 +1421,6 @@ class TestARestore(_PitrCase):
             asyncio.run(executor.on_abort(TimeoutError("ssh")))
         self.assertEqual(enqueue.call_args.kwargs["payload"]["follow"], executor.job.id)
 
-    def test_a_restore_cancelled_while_followed_is_followed_no_more(self):
-        """A person stopped the following: no job takes it over and no
-        alert is raised; the log says the restore goes on on the host."""
-        self.registry.enter_test_mode(self.cr)
-        self.addCleanup(self.registry.leave_test_mode)
-        executor = self._planned()
-        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
-            asyncio.run(executor._dispatch_cancel(JobCancelled()))
-        enqueue.assert_not_called()
-        self.assertFalse(self._alerts("pitr_failing"))
-
     def test_a_restore_whose_process_runs_is_followed_however_long(self):
         """No job holding the instance would let a rebuild start a second
         database on the same data; a long one is only said to be long."""
@@ -1472,6 +1466,396 @@ class TestARestore(_PitrCase):
         (only,) = executor.get_commands()
         self.assertEqual(only[0], "Wait for the restore")
         self.assertIn(f" {executor.job.id} ", only[1])
+
+
+class TestCancellingARestore(_PitrCase):
+    """A cancel stops the restore on the host and waits for it to undo.
+
+    ``restore-cancel`` answers how the restore ended; the job records it
+    as a wait would, raises the alerts the stop left (a cancelled job
+    raises none otherwise), and hands one still undoing to the next job.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.inst.write({
+            "pitr_enabled": True, "pitr_state": "ok", "pitr_cluster_id": "77",
+        })
+        for name in ("_refresh_host_disk", "_publish_bus"):
+            patcher = patch.object(ex.PitrRestoreExecutor, name, autospec=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _restore(self, payload=None):
+        """A restore job's executor, built anew: no plan, nothing known."""
+        return self._executor(
+            ex.PitrRestoreExecutor, "pitr_restore",
+            payload=payload or {"target": "2026-10-18 22:31:00"},
+        )
+
+    def _host(self, answer=None, exit_status=0, error=None):
+        """Patch the connection to the host: one command, one answer.
+
+        :param str answer: what the command prints
+        :param Exception error: what the connection raises instead
+        :return: ``(patcher, transport)``
+        """
+        transport = MagicMock(spec=SSHTransport)
+        transport.upload_text_files = AsyncMock()
+        transport.run = AsyncMock(return_value=CommandResult("", 0))
+        transport.execute = AsyncMock(
+            return_value=CommandResult(answer or "", exit_status),
+        )
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            if error:
+                raise error
+            yield transport
+
+        patcher = patch.object(
+            CloudHost, "get_transport", autospec=True, side_effect=_connect,
+        )
+        return patcher, transport
+
+    def _cancel(self, executor, answer=None, error=None):
+        """Cancel *executor*'s run, the host answering *answer*.
+
+        :return: ``(transport, enqueue)``
+        """
+        patcher, transport = self._host(answer, error=error)
+        with patcher, patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            asyncio.run(executor._dispatch_cancel(JobCancelled()))
+        self.inst.invalidate_recordset()
+        return transport, enqueue
+
+    def _said(self):
+        """What the executor wrote to the job log, as one text."""
+        return "\n".join(str(c.args[1]) for c in self.sys_log.call_args_list)
+
+    def test_the_host_is_asked_to_stop_it_and_puts_the_data_back(self):
+        """Undone: the instance runs again, no alert, no job follows."""
+        self.inst.write({"running": False})
+        self.env.flush_all()
+        executor = self._restore()
+        transport, enqueue = self._cancel(executor, (
+            f"IC_PITR_RESTORE job={executor.job.id} state=failed "
+            "stopped_at=fetching cancelled=1"
+        ))
+        command = transport.execute.await_args.args[0]
+        self.assertIn(" restore-cancel ", command)
+        self.assertIn(
+            f" {executor.job.id} {ex.CANCEL_WAIT_OUTSIDE_RUN_S}", command,
+        )
+        self.assertEqual(
+            transport.execute.await_args.kwargs["timeout"],
+            ex.CANCEL_WAIT_OUTSIDE_RUN_S + ex.CANCEL_SSH_MARGIN_S,
+        )
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertTrue(self.inst.running)
+        self.assertTrue(self.inst.running_confirmed_at)
+        self.assertIn("'fetching' and undone", self._said())
+
+    def test_the_job_s_scripts_go_to_a_directory_of_their_own_and_are_removed(self):
+        """The run's directory went with its connection: a new one, the
+        scripts uploaded to it, all of it removed once the host answered."""
+        executor = self._restore()
+        executor._job_dir_created = True
+        old = executor._job_dir()
+        transport, _enqueue = self._cancel(
+            executor, "IC_PITR_RESTORE state=none",
+        )
+        self.assertNotEqual(executor._job_dir(), old)
+        transport.upload_text_files.assert_awaited()
+        cleanup = transport.run.await_args_list[-1].args[0]
+        self.assertTrue(cleanup.startswith("rm -rf "))
+        self.assertIn(executor._job_dir(), cleanup)
+
+    def test_one_that_never_started_changed_nothing(self):
+        executor = self._restore()
+        _transport, enqueue = self._cancel(executor, "IC_PITR_RESTORE state=none")
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertIn("had not started", self._said())
+
+    def test_one_that_never_started_beside_another_job_s_says_whose_it_is(self):
+        executor = self._restore()
+        _transport, enqueue = self._cancel(
+            executor, "IC_PITR_RESTORE state=none held_by=8",
+        )
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertIn("(job 8) holds the instance", self._said())
+
+    def test_one_applied_before_the_cancel_came_is_recorded_as_a_restore(self):
+        executor = self._restore()
+        _transport, enqueue = self._cancel(executor, (
+            f"IC_PITR_RESTORE job={executor.job.id} state=done stopped_at=done "
+            "target=2026-10-18T22:31:00+00 timeline=00000002 "
+            "promoted_at=1792369056 filestore=restored cancelled=1"
+        ))
+        self.assertEqual(enqueue.call_args.args[3], "pitr_base_backup")
+        self.assertEqual(self.inst.pitr_timelines[0]["job"], str(executor.job.id))
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertIn("already been applied", self._said())
+
+    def test_one_applied_without_its_files_is_critical_although_cancelled(self):
+        executor = self._restore()
+        self._cancel(executor, (
+            f"IC_PITR_RESTORE job={executor.job.id} state=db-only "
+            "target=2026-10-18T22:31:00+00 timeline=00000002 "
+            "promoted_at=1792369056 filestore=failed cancelled=1"
+        ))
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("not its files", alert.message)
+
+    def test_one_whose_data_could_not_be_put_back_says_where_it_is(self):
+        executor = self._restore()
+        self._cancel(executor, (
+            f"IC_PITR_RESTORE job={executor.job.id} state=failed-unknown "
+            "stopped_at=recovering cancelled=1"
+        ))
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn(".pre-pitr-*", alert.message)
+        self.assertIn(".walg/restore/log", alert.message)
+        self.assertIn("Do not touch the instance", alert.message)
+
+    def test_one_still_undoing_when_the_wait_ends_is_followed_by_the_next_job(self):
+        executor = self._restore()
+        _transport, enqueue = self._cancel(executor, "IC_PITR_RESTORE state=running")
+        call = enqueue.call_args
+        self.assertEqual(call.args[3], "pitr_restore")
+        self.assertEqual(call.kwargs["payload"]["follow"], executor.job.id)
+        self.assertTrue(call.kwargs["bypass_running_check"])
+        self.assertEqual(self._alerts("pitr_failing").level, "warning")
+
+    def test_one_whose_process_is_gone_is_critical(self):
+        executor = self._restore()
+        self._cancel(executor, "IC_PITR_RESTORE state=lost")
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("remove .walg/restore/lock", alert.message)
+
+    def test_a_host_that_cannot_be_told_leaves_it_to_the_next_job(self):
+        """Whether it got the stop is unknown: followed, and critical."""
+        executor = self._restore()
+        _transport, enqueue = self._cancel(executor, error=OSError("no route"))
+        call = enqueue.call_args
+        self.assertEqual(call.kwargs["payload"]["follow"], executor.job.id)
+        self.assertEqual(call.kwargs["payload"]["missed"], 1)
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("could not be asked to stop it", alert.message)
+
+    def test_a_host_that_answers_nothing_is_one_that_could_not_be_told(self):
+        executor = self._restore()
+        _transport, enqueue = self._cancel(executor, "bash: pitr.sh: not found")
+        self.assertEqual(enqueue.call_args.kwargs["payload"]["missed"], 1)
+        self.assertEqual(self._alerts("pitr_failing").level, "critical")
+
+    def test_a_following_job_cancelled_stops_the_restore_it_follows(self):
+        executor = self._restore({"target": "2026-10-18 22:31:00", "follow": 5})
+        transport, _enqueue = self._cancel(
+            executor, "IC_PITR_RESTORE job=5 state=failed stopped_at=recovering cancelled=1",
+        )
+        self.assertIn(
+            f" 5 {ex.CANCEL_WAIT_OUTSIDE_RUN_S}", transport.execute.await_args.args[0],
+        )
+        self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_the_job_that_follows_a_cancelled_restore_reads_it_undone(self):
+        """No alert: the host put the data back, as asked."""
+        executor = self._restore({"target": "2026-10-18 22:31:00", "follow": 5})
+        asyncio.run(executor.on_failure({"Wait for the restore": {
+            "stdout": "IC_PITR_RESTORE job=5 state=failed stopped_at=recovering cancelled=1",
+            "exit_status": 1,
+        }}, ["exit 1"]))
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertIn("cancelled at 'recovering' and undone", self._said())
+
+    def test_the_job_that_follows_one_applied_before_its_cancel_says_so(self):
+        executor = self._restore({"target": "2026-10-18 22:31:00", "follow": 5})
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success({"Wait for the restore": {"stdout": (
+                "IC_PITR_RESTORE job=5 state=done target=2026-10-18T22:31:00+00 "
+                "timeline=00000002 promoted_at=1792369056 filestore=restored cancelled=1"
+            ), "exit_status": 0}}))
+        self.assertIn("had already been applied", self._said())
+
+    def test_a_run_cancelled_waits_on_the_host_and_holds_the_queue_meanwhile(self):
+        """End to end with ``run``: the stop is read on a tick, the hook
+        waits its full time on the host, and the job's queue stays busy
+        while it does (``_scope_busy``: a cancelled job whose queue.job
+        runs)."""
+        job = self._restore().job
+        qjob = self.env["queue.job"].sudo().create({
+            "uuid": f"uuid-pitr-cancel-{job.id}", "name": "pitr_restore",
+            "state": "started", "method_name": "execute",
+            "model_name": "cloud.job", "func_string": "execute()",
+        })
+        job.sudo().write({"queue_job_uuid": qjob.uuid, "queue_job_id": qjob.id})
+        job.with_context(ic_skip_state_hook=True).write({"state": "started"})
+        job.cancel_job()
+        self.env.flush_all()
+        busy = []
+        executor = ex.PitrRestoreExecutor(job, self.host, sleep_interval=0.01)
+
+        async def _hang(*_args, **_kwargs):
+            await asyncio.sleep(30)
+
+        async def _answer(command, *_args, **_kwargs):
+            busy.append(self.env["cloud.job"]._scope_busy(self.inst.id, self.host.id))
+            return CommandResult(
+                f"IC_PITR_RESTORE job={job.id} state=failed "
+                "stopped_at=draining cancelled=1", 0,
+            )
+
+        patcher, transport = self._host()
+        transport.execute.side_effect = _answer
+        with patcher, patch.object(
+            ex.PitrRestoreExecutor, "before_execute", autospec=True,
+            side_effect=_hang,
+        ), patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            try:
+                executor.run()
+            except JobCancelled:
+                pass
+            else:
+                self.fail("the run did not stop on the flag")
+        command = transport.execute.await_args.args[0]
+        self.assertIn(" restore-cancel ", command)
+        self.assertIn(f" {job.id} {ex.CANCEL_WAIT_S}", command)
+        self.assertEqual(busy, [True])
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+
+
+class TestAJobThatEndedWithoutKnowing(_PitrCase):
+    """``on_abort`` on an executor that never heard from the host.
+
+    The reconciliation builds one anew for a job whose worker died
+    (``JobWorkerLost``): no plan, nothing followed, though the host may be
+    restoring. It asks the host what became of the job's restore.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.inst.write({
+            "pitr_enabled": True, "pitr_state": "ok", "pitr_cluster_id": "77",
+        })
+        self.executor = self._executor(
+            ex.PitrRestoreExecutor, "pitr_restore",
+            payload={"target": "2026-10-18 22:31:00"},
+        )
+
+    def _abort(self, answer="", exit_status=0, error=None):
+        """``on_abort(JobWorkerLost)``, the host answering *answer*."""
+        patcher, transport = TestCancellingARestore._host(
+            self, answer, exit_status=exit_status, error=error,
+        )
+        with patcher, patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            asyncio.run(self.executor.on_abort(JobWorkerLost("worker died")))
+        self.inst.invalidate_recordset()
+        return transport, enqueue
+
+    def test_a_restore_still_running_is_followed_by_the_next_job(self):
+        transport, enqueue = self._abort("IC_PITR_RESTORE state=running")
+        self.assertIn(
+            " restore-wait ", transport.execute.await_args.args[0],
+        )
+        self.assertIn(f" {self.executor.job.id} 0", transport.execute.await_args.args[0])
+        call = enqueue.call_args
+        self.assertEqual(call.args[3], "pitr_restore")
+        self.assertEqual(call.kwargs["payload"]["follow"], self.executor.job.id)
+        self.assertEqual(call.kwargs["payload"]["missed"], 0)
+
+    def test_no_restore_of_the_job_on_the_host_changed_nothing(self):
+        _transport, enqueue = self._abort(
+            "IC_PITR_RESTORE state=lost lock=none", exit_status=1,
+        )
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_another_job_s_restore_is_not_this_one_s(self):
+        _transport, enqueue = self._abort(
+            "IC_PITR_RESTORE state=lost lock=8", exit_status=1,
+        )
+        enqueue.assert_not_called()
+        self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_its_own_lock_without_a_process_is_critical(self):
+        self._abort(
+            f"IC_PITR_RESTORE state=lost lock={self.executor.job.id}", exit_status=1,
+        )
+        self.assertEqual(self._alerts("pitr_failing").level, "critical")
+
+    def test_one_that_ended_is_recorded_as_its_wait_would_have(self):
+        _transport, enqueue = self._abort((
+            f"IC_PITR_RESTORE job={self.executor.job.id} state=done "
+            "target=2026-10-18T22:31:00+00 timeline=00000002 "
+            "promoted_at=1792369056 filestore=restored cancelled=0"
+        ))
+        self.assertEqual(enqueue.call_args.args[3], "pitr_base_backup")
+        self.assertEqual(
+            self.inst.pitr_timelines[0]["job"], str(self.executor.job.id),
+        )
+
+    def test_one_that_failed_and_was_put_back_is_said(self):
+        self._abort((
+            f"IC_PITR_RESTORE job={self.executor.job.id} state=failed "
+            "stopped_at=recovering cancelled=0"
+        ), exit_status=1)
+        self.assertIn("'recovering'", self._alerts("pitr_failing").message)
+
+    def test_a_host_that_cannot_be_asked_leaves_it_to_the_next_job(self):
+        _transport, enqueue = self._abort(error=OSError("no route"))
+        self.assertEqual(enqueue.call_args.kwargs["payload"]["missed"], 1)
+
+    def test_a_run_whose_host_said_nothing_was_there_asks_again_nothing(self):
+        """``before_execute`` heard from the host: no restore of the job,
+        then no base copy served. Nothing to ask."""
+        self.executor._probed = True
+        patcher, transport = TestCancellingARestore._host(self, "")
+        with patcher, patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            asyncio.run(self.executor.on_abort(ValueError("no copy")))
+        transport.execute.assert_not_called()
+        enqueue.assert_not_called()
+
+    def test_the_question_of_before_execute_marks_what_it_learnt(self):
+        """Nothing there, or another job's lock: known. Its own lock with
+        no process: a lost restore of its own, asked about again."""
+        def _transport(probe):
+            """The host: *probe* to ``restore-wait``, no listing, the rest well."""
+            async def _run(command, *_args, **_kwargs):
+                if " restore-wait " in command:
+                    return CommandResult(probe, 1)
+                if " list " in command:
+                    return CommandResult("no listing", 1)
+                return CommandResult("", 0)
+
+            transport = MagicMock(spec=SSHTransport)
+            transport.upload_text_files = AsyncMock()
+            transport.run = AsyncMock(side_effect=_run)
+            return transport
+
+        with self.assertRaises(ValueError):
+            asyncio.run(self.executor.before_execute(
+                _transport("IC_PITR_RESTORE state=lost lock=none"),
+            ))
+        self.assertTrue(self.executor._probed)
+        again = self._executor(
+            ex.PitrRestoreExecutor, "pitr_restore",
+            payload={"target": "2026-10-18 22:31:00"},
+        )
+        with self.assertRaises(ValueError):
+            asyncio.run(again.before_execute(
+                _transport(f"IC_PITR_RESTORE state=lost lock={again.job.id}"),
+            ))
+        self.assertFalse(again._probed)
 
 
 class TestThePanelAnchor(BaseCase):
