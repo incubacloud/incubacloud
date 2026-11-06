@@ -10,9 +10,10 @@ Single-pass setup for a new host (or re-run to repair):
   Phase 4 — Whitelist: create/update globalwhitelist services
 
 Status transitions:
-  Job enqueued  → checking      (set at job start, before SSH)
+  Job started   → checking      (once connected, in before_execute)
   All phases OK → compatible    (traefik_deployed=True)
-  Any failure   → unsupported
+  Any failure   → unsupported (one before 'checking' was set — a refused
+                  check, no connection — leaves the status as it was)
 
 "degraded" is reserved exclusively for the host_metrics executor
 (disk/CPU/RAM resource monitoring).
@@ -703,16 +704,27 @@ class FullSetupExecutor(
             )
 
     async def on_abort(self, exc):
-        """A run that ended before its steps failed like one whose steps did.
+        """Close a run that ended before its steps, by the server's state.
 
         ``before_execute`` marks the server 'checking', and only
-        ``on_failure`` moves it on: stopped before the first step — a
-        person cancelled it, the connection dropped — it stayed there for
-        good.
+        ``on_failure`` moves it on: stopped after that and before the
+        first step — a person cancelled it, the connection dropped — it
+        stayed there for good. A run that ended before ``before_execute``
+        — refused by ``pre_run_checks``, no connection, cancelled while it
+        connected — never touched the server: one that worked keeps its
+        status and raises no ``setup_failed``, and the failure is only
+        written to the log. Marked ``unsupported`` it was no destination
+        of moves or placements any more (6-nov-2026). The status is read
+        on the hook's durable cursor, which sees what ``before_execute``
+        committed.
 
         :param Exception exc: what stopped the run
         """
-        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
+        error = f"{type(exc).__name__}: {exc}"
+        if self._host().status == "checking":
+            await self.on_failure({}, [error])
+        else:
+            self._sys(f"✗ {error}")
 
     async def on_failure(self, results, errors):
         self._sys(f"Setup failed with {len(errors)} error(s):")
