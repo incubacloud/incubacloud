@@ -1541,6 +1541,18 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if inst and inst.state == "deploying":
             inst._transition("draft")
 
+    def on_never_run(self):
+        """A deploy that left its queue but never ran leaves 'draft' too.
+
+        Cancelled once dispatched, before it started, or ended with its
+        chain by a step before it (``clone_to_staging``'s): nothing of
+        it reached the host, and in 'deploying' the instance could be
+        neither deployed again nor deleted. Same move as
+        ``on_cancelled_queued``; a rebuild's instance is 'deployed', and
+        stays so.
+        """
+        self.on_cancelled_queued()
+
     async def on_abort(self, exc):
         """A run that ended before its steps failed like one whose steps did.
 
