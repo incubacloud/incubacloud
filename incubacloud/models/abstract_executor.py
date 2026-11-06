@@ -396,6 +396,59 @@ def _is_refusal(exc):
     )
 
 
+def deferred_instance_unlink(job_env, inst, job_id, host_id, sudo=False):
+    """Return the callable that unlinks *inst* once it is called.
+
+    Meant for a cursor's ``postcommit``: it opens a cursor of its own,
+    does nothing if the record is gone already, and never raises — an
+    unlink that fails is logged and raised as an alert instead. Shared
+    by ``AbstractExecutor._unlink_after_job_commit`` and by
+    ``queue_job_ext``, which arms it again for a job stored done after
+    its own transaction was rolled back.
+
+    :param job_env: the job's environment; its user and context are kept
+    :param inst: the ``cloud.instance`` to remove
+    :param int job_id: the job the alert names, if the unlink fails
+    :param int host_id: the host the alert names, if the unlink fails
+    :param bool sudo: unlink as superuser
+    :return: a function of no arguments
+    """
+    registry = job_env.registry
+    inst_id, inst_name = inst.id, inst.name
+
+    def _unlink():
+        with registry.cursor() as cr:
+            env = job_env(cr=cr)
+            rec = env["cloud.instance"].with_context(
+                active_test=False,
+            ).browse(inst_id)
+            if sudo:
+                rec = rec.sudo()
+            if not rec.exists():
+                return
+            try:
+                rec.unlink()
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "deferred unlink of instance %s failed", inst_name,
+                )
+                cr.rollback()
+                env["cloud.alert"].sudo().raise_alert(
+                    "instance_unlink_failed",
+                    f"'{inst_name}' was removed from its host but its "
+                    "record could not be deleted; see the server log. "
+                    "Delete it again once the cause is fixed.",
+                    level="warning",
+                    host=env["cloud.host"].browse(host_id),
+                    instance=rec,
+                    job=env["cloud.job"].browse(job_id),
+                    # "See the server log": only the platform can.
+                    audience="provider",
+                )
+
+    return _unlink
+
+
 class AbstractExecutor(ABC):
 
     _job_type = None  # required in subclasses
@@ -1052,7 +1105,9 @@ class AbstractExecutor(ABC):
         If the job does not commit, the rollback clears ``postcommit``
         and the unlink is simply dropped: the record stays exactly as
         the hook left it (marked, for the teardown; archived, for the
-        purge), and the re-run finds that state and arms this again.
+        purge), and the re-run finds that state and arms this again. A
+        job stored done after a stop runs no more: the cursor that stores
+        it arms the unlink again (``queue_job_ext``).
 
         Never raises. By the time it runs the job is already done, so
         a failure here is logged and raised as an alert rather than
@@ -1064,44 +1119,12 @@ class AbstractExecutor(ABC):
             archived instance's purge).
         """
         job_env = self.job.env
-        registry = job_env.registry
-        inst_id, inst_name = inst.id, inst.name
-        job_id, host_id = self.job.id, self._host().id
-
-        def _unlink():
-            with registry.cursor() as cr:
-                env = job_env(cr=cr)
-                rec = env["cloud.instance"].with_context(
-                    active_test=False,
-                ).browse(inst_id)
-                if sudo:
-                    rec = rec.sudo()
-                if not rec.exists():
-                    return
-                try:
-                    rec.unlink()
-                except Exception:
-                    logging.getLogger(__name__).exception(
-                        "deferred unlink of instance %s failed", inst_name,
-                    )
-                    cr.rollback()
-                    env["cloud.alert"].sudo().raise_alert(
-                        "instance_unlink_failed",
-                        f"'{inst_name}' was removed from its host but its "
-                        "record could not be deleted; see the server log. "
-                        "Delete it again once the cause is fixed.",
-                        level="warning",
-                        host=env["cloud.host"].browse(host_id),
-                        instance=rec,
-                        job=env["cloud.job"].browse(job_id),
-                        # "See the server log": only the platform can.
-                        audience="provider",
-                    )
-
         # ``_job_cr`` is set by ``_dispatch_outcome``; a hook invoked
         # directly (tests) has only its own cursor, which is the job's.
         main_cr = getattr(self, "_job_cr", None) or job_env.cr
-        main_cr.postcommit.add(_unlink)
+        main_cr.postcommit.add(deferred_instance_unlink(
+            job_env, inst, self.job.id, self._host().id, sudo=sudo,
+        ))
 
     # ===============================
     # DURABLE WRITES

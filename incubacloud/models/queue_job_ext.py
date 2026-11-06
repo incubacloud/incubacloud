@@ -4,7 +4,12 @@ from odoo import _, fields, models
 
 from odoo.addons.queue_job.job import Job
 
-from .abstract_executor import BLOCKED_BY_ALERT, CANCELLED_WHILE_RUNNING
+from .abstract_executor import (
+    BLOCKED_BY_ALERT,
+    CANCELLED_WHILE_RUNNING,
+    deferred_instance_unlink,
+)
+from .purge_archived_executor import PurgeArchivedBackupsExecutor
 from .registry import executor_registry
 
 _logger = logging.getLogger(__name__)
@@ -137,6 +142,12 @@ class QueueJob(models.Model):
         start the steps that wait on it, so they are set going here, as
         ``button_done`` sets them going.
 
+        Either way the job's own transaction was rolled back, and with it
+        the unlink a delete's or a purge's ``on_success`` left for its
+        commit (``AbstractExecutor._unlink_after_job_commit``): the job
+        would end done with its instance still in the panel. The unlink
+        is armed again here, for this cursor's commit.
+
         :param dict vals: what queue_job was writing
         :return: the result of ``write``
         """
@@ -156,6 +167,7 @@ class QueueJob(models.Model):
         }
         result = self.write(done)
         self.flush_recordset(["state"])
+        self._unlink_owed_instances()
         for qjob in self:
             if (qjob.dependencies or {}).get("reverse_depends_on"):
                 Job.load(self.env, qjob.uuid).enqueue_waiting()
@@ -164,6 +176,32 @@ class QueueJob(models.Model):
             self.ids,
         )
         return result
+
+    def _unlink_owed_instances(self):
+        """Arm the unlink of the instances the jobs of ``self`` removed.
+
+        A delete's ``on_success`` marks its instance ``removal_finalized``
+        and a purge's leaves it archived; both leave the unlink for the
+        job's commit. Called once ``on_success`` returned on each of them
+        (``_store_success_before_cancel``), so what is left of their
+        instance only awaits that unlink. Registered on this cursor's
+        ``postcommit``, as superuser, as the executor registers it.
+        """
+        for qjob in self:
+            cjob = self.env["cloud.job"].sudo().with_context(
+                active_test=False,
+            ).search([("queue_job_uuid", "=", qjob.uuid)], limit=1)
+            inst = cjob.instance_id
+            if not inst.exists():
+                continue
+            purged = (
+                cjob.job_type_id.code == PurgeArchivedBackupsExecutor._job_type
+                and not inst.active
+            )
+            if inst.removal_finalized or purged:
+                self.env.cr.postcommit.add(deferred_instance_unlink(
+                    cjob.env, inst, cjob.id, cjob.host_id.id, sudo=True,
+                ))
 
     def write(self, vals):
         # A job a person cancelled while it ran ends cancelled, as one
