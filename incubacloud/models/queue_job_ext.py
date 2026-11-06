@@ -1,7 +1,10 @@
 import logging
 
+from psycopg2 import OperationalError
+
 from odoo import _, fields, models
 
+from odoo.addons.queue_job.controllers.main import RunJobController
 from odoo.addons.queue_job.job import Job
 
 from .abstract_executor import (
@@ -140,7 +143,8 @@ class QueueJob(models.Model):
         failed to serialize against the stop's write) or storing a
         failure that came after the success. Neither path lets queue_job
         start the steps that wait on it, so they are set going here, as
-        ``button_done`` sets them going.
+        ``button_done`` sets them going, with the retries queue_job gives
+        that same update (``_enqueue_dependent_jobs``).
 
         Either way the job's own transaction was rolled back, and with it
         the unlink a delete's or a purge's ``on_success`` left for its
@@ -169,8 +173,21 @@ class QueueJob(models.Model):
         self.flush_recordset(["state"])
         self._unlink_owed_instances()
         for qjob in self:
-            if (qjob.dependencies or {}).get("reverse_depends_on"):
-                Job.load(self.env, qjob.uuid).enqueue_waiting()
+            if not (qjob.dependencies or {}).get("reverse_depends_on"):
+                continue
+            try:
+                # Its own savepoint and retries, as after any done.
+                RunJobController._enqueue_dependent_jobs(
+                    self.env, Job.load(self.env, qjob.uuid),
+                )
+            except OperationalError:
+                # The tries ran out. Logged, not raised: the job stays
+                # done, as queue_job leaves it when the same update fails
+                # after its commit.
+                _logger.exception(
+                    "[queue_job_ext] queue job %s: the steps waiting on it"
+                    " could not be set going", qjob.uuid,
+                )
         _logger.info(
             "[queue_job_ext] queue jobs %s succeeded before their stop: done",
             self.ids,
