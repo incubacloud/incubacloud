@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import urllib.request
 import uuid
 from datetime import timedelta
@@ -33,6 +34,7 @@ from .abstract_executor import (
     CONNECTION_RETRY_SECONDS,
     JobCancelled,
     JobRefused,
+    JobWorkerLost,
     _is_refusal,
     is_transient_connection_error,
 )
@@ -71,6 +73,7 @@ _QUEUE_CONTROL_FIELDS = frozenset({
     "blocked_alert_id", "queue_job_uuid", "queue_job_id", "job_type_id",
     "payload", "secret_payload", "instance_id", "host_id",
     "asked_as_superuser", "date_done", "succeeded_before_cancel",
+    "worker_lost_at",
 })
 
 _CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
@@ -210,6 +213,17 @@ class CloudJob(models.Model):
             " reached it: the job is stored done, not cancelled"
             " (AbstractExecutor._mark_success_before_cancel). Cleared"
             " when the job starts again."
+        ),
+    )
+    worker_lost_at = fields.Datetime(
+        string="Worker Lost At",
+        copy=False,
+        readonly=True,
+        help=(
+            "When the reconciliation took up this job, whose worker died"
+            " for good (_cron_reconcile_lost_jobs): it has put back what"
+            " the lost run left, or is doing so, and closes the job next."
+            " Cleared when the job starts again."
         ),
     )
     date_done = fields.Datetime(
@@ -685,6 +699,11 @@ class CloudJob(models.Model):
         # before it is handed over here.
         running = False
         try:
+            # A stop that came before this attempt began — before its worker
+            # died, mostly: queue_job put it back in the queue and it starts
+            # again, still ``cancelled`` (``queue_job_ext``). It does not run.
+            if self._stopped_flags()[0]:
+                raise JobCancelled(CANCELLED_WHILE_RUNNING)
             ssh_executor.pre_run_checks()
             if not self._has_dependents():
                 blocking = ssh_executor.blocking_alert()
@@ -718,13 +737,15 @@ class CloudJob(models.Model):
             # queue_job applies its retry semantics; wrapping it as
             # JobError would mark the job permanently failed instead.
             raise
-        except JobCancelled:
+        except JobCancelled as exc:
             # A person cancelled it and the executor stopped on the flag.
             # Returned, not raised: queue_job logs any exception with its
             # traceback before storing it, and the log scraper turned
             # each cancellation into an ``instance_error_logs`` alert on
             # the customer's panel (12-oct-2026). ``queue_job_ext``
             # stores this ending as the cancellation it is.
+            if not running:
+                self._close_stopped_before_run(ssh_executor, exc)
             return CANCELLED_WHILE_RUNNING
         except OperationalError as e:
             # Serialisation failures belong to queue_job, which already
@@ -826,6 +847,59 @@ class CloudJob(models.Model):
             executor._flush_logs()
         except Exception:
             _logger.exception("job %s: could not log its refusal", self.id)
+
+    def _stopped_flags(self):
+        """Read this job's stop flag and success mark from its row.
+
+        In the job's own transaction, which queue_job began once the
+        attempt was stored ``started``: it sees a stop committed before,
+        and the cache may hold neither.
+
+        :return: ``(cancelled, succeeded_before_cancel)``
+        :rtype: tuple
+        """
+        self.ensure_one()
+        self.flush_recordset(["state", "succeeded_before_cancel"])
+        self.env.cr.execute(
+            "SELECT state = 'cancelled', succeeded_before_cancel"
+            " FROM cloud_job WHERE id = %s",
+            (self.id,),
+        )
+        row = self.env.cr.fetchone()
+        return (bool(row[0]), bool(row[1])) if row else (False, False)
+
+    def _close_stopped_before_run(self, executor, exc):
+        """Close a job stopped before this attempt began, without running it.
+
+        A person cancelled it while it ran, and its worker died before
+        the executor stopped: queue_job put it back in the queue
+        (``requeue_dead_jobs``) and it starts again with the flag set
+        (or the stop came in the instant after the attempt was stored
+        ``started``). It does not run: what a run left is put back by
+        ``on_cancelled_running`` with no step results, as for a stop
+        before the steps (``_dispatch_cancel``), the hook the
+        reconciliation gives a stop whose worker died for good. A run
+        whose ``on_success`` had returned before the stop gets no hook:
+        it is stored done and its chain goes on
+        (``queue_job_ext._store_success_before_cancel``). The job log
+        says so, and the watchers hear of it. Never raises: the caller
+        returns ``CANCELLED_WHILE_RUNNING`` next.
+
+        :param executor: the executor whose run does not start
+        :param JobCancelled exc: the stop
+        """
+        try:
+            succeeded = self._stopped_flags()[1]
+            executor._sys(_(
+                "This job was cancelled before this attempt of it began:"
+                " it is not run."
+            ))
+            if not succeeded:
+                asyncio.run(executor._dispatch_cancel(exc))
+            executor._flush_logs()
+            executor._publish_bus()
+        except Exception:
+            _logger.exception("job %s: could not close its stop", self.id)
 
     def _block_on(self, executor, alert):
         """End this job blocked on *alert*, before anything ran.
@@ -1949,10 +2023,7 @@ class CloudJob(models.Model):
         the dispatcher holds it.
         """
         job = job.sudo()
-        runner = job.with_user(job.create_uid)
-        if job.asked_as_superuser:
-            # After ``with_user``, which drops it.
-            runner = runner.sudo()
+        runner = job._as_its_creator()
         job_type = job.job_type_id
         executor_cls = executor_registry.get(job_type.code)
         max_retries = 1
@@ -1978,6 +2049,24 @@ class CloudJob(models.Model):
             {"queue_job_uuid": delayed.uuid, "state": "pending"},
         )
         self._broadcast_job_update(job.id)
+
+    def _as_its_creator(self):
+        """Return this job in the environment its run has: its creator's.
+
+        With superuser rights only when it was asked for with them
+        (``asked_as_superuser``); see ``_dispatch_single``. What the
+        dispatcher hands queue_job, and what the reconciliation runs a
+        lost job's hooks with (``_cron_reconcile_lost_jobs``).
+
+        :return: the ``cloud.job``, as its creator holds it
+        """
+        self.ensure_one()
+        job = self.sudo()
+        runner = job.with_user(job.create_uid)
+        if job.asked_as_superuser:
+            # After ``with_user``, which drops it.
+            runner = runner.sudo()
+        return runner
 
     @api.model
     def _dispatch_chain(self, records):
@@ -2357,6 +2446,431 @@ class CloudJob(models.Model):
                     host=alert.host_id or None,
                     instance=alert.instance_id or None,
                 )
+
+    #: How long a job's two rows must have stood still before the
+    #: reconciliation reads them as final. Only for what may still be in
+    #: flight: an ORM transition writes both rows in one transaction
+    #: (``queue_job_ext``), and the jobrunner's conversion of a dead job is
+    #: one statement. It is no deadline for a slow job: one whose
+    #: queue.job is not ended is never taken up, however long it runs —
+    #: whether a worker died is queue_job's lock to say (6-nov-2026).
+    _RECONCILE_GRACE_MINUTES = 2
+    #: Jobs read per pass of the reconciliation.
+    _RECONCILE_BATCH = 20
+    #: Seconds after which a pass starts the clean-up of no other job. A
+    #: hook may reach a host or a provider and wait on it, and the pass
+    #: holds the cron thread the other crons of the runner wait for: the
+    #: first job's clean-up always runs, the rest are the next pass's,
+    #: five minutes later (6-nov-2026).
+    _RECONCILE_HOOK_BUDGET_S = 60
+    #: What a job closed as failed by the reconciliation says it ended on:
+    #: the ``exc_message`` of its queue.job and its ``job_failed`` alert.
+    _WORKER_LOST_MESSAGE = (
+        "The process running this job died and queue_job gave up on it;"
+        " closed by the reconciliation of lost jobs."
+    )
+
+    @api.model
+    def _cron_reconcile_lost_jobs(self):
+        """Close the jobs whose worker died, and put back what they left.
+
+        queue_job finds a job whose worker died (its lock released) and
+        puts it back in the queue with SQL, or fails it ``JobFoundDead``
+        once its retries are spent (``requeue_dead_jobs``). Neither goes
+        through the ORM, so ``queue_job_ext`` never hears of it: the
+        cloud job stayed ``started`` for good, its queue busy
+        (``_scope_busy``), its move never rolled back
+        (``cloud.instance.cron_recover_stuck_moves``), the steps after it
+        waiting forever (6-nov-2026). The same holds for a queue.job
+        ended or deleted by hand.
+
+        Each job found is taken in three steps, each on a cursor of its
+        own, so that whatever happens it is cleaned up at most once:
+
+        1. claimed: both rows locked without waiting (``SKIP LOCKED``),
+           the case read again on them, ``worker_lost_at`` set and
+           committed — a row someone holds is left for the next pass;
+        2. cleaned up with no lock held: a new executor, as the job's
+           creator, gives ``on_abort`` (a failure) or
+           ``on_cancelled_running`` (a stop) what the lost run left, and
+           the job log says what happened;
+        3. closed: locked again, and the end the ORM never saw written
+           through it, so ``queue_job_ext`` acts on it as on any end —
+           the mirror, ``job_failed``, the end of its chain, the queue,
+           the bus.
+
+        A job claimed whose close did not happen (the cron died between
+        the two) is only closed on the next pass, and its log says the
+        clean-up may have stopped half way. A pass starts no clean-up
+        once ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
+
+        Assumes the database lets idle transactions be
+        (``idle_in_transaction_session_timeout`` off): cut off, a live
+        job's lock is released and queue_job takes it for dead
+        (``docs/architecture.md``).
+
+        :return: how many jobs were closed
+        :rtype: int
+        """
+        began = time.monotonic()
+        cleaned = False
+        closed = 0
+        job_ids = self._lost_job_ids()
+        for position, job_id in enumerate(job_ids):
+            if cleaned and time.monotonic() - began >= self._RECONCILE_HOOK_BUDGET_S:
+                _logger.info(
+                    "cloud.job: the reconciliation leaves %d lost job(s)"
+                    " for its next pass", len(job_ids) - position,
+                )
+                break
+            try:
+                claim = self._claim_lost_job(job_id)
+                if claim is None:
+                    continue
+                case, resumed = claim
+                cleaned |= self._clean_up_lost_job(job_id, case, resumed)
+                closed += self._close_lost_job(job_id)
+            except Exception:
+                # One job that cannot be dealt with must not hold the
+                # others: its claim stands and the next pass closes it.
+                _logger.exception(
+                    "cloud.job %s: the reconciliation of its lost worker failed",
+                    job_id,
+                )
+        return closed
+
+    @api.model
+    def _lost_job_ids(self):
+        """Return the ids of the jobs the reconciliation may have to close.
+
+        One read, without locks, of what ``_lost_job_case`` names: an
+        active job whose queue.job ended or is gone, and a stopped one
+        whose queue.job was found dead. A cancelled job whose queue.job
+        is gone is history (the autovacuum deletes them after 30 days),
+        and one whose queue.job still waits or runs is queue_job's.
+
+        :rtype: list[int]
+        """
+        self.env.flush_all()
+        cutoff = fields.Datetime.now() - timedelta(
+            minutes=self._RECONCILE_GRACE_MINUTES,
+        )
+        self.env.cr.execute(
+            "SELECT c.id FROM cloud_job c"
+            " LEFT JOIN queue_job q ON q.uuid = c.queue_job_uuid"
+            " WHERE c.queue_job_uuid IS NOT NULL AND c.state IN %(active)s"
+            "   AND (q.id IS NULL OR q.state IN ('failed', 'cancelled', 'done'))"
+            "   AND c.write_date < %(cutoff)s AND (q.id IS NULL OR COALESCE("
+            "     q.date_done, q.date_cancelled, q.date_enqueued, q.date_created"
+            "   ) < %(cutoff)s)"
+            " UNION"
+            " SELECT c.id FROM queue_job q"
+            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " WHERE q.state = 'failed' AND q.exc_name = 'JobFoundDead'"
+            "   AND c.state = 'cancelled'"
+            "   AND c.write_date < %(cutoff)s AND COALESCE(q.date_done,"
+            "     q.date_cancelled, q.date_enqueued, q.date_created) < %(cutoff)s"
+            " ORDER BY 1 LIMIT %(limit)s",
+            {
+                "active": tuple(self._running_states),
+                "cutoff": cutoff,
+                "limit": self._RECONCILE_BATCH,
+            },
+        )
+        return [row[0] for row in self.env.cr.fetchall()]
+
+    @api.model
+    def _lost_job_case(self, job_state, queue_state, exc_name):
+        """Name how a job whose worker may have died is to be closed.
+
+        - ``failed``: active, its queue.job failed or gone — queue_job
+          gave up on a dead worker. ``on_abort``, then closed failed.
+        - ``stopped``: cancelled, its queue.job found dead — a person
+          stopped it and its worker died before it stopped.
+          ``on_cancelled_running``, then closed cancelled.
+        - ``cancelled_running``: started, its queue.job cancelled.
+          ``on_cancelled_running``, then closed cancelled.
+        - ``cancelled_waiting``: dispatched and not started, its
+          queue.job cancelled. Closed cancelled, which gives it its
+          ``on_never_run``.
+        - ``done``: active, its queue.job done. Closed done.
+
+        :param str job_state: the ``cloud_job`` row's state
+        :param queue_state: its ``queue_job`` row's state, None if gone
+        :param exc_name: what the queue.job failed on
+        :return: the case, or None when there is nothing to close
+        """
+        if job_state in self._running_states:
+            if queue_state in (None, "failed"):
+                return "failed"
+            if queue_state == "cancelled":
+                if job_state == "started":
+                    return "cancelled_running"
+                return "cancelled_waiting"
+            if queue_state == "done":
+                return "done"
+            return None
+        if (
+            job_state == "cancelled"
+            and queue_state == "failed"
+            and exc_name == "JobFoundDead"
+        ):
+            return "stopped"
+        return None
+
+    @api.model
+    def _lock_lost_job(self, cr, job_id):
+        """Lock a job's two rows without waiting and return what they hold.
+
+        ``cloud_job`` first, then ``queue_job``, both ``SKIP LOCKED``:
+        nothing ever waits, so no order of locks can deadlock.
+
+        :param cr: the cursor to lock them on
+        :param int job_id: the ``cloud.job``
+        :return: ``(job_row, queue_row)`` as dicts, ``queue_row`` None
+            when the queue.job is gone; None when a row is held or the
+            job is gone
+        """
+        cr.execute(
+            "SELECT id, state, queue_job_uuid, worker_lost_at, write_date"
+            " FROM cloud_job WHERE id = %s FOR NO KEY UPDATE SKIP LOCKED",
+            (job_id,),
+        )
+        job_row = cr.dictfetchone()
+        if not job_row:
+            return None
+        cr.execute(
+            "SELECT id, state, exc_name, COALESCE(date_done, date_cancelled,"
+            " date_enqueued, date_created) AS moved"
+            " FROM queue_job WHERE uuid = %s FOR NO KEY UPDATE SKIP LOCKED",
+            (job_row["queue_job_uuid"],),
+        )
+        queue_row = cr.dictfetchone()
+        if queue_row is None:
+            cr.execute(
+                "SELECT 1 FROM queue_job WHERE uuid = %s",
+                (job_row["queue_job_uuid"],),
+            )
+            if cr.fetchone():
+                # There, and held by someone.
+                return None
+        return job_row, queue_row
+
+    @api.model
+    def _claim_lost_job(self, job_id):
+        """Step 1 of the reconciliation: take a job up, on a cursor of its own.
+
+        The case is read again on the locked rows, with the same margin
+        as the read that found the job, and ``worker_lost_at`` is set and
+        committed before anything is cleaned up. A job already claimed
+        is taken up again for its close alone.
+
+        :param int job_id: the ``cloud.job``
+        :return: ``(case, resumed)`` — *resumed* when an earlier pass
+            had claimed it — or None to leave it alone
+        """
+        cutoff = fields.Datetime.now() - timedelta(
+            minutes=self._RECONCILE_GRACE_MINUTES,
+        )
+        with self.env.registry.cursor() as cr:
+            rows = self._lock_lost_job(cr, job_id)
+            if rows is None:
+                return None
+            job_row, queue_row = rows
+            case = self._lost_job_case(
+                job_row["state"],
+                queue_row and queue_row["state"],
+                queue_row and queue_row["exc_name"],
+            )
+            if case is None:
+                return None
+            if job_row["worker_lost_at"]:
+                return case, True
+            if (job_row["write_date"] or cutoff) >= cutoff or (
+                queue_row and (queue_row["moved"] or cutoff) >= cutoff
+            ):
+                return None
+            cr.execute(
+                "UPDATE cloud_job SET worker_lost_at ="
+                " (now() at time zone 'UTC') WHERE id = %s",
+                (job_id,),
+            )
+        return case, False
+
+    @api.model
+    def _lost_job_note(self, env, case, gone):
+        """Return the job log's line for a job the reconciliation closes.
+
+        :param env: the environment whose language it is written in
+        :param str case: as ``_lost_job_case`` names it
+        :param bool gone: whether the queue.job is gone
+        :rtype: str
+        """
+        if case == "failed" and gone:
+            return env._(
+                "The process running this job was lost and its queue_job"
+                " record is gone: it is closed as failed."
+            )
+        if case == "failed":
+            return env._(
+                "The process running this job died and queue_job gave up"
+                " on it (JobFoundDead): it is closed as failed."
+            )
+        if case == "stopped":
+            return env._(
+                "This job was cancelled while it ran, and the process"
+                " running it died before it stopped (queue_job:"
+                " JobFoundDead): it is closed as cancelled."
+            )
+        if case == "done":
+            return env._(
+                "queue_job recorded this job as done, but its end was never"
+                " acted on: it is closed as done."
+            )
+        return env._(
+            "queue_job recorded this job as cancelled, but its end was never"
+            " acted on: it is closed as cancelled."
+        )
+
+    @api.model
+    def _clean_up_lost_job(self, job_id, case, resumed):
+        """Step 2 of the reconciliation: put back what the lost run left.
+
+        No lock is held. A new executor, in the job's creator's
+        environment (``_as_its_creator``), is handed the hook of the
+        case: ``on_abort`` with ``JobWorkerLost`` for a failure,
+        ``on_cancelled_running`` with no step results for a stop — not
+        for a run whose ``on_success`` had returned before the stop,
+        which is closed done. Both run on a durable cursor and never
+        raise (``_dispatch_abort``, ``_dispatch_cancel``). The executor
+        knows nothing of the lost run but what the database holds.
+        Then the job log says what happened, and its watchers hear of
+        it. A job claimed by an earlier pass is not cleaned up again:
+        its log says the clean-up may have stopped half way. Never
+        raises: the job is closed next whatever happens here.
+
+        :param int job_id: the ``cloud.job``
+        :param str case: as ``_lost_job_case`` names it
+        :param bool resumed: whether an earlier pass claimed it
+        :return: whether a hook was run, which may have waited on a host
+        :rtype: bool
+        """
+        hooked = False
+        try:
+            with self.env.registry.cursor() as cr:
+                job = self.env(cr=cr)["cloud.job"].browse(job_id)
+                runner = job._as_its_creator()
+                note = self._lost_job_note(
+                    runner.env, case, not runner.sudo().queue_job_id,
+                )
+                executor_cls = executor_registry.get(job.sudo().job_type_id.code)
+                if not executor_cls:
+                    job.env["cloud.job.log.chunk"].sudo().create({
+                        "job_id": job_id, "content": note, "source": "system",
+                    })
+                    return hooked
+                executor = executor_cls(
+                    job_record=runner, host_record=runner.sudo().host_id,
+                )
+                executor._sys(note)
+                if resumed:
+                    executor._sys(runner.env._(
+                        "An earlier pass took this job up and stopped before"
+                        " closing it: what the lost run left may not all"
+                        " have been put back."
+                    ))
+                elif case == "failed":
+                    hooked = True
+                    asyncio.run(executor._dispatch_abort(
+                        JobWorkerLost(self._WORKER_LOST_MESSAGE),
+                    ))
+                elif case in ("stopped", "cancelled_running") and not (
+                    runner.sudo().succeeded_before_cancel
+                ):
+                    hooked = True
+                    asyncio.run(executor._dispatch_cancel(
+                        JobCancelled(CANCELLED_WHILE_RUNNING),
+                    ))
+                executor._flush_logs()
+                executor._publish_bus()
+        except Exception:
+            _logger.exception(
+                "cloud.job %s: the clean-up of its lost run failed", job_id,
+            )
+        return hooked
+
+    @api.model
+    def _close_lost_job(self, job_id):
+        """Step 3 of the reconciliation: write the end the ORM never saw.
+
+        Locked again without waiting, and closed only if the job is still
+        to be closed and was claimed. The end goes through the ORM —
+        through ``queue.job.write``, or the job's own for a queue.job
+        that is gone — so it is acted on as every end is.
+
+        :param int job_id: the ``cloud.job``
+        :return: whether the job was closed
+        :rtype: bool
+        """
+        with self.env.registry.cursor() as cr:
+            rows = self._lock_lost_job(cr, job_id)
+            if rows is None:
+                return False
+            job_row, queue_row = rows
+            case = self._lost_job_case(
+                job_row["state"],
+                queue_row and queue_row["state"],
+                queue_row and queue_row["exc_name"],
+            )
+            if case is None or not job_row["worker_lost_at"]:
+                return False
+            env = self.env(cr=cr)
+            if queue_row is None:
+                self._close_lost_job_without_queue(env, job_id)
+                return True
+            qjob = env["queue.job"].sudo().browse(queue_row["id"])
+            if case == "failed":
+                qjob.write({
+                    "state": "failed", "exc_message": self._WORKER_LOST_MESSAGE,
+                })
+            elif case == "stopped":
+                # Stored failed, which ``queue_job_ext`` turns into the
+                # stop it was, or into done after a success.
+                qjob.write({"state": "failed"})
+            elif case == "cancelled_running":
+                qjob.with_context(ic_cancelled_while_running=True).write(
+                    {"state": "cancelled"},
+                )
+            elif case == "cancelled_waiting":
+                qjob.write({"state": "cancelled"})
+            else:
+                qjob.write({"state": "done"})
+            _logger.info(
+                "cloud.job %s: closed by the reconciliation (%s)", job_id, case,
+            )
+        return True
+
+    @api.model
+    def _close_lost_job_without_queue(self, env, job_id):
+        """Close as failed a job whose queue.job is gone.
+
+        What ``queue_job_ext`` does for a failure, with nothing to write
+        it through: the state, the ``job_failed`` alert, the bus, then
+        the end acted on (``_on_state_changed``).
+
+        :param env: the closing cursor's environment
+        :param int job_id: the ``cloud.job``
+        """
+        Job = env["cloud.job"].sudo()
+        job = Job.browse(job_id)
+        job.with_context(ic_skip_state_hook=True).write({"state": "failed"})
+        Job._create_job_failed_alert(job, exc_message=self._WORKER_LOST_MESSAGE)
+        Job._broadcast_job_update(job.id, state="failed")
+        job._on_state_changed("failed")
+        _logger.info(
+            "cloud.job %s: closed by the reconciliation (queue job gone)",
+            job_id,
+        )
 
     #: Terminal-job retention. Jobs feed the instance timeline, so the
     #: window is deliberately long (settings default: 180 days). The

@@ -363,6 +363,18 @@ class JobCancelled(Exception):
     """
 
 
+class JobWorkerLost(Exception):
+    """The process that ran the job died, and queue_job gave up on it.
+
+    Never raised by a run: ``cloud.job._cron_reconcile_lost_jobs`` hands
+    it to ``on_abort`` once queue_job found the job dead for the last
+    time (``JobFoundDead``) or its queue.job is gone, so the executor
+    puts back what a run that stopped half way left. The executor that
+    receives it is a new one: what the lost run kept in memory (its step
+    results, a plan, an id it was given) is not there.
+    """
+
+
 # What ``cloud.job.execute`` returns when the executor stopped on the
 # cancel flag, and what ``queue_job_ext`` recognises in the job it stores.
 CANCELLED_WHILE_RUNNING = "Cancelled while it ran."
@@ -514,6 +526,16 @@ class AbstractExecutor(ABC):
     # instead of on the next pass of the five-minute cron: a build and a
     # teardown change the disk, and the host's Check is asked to show it.
     _refreshes_host_disk = False
+
+    # Whether the job runs in ticks: it asks queue_job to postpone it
+    # (``RetryableJobError``) and starts again later, holding between two
+    # ticks what it had begun (an order it placed). A stop committed in
+    # the instant between the tick's own ``_check_cancel`` and the store
+    # of the postpone ends the job ``cancelled`` with no hook run
+    # (``queue_job_ext.write``); with this set, its ``on_never_run`` lets
+    # go then, as for a job cancelled between two ticks. That hook must
+    # then do nothing a second time (6-nov-2026).
+    _postpones_between_ticks = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

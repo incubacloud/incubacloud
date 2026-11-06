@@ -48,6 +48,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/host_posture_cron.xml",
         "data/rate_limit_gc_cron.xml",
         "data/job_duration_cron.xml",
+        "data/job_reconcile_cron.xml",
         "data/job_purge_cron.xml",
         "data/job_queue_dispatch_cron.xml",
         "data/terminal_route_gc_cron.xml",
