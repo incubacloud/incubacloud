@@ -70,7 +70,7 @@ _QUEUE_CONTROL_FIELDS = frozenset({
     "state", "queue_head", "queue_chain_key", "retry_of_id",
     "blocked_alert_id", "queue_job_uuid", "queue_job_id", "job_type_id",
     "payload", "secret_payload", "instance_id", "host_id",
-    "asked_as_superuser", "date_done",
+    "asked_as_superuser", "date_done", "succeeded_before_cancel",
 })
 
 _CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
@@ -199,6 +199,17 @@ class CloudJob(models.Model):
             "Shared by the steps of one chain. A chain waits in the"
             " queue as one entry and is dispatched whole, with its"
             " queue.job dependencies, when its turn comes."
+        ),
+    )
+    succeeded_before_cancel = fields.Boolean(
+        string="Succeeded Before the Cancel",
+        copy=False,
+        readonly=True,
+        help=(
+            "The run's success hook had returned when a person's cancel"
+            " reached it: the job is stored done, not cancelled"
+            " (AbstractExecutor._mark_success_before_cancel). Cleared"
+            " when the job starts again."
         ),
     )
     date_done = fields.Datetime(
