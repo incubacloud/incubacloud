@@ -509,6 +509,9 @@ class TestATickPostponedAfterAStop(TestAStopBetweenTwoTicks):
     (``retry_postpone``).
     """
 
+    # The two tests of the case above, with this way of reaching it.
+    allow_inherited_tests_method = True
+
     def _postponed_after_the_stop(self):
         """Run one tick through queue_job's ``Job``; the stop lands in it."""
         self.qjob.with_context(_job_edit_sentinel=self.qjob.EDIT_SENTINEL).write({
