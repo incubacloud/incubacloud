@@ -385,9 +385,16 @@ class CloudAlert(models.Model):
         :param dict extra: other fields to write on creation and on every
             refresh (``conflict_data``, ``occurrences``)
         :returns: the active ``cloud.alert`` record, or an empty
-            recordset when a concurrent producer filed it first or the
-            sighting is still a suspicion
+            recordset when a concurrent producer filed it first, the
+            sighting is still a suspicion, or a cancelled job raised it
         """
+        if self.env.context.get("ic_job_cancelled"):
+            # The hook closing a job a person cancelled while it ran
+            # (``AbstractExecutor._dispatch_cancel``): its failure path,
+            # whose alerts would tell that person that what they stopped
+            # failed.
+            _logger.info("Alert %s not raised: its job was cancelled.", code)
+            return self.browse()
         # An alert is the platform noticing something, never a user
         # action — but it is raised from wherever the failure happened,
         # which may be a public webhook or a customer's signup request.

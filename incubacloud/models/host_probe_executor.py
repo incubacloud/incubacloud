@@ -1,5 +1,6 @@
 import re
 
+from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
 
 MIN_DISK_GB = 10
@@ -131,6 +132,14 @@ class HostProbeExecutor(AnsibleExecutor):
             self._resolve_alert("missing_deps")
             self.job.host_id.write({"status": "compatible"})
             self._sys("✓ Host is compatible and ready for deployments.")
+
+    async def on_cancelled_running(self, results, exc):
+        """A probe stopped halfway found nothing: the host keeps its status.
+
+        ``on_failure`` marks the host unsupported for what the probe
+        found, and a probe a person cancelled found nothing either way.
+        """
+        self._sys(f"✗ {CANCELLED_WHILE_RUNNING} The host's status is unchanged.")
 
     async def on_failure(self, results, errors):
         self._sys(f"Host probe found {len(errors)} critical issue(s):")
