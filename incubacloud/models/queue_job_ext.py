@@ -259,7 +259,7 @@ class QueueJob(models.Model):
             stopped = candidates._cancelled_while_running()
             if stopped:
                 (self - stopped).write(vals)
-                return stopped.with_context(
+                result = stopped.with_context(
                     ic_cancelled_while_running=True,
                 ).write(vals | {
                     "state": "cancelled",
@@ -270,11 +270,14 @@ class QueueJob(models.Model):
                     "exc_message": False,
                     "exc_info": False,
                 })
+                stopped._let_go_between_ticks(vals)
+                return result
         result = super().write(vals)
         new_state = vals.get("state")
         if new_state not in _MIRRORED:
             return result
 
+        kept_cancelled = self._started_again_after_a_stop(new_state)
         for qjob in self:
             cloud_jobs = self.env["cloud.job"].search(
                 [("queue_job_uuid", "=", qjob.uuid)],
@@ -284,6 +287,12 @@ class QueueJob(models.Model):
                 continue
 
             cjob = cloud_jobs
+            if qjob in kept_cancelled:
+                _logger.info(
+                    "[queue_job_ext] uuid=%s started again after a stop:"
+                    " cloud.job id=%s stays cancelled", qjob.uuid, cjob.id,
+                )
+                continue
 
             # The cloud job's own ``state`` follows the queue.job's on
             # every transition the runner makes through the ORM:
@@ -296,11 +305,9 @@ class QueueJob(models.Model):
             # — the operator who cancels a queued job has no write on
             # queue jobs — and without the state hook: the end is acted
             # on below, once its alerts are recorded.
-            mirror = {"state": new_state}
-            if new_state == "started" and cjob.succeeded_before_cancel:
-                # A new attempt, in the transaction that commits before it
-                # runs: what an earlier one recorded is not its own.
-                mirror["succeeded_before_cancel"] = False
+            mirror = {"state": new_state} | self._new_attempt_clears(
+                cjob, new_state,
+            )
             cjob.sudo().with_context(ic_skip_state_hook=True).write(mirror)
             # To the row now: ``_check_cancel`` and the stop detection
             # above read it with SQL, from other transactions and from
@@ -458,6 +465,70 @@ class QueueJob(models.Model):
         steps._run_after_terminal('cancelled')
         self._let_go_for_jobs_never_run(steps)
         Job._schedule_dispatch(Job._queue_scopes_of(steps))
+
+    def _started_again_after_a_stop(self, new_state):
+        """The jobs of ``self`` that start again although a person stopped them.
+
+        A job cancelled while it ran whose worker died: queue_job puts it
+        back in the queue with SQL, and its cloud job keeps the flag. The
+        mirror wrote ``started`` over it, so the job ran again from the
+        start with no hook at all (6-nov-2026). Their cloud jobs keep
+        ``cancelled``, and what they carry with it; ``cloud.job.execute``
+        reads the flag before anything runs and closes the job as a stop.
+
+        :param str new_state: the state being stored
+        :return: the ``queue.job`` records whose mirror is skipped
+        """
+        if new_state != "started":
+            return self.browse()
+        return self._cancelled_while_running()
+
+    @staticmethod
+    def _new_attempt_clears(cjob, new_state):
+        """Return what a new attempt of *cjob* clears as it starts.
+
+        In the transaction that commits before it runs: what an earlier
+        attempt recorded is not its own — a success before a stop, and
+        the reconciliation's claim (a job requeued by hand after it,
+        whose next death is a new one). Nothing for another state.
+
+        :param cjob: the ``cloud.job`` whose mirror is written
+        :param str new_state: the state being mirrored
+        :return: values for its mirror's write
+        :rtype: dict
+        """
+        if new_state != "started":
+            return {}
+        return {
+            name: False
+            for name in ("succeeded_before_cancel", "worker_lost_at")
+            if cjob[name]
+        }
+
+    def _let_go_between_ticks(self, vals):
+        """Give ``on_never_run`` to the jobs of ``self`` stopped between ticks.
+
+        Called once what queue_job was storing on each, *vals*, was
+        stored as the stop it was; only a postpone (``pending``) counts.
+        A job that runs in ticks (``_postpones_between_ticks``) holds
+        between two of them what it had begun, and a stop committed after
+        the tick read the flag reached no hook: its ``on_never_run`` lets
+        go, as for one cancelled while it waited for its next tick. Other
+        jobs are left as they are. Never raises.
+
+        :param dict vals: what queue_job was writing
+        """
+        if vals.get("state") != "pending":
+            return
+        jobs = self.env["cloud.job"].sudo().search(
+            [("queue_job_uuid", "in", self.mapped("uuid"))],
+        )
+        ticking = jobs.filtered(lambda job: getattr(
+            executor_registry.get(job.job_type_id.code),
+            "_postpones_between_ticks", False,
+        ))
+        if ticking:
+            self._let_go_for_jobs_never_run(ticking)
 
     def _let_go_for_jobs_never_run(self, jobs):
         """Give each of *jobs*' executors its ``on_never_run``; never raises.
