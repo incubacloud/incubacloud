@@ -55,7 +55,20 @@ STUB
 }
 
 teardown() {
+    # A restore process a test started, and whatever it left running.
+    pkill -KILL -f "$TMP/" 2>/dev/null || true
     rm -rf "$TMP"
+}
+
+# A process standing for a restore's: it notes each TERM in $TMP/term and
+# goes on, as restore-run does once its database is promoted. Its pid is
+# in .walg/restore/pid, the lock names job $1.
+fake_restore() {
+    mkdir -p "$DIR/.walg/restore"
+    echo "$1" > "$DIR/.walg/restore/lock"
+    bash -c "trap 'echo TERM >> \"$TMP/term\"' TERM; while :; do sleep 0.2; done" &
+    echo "$!" > "$DIR/.walg/restore/pid"
+    touch "$DIR/.walg/restore/armed"
 }
 
 # ── pitr.sh ──────────────────────────────────────────────────────────────
@@ -324,6 +337,105 @@ STUB
     run bash "$SCRIPT" status "$DIR" odoo
     [ "$status" -eq 0 ]
     [[ "$output" == *"IC_PITR_STATUS restoring=lost job=9"* ]]
+}
+
+@test "a cancel with no restore of its job says so, and the restore never starts after it" {
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE state=none"* ]]
+    # The start that comes after the cancel (it was on its way) refuses.
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cancelled before it started"* ]]
+    [ ! -e "$DIR/.walg/restore/lock" ]
+    [ "$(grep -c setsid "$CALLS")" -eq 0 ]
+}
+
+@test "a cancel of another job does not keep a restore from starting" {
+    run bash "$SCRIPT" restore-cancel "$DIR" 8 0
+    [ "$status" -eq 0 ]
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18
+    [ "$status" -eq 0 ]
+    grep -q "setsid" "$CALLS"
+}
+
+@test "a cancel of a restore that ended reports how it ended" {
+    mkdir -p "$DIR/.walg/restore"
+    printf 'job=9\nstate=failed\nstopped_at=recovering\ncancelled=1\n' > "$DIR/.walg/restore/result"
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 60
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE job=9 state=failed stopped_at=recovering cancelled=1"* ]]
+}
+
+@test "a cancel stops the restore's process and waits for it to say how it ended" {
+    fake_restore 9
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 0
+    [ "$status" -eq 0 ]
+    # Still running when the wait ended: not a failure, and the next job follows it.
+    [[ "$output" == *"IC_PITR_RESTORE state=running"* ]]
+    for _ in $(seq 1 10); do [ -s "$TMP/term" ] && break; sleep 0.2; done
+    [ "$(cat "$TMP/term")" = "TERM" ]
+    [ "$(cat "$DIR/.walg/restore/cancel")" = "9" ]
+    grep -q "cancel asked (job 9)" "$DIR/.walg/restore/log"
+}
+
+@test "a cancel whose restore's process died without a word says it is lost" {
+    mkdir -p "$DIR/.walg/restore"
+    echo 9 > "$DIR/.walg/restore/lock"
+    echo 999999 > "$DIR/.walg/restore/pid"
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 60
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE state=lost"* ]]
+}
+
+@test "a cancel while another job's restore holds the instance says whose it is, and stops nothing" {
+    fake_restore 8
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 60
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE state=none held_by=8"* ]]
+    [[ "$output" != *"state=lost"* ]]
+    [ ! -e "$TMP/term" ]
+}
+
+@test "a restore cancelled while it drains stops what the drain started before the stack comes up" {
+    # The drain's reads of pg_wal never end: it would wait its 300 s.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"grep -c"*)
+        echo "exec-start" >> "$CALLS"
+        trap 'echo exec-killed >> "$CALLS"; exit 143' TERM
+        sleep 3 & wait "$!"
+        echo "exec-end" >> "$CALLS"
+        echo 1 ;;
+esac
+exit 0
+STUB
+    mkdir -p "$DIR/.walg/restore"
+    bash "$SCRIPT" restore-run "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 > "$TMP/run.log" 2>&1 3>&- &
+    run_pid=$!
+    for _ in $(seq 1 50); do grep -q exec-start "$CALLS" && break; sleep 0.2; done
+    grep -q exec-start "$CALLS"
+    kill -TERM "$run_pid"
+    for _ in $(seq 1 40); do kill -0 "$run_pid" 2>/dev/null || break; sleep 0.5; done
+    cat "$TMP/run.log"
+    if kill -0 "$run_pid" 2>/dev/null; then false; fi
+    grep -qx "state=failed" "$DIR/.walg/restore/result"
+    grep -qx "stopped_at=draining" "$DIR/.walg/restore/result"
+    # Every read the drain started ended before the stack was brought up,
+    # and none after it.
+    up="$(grep -n "docker compose up -d$" "$CALLS" | head -n 1 | cut -d: -f1)"
+    [ -n "$up" ]
+    before="$(head -n "$up" "$CALLS")"
+    after="$(tail -n "+$up" "$CALLS")"
+    [ "$(grep -c exec-start <<<"$before")" -eq "$(grep -cE "exec-(killed|end)" <<<"$before")" ]
+    [ "$(grep -cE "exec-(start|killed|end)" <<<"$after")" -eq 0 ]
 }
 
 @test "installing again forgets the marks of a cluster that may be gone" {
