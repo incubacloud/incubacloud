@@ -711,6 +711,16 @@ class TestAlertNotifyDigest(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # A record is stamped with its transaction's time to the
+        # microsecond, and fields.Datetime.now() drops them: within the
+        # second the class's transaction began, what a test just wrote
+        # falls after the digest's window (``create_date <= now``) and
+        # is left out. The digest's clock runs a second ahead here.
+        wall_clock = fields.Datetime.now
+        self.patch(
+            fields.Datetime, "now",
+            lambda *args: wall_clock() + timedelta(seconds=1),
+        )
         self.host = self.env["cloud.host"].create(
             {
                 "name": "digest-alert-host",
