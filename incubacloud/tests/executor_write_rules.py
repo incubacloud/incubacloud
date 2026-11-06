@@ -48,8 +48,9 @@ WRITE_CALLS = frozenset({
 })
 
 #: The terminal hooks, which run on a durable cursor: ``_dispatch_outcome``
-#: runs ``on_success`` and ``on_failure``, ``_dispatch_abort`` ``on_abort``.
-HOOKS = frozenset({"on_success", "on_failure", "on_abort"})
+#: runs ``on_success`` and ``on_failure``, ``_dispatch_abort`` ``on_abort``,
+#: ``_dispatch_cancel`` ``on_cancelled_running``.
+HOOKS = frozenset({"on_success", "on_failure", "on_abort", "on_cancelled_running"})
 
 #: The hooks that write with ``self.env`` and are not terminal, named
 #: one by one because each is an exception to the rule. ``on_blocked``

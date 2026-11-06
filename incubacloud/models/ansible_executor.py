@@ -278,6 +278,9 @@ class AnsibleExecutor(AbstractExecutor):
         os.chmod(root, 0o700)
         try:
             self._build_private_data_dir(root)
+            # The playbook is the run's one step: cancelled from here on,
+            # the job closes through ``on_failure``.
+            self._step_results = {}
             rc, status = await asyncio.get_running_loop().run_in_executor(
                 None, self._run_playbook, root,
             )
