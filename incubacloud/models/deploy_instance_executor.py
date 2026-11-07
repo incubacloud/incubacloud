@@ -2024,11 +2024,18 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             ),
             # 12. Store module checksums baseline so future rebuilds
             #     can detect which modules changed via click-odoo-update.
+            #     The click-odoo-contrib of 7.0 to 10.0's images (1.12, the
+            #     last on Python 2) has no ``--only-compute-hashes``: there
+            #     a plain run stores them, after updating the modules of a
+            #     database that has just been created (QA of the series,
+            #     7-nov-2026).
             (
                 "Initialize module checksums",
-                f"cd {d} && {COMPOSE_RUN} --rm odoo"
-                f" click-odoo-update --only-compute-hashes"
-                f" --database {inst.postgres_dbname or 'prod'}",
+                f"cd {d} && {COMPOSE_RUN} --rm odoo sh -c"
+                " 'if click-odoo-update --help | grep -q -- --only-compute-hashes;"
+                ' then exec click-odoo-update --only-compute-hashes --database "$0";'
+                ' fi; exec click-odoo-update --database "$0"\''
+                f" {shlex.quote(inst.postgres_dbname or 'prod')}",
             ),
             # 13. Set web.base.url and report.url before the stack starts so
             #     any post-init steps and Odoo itself see the correct public

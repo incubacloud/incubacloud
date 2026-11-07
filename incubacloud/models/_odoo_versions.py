@@ -64,6 +64,12 @@ POSTGRES_MAJORS = (
     "9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18",
 )
 
+#: The oldest PostgreSQL doodba's template renders a ``backup`` service
+#: for: its copier.yml asks no backup question below it and its compose
+#: files render the service only from it, since the backup image does not
+#: support 9.6 (template v10.0.8).
+BACKUP_POSTGRES_MIN = "10"
+
 _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -241,6 +247,20 @@ def postgres_versions(version):
     return POSTGRES_MAJORS[
         POSTGRES_MAJORS.index(lowest) : POSTGRES_MAJORS.index(highest) + 1
     ]
+
+
+def postgres_has_backup(major):
+    """Whether an instance on PostgreSQL *major* gets doodba's backup service.
+
+    :param major: one of ``POSTGRES_MAJORS``; empty or unknown counts as
+        the field's default, which has it.
+    :rtype: bool
+    """
+    if major not in POSTGRES_MAJORS:
+        return True
+    return POSTGRES_MAJORS.index(major) >= POSTGRES_MAJORS.index(
+        BACKUP_POSTGRES_MIN
+    )
 
 
 def postgres_default(version):

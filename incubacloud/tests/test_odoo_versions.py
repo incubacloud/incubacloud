@@ -310,6 +310,33 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
                     {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "sql"},
                 )
 
+    def test_postgres_9_6_has_no_backup_service(self):
+        """The template renders none below 10: the instance does not count
+        on one, whatever backend it has."""
+        self.assertFalse(versions.postgres_has_backup("9.6"))
+        for major in ("10", "13", "17", "18", "", None):
+            with self.subTest(major=major):
+                self.assertTrue(versions.postgres_has_backup(major))
+        backend = self.env["cloud.backup.backend"].create({
+            "name": "series-backend", "backend_type": "s3",
+            "s3_bucket": "series-bucket", "s3_access_key_id": "AKIASERIES",
+            "s3_secret_access_key": "shh",
+        })
+        for series, has_it in (("10.0", False), ("11.0", True), ("19.0", True)):
+            with self.subTest(series=series):
+                # One production per project.
+                project = self.env["cloud.project"].create({
+                    "name": f"Series {series}", "odoo_version": series,
+                })
+                inst = self.env["cloud.instance"].create({
+                    "name": f"series-prod-{series[:-2]}",
+                    "project_id": project.id, "environment": "production",
+                    "host_id": self.host.id, "odoo_version": series,
+                    "backup_backend_id": backend.id,
+                })
+                self.assertEqual(inst._backup_enabled(), has_it)
+                self.assertEqual("backup" in inst.expected_services(), has_it)
+
     def test_a_series_on_odoo_db_gets_it(self):
         self.assertEqual(
             versions.script_env(self.instance20.odoo_version),

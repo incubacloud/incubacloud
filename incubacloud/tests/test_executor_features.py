@@ -268,6 +268,48 @@ class TestDeployCommandsChecksums(BaseCase):
         cmd = _find_cmd(self.cmds, "Initialize module checksums")
         self.assertIn("--only-compute-hashes", cmd[1])
 
+    def _container_run(self, help_text):
+        """Run the step's container command with a stand-in click-odoo-update.
+
+        :param str help_text: what the stand-in's ``--help`` prints.
+        :returns: the arguments the stand-in was run with, last call.
+        :rtype: str
+        """
+        import os
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        argv = shlex.split(_find_cmd(self.cmds, "Initialize module checksums")[1])
+        start = argv.index("odoo", argv.index("--rm")) + 1
+        self.assertEqual(argv[start:start + 2], ["sh", "-c"])
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp, "calls")
+            tool = Path(tmp, "click-odoo-update")
+            tool.write_text(
+                "#!/bin/sh\n"
+                f'[ "$1" = --help ] && {{ echo {shlex.quote(help_text)}; exit 0; }}\n'
+                f'echo "$*" > {shlex.quote(str(calls))}\n'
+            )
+            tool.chmod(0o755)
+            subprocess.run(
+                ["sh", "-c", *argv[start + 2:]], check=True,
+                env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"},
+            )
+            return calls.read_text().strip()
+
+    def test_checksums_are_only_computed_where_the_tool_can(self):
+        self.assertEqual(
+            self._container_run("  --only-compute-hashes  Only compute"),
+            "--only-compute-hashes --database prod",
+        )
+
+    def test_an_old_click_odoo_stores_them_with_a_plain_run(self):
+        """click-odoo-contrib 1.12, on 7.0 to 10.0, has no such option."""
+        self.assertEqual(
+            self._container_run("  --list-only  Log the list"), "--database prod",
+        )
+
     def test_init_db_has_stop_on_failure(self):
         cmd = _find_cmd(self.cmds, "Initialize database")
         self.assertIsNotNone(cmd, "Init DB command not found")
