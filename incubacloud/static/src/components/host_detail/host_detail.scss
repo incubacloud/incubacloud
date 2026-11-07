@@ -167,6 +167,69 @@
     }
 }
 
+// ── Connection: where the SSH key comes from, and its public half ─────────────
+
+.ic-key-source {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+
+    &__option {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 400;
+        cursor: pointer;
+    }
+}
+
+.ic-host-pubkey {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    > label { margin-block-end: 0; }
+}
+
+.ic-copy-field {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+
+    &__value {
+        flex: 1;
+        min-width: 0;
+        padding: 8px 12px;
+        background: $code-bg;
+        border: 1px solid rgba(var(--rl-line-rgb), 0.6);
+        border-radius: 6px;
+        font-family: $font-mono;
+        font-size: 12px;
+        color: $code-text;
+        word-break: break-all;
+        white-space: pre-wrap;
+        user-select: all;
+    }
+
+    &__btn {
+        flex-shrink: 0;
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--rl-line2);
+        border-radius: 6px;
+        color: $text-secondary;
+        cursor: pointer;
+
+        &:hover { color: $text-primary; }
+
+        .fa-check { color: $state-ok; }
+    }
+}
+
 // ── Traefik: domain + password row above editors ───────────────────────────────
 
 .ic-traefik-meta {

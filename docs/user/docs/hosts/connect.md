@@ -31,18 +31,29 @@ Go to `/cloud/hosts`. Click **Add Host**.
 
 ### 3. SSH key (recommended path)
 
-The panel does not generate the key: you bring one. On your computer, create a
-key pair without a passphrase (the panel has no field for one):
+On the **Connection** tab, **Generate a key for me** is selected: the panel
+creates a key pair for this host and shows its **public key**, with a button to
+copy it. The private half stays in the panel, stored encrypted.
+
+Put the public key on the VPS, as the user you entered:
+
+- if you have not created the server yet, paste it in your provider's SSH key
+  field when you create it, then come back and fill in its IP address;
+- if the server already exists, run the command the panel shows under the key,
+  which appends it to that user's `~/.ssh/authorized_keys`:
 
 ```bash
-ssh-keygen -t ed25519 -N "" -f ~/.ssh/incubacloud_host
+mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "ssh-ed25519 AAAA... incubacloud" >> ~/.ssh/authorized_keys
 ```
 
-Put the **public** half (`~/.ssh/incubacloud_host.pub`) on the VPS: paste it
-in your provider's SSH key field when you create the server, or append it to
-the chosen user's `~/.ssh/authorized_keys`. Upload the **private** half
-(`~/.ssh/incubacloud_host`) in **SSH Private Key**; the panel stores it
-encrypted.
+Keep the form open while you do it: the key is saved with the host.
+
+To use a key of your own instead, choose **Upload my own private key** and
+upload the private half. It must have no passphrase (the panel has no field for
+one).
+
+The host's **Connection** tab keeps showing the public key, so you can copy it
+again later.
 
 Create the host, then click **Trust SSH Key** in its action bar. Green = we
 got in, and the panel keeps the host's key to check it on every connection.

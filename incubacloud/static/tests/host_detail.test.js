@@ -787,3 +787,54 @@ describe("HostDetail — onKeyFileChange", () => {
         expect(ctx.state.form.key_file).toBe(null);
     });
 });
+
+describe("HostDetail — SSH public key", () => {
+    const shown = Object.getOwnPropertyDescriptor(HostDetail.prototype, "sshPublicKey").get;
+    const command = Object.getOwnPropertyDescriptor(
+        HostDetail.prototype, "authorizedKeysCommand",
+    ).get;
+    const KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample incubacloud";
+
+    test("a new host shows the generated key, and none for an upload", () => {
+        const ctx = {
+            isNew: true,
+            state: {
+                form: { login_type: "ssh_key", key_source: "generate", key_file: null },
+                generatedPublicKey: KEY,
+            },
+        };
+        expect(shown.call(ctx)).toBe(KEY);
+        ctx.state.form.key_source = "upload";
+        expect(shown.call(ctx)).toBe("");
+    });
+
+    test("a password host shows no key", () => {
+        const ctx = {
+            isNew: true,
+            state: {
+                form: { login_type: "password", key_source: "generate" },
+                generatedPublicKey: KEY,
+            },
+        };
+        expect(shown.call(ctx)).toBe("");
+    });
+
+    test("a saved host shows its stored key until a new file is picked", () => {
+        const ctx = {
+            isNew: false,
+            state: {
+                form: { login_type: "ssh_key", key_file: null },
+                host: { ssh_public_key: KEY },
+            },
+        };
+        expect(shown.call(ctx)).toBe(KEY);
+        ctx.state.form.key_file = "bmV3";
+        expect(shown.call(ctx)).toBe("");
+    });
+
+    test("the command appends the key to authorized_keys", () => {
+        expect(command.call({ sshPublicKey: KEY })).toBe(
+            `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "${KEY}" >> ~/.ssh/authorized_keys`,
+        );
+    });
+});

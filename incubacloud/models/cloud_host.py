@@ -31,7 +31,12 @@ from . import _config_snapshot_diff as _snapshot_diff
 from ._concurrency import read_committed_cursor
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar, EncryptedText
-from .password_utils import generate_password
+from .password_utils import (
+    decrypt_value,
+    encrypt_value,
+    generate_password,
+    is_encrypted,
+)
 from .transport import SSHTransport
 
 _logger = logging.getLogger(__name__)
@@ -1202,6 +1207,77 @@ class CloudHost(models.Model):
         if not self.key_file:
             return b""
         return base64.b64decode(self.key_file)
+
+    @api.model
+    def _generate_ssh_key(self):
+        """Generate an Ed25519 key pair for a host that is not created yet.
+
+        The new-host form shows the public half before the host exists, so
+        that it can go into the provider's form while the server is being
+        ordered. The private half is handed back sealed with the panel's
+        secret key: the browser holds it until the host is created and
+        cannot read it; :meth:`_unseal_ssh_key` turns it into ``key_file``.
+
+        :return: ``{'public_key': <OpenSSH line>, 'sealed_key': <enc:...>}``
+        :rtype: dict
+        :raise IncubacloudCryptoError: when the panel has no secret key
+        """
+        key = asyncssh.generate_private_key(
+            "ssh-ed25519", comment="incubacloud",
+        )
+        pem = key.export_private_key("openssh")
+        return {
+            "public_key": key.export_public_key("openssh").decode().strip(),
+            "sealed_key": encrypt_value(
+                base64.b64encode(pem).decode(), self.env,
+            ),
+        }
+
+    @api.model
+    def _unseal_ssh_key(self, sealed):
+        """Return the ``key_file`` value of a key sealed by this panel.
+
+        Only a value sealed with this panel's secret key is accepted, and
+        only if it holds a private key asyncssh can use.
+
+        :param str sealed: ``sealed_key`` from :meth:`_generate_ssh_key`
+        :return: the key as ``key_file`` stores it (base64 of the PEM)
+        :rtype: str
+        :raise UserError: when *sealed* is not such a key
+        """
+        try:
+            if not is_encrypted(sealed):
+                raise ValueError("not sealed by this panel")
+            value = decrypt_value(sealed, self.env)
+            asyncssh.import_private_key(base64.b64decode(value))
+        except (ValueError, TypeError) as exc:
+            raise UserError(_(
+                "The generated key could not be read. Generate a new one, "
+                "or upload your own."
+            )) from exc
+        return value
+
+    def _ssh_public_key(self):
+        """Return the OpenSSH public half of the stored key, or ``""``.
+
+        Derived from ``key_file`` on every call, so it is right for a key
+        the panel generated and for one a person uploaded. Empty for a
+        password host, a host with no key, and a key that cannot be read
+        (unreadable ciphertext, not a key, or protected by a passphrase).
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.login_type != "ssh_key":
+            return ""
+        try:
+            raw = self._get_ssh_private_key_bytes()
+            if not raw:
+                return ""
+            key = asyncssh.import_private_key(raw)
+        except ValueError:
+            return ""
+        return key.export_public_key("openssh").decode().strip()
 
     def _known_hosts_line(self, server_key):
         """Return the ``known_hosts`` line of *server_key* at this endpoint.

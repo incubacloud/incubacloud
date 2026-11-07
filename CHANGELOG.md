@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.215] — 2026-11-07
+
+### Added
+
+- **The panel generates a host's SSH key.** A new host with Login Type *SSH
+  Key* offers *Generate a key for me*, selected by default, or *Upload my own
+  private key* as before. The panel's server makes an Ed25519 pair as the form
+  opens (`/cloud/generate_host_key`), so its public half can be pasted into the
+  provider's form before the server, and its address, exist. The private half
+  reaches the browser only sealed with the panel's secret key and is stored in
+  `key_file` when the host is created, as an uploaded key is.
+- **A host's public key stays on its Connection tab,** derived from the stored
+  key (generated or uploaded), with copy buttons for the key and for a command
+  that adds it to a server's `~/.ssh/authorized_keys`. `/cloud/get_host`, and
+  so the MCP's `get_host`, answer it as `ssh_public_key`; the private key is
+  never answered.
+
 ## [1.0.214] — 2026-11-07
 
 Publish this core and `incubacloud_saas_manager` in the same deployment: the

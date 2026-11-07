@@ -3283,6 +3283,18 @@ msgstr ""
 "un fork de la plantilla doodba."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Copy the command"
+msgstr "Copiar el comando"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Copy the public key"
+msgstr "Copiar la clave pública"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not access a repository declared by the project."
@@ -3325,6 +3337,12 @@ msgstr "No se pudo limpiar la copia congelada"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_mails.js:0
 msgid "Could not clear the mailbox"
 msgstr "No se pudo vaciar el buzón"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Could not copy. Select the text and copy it."
+msgstr "No se pudo copiar. Seleccione el texto y cópielo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5857,6 +5875,12 @@ msgstr "Ajustes generales"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Generate a key for me"
+msgstr "Generar una clave por mí"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Generated automatically. Replacing it means redeploying the\n"
@@ -5866,6 +5890,12 @@ msgstr ""
 "Se genera automáticamente. Reemplazarla obliga a redesplegar el central y a "
 "re-enrolar todos los hosts — hasta que ambos lados coincidan, los envíos se "
 "rechazan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Generating a key…"
+msgstr "Generando una clave…"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert__payload
@@ -6872,6 +6902,13 @@ msgid ""
 msgstr ""
 "Si está activado, aparece un botón para este tipo de job en la barra de "
 "acciones de la instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "If the server already exists, run this on it as the user above:"
+msgstr ""
+"Si el servidor ya existe, ejecute esto en él con el usuario de arriba:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9100,6 +9137,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "No key has been generated. Try again, or upload your own."
+msgstr "No se ha generado ninguna clave. Inténtelo de nuevo o suba la suya."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "No request matches this search."
 msgstr "Ninguna petición coincide con esta búsqueda."
@@ -10466,6 +10509,13 @@ msgstr "La contraseña es obligatoria para login por contraseña"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Paste it in your provider's SSH key field when you create the server."
+msgstr ""
+"Péguela en el campo de clave SSH de su proveedor al crear el servidor."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 msgid ""
 "Paste the GitHub URL of your project. We will automatically\n"
@@ -10977,6 +11027,12 @@ msgstr "Clave pública"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_public_host
 msgid "Public host name of the central"
 msgstr "Nombre de host público del central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Public key"
+msgstr "Clave pública"
 
 #. module: incubacloud
 #. odoo-python
@@ -12295,6 +12351,12 @@ msgstr "Cadena S3"
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "S3 error %(code)s: %(msg)s"
 msgstr "Error S3 %(code)s: %(msg)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "SSH key"
+msgstr "Clave SSH"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13770,6 +13832,13 @@ msgstr ""
 "antes de la instancia existente y reintente la importación."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"The generated key could not be read. Generate a new one, or upload your own."
+msgstr "No se pudo leer la clave generada. Genere una nueva o suba la suya."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__public_key
 msgid ""
 "The half installed on the host. The private half is shown to the caller once"
@@ -13859,6 +13928,12 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert__resolved_by_job_id
 msgid "The job whose success closed this failure alert."
 msgstr "El trabajo cuyo éxito cerró esta alerta de fallo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "The key could not be generated."
+msgstr "No se pudo generar la clave."
 
 #. module: incubacloud
 #. odoo-python
@@ -14966,6 +15041,7 @@ msgstr "Rangos de proxy de confianza (excepción)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Try again"
@@ -15188,6 +15264,12 @@ msgstr "No soportado"
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Unsupported repository content encoding."
 msgstr "La codificación del contenido del repositorio no es compatible."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Upload my own private key"
+msgstr "Subir mi propia clave privada"
 
 #. module: incubacloud
 #. odoo-javascript
