@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.217] — 2026-11-08
+
+The update creates the `cloud_job_outcome` table; nothing else changes in the
+database. `incubacloud_saas_manager`'s tests import the new harness, so its CI
+needs this core.
+
+### Fixed
+
+- **A job whose success was saved is not run again.** When the store of a job's
+  `done` lost a serialization race after its `on_success` had committed, or the
+  worker died in between, queue_job ran the whole job a second time: a move's
+  restore looked for the archive its first success had removed and the move was
+  rolled back; rebuilds built and restarted twice. The success hook now leaves a
+  mark (`cloud.job.outcome`) on its own cursor; the next attempt finds it, runs
+  nothing, writes back what the lost transaction held on the job and arms the
+  unlink a delete or a purge left for its commit.
+- **The store of `done` writes only the job's rows.** The instance's state probe,
+  the success's mail, Telegram, webhook and bus event, and the layers' end hooks
+  wait for its commit, on cursors of their own: a store that does not commit no
+  longer announces a success, nor announces it twice, and queuing the probe no
+  longer makes the store fail. A callback after the commit that raises is logged.
+
+### Added
+
+- `tests/idempotency_harness.py`: runs a job type once, twice and cut off at each
+  call to a host, and compares the result; `delete_instance` and
+  `restore_instance` are specified, and every other type is listed with the
+  reason it is not yet.
+
 ## [1.0.216] — 2026-11-08
 
 The update needs no migration.
