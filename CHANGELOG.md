@@ -37,6 +37,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   host page's button that reveals the SSH password is unchanged. Publish with
   the `incubacloud_saas_manager` and `incubacloud_tenant` that read `key_file`
   elevated in their VPS provisioning.
+- **A host's default certificate key is for system administrators only.**
+  `cloud.host.tls_default_key` carried no group, so every role down to a
+  Stakeholder read the private key of the certificate the host's proxy serves
+  through the same endpoints. It now carries `base.group_system`; the panel
+  reads it elevated (`_effective_tls_default`, the pair's check, the host
+  page's `has_tls_default_key`) and `write` stores it, with the certificate
+  it pairs with, elevated once the manager check passed.
 - **A generated key opens only as one, and for a day.** What is sealed starts
   with `host-genkey:v1:` and `/cloud/create_host` refuses any other value this
   panel encrypted, or one sealed more than 24 hours earlier.

@@ -743,8 +743,13 @@ class CloudHost(models.Model):
              "from anybody else's pointing at the same origin. Leave "
              "empty to accept any connection the firewall lets in.",
     )
+    # For system administrators only, as the SSH credentials are: every
+    # role down to a Stakeholder reads ``cloud.host``. The panel's code
+    # reads it elevated (``_effective_tls_default``) and writes it
+    # elevated once the manager check passed (``create``, ``write``).
     tls_default_key = EncryptedText(
         string="Default TLS Private Key",
+        groups="base.group_system",
         help="Private key for the certificate above. Stored encrypted "
              "and written to the host with owner-only permissions.",
     )
@@ -2201,10 +2206,10 @@ class CloudHost(models.Model):
 
     # Password fields that are auto-generated when left empty
     _PASSWORD_FIELDS = ("password", "traefik_panel_password")
-    # The SSH credentials: readable and writable by system administrators
-    # only, so ``create`` and ``write`` store them elevated once the
-    # manager check passed.
-    _CREDENTIAL_FIELDS = ("password", "key_file")
+    # The SSH credentials and the default certificate's key: readable and
+    # writable by system administrators only, so ``create`` and ``write``
+    # store them elevated once the manager check passed.
+    _CREDENTIAL_FIELDS = ("password", "key_file", "tls_default_key")
     # Traefik fields that should fall back to template defaults when empty
     _TRAEFIK_TEMPLATE_FIELDS = {
         "traefik_config_yml": "config.yml",
@@ -2432,6 +2437,11 @@ class CloudHost(models.Model):
             for field in self._CREDENTIAL_FIELDS
             if field in vals
         }
+        # The default certificate goes with its key: the pair is checked as
+        # one (``_check_tls_default_pair``), and written apart a new
+        # certificate would be checked against the old key.
+        if "tls_default_key" in credentials and "tls_default_cert" in vals:
+            credentials["tls_default_cert"] = vals["tls_default_cert"]
         vals = {k: v for k, v in vals.items() if k not in credentials}
         result = super().write(vals)
         if credentials:
@@ -3644,8 +3654,9 @@ class CloudHost(models.Model):
             key that belongs to a different certificate.
         """
         for host in self:
+            # The key read elevated: it is for system administrators only.
             problem = self._tls_pair_error(
-                host.tls_default_cert, host.tls_default_key,
+                host.tls_default_cert, host.sudo().tls_default_key,
             )
             if problem:
                 raise ValidationError(problem)
@@ -3746,11 +3757,17 @@ class CloudHost(models.Model):
         sits behind their CDN, which is what keeps a self-hosted host
         from being given somebody else's.
 
+        The key is read elevated: it is for system administrators only,
+        and the jobs and pages that serve it run as whoever started them.
+
         :return: ``(certificate, private key)``, both possibly empty.
         :rtype: tuple
         """
         self.ensure_one()
-        return (self.tls_default_cert or "", self.tls_default_key or "")
+        return (
+            self.tls_default_cert or "",
+            self.sudo().tls_default_key or "",
+        )
 
     def _effective_cdn_client_ca(self):
         """Return the authority a CDN's client certificate must chain to.

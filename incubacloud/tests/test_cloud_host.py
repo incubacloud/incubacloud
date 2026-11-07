@@ -1189,6 +1189,103 @@ class TestSaveHostCertificateRoute(TestCloudDeleteHostRoute):
         self.assertNotIn(key, repr(data))
 
 
+class TestDefaultCertificateKeyStaysInThePanel(TestSaveHostCertificateRoute):
+    """No role of the panel reads a host's default certificate key.
+
+    ``tls_default_key`` is the private key of the certificate the host's
+    proxy serves, and ``cloud.host`` is readable by every role down to a
+    Stakeholder: it is readable by system administrators only, as the SSH
+    credentials are. The panel's own code reads it elevated, so the jobs a
+    Developer queues and the host page keep working.
+
+    Reuses the parent's manager, host and ``_call``; the loader collects
+    only the tests declared here.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stakeholder = new_test_user(
+            self.env,
+            login="tls_key_stakeholder",
+            groups="base.group_user,incubacloud.group_cloud_user",
+        )
+        self.developer = new_test_user(
+            self.env,
+            login="tls_key_developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        self.cert, self.key = make_pair()
+        self.host.write({
+            "tls_default_cert": self.cert, "tls_default_key": self.key,
+        })
+
+    def test_no_role_reads_the_key(self):
+        """Not by ``read``, ``search_read``, ``call_kw``, export or search."""
+        from odoo.service.model import call_kw
+
+        (self.stakeholder | self.developer | self.manager).write({
+            "group_ids": [(4, self.env.ref("base.group_allow_export").id)],
+        })
+        ids = self.host.ids
+        for user in (self.stakeholder, self.developer, self.manager):
+            Host = self.env["cloud.host"].with_user(user)
+            with self.subTest(user=user.login):
+                with self.assertRaises(AccessError):
+                    Host.browse(ids).read(["tls_default_key"])
+                with self.assertRaises(AccessError):
+                    Host.search_read([("id", "in", ids)], ["tls_default_key"])
+                with self.assertRaises(AccessError):
+                    call_kw(Host, "read", [ids, ["tls_default_key"]], {})
+                with self.assertRaises(AccessError):
+                    Host.browse(ids).export_data(["tls_default_key"])
+                with self.assertRaises(AccessError):
+                    Host.search([("tls_default_key", "!=", False)])
+                self.assertNotIn("tls_default_key", Host.fields_get())
+
+    def test_a_developer_s_job_still_serves_the_certificate(self):
+        """What full_setup and the deploy read, read elevated."""
+        host = self.host.with_user(self.developer)
+        self.assertEqual(host._effective_tls_default(), (self.cert, self.key))
+        self.assertTrue(host._tls_default_covers("a.example.test"))
+        self.assertTrue(host._shipped_tls_default_yml())
+
+    def test_a_manager_replaces_and_keeps_the_pair(self):
+        """A new pair is checked as one, and an untouched key is kept."""
+        cert, key = make_pair(issuer="Other CA")
+        host = self.host.with_user(self.manager)
+        host.write({"tls_default_cert": cert, "tls_default_key": key})
+        self.env.flush_all()
+        self.assertEqual(self.host._effective_tls_default(), (cert, key))
+        host.write({"tls_default_cert": cert})
+        self.env.flush_all()
+        self.assertEqual(self.host._effective_tls_default()[1], key)
+        with self.assertRaises(ValidationError):
+            host.write({"tls_default_cert": self.cert})
+            self.env.flush_all()
+
+    def test_a_manager_creates_a_host_with_its_pair(self):
+        host = self.env["cloud.host"].with_user(self.manager).create({
+            "name": "tls-key-new-host",
+            "ip_address": "198.51.100.77",
+            "user": "root",
+            "wildcard_domain": "tls-key-new.example.com",
+            "tls_default_cert": self.cert,
+            "tls_default_key": self.key,
+        })
+        self.assertEqual(
+            host.sudo()._effective_tls_default(), (self.cert, self.key),
+        )
+
+    def test_the_host_page_says_whether_a_key_is_stored(self):
+        """Read elevated: a refused read would count as a stored key."""
+        data = self._call("cloud_get_host", host_id=self.host.id)
+        self.assertTrue(data["has_tls_default_key"])
+        self.assertNotIn(self.key, repr(data))
+        self.host.write({"tls_default_cert": ""})
+        data = self._call("cloud_get_host", host_id=self.host.id)
+        self.assertFalse(data["has_tls_default_key"])
+
+
 class TestStoreCertificatesDeclared(TransactionCase):
     """Whether a host's config.yml loads certificates of its own (RB-12)."""
 
