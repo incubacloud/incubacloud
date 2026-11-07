@@ -8,6 +8,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.215] — 2026-11-07
 
+The update needs no migration. `incubacloud_connect` 1.0.3 reaches an existing
+instance with its next rebuild.
+
+### Fixed
+
+- **7.0 to 12.0 deploy again** (QA of the series, 7-nov-2026). The image of 7.0
+  to 10.0 reads apt from archive.debian.org (`debian_archive` on their cards),
+  and instances get `incubacloud_connect` without its tests or bytecode, which
+  Python 2.7 and 3.5 refused to compile; a deploy or a rebuild replaces the
+  copy an instance had instead of copying over it. The checksums are stored
+  with a plain `click-odoo-update` where it has no `--only-compute-hashes`,
+  and an instance on PostgreSQL 9.6 gets no backup service, which doodba's
+  template does not render there.
+- **Connect as user works on 9.0 to 12.0** (`incubacloud_connect` 1.0.3): the
+  module imports on Python 2.7 and 3.5 and with 9.0's `openerp` package, and
+  9.0 reads its manifest from `__openerp__.py`.
+- **Installing `incubacloud_connect` on a restored database works on every
+  series.** A restore, a staging and a rebuild run Odoo headless with the
+  option its series' card names (`headless`): `--no-http` from 11.0,
+  `--no-xmlrpc` before. `restore.sh ensure-connect` takes it as an argument
+  instead of reading `odoo --help`, which from 19.0 lists no server options.
+
+### Added
+
+- CI compiles what a deploy ships of `incubacloud_connect` with Python 2.7 and
+  3.5, in their official images (`connect-old-python`).
+
 ### Added
 
 - **The panel generates a host's SSH key.** A new host with Login Type *SSH
