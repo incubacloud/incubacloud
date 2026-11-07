@@ -560,3 +560,23 @@ HEADS_PLAIN_URL="https://github.com/acme/addons.git"
         [[ "$heads" == *"$alias main unknown-"* ]]
     done
 }
+
+@test "debian-archive puts the archive step first in the image's build" {
+    mkdir -p "$DIR/odoo/custom/build.d"
+    : > "$DIR/odoo/custom/build.d/20-update-pg-repos"
+    run bash "$SCRIPT" debian-archive "$DIR"
+    [ "$status" -eq 0 ]
+    step="$DIR/odoo/custom/build.d/05-incubacloud-debian-archive"
+    [ -x "$step" ]
+    cmp "$step" "${BATS_TEST_DIRNAME}/../../scripts/doodba/debian_archive.sh"
+    [ "$(find "$DIR/odoo/custom/build.d" -type f | sort | head -1)" = "$step" ]
+}
+
+@test "debian-archive writes the step again over an older one" {
+    mkdir -p "$DIR/odoo/custom/build.d"
+    echo "old" > "$DIR/odoo/custom/build.d/05-incubacloud-debian-archive"
+    run bash "$SCRIPT" debian-archive "$DIR"
+    [ "$status" -eq 0 ]
+    cmp "$DIR/odoo/custom/build.d/05-incubacloud-debian-archive" \
+        "${BATS_TEST_DIRNAME}/../../scripts/doodba/debian_archive.sh"
+}

@@ -38,6 +38,12 @@ Fields of a card:
     The lowest doodba copier template (``vX.Y.Z``) able to render the
     series, or None when any does. A deploy or rebuild whose pin is
     older refuses before copier fails on its own.
+``debian_archive``
+    Whether doodba's image of the series is built on a Debian release
+    gone from the mirrors, so its build reads apt from archive.debian.org
+    (``scripts/doodba/debian_archive.sh``, put in the image's build by
+    ``deploy.sh debian-archive``). Without it the image of 7.0 to 10.0,
+    on Debian 8, does not build (QA of the series, 7-nov-2026).
 """
 import re
 
@@ -61,7 +67,10 @@ POSTGRES_MAJORS = (
 _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
-def _card(offered, postgres, db_tool, template_min, neutralize="odoo"):
+def _card(
+    offered, postgres, db_tool, template_min, neutralize="odoo",
+    debian_archive=False,
+):
     """Build one series' card, checking its values.
 
     :param bool offered: see the module docstring.
@@ -70,6 +79,7 @@ def _card(offered, postgres, db_tool, template_min, neutralize="odoo"):
     :param str db_tool: one of ``DB_TOOLS``.
     :param template_min: ``vX.Y.Z`` or None.
     :param str neutralize: one of ``NEUTRALIZERS``.
+    :param bool debian_archive: see the module docstring.
     :rtype: dict
     """
     lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
@@ -87,6 +97,7 @@ def _card(offered, postgres, db_tool, template_min, neutralize="odoo"):
         "db_tool": db_tool,
         "neutralize": neutralize,
         "template_min": template_min,
+        "debian_archive": bool(debian_archive),
     }
 
 
@@ -100,10 +111,23 @@ VERSIONS = {
     # can still deploy one, which is how that run tests it.
     # 7.0 to 15.0 run on what the doodba template allows each (v10.0.8's
     # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
-    "7.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "8.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "9.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "10.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    # 7.0 to 10.0 are on Debian 8, gone from the mirrors (7-nov-2026).
+    "7.0": _card(
+        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        debian_archive=True,
+    ),
+    "8.0": _card(
+        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        debian_archive=True,
+    ),
+    "9.0": _card(
+        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        debian_archive=True,
+    ),
+    "10.0": _card(
+        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        debian_archive=True,
+    ),
     "11.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
     "12.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
     "13.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
@@ -235,6 +259,15 @@ def db_tool(version):
     :rtype: str
     """
     return card(version)["db_tool"]
+
+
+def debian_archive(version):
+    """Whether *version*'s image is built reading apt from archive.debian.org.
+
+    :param str version: a series.
+    :rtype: bool
+    """
+    return card(version)["debian_archive"]
 
 
 def script_env(version):

@@ -222,6 +222,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 f" {src}/private/"
                 f" && rm -rf {self._modules_stage_dir()}",
             ),
+            *self._debian_archive_steps(d),
             # 7. Write Odoo conf, pip.txt, apt.txt.
             (
                 "Write Odoo conf",
