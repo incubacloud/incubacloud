@@ -27,6 +27,7 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
+from odoo.addons.incubacloud.models import _odoo_versions
 from odoo.addons.incubacloud.models.abstract_executor import (
     JobCancelled,
     JobWorkerLost,
@@ -560,8 +561,12 @@ class TestTheActions(_PitrCase):
         enqueue.assert_not_called()
 
     def test_a_postgres_before_twelve_cannot_be_switched_on(self):
-        """``pitr.sh`` recovers with ``recovery.signal``, from 12 on."""
-        self.inst.write({"odoo_version": "13.0", "postgres_version": "10"})
+        """``pitr.sh`` recovers with ``recovery.signal``, from 12 on. No
+        series runs below 12 any more, so a card that did stands in for a
+        record stored on an older one."""
+        older = dict(_odoo_versions.VERSIONS["13.0"], postgres=("10", "16", "16"))
+        with patch.dict(_odoo_versions.VERSIONS, {"13.0": older}):
+            self.inst.write({"odoo_version": "13.0", "postgres_version": "10"})
         self.assertFalse(self.inst._pitr_applicable())
         with self.assertRaisesRegex(UserError, "PostgreSQL 12"):
             self.inst.action_pitr_enable()

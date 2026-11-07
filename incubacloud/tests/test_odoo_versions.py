@@ -62,7 +62,8 @@ class TestTheSeriesCards(BaseCase):
             # v10.0.8 allows each (its copier.yml) but below 12, the first
             # major with continuous recovery, which 9.6 lacks as well as a
             # backup service: 12 instead, beyond the template's 9.6 alone
-            # for 8.0 to 10.0, and 12 to 13 for 11.0 and 12.0 (owner,
+            # for 8.0 to 10.0, and 12 to 13 for 11.0 and 12.0; 13.0 to
+            # 15.0 start at 12 instead of the template's 10 (owner,
             # 7-nov-2026). No neutralization of Odoo's own before 16.0.
             # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
             # and have no ``--no-http`` (7-nov-2026).
@@ -74,8 +75,8 @@ class TestTheSeriesCards(BaseCase):
                 ),
             ),
             **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
-            **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
-            "15.0": card(("10", "17", "17"), "sql"),
+            **dict.fromkeys(("13.0", "14.0"), card(("12", "16", "16"), "sql")),
+            "15.0": card(("12", "17", "17"), "sql"),
             **dict.fromkeys(("16.0", "17.0"), card(("14", "18", "17"))),
             # What the launch offers (owner, 2-nov-2026); the rest open one by
             # one as their run of the series passes.
