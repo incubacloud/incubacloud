@@ -8,6 +8,8 @@ needs, the importer's acceptance — comes from the card and nowhere else.
 """
 from unittest.mock import MagicMock, patch
 
+import yaml
+
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
@@ -46,26 +48,30 @@ class TestTheSeriesCards(BaseCase):
         def card(
             postgres, neutralize="odoo", db_tool="click-odoo", template=None,
             offered=False, debian_archive=False, headless="--no-http",
+            beyond_template=False,
         ):
             return {
                 "offered": offered, "postgres": postgres, "db_tool": db_tool,
                 "neutralize": neutralize, "template_min": template,
                 "debian_archive": debian_archive, "headless": headless,
+                "postgres_beyond_template": beyond_template,
             }
 
         expected = {
-            # What doodba's template v10.0.8 allows each (its copier.yml),
-            # and no neutralization of Odoo's own before 16.0. 7.0 to 10.0
-            # are built on Debian 8, gone from the mirrors, and have no
-            # ``--no-http`` (7-nov-2026).
+            # 7.0 is retired (owner, 7-nov-2026). What doodba's template
+            # v10.0.8 allows each (its copier.yml) but 9.6, which has no
+            # backup service: 10 instead, beyond the template's 9.6 alone
+            # for 8.0 to 10.0. No neutralization of Odoo's own before 16.0.
+            # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
+            # and have no ``--no-http`` (7-nov-2026).
             **dict.fromkeys(
-                ("7.0", "8.0", "9.0", "10.0"),
+                ("8.0", "9.0", "10.0"),
                 card(
-                    ("9.6", "9.6", "9.6"), "sql", debian_archive=True,
-                    headless="--no-xmlrpc",
+                    ("10", "10", "10"), "sql", debian_archive=True,
+                    headless="--no-xmlrpc", beyond_template=True,
                 ),
             ),
-            **dict.fromkeys(("11.0", "12.0"), card(("9.6", "13", "13"), "sql")),
+            **dict.fromkeys(("11.0", "12.0"), card(("10", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
             "15.0": card(("10", "17", "17"), "sql"),
             **dict.fromkeys(("16.0", "17.0"), card(("14", "18", "17"))),
@@ -88,6 +94,7 @@ class TestTheSeriesCards(BaseCase):
                     {
                         "offered", "postgres", "db_tool", "neutralize",
                         "template_min", "debian_archive", "headless",
+                        "postgres_beyond_template",
                     },
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
@@ -123,6 +130,68 @@ class TestTheSeriesCards(BaseCase):
         with self.assertRaises(KeyError):
             versions.card("6.1")
 
+    def test_seven_is_retired_and_nine_six_gone(self):
+        """7.0 can neither dump, restore nor update its database, and 9.6
+        has no backup service (owner, 7-nov-2026): no picker, field or
+        tool offers either."""
+        self.assertNotIn("7.0", versions.VERSIONS)
+        self.assertNotIn(("7.0", "7.0"), versions.ODOO_VERSION_SELECTION)
+        self.assertNotIn("9.6", versions.POSTGRES_MAJORS)
+        self.assertEqual(versions.POSTGRES_MAJORS[0], "10")
+
+    def test_a_postgres_beyond_the_template_is_handed_to_copier(self):
+        """8.0 to 10.0 on 10: the template's ``pg_per_odoo`` entry of the
+        series, keyed as the template reads it; nothing for the rest."""
+        for series in ("8.0", "9.0", "10.0"):
+            with self.subTest(series=series):
+                self.assertEqual(
+                    versions.copier_defaults(series),
+                    {"pg_per_odoo": {float(series): {"oldest": "10", "latest": "10"}}},
+                )
+        for series in ("11.0", "19.0", "20.0", "7.0", "", None, False):
+            with self.subTest(series=series):
+                self.assertEqual(versions.copier_defaults(series), {})
+
+
+class TestCopierTakesThePostgresOfTheCard(BaseCase):
+    """A deploy and a rebuild of 8.0 to 10.0 hand copier a settings file.
+
+    Its defaults hold the card's PostgreSQL as the template's
+    ``pg_per_odoo``: an answer in the data would reach ``copier copy`` but
+    not the replay ``copier update`` starts with (copier 9.19.1,
+    7-nov-2026). No other series gets one, and copier runs as before.
+    """
+
+    STEPS = (
+        (_make_deploy_executor, "Deploy with copier"),
+        (_make_rebuild_executor, "Update with copier"),
+    )
+
+    def test_the_copier_step_of_an_old_series_names_the_settings(self):
+        for make, label in self.STEPS:
+            with self.subTest(executor=make.__name__):
+                ex = make(odoo_version="9.0")
+                steps = dict(c[:2] for c in ex.get_commands())
+                settings = ex._tmp("copier-settings.yml")
+                self.assertTrue(
+                    steps[label].startswith(f"IC_COPIER_SETTINGS={settings} bash "),
+                    steps[label],
+                )
+                self.assertIn(settings, steps["Remove temp files"])
+                self.assertEqual(
+                    yaml.safe_load(ex._copier_settings_content()),
+                    {"defaults": {"pg_per_odoo": {9.0: {"oldest": "10", "latest": "10"}}}},
+                )
+
+    def test_no_other_series_gets_one(self):
+        for make, label in self.STEPS:
+            for version in ("11.0", "19.0", "20.0", None):
+                with self.subTest(executor=make.__name__, version=version):
+                    ex = make(odoo_version=version)
+                    steps = dict(c[:2] for c in ex.get_commands())
+                    self.assertNotIn("IC_COPIER_SETTINGS", steps[label])
+                    self.assertIsNone(ex._copier_settings_content())
+
     def test_the_postgres_range_and_default(self):
         self.assertEqual(
             versions.postgres_versions("19.0"), ("14", "15", "16", "17", "18"),
@@ -151,7 +220,7 @@ class TestTheSeriesCards(BaseCase):
 
 
 class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
-    """7.0 to 10.0's image reads apt from archive.debian.org; no other's."""
+    """8.0 to 10.0's image reads apt from Freexian's Extended LTS; no other's."""
 
     LABEL = "Read apt from the Debian archive"
 
@@ -165,7 +234,7 @@ class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
 
     def test_the_deploy_and_the_rebuild_of_an_old_series_get_it(self):
         for make in (_make_deploy_executor, _make_rebuild_executor):
-            for version in ("7.0", "10.0"):
+            for version in ("8.0", "10.0"):
                 with self.subTest(executor=make.__name__, version=version):
                     steps = self._steps(make, version)
                     self.assertIn("deploy.sh debian-archive", steps[self.LABEL])
@@ -183,7 +252,7 @@ class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
 
     def test_no_other_series_gets_it(self):
         for make in (_make_deploy_executor, _make_rebuild_executor):
-            for version in ("11.0", "15.0", "18.0", "19.0", "20.0", None):
+            for version in ("7.0", "11.0", "15.0", "18.0", "19.0", "20.0", None):
                 with self.subTest(executor=make.__name__, version=version):
                     self.assertNotIn(self.LABEL, self._steps(make, version))
 
@@ -339,13 +408,13 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         self.instance20.postgres_version = "16"
 
     def test_a_new_instance_gets_the_postgres_of_its_series(self):
-        """The field's default, 17, does not run 7.0 to 14.0."""
+        """The field's default, 17, does not run 8.0 to 14.0."""
         old = self.env["cloud.instance"].create({
-            "name": "series-seven", "project_id": self.project.id,
+            "name": "series-eight", "project_id": self.project.id,
             "environment": "staging", "host_id": self.host.id,
-            "odoo_version": "7.0",
+            "odoo_version": "8.0",
         })
-        self.assertEqual(old.postgres_version, "9.6")
+        self.assertEqual(old.postgres_version, "10")
 
     def test_every_postgres_of_the_range_is_taken(self):
         for major in versions.postgres_versions("19.0"):
@@ -371,26 +440,23 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         self.instance20._check_template_ref("v10.0.8")
 
     def test_a_series_before_sixteen_is_neutralized_by_the_panel(self):
-        for series in ("7.0", "15.0"):
+        for series in ("8.0", "15.0"):
             with self.subTest(series=series):
                 self.assertEqual(
                     versions.script_env(series),
                     {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "sql"},
                 )
 
-    def test_postgres_9_6_has_no_backup_service(self):
-        """The template renders none below 10: the instance does not count
-        on one, whatever backend it has."""
-        self.assertFalse(versions.postgres_has_backup("9.6"))
-        for major in ("10", "13", "17", "18", "", None):
-            with self.subTest(major=major):
-                self.assertTrue(versions.postgres_has_backup(major))
+    def test_every_series_gets_its_backup_service(self):
+        """10, the PostgreSQL of 8.0 to 10.0, has the template's backup
+        service, as every other major the table names: an instance with a
+        backend counts on it."""
         backend = self.env["cloud.backup.backend"].create({
             "name": "series-backend", "backend_type": "s3",
             "s3_bucket": "series-bucket", "s3_access_key_id": "AKIASERIES",
             "s3_secret_access_key": "shh",
         })
-        for series, has_it in (("10.0", False), ("11.0", True), ("19.0", True)):
+        for series in ("8.0", "10.0", "11.0", "19.0"):
             with self.subTest(series=series):
                 # One production per project.
                 project = self.env["cloud.project"].create({
@@ -402,8 +468,11 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
                     "host_id": self.host.id, "odoo_version": series,
                     "backup_backend_id": backend.id,
                 })
-                self.assertEqual(inst._backup_enabled(), has_it)
-                self.assertEqual("backup" in inst.expected_services(), has_it)
+                self.assertTrue(inst._backup_enabled())
+                self.assertIn("backup", inst.expected_services())
+                answers = inst._render_copier_answers()
+                self.assertTrue(answers["backup_dst"])
+                self.assertEqual(answers["postgres_version"], inst.postgres_version)
 
     def test_a_series_on_odoo_db_gets_it(self):
         self.assertEqual(

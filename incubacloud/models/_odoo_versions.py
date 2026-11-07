@@ -24,7 +24,16 @@ Fields of a card:
 ``postgres``
     ``(lowest, highest, default)`` major versions of PostgreSQL the
     series runs on, as the strings of ``POSTGRES_MAJORS``. The picker
-    shows that range and ``cloud.instance`` refuses any other.
+    shows that range and ``cloud.instance`` refuses any other. What Odoo
+    and doodba's template recommend for the series, unless a reason
+    written beside the card, with its date, says otherwise; then the
+    nearest major that serves (owner, 7-nov-2026).
+``postgres_beyond_template``
+    Whether that range is not the one doodba's template allows the
+    series (its copier.yml's ``pg_per_odoo``), so the copier run of a
+    deploy and of a rebuild takes the card's range in its place
+    (``copier_defaults``): copier refuses a PostgreSQL outside the
+    template's.
 ``db_tool``
     The tool that dumps and loads the instance's database inside its
     ``odoo`` container, one of ``DB_TOOLS``. ``scripts/lib/common.sh``
@@ -40,10 +49,12 @@ Fields of a card:
     older refuses before copier fails on its own.
 ``debian_archive``
     Whether doodba's image of the series is built on a Debian release
-    gone from the mirrors, so its build reads apt from archive.debian.org
-    (``scripts/doodba/debian_archive.sh``, put in the image's build by
-    ``deploy.sh debian-archive``). Without it the image of 7.0 to 10.0,
-    on Debian 8, does not build (QA of the series, 7-nov-2026).
+    gone from the mirrors, so its build reads apt from Freexian's
+    Extended LTS of that release (``scripts/doodba/debian_archive.sh``,
+    put in the image's build by ``deploy.sh debian-archive``). Without
+    it the image of 8.0 to 10.0, on Debian 8, does not build, nor
+    installs the packages of an ``apt.txt`` (QA of the series,
+    7-nov-2026).
 ``headless``
     The option, one of ``HEADLESS_FLAGS``, that runs the series' Odoo
     with no server listening, so a one-off ``odoo -i`` never takes the
@@ -70,23 +81,21 @@ NEUTRALIZERS = ("odoo", "sql")
 #: The options that run Odoo with no server listening (``headless``).
 HEADLESS_FLAGS = ("--no-http", "--no-xmlrpc")
 
-#: The PostgreSQL majors the panel can run, oldest first.
+#: The PostgreSQL majors the panel can run, oldest first. Not 9.6, which
+#: doodba's template allows 8.0 to 12.0: it renders no ``backup`` service
+#: for it, since its backup image does not support it (template v10.0.8),
+#: and a series runs with every service of the panel or is not offered
+#: (owner, 7-nov-2026).
 POSTGRES_MAJORS = (
-    "9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18",
+    "10", "11", "12", "13", "14", "15", "16", "17", "18",
 )
-
-#: The oldest PostgreSQL doodba's template renders a ``backup`` service
-#: for: its copier.yml asks no backup question below it and its compose
-#: files render the service only from it, since the backup image does not
-#: support 9.6 (template v10.0.8).
-BACKUP_POSTGRES_MIN = "10"
 
 _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
 def _card(
     offered, postgres, db_tool, template_min, neutralize="odoo",
-    debian_archive=False, headless="--no-http",
+    debian_archive=False, headless="--no-http", postgres_beyond_template=False,
 ):
     """Build one series' card, checking its values.
 
@@ -98,6 +107,7 @@ def _card(
     :param str neutralize: one of ``NEUTRALIZERS``.
     :param bool debian_archive: see the module docstring.
     :param str headless: one of ``HEADLESS_FLAGS``.
+    :param bool postgres_beyond_template: see the module docstring.
     :rtype: dict
     """
     lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
@@ -119,6 +129,7 @@ def _card(
         "template_min": template_min,
         "debian_archive": bool(debian_archive),
         "headless": headless,
+        "postgres_beyond_template": bool(postgres_beyond_template),
     }
 
 
@@ -130,28 +141,33 @@ VERSIONS = {
     # opens here once its own run of the series passes on the code that
     # will serve it. A record that holds one keeps it, and an administrator
     # can still deploy one, which is how that run tests it.
-    # 7.0 to 15.0 run on what the doodba template allows each (v10.0.8's
+    # 7.0 is retired (owner, 7-nov-2026): the click-odoo of its image can
+    # neither dump, restore nor update its database, so no panel deploys it
+    # and the table no longer names it. No instance of production held it.
+    # 8.0 to 15.0 run on what the doodba template allows each (v10.0.8's
     # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
-    # 7.0 to 10.0 are on Debian 8, gone from the mirrors, and have no
-    # ``--no-http`` (7-nov-2026).
-    "7.0": _card(
-        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
-        debian_archive=True, headless="--no-xmlrpc",
-    ),
+    # Except for 9.6, the only PostgreSQL the template allows 8.0 to 10.0
+    # and the lowest of 11.0 and 12.0: it has no backup service
+    # (``POSTGRES_MAJORS``), so they run on 10, the nearest major that has
+    # one (owner, 7-nov-2026). 8.0 to 10.0 are on Debian 8, gone from the
+    # mirrors, and have no ``--no-http`` (7-nov-2026).
     "8.0": _card(
-        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        False, ("10", "10", "10"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
+        postgres_beyond_template=True,
     ),
     "9.0": _card(
-        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        False, ("10", "10", "10"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
+        postgres_beyond_template=True,
     ),
     "10.0": _card(
-        False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
+        False, ("10", "10", "10"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
+        postgres_beyond_template=True,
     ),
-    "11.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
-    "12.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
+    "11.0": _card(False, ("10", "13", "13"), "click-odoo", None, "sql"),
+    "12.0": _card(False, ("10", "13", "13"), "click-odoo", None, "sql"),
     "13.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
     "14.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
     "15.0": _card(False, ("10", "17", "17"), "click-odoo", None, "sql"),
@@ -265,18 +281,31 @@ def postgres_versions(version):
     ]
 
 
-def postgres_has_backup(major):
-    """Whether an instance on PostgreSQL *major* gets doodba's backup service.
+def copier_defaults(version):
+    """Return what a copier run of *version* takes as its settings' defaults.
 
-    :param major: one of ``POSTGRES_MAJORS``; empty or unknown counts as
-        the field's default, which has it.
-    :rtype: bool
+    For a card with ``postgres_beyond_template``, its range as the
+    template's ``pg_per_odoo`` entry for the series, which the template's
+    ``postgres_version`` question checks its answer against; keyed by the
+    series as a number, as the template reads it. A question the template
+    never asks (``when: false``) and keeps out of ``.copier-answers.yml``:
+    given in the data, it reached ``copier copy`` but not the replay of
+    the project's last render that ``copier update`` starts with, from
+    that file alone, and the replay refused the PostgreSQL. A default of
+    the run's settings file (``COPIER_SETTINGS_PATH``) reaches both
+    (copier 9.19.1, 7-nov-2026). The executors write it next to the
+    answers and ``ic_copier`` points copier at it.
+
+    :param version: a series; empty or one the table does not know gets
+        none, as ``headless_flag`` gives such a series its default.
+    :return: ``{"pg_per_odoo": {8.0: {"oldest": "10", "latest": "10"}}}``,
+        or an empty dict.
+    :rtype: dict
     """
-    if major not in POSTGRES_MAJORS:
-        return True
-    return POSTGRES_MAJORS.index(major) >= POSTGRES_MAJORS.index(
-        BACKUP_POSTGRES_MIN
-    )
+    if version not in VERSIONS or not card(version)["postgres_beyond_template"]:
+        return {}
+    lowest, highest, _default = card(version)["postgres"]
+    return {"pg_per_odoo": {float(version): {"oldest": lowest, "latest": highest}}}
 
 
 def postgres_default(version):
@@ -298,7 +327,7 @@ def db_tool(version):
 
 
 def debian_archive(version):
-    """Whether *version*'s image is built reading apt from archive.debian.org.
+    """Whether *version*'s image is built reading apt from Freexian's Extended LTS.
 
     :param str version: a series.
     :rtype: bool
@@ -310,8 +339,7 @@ def headless_flag(version):
     """Return the option that runs *version*'s Odoo with no server listening.
 
     :param version: a series; empty or one the table does not know
-        counts as the newest series' option, as ``postgres_has_backup``
-        does with its own default.
+        counts as the newest series' option.
     :return: one of ``HEADLESS_FLAGS``.
     :rtype: str
     """

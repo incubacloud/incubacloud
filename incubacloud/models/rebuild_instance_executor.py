@@ -139,6 +139,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                     "rebuild.sh",
                     ["copier-update", d, tmp_answers,
                      self._copier_template()[1]],
+                    env=self._copier_settings_env(),
                 ),
             ),
             # 2b. Resolve copier merge conflicts: keep new version (after =======)
@@ -241,8 +242,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 "Write apt.txt",
                 f"mv {tmp_apt} {d}/odoo/custom/dependencies/apt.txt",
             ),
-            # 8. Remove the temp answers file.
-            ("Remove temp files", f"rm -f {tmp_answers}"),
+            # 8. Remove the temp answers and copier settings files.
+            (
+                "Remove temp files",
+                f"rm -f {tmp_answers} {self._tmp(self._COPIER_SETTINGS)}",
+            ),
             # 9. Capture services list for on_success (parsed from stdout).
             ("List services", f"cd {d} && docker compose config --services"),
             # 9b. Empty Docker's build cache first when the host's disk

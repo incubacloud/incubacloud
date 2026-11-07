@@ -166,7 +166,7 @@ STUB
 }
 
 @test "ensure-connect goes headless with the option the panel hands it" {
-    # 7.0 to 10.0 have no --no-http; the series' card says --no-xmlrpc.
+    # 8.0 to 10.0 have no --no-http; the series' card says --no-xmlrpc.
     run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-xmlrpc
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"odoo -d prod -i incubacloud_connect --stop-after-init --no-xmlrpc"* ]]

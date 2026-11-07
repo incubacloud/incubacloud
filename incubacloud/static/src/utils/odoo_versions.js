@@ -32,7 +32,7 @@ function fetchVersionInfo() {
 /**
  * Fetch the supported Odoo versions from the backend.
  *
- * @returns {Promise<string[]>} ordered version strings, e.g. ["7.0", …, "20.0"]
+ * @returns {Promise<string[]>} ordered version strings, e.g. ["18.0", "19.0", "20.0"]
  */
 export function fetchOdooVersions() {
     return fetchVersionInfo().then((info) => info.odoo_versions);

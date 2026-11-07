@@ -375,7 +375,7 @@ class TestConnectAsScripts(ConnectAsBase):
             compile(script, '<remote>', 'exec')
 
     def test_scripts_carry_nothing_python_2_lacks(self):
-        """7.0 to 10.0 run them on Python 2.7: no ``secrets``, no
+        """8.0 to 10.0 run them on Python 2.7: no ``secrets``, no
         ``exist_ok``, and a coding line for a login that is not ASCII."""
         for script in (
             connect_ctl._GET_USERS_SCRIPT, connect_ctl._INJECT_SESSION_SCRIPT,
