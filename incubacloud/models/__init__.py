@@ -31,6 +31,7 @@ from . import cloud_instance_metrics
 from . import cloud_host_metrics
 from . import cloud_host_observability
 from . import cloud_host_direct
+from . import cloud_host_edge_guard
 from . import cloud_settings_direct
 from . import cloud_host_posture
 from . import cloud_settings_metrics_purge
@@ -59,6 +60,7 @@ from . import setup_whitelist_executor
 from . import full_setup_executor
 from . import push_trusted_proxies_executor
 from . import sync_direct_path_executor
+from . import push_edge_guard_executor
 from . import delete_instance_executor
 from . import purge_archived_executor
 from . import delete_host_executor

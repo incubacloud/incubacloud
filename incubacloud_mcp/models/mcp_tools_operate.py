@@ -163,6 +163,10 @@ _UPDATE_INSTANCE = obj(
         "auto_rebuild": boolean("Rebuild on a push to a branch it deploys."),
         "auto_update": boolean("Update the modules on a rebuild."),
         "autopurge_exempt": boolean("Keep this staging from the automatic purge."),
+        "website_info_public": boolean(
+            "Let anyone open Odoo's /website/info (installed apps and version);"
+            " applied on the next rebuild."
+        ),
         "whitelist": array(
             "The hostnames it may reach out to, all of them.", string("A hostname.")
         ),

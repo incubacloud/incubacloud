@@ -2,6 +2,7 @@ import re
 
 from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
+from .cloud_host_edge_guard import edge_guard_digest
 
 MIN_DISK_GB = 10
 GIT_MIN = (2, 24)
@@ -15,6 +16,10 @@ class HostProbeExecutor(AnsibleExecutor):
     *judgement* stays here in Python: OS / disk are critical (a failure
     marks the host ``unsupported``), missing tools are non-fatal (the
     host is ``degraded`` and an alert points the operator at Setup Host).
+
+    The playbook also reads the digest of the host's edge guard
+    (``ic_guard.yml``); when it is missing or differs from the panel's
+    render, ``push_edge_guard`` is queued behind the Check.
     """
 
     _job_type = "host_probe"
@@ -132,6 +137,31 @@ class HostProbeExecutor(AnsibleExecutor):
             self._resolve_alert("missing_deps")
             self.job.host_id.write({"status": "compatible"})
             self._sys("✓ Host is compatible and ready for deployments.")
+        self._check_edge_guard()
+
+    def _check_edge_guard(self):
+        """Queue the edge guard when the host's file is missing or differs.
+
+        Only on a host that should carry it (``_edge_guard_wanted``). A
+        playbook that exported nothing about it says nothing: the job is
+        not queued on a guess.
+        """
+        host = self.job.host_id
+        if not host._edge_guard_wanted():
+            return
+        found = self.playbook_facts().get("ic_edge_guard_sha256")
+        if found is None:
+            return
+        wanted = edge_guard_digest(host._shipped_edge_guard_yml())
+        if (found or "").strip() == wanted:
+            self._sys("✓ Edge guard: in place.")
+            return
+        self._sys(
+            "⚠ Edge guard: missing on the host." if not (found or "").strip()
+            else "⚠ Edge guard: differs from the panel's."
+        )
+        if host._enqueue_edge_guard("host check", chained=True):
+            self._sys("Queued the edge guard for this host.")
 
     async def on_cancelled_running(self, results, exc):
         """A probe stopped halfway found nothing: the host keeps its status.

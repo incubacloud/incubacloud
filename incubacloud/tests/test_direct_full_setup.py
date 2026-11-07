@@ -227,7 +227,7 @@ class TestWithoutADirectPortNothingChanges(_DirectSetupCase):
             {path.rsplit("/", 1)[1] for path in uploaded},
             {
                 "inverseproxy.yaml", "traefik.yml", "config.yml", "tls.yml",
-                "client-auth.yml", "whitelist.yaml",
+                "client-auth.yml", "whitelist.yaml", "ic_guard.yml",
             },
         )
 

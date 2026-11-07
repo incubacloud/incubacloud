@@ -543,6 +543,7 @@ export class InstanceDetail extends JobsMixin(
       backup_backend_id: inst.backup_backend_id || null,
       auto_rebuild: inst.auto_rebuild || false,
       autopurge_exempt: inst.autopurge_exempt || false,
+      website_info_public: inst.website_info_public || false,
       auto_update: inst.auto_update !== false,
       repos: (inst.repos || []).map((r) => ({...r})),
       whitelist: [...(inst.whitelist || [])],
@@ -631,6 +632,7 @@ export class InstanceDetail extends JobsMixin(
           backup_backend_id: project?.backup_backend_id || null,
           auto_rebuild: false,
           autopurge_exempt: false,
+          website_info_public: false,
           auto_update: true,
           repos,
           // Seeded on the server from the chosen host, so the create
