@@ -573,8 +573,13 @@ class CloudSettings(models.Model):
             for account, _token in accounts
         )
 
+    # The central's credentials are for system administrators only: the
+    # panel's code reads and mints them elevated (``_get_system``), and the
+    # settings page only says whether the account's token is set. Without
+    # a group every Manager read all four through ``/web/dataset/call_kw``.
     metrics_remote_write_token = EncryptedChar(
         string='Metrics credential',
+        groups='base.group_system',
         help='Password half of this panel\'s metrics account (the user '
              'half is ``metrics_account``). Presented as HTTP basic auth '
              'both when the agents push and when the panel queries. '
@@ -585,6 +590,7 @@ class CloudSettings(models.Model):
     )
     grafana_admin_password = EncryptedChar(
         string='Grafana admin password',
+        groups='base.group_system',
         help='Grafana\'s own administrative credential. Never leaves the '
              'central: the gateway authenticates callers with the '
              'operator credential and swaps this one in before proxying, '
@@ -593,6 +599,7 @@ class CloudSettings(models.Model):
     )
     metrics_operator_token = EncryptedChar(
         string='Operator read credential',
+        groups='base.group_system',
         help='Second credential, for the UNFILTERED read used by the '
              "operator's own Grafana organisation. Only meaningful on the "
              'panel that owns the central, and deliberately never written '
@@ -601,6 +608,7 @@ class CloudSettings(models.Model):
     )
     metrics_delete_auth_key = EncryptedChar(
         string='Metrics deletion key',
+        groups='base.group_system',
         help="VictoriaMetrics' own key for deleting series. The central "
              'refuses every deletion that does not carry it, and the '
              'gateway adds it on the operator\'s deletion route only, so '

@@ -697,10 +697,15 @@ class CloudHost(models.Model):
         required=True,
         help="Base domain for wildcard certificates (e.g. *.example.com).",
     )
+    # For system administrators only, as the SSH password is: a Developer
+    # read it through the ORM while ``/cloud/get_secret`` only reveals it
+    # to a Manager. The panel's code reads it elevated
+    # (``_shipped_inverseproxy_yaml``, the host page's flag) and writes it
+    # elevated once the manager check passed (``create``, ``write``).
     traefik_panel_password = EncryptedChar(
         string="Traefik Panel Password",
         required=True,
-        groups="incubacloud.group_cloud_developer",
+        groups="base.group_system",
         help="Password for the Traefik dashboard.",
     )
     traefik_config_yml = fields.Text(
@@ -2206,10 +2211,13 @@ class CloudHost(models.Model):
 
     # Password fields that are auto-generated when left empty
     _PASSWORD_FIELDS = ("password", "traefik_panel_password")
-    # The SSH credentials and the default certificate's key: readable and
-    # writable by system administrators only, so ``create`` and ``write``
-    # store them elevated once the manager check passed.
-    _CREDENTIAL_FIELDS = ("password", "key_file", "tls_default_key")
+    # The SSH credentials, the default certificate's key and the Traefik
+    # dashboard password: readable and writable by system administrators
+    # only, so ``create`` and ``write`` store them elevated once the
+    # manager check passed.
+    _CREDENTIAL_FIELDS = (
+        "password", "key_file", "tls_default_key", "traefik_panel_password",
+    )
     # Traefik fields that should fall back to template defaults when empty
     _TRAEFIK_TEMPLATE_FIELDS = {
         "traefik_config_yml": "config.yml",
@@ -3637,7 +3645,9 @@ class CloudHost(models.Model):
                 self.traefik_inverseproxy_yaml or "",
             ),
             self.wildcard_domain,
-            self.traefik_panel_password,
+            # Read elevated: it is for system administrators only, and the
+            # setup that ships it runs as whoever queued it.
+            self.sudo().traefik_panel_password,
         )
 
     @api.constrains("tls_default_cert", "tls_default_key")

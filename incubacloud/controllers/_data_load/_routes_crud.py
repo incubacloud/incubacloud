@@ -833,8 +833,9 @@ class CrudMixin:
             return {'ok': False, 'error': _('Record not found')}
         # Require write access as a proxy for "trusted user"
         record.check_access('write')
-        # A host's SSH password is readable by system administrators only:
-        # the write check above is what lets a Manager reveal it.
+        # A host's SSH and dashboard passwords are readable by system
+        # administrators only: the write check above is what lets a
+        # Manager reveal them.
         if model == 'cloud.host':
             record = record.sudo()
         value = getattr(record, field, None) or ''
@@ -892,8 +893,10 @@ class CrudMixin:
             'template_drift': host.template_drift,
             'template_drift_details': host.template_drift_details or '',
             'wildcard_domain': host.wildcard_domain or '',
+            # Read elevated, as the SSH credentials: a refused read would
+            # count as a stored password.
             'has_traefik_panel_password':
-                _has_encrypted(host, 'traefik_panel_password'),
+                _has_encrypted(host.sudo(), 'traefik_panel_password'),
             'traefik_config_yml': host.traefik_config_yml or '',
             'traefik_inverseproxy_yaml': host.traefik_inverseproxy_yaml or '',
             'traefik_yml': host.traefik_yml or '',

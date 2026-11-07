@@ -4480,7 +4480,8 @@ class CloudJob(models.Model):
             # failure levels differ in alerts, not in jobs.
             if user.cloud_notification_level != "all" and state != "failed":
                 continue
-            if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
+            if (user._get_cloud_telegram_bot_token()
+                    and user.cloud_telegram_chat_id):
                 try:
                     self._send_telegram(user, job, state, severe)
                 except Exception:
@@ -4525,7 +4526,8 @@ class CloudJob(models.Model):
             lines.append(f"Instance: {telegram_markdown(job.instance_id.name)}")
         lines.append(f"Logs: {telegram_markdown(base_url)}/cloud/log/{job.id}")
         text = "\n".join(lines)
-        url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"
+        token = user._get_cloud_telegram_bot_token()
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = json.dumps(
             {
                 "chat_id": user.cloud_telegram_chat_id,
@@ -4572,7 +4574,7 @@ class CloudJob(models.Model):
             }
         ).encode()
         headers = {"Content-Type": "application/json"}
-        secret = user.cloud_webhook_secret or ""
+        secret = user._get_cloud_webhook_secret() or ""
         if secret:
             sig = hmac.new(
                 secret.encode(),
