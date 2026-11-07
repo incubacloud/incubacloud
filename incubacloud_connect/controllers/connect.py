@@ -1,21 +1,90 @@
+# -*- coding: utf-8 -*-
+# Python 2 (9.0 and 10.0) as well as 3, and 9.0's ``openerp`` package: the
+# module is installed on every series a panel deploys, so it keeps to what
+# all of their interpreters and APIs have.
+import errno
+import importlib
+import io
 import json
 import logging
+import os
 import time
-from contextlib import suppress
-from pathlib import Path
 
-import odoo
-import odoo.api
 import werkzeug.utils
-from odoo import http
-from odoo.modules.registry import Registry
-from odoo.http import request, Response
+
+# ``openerp`` first: on 9.0, ``import odoo`` finds the source tree's
+# ``odoo.py`` launcher instead. From 10.0 on there is no ``openerp``.
+try:
+    import openerp as odoo
+except ImportError:
+    import odoo
+
+http = importlib.import_module(odoo.__name__ + '.http')
+odoo_api = importlib.import_module(odoo.__name__ + '.api')
+odoo_registry = importlib.import_module(odoo.__name__ + '.modules.registry')
+request = http.request
+Response = http.Response
 
 _logger = logging.getLogger(__name__)
 
 _TOKEN_DIR = '/tmp/ic_tokens'
 _TOKEN_TTL = 60  # seconds
 _MAJOR = int(odoo.release.version_info[0])
+
+
+class _suppress(object):
+    """``contextlib.suppress``, which Python 2 lacks: swallow *exceptions*.
+
+    :param exceptions: the exception classes to swallow.
+    """
+
+    def __init__(self, *exceptions):
+        self._exceptions = exceptions
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return exc_type is not None and issubclass(exc_type, self._exceptions)
+
+
+def _registry(db):
+    """Return the registry of *db*, the way the series names it.
+
+    ``Registry(db)`` from 10.0 on; ``RegistryManager.get(db)`` before.
+
+    :param str db: the database name.
+    """
+    if _MAJOR >= 10:
+        return odoo_registry.Registry(db)
+    return odoo_registry.RegistryManager.get(db)
+
+
+def _take_token(path):
+    """Read the token file at *path* and remove it, whatever it holds.
+
+    :param str path: the token file.
+    :returns: its JSON content, or None when there is no such file.
+    :raises Exception: when it exists but cannot be read or parsed; the
+        file is removed first if that is still possible.
+    """
+    try:
+        with io.open(path, encoding='utf-8') as token_file:
+            content = token_file.read()
+    except (IOError, OSError) as exc:
+        if exc.errno == errno.ENOENT:
+            return None
+        with _suppress(Exception):
+            os.unlink(path)  # noqa: FURB144 — Python 2 has no pathlib
+        raise
+    try:
+        os.unlink(path)  # noqa: FURB144 — Python 2 has no pathlib
+    except (IOError, OSError) as exc:
+        if exc.errno == errno.ENOENT:
+            # Taken by a concurrent request in between: single use.
+            return None
+        raise
+    return json.loads(content)
 
 
 def _redirect(url):
@@ -103,7 +172,7 @@ class IncubaCloudConnectController(http.Controller):
         methods=['GET'],
     )
     def ic_login(self, t=None, **_kw):
-        """Magic-link login — compatible with Odoo v7.0 through v20.0.
+        """Magic-link login — Odoo 9.0 through 20.0 (see ``controllers/__init__``).
 
         Validates the one-time token written by the IncubaCloud panel,
         then uses Odoo's own session API to authenticate the user and
@@ -130,17 +199,15 @@ class IncubaCloudConnectController(http.Controller):
             )
             return Response('Invalid request.', status=400)
 
-        token_path = Path(_TOKEN_DIR) / t
+        token_path = os.path.join(_TOKEN_DIR, t)
 
         try:
-            data = json.loads(token_path.read_text())
-            token_path.unlink()
-        except FileNotFoundError:
-            return Response('Invalid or expired token.', status=400)
+            data = _take_token(token_path)
         except Exception:
+            # Removed already by ``_take_token``, if that could be done.
             _logger.warning('/ic/login: error reading token %s', token_path)
-            with suppress(Exception):
-                token_path.unlink()
+            return Response('Invalid or expired token.', status=400)
+        if data is None:
             return Response('Invalid or expired token.', status=400)
 
         if time.time() - data.get('ts', 0) > _TOKEN_TTL:
@@ -155,9 +222,9 @@ class IncubaCloudConnectController(http.Controller):
         # the new sid using Odoo's own method (v16+: at save time).
         # _compute_session_token exists since v9; v7-v8 skip it.
         try:
-            registry = Registry(db)
+            registry = _registry(db)
             with registry.cursor() as cr:
-                env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+                env = odoo_api.Environment(cr, odoo.SUPERUSER_ID, {})
                 user = env['res.users'].browse(uid)
                 if not user.exists() or not user.active:
                     return Response('User not found.', status=400)
@@ -166,7 +233,7 @@ class IncubaCloudConnectController(http.Controller):
                 # whoever used the browser's session before (8+).
                 context = (
                     _user_context(
-                        odoo.api.Environment(cr, uid, {}), uid,
+                        odoo_api.Environment(cr, uid, {}), uid,
                         request.session,
                     )
                     if _MAJOR >= 8 else None
@@ -207,10 +274,10 @@ class IncubaCloudConnectController(http.Controller):
 
         # Redirect admins to /odoo (v18+), everyone else to /web
         if _MAJOR >= 18:
-            with suppress(Exception):
-                registry = Registry(db)
+            with _suppress(Exception):
+                registry = _registry(db)
                 with registry.cursor() as cr:
-                    env = odoo.api.Environment(cr, uid, {})
+                    env = odoo_api.Environment(cr, uid, {})
                     if env['res.users'].browse(uid).has_group(
                         'base.group_system',
                     ):

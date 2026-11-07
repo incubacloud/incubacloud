@@ -1,6 +1,6 @@
 {
     'name': 'IncubaCloud Connect',
-    'version': '1.0.2',
+    'version': '1.0.3',
     'summary': 'Magic-link passwordless login for IncubaCloud managed instances',
     'category': 'Hidden',
     'author': 'IncubaCloud',
