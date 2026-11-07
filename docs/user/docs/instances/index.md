@@ -324,6 +324,19 @@ list of its host, which is what every staging used before this existed.
 Production has no such list. A production instance is yours, its traffic is not
 filtered by the platform, and the tab is absent rather than empty.
 
+## Odoo's website info page is blocked
+
+Odoo shows anyone the list of installed apps and its exact version at
+`/website/info` (also `/es/website/info` and the other languages). That tells a
+stranger which known flaws to try, so the proxy of every host refuses it on
+every instance with a `403 Forbidden`, before the request reaches Odoo. Your
+own signed-in users lose the page too: the proxy does not know who is signed in.
+
+To let anyone open it on one instance, turn on **Allow Odoo's public website
+info page** under `Instance detail → Networking` and rebuild the instance. It is
+off for every instance, and a staging cloned from production starts with it off.
+While the instance is stopped or asleep, the page stays blocked.
+
 ## See also
 
 - [Hosts](../hosts/index.md) — where instances run.
