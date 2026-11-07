@@ -1109,6 +1109,28 @@
     inline-size: 13rem;
 }
 
+// Phone width: hostname, redirect, 301, certificate and remove cannot share
+// one line (the fixed 13rem picker alone takes a third of 390 px, and the
+// inputs' own minimum widths pushed the tab to ~680 px). The row wraps: the
+// two inputs take a line each, then 301, the picker and the remove button.
+@media (max-width: 480px) {
+    .ic-domain-row {
+        flex-wrap: wrap;
+    }
+
+    .ic-domain-hostname,
+    .ic-domain-redirect {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .ic-domain-cert {
+        flex: 1 1 0;
+        inline-size: auto;
+        min-width: 0;
+    }
+}
+
 .ic-domain-remove {
     width: 28px;
     height: 28px;
