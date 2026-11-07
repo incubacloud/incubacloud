@@ -1270,6 +1270,16 @@ msgstr "Un backup de archivo no puede pertenecer a una cadena de duplicity."
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
+"An earlier attempt of this job finished and its outcome was saved: this "
+"attempt runs nothing again."
+msgstr ""
+"Un intento anterior de este trabajo terminó y su resultado quedó guardado: "
+"este intento no vuelve a ejecutar nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
 "An earlier pass took this job up and stopped before closing it: what the "
 "lost run left may not all have been put back."
 msgstr ""
@@ -4498,6 +4508,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_whitelist__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_pip_provenance_mixin__display_name
@@ -6812,6 +6823,7 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_whitelist__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_pip_provenance_mixin__id
@@ -7634,6 +7646,7 @@ msgstr "Su copia en"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__job_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__job_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__job_id
 msgid "Job"
 msgstr "Tarea"
 
@@ -7670,6 +7683,11 @@ msgstr "Retención de logs de jobs"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__name
 msgid "Job Name"
 msgstr "Nombre de tarea"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_job_outcome
+msgid "Job Outcome Committed"
+msgstr "Resultado guardado de un trabajo"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__payload
@@ -10359,6 +10377,16 @@ msgstr ""
 " Reenvíe con force=true."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__owed
+msgid "Owed"
+msgstr "Pendiente tras el commit"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__own_job_vals
+msgid "Own Job Vals"
+msgstr "Valores de la fila del trabajo"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__user_id
@@ -11142,6 +11170,11 @@ msgstr "Trabajo en cola"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__queue_job_uuid
 msgid "Queue Job UUID"
+msgstr "UUID de tarea en cola"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_outcome__queue_job_uuid
+msgid "Queue Job Uuid"
 msgstr "UUID de tarea en cola"
 
 #. module: incubacloud
@@ -14083,6 +14116,11 @@ msgstr ""
 "ejecutando."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_outcome__queue_job_uuid
+msgid "The queue job whose attempts the mark answers for."
+msgstr "El trabajo en cola de cuyos intentos responde la marca."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -15731,6 +15769,28 @@ msgstr ""
 " no basta: el backend de backup, el tipo del trabajo que falló. Forma parte "
 "de la identidad de la alerta en raise_alert; vacío en la mayoría de las "
 "alertas."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_outcome__owed
+msgid ""
+"What the hook left for after the job's commit, which a rollback drops: a "
+"list of {'kind': ...} entries the attempt that finds this mark arms again "
+"(cloud.job._rearm_owed)."
+msgstr ""
+"Lo que el hook dejó para después del commit del trabajo, que un rollback "
+"descarta: una lista de entradas {'kind': ...} que el intento que encuentra "
+"esta marca vuelve a programar (cloud.job._rearm_owed)."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_outcome__own_job_vals
+msgid ""
+"What the hook wrote on the job's own row through "
+"AbstractExecutor._write_own_job: in the job's transaction, so lost with it, "
+"and written again by the attempt that finds this mark."
+msgstr ""
+"Lo que el hook escribió en la propia fila del trabajo con "
+"AbstractExecutor._write_own_job: en la transacción del trabajo, así que se "
+"pierde con ella, y lo vuelve a escribir el intento que encuentra esta marca."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_state
