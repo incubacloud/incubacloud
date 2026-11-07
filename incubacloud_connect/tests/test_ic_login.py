@@ -40,11 +40,14 @@ class TestIcLogin(HttpCase):
         # ``auth='none'`` routes get a read-only cursor, and the route
         # opens a cursor of its own on the link's database: a separate
         # connection on an instance, refused between test cursors only.
-        readonly_check = patch.object(
-            TestCursor, '_check_cursor_readonly', autospec=True,
-        )
-        readonly_check.start()
-        self.addCleanup(readonly_check.stop)
+        # Odoo 18's TestCursor has no such check (it arrived with 19.0),
+        # so there is nothing to lift here.
+        if hasattr(TestCursor, '_check_cursor_readonly'):
+            readonly_check = patch.object(
+                TestCursor, '_check_cursor_readonly', autospec=True,
+            )
+            readonly_check.start()
+            self.addCleanup(readonly_check.stop)
 
     def _link(self, uid):
         """Write a one-time token for *uid*, as the panel does.
