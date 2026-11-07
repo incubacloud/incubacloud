@@ -298,7 +298,7 @@ class CloudSettings(models.Model):
             env = self.env(cr=cr)
             settings = env["cloud.settings"].sudo()._get_system()
             cr.execute(
-                "SELECT id FROM cloud_settings WHERE id = %s FOR UPDATE",
+                "SELECT id FROM cloud_settings WHERE id = %s FOR NO KEY UPDATE",
                 [settings.id],
             )
             settings.invalidate_recordset()

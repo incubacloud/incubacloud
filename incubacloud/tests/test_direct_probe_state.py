@@ -235,7 +235,7 @@ class TestTheSettingsKeepTheState(TransactionCase):
                    execute.call_args_list]
         lock = next(
             (i for i, q in enumerate(queries)
-             if "cloud_settings" in q and "FOR UPDATE" in q),
+             if "cloud_settings" in q and "FOR NO KEY UPDATE" in q),
             None,
         )
         self.assertIsNotNone(lock, "the settings row is read without a lock")
