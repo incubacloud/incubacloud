@@ -243,3 +243,4 @@ from . import test_edge_guard_job
 from . import test_edge_guard_migration
 from . import test_website_info_router
 from . import test_host_generated_key
+from . import test_secret_field_groups

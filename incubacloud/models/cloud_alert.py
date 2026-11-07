@@ -876,7 +876,8 @@ class CloudAlert(models.Model):
         for user in users:
             if not self._alert_user_eligible(user, channel="external"):
                 continue
-            if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
+            if (user._get_cloud_telegram_bot_token()
+                    and user.cloud_telegram_chat_id):
                 try:
                     self._send_alert_telegram(user, resolved=resolved)
                 except Exception:
@@ -959,7 +960,8 @@ class CloudAlert(models.Model):
                 f"/cloud/log/{self.resolved_by_job_id.id}"
             )
         text = "\n".join(lines)
-        url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"
+        token = user._get_cloud_telegram_bot_token()
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = json.dumps(
             {
                 "chat_id": user.cloud_telegram_chat_id,
@@ -1011,7 +1013,7 @@ class CloudAlert(models.Model):
             }
         ).encode()
         headers = {"Content-Type": "application/json"}
-        secret = user.cloud_webhook_secret or ""
+        secret = user._get_cloud_webhook_secret() or ""
         if secret:
             sig = hmac.new(
                 secret.encode(),

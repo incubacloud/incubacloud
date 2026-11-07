@@ -408,9 +408,11 @@ class InstanceConnectController(http.Controller):
             'cloud_notification_mode': user.cloud_notification_mode or 'immediate',
             'cloud_email_enabled': user.cloud_email_enabled,
             'cloud_muted_projects': muted,
-            'cloud_telegram_configured': bool(user.cloud_telegram_bot_token),
+            'cloud_telegram_configured': bool(
+                user._get_cloud_telegram_bot_token()
+            ),
             'cloud_telegram_chat_id': user.cloud_telegram_chat_id or '',
-            'cloud_webhook_configured': bool(user.cloud_webhook_secret),
+            'cloud_webhook_configured': bool(user._get_cloud_webhook_secret()),
             'cloud_webhook_url': user.cloud_webhook_url or '',
         }
 
@@ -516,7 +518,7 @@ class InstanceConnectController(http.Controller):
         message the bot received. The user must send at least one
         message to their bot first.
         """
-        token = request.env.user.cloud_telegram_bot_token
+        token = request.env.user._get_cloud_telegram_bot_token()
         if not token:
             return {'ok': False, 'error': 'No Telegram bot token configured'}
         url = f"https://api.telegram.org/bot{token}/getUpdates"
@@ -546,7 +548,7 @@ class InstanceConnectController(http.Controller):
                 methods=['POST'])
     def telegram_send_test(self):
         """Send a test message to the user's configured Telegram chat."""
-        token = request.env.user.cloud_telegram_bot_token
+        token = request.env.user._get_cloud_telegram_bot_token()
         chat_id = request.env.user.cloud_telegram_chat_id
         if not token:
             return {'ok': False, 'error': 'No Telegram bot token configured'}

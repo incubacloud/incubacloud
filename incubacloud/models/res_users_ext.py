@@ -137,8 +137,17 @@ class ResUsers(models.Model):
         ),
     )
 
+    # The bot token and the signing secret are for system administrators
+    # only: ``res.users`` is readable by every internal user, so without a
+    # group anyone read anyone's through ``/web/dataset/call_kw`` (read,
+    # search_read) and the export. Their owner sets them in the panel's
+    # notification preferences, which store them elevated and only say
+    # whether each is set; the senders of jobs and alerts read them
+    # elevated (``_get_cloud_telegram_bot_token``,
+    # ``_get_cloud_webhook_secret``).
     cloud_telegram_bot_token = EncryptedChar(
         string='Telegram Bot Token',
+        groups='base.group_system',
         help='Bot token from @BotFather. Stored encrypted.',
     )
     cloud_telegram_chat_id = fields.Char(
@@ -153,10 +162,35 @@ class ResUsers(models.Model):
     )
     cloud_webhook_secret = EncryptedChar(
         string='Webhook Signing Secret',
+        groups='base.group_system',
         help='HMAC-SHA256 secret used to sign webhook payloads. '
              'Set to the same value the receiving endpoint expects '
              'in the X-IncubaCloud-Signature header.',
     )
+
+    def _get_cloud_telegram_bot_token(self):
+        """Return this user's Telegram bot token, read elevated.
+
+        ``cloud_telegram_bot_token`` is for system administrators only;
+        the senders of jobs and alerts, and the buttons of the user's own
+        preferences, read it for whoever runs them.
+
+        :return: the token, or ``False`` when none is stored
+        """
+        self.ensure_one()
+        return self.sudo().cloud_telegram_bot_token
+
+    def _get_cloud_webhook_secret(self):
+        """Return this user's webhook signing secret, read elevated.
+
+        ``cloud_webhook_secret`` is for system administrators only, as the
+        Telegram bot token is; the senders of jobs and alerts sign with it
+        for whoever runs them.
+
+        :return: the secret, or ``False`` when none is stored
+        """
+        self.ensure_one()
+        return self.sudo().cloud_webhook_secret
 
     def _cloud_project_muted(self, project):
         """Return True when *project* is in this user's muted list.

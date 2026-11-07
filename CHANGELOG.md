@@ -44,6 +44,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   reads it elevated (`_effective_tls_default`, the pair's check, the host
   page's `has_tls_default_key`) and `write` stores it, with the certificate
   it pairs with, elevated once the manager check passed.
+- **A user's Telegram bot token and webhook signing secret are for system
+  administrators only.** `res.users` is readable by every internal user, and
+  `cloud_telegram_bot_token` and `cloud_webhook_secret` carried no group, so a
+  Stakeholder read a Manager's in clear through the same endpoints. Both now
+  carry `base.group_system`. Their owner still sets them in the notification
+  preferences, which store them elevated and only say whether each is set,
+  and the senders of jobs and alerts, and the preferences' Telegram buttons,
+  read them elevated (`res.users._get_cloud_telegram_bot_token`,
+  `_get_cloud_webhook_secret`).
+- **A host's Traefik dashboard password is for system administrators only.**
+  `cloud.host.traefik_panel_password` carried the Developer group, so a
+  Developer read it through the same endpoints while `/cloud/get_secret` only
+  reveals it to a Manager. It now carries `base.group_system`, as `password`
+  does: Full Setup reads it elevated (`_shipped_inverseproxy_yaml`), the host
+  page's `has_traefik_panel_password` too, and `create`/`write` store it
+  elevated once the manager check passed. A Manager still reveals it with
+  `/cloud/get_secret`.
+- **The metrics central's credentials are for system administrators only.**
+  `cloud.settings.metrics_remote_write_token`, `grafana_admin_password`,
+  `metrics_operator_token` and `metrics_delete_auth_key` carried no group, so
+  every Manager read them through the same endpoints, the deletion key that
+  only the gateway presents among them. They now carry `base.group_system`;
+  the panel already read and minted them elevated (`_get_system`), and the
+  Settings page only says whether the account's token is set.
 - **A generated key opens only as one, and for a day.** What is sealed starts
   with `host-genkey:v1:` and `/cloud/create_host` refuses any other value this
   panel encrypted, or one sealed more than 24 hours earlier.
