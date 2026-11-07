@@ -18,13 +18,15 @@
 #   it. Full Setup itself writes the guard before it starts the proxy, so
 #   it passes ``--no-mount-check``;
 # * the proxy is asked for the page on 127.0.0.1, up to five times two
-#   seconds apart: a 403 exits 0; any other answer, or a handshake the
-#   CDN's client-certificate requirement refuses, exits 4 ("not
-#   verified": the QA checks it from outside).
+#   seconds apart: a 403 exits 0; a handshake the CDN's client-certificate
+#   requirement refuses (code 000) exits 4 ("not verified": the QA checks
+#   it from outside); a real HTTP answer other than 403 (200, 404...) exits
+#   5, because the guard is not applied (Traefik dropped the file, say).
 #
 # Prints ``ic_guard.yml unchanged`` or ``ic_guard.yml updated``, then
-# ``IC_EDGE_GUARD_NOT_MOUNTED``, ``IC_EDGE_GUARD_REFUSES`` or
-# ``IC_EDGE_GUARD_UNVERIFIED <last answer>``.
+# ``IC_EDGE_GUARD_NOT_MOUNTED``, ``IC_EDGE_GUARD_REFUSES``,
+# ``IC_EDGE_GUARD_UNVERIFIED <last answer>`` or
+# ``IC_EDGE_GUARD_NOT_APPLIED <last answer>``.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -89,6 +91,14 @@ if [ "$probe" -eq 1 ]; then
         fi
         [ "$attempt" -lt 5 ] && sleep "${IC_EDGE_GUARD_PROBE_WAIT:-2}"
     done
-    echo "IC_EDGE_GUARD_UNVERIFIED ${answer:-none}"
-    exit 4
+    case "${answer:-000}" in
+        000)
+            echo "IC_EDGE_GUARD_UNVERIFIED ${answer:-none}"
+            exit 4
+            ;;
+        *)
+            echo "IC_EDGE_GUARD_NOT_APPLIED $answer"
+            exit 5
+            ;;
+    esac
 fi

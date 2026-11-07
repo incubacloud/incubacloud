@@ -5,7 +5,8 @@
 # directory is a temporary one (IC_TRAEFIK_DIR). The file is replaced only
 # when it changed and by a rename, the proxy has to mount the directory
 # (exit 3), and the probe says whether the proxy refuses the page (exit 0)
-# or could not be verified (exit 4). The staged copy never survives.
+# could not be verified because the handshake was refused (exit 4), or
+# answers with another HTTP status (exit 5). The staged copy never survives.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/edge_guard.sh"
@@ -117,10 +118,10 @@ STUB
     [ ! -s "$STUB_CURL_LOG" ]
 }
 
-@test "another answer, five times, is not verified: exit 4" {
+@test "a real answer other than 403, five times, is not applied: exit 5" {
     STUB_CODE=404 run bash "$SCRIPT" install "$STAGED"
-    [ "$status" -eq 4 ]
-    [[ "$output" == *"IC_EDGE_GUARD_UNVERIFIED 404"* ]]
+    [ "$status" -eq 5 ]
+    [[ "$output" == *"IC_EDGE_GUARD_NOT_APPLIED 404"* ]]
     [ "$(wc -l < "$STUB_CURL_LOG")" -eq 5 ]
     [ -f "$TMP/traefik/dynamic/ic_guard.yml" ]
 }

@@ -8,9 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.214] — 2026-11-07
 
-Publish this core before `incubacloud_saas_manager`: its hook leaves the
-master's own host without the guard. The update queues `push_edge_guard` once
-per active host whose proxy the panel set up; it runs no Full Setup.
+Publish this core and `incubacloud_saas_manager` in the same deployment: the
+update's `end-migrate` asks the saas module's `_edge_guard_leaves_alone()` hook
+which hosts to skip, and a core deployed alone would also queue the guard on
+the master panel's own host. The update queues `push_edge_guard` once per
+active host whose proxy the panel set up; it runs no Full Setup.
 
 ### Added
 
