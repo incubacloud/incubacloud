@@ -12,10 +12,14 @@ returns), the same way the old executor tests fed a ``results`` dict:
 no host, no ansible-runner.
 """
 import re
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import yaml
 
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.cloud_host_edge_guard import edge_guard_digest
 from odoo.addons.incubacloud.models.host_probe_executor import (
     GIT_MIN,
     HostProbeExecutor,
@@ -161,6 +165,67 @@ class TestHostProbeJudgement(HostStateCase):
         errors = ex.parse_results({})
         self.assertTrue(errors)
         self.assertIn("did not complete", errors[0])
+
+
+class TestTheCheckReadsTheEdgeGuard(HostStateCase):
+    """The playbook exports the digest of ``ic_guard.yml``; the Check
+    queues ``push_edge_guard`` only when the file is missing or differs,
+    and only on a host that should carry it. It stays read-only."""
+
+    def _check(self, digest, **host_vals):
+        host = self._host(**({"traefik_deployed": True} | host_vals))
+        facts = _probe_facts()
+        if digest is not None:
+            facts["ic_edge_guard_sha256"] = digest
+        ex = self._executor(HostProbeExecutor, host=host, facts=facts)
+        ex._missing_tools = []
+        ex.parse_results({})
+        with patch.object(
+            type(host), "_enqueue_edge_guard", autospec=True, return_value=1,
+        ) as enqueue:
+            _run(ex.on_success({}))
+        return host, enqueue
+
+    def _wanted(self):
+        return edge_guard_digest(
+            self.env["cloud.host"]._shipped_edge_guard_yml(),
+        )
+
+    def test_a_missing_guard_is_queued_behind_the_check(self):
+        host, enqueue = self._check("")
+        enqueue.assert_called_once_with(host, "host check", chained=True)
+
+    def test_a_different_guard_is_queued(self):
+        host, enqueue = self._check("0" * 64)
+        enqueue.assert_called_once_with(host, "host check", chained=True)
+
+    def test_the_same_guard_queues_nothing(self):
+        _host, enqueue = self._check(self._wanted())
+        enqueue.assert_not_called()
+
+    def test_a_host_without_the_panels_proxy_queues_nothing(self):
+        _host, enqueue = self._check("", traefik_deployed=False)
+        enqueue.assert_not_called()
+
+    def test_a_playbook_that_said_nothing_queues_nothing(self):
+        _host, enqueue = self._check(None)
+        enqueue.assert_not_called()
+
+    def test_the_playbook_only_reads(self):
+        playbook = (
+            Path(__file__).resolve().parents[1]
+            / "ansible" / "playbooks" / "host_probe.yml"
+        )
+        plays = yaml.safe_load(playbook.read_text())
+        task = next(
+            t for t in plays[0]["tasks"]
+            if t["name"] == "Read the edge guard's digest"
+        )
+        self.assertEqual(task["ansible.builtin.command"]["argv"][0], "sha256sum")
+        self.assertIs(task["changed_when"], False)
+        self.assertIs(task["failed_when"], False)
+        exported = plays[0]["tasks"][-1]["ansible.builtin.set_stats"]["data"]
+        self.assertIn("ic_edge_guard_sha256", exported)
 
 
 class TestDockerPruneSummary(HostStateCase):

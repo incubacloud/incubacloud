@@ -1177,6 +1177,8 @@ class CloudJob(models.Model):
         "push_trusted_proxies": "group_cloud_manager",
         # Rewrites who the host's direct port admits, in its firewall.
         "sync_direct_path": "group_cloud_manager",
+        # Writes the router every request to the host's proxy meets first.
+        "push_edge_guard": "group_cloud_manager",
         "setup_whitelist": "group_cloud_manager",
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",

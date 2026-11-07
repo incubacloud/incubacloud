@@ -106,6 +106,27 @@ class TestOperateTools(
         self.assertFalse(result["isError"], result)
         self.assertTrue(self.staging.auto_update)
 
+    def test_update_instance_turns_on_the_public_website_info_page(self):
+        """The exception to the edge guard is announced and written; the
+        instance's page answers with it."""
+        from odoo.addons.incubacloud_mcp.models.mcp_tools_operate import (
+            _UPDATE_INSTANCE,
+        )
+
+        self.assertIn("website_info_public", _UPDATE_INSTANCE["properties"])
+        self.assertFalse(self.staging.website_info_public)
+        result = self._call_tool(
+            self.key,
+            "update_instance",
+            {"instance_id": self.staging.id, "vals": {"website_info_public": True}},
+        )
+        self.assertFalse(result["isError"], result)
+        self.assertTrue(self.staging.website_info_public)
+        payload = self._payload(
+            self._call_tool(self.key, "get_instance", {"instance_id": self.staging.id})
+        )
+        self.assertIs(payload["website_info_public"], True)
+
     def test_update_instance_keeps_a_repository_to_its_canonical_url(self):
         """An agent's repository line ends in the model's check (5-nov-2026).
 

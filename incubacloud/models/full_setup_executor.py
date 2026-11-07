@@ -30,7 +30,7 @@ import re
 
 import bcrypt as _bcrypt
 
-from odoo import _
+from odoo import _, fields
 
 from . import acme_store
 from .abstract_executor import AbstractSSHExecutor, JobRefused
@@ -41,6 +41,8 @@ from .cloud_host_direct import (
     install_dns_token_command,
     publishes_direct_port,
 )
+from .cloud_host_edge_guard import EDGE_GUARD_STAGED, edge_guard_digest
+from .push_edge_guard_executor import EDGE_GUARD_ALERT
 from .setup_whitelist_executor import (
     _WL_DIR,
     _WL_FILE,
@@ -317,6 +319,13 @@ class FullSetupExecutor(
                 transport,
                 {self._job_path(_DIRECT_STAGED): host._shipped_direct_yml()},
             )
+        if not host._edge_guard_leaves_alone():
+            # The router that refuses Odoo's /website/info, there before
+            # the proxy starts. The same document on every host.
+            await self._upload_files(
+                transport,
+                {self._job_path(EDGE_GUARD_STAGED): host._shipped_edge_guard_yml()},
+            )
         self._sys("✓ Traefik configuration files uploaded.")
         if self._job_path(_TOKEN_STAGED) in private:
             self._sys("✓ DNS token for certificates staged.")
@@ -406,6 +415,23 @@ class FullSetupExecutor(
             ]
         else:
             direct_steps = []
+        if host._edge_guard_leaves_alone():
+            guard_steps = []
+        else:
+            guard_steps = [(
+                # In the directory before the proxy starts, so it never
+                # serves /website/info. Not mounted yet and not running
+                # yet: the script checks neither (they are the light
+                # job's, push_edge_guard).
+                "Install the edge guard",
+                self.run_script(
+                    "edge_guard.sh",
+                    [
+                        "install", stage(EDGE_GUARD_STAGED),
+                        "--no-mount-check", "--no-probe",
+                    ],
+                ),
+            )]
         commands = [
             # ── Phase 1: compatibility ────────────────────────────────
             ("check:os",   "uname -s"),
@@ -441,6 +467,7 @@ class FullSetupExecutor(
                 "mkdir -p ~/traefik/dynamic"
                 " && cp ~/traefik/config.yml ~/traefik/dynamic/config.yml",
             ),
+            *guard_steps,
             (
                 # Same interlock as the proxy-settings push: a host with
                 # its own certificate serves it as the default, one
@@ -586,12 +613,15 @@ class FullSetupExecutor(
         # The direct path's steps run only on some hosts: each is checked
         # when it ran. Without the token there is no certificate, without
         # the list the port serves nothing, without "Keep" a refused start
-        # has no files to fall back to.
+        # has no files to fall back to. The edge guard is left out only
+        # on a host it leaves alone; without it every instance serves
+        # Odoo's /website/info, and nothing else would say so (7-nov-2026).
         ran = [
             label for label in (
                 "Install the DNS token",
                 "Install the direct list for Traefik",
                 "Keep the running proxy files",
+                "Install the edge guard",
             ) if label in results
         ]
         # The certificate, the CDN's authority and the access log too:
@@ -650,6 +680,8 @@ class FullSetupExecutor(
         for code in (
             'missing_deps', 'setup_failed',
             'traefik_setup_failed', 'whitelist_setup_failed',
+            # The proxy this run started mounts the dynamic directory.
+            EDGE_GUARD_ALERT,
         ):
             self._resolve_alert(code)
         self._sys("✓ Host is fully configured and ready for deployments.")
@@ -667,6 +699,13 @@ class FullSetupExecutor(
             # current snapshot, so the saved host config is applied.
             **host._applied_config_vals(),
         })
+        if not host._edge_guard_leaves_alone():
+            # The guard this run wrote before the proxy started.
+            host.write({
+                'edge_guard_shipped_hash':
+                    edge_guard_digest(host._shipped_edge_guard_yml()),
+                'edge_guard_shipped_at': fields.Datetime.now(),
+            })
         self._chain_observability()
         if host.direct_port:
             # The list and the probes of the port this run published, at

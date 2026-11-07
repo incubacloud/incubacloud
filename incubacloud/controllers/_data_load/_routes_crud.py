@@ -2189,6 +2189,7 @@ class CrudMixin:
             'auto_rebuild': inst.auto_rebuild,
             'auto_update': inst.auto_update,
             'autopurge_exempt': inst.autopurge_exempt,
+            'website_info_public': inst.website_info_public,
             'autopurge_days_left': inst._autopurge_days_left(),
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
@@ -2380,6 +2381,9 @@ class CrudMixin:
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
         'backup_backend_id', 'auto_rebuild', 'auto_update', 'tag_ids',
         'autopurge_exempt',
+        # The exception to the edge guard; never on create: an instance
+        # is born with /website/info blocked.
+        'website_info_public',
         'odoo_memory_limit', 'odoo_cpus',
         'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus',

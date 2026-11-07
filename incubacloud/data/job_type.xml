@@ -76,6 +76,21 @@
             <field name="queue_collapse">True</field>
         </record>
 
+        <record id="push_edge_guard" model="cloud.job.type">
+            <field name="name">Push Edge Guard</field>
+            <field name="code">push_edge_guard</field>
+            <field name="apply_to">host</field>
+            <field name="description">Writes the edge guard to the host's proxy, the router that refuses Odoo's public /website/info page on every instance, and checks the proxy refuses it. Never restarts the proxy.</field>
+            <!-- Queued by the update that introduced it and by the host
+                 Check when the file is missing or differs; Full Setup
+                 writes it itself. Nothing for a person to run. -->
+            <field name="show_as_action">False</field>
+            <!-- The document is rendered when the job runs, so a waiting
+                 one covers every request queued behind it. A failure
+                 must not hold the host's queue (the default). -->
+            <field name="queue_collapse">True</field>
+        </record>
+
         <record id="start_instance" model="cloud.job.type">
             <field name="name">Start Instance</field>
             <field name="code">start_instance</field>
