@@ -188,9 +188,13 @@ class QueueJob(models.Model):
         is armed again here, for this cursor's commit, and what the hook
         wrote on the job's own row is written again from its outcome mark.
 
-        Also for a job stored failed although its ``on_success`` had
-        committed (the mark, ``cloud.job.outcome``): what failed came
-        after its outcome.
+        Also for a job whose ``on_success`` had committed (the mark,
+        ``cloud.job.outcome``) stored failed — what failed came after its
+        outcome — or put back in the queue: then this runs on the
+        temporary cursor of queue_job's ``retry_postpone``, and what it
+        arms for after the commit runs when that cursor commits. And for
+        the reconciliation's close of a lost worker whose success was
+        saved (``cloud.job._close_lost_job``).
 
         :param dict vals: what queue_job was writing
         :return: the result of ``write``
@@ -310,15 +314,14 @@ class QueueJob(models.Model):
             # Its ``on_success`` had returned when the stop arrived: the
             # job is done, and its chain goes on. Stored cancelled, a
             # cutover that had cut over cancelled the freeze of its
-            # source; put back in the queue, it would run again. Stored
-            # failed or with the stop's result, a job whose success hook
-            # committed (its outcome mark) is done too. Put back in the
-            # queue without a stop — a lost race on the store of done —
-            # it runs again, and ``cloud.job.execute`` ends that attempt
-            # at the mark.
-            succeeded = candidates._succeeded_before_cancel(
-                outcome=vals.get("state") != "pending",
-            )
+            # source; put back in the queue, it would run again. A job
+            # whose success hook committed (its outcome mark) is done too,
+            # however it was being stored: failed, with the stop's result,
+            # or put back in the queue — the store of done lost its race,
+            # against a stop that came after the mark or anything else.
+            # Read as the stop only, a stop after the mark ended it
+            # cancelled and cut its chain.
+            succeeded = candidates._succeeded_before_cancel(outcome=True)
             if succeeded:
                 (self - succeeded).write(vals)
                 return succeeded._store_success_before_cancel(vals)

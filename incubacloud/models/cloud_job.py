@@ -2765,6 +2765,11 @@ class CloudJob(models.Model):
           queue.job cancelled. Closed cancelled, which gives it its
           ``on_never_run``.
         - ``done``: active, its queue.job done. Closed done.
+        - ``succeeded``: any of the above but ``done``, with the outcome
+          mark of its queue.job (``cloud.job.outcome``) — its
+          ``on_success`` committed, then the worker died or a stop came.
+          No hook; closed done, with what the mark holds
+          (``_lost_job_succeeded``).
 
         :param str job_state: the ``cloud_job`` row's state
         :param queue_state: its ``queue_job`` row's state, None if gone
@@ -2788,6 +2793,31 @@ class CloudJob(models.Model):
         ):
             return "stopped"
         return None
+
+    @api.model
+    def _lost_job_succeeded(self, cr, job_row, case):
+        """Return *case*, or ``succeeded`` when the job's success was saved.
+
+        An outcome mark for the job's queue.job means its ``on_success``
+        committed: what came after — a dead worker, a stop — does not
+        undo it. Without this, the reconciliation ran ``on_abort`` or
+        ``on_cancelled_running`` on a job that had succeeded and closed it
+        failed or cancelled, cutting its chain.
+
+        :param cr: the reconciliation's cursor
+        :param dict job_row: the ``cloud_job`` row, as ``_lock_lost_job``
+            returns it
+        :param case: as ``_lost_job_case`` names it
+        :return: the case to close the job as
+        """
+        if case in (None, "done"):
+            return case
+        cr.execute(
+            "SELECT 1 FROM cloud_job_outcome"
+            " WHERE job_id = %s AND queue_job_uuid = %s LIMIT 1",
+            (job_row["id"], job_row["queue_job_uuid"]),
+        )
+        return "succeeded" if cr.fetchone() else case
 
     @api.model
     def _lock_lost_job(self, cr, job_id):
@@ -2848,11 +2878,11 @@ class CloudJob(models.Model):
             if rows is None:
                 return None
             job_row, queue_row = rows
-            case = self._lost_job_case(
+            case = self._lost_job_succeeded(cr, job_row, self._lost_job_case(
                 job_row["state"],
                 queue_row and queue_row["state"],
                 queue_row and queue_row["exc_name"],
-            )
+            ))
             if case is None:
                 return None
             if job_row["worker_lost_at"]:
@@ -2898,6 +2928,12 @@ class CloudJob(models.Model):
                 "queue_job recorded this job as done, but its end was never"
                 " acted on: it is closed as done."
             )
+        if case == "succeeded":
+            return env._(
+                "This job had finished and its outcome was saved when the"
+                " process running it was lost: it is closed as done, and"
+                " nothing is undone."
+            )
         return env._(
             "queue_job recorded this job as cancelled, but its end was never"
             " acted on: it is closed as cancelled."
@@ -2912,7 +2948,8 @@ class CloudJob(models.Model):
         case: ``on_abort`` with ``JobWorkerLost`` for a failure,
         ``on_cancelled_running`` with no step results for a stop — not
         for a run whose ``on_success`` had returned before the stop,
-        which is closed done. Both run on a durable cursor and never
+        which is closed done, nor for one whose outcome mark is there
+        (``succeeded``). Both run on a durable cursor and never
         raise (``_dispatch_abort``, ``_dispatch_cancel``). The executor
         knows nothing of the lost run but what the database holds.
         Then the job log says what happened, and its watchers hear of
@@ -2988,19 +3025,25 @@ class CloudJob(models.Model):
             if rows is None:
                 return False
             job_row, queue_row = rows
-            case = self._lost_job_case(
+            case = self._lost_job_succeeded(cr, job_row, self._lost_job_case(
                 job_row["state"],
                 queue_row and queue_row["state"],
                 queue_row and queue_row["exc_name"],
-            )
+            ))
             if case is None or not job_row["worker_lost_at"]:
                 return False
             env = self.env(cr=cr)
             if queue_row is None:
-                self._close_lost_job_without_queue(env, job_id)
+                self._close_lost_job_without_queue(
+                    env, job_id, succeeded=case == "succeeded",
+                )
                 return True
             qjob = env["queue.job"].sudo().browse(queue_row["id"])
-            if case == "failed":
+            if case == "succeeded":
+                # Done as a success stored after a stop is: its own row
+                # and the unlink it owed back, the steps after it going.
+                qjob._store_success_before_cancel({"state": "done"})
+            elif case == "failed":
                 qjob.write({
                     "state": "failed",
                     "exc_message": self._worker_lost_message(env),
@@ -3023,18 +3066,36 @@ class CloudJob(models.Model):
         return True
 
     @api.model
-    def _close_lost_job_without_queue(self, env, job_id):
-        """Close as failed a job whose queue.job is gone.
+    def _close_lost_job_without_queue(self, env, job_id, succeeded=False):
+        """Close a job whose queue.job is gone: failed, or done after a success.
 
         What ``queue_job_ext`` does for a failure, with nothing to write
         it through: the state, the ``job_failed`` alert, the bus, then
         the end acted on (``_on_state_changed``).
 
+        With *succeeded* — its outcome mark is there — it is closed done
+        instead, with the values the mark holds for its own row. What the
+        mark says it owed is not armed again: that is done through the
+        queue.job (``queue.job._unlink_owed_instances``), which is gone.
+
         :param env: the closing cursor's environment
         :param int job_id: the ``cloud.job``
+        :param bool succeeded: whether its ``on_success`` committed
         """
         Job = env["cloud.job"].sudo()
         job = Job.browse(job_id)
+        if succeeded:
+            outcome = job._committed_outcome()
+            job.with_context(ic_skip_state_hook=True).write(
+                {**(outcome[0] if outcome else {}), "state": "done"},
+            )
+            Job._broadcast_job_update(job.id, state="done")
+            job._on_state_changed("done", after_commit=True)
+            _logger.info(
+                "cloud.job %s: closed done by the reconciliation (queue job"
+                " gone, outcome saved)", job_id,
+            )
+            return
         job.with_context(ic_skip_state_hook=True).write({"state": "failed"})
         Job._create_job_failed_alert(
             job, exc_message=self._worker_lost_message(env),
