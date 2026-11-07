@@ -14,25 +14,35 @@ and request HTTPS automatically.
 
 ### 1. Open the hosts page
 
-Go to `/cloud/hosts`. Click **New Host**.
+Go to `/cloud/hosts`. Click **Add Host**.
 
 ### 2. Fill in connection details
 
 - **Name** — whatever helps you remember it (e.g. `customer-foo-prod`).
-- **IP address or hostname** — the public IP works fine.
-- **SSH port** — usually `22`.
-- **Username** — `root` is fine; a sudo-capable user is also fine.
-- **Auth method** — **SSH key** (recommended) or password.
+- **IP Address** — the public IP works fine.
+- **Port** — the SSH port, usually `22`.
+- **User** — `root` is fine; a user with passwordless `sudo` is also fine.
+- **Login Type** — **SSH Key** (recommended) or **Password**. Hardening
+  needs a key: it copies the user's authorized keys to the account it creates.
+- **Wildcard Domain** — the domain your instances get their names under
+  (`example.com` or `*.example.com`): each instance answers at a name such as
+  `myproject-prod.example.com`. Point a wildcard DNS record (`*.example.com`)
+  at the host's IP before you deploy.
 
 ### 3. SSH key (recommended path)
 
-We generate an Ed25519 keypair for you. Copy the displayed public key.
-
-On the VPS, append it to the chosen user's `~/.ssh/authorized_keys`:
+The panel does not generate the key: you bring one. On your computer, create a
+key pair without a passphrase (the panel has no field for one):
 
 ```bash
-echo "ssh-ed25519 AAAAC3..." >> ~/.ssh/authorized_keys
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/incubacloud_host
 ```
+
+Put the **public** half (`~/.ssh/incubacloud_host.pub`) on the VPS: paste it
+in your provider's SSH key field when you create the server, or append it to
+the chosen user's `~/.ssh/authorized_keys`. Upload the **private** half
+(`~/.ssh/incubacloud_host`) in **SSH Private Key**; the panel stores it
+encrypted.
 
 Create the host, then click **Trust SSH Key** in its action bar. Green = we
 got in, and the panel keeps the host's key to check it on every connection.
