@@ -160,7 +160,7 @@ case "$op" in
         mkdir -p "$build_d"
         install -m 0755 "$(dirname "$0")/doodba/debian_archive.sh" \
             "$build_d/05-incubacloud-debian-archive"
-        ic_log "the image's apt will read archive.debian.org"
+        ic_log "the image's apt will read Freexian's Extended LTS"
         ;;
 
     ensure-secret-key)
