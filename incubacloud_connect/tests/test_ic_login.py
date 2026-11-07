@@ -19,8 +19,7 @@ from unittest.mock import patch
 from odoo import http
 from odoo.service import security
 from odoo.tests import get_db_name, new_test_user, tagged
-from odoo.tests.common import HttpCase
-from odoo.sql_db import TestCursor
+from odoo.tests.common import HOST, HttpCase
 
 from odoo.addons.incubacloud_connect.controllers import connect
 
@@ -28,6 +27,15 @@ from odoo.addons.incubacloud_connect.controllers import connect
 @tagged('-at_install', 'post_install')
 class TestIcLogin(HttpCase):
     """The link logs its user in on a new sid, with a token for it."""
+
+    # ``auth='none'`` routes get a read-only cursor, and the route opens
+    # a read/write cursor of its own on the link's database: a separate
+    # connection on an instance, refused between test cursors only.
+    # Odoo 18's TestCursor refuses it in ``__init__`` after taking the
+    # registry's test lock, which it then never releases: the next
+    # request of the class waits on it forever. Request cursors are
+    # read/write here instead, as Odoo's own tests do.
+    readonly_enabled = False
 
     def setUp(self):
         super().setUp()
@@ -37,17 +45,24 @@ class TestIcLogin(HttpCase):
         self.user_b = new_test_user(
             self.env, login='ic_login_b', groups='base.group_user',
         )
-        # ``auth='none'`` routes get a read-only cursor, and the route
-        # opens a cursor of its own on the link's database: a separate
-        # connection on an instance, refused between test cursors only.
-        # Odoo 18's TestCursor has no such check (it arrived with 19.0),
-        # so there is nothing to lift here.
-        if hasattr(TestCursor, '_check_cursor_readonly'):
-            readonly_check = patch.object(
-                TestCursor, '_check_cursor_readonly', autospec=True,
-            )
-            readonly_check.start()
-            self.addCleanup(readonly_check.stop)
+
+    def authenticate(self, user, password, **kwargs):
+        """Log in as ``HttpCase.authenticate``, the cookie on the test host.
+
+        Odoo 18 sets the session cookie with no domain, and ``/ic/login``
+        answers with one for ``HOST``: the opener keeps both and sends the
+        old sid first, which the next request finds deleted. A browser
+        keeps one cookie per name, domain and path, and Odoo 19 sets it
+        for ``HOST`` too.
+
+        :param str user: the login, or ``None`` for an anonymous session.
+        :param str password: its password.
+        :returns: the session ``HttpCase.authenticate`` returns.
+        """
+        session = super().authenticate(user, password, **kwargs)
+        self.opener.cookies.set('session_id', None)
+        self.opener.cookies.set('session_id', session.sid, domain=HOST)
+        return session
 
     def _link(self, uid):
         """Write a one-time token for *uid*, as the panel does.

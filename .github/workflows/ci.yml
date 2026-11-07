@@ -114,6 +114,9 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-22.04
+    # About 25 minutes when healthy: a hung test fails here, not after
+    # GitHub's 6 hours.
+    timeout-minutes: 45
     permissions:
       contents: read
     # CN-011: Pinned to digest to prevent silent image changes.
