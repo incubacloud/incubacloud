@@ -21,7 +21,10 @@ needs this core.
   rolled back; rebuilds built and restarted twice. The success hook now leaves a
   mark (`cloud.job.outcome`) on its own cursor; the next attempt finds it, runs
   nothing, writes back what the lost transaction held on the job and arms the
-  unlink a delete or a purge left for its commit.
+  unlink a delete or a purge left for its commit. A stop that arrives after the
+  mark, while the store of `done` loses its race, no longer ends the job
+  `cancelled` and cuts its chain: it is stored `done`. The reconciliation of a
+  lost worker closes a job with the mark `done`, without its abort or stop hook.
 - **The store of `done` writes only the job's rows.** The instance's state probe,
   the success's mail, Telegram, webhook and bus event, and the layers' end hooks
   wait for its commit, on cursors of their own: a store that does not commit no
