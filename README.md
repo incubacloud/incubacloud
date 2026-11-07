@@ -240,3 +240,5 @@ Project maintained by **IncubaCloud**
 
 Enterprise features, support and partnerships:
 contact@incubacloud.io
+
+**Don't want to install it?** Try the hosted platform, free: https://www.incubacloud.io/?utm_source=github&utm_medium=readme
