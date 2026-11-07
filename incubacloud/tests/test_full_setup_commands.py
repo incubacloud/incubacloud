@@ -145,7 +145,8 @@ class TestFullSetupWritesTheEdgeGuard(TransactionCase):
     """
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.host = self.env['cloud.host'].create({
             'name': 'fs-guard-host',
