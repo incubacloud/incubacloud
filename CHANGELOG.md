@@ -8,22 +8,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.215] — 2026-11-07
 
-The update needs no migration. `incubacloud_connect` 1.0.3 reaches an existing
-instance with its next rebuild.
+The update needs no migration: no instance of production runs 7.0 or
+PostgreSQL 9.6, which the panel no longer knows. `incubacloud_connect` 1.0.3
+reaches an existing instance with its next rebuild.
+
+### Changed
+
+- **A series runs with every service of the panel or is not offered** (owner,
+  7-nov-2026). **7.0 is retired**: its click-odoo can neither dump, restore nor
+  update its database, so its card is gone from `_odoo_versions.py` and no
+  picker, field or tool names it. **PostgreSQL 9.6 is gone** too: doodba's
+  template renders no backup service for it. 8.0 to 10.0, for which the
+  template allows 9.6 alone, run on 10, the nearest major with one. Copier would
+  refuse it, so the copier run of their deploy and rebuild reads a settings file
+  whose defaults give the template's `pg_per_odoo` that range
+  (`postgres_beyond_template`, `IC_COPIER_SETTINGS`): an answer would not reach
+  the replay that `copier update` starts with. 11.0 and 12.0 run on 10 to 13.
+  The rebuild's boot test no longer turns replication on nor asks
+  `pg_basebackup` for `--no-sync`, which only 9.6 lacked.
 
 ### Fixed
 
-- **7.0 to 12.0 deploy again** (QA of the series, 7-nov-2026). The image of 7.0
-  to 10.0 reads apt from archive.debian.org (`debian_archive` on their cards),
-  and instances get `incubacloud_connect` without its tests or bytecode, which
+- **8.0 to 12.0 deploy again** (QA of the series, 7-nov-2026). The image of 8.0
+  to 10.0, on Debian 8, reads apt from Freexian's Extended LTS of jessie
+  (`debian_archive` on their cards), whose keyring the build checks against a
+  fixed sha256, so the packages of an `apt.txt` install with their signatures
+  checked; archive.debian.org's keys have expired, and apt refused them.
+  Instances get `incubacloud_connect` without its tests or bytecode, which
   Python 2.7 and 3.5 refused to compile; a deploy or a rebuild replaces the
   copy an instance had instead of copying over it. The checksums are stored
-  with a plain `click-odoo-update` where it has no `--only-compute-hashes`,
-  and an instance on PostgreSQL 9.6 gets no backup service, which doodba's
-  template does not render there.
-- **Connect as user works on 9.0 to 12.0** (`incubacloud_connect` 1.0.3): the
-  module imports on Python 2.7 and 3.5 and with 9.0's `openerp` package, and
-  9.0 reads its manifest from `__openerp__.py`.
+  with a plain `click-odoo-update` where it has no `--only-compute-hashes`.
+- **Connect as user works on 8.0 to 12.0** (`incubacloud_connect` 1.0.3): the
+  module imports on Python 2.7 and 3.5 and with the `openerp` package of 8.0
+  and 9.0, which read its manifest from `__openerp__.py`. On 8.0, which checks
+  the session's password on every call and has no session token, the session
+  holds a signed password of its own, valid a week, for that user and database
+  only, and ended by a change of the user's password or login; the module
+  accepts it in `res.users.check_credentials`, Odoo 8's place for other ways to
+  authenticate, and signs it with a key in Odoo's data directory.
 - **Installing `incubacloud_connect` on a restored database works on every
   series.** A restore, a staging and a rebuild run Odoo headless with the
   option its series' card names (`headless`): `--no-http` from 11.0,
