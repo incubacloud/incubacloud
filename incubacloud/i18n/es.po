@@ -787,6 +787,13 @@ msgstr "Hay un token guardado. Déjelo en blanco para conservarlo."
 
 #. module: incubacloud
 #. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__website_info_public
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Allow Odoo's public website info page"
+msgstr "Permitir la página pública de información del sitio web de Odoo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "API token"
 msgstr "Token de API"
@@ -3751,6 +3758,15 @@ msgid "DB only"
 msgstr "Solo BD"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__edge_guard_shipped_hash
+msgid ""
+"Digest of the edge guard (ic_guard.yml) last written to this host's proxy "
+"and read by it."
+msgstr ""
+"Huella de la guarda del borde (ic_guard.yml) que se escribió por última vez "
+"en el proxy de este host y que este lee."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__acme_dns_cloudflare_token
@@ -4645,6 +4661,16 @@ msgstr "Duración"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Edge"
 msgstr "Borde"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__edge_guard_shipped_hash
+msgid "Edge guard applied"
+msgstr "Guarda del borde aplicada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__edge_guard_shipped_at
+msgid "Edge guard applied on"
+msgstr "Guarda del borde aplicada el"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9642,6 +9668,30 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Odoo lists the installed apps and its version at /website/info. Blocked by "
+"default; a rebuild applies the change."
+msgstr ""
+"Odoo muestra en /website/info las aplicaciones instaladas y su versión. Está"
+" bloqueada por defecto; el cambio se aplica en la siguiente reconstrucción."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__website_info_public
+msgid ""
+"Odoo lists the installed apps and its version at /website/info. The host's "
+"proxy refuses it on every instance; this lets anyone open it on this one. A "
+"rebuild applies the change. Not copied: a staging cloned from this instance "
+"starts blocked."
+msgstr ""
+"Odoo muestra en /website/info las aplicaciones instaladas y su versión. El "
+"proxy del host la rechaza en todas las instancias; esto permite que "
+"cualquiera la abra en esta. El cambio se aplica en la siguiente "
+"reconstrucción. No se copia: un staging clonado de esta instancia empieza "
+"bloqueado."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_card/project_card.js:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__status__ok
@@ -10975,6 +11025,11 @@ msgstr "Purgar logs antiguos"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Purge old logs now"
 msgstr "Purgar logs antiguos ahora"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.push_edge_guard
+msgid "Push Edge Guard"
+msgstr "Enviar la guarda del borde"
 
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.push_trusted_proxies
@@ -14631,6 +14686,12 @@ msgstr "Desactive para dejar de recibir alertas de la nube por correo"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Toggle public website info page"
+msgstr "Alternar «página pública de información del sitio web»"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Toggle pull request previews"
 msgstr "Activar o desactivar las vistas previas de pull requests"
@@ -15761,6 +15822,13 @@ msgstr ""
 "por la que siega el cron de recolección."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__edge_guard_shipped_at
+msgid "When the edge guard was last written to this host's proxy."
+msgstr ""
+"Cuándo se escribió por última vez la guarda del borde en el proxy de este "
+"host."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__autopurge_final_warned_at
 msgid ""
 "When the final expiry warning went out. Deletion requires this to be set and"
@@ -16083,6 +16151,17 @@ msgstr "Funcionando"
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Working, certificate valid until %s"
 msgstr "Funciona, certificado válido hasta %s"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.push_edge_guard
+msgid ""
+"Writes the edge guard to the host's proxy, the router that refuses Odoo's "
+"public /website/info page on every instance, and checks the proxy refuses "
+"it. Never restarts the proxy."
+msgstr ""
+"Escribe en el proxy del host la guarda del borde, el router que rechaza la "
+"página pública /website/info de Odoo en todas las instancias, y comprueba "
+"que el proxy la rechaza. Nunca reinicia el proxy."
 
 #. module: incubacloud
 #. odoo-javascript

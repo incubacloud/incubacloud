@@ -2470,6 +2470,24 @@
               t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
             />
                     </div>
+                    <t t-if="(state.form.odoo_proxy || 'traefik') === 'traefik'">
+                        <div class="rl-ftoggle rl-full">
+                            <div>
+                                <div
+                  class="rl-tl-label"
+                >Allow Odoo's public website info page</div>
+                                <div
+                  class="rl-th"
+                >Odoo lists the installed apps and its version at /website/info. Blocked by default; a rebuild applies the change.</div>
+                            </div>
+                            <button
+                type="button"
+                t-att-class="'rl-sw' + (state.form.website_info_public ? ' on' : '')"
+                aria-label="Toggle public website info page"
+                t-on-click="() => { state.form.website_info_public = !state.form.website_info_public; state.saved = false; }"
+              />
+                        </div>
+                    </t>
                     <t t-if="state.form.environment === 'staging'">
                         <div class="rl-ftoggle rl-full">
                             <div>

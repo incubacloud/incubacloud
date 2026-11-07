@@ -948,6 +948,10 @@ class CloudInstance(models.Model):
             "extras": {
                 f: inst[f] or "" for f in self._CONFIG_SNAPSHOT_EXTRA_FIELDS
             },
+            # Only when on: an instance with the page blocked, the
+            # default, hashes as it did before the switch existed, so
+            # the fleet does not all come out with changes to apply.
+            **({"website_info_public": True} if inst.website_info_public else {}),
         }
 
     def _config_snapshot_hash(self):
@@ -3088,6 +3092,16 @@ class CloudInstance(models.Model):
              "instance leaves this alone — no reading means 'unknown', "
              "never 'nobody logged in'.",
     )
+    website_info_public = fields.Boolean(
+        string="Allow Odoo's public website info page",
+        default=False,
+        copy=False,
+        help="Odoo lists the installed apps and its version at "
+             "/website/info. The host's proxy refuses it on every "
+             "instance; this lets anyone open it on this one. A rebuild "
+             "applies the change. Not copied: a staging cloned from this "
+             "instance starts blocked.",
+    )
     autopurge_exempt = fields.Boolean(
         default=False,
         copy=False,
@@ -4358,6 +4372,7 @@ class CloudInstance(models.Model):
             "backup_backend_id",
             "active",
             "autopurge_exempt",
+            "website_info_public",
         }
     )
 
