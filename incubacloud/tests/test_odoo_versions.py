@@ -183,7 +183,11 @@ class TestCopierTakesThePostgresOfTheCard(BaseCase):
                 self.assertIn(settings, steps["Remove temp files"])
                 self.assertEqual(
                     yaml.safe_load(ex._copier_settings_content()),
-                    {"defaults": {"pg_per_odoo": {9.0: {"oldest": "12", "latest": "12"}}}},
+                    {
+                        "defaults": {
+                            "pg_per_odoo": {9.0: {"oldest": "12", "latest": "12"}}
+                        }
+                    },
                 )
 
     def test_no_other_series_gets_one(self):
