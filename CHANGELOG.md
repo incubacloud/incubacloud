@@ -30,6 +30,13 @@ needs this core.
   wait for its commit, on cursors of their own: a store that does not commit no
   longer announces a success, nor announces it twice, and queuing the probe no
   longer makes the store fail. A callback after the commit that raises is logged.
+- **The probe of running panels no longer fails a job keyed on the instance.**
+  It locked the instance's row `FOR UPDATE` before writing it, and any job whose
+  transaction began before the probe committed failed to store a row keyed on
+  that instance (a move failed so on 7-nov-2026). It locks `FOR NO KEY UPDATE`,
+  as do the direct-name probe on the settings row and the assistant on its
+  conversation. A test fails the build on any new `FOR UPDATE` not marked as
+  needed.
 
 ### Added
 
