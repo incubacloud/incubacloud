@@ -59,19 +59,21 @@ class TestTheSeriesCards(BaseCase):
 
         expected = {
             # 7.0 is retired (owner, 7-nov-2026). What doodba's template
-            # v10.0.8 allows each (its copier.yml) but 9.6, which has no
-            # backup service: 10 instead, beyond the template's 9.6 alone
-            # for 8.0 to 10.0. No neutralization of Odoo's own before 16.0.
+            # v10.0.8 allows each (its copier.yml) but below 12, the first
+            # major with continuous recovery, which 9.6 lacks as well as a
+            # backup service: 12 instead, beyond the template's 9.6 alone
+            # for 8.0 to 10.0, and 12 to 13 for 11.0 and 12.0 (owner,
+            # 7-nov-2026). No neutralization of Odoo's own before 16.0.
             # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
             # and have no ``--no-http`` (7-nov-2026).
             **dict.fromkeys(
                 ("8.0", "9.0", "10.0"),
                 card(
-                    ("10", "10", "10"), "sql", debian_archive=True,
+                    ("12", "12", "12"), "sql", debian_archive=True,
                     headless="--no-xmlrpc", beyond_template=True,
                 ),
             ),
-            **dict.fromkeys(("11.0", "12.0"), card(("10", "13", "13"), "sql")),
+            **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
             "15.0": card(("10", "17", "17"), "sql"),
             **dict.fromkeys(("16.0", "17.0"), card(("14", "18", "17"))),
@@ -140,13 +142,13 @@ class TestTheSeriesCards(BaseCase):
         self.assertEqual(versions.POSTGRES_MAJORS[0], "10")
 
     def test_a_postgres_beyond_the_template_is_handed_to_copier(self):
-        """8.0 to 10.0 on 10: the template's ``pg_per_odoo`` entry of the
+        """8.0 to 10.0 on 12: the template's ``pg_per_odoo`` entry of the
         series, keyed as the template reads it; nothing for the rest."""
         for series in ("8.0", "9.0", "10.0"):
             with self.subTest(series=series):
                 self.assertEqual(
                     versions.copier_defaults(series),
-                    {"pg_per_odoo": {float(series): {"oldest": "10", "latest": "10"}}},
+                    {"pg_per_odoo": {float(series): {"oldest": "12", "latest": "12"}}},
                 )
         for series in ("11.0", "19.0", "20.0", "7.0", "", None, False):
             with self.subTest(series=series):
@@ -180,7 +182,7 @@ class TestCopierTakesThePostgresOfTheCard(BaseCase):
                 self.assertIn(settings, steps["Remove temp files"])
                 self.assertEqual(
                     yaml.safe_load(ex._copier_settings_content()),
-                    {"defaults": {"pg_per_odoo": {9.0: {"oldest": "10", "latest": "10"}}}},
+                    {"defaults": {"pg_per_odoo": {9.0: {"oldest": "12", "latest": "12"}}}},
                 )
 
     def test_no_other_series_gets_one(self):
@@ -414,7 +416,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
             "environment": "staging", "host_id": self.host.id,
             "odoo_version": "8.0",
         })
-        self.assertEqual(old.postgres_version, "10")
+        self.assertEqual(old.postgres_version, "12")
 
     def test_every_postgres_of_the_range_is_taken(self):
         for major in versions.postgres_versions("19.0"):
@@ -448,7 +450,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
                 )
 
     def test_every_series_gets_its_backup_service(self):
-        """10, the PostgreSQL of 8.0 to 10.0, has the template's backup
+        """12, the PostgreSQL of 8.0 to 10.0, has the template's backup
         service, as every other major the table names: an instance with a
         backend counts on it."""
         backend = self.env["cloud.backup.backend"].create({

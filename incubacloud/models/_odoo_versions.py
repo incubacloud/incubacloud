@@ -146,28 +146,33 @@ VERSIONS = {
     # and the table no longer names it. No instance of production held it.
     # 8.0 to 15.0 run on what the doodba template allows each (v10.0.8's
     # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
-    # Except for 9.6, the only PostgreSQL the template allows 8.0 to 10.0
-    # and the lowest of 11.0 and 12.0: it has no backup service
-    # (``POSTGRES_MAJORS``), so they run on 10, the nearest major that has
-    # one (owner, 7-nov-2026). 8.0 to 10.0 are on Debian 8, gone from the
-    # mirrors, and have no ``--no-http`` (7-nov-2026).
+    # Except below 12, the first major continuous recovery serves
+    # (incubacloud_pitr's ``_pitr_postgres_supported``: pitr.sh recovers
+    # with ``recovery.signal``), which 9.6 lacks as well as a backup
+    # service (``POSTGRES_MAJORS``): 8.0 to 10.0, for which the template
+    # allows 9.6 alone, run on 12 alone, and 11.0 and 12.0 on 12 to 13,
+    # with 13 by default as the template recommends (owner, 7-nov-2026;
+    # each checked on 12 that day: database created, modules installed and
+    # updated, click-odoo and duplicity copies restored, login served,
+    # recovery to a point in time). 8.0 to 10.0 are on Debian 8, gone from
+    # the mirrors, and have no ``--no-http`` (7-nov-2026).
     "8.0": _card(
-        False, ("10", "10", "10"), "click-odoo", None, "sql",
+        False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
         postgres_beyond_template=True,
     ),
     "9.0": _card(
-        False, ("10", "10", "10"), "click-odoo", None, "sql",
+        False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
         postgres_beyond_template=True,
     ),
     "10.0": _card(
-        False, ("10", "10", "10"), "click-odoo", None, "sql",
+        False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
         postgres_beyond_template=True,
     ),
-    "11.0": _card(False, ("10", "13", "13"), "click-odoo", None, "sql"),
-    "12.0": _card(False, ("10", "13", "13"), "click-odoo", None, "sql"),
+    "11.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
+    "12.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
     "13.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
     "14.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
     "15.0": _card(False, ("10", "17", "17"), "click-odoo", None, "sql"),
@@ -298,7 +303,7 @@ def copier_defaults(version):
 
     :param version: a series; empty or one the table does not know gets
         none, as ``headless_flag`` gives such a series its default.
-    :return: ``{"pg_per_odoo": {8.0: {"oldest": "10", "latest": "10"}}}``,
+    :return: ``{"pg_per_odoo": {8.0: {"oldest": "12", "latest": "12"}}}``,
         or an empty dict.
     :rtype: dict
     """
