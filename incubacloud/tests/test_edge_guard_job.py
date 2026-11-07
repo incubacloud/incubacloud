@@ -1,9 +1,10 @@
 """``push_edge_guard``: the guard written to a host that is already set up.
 
 One step runs ``edge_guard.sh``. It exits 3 when the proxy does not mount
-the dynamic directory and 4 when the answer could not be verified: the file
-is written either way, so neither fails the job. 3 raises a warning on the
-host until a run finds the directory mounted; 4 is only said in the log.
+the dynamic directory and 4 when the handshake was refused and the answer
+could not be verified: the file is written either way, so neither fails the
+job. 3 raises a warning on the host until a run finds the directory mounted;
+4 is only said in the log. 5 (a real HTTP answer other than 403) fails it.
 What the proxy reads is recorded on the host, as ``direct_allowlist_shipped``.
 """
 import asyncio
@@ -106,6 +107,18 @@ class TestWhatTheScriptSays(_EdgeGuardCase):
                 errors = self._run_with(status)[2]
                 self.assertEqual(len(errors), 1)
                 self.assertIn(_INSTALL, errors[0])
+
+    def test_a_real_answer_other_than_403_says_what_it_was(self):
+        executor = self._executor()
+        self._staged(executor)
+        results = {_INSTALL: {
+            "stdout": "ic_guard.yml updated\nIC_EDGE_GUARD_NOT_APPLIED 200\n",
+            "exit_status": 5,
+        }}
+        errors = executor.parse_results(results)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("200", errors[0])
+        self.assertIn("not applied", errors[0])
 
     def test_a_step_that_never_ran_is_an_error(self):
         self.assertTrue(self._executor().parse_results({}))
