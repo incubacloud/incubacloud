@@ -23,6 +23,10 @@ from odoo.addons.incubacloud.models.rebuild_instance_executor import (
 )
 from odoo.addons.incubacloud.tests._template import pin_template
 from odoo.addons.incubacloud.tests.test_cloud_security import CloudSecurityBase
+from odoo.addons.incubacloud.tests.test_executor_features import (
+    _make_deploy_executor,
+    _make_rebuild_executor,
+)
 
 
 class TestTheSeriesCards(BaseCase):
@@ -36,18 +40,21 @@ class TestTheSeriesCards(BaseCase):
         """
         def card(
             postgres, neutralize="odoo", db_tool="click-odoo", template=None,
-            offered=False,
+            offered=False, debian_archive=False,
         ):
             return {
                 "offered": offered, "postgres": postgres, "db_tool": db_tool,
                 "neutralize": neutralize, "template_min": template,
+                "debian_archive": debian_archive,
             }
 
         expected = {
             # What doodba's template v10.0.8 allows each (its copier.yml),
-            # and no neutralization of Odoo's own before 16.0.
+            # and no neutralization of Odoo's own before 16.0. 7.0 to 10.0
+            # are built on Debian 8, gone from the mirrors (7-nov-2026).
             **dict.fromkeys(
-                ("7.0", "8.0", "9.0", "10.0"), card(("9.6", "9.6", "9.6"), "sql"),
+                ("7.0", "8.0", "9.0", "10.0"),
+                card(("9.6", "9.6", "9.6"), "sql", debian_archive=True),
             ),
             **dict.fromkeys(("11.0", "12.0"), card(("9.6", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
@@ -69,7 +76,10 @@ class TestTheSeriesCards(BaseCase):
             with self.subTest(version=version):
                 self.assertEqual(
                     set(card),
-                    {"offered", "postgres", "db_tool", "neutralize", "template_min"},
+                    {
+                        "offered", "postgres", "db_tool", "neutralize",
+                        "template_min", "debian_archive",
+                    },
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
                 self.assertIn(card["neutralize"], versions.NEUTRALIZERS)
@@ -124,6 +134,44 @@ class TestTheSeriesCards(BaseCase):
         self.assertEqual(
             facts["20.0"], {"postgres": ["16", "17", "18"], "postgres_default": "17"},
         )
+
+
+class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
+    """7.0 to 10.0's image reads apt from archive.debian.org; no other's."""
+
+    LABEL = "Read apt from the Debian archive"
+
+    def _steps(self, make, version):
+        """The steps of executor factory *make* for a *version* instance.
+
+        :returns: ``{label: command}``, in order.
+        :rtype: dict
+        """
+        return {c[0]: c[1] for c in make(odoo_version=version).get_commands()}
+
+    def test_the_deploy_and_the_rebuild_of_an_old_series_get_it(self):
+        for make in (_make_deploy_executor, _make_rebuild_executor):
+            for version in ("7.0", "10.0"):
+                with self.subTest(executor=make.__name__, version=version):
+                    steps = self._steps(make, version)
+                    self.assertIn("deploy.sh debian-archive", steps[self.LABEL])
+                    labels = list(steps)
+                    # In the build context before anything builds the image.
+                    self.assertLess(
+                        labels.index(self.LABEL),
+                        labels.index("Install incubacloud_connect") + 2,
+                    )
+                    build = next(
+                        i for i, label in enumerate(labels)
+                        if label in ("Pull images", "Rebuild Odoo image")
+                    )
+                    self.assertLess(labels.index(self.LABEL), build)
+
+    def test_no_other_series_gets_it(self):
+        for make in (_make_deploy_executor, _make_rebuild_executor):
+            for version in ("11.0", "15.0", "18.0", "19.0", "20.0", None):
+                with self.subTest(executor=make.__name__, version=version):
+                    self.assertNotIn(self.LABEL, self._steps(make, version))
 
 
 class TestTheTemplateFloor(BaseCase):

@@ -4,10 +4,13 @@ import io
 import logging
 import os
 import re
+import shlex
+import shutil
 import string
+import tempfile
 import urllib.error
 import urllib.request
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 
 import yaml
 
@@ -15,6 +18,7 @@ from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..github.http_utils import safe_urlopen
+from ._odoo_versions import VERSIONS, debian_archive
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -115,6 +119,30 @@ _IC_CONNECT_MODULE = os.path.realpath(
         )
     )
 )
+
+
+@contextmanager
+def _ic_connect_for_instances():
+    """Yield a copy of incubacloud_connect fit for every series' image.
+
+    Without its tests, nor any bytecode the panel left: doodba compiles
+    every addon of the image with the series' own Python (its
+    ``500-compile``), and the tests are the panel's, written for
+    Python 3.12. Their f-strings stopped the image of 7.0 to 12.0 from
+    building at all (Python 2.7 and 3.5; QA of the series, 7-nov-2026).
+    The copy is named like the module and goes when the block ends.
+
+    :return: the path of the copy, a directory named ``incubacloud_connect``.
+    :rtype: str
+    """
+    with tempfile.TemporaryDirectory(prefix="ic-connect-") as stage:
+        copy = os.path.join(stage, os.path.basename(_IC_CONNECT_MODULE))
+        shutil.copytree(
+            _IC_CONNECT_MODULE, copy,
+            ignore=shutil.ignore_patterns("tests", "__pycache__", "*.pyc"),
+        )
+        yield copy
+
 
 # Kill switch for the pre-build requirements re-sync. Absent ⇒ enabled:
 # keeping dependencies in step with the code a rebuild ships is the
@@ -733,6 +761,27 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """Days of Odoo log the host keeps for this instance."""
         settings = self.env["cloud.settings"].sudo()._get()
         return settings.odoo_log_archive_days
+
+    def _debian_archive_steps(self, d):
+        """Return the step that lets an image on an archived Debian build.
+
+        Only for a series whose card says ``debian_archive`` (7.0 to 10.0,
+        on Debian 8): ``deploy.sh debian-archive`` puts apt's switch to
+        archive.debian.org first in the image's build. Any other series
+        gets no step, and its deploy and rebuild run as they did; so does
+        a value the table does not know.
+
+        :param str d: remote instance directory
+        :return: a list of zero or one ``(label, command)`` tuple
+        :rtype: list
+        """
+        series = self._inst().odoo_version
+        if series not in VERSIONS or not debian_archive(series):
+            return []
+        return [(
+            "Read apt from the Debian archive",
+            self.run_script("deploy.sh", ["debian-archive", d]),
+        )]
 
     def _prepare_logs_step(self, d):
         """Return the get_commands step that readies ``logs/`` on the host.
@@ -1531,7 +1580,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         # Stage incubacloud_connect; get_commands moves it after copier.
         await self._make_modules_stage_dir(transport)
-        await transport.upload_dir(_IC_CONNECT_MODULE, self._modules_stage_dir())
+        with _ic_connect_for_instances() as module:
+            await transport.upload_dir(module, self._modules_stage_dir())
 
         self._sys("✓ Configuration files uploaded.")
 
@@ -1922,6 +1972,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 f" {src}/private/"
                 f" && rm -rf {self._modules_stage_dir()}",
             ),
+            *self._debian_archive_steps(d),
             # 6. Create conf.d (copier may not) and drop the conf file
             (
                 "Write Odoo conf",

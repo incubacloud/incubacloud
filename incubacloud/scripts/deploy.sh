@@ -9,6 +9,7 @@
 #   deploy.sh cap-hostnames      <dir>
 #   deploy.sh set-system-params  <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   deploy.sh record-heads       <dir> <spec_file>
+#   deploy.sh debian-archive     <dir>
 #
 # The executor keeps each deploy step as its own labelled command (so
 # tenant/warm subclasses can still splice by label); this script only
@@ -145,6 +146,21 @@ case "$op" in
             ic_copier copy --defaults --overwrite --trust \
                 --data-file "$answers" "$template_ref" "$dir"
         fi
+        ;;
+
+    debian-archive)
+        # The series' image is built on a Debian release gone from the
+        # mirrors (its card's ``debian_archive``): doodba runs the files
+        # of ``odoo/custom/build.d`` with its own in name order, and 05
+        # comes before every one that uses apt: the template's
+        # 20-update-pg-repos and doodba's 200-dependencies.
+        # Written again by every deploy and rebuild: copier does not own
+        # the file, and a new version of it reaches the image this way.
+        build_d="$dir/odoo/custom/build.d"
+        mkdir -p "$build_d"
+        install -m 0755 "$(dirname "$0")/doodba/debian_archive.sh" \
+            "$build_d/05-incubacloud-debian-archive"
+        ic_log "the image's apt will read archive.debian.org"
         ;;
 
     ensure-secret-key)
