@@ -36,6 +36,7 @@ from .abstract_executor import (
     JobRefused,
     sql_escape_literal,
 )
+from .cloud_host_edge_guard import WEBSITE_INFO_EXCEPTION_PRIORITY, WEBSITE_INFO_RULE
 from .docker_prune_executor import PROTECT_LABEL, build_cache_prune_if_low
 from .secret_key_escrow import SecretKeyEscrowMixin
 
@@ -973,6 +974,69 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                         )
         return labels
 
+    def _website_info_router_labels(self):
+        """Return the routers that let this instance answer /website/info.
+
+        Every host's proxy refuses the page (the edge guard,
+        ``cloud_host_edge_guard.py``, priority 2000). An instance with
+        ``website_info_public`` gets, for each group of its names, a
+        router for the same paths just above it, to its own Odoo. Labels
+        rather than a file of the host's: they go with the containers, so
+        a deploy, rebuild, move or revive writes them from the field, a
+        rebuild with the field off drops them and a deleted instance
+        leaves nothing behind.
+
+        The router repeats what the template gives its ``/website/info``
+        router (``forbiddenCrawlers``): name scheme, service, middlewares,
+        the TLS twin. The same knowledge of the template
+        ``_login_router_labels`` relies on: should a template release
+        rename them, Traefik drops these routers and the page stays
+        refused.
+
+        :return: ``{label: value}`` to merge into the odoo service; empty
+            while the switch is off
+        """
+        inst = self._inst()
+        if not inst.website_info_public:
+            return {}
+        answers = inst._render_copier_answers()
+        production = inst.environment == "production"
+        groups = answers["domains_prod" if production else "domains_test"]
+        key = (
+            f"{answers['project_name']}-{float(answers['odoo_version']):.1f}"
+            f"-{'prod' if production else 'test'}"
+        ).replace(".", "-")
+        labels = {}
+        for index, group in enumerate(groups):
+            if group.get("redirect_to"):
+                continue  # a redirect serves no page
+            hosts = group["hosts"]
+            domains = (
+                f"Host(`{hosts[0]}`)" if len(hosts) == 1
+                else "(" + " || ".join(f"Host(`{h}`)" for h in hosts) + ")"
+            )
+            basic = (["whitelist"] if answers.get("cidr_whitelist") else [])
+            if group.get("cert_resolver"):
+                basic += ["addSTS", "forceSecure"]
+            middlewares = sorted(basic + ["buffering", "compress", "forbid-crawlers"])
+            chain = ", ".join(f"{key}-{m}" for m in middlewares)
+            names = [f"{key}-website-info-{index}"]
+            if group.get("cert_resolver"):
+                names.append(f"{key}-website-info-secure-{index}")
+            for name in names:
+                router = f"traefik.http.routers.{name}"
+                labels[f"{router}.rule"] = f"{domains} && ({WEBSITE_INFO_RULE})"
+                labels[f"{router}.service"] = f"{key}-main"
+                labels[f"{router}.middlewares"] = chain
+                labels[f"{router}.priority"] = str(WEBSITE_INFO_EXCEPTION_PRIORITY)
+                if name.startswith(f"{key}-website-info-secure-"):
+                    labels[f"{router}.tls"] = "true"
+                    if isinstance(group["cert_resolver"], str):
+                        labels[f"{router}.tls.certResolver"] = (
+                            group["cert_resolver"]
+                        )
+        return labels
+
     def _resource_override_content(self):
         """Generate docker-compose.override.yml: limits, label, logs.
 
@@ -1157,6 +1221,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             services["gatekeeper"].update(self._gatekeeper_override())
         if router in allowed:
             services[router]["labels"].update(self._login_router_labels())
+            services[router]["labels"].update(self._website_info_router_labels())
         if "odoo" in allowed:
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [

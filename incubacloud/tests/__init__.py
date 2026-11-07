@@ -238,3 +238,7 @@ from . import test_direct_identity
 from . import test_direct_settings_screen
 from . import test_state_refresh
 from . import test_instance_memory_settings
+from . import test_edge_guard_document
+from . import test_edge_guard_job
+from . import test_edge_guard_migration
+from . import test_website_info_router

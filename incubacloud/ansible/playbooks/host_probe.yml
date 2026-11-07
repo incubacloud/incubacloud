@@ -48,6 +48,20 @@
       changed_when: false
       check_mode: false
 
+    - name: Read the edge guard's digest
+      # What the proxy's dynamic directory holds as ``ic_guard.yml``; an
+      # empty answer when it is not there. The executor compares it with
+      # the panel's render and queues ``push_edge_guard`` only when they
+      # differ, so a Check stays read-only.
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "{{ ansible_env.HOME }}/traefik/dynamic/ic_guard.yml"
+      register: ic_edge_guard
+      failed_when: false
+      changed_when: false
+      check_mode: false
+
     - name: Collapse the tool probe into a name → version map
       ansible.builtin.set_fact:
         ic_tool_versions: >-
@@ -65,3 +79,6 @@
           ic_os: "{{ ansible_facts['system'] | default('') }}"
           ic_disk_free_bytes: "{{ ic_disk.stdout_lines | last | trim }}"
           ic_tools: "{{ ic_tool_versions | default({}) }}"
+          ic_edge_guard_sha256: >-
+            {{ (ic_edge_guard.stdout.split() | first)
+               if ic_edge_guard.rc == 0 and ic_edge_guard.stdout else '' }}

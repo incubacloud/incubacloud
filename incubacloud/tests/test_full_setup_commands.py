@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.acme_store import AcmeStorePruneMixin
+from odoo.addons.incubacloud.models.cloud_host_edge_guard import edge_guard_digest
 from odoo.addons.incubacloud.models.full_setup_executor import (
     FullSetupExecutor,
 )
@@ -131,6 +132,134 @@ class TestFullSetupStartsTheStackConvergently(TransactionCase):
             'proxy_access_log.sh',
             self._commands()['Prepare the proxy access log'],
         )
+
+
+class TestFullSetupWritesTheEdgeGuard(TransactionCase):
+    """The proxy starts with the guard that refuses /website/info.
+
+    The step is fatal, as the direct list is: a Full Setup that did not
+    write it cannot end green, or every instance of the host would serve
+    the page with nothing saying so (the silence closed on Tenants1,
+    1-nov-2026). The proxy is neither mounted nor running yet, so the
+    script checks neither.
+    """
+
+    def setUp(self):
+        self.registry_enter_test_mode()
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'fs-guard-host',
+            'ip_address': '10.0.0.39',
+            'user': 'ubuntu',
+            'wildcard_domain': 'fs-guard.example.com',
+        })
+        job_type = self.env['cloud.job.type'].search(
+            [('code', '=', 'full_setup')], limit=1,
+        )
+        self.job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'job_type_id': job_type.id,
+            'name': 'Full Setup',
+        })
+        self.executor = FullSetupExecutor(self.job, self.host)
+
+    def _uploaded(self):
+        transport = MagicMock(spec=SSHTransport)
+        transport.run.return_value = CommandResult('', 0)
+        with patch.object(
+            AcmeStorePruneMixin, '_prepare_acme_prune',
+            autospec=True, return_value=None,
+        ):
+            asyncio.run(self.executor.before_execute(transport))
+        uploaded = {}
+        for call in transport.upload_text_files.await_args_list:
+            uploaded.update(call.args[0])
+        return uploaded
+
+    def _good_results(self):
+        results = {
+            label: {'stdout': 'ok', 'exit_status': 0}
+            for label, *_rest in self.executor.get_commands()
+        }
+        results['check:os']['stdout'] = 'Linux'
+        results['check:disk']['stdout'] = str(100 * 1024 ** 3)
+        return results
+
+    def test_the_guard_is_staged(self):
+        self.assertEqual(
+            self._uploaded()[self.executor._job_path('ic_guard.yml')],
+            self.host._shipped_edge_guard_yml(),
+        )
+
+    def test_it_is_written_into_the_directory_before_the_proxy_starts(self):
+        commands = self.executor.get_commands()
+        labels = [c[0] for c in commands]
+        at = labels.index('Install the edge guard')
+        self.assertGreater(at, labels.index('Copy config.yml to dynamic directory'))
+        self.assertLess(at, labels.index('Start Traefik'))
+        command = commands[at][1]
+        self.assertIn(
+            f"edge_guard.sh install {self.executor._job_path('ic_guard.yml')}",
+            command,
+        )
+        # Not mounted and not running yet: neither is checked, so the
+        # step never exits 3 or 4 and nothing is logged as failed.
+        self.assertIn('--no-mount-check', command)
+        self.assertIn('--no-probe', command)
+        self.assertEqual(len(commands[at]), 2)
+
+    def test_a_guard_that_was_not_written_fails_the_job(self):
+        results = self._good_results()
+        self.assertEqual(self.executor.parse_results(results), [])
+        for status in (1, 3):
+            with self.subTest(status=status):
+                failed = {
+                    **results,
+                    'Install the edge guard': {'stdout': '', 'exit_status': status},
+                }
+                errors = self.executor.parse_results(failed)
+                self.assertEqual(
+                    [e for e in errors if 'Install the edge guard' in e],
+                    [f"Traefik step 'Install the edge guard' failed (exit {status})"],
+                )
+
+    def test_success_records_the_guard_and_clears_its_alert(self):
+        self.env['cloud.alert'].raise_alert(
+            'edge_guard_not_mounted', 'not mounted', host=self.host,
+        )
+        with patch.object(
+            type(self.host), '_enqueue_observability',
+            autospec=True, return_value=False,
+        ):
+            asyncio.run(self.executor.on_success({}))
+        self.assertEqual(
+            self.host.edge_guard_shipped_hash,
+            edge_guard_digest(self.host._shipped_edge_guard_yml()),
+        )
+        self.assertTrue(self.host.edge_guard_shipped_at)
+        self.assertFalse(self.env['cloud.alert'].search([
+            ('host_id', '=', self.host.id),
+            ('code', '=', 'edge_guard_not_mounted'),
+            ('state', '=', 'active'),
+        ]))
+
+    def test_a_host_the_guard_leaves_alone_gets_none(self):
+        self.patch(
+            type(self.host), '_edge_guard_leaves_alone', lambda host: True,
+        )
+        self.assertNotIn(
+            self.executor._job_path('ic_guard.yml'), self._uploaded(),
+        )
+        labels = [c[0] for c in self.executor.get_commands()]
+        self.assertNotIn('Install the edge guard', labels)
+        results = self._good_results()
+        self.assertEqual(self.executor.parse_results(results), [])
+        with patch.object(
+            type(self.host), '_enqueue_observability',
+            autospec=True, return_value=False,
+        ):
+            asyncio.run(self.executor.on_success({}))
+        self.assertFalse(self.host.edge_guard_shipped_hash)
 
 
 class TestRebuildDefersOnBusyCrons(TransactionCase):
