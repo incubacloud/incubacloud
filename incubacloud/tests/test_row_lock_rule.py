@@ -104,6 +104,44 @@ class TestTheLockCheckerCatchesWhatItMust(BaseCase):
                 records.lock_for_update()  # lock: key-update needed — deleted
         """), [])
 
+    def test_the_marker_covers_a_statement_of_several_lines(self):
+        """Before the statement or on its closing line, the lock further down."""
+        self.assertEqual(self._violations("""
+            def purge(cr, ids):
+                # lock: key-update needed — the rows are deleted below
+                cr.execute(
+                    "SELECT id FROM t"
+                    " WHERE id IN %s FOR UPDATE",
+                    (ids,),
+                )
+                cr.execute(
+                    "SELECT id FROM t WHERE id IN %s FOR UPDATE",
+                    (ids,),
+                )  # lock: key-update needed — deleted below
+                records = cr.env["t"].browse(
+                    ids,
+                ).lock_for_update()  # lock: key-update needed — deleted
+        """), [])
+
+    def test_a_marker_covers_its_statement_only(self):
+        """Not a statement further down, nor the header of the block it sits in."""
+        found = self._violations("""
+            def purge(cr, ids):
+                cr.execute("SELECT 1")  # lock: key-update needed — deleted
+                cr.execute("SELECT 2")
+                cr.execute(
+                    "SELECT id FROM t WHERE id IN %s FOR UPDATE", (ids,),
+                )
+                if cr.execute(
+                    "SELECT id FROM t FOR UPDATE",
+                ):
+                    # lock: key-update needed — deleted
+                    pass
+        """)
+        self.assertEqual(len(found), 2)
+        self.assertIn("probe.py:6 purge", found[0])
+        self.assertIn("probe.py:9 purge", found[1])
+
     def test_a_marker_without_a_reason_allows_nothing(self):
         """The reason is the point of the marker."""
         self.assertEqual(len(self._violations("""

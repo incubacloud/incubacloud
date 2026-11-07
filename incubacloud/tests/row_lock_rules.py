@@ -3,7 +3,8 @@
     Our code does not take ``SELECT … FOR UPDATE`` (nor
     ``lock_for_update()`` / ``try_lock_for_update()`` without
     ``allow_referencing=True``) on a row other rows point to, except to
-    delete the row or change its id. It takes ``FOR NO KEY UPDATE``.
+    delete the row or change a column of one of its unique indexes. It
+    takes ``FOR NO KEY UPDATE``.
 
 Why: both keep any other transaction from deleting or writing the row,
 but ``FOR UPDATE`` followed by an ``UPDATE`` in the same transaction
@@ -20,10 +21,29 @@ transaction opened first and an insert keyed on the row after: a plain
 ``UPDATE`` passes, ``FOR UPDATE`` + ``UPDATE`` fails, ``FOR NO KEY
 UPDATE`` + ``UPDATE`` passes.
 
+What the soft lock cannot do: for PostgreSQL the key of a row is every
+plain column of a unique index that is not partial (deferrable or not), the
+primary key's and, say, ``UNIQUE (project_id, name)`` of
+``cloud.instance``. An ``UPDATE`` that changes one of those columns is a
+change of the key whatever lock came before, or none: the older
+transaction fails all the same (measured on 8-nov-2026: ``FOR NO KEY
+UPDATE`` + another column passes, ``FOR NO KEY UPDATE`` + ``project_id``
+fails, no lock + ``project_id`` fails). There the lock decides nothing,
+and ``FOR UPDATE`` is as good: the claim of a ready warm, which moves
+the instance to its tenant's project, is such a write.
+
 A strong lock that is really needed carries the comment
-``# lock: key-update needed — <why>`` on the line before it or on one of
-its own lines. Docstrings and other bare strings are not code and are
-not read; tests are not scanned.
+``# lock: key-update needed — <why>`` on the line before its statement
+or on one of the statement's own lines (the header lines, for an ``if``,
+a ``with`` or another statement with a body). Docstrings and other bare
+strings are not code and are not read; tests are not scanned.
+
+What the check does not see, as it reads string constants and call
+names only: SQL built at run time (``"FOR" + " UPDATE"``,
+``"FOR %s" % "UPDATE"``, an f-string's formatted parts) and a lock
+reached by name (``getattr(records, "lock_for_update")()``). And what it
+sees wrongly: ``FOR UPDATE`` inside a text for the user or for the log
+that is not SQL, which the marker lets through with its reason.
 
 This module is importable, not a test: each repository runs
 :func:`check` over its own addons from a test of its own.
@@ -36,7 +56,8 @@ from pathlib import Path
 
 RULE = (
     "lock FOR NO KEY UPDATE (lock_for_update(allow_referencing=True)); "
-    "FOR UPDATE only to delete the row or change its id, marked "
+    "FOR UPDATE only to delete the row or change a column of a unique "
+    "index, marked "
     "'# lock: key-update needed — <why>'"
 )
 
@@ -68,6 +89,31 @@ def _soft_call(call):
     )
 
 
+#: The fields of a statement that hold nested statements, not its header.
+_BLOCKS = ("body", "orelse", "handlers", "finalbody", "cases")
+
+
+def _statement_lines(stmt):
+    """Return the lines a marker may sit on to cover the statement *stmt*.
+
+    The line before it and its own lines; for a statement with a body
+    (``if``, ``with``, ``def``, …) only its header, so a marker inside
+    the body does not cover the header's lock.
+
+    :param ast.stmt stmt: the statement
+    :rtype: range
+    """
+    blocks = [getattr(stmt, f, None) for f in _BLOCKS]
+    if not any(isinstance(b, list) for b in blocks):
+        return range(stmt.lineno - 1, stmt.end_lineno + 1)
+    nested = {id(n) for b in blocks if isinstance(b, list) for n in b}
+    header = [
+        n.end_lineno for n in ast.iter_child_nodes(stmt)
+        if id(n) not in nested and getattr(n, "end_lineno", None)
+    ]
+    return range(stmt.lineno - 1, max(header, default=stmt.lineno) + 1)
+
+
 class _LockVisitor(ast.NodeVisitor):
     """Collect the strong locks of one module, with where they are."""
 
@@ -78,11 +124,29 @@ class _LockVisitor(ast.NodeVisitor):
         """
         self.marked = marked
         self.scope = []
+        self.statements = []
         self.found = []
 
+    def visit(self, node):
+        """Visit *node*, keeping the statement it belongs to at hand.
+
+        :param ast.AST node: the node to visit
+        :return: what its visitor returns
+        """
+        if not isinstance(node, ast.stmt):
+            return super().visit(node)
+        self.statements.append(node)
+        try:
+            return super().visit(node)
+        finally:
+            self.statements.pop()
+
     def _add(self, node, line, what):
-        """Record a strong lock unless the marker covers *node*."""
-        if self.marked & set(range(node.lineno - 1, node.end_lineno + 1)):
+        """Record a strong lock unless the marker covers *node* or its statement."""
+        lines = set(range(node.lineno - 1, node.end_lineno + 1))
+        if self.statements:
+            lines.update(_statement_lines(self.statements[-1]))
+        if self.marked & lines:
             return
         self.found.append((line, ".".join(self.scope) or "<module>", what))
 
