@@ -215,10 +215,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             # 5. Overwrite repos.yaml and addons.yaml.
             ("Write addons.yaml", f"mv {tmp_addons} {src}/addons.yaml"),
             ("Write repos.yaml", f"mv {tmp_repos} {src}/repos.yaml"),
-            # 6. Copy incubacloud_connect.
+            # 6. Copy incubacloud_connect, over no copy of an older one:
+            #    ``cp -r`` would leave behind what this one no longer
+            #    ships, like the tests/ an instance got before 7-nov-2026.
             (
                 "Install incubacloud_connect",
                 f"mkdir -p {src}/private"
+                f" && rm -rf {src}/private/incubacloud_connect"
                 f" && cp -r {self._modules_stage_dir()}/incubacloud_connect"
                 f" {src}/private/"
                 f" && rm -rf {self._modules_stage_dir()}",

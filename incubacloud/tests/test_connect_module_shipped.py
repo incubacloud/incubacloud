@@ -13,6 +13,10 @@ from pathlib import Path
 from odoo.tests.common import BaseCase
 
 from odoo.addons.incubacloud.models import deploy_instance_executor as deploy
+from odoo.addons.incubacloud.tests.test_executor_features import (
+    _make_deploy_executor,
+    _make_rebuild_executor,
+)
 
 #: What Python 2.7 or 3.5 lack, as the module would import it.
 _TOO_NEW_IMPORTS = {"pathlib", "secrets", "contextlib.suppress"}
@@ -73,3 +77,22 @@ class TestTheConnectModuleTheInstancesGet(BaseCase):
             return ast.literal_eval(path.read_text(encoding="utf-8"))
 
         self.assertEqual(read("__openerp__.py"), read("__manifest__.py"))
+
+
+class TestAnInstanceGetsOnlyTheNewCopy(BaseCase):
+    """A deploy or a rebuild replaces the module an instance already has.
+
+    ``cp -r`` over the old copy would keep what the new one no longer
+    ships: the ``tests/`` of an instance deployed before 7-nov-2026, and
+    with it the f-strings Python 2.7 and 3.5 refuse to compile.
+    """
+
+    def test_the_old_copy_goes_before_the_new_one_lands(self):
+        target = "~/projects/test-inst/odoo/custom/src/private/incubacloud_connect"
+        for make in (_make_deploy_executor, _make_rebuild_executor):
+            with self.subTest(executor=make.__name__):
+                step = next(
+                    c[1] for c in make().get_commands()
+                    if c[0] == "Install incubacloud_connect"
+                )
+                self.assertIn(f"rm -rf {target} && cp -r ", step)
