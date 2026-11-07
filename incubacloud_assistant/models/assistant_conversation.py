@@ -131,12 +131,14 @@ class AssistantConversation(models.Model):
 
         Two requests of the person (two messages, a message and a
         confirmation) change it one after the other, never both on the
-        same old state.
+        same old state. ``FOR NO KEY UPDATE``: its messages reference the
+        row, and with ``FOR UPDATE`` one stored by a transaction older than
+        this one's commit would fail to serialize.
         """
         self.ensure_one()
         self.env.cr.execute(
             "SELECT id FROM incubacloud_assistant_conversation "
-            "WHERE id = %s FOR UPDATE",
+            "WHERE id = %s FOR NO KEY UPDATE",
             (self.id,),
         )
         self.invalidate_recordset()

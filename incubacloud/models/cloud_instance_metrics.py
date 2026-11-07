@@ -195,13 +195,19 @@ class CloudInstance(models.Model):
         lock waits for — must not see it overwritten with a stop. Asked
         only before writing one, on a row the write locks anyway.
 
+        ``FOR NO KEY UPDATE``, not ``FOR UPDATE``: held that way, the
+        write that follows counts as a change of the row's key, and any
+        REPEATABLE READ transaction begun before this cursor commits that
+        then inserts or updates a row keyed on the instance — a job
+        stored ``done`` — fails to serialize (a move, 7-nov-2026).
+
         :param datetime moment: when the grace that still counts began
         :rtype: bool
         """
         self.ensure_one()
         self.env.cr.execute(
             "SELECT running_confirmed_at FROM cloud_instance"
-            " WHERE id = %s FOR UPDATE",
+            " WHERE id = %s FOR NO KEY UPDATE",
             (self.id,),
         )
         row = self.env.cr.fetchone()
@@ -214,7 +220,7 @@ class CloudInstance(models.Model):
         reason as ``_running_confirmed_after``: a Stop committing as the
         cron decides must not see its stop undone by a series from before
         it. Asked only before writing a start, on a row the write locks
-        anyway.
+        anyway, and locked ``FOR NO KEY UPDATE`` for the same reason.
 
         :param datetime moment: when the ``odoo`` the cron read was last seen
         :rtype: bool
@@ -222,7 +228,7 @@ class CloudInstance(models.Model):
         self.ensure_one()
         self.env.cr.execute(
             "SELECT running_stopped_at FROM cloud_instance"
-            " WHERE id = %s FOR UPDATE",
+            " WHERE id = %s FOR NO KEY UPDATE",
             (self.id,),
         )
         row = self.env.cr.fetchone()
