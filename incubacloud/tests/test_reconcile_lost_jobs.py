@@ -330,6 +330,62 @@ class TestTheOtherEnds(_LostJobCase):
         self.assertEqual(self.qjob.state, "done")
         self.assertEqual(self.job.state, "done")
 
+    def _mark_the_outcome(self):
+        """What a run whose ``on_success`` committed leaves: its outcome mark."""
+        self.env["cloud.job.outcome"].sudo().create({
+            "job_id": self.job.id,
+            "queue_job_uuid": self.qjob.uuid,
+            "own_job_vals": {"result": {"saved": "outcome"}},
+            "owed": [],
+        })
+        self.env.flush_all()
+
+    def test_a_success_saved_before_the_death_ends_done_without_a_hook(self):
+        """Found dead after its ``on_success`` committed: done, its own row back."""
+        self._mark_the_outcome()
+        self._age(self.job)
+        self._die()
+        with patch.object(
+            DeployInstanceExecutor, "on_abort", autospec=True,
+        ) as on_abort:
+            self.assertEqual(self._reconcile(), 1)
+        on_abort.assert_not_called()
+        self.assertEqual(self.qjob.state, "done")
+        self.assertEqual(self.job.state, "done")
+        self.assertEqual(self.job.result, {"saved": "outcome"})
+        self.assertFalse(self._failures())
+        self.assertIn("its outcome was saved", self._log())
+
+    def test_a_stop_after_a_saved_success_ends_done_without_a_hook(self):
+        """Stopped after the mark, worker found dead: no stop hook, done."""
+        self._mark_the_outcome()
+        self.job.cancel_job()
+        self._age(self.job)
+        self._die()
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ) as on_cancelled:
+            self.assertEqual(self._reconcile(), 1)
+        on_cancelled.assert_not_called()
+        self.assertEqual(self.qjob.state, "done")
+        self.assertEqual(self.job.state, "done")
+        self.assertEqual(self.job.result, {"saved": "outcome"})
+
+    def test_a_saved_success_whose_queue_job_is_gone_is_closed_done(self):
+        """Its queue.job gone, the mark there: done, no hook, no failure alert."""
+        self._mark_the_outcome()
+        self._age(self.job)
+        self.env.cr.execute("DELETE FROM queue_job WHERE id = %s", (self.qjob.id,))
+        self.env.invalidate_all()
+        with patch.object(
+            DeployInstanceExecutor, "on_abort", autospec=True,
+        ) as on_abort:
+            self.assertEqual(self._reconcile(), 1)
+        on_abort.assert_not_called()
+        self.assertEqual(self.job.state, "done")
+        self.assertEqual(self.job.result, {"saved": "outcome"})
+        self.assertFalse(self._failures())
+
     def test_a_queue_job_cancelled_before_it_started_lets_go(self):
         self.job.with_context(ic_skip_state_hook=True).write({"state": "pending"})
         self.env.flush_all()

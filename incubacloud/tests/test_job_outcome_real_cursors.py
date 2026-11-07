@@ -6,8 +6,12 @@ whose REPEATABLE READ snapshot does not see it — what production does,
 and what ``test_job_outcome`` cannot reproduce. Here the fixtures are
 committed, a "runner" cursor takes its snapshot as queue_job's
 ``job.lock()`` does, the job runs through ``cloud.job.execute``, another
-cursor stamps the instance as the metrics cron does, and the store of
-``done`` either commits or meets a real ``SerializationFailure``.
+cursor stamps the instance as the metrics cron does — the row held
+``FOR UPDATE``, then written —, and the store of ``done`` either commits
+or meets a real ``SerializationFailure``: PostgreSQL refuses there a key
+check on the instance's row, that of a row inserted keyed on it — the
+state probe the store queued until C1 — or of a second write of the
+job's own row (7-nov-2026).
 
 Everything committed is removed at the end (``_remove_fixtures``).
 """
@@ -19,12 +23,27 @@ from psycopg2.errors import SerializationFailure
 
 from odoo import SUPERUSER_ID, api
 from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
 
 from ..models import abstract_executor
 from ..models.cloud_host import CloudHost
 from ..models.delete_instance_executor import DeleteInstanceExecutor
 from ..models.transport import CommandResult, SSHTransport
 from .test_job_outcome import _OWN, _OutcomeProbe
+
+
+class _QuietProbe(_OutcomeProbe):
+    """A success that writes nothing in the job's transaction.
+
+    Its instance stays deployed, one the end of a restart probes
+    (``cloud.instance._refresh_state_now``). And the store of ``done`` is
+    then the first write of the job's row in the runner's transaction:
+    PostgreSQL checks no key of a row the transaction had not written
+    yet (``_lose_a_serialization_race`` writes it twice).
+    """
+
+    async def on_success(self, results):
+        """Nothing: the instance as it was."""
 
 
 class _RealCursorCase(TransactionCase):
@@ -168,48 +187,80 @@ class _RealCursorCase(TransactionCase):
         env.flush_all()
 
     def _stamp_the_instance(self):
-        """What the metrics cron does meanwhile: update the instance's row."""
+        """What the metrics cron does meanwhile: lock the instance's row, write it.
+
+        ``cloud_instance_metrics`` reads the row ``FOR UPDATE`` before it
+        writes it (``_running_confirmed_after``): in one transaction that
+        counts as a change of the row's key, and a REPEATABLE READ
+        transaction older than its commit can key no new row on the
+        instance. A plain ``UPDATE`` does not: the state probe's job
+        inserted after it went through (7-nov-2026).
+        """
         with self.registry.cursor() as cr:
+            # Never wait on the runner: the test would hang.
+            cr.execute("SET LOCAL lock_timeout = '5s'")
+            cr.execute(
+                "SELECT running_confirmed_at FROM cloud_instance"
+                " WHERE id = %s FOR UPDATE", (self.ids["instance"],),
+            )
             cr.execute(
                 "UPDATE cloud_instance SET write_date = now() at time zone 'UTC'"
                 " WHERE id = %s", (self.ids["instance"],),
             )
-
-    def _meet_the_instance(self, env):
-        """A write of the store's that meets the instance's row, as before C1.
-
-        Until C1 the store of ``done`` queued the instance's state probe,
-        a ``cloud_job`` row whose foreign key locks the instance's row
-        ``FOR KEY SHARE`` (the ``CONTEXT`` of the 7-nov failures). Here
-        that lock alone did not fail — the run had taken one on the row
-        before its hook, it seems, and PostgreSQL does not check again a
-        lock the transaction holds —, so the row is updated instead,
-        which PostgreSQL refuses on a row changed after the snapshot.
-        """
-        env.cr.execute(
-            "UPDATE cloud_instance SET write_date = now() at time zone 'UTC'"
-            " WHERE id = %s",
-            (self.ids["instance"],), log_exceptions=False,
-        )
 
     def _start_again(self):
         """queue_job hands the job to a worker again: ``started``, committed."""
         with self._cursor() as env:
             env["queue.job"].browse(self.ids["queue_job"]).write({"state": "started"})
 
-    def _lose_a_serialization_race(self, executor_cls):
-        """First attempt: the hook commits; the store meets a real race, rolls back."""
+    def _lose_a_serialization_race(self, executor_cls, keyed=False):
+        """First attempt: the hook commits; the store of ``done`` loses a real race.
+
+        The metrics cron locks the instance's row ``FOR UPDATE`` and
+        writes it after the runner's snapshot; a key check on that row in
+        the runner's transaction is then refused — the ``CONTEXT`` of the
+        7-nov-2026 failures, ``FOR KEY SHARE`` on ``cloud_instance``. The
+        runner's transaction rolls back.
+
+        A hook that writes the job's own row there (``_write_own_job``)
+        makes the store's update of that row its second, and PostgreSQL
+        checks its keys again: the store itself is refused. One that does
+        not — a delete — has the store followed, with *keyed*, by a row
+        keyed on the instance, as the state probe the store queued until
+        C1.
+
+        :param executor_cls: the job's executor
+        :param bool keyed: insert a job keyed on the instance after the store
+        """
         with self._outside(executor_cls), self._runner() as env:
             self._attempt(env)
             self._stamp_the_instance()
-            self._store_done(env)
-            with self.assertRaises(SerializationFailure) as raised:
-                self._meet_the_instance(env)
+            with mute_logger("odoo.sql_db"), \
+                    self.assertRaises(SerializationFailure) as raised:
+                self._store_done(env)
+                if keyed:
+                    env.cr.execute(
+                        "INSERT INTO cloud_job"
+                        " (host_id, instance_id, job_type_id, name)"
+                        " SELECT host_id, instance_id, job_type_id, 'Probe'"
+                        " FROM cloud_job WHERE id = %s", (self.ids["job"],),
+                    )
             self.assertEqual(
                 raised.exception.pgcode, errorcodes.SERIALIZATION_FAILURE,
             )
+            self.assertIn("cloud_instance", raised.exception.diag.context or "")
             env.cr.rollback()
         self._start_again()
+
+    def _probes(self, cr):
+        """How many state probes of the instance *cr* sees."""
+        cr.execute(
+            "SELECT count(*) FROM cloud_job c"
+            " JOIN cloud_job_type t ON t.id = c.job_type_id"
+            " WHERE c.instance_id = %s AND t.code = 'instance_health'",
+            (self.ids["instance"],),
+        )
+        return cr.fetchone()[0]
 
     def _row(self, table, record_id, columns):
         """*columns* of a row as committed, or None."""
@@ -225,19 +276,31 @@ class TestTheGuardOnRealCursors(_RealCursorCase):
     """A success committed, a store lost: the next attempt only finishes it."""
 
     def test_the_store_of_done_meets_nothing_of_the_hooks(self):
-        """With C1 the store keeps to the job's rows: it commits after a real hook."""
-        with self._outside(_OutcomeProbe) as (_connected, notified), \
+        """The store keys nothing on the instance; the probe follows its commit.
+
+        Until C1 the store of a restart's ``done`` queued the instance's
+        state probe in the runner's transaction: a job keyed on the
+        instance the metrics cron had just locked ``FOR UPDATE`` and
+        written, which PostgreSQL refused (the probe, in a savepoint of
+        its own, was lost with a warning). With C1 the store keeps to the
+        job's rows, and the probe is queued once it commits, on a cursor
+        of its own.
+        """
+        with self._outside(_QuietProbe) as (_connected, notified), \
                 self._runner() as env:
             self._attempt(env)
             self._stamp_the_instance()
             self._store_done(env)
-            notified.assert_not_called()
+            in_the_store = self._probes(env.cr), notified.call_count
             env.cr.commit()
-            notified.assert_called_once()
+        with self.registry.cursor() as cr:
+            self.assertEqual(self._probes(cr), 1)
+        self.assertEqual(in_the_store, (0, 0))
+        notified.assert_called_once()
         self.assertEqual(
             self._row("queue_job", self.ids["queue_job"], ["state"]), ("done",),
         )
-        self.assertIsNone(self._row("cloud_instance", self.ids["instance"], ["id"]))
+        self.assertEqual(self._row("cloud_job", self.ids["job"], ["state"]), ("done",))
 
     def test_the_repetition_ends_at_the_mark(self):
         """No connection; the own row and the owed unlink come back; one mark."""
@@ -245,8 +308,9 @@ class TestTheGuardOnRealCursors(_RealCursorCase):
         self.assertIsNotNone(self._row("cloud_instance", self.ids["instance"], ["id"]))
         with self._outside(_OutcomeProbe) as (connected, notified), \
                 self._runner() as env:
-            self.assertEqual(self._attempt(env), abstract_executor.ALREADY_DONE)
+            result = self._attempt(env)
             connected.assert_not_called()
+            self.assertEqual(result, abstract_executor.ALREADY_DONE)
             self._store_done(env, abstract_executor.ALREADY_DONE)
             env.cr.commit()
             notified.assert_called_once()
@@ -284,15 +348,16 @@ class TestADeleteOnRealCursors(_RealCursorCase):
 
     def test_after_a_lost_race_the_unlink_is_armed_again(self):
         """The repetition reaches no host and removes the record it owes."""
-        self._lose_a_serialization_race(DeleteInstanceExecutor)
+        self._lose_a_serialization_race(DeleteInstanceExecutor, keyed=True)
         self.assertEqual(
             self._row("cloud_instance", self.ids["instance"], ["removal_finalized"]),
             (True,),
         )
         with self._outside(DeleteInstanceExecutor) as (connected, _notified), \
                 self._runner() as env:
-            self.assertEqual(self._attempt(env), abstract_executor.ALREADY_DONE)
+            result = self._attempt(env)
             connected.assert_not_called()
+            self.assertEqual(result, abstract_executor.ALREADY_DONE)
             self._store_done(env, abstract_executor.ALREADY_DONE)
             env.cr.commit()
         self.assertIsNone(self._row("cloud_instance", self.ids["instance"], ["id"]))

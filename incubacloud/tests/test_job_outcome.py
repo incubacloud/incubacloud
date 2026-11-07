@@ -23,6 +23,7 @@ import logging
 import re
 from unittest.mock import MagicMock, patch
 
+from odoo import fields
 from odoo.tests.common import TransactionCase
 from odoo.tools.misc import Callbacks
 
@@ -35,6 +36,15 @@ from ..models.transport import CommandResult, SSHTransport
 
 #: What the probe writes on its job's own row.
 _OWN = {"result": {"probe": "fingerprint"}}
+#: A statement that writes rows, and its table.
+_WRITE = re.compile(
+    r'\s*(INSERT INTO|UPDATE|DELETE FROM)\s+"?(\w+)"?', re.IGNORECASE,
+)
+#: A statement that locks rows, and the table it reads them from.
+_ROW_LOCK = re.compile(
+    r'\bFROM\s+"?(\w+)"?.*\bFOR\s+(UPDATE|NO\s+KEY\s+UPDATE|SHARE|KEY\s+SHARE)\b',
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 class _OutcomeProbe(AbstractSSHExecutor):
@@ -260,14 +270,21 @@ class TestARepetitionRunsNothing(_OutcomeCase):
         self.assertFalse(self.inst.exists())
 
     def test_the_mark_comes_before_a_stop(self):
-        """A stop that came after the success does not undo it."""
+        """A stop that came after the success does not undo it: the job ends done."""
         self._first_attempt_loses_its_commit()
         self.env.cr.execute(
             "UPDATE cloud_job SET state = 'cancelled' WHERE id = %s", (self.job.id,),
         )
         self.env.invalidate_all()
         with self._runner():
-            self.assertEqual(self.job.execute(), abstract_executor.ALREADY_DONE)
+            result = self.job.execute()
+            self.assertEqual(result, abstract_executor.ALREADY_DONE)
+            # What the runner stores once ``execute`` returns.
+            self.qjob.write({"state": "done", "result": result})
+        self.env.invalidate_all()
+        self.assertEqual(self.qjob.state, "done")
+        self.assertEqual(self.job.state, "done")
+        self.assertEqual(self.job.result, _OWN["result"])
 
     def test_a_stop_stored_after_the_mark_ends_done(self):
         """``done`` with the stop's result, and a mark: done, its own row back."""
@@ -287,21 +304,60 @@ class TestARepetitionRunsNothing(_OutcomeCase):
         self.assertEqual(self.job.result, _OWN["result"])
 
 
+    def test_a_stop_after_the_mark_put_back_in_the_queue_ends_done(self):
+        """The store of done lost its race, a stop came after the mark: done.
+
+        queue_job puts the job back in the queue (``retry_postpone``, on a
+        cursor of its own). Read as the stop alone, the job ended
+        cancelled and its chain was cut.
+        """
+        with self._runner() as armed:
+            self.job.execute()
+        armed.clear()
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'cancelled', result = NULL WHERE id = %s",
+            (self.job.id,),
+        )
+        self.env.cr.execute(
+            "UPDATE queue_job SET graph_uuid = 'graph-outcome' WHERE id = %s",
+            (self.qjob.id,),
+        )
+        self.env.invalidate_all()
+        QueueJob = type(self.env["queue.job"])
+        with self._runner(), patch.object(
+            QueueJob, "_end_chain_after", autospec=True,
+        ) as ended:
+            # ``retry_postpone``: postponed, then pending.
+            self.qjob.write({
+                "state": "pending",
+                "result": "could not serialize access due to concurrent update",
+                "date_started": False,
+                "eta": fields.Datetime.now(),
+            })
+        ended.assert_not_called()
+        self.env.invalidate_all()
+        self.assertEqual(self.qjob.state, "done")
+        self.assertEqual(self.job.state, "done")
+        self.assertEqual(self.job.result, _OWN["result"])
+
+
 class TestTheEndWaitsForTheCommit(_OutcomeCase):
     """What ``done`` sets going outside the job's rows runs after the commit."""
 
     @contextlib.contextmanager
-    def _store_done(self):
+    def _store_done(self, qjob=None):
         """Store the job done; yield the ``postcommit`` it filled.
 
         The queue stays the cursor's until the block ends, so its
         callbacks find their data there when the test runs them.
+
+        :param qjob: the ``queue.job`` to store, the test's by default
         """
         cr = self.env.cr
         original = cr.postcommit
         cr.postcommit = armed = Callbacks()
         try:
-            self.qjob.write({"state": "done"})
+            (qjob or self.qjob).write({"state": "done"})
             self.env.flush_all()
             yield armed
         finally:
@@ -334,35 +390,88 @@ class TestTheEndWaitsForTheCommit(_OutcomeCase):
             probed.assert_called_once()
             self.assertEqual(probed.call_args.args[0].ids, self.inst.ids)
 
-    def test_the_store_writes_only_the_jobs_rows(self):
-        """The store updates ``cloud_job`` and ``queue_job``, and inserts nothing.
+    def _dispatched(self, code):
+        """A started job of type *code* on the test's instance, and its queue job.
 
-        An insert is another row — a probe's job with its key on the
-        instance, a mail —, and a row another transaction may have
-        changed under the job's snapshot.
+        :return: ``(cloud.job, queue.job)``
         """
-        written = set()
+        qjob = self.env["queue.job"].sudo().create({
+            "uuid": f"outcome-{code}-{self.inst.id}",
+            "name": code,
+            "state": "started",
+            "method_name": "execute",
+            "model_name": "cloud.job",
+            "func_string": "execute()",
+        })
+        job = self.env["cloud.job"].sudo().create({
+            "host_id": self.host.id,
+            "instance_id": self.inst.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", code)], limit=1,
+            ).id,
+            "name": code,
+            "queue_job_uuid": qjob.uuid,
+            "queue_job_id": qjob.id,
+        })
+        self.env.flush_all()
+        return job, qjob
+
+    def _rows_the_store_touches(self, qjob):
+        """Store *qjob* done and run its pre-commit; return what it wrote or locked.
+
+        :return: ``{(statement, table)}``: ``INSERT INTO``, ``UPDATE``,
+            ``DELETE FROM``, and the row locks ``FOR UPDATE``, ``FOR NO
+            KEY UPDATE``, ``FOR SHARE`` and ``FOR KEY SHARE``
+        :rtype: set
+        """
+        # What the fixtures left for the commit is not the store's.
+        self.env.cr.flush()
+        touched = set()
         Cursor = type(self.env.cr)
         execute = Cursor.execute
 
         def spy(cr, query, params=None, log_exceptions=True):
-            """Note the table of each write."""
-            code = getattr(query, "code", query)
-            match = re.match(
-                r'\s*(INSERT INTO|UPDATE|DELETE FROM)\s+"?(\w+)"?',
-                str(code), re.IGNORECASE,
-            )
-            if match:
-                written.add((match.group(1).upper(), match.group(2)))
+            """Note the table of each write and of each row lock."""
+            code = str(getattr(query, "code", query))
+            write = _WRITE.match(code)
+            if write:
+                touched.add((write.group(1).upper(), write.group(2)))
+            lock = _ROW_LOCK.search(code)
+            if lock:
+                touched.add((
+                    "FOR " + " ".join(lock.group(2).upper().split()),
+                    lock.group(1),
+                ))
             return execute(cr, query, params, log_exceptions)
 
         with patch.object(Cursor, "execute", autospec=True, side_effect=spy), \
-                self._store_done():
-            pass
-        self.assertTrue(written)
-        self.assertLessEqual(
-            written, {("UPDATE", "cloud_job"), ("UPDATE", "queue_job")},
-        )
+                self._store_done(qjob):
+            # The pre-commit hooks run in the store's transaction too.
+            self.env.cr.flush()
+        return touched
+
+    def test_the_store_writes_only_the_jobs_rows(self):
+        """The store updates ``cloud_job`` and ``queue_job``, and nothing else.
+
+        An insert is another row — a probe's job with its key on the
+        instance, a mail —, and a row another transaction may have
+        changed under the job's snapshot; a row lock on another table
+        meets the same refusal. Its pre-commit hooks count, and the job
+        types whose ends act on other rows: a restart probes its
+        instance, a deploy and a backup end with layers' hooks.
+        """
+        jobs = {"restart_instance": self.qjob}
+        for code in ("deploy_instance", "backup_create", "rebuild_instance"):
+            jobs[code] = self._dispatched(code)[1]
+        for code, qjob in jobs.items():
+            with self.subTest(code=code):
+                touched = self._rows_the_store_touches(qjob)
+                self.assertIn(("UPDATE", "queue_job"), touched)
+                self.assertLessEqual(touched, {
+                    ("UPDATE", "cloud_job"), ("UPDATE", "queue_job"),
+                    ("FOR UPDATE", "queue_job"), ("FOR NO KEY UPDATE", "queue_job"),
+                    ("FOR UPDATE", "cloud_job"), ("FOR NO KEY UPDATE", "cloud_job"),
+                })
 
 
 class TestRunAfterCommit(TransactionCase):
