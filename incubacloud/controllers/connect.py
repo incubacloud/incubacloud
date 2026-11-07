@@ -38,7 +38,11 @@ _IS_ADMIN_SQL = (
     "AND d.name IN ('group_system', 'group_erp_manager')))"
 )
 
+# Both scripts run on Python 2 too: 7.0 to 10.0 images have no python3
+# (``_CONTAINER_PYTHON``). Hence the coding line (a login may not be
+# ASCII), and nothing newer than 2.7 has.
 _GET_USERS_SCRIPT = """\
+# -*- coding: utf-8 -*-
 import json
 try:
     import psycopg2
@@ -59,7 +63,8 @@ except Exception as e:
 """
 
 _INJECT_SESSION_SCRIPT = """\
-import json, time, os, secrets
+# -*- coding: utf-8 -*-
+import binascii, errno, json, time, os
 try:
     import psycopg2
     conn = psycopg2.connect(host='db', dbname={db!r}, user={user!r}, password={password!r})
@@ -79,9 +84,13 @@ try:
             'requires the Manager role.'}}))
     else:
         token_dir = '/tmp/ic_tokens'
-        os.makedirs(token_dir, mode=0o700, exist_ok=True)
+        try:
+            os.makedirs(token_dir, 0o700)
+        except OSError as exc:
+            if exc.errno != errno.EEXIST:
+                raise
         os.chmod(token_dir, 0o700)
-        ic_token = secrets.token_hex(16)
+        ic_token = binascii.hexlify(os.urandom(16)).decode('ascii')
         token_path = os.path.join(token_dir, ic_token)
         fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as tf:
@@ -115,10 +124,22 @@ async def _get_container_id(conn, inst_dir, yaml_file):
     return cid
 
 
+#: The interpreter the scripts run with inside the odoo container: the
+#: one that has psycopg2, Odoo's own. python3 from 11.0 on; 7.0 to 10.0
+#: images have Python 2 alone (doodba, QA of the series, 7-nov-2026).
+_CONTAINER_PYTHON = (
+    "sh -c 'if python3 -c \"import psycopg2\" 2>/dev/null;"
+    " then exec python3 -; else exec python -; fi'"
+)
+
+
 async def _run_in_container(conn, container_id, script):
-    """Run a Python script inside the container via docker exec -i."""
+    """Run a Python script inside the container via docker exec -i.
+
+    With ``_CONTAINER_PYTHON``, whichever Python the series' image has.
+    """
     result = await conn.run(
-        f"docker exec -i {container_id} python3 -",
+        f"docker exec -i {container_id} {_CONTAINER_PYTHON}",
         input=script,
         check=False,
     )

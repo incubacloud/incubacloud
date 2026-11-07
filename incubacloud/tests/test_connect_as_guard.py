@@ -16,8 +16,12 @@ who opened the session.
 attempted; the point of most assertions is precisely that the guard
 short-circuits *before* reaching the remote host.
 """
+import asyncio
+import shlex
 from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
+
+import asyncssh
 
 from odoo.exceptions import AccessError
 from odoo.http import Request
@@ -369,3 +373,34 @@ class TestConnectAsScripts(ConnectAsBase):
             ),
         ):
             compile(script, '<remote>', 'exec')
+
+    def test_scripts_carry_nothing_python_2_lacks(self):
+        """7.0 to 10.0 run them on Python 2.7: no ``secrets``, no
+        ``exist_ok``, and a coding line for a login that is not ASCII."""
+        for script in (
+            connect_ctl._GET_USERS_SCRIPT, connect_ctl._INJECT_SESSION_SCRIPT,
+        ):
+            with self.subTest(script=script[:60]):
+                self.assertTrue(script.startswith('# -*- coding: utf-8 -*-\n'))
+                self.assertNotIn('secrets', script)
+                self.assertNotIn('exist_ok', script)
+
+
+class TestTheScriptsFindThePythonOfTheImage(ConnectAsBase):
+    """python3 where it has psycopg2 (11.0 on), Python 2 before."""
+
+    def test_the_container_runs_the_python_that_has_psycopg2(self):
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.run.return_value = MagicMock(
+            spec=asyncssh.SSHCompletedProcess, stdout='{"ok": true}\n',
+        )
+        out = asyncio.run(connect_ctl._run_in_container(conn, 'a' * 12, 'pass'))
+        self.assertEqual(out, '{"ok": true}')
+        command = conn.run.await_args.args[0]
+        argv = shlex.split(command)
+        self.assertEqual(argv[:4], ['docker', 'exec', '-i', 'a' * 12])
+        self.assertEqual(argv[4:6], ['sh', '-c'])
+        self.assertIn('python3 -c "import psycopg2"', argv[6])
+        self.assertIn('exec python3 -', argv[6])
+        self.assertIn('else exec python -', argv[6])
+        self.assertEqual(conn.run.await_args.kwargs['input'], 'pass')
