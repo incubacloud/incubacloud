@@ -21,6 +21,9 @@ Once a host is registered and you run **Full Setup**, we deploy:
 - **Traefik** as the network proxy. It terminates HTTPS and routes traffic to
   the right instance based on the domain.
 - **Let's Encrypt cert manager**. HTTPS is automatic when you add a custom domain.
+- **The edge guard** (`~/traefik/dynamic/ic_guard.yml`), which has Traefik refuse
+  Odoo's public `/website/info` page on every instance. An instance can allow it
+  ([how](../instances/index.md#odoos-website-info-page-is-blocked)).
 
 The host stays under your control — root access is yours. VPS ordered through
 the platform are billed on your IncubaCloud subscription invoice.

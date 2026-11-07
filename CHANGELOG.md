@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.214] — 2026-11-07
+
+Publish this core before `incubacloud_saas_manager`: its hook leaves the
+master's own host without the guard. The update queues `push_edge_guard` once
+per active host whose proxy the panel set up; it runs no Full Setup.
+
+### Added
+
+- **Odoo's `/website/info` is refused at the edge.** Every host's proxy reads
+  `~/traefik/dynamic/ic_guard.yml`, a router on `https` at priority 2000 that
+  answers 403 for the page, with a trailing path and behind a language code
+  (`/es/website/info`), before any instance sees it. Full Setup writes it before
+  the proxy starts and fails if it cannot; `push_edge_guard` writes it to a host
+  already set up, without restarting the proxy; the host Check queues that job
+  when the file is missing or differs. A proxy that does not mount the dynamic
+  directory gets a warning until a Full Setup.
+- **An instance can allow the page:** *Allow Odoo's public website info page*
+  (`website_info_public`, Networking tab, MCP `update_instance`), off by default
+  and not copied to a staging; a rebuild applies it.
+
 ## [1.0.201] — 2026-10-28
 
 For the direct path, publish this core before `incubacloud_saas_manager` and before
