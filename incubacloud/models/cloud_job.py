@@ -24,10 +24,11 @@ from odoo.addons.queue_job.exception import JobError, RetryableJobError
 from ..github.http_utils import safe_urlopen
 from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
-from ._concurrency import read_committed_cursor
+from ._concurrency import read_committed_cursor, run_after_commit
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
 from .abstract_executor import (
+    ALREADY_DONE,
     BLOCKED_BY_ALERT,
     CANCELLED_WHILE_RUNNING,
     CONNECTION_RETRY_MARKER,
@@ -695,6 +696,15 @@ class CloudJob(models.Model):
             job_record=self,
             host_record=self.host_id,
         )
+        # An earlier attempt's ``on_success`` committed and its own
+        # transaction did not: the store of ``done`` lost a serialization
+        # race, or the worker died before the commit. The job is done;
+        # this attempt only finishes what the lost transaction held.
+        # First of all, before the stop flag: a stop that came after the
+        # success does not undo it (``_mark_success_before_cancel``).
+        outcome = self._committed_outcome()
+        if outcome is not None:
+            return self._replay_committed_outcome(ssh_executor, *outcome)
         # ``run`` hands a failure inside it to ``on_abort`` itself; one
         # before it is handed over here.
         running = False
@@ -802,6 +812,89 @@ class CloudJob(models.Model):
             with contextlib.suppress(Exception):
                 self.env.cr.execute("SELECT 1")
                 self.env.clear()
+
+    def _committed_outcome(self):
+        """Return the mark an earlier attempt's ``on_success`` left, if any.
+
+        ``AbstractExecutor._run_hook_durably`` writes it on the hook's
+        cursor, which commits before this job's transaction. Read in this
+        attempt's own transaction: queue_job began it after the earlier
+        attempt ended, so it sees what that hook committed.
+
+        :return: ``(own_job_vals, owed)`` from ``cloud.job.outcome``, or
+            None when this job's queue job has no mark
+        :rtype: tuple | None
+        """
+        self.ensure_one()
+        if not self.queue_job_uuid:
+            return None
+        self.env.cr.execute(
+            "SELECT own_job_vals, owed FROM cloud_job_outcome"
+            " WHERE job_id = %s AND queue_job_uuid = %s"
+            " ORDER BY id DESC LIMIT 1",
+            (self.id, self.queue_job_uuid),
+        )
+        row = self.env.cr.fetchone()
+        if not row:
+            return None
+        return row[0] or {}, row[1] or []
+
+    def _replay_committed_outcome(self, executor, own_job_vals, owed):
+        """End an attempt whose job an earlier attempt finished; run nothing.
+
+        What the earlier attempt's transaction held is lost with it, so
+        this one's carries it instead: the values the hook wrote on the
+        job's own row (``AbstractExecutor._write_own_job`` — a move's
+        fingerprint, read by the next step), and what the hook left for
+        that commit (``_rearm_owed``). The job log says why nothing ran.
+        queue_job stores the job done once this returns, and its end is
+        acted on then as for any job done.
+
+        :param executor: the job's executor, which does not run
+        :param dict own_job_vals: ``cloud.job`` values, ``write`` format
+        :param list owed: ``{'kind': ...}`` entries
+        :return: ``ALREADY_DONE``
+        """
+        if own_job_vals:
+            job = self.sudo()
+            job.write(own_job_vals)
+            job.flush_recordset(list(own_job_vals))
+        self._rearm_owed(owed)
+        _logger.info(
+            "cloud.job %s: an earlier attempt's outcome was saved; this"
+            " attempt runs nothing", self.id,
+        )
+        try:
+            executor._sys(_(
+                "An earlier attempt of this job finished and its outcome was"
+                " saved: this attempt runs nothing again."
+            ))
+            executor._flush_logs()
+            executor._publish_bus()
+        except Exception:  # noqa: BLE001 — the job is done whatever the log does
+            _logger.exception("job %s: could not log its earlier outcome", self.id)
+        return ALREADY_DONE
+
+    def _rearm_owed(self, owed):
+        """Arm again, for this transaction's commit, what a lost one owed.
+
+        ``instance_unlink``: the instance a delete marked
+        ``removal_finalized``, or a purge left archived, is unlinked after
+        the commit — decided again on a fresh read of the instance
+        (``queue.job._unlink_owed_instances``). A kind this code does not
+        know is logged and left.
+
+        :param list owed: ``{'kind': ...}`` entries of ``cloud.job.outcome``
+        """
+        kinds = {
+            entry.get("kind") for entry in owed or () if isinstance(entry, dict)
+        }
+        if "instance_unlink" in kinds:
+            self.sudo().queue_job_id._unlink_owed_instances()
+        for kind in sorted(kinds - {"instance_unlink"}, key=str):
+            _logger.warning(
+                "cloud.job %s: nothing knows how to arm %r again", self.id, kind,
+            )
 
     def _has_dependents(self):
         """Whether queue_job runs another job once this one ends.
@@ -2236,7 +2329,7 @@ class CloudJob(models.Model):
                     {"state": job.queue_job_id.state},
                 )
 
-    def _on_state_changed(self, new_state):
+    def _on_state_changed(self, new_state, after_commit=False):
         """The one place a job's end is acted on.
 
         For a terminal state: ``_after_job_terminal`` (what a layer hooks
@@ -2247,6 +2340,11 @@ class CloudJob(models.Model):
         ``queue_job_ext`` when the executor stops, and is acted on then.
 
         :param str new_state: the state just written
+        :param bool after_commit: run ``_after_job_terminal`` once this
+            transaction commits, on a cursor of its own
+            (``_run_after_terminal_after_commit``): for the store of
+            ``done`` by the runner, which writes nothing but the job's
+            own rows
         """
         if new_state not in self._terminal_states:
             return
@@ -2256,7 +2354,10 @@ class CloudJob(models.Model):
             queue_job = job.queue_job_id
             if queue_job and queue_job.state in self._running_states:
                 continue
-            job._run_after_terminal(new_state)
+            if after_commit:
+                job._run_after_terminal_after_commit(new_state)
+            else:
+                job._run_after_terminal(new_state)
             if job.job_type_id.code in hidden:
                 continue
             scopes |= self._queue_scopes_of(job)
@@ -2291,6 +2392,37 @@ class CloudJob(models.Model):
                     job.id, new_state,
                 )
 
+    def _run_after_terminal_after_commit(self, new_state):
+        """``_run_after_terminal`` once this transaction commits.
+
+        For the store of ``done`` by the runner. Its transaction must
+        write nothing but the job's own rows: it began before the job's
+        hooks committed on cursors of their own, and a row they or anyone
+        else changed since — the instance's, which the probe's job keys
+        on — makes PostgreSQL refuse its commit, and queue_job runs the
+        whole job again (7-nov-2026). After the commit, on a fresh cursor,
+        with ``ic_after_job_commit`` in the context. A job not committed
+        is not acted on; a worker that dies between the commit and this
+        loses it, and ``run_after_commit`` logs what raises.
+
+        :param str new_state: the terminal state just stored
+        """
+        env = self.env
+        ids = self.ids
+
+        def _after_terminal():
+            """Run the layers' hooks on a cursor of their own."""
+            with env.registry.cursor() as cr:
+                jobs = env(
+                    cr=cr, context=dict(env.context, ic_after_job_commit=True),
+                )["cloud.job"].browse(ids).exists()
+                jobs._run_after_terminal(new_state)
+
+        run_after_commit(
+            self.env.cr, f"the end of cloud.job {ids} ({new_state})",
+            _after_terminal,
+        )
+
     def _after_job_terminal(self, new_state):
         """Called once *self* reached a terminal state, before the queue moves.
 
@@ -2299,8 +2431,12 @@ class CloudJob(models.Model):
         it to react to how a job ended (the SaaS manager reverts a tenant
         whose deploy failed or was cancelled before it started); call
         super(). Runs in the
-        transaction that recorded the end: the runner's for a job that
-        ran, the request's for one cancelled while it waited (blocked
+        transaction that recorded the end — except a job the runner
+        stored ``done``, whose hooks run once that commits, on a cursor of
+        their own (``_run_after_terminal_after_commit``, with
+        ``ic_after_job_commit`` in the context) — : the runner's for a
+        failure of a job that ran, the request's for one cancelled while
+        it waited (blocked
         twins dropped by ``unblock_and_enqueue`` included), the
         dispatcher's for one whose instance was gone when its turn came,
         and, for a step of a chain that never ran because the step before
@@ -2336,14 +2472,38 @@ class CloudJob(models.Model):
         outside the queues: asking for it here, with the queue's locks
         of the job that ended taken, waits for none.
 
+        Asked for once the transaction that recorded the end commits, on
+        a cursor of its own: its row keys on the instance, which the
+        job's hooks changed on cursors of their own after that
+        transaction began, and PostgreSQL refused the commit — queue_job
+        ran the whole job again (7-nov-2026, ``FOR KEY SHARE`` on
+        ``cloud_instance``). Already after the commit
+        (``ic_after_job_commit``), it is asked for at once.
+
         :param str new_state: ``done``, ``failed`` or ``cancelled``
         """
         if new_state not in ("done", "failed"):
             return
         codes = self._get_state_refresh_job_types()
-        self.filtered(
+        instances = self.filtered(
             lambda job: job.instance_id and job.job_type_id.code in codes
-        ).instance_id._refresh_state_now()
+        ).instance_id
+        if not instances:
+            return
+        if self.env.context.get("ic_after_job_commit"):
+            instances._refresh_state_now()
+            return
+        env = self.env
+        ids = instances.ids
+
+        def _probe():
+            """Ask for the probes on a cursor of their own."""
+            with env.registry.cursor() as cr:
+                env(cr=cr)["cloud.instance"].browse(ids)._refresh_state_now()
+
+        run_after_commit(
+            self.env.cr, f"the state probe of cloud.instance {ids}", _probe,
+        )
 
     @api.model
     def _on_holding_alert_closed(self, alerts):

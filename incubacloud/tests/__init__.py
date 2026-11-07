@@ -245,3 +245,6 @@ from . import test_website_info_router
 from . import test_host_generated_key
 from . import test_secret_field_groups
 from . import test_connect_module_shipped
+from . import test_job_idempotency
+from . import test_job_outcome
+from . import test_job_outcome_real_cursors

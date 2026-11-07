@@ -383,6 +383,10 @@ CANCELLED_WHILE_RUNNING = "Cancelled while it ran."
 # job before it started: it waits, ``blocked_alert_id`` says on what.
 BLOCKED_BY_ALERT = "Blocked until an alert is resolved."
 
+# What ``cloud.job.execute`` returns when an earlier attempt's
+# ``on_success`` committed (``cloud.job.outcome``): this one runs nothing.
+ALREADY_DONE = "Done by an earlier attempt."
+
 
 class JobRefused(RuntimeError):
     """A check of the executor's own refused to go on, before any step ran.
@@ -926,7 +930,7 @@ class AbstractExecutor(ABC):
         # (``run``). ``after_commands`` above can still be stopped.
         self._outcome_started = True
         try:
-            await self._run_hook_durably(hook, *args)
+            await self._run_hook_durably(hook, *args, record_outcome=not errors)
         except Exception:
             # Whatever it raised, a ``UserError`` included, is a defect
             # of ours: logged with its traceback, not as a refusal.
@@ -1000,7 +1004,7 @@ class AbstractExecutor(ABC):
                 self.job.id, exc,
             )
 
-    async def _run_hook_durably(self, hook, *args):
+    async def _run_hook_durably(self, hook, *args, record_outcome=False):
         """Await *hook* with ``self.job``/``self.env`` on a durable cursor.
 
         A durable environment, READ COMMITTED: this is where
@@ -1012,9 +1016,50 @@ class AbstractExecutor(ABC):
 
         :param hook: coroutine function to await
         :param args: positional arguments for *hook*
+        :param bool record_outcome: leave the job's outcome mark, as the
+            hook's last statement and on its cursor
+            (``_outcome_mark_vals``): for ``on_success`` only
         """
-        with self._as_durable():
+        with self._as_durable() as env:
             await hook(*args)
+            if record_outcome and self.job.queue_job_uuid:
+                env.flush_all()
+                env["cloud.job.outcome"].sudo().create(
+                    self._outcome_mark_vals(),
+                ).flush_recordset()
+
+    def _outcome_mark_vals(self):
+        """Return the outcome mark of a run whose ``on_success`` returned.
+
+        Written by ``_run_hook_durably`` as the last statement of the
+        hook's transaction, so the mark commits with what the hook wrote
+        or not at all: a hook that raises, or a worker that dies before
+        that commit, leaves none, and the next attempt runs the job again
+        as before. One that finds the mark — the store of ``done`` lost a
+        serialization race after this commit, or the worker died after
+        it — runs nothing again (``cloud.job.execute``), writes back what
+        this run wrote on the job's own row (``_write_own_job``), which
+        went with the lost transaction, and arms again what it left for
+        that commit (``_unlink_after_job_commit``).
+
+        Only for a job queue_job runs: its uuid names the attempts the
+        mark answers for.
+
+        :return: ``cloud.job.outcome`` values
+        :rtype: dict
+        """
+        return {
+            "job_id": self.job.id,
+            "queue_job_uuid": self.job.queue_job_uuid,
+            "own_job_vals": self._own_job_vals or {},
+            "owed": list(self._owed or ()),
+        }
+
+    #: What ``_write_own_job`` wrote in this run, for the outcome mark.
+    _own_job_vals = None
+    #: What this run left for after the job's commit, for the outcome
+    #: mark: ``{'kind': ...}`` entries ``cloud.job._rearm_owed`` knows.
+    _owed = None
 
     @contextlib.contextmanager
     def _as_durable(self):
@@ -1156,6 +1201,11 @@ class AbstractExecutor(ABC):
         main_cr.postcommit.add(deferred_instance_unlink(
             job_env, inst, self.job.id, self._host().id, sudo=sudo,
         ))
+        # For the outcome mark: a repetition that finds it arms the
+        # unlink again (``cloud.job._rearm_owed``).
+        self._owed = [*(self._owed or ()), {
+            "kind": "instance_unlink", "instance_id": inst.id,
+        }]
 
     # ===============================
     # DURABLE WRITES
@@ -1256,6 +1306,9 @@ class AbstractExecutor(ABC):
         job = self.job.with_env(self.job.env(cr=cr)).sudo()
         job.write(vals)
         job.flush_recordset(list(vals))
+        # For the outcome mark, which outlives this transaction: an
+        # attempt that finds it writes them again (``cloud.job.execute``).
+        self._own_job_vals = {**(self._own_job_vals or {}), **vals}
 
     def _persist(self, record, vals):
         """Write *vals* on *record* durably and let this job see the result.

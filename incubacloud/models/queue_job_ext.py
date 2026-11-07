@@ -7,6 +7,7 @@ from odoo import _, fields, models
 from odoo.addons.queue_job.controllers.main import RunJobController
 from odoo.addons.queue_job.job import Job
 
+from ._concurrency import run_after_commit
 from .abstract_executor import (
     BLOCKED_BY_ALERT,
     CANCELLED_WHILE_RUNNING,
@@ -117,24 +118,58 @@ class QueueJob(models.Model):
         )
         return self.browse([row[0] for row in self.env.cr.fetchall()])
 
-    def _succeeded_before_cancel(self):
+    def _succeeded_before_cancel(self, outcome=False):
         """The jobs of ``self`` whose ``on_success`` returned before a stop.
 
         ``AbstractExecutor._mark_success_before_cancel`` records it on the
         cloud job, on a cursor of its own, when that job was already
-        cancelled; read from the row, not the cache, as the flag is.
+        cancelled; with *outcome*, the mark every ``on_success`` leaves on
+        its cursor counts too (``cloud.job.outcome``). Both are read on a
+        fresh cursor (``cloud.job._fresh_env``): the store of ``done``
+        reaches here in the runner's transaction, whose snapshot predates
+        that commit and would never see either.
 
+        :param bool outcome: count a job whose success hook committed
         :return: the ``queue.job`` records concerned
         """
         if not self.ids:
             return self.browse()
-        self.env.cr.execute(
-            "SELECT q.id FROM queue_job q"
-            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
-            " WHERE q.id IN %s AND c.succeeded_before_cancel",
-            (tuple(self.ids),),
+        committed = (
+            " OR EXISTS (SELECT 1 FROM cloud_job_outcome o"
+            " WHERE o.job_id = c.id AND o.queue_job_uuid = q.uuid)"
+            if outcome else ""
         )
-        return self.browse([row[0] for row in self.env.cr.fetchall()])
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT q.id FROM queue_job q"
+                " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+                " WHERE q.id IN %s AND (c.succeeded_before_cancel" + committed + ")",
+                (tuple(self.ids),),
+            )
+            ids = [row[0] for row in env.cr.fetchall()]
+        return self.browse(ids)
+
+    def _committed_own_job_vals(self):
+        """What the committed success of each job of ``self`` wrote on its row.
+
+        ``AbstractExecutor._write_own_job`` writes in the job's
+        transaction; the outcome mark keeps a copy, which outlives a
+        transaction rolled back. Read on a fresh cursor, as the mark.
+
+        :return: ``{cloud.job id: values}`` for the jobs that wrote some
+        :rtype: dict
+        """
+        if not self.ids:
+            return {}
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT DISTINCT ON (o.job_id) o.job_id, o.own_job_vals"
+                " FROM cloud_job_outcome o"
+                " JOIN queue_job q ON q.uuid = o.queue_job_uuid"
+                " WHERE q.id IN %s ORDER BY o.job_id, o.id DESC",
+                (tuple(self.ids),),
+            )
+            return {job_id: vals for job_id, vals in env.cr.fetchall() if vals}
 
     def _store_success_before_cancel(self, vals):
         """Store ``self`` done, whatever end queue_job was storing.
@@ -150,7 +185,12 @@ class QueueJob(models.Model):
         the unlink a delete's or a purge's ``on_success`` left for its
         commit (``AbstractExecutor._unlink_after_job_commit``): the job
         would end done with its instance still in the panel. The unlink
-        is armed again here, for this cursor's commit.
+        is armed again here, for this cursor's commit, and what the hook
+        wrote on the job's own row is written again from its outcome mark.
+
+        Also for a job stored failed although its ``on_success`` had
+        committed (the mark, ``cloud.job.outcome``): what failed came
+        after its outcome.
 
         :param dict vals: what queue_job was writing
         :return: the result of ``write``
@@ -172,6 +212,10 @@ class QueueJob(models.Model):
         result = self.write(done)
         self.flush_recordset(["state"])
         self._unlink_owed_instances()
+        for job_id, own in self._committed_own_job_vals().items():
+            job = self.env["cloud.job"].sudo().browse(job_id)
+            job.write(own)
+            job.flush_recordset(list(own))
         for qjob in self:
             if not (qjob.dependencies or {}).get("reverse_depends_on"):
                 continue
@@ -189,7 +233,7 @@ class QueueJob(models.Model):
                     " could not be set going", qjob.uuid,
                 )
         _logger.info(
-            "[queue_job_ext] queue jobs %s succeeded before their stop: done",
+            "[queue_job_ext] queue jobs %s succeeded before what ended them: done",
             self.ids,
         )
         return result
@@ -200,25 +244,40 @@ class QueueJob(models.Model):
         A delete's ``on_success`` marks its instance ``removal_finalized``
         and a purge's leaves it archived; both leave the unlink for the
         job's commit. Called once ``on_success`` returned on each of them
-        (``_store_success_before_cancel``), so what is left of their
-        instance only awaits that unlink. Registered on this cursor's
-        ``postcommit``, as superuser, as the executor registers it.
+        (``_store_success_before_cancel``, and an attempt that finds its
+        outcome saved, ``cloud.job._rearm_owed``), so what is left of
+        their instance only awaits that unlink. Registered on this
+        cursor's ``postcommit``, as superuser, as the executor registers
+        it.
+
+        The instance is read on a fresh cursor (``cloud.job._fresh_env``):
+        the store of ``done`` calls this in the runner's transaction,
+        whose snapshot predates the hook's commit and still shows the
+        instance as it was before it.
         """
-        for qjob in self:
-            cjob = self.env["cloud.job"].sudo().with_context(
+        owed = []
+        with self.env["cloud.job"]._fresh_env() as env:
+            for qjob in self:
+                cjob = env["cloud.job"].with_context(
+                    active_test=False,
+                ).search([("queue_job_uuid", "=", qjob.uuid)], limit=1)
+                inst = cjob.instance_id.with_context(active_test=False)
+                if not inst.exists():
+                    continue
+                purged = (
+                    cjob.job_type_id.code == PurgeArchivedBackupsExecutor._job_type
+                    and not inst.active
+                )
+                if inst.removal_finalized or purged:
+                    owed.append((cjob.id, inst.id, cjob.host_id.id))
+        Job = self.env["cloud.job"].sudo()
+        for job_id, inst_id, host_id in owed:
+            inst = self.env["cloud.instance"].sudo().with_context(
                 active_test=False,
-            ).search([("queue_job_uuid", "=", qjob.uuid)], limit=1)
-            inst = cjob.instance_id
-            if not inst.exists():
-                continue
-            purged = (
-                cjob.job_type_id.code == PurgeArchivedBackupsExecutor._job_type
-                and not inst.active
-            )
-            if inst.removal_finalized or purged:
-                self.env.cr.postcommit.add(deferred_instance_unlink(
-                    cjob.env, inst, cjob.id, cjob.host_id.id, sudo=True,
-                ))
+            ).browse(inst_id)
+            self.env.cr.postcommit.add(deferred_instance_unlink(
+                Job.env, inst, job_id, host_id, sudo=True,
+            ))
 
     def write(self, vals):
         # A job a person cancelled while it ran ends cancelled, as one
@@ -251,8 +310,15 @@ class QueueJob(models.Model):
             # Its ``on_success`` had returned when the stop arrived: the
             # job is done, and its chain goes on. Stored cancelled, a
             # cutover that had cut over cancelled the freeze of its
-            # source; put back in the queue, it would run again.
-            succeeded = candidates._succeeded_before_cancel()
+            # source; put back in the queue, it would run again. Stored
+            # failed or with the stop's result, a job whose success hook
+            # committed (its outcome mark) is done too. Put back in the
+            # queue without a stop — a lost race on the store of done —
+            # it runs again, and ``cloud.job.execute`` ends that attempt
+            # at the mark.
+            succeeded = candidates._succeeded_before_cancel(
+                outcome=vals.get("state") != "pending",
+            )
             if succeeded:
                 (self - succeeded).write(vals)
                 return succeeded._store_success_before_cancel(vals)
@@ -343,22 +409,22 @@ class QueueJob(models.Model):
             # failures are handled by cloud.alert._dispatch_notifications()
             # so there is a single, unified code path. For successful
             # completion we still notify directly because no alert is
-            # created for done/cancelled.
+            # created for done/cancelled; ``cancelled`` is announced to
+            # nobody (``_notify_by_email``).
             blocked = qjob.result == BLOCKED_BY_ALERT
-            # queue_job stores a job that ended blocked as done; the
-            # browser is told 'blocked', which it does not toast. "Deploy
-            # Instance completed" was shown for a deploy that waited.
-            self.env['cloud.job']._broadcast_job_update(
-                cjob.id, state='blocked' if blocked else new_state,
-            )
+            if new_state == 'done':
+                # The runner's store of ``done`` writes nothing but the
+                # job's own rows (``_announce_done_after_commit``).
+                self._announce_done_after_commit(cjob, blocked)
+            else:
+                self.env['cloud.job']._broadcast_job_update(
+                    cjob.id, state=new_state,
+                )
             # A job that ended blocked did nothing: there is no success to
             # announce, no failure to dismiss and nobody's activity to
             # count. The alert it waits for is what people are told about.
             if blocked:
                 continue
-            if new_state != 'failed':
-                self.env['cloud.job']._notify_by_email(cjob, new_state)
-                self.env['cloud.job']._notify_external(cjob, new_state)
             _logger.info(
                 "[queue_job_ext] broadcast cloud.job id=%s state=%s",
                 cjob.id, new_state,
@@ -388,8 +454,9 @@ class QueueJob(models.Model):
             # that succeeded has dismissed it, before the next entry of
             # the target's queue is looked at — once this transaction
             # commits, on a cursor of its own. Nothing raised there, or
-            # by a layer's hook, reaches the runner's ``store()``.
-            cjob._on_state_changed(new_state)
+            # by a layer's hook, reaches the runner's ``store()``. For
+            # ``done`` the layers' hooks wait for that commit too.
+            cjob._on_state_changed(new_state, after_commit=new_state == 'done')
 
         return result
 
@@ -550,6 +617,46 @@ class QueueJob(models.Model):
                 _logger.warning(
                     "Job %s: on_never_run raised.", job.id, exc_info=True,
                 )
+
+    def _announce_done_after_commit(self, cjob, blocked):
+        """Tell the watchers and the subscribers once *cjob*'s ``done`` commits.
+
+        The bus event, and for a job that did not end blocked the mail,
+        Telegram and webhook of a success (``_notify_by_email``,
+        ``_notify_external``). Sent from the runner's transaction, they
+        went out before its commit: a store of ``done`` that then failed
+        — a lost serialization race, and queue_job runs the job again —
+        announced a success that was not recorded, and the next attempt
+        announced it a second time. After the commit, on a cursor of its
+        own, never raising (``run_after_commit``): a worker that dies in
+        between announces nothing, which the log does not show either.
+
+        :param cjob: the ``cloud.job`` stored ``done``
+        :param bool blocked: it ended blocked by an alert, and did
+            nothing: the browser is told ``blocked``, which it does not
+            toast ("Deploy Instance completed" was shown for a deploy
+            that waited), and nobody is mailed
+        """
+        env = self.env
+        job_id = cjob.id
+
+        def _announce():
+            """Broadcast and notify on a cursor of its own."""
+            with env.registry.cursor() as cr:
+                Job = env(cr=cr)["cloud.job"]
+                Job._broadcast_job_update(
+                    job_id, state="blocked" if blocked else "done",
+                )
+                job = Job.browse(job_id).exists()
+                if blocked or not job:
+                    return
+                Job._notify_by_email(job, "done")
+                Job._notify_external(job, "done")
+
+        run_after_commit(
+            self.env.cr, f"the announcement of cloud.job {job_id} done",
+            _announce,
+        )
 
     def _dismiss_failures_after_commit(self, cjob):
         """Dismiss *cjob*'s earlier failures once the job's own commit is in.

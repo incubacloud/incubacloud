@@ -159,7 +159,8 @@ def _is_durable_with(node, filename):
         expr = item.context_expr
         if not isinstance(expr, ast.Call):
             continue
-        if ast.unparse(expr.func).endswith("_durable_env"):
+        # ``_as_durable`` yields the hooks' durable environment.
+        if ast.unparse(expr.func).endswith(("_durable_env", "_as_durable")):
             return True
         if filename == PRIMITIVES_FILE and _opens_cursor(expr):
             return True
