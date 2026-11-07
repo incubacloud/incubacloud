@@ -1262,8 +1262,16 @@ class CloudInstance(models.Model):
         Default: any instance with a usable backup backend (one that
         resolves a ``backup_dst``) is backup-enabled. Modules layered
         on top (e.g. SaaS plan logic) may override to opt out.
+
+        Never on a PostgreSQL the template renders no backup service for
+        (``_odoo_versions.postgres_has_backup``: 9.6, the only one of 7.0
+        to 10.0). Counted as enabled, the instance's compose override
+        got a ``backup`` block with no image, which ``docker compose``
+        refuses, and its deploy failed (QA of the series, 7-nov-2026).
         """
         self.ensure_one()
+        if not _odoo_versions.postgres_has_backup(self.postgres_version):
+            return False
         bb = self.effective_backup_backend
         return bool(bb and bb.backup_dst)
 

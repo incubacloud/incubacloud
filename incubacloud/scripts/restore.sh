@@ -145,8 +145,15 @@ END IF; END \$\$;"
             exit 0
         fi
         ic_log "ensuring incubacloud_connect is installed on $dbname"
-        ic_compose_run --rm odoo \
-            odoo -d "$dbname" -i incubacloud_connect --stop-after-init --no-http
+        # Headless, so it never takes the port of an Odoo sharing its
+        # network: ``--no-http`` from 11.0 on, ``--no-xmlrpc`` before,
+        # where the other does not exist (QA of the series, 7-nov-2026).
+        # shellcheck disable=SC2016  # expanded by the container's shell
+        ic_compose_run --rm odoo sh -c \
+            'headless=--no-http
+             odoo --help | grep -q -- --no-http || headless=--no-xmlrpc
+             exec odoo -d "$0" -i incubacloud_connect --stop-after-init "$headless"' \
+            "$dbname"
         ;;
     *)
         ic_die "unknown operation: $op"
