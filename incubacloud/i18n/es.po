@@ -5877,7 +5877,7 @@ msgstr "Ajustes generales"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Generate a key for me"
-msgstr "Generar una clave por mí"
+msgstr "Generar una clave automáticamente"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6908,7 +6908,8 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "If the server already exists, run this on it as the user above:"
 msgstr ""
-"Si el servidor ya existe, ejecute esto en él con el usuario de arriba:"
+"Si el servidor ya existe, ejecute esto en él como el usuario indicado "
+"arriba:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7783,6 +7784,12 @@ msgstr ""
 "Deja esta instancia fuera de la purga automática de stagings para siempre. "
 "Para las permanentes: un entorno de QA en el que nadie entra durante meses "
 "sigue sin ser prescindible."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Keep this page open until you create the host."
+msgstr "Mantenga esta página abierta hasta crear el host."
 
 #. module: incubacloud
 #. odoo-javascript

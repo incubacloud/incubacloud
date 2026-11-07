@@ -41,6 +41,17 @@ from .transport import SSHTransport
 
 _logger = logging.getLogger(__name__)
 
+#: What a generated key is sealed with before it reaches the browser, so
+#: that only a value sealed for this purpose opens as one: a password or a
+#: ``key_file`` the panel encrypted with the same secret key does not.
+GENERATED_KEY_PURPOSE = "host-genkey:v1:"
+#: How long a sealed generated key opens, in seconds: the new-host form is
+#: filled in one sitting, and the server ordered while it stays open.
+GENERATED_KEY_TTL = 24 * 3600
+#: The comment of every public key the panel shows, whatever the key's own
+#: comment says: the page offers it inside a command to run on a server.
+PUBLIC_KEY_COMMENT = "incubacloud"
+
 
 def parse_memory_to_gb(mem_str):
     """Convert Docker memory strings like '2g', '512m', '256m' to float GB."""
@@ -220,12 +231,15 @@ class CloudHost(models.Model):
         default="self_hosted",
         help="Type of the cloud host. Other modules may extend this selection.",
     )
-    # ``ip_address``/``port``/``user`` share the ``password``/``key_file``
-    # gate (developer): whoever may read the SSH credential gains nothing
-    # from the endpoint being hidden, and jobs run as the user who enqueued
-    # them, so a stricter gate here would break every SSH job a Developer
-    # triggers. Roles below Developer get neither the endpoint nor the
-    # credential.
+    # ``ip_address``/``port``/``user`` are developer-gated: jobs run as the
+    # user who enqueued them, so a stricter gate here would break every SSH
+    # job a Developer triggers. Roles below Developer do not get the
+    # endpoint. The credentials, ``password`` and ``key_file``, are for
+    # system administrators only: no role of the panel reads them through
+    # the ORM (``/web/dataset/call_kw``, export), and the panel's own code
+    # reads them elevated (``_get_ssh_private_key_bytes``,
+    # ``_get_ssh_password``) and writes them elevated once the manager
+    # check passed (``create``, ``write``).
     ip_address = fields.Char(
         string="IP Address",
         required=True,
@@ -242,12 +256,12 @@ class CloudHost(models.Model):
     password = EncryptedChar(
         string="Password",
         required=True,
-        groups="incubacloud.group_cloud_developer",
+        groups="base.group_system",
         help="Password for accessing the cloud host.",
     )
     key_file = EncryptedChar(
         string="SSH Key",
-        groups="incubacloud.group_cloud_developer",
+        groups="base.group_system",
         help="SSH private key for accessing the cloud host.",
     )
     known_hosts_key = fields.Text(
@@ -1202,11 +1216,40 @@ class CloudHost(models.Model):
         accepts bytes containing raw key data, but a *string* gets
         treated as a filename and triggers ``open_file()``. So we always
         return bytes here and centralise the decode.
+
+        Read elevated: ``key_file`` is for system administrators only, and
+        the connection is opened for whoever runs the job or the page.
         """
         self.ensure_one()
-        if not self.key_file:
+        key_file = self.sudo().key_file
+        if not key_file:
             return b""
-        return base64.b64decode(self.key_file)
+        return base64.b64decode(key_file)
+
+    def _get_ssh_password(self):
+        """Return the SSH password of the host, read elevated.
+
+        ``password`` is for system administrators only, as ``key_file`` is;
+        the connection is opened for whoever runs the job or the page.
+
+        :return: the password, or ``False`` when none is stored
+        """
+        self.ensure_one()
+        return self.sudo().password
+
+    @api.model
+    def _openssh_public_line(self, key):
+        """Return the public half of *key* as one OpenSSH line.
+
+        The comment is always :data:`PUBLIC_KEY_COMMENT`: the page puts the
+        line inside a command to run on a server, and the comment of an
+        uploaded key is whatever its author wrote.
+
+        :param asyncssh.SSHKey key: a private or public key
+        :rtype: str
+        """
+        kind, data = key.export_public_key("openssh").decode().split()[:2]
+        return f"{kind} {data} {PUBLIC_KEY_COMMENT}"
 
     @api.model
     def _generate_ssh_key(self):
@@ -1218,18 +1261,22 @@ class CloudHost(models.Model):
         secret key: the browser holds it until the host is created and
         cannot read it; :meth:`_unseal_ssh_key` turns it into ``key_file``.
 
+        What is sealed starts with :data:`GENERATED_KEY_PURPOSE`, so that
+        nothing else this panel encrypts opens as a generated key.
+
         :return: ``{'public_key': <OpenSSH line>, 'sealed_key': <enc:...>}``
         :rtype: dict
         :raise IncubacloudCryptoError: when the panel has no secret key
         """
         key = asyncssh.generate_private_key(
-            "ssh-ed25519", comment="incubacloud",
+            "ssh-ed25519", comment=PUBLIC_KEY_COMMENT,
         )
         pem = key.export_private_key("openssh")
         return {
-            "public_key": key.export_public_key("openssh").decode().strip(),
+            "public_key": self._openssh_public_line(key),
             "sealed_key": encrypt_value(
-                base64.b64encode(pem).decode(), self.env,
+                GENERATED_KEY_PURPOSE + base64.b64encode(pem).decode(),
+                self.env,
             ),
         }
 
@@ -1237,8 +1284,9 @@ class CloudHost(models.Model):
     def _unseal_ssh_key(self, sealed):
         """Return the ``key_file`` value of a key sealed by this panel.
 
-        Only a value sealed with this panel's secret key is accepted, and
-        only if it holds a private key asyncssh can use.
+        Only a value this panel sealed as a generated key in the last
+        :data:`GENERATED_KEY_TTL` seconds is accepted, and only if it holds
+        a private key asyncssh can use.
 
         :param str sealed: ``sealed_key`` from :meth:`_generate_ssh_key`
         :return: the key as ``key_file`` stores it (base64 of the PEM)
@@ -1248,7 +1296,10 @@ class CloudHost(models.Model):
         try:
             if not is_encrypted(sealed):
                 raise ValueError("not sealed by this panel")
-            value = decrypt_value(sealed, self.env)
+            plain = decrypt_value(sealed, self.env, ttl=GENERATED_KEY_TTL)
+            if not plain.startswith(GENERATED_KEY_PURPOSE):
+                raise ValueError("not sealed as a generated key")
+            value = plain.removeprefix(GENERATED_KEY_PURPOSE)
             asyncssh.import_private_key(base64.b64decode(value))
         except (ValueError, TypeError) as exc:
             raise UserError(_(
@@ -1261,9 +1312,11 @@ class CloudHost(models.Model):
         """Return the OpenSSH public half of the stored key, or ``""``.
 
         Derived from ``key_file`` on every call, so it is right for a key
-        the panel generated and for one a person uploaded. Empty for a
-        password host, a host with no key, and a key that cannot be read
-        (unreadable ciphertext, not a key, or protected by a passphrase).
+        the panel generated and for one a person uploaded; its comment is
+        the panel's (:meth:`_openssh_public_line`). Empty for a password
+        host, a host with no key, and a key that cannot be read (unreadable
+        ciphertext, a panel without its secret key, not a key, or protected
+        by a passphrase): the host page opens anyway.
 
         :rtype: str
         """
@@ -1275,9 +1328,13 @@ class CloudHost(models.Model):
             if not raw:
                 return ""
             key = asyncssh.import_private_key(raw)
-        except ValueError:
+        except Exception as exc:  # noqa: BLE001 — the page must still open
+            _logger.warning(
+                "[ssh] cannot derive the public key of cloud.host(id=%s): %s",
+                self.id, exc,
+            )
             return ""
-        return key.export_public_key("openssh").decode().strip()
+        return self._openssh_public_line(key)
 
     def _known_hosts_line(self, server_key):
         """Return the ``known_hosts`` line of *server_key* at this endpoint.
@@ -1332,10 +1389,14 @@ class CloudHost(models.Model):
             known_hosts=known_hosts,
             agent_path=None,
         )
-        if self.login_type == "ssh_key" and self.key_file:
-            connect_kw["client_keys"] = [self._get_ssh_private_key_bytes()]
+        key = (
+            self._get_ssh_private_key_bytes()
+            if self.login_type == "ssh_key" else b""
+        )
+        if key:
+            connect_kw["client_keys"] = [key]
         else:
-            connect_kw["password"] = self.password
+            connect_kw["password"] = self._get_ssh_password()
             connect_kw["client_keys"] = None
 
         async def _capture():
@@ -1678,6 +1739,7 @@ class CloudHost(models.Model):
                 host=host,
             )
 
+    @api.private
     def ssh_connect_kwargs(self):
         """Return kwargs dict for ``asyncssh.connect()``.
 
@@ -1685,6 +1747,11 @@ class CloudHost(models.Model):
         terminal sessions) shares the same behaviour.  When *password*
         auth is selected, ``client_keys`` is set to an empty list to
         prevent asyncssh from probing ``~/.ssh`` for default keys.
+
+        The endpoint is read as the caller (developer-gated), the
+        credential elevated (``_get_ssh_private_key_bytes``,
+        ``_get_ssh_password``). It carries that credential, so it is not
+        callable over RPC.
         """
         self.ensure_one()
         if not self.known_hosts_key:
@@ -1701,10 +1768,14 @@ class CloudHost(models.Model):
             username=self.user,
             known_hosts=asyncssh.import_known_hosts(self.known_hosts_key),
         )
-        if self.login_type == "ssh_key" and self.key_file:
-            kwargs["client_keys"] = [self._get_ssh_private_key_bytes()]
+        key = (
+            self._get_ssh_private_key_bytes()
+            if self.login_type == "ssh_key" else b""
+        )
+        if key:
+            kwargs["client_keys"] = [key]
         else:
-            kwargs["password"] = self.password
+            kwargs["password"] = self._get_ssh_password()
             # None (not []) tells asyncssh to skip default key loading.
             # With [], asyncssh falls through to load_default_keypairs()
             # which reads ~/.ssh/id_* — breaks when those files are
@@ -2104,9 +2175,9 @@ class CloudHost(models.Model):
         """
         self.ensure_one()
         # Trusted reader: the job that opens this transport was authorized
-        # at enqueue, and the credential fields are developer-gated for raw
-        # reads. Elevate here — never inside ``ssh_connect_kwargs`` itself,
-        # which is a public method that returns the password.
+        # at enqueue, and the endpoint fields are developer-gated for raw
+        # reads. Elevate here — never for the endpoint inside
+        # ``ssh_connect_kwargs`` itself, which reads it as its caller.
         connect_kw = self.sudo().ssh_connect_kwargs()
         connect_kw.update(keepalive_interval=30, keepalive_count_max=10)
         async with asyncssh.connect(**connect_kw) as conn:
@@ -2130,6 +2201,10 @@ class CloudHost(models.Model):
 
     # Password fields that are auto-generated when left empty
     _PASSWORD_FIELDS = ("password", "traefik_panel_password")
+    # The SSH credentials: readable and writable by system administrators
+    # only, so ``create`` and ``write`` store them elevated once the
+    # manager check passed.
+    _CREDENTIAL_FIELDS = ("password", "key_file")
     # Traefik fields that should fall back to template defaults when empty
     _TRAEFIK_TEMPLATE_FIELDS = {
         "traefik_config_yml": "config.yml",
@@ -2152,7 +2227,13 @@ class CloudHost(models.Model):
                 vals["allowed_ssh_ips"] = _normalize_ssh_allowlist(
                     vals["allowed_ssh_ips"],
                 )
-        hosts = super().create(vals_list)
+        # Every host is created with a password (generated above), which
+        # only a system administrator may write: the rest of the values
+        # are a manager's to set, checked here as the ORM would.
+        self.check_access("create")
+        hosts = super(CloudHost, self.sudo()).create(vals_list).sudo(
+            self.env.su,
+        )
         for host in hosts:
             if not host.whitelist_ids:
                 self.env["cloud.host.whitelist"].create(
@@ -2346,7 +2427,16 @@ class CloudHost(models.Model):
                 if vals.get("known_hosts_key"):
                     trust_revoked = {}
         changed, old_snap = self._audit_snapshot(vals)
+        credentials = {
+            field: vals[field]
+            for field in self._CREDENTIAL_FIELDS
+            if field in vals
+        }
+        vals = {k: v for k, v in vals.items() if k not in credentials}
         result = super().write(vals)
+        if credentials:
+            self.check_access("write")
+            super(CloudHost, self.sudo()).write(credentials)
         for host_id in endpoint_invalidated:
             self.env["cloud.audit.log"].sudo().create(
                 {

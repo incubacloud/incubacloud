@@ -122,6 +122,10 @@ export class HostDetail extends Component {
             keyGenerateFailed:         false,
             // Which copy button just copied: "key", "command" or "".
             copied:                    "",
+            // Whether the generated key was copied out of the page: from
+            // then on leaving without creating the host would lose a key
+            // that may already be on a server.
+            keyShared:                 false,
             trusting_host_key:         false,
             // Code of the pluggable action being enqueued, "" when idle.
             actionBusy: "",
@@ -241,6 +245,8 @@ export class HostDetail extends Component {
     }
 
     get hasUnsavedChanges() {
+        if (this.isNew && this.state.keyShared
+            && this.state.form.key_source === "generate") return true;
         if (!this._savedForm) return false;
         return this._currentFormKey() !== this._savedForm;
     }
@@ -494,9 +500,24 @@ export class HostDetail extends Component {
         return this.state.host?.ssh_public_key || "";
     }
 
-    /** The command that adds the public key to a server's authorized keys. */
+    /**
+     * The command that adds the public key to a server's authorized keys.
+     *
+     * The key goes in single quotes, any quote inside it closed and
+     * escaped, so no part of the line runs as a command.
+     */
     get authorizedKeysCommand() {
-        return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "${this.sshPublicKey}" >> ~/.ssh/authorized_keys`;
+        const quoted = `'${this.sshPublicKey.replaceAll("'", "'\\''")}'`;
+        return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo ${quoted} >> ~/.ssh/authorized_keys`;
+    }
+
+    /**
+     * Note that the generated key left the page (copied by a button or by
+     * hand), so leaving a new host's form asks first. A saved host's key
+     * is already stored: nothing to lose.
+     */
+    markKeyShared() {
+        if (this.isNew) this.state.keyShared = true;
     }
 
     /**
@@ -512,6 +533,7 @@ export class HostDetail extends Component {
             this.env.toast?.error(_t("Could not copy. Select the text and copy it."));
             return;
         }
+        this.markKeyShared();
         this.state.copied = which;
         setTimeout(() => {
             if (this.state.copied === which) this.state.copied = "";
@@ -838,6 +860,7 @@ export class HostDetail extends Component {
                 this.env.refreshNavCounts?.();
                 // Clear the dirty baseline before navigating so the
                 // guard doesn't fire on the programmatic transition.
+                this.state.keyShared = false;
                 this._snapshotForm();
                 this.env.navigate("host_detail", { host_id: result.id });
             } else {

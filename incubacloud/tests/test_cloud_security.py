@@ -660,7 +660,7 @@ class TestSec009FieldGroups(CloudSecurityBase):
             )
 
     def test_developer_can_read_host_ssh_endpoint(self):
-        # Same gate as password/key_file: a Developer opens SSH jobs that
+        # Developer-gated: a Developer opens SSH jobs that
         # run under their own user, so the endpoint must stay readable.
         data = self.host.with_user(self.developer).read(
             ['ip_address', 'user', 'port']

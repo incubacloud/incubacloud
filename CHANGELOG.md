@@ -21,7 +21,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   key (generated or uploaded), with copy buttons for the key and for a command
   that adds it to a server's `~/.ssh/authorized_keys`. `/cloud/get_host`, and
   so the MCP's `get_host`, answer it as `ssh_public_key`; the private key is
-  never answered.
+  never answered. The line always ends with the comment `incubacloud`, not
+  the uploaded key's own, and the command quotes it. Once the generated key
+  is copied, leaving the new-host form asks first.
+
+### Security
+
+- **A host's SSH credentials are for system administrators only.**
+  `cloud.host.key_file` and `password` were readable by a Developer or a
+  Manager through Odoo's generic endpoints (`/web/dataset/call_kw` `read` and
+  `search_read`, export). Both now carry `base.group_system`. The panel reads
+  them elevated where it connects (`_get_ssh_private_key_bytes`,
+  `_get_ssh_password`), `ssh_connect_kwargs` is no longer callable over RPC,
+  and `create`/`write` store them elevated once the manager check passed. The
+  host page's button that reveals the SSH password is unchanged. Publish with
+  the `incubacloud_saas_manager` and `incubacloud_tenant` that read `key_file`
+  elevated in their VPS provisioning.
+- **A generated key opens only as one, and for a day.** What is sealed starts
+  with `host-genkey:v1:` and `/cloud/create_host` refuses any other value this
+  panel encrypted, or one sealed more than 24 hours earlier.
 
 ## [1.0.214] — 2026-11-07
 

@@ -367,8 +367,10 @@ class CrudMixin:
                     'port': host.port if is_manager else 0,
                     'user': host.user if is_manager else '',
                     'login_type': host.login_type if is_manager else '',
-                    'has_password': _has_encrypted(host, 'password'),
-                    'has_key_file': _has_encrypted(host, 'key_file'),
+                    # Existence only, read elevated: the credentials are
+                    # for system administrators.
+                    'has_password': _has_encrypted(host.sudo(), 'password'),
+                    'has_key_file': _has_encrypted(host.sudo(), 'key_file'),
                     'has_known_hosts_key':
                         _has_encrypted(host, 'known_hosts_key'),
                     'known_hosts_fingerprint':
@@ -831,6 +833,10 @@ class CrudMixin:
             return {'ok': False, 'error': _('Record not found')}
         # Require write access as a proxy for "trusted user"
         record.check_access('write')
+        # A host's SSH password is readable by system administrators only:
+        # the write check above is what lets a Manager reveal it.
+        if model == 'cloud.host':
+            record = record.sudo()
         value = getattr(record, field, None) or ''
         return {'value': value}
     @http.route(['/cloud/get_host'], type='json', auth='user')
@@ -850,8 +856,10 @@ class CrudMixin:
             'port': host.port,
             'user': host.user,
             'login_type': host.login_type,
-            'has_password': _has_encrypted(host, 'password'),
-            'has_key_file': _has_encrypted(host, 'key_file'),
+            # Existence only, read elevated: the credentials are for system
+            # administrators.
+            'has_password': _has_encrypted(host.sudo(), 'password'),
+            'has_key_file': _has_encrypted(host.sudo(), 'key_file'),
             # The public half only, derived from the stored key so it can
             # be copied again; the private one never leaves the panel.
             'ssh_public_key': host._ssh_public_key(),

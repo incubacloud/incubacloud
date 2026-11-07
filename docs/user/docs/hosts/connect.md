@@ -43,14 +43,15 @@ Put the public key on the VPS, as the user you entered:
   which appends it to that user's `~/.ssh/authorized_keys`:
 
 ```bash
-mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "ssh-ed25519 AAAA... incubacloud" >> ~/.ssh/authorized_keys
+mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo 'ssh-ed25519 AAAA... incubacloud' >> ~/.ssh/authorized_keys
 ```
 
-Keep the form open while you do it: the key is saved with the host.
+Keep this page open until you create the host: the key is saved with it. Once
+you have copied the key, the panel asks before you leave the page.
 
 To use a key of your own instead, choose **Upload my own private key** and
-upload the private half. It must have no passphrase (the panel has no field for
-one).
+upload the private half in **SSH Private Key**. It must have no passphrase (the
+panel has no field for one).
 
 The host's **Connection** tab keeps showing the public key, so you can copy it
 again later.

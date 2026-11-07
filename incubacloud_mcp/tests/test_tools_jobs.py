@@ -1,6 +1,10 @@
 """The buttons that queue jobs, as tools: the panel's roles, and what asks."""
 
+import base64
+import json
 from unittest.mock import patch
+
+import asyncssh
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
@@ -443,3 +447,20 @@ class TestJobToolsOverHttp(
             )
         )
         self.assertEqual(host["traefik_yml"], "entryPoints: {}")
+
+    def test_get_host_answers_the_public_half_of_its_key(self):
+        """A manager's get_host carries the key's public half, never the private."""
+        key = asyncssh.generate_private_key("ssh-ed25519")
+        pem = key.export_private_key("openssh")
+        self.host.sudo().write(
+            {"login_type": "ssh_key", "key_file": base64.b64encode(pem).decode()}
+        )
+        manager = self._cloud_user("mcp-jobs-key-mgr", group="group_cloud_manager")
+        key_id = self._api_key(manager)
+        host = self._payload(
+            self._call_tool(key_id, "get_host", {"host_id": self.host.id})
+        )
+        public = " ".join(key.export_public_key("openssh").decode().split()[:2])
+        self.assertEqual(host["ssh_public_key"], f"{public} incubacloud")
+        self.assertNotIn("PRIVATE KEY", json.dumps(host))
+        self.assertNotIn(base64.b64encode(pem).decode(), json.dumps(host))

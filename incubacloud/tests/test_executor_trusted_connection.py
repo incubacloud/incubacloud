@@ -1,14 +1,15 @@
 """The executor is a trusted reader of the host connection material.
 
 Jobs run under the env of whoever enqueued them (queue_job restores the
-caller's env), while ``ip_address``/``port``/``user``/``password``/
-``key_file`` are developer-gated at the ORM layer. Without an explicit
-elevation, a consultant-triggered deploy would raise ``AccessError``
-inside the worker — which is exactly what happened before SEC-009b.
+caller's env), while ``ip_address``/``port``/``user`` are developer-gated
+at the ORM layer (and ``password``/``key_file`` system-only, read elevated
+by their own helpers). Without an explicit elevation, a consultant-triggered
+deploy would raise ``AccessError`` inside the worker — which is exactly what
+happened before SEC-009b.
 
-The elevation must stay confined to the executor path: the public
-``ssh_connect_kwargs()`` returns the password and must keep refusing a
-low-privilege caller.
+The elevation of the endpoint must stay confined to the executor path:
+``ssh_connect_kwargs()`` reads it as its caller and must keep refusing a
+low-privilege one.
 """
 import asyncio
 from contextlib import asynccontextmanager
@@ -139,7 +140,7 @@ class TrustedConnectionCase(TransactionCase):
     # -- but the public method stays closed ------------------------------
 
     def test_ssh_connect_kwargs_still_refuses_a_consultant(self):
-        # It returns the password, so the elevation must NOT live in it.
+        # It reads the endpoint as its caller: the elevation must NOT live in it.
         with self.assertRaises(AccessError):
             self.host.with_user(self.consultant).ssh_connect_kwargs()
 

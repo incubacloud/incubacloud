@@ -156,12 +156,15 @@ class AnsibleExecutor(AbstractExecutor):
         self._write_private(known_hosts_path, host.known_hosts_key + "\n")
 
         key_path = None
-        if host.login_type == "ssh_key" and host.key_file:
+        # Read elevated by the helper: the job may run as a Developer, and
+        # ``key_file`` is for system administrators only.
+        key = (
+            host._get_ssh_private_key_bytes()
+            if host.login_type == "ssh_key" else b""
+        )
+        if key:
             key_path = os.path.join(root, "ssh_key")
-            self._write_private(
-                key_path,
-                host._get_ssh_private_key_bytes().decode() + "\n",
-            )
+            self._write_private(key_path, key.decode() + "\n")
 
         inventory_dir = os.path.join(root, "inventory")
         Path(inventory_dir).mkdir(parents=True, exist_ok=True)
