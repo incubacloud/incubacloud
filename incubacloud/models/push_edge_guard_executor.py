@@ -6,11 +6,13 @@ only when it changed, checks the proxy reads the directory and asks the
 proxy for the page. The proxy is never restarted: its file provider
 reloads the document on its own.
 
-Exit 3 (the proxy does not mount the directory) and 4 (the answer could
-not be verified) are not failures: the file is written either way. The
-first raises a warning on the host until a run finds it mounted; the
-second is only said in the log, because a host that requires the CDN's
-client certificate can never be verified from inside.
+Exit 3 (the proxy does not mount the directory) and 4 (the handshake was
+refused, so the answer could not be verified) are not failures: the file is
+written either way. The first raises a warning on the host until a run
+finds it mounted; the second is only said in the log, because a host that
+requires the CDN's client certificate can never be verified from inside.
+Exit 5 is a failure: the proxy answered with a real HTTP status other than
+403, so the guard is not applied (Traefik dropped the file, say).
 """
 from odoo import fields
 
@@ -25,6 +27,9 @@ EDGE_GUARD_NOT_MOUNTED = 3
 
 #: The script's "written, the proxy's answer could not be verified".
 EDGE_GUARD_UNVERIFIED = 4
+
+#: The script's "the proxy answered, and not with 403: the guard is not applied".
+EDGE_GUARD_NOT_APPLIED = 5
 
 #: The alert a host whose proxy does not read the guard carries.
 EDGE_GUARD_ALERT = "edge_guard_not_mounted"
@@ -81,8 +86,16 @@ class PushEdgeGuardExecutor(AbstractSSHExecutor):
         """Return the install step's exit status (1 when it did not run)."""
         return results.get(_INSTALL, {}).get("exit_status", 1)
 
+    def _answer(self, results):
+        """Return the HTTP code the script reported with exit 5, or ``?``."""
+        stdout = results.get(_INSTALL, {}).get("stdout") or ""
+        for line in stdout.splitlines():
+            if line.startswith("IC_EDGE_GUARD_NOT_APPLIED "):
+                return line.split(None, 1)[1].strip()
+        return "?"
+
     def parse_results(self, results):
-        """0, 3 and 4 wrote the guard; anything else did not."""
+        """0, 3 and 4 wrote the guard; 5 and anything else did not."""
         status = self._status(results)
         if status == EDGE_GUARD_NOT_MOUNTED:
             self._sys(
@@ -95,6 +108,14 @@ class PushEdgeGuardExecutor(AbstractSSHExecutor):
                 "⚠ The edge guard is written, but the proxy's answer could "
                 "not be verified from the host itself."
             )
+        elif status == EDGE_GUARD_NOT_APPLIED:
+            answer = self._answer(results)
+            return [
+                (
+                    f"The proxy answered {answer} for /website/info instead "
+                    "of 403: the edge guard is not applied."
+                ),
+            ]
         elif status != 0:
             return [f"'{_INSTALL}' exited with status {status}."]
         return []
