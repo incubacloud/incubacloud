@@ -13,6 +13,29 @@ PostgreSQL 9.6, which the panel no longer knows, nor any series from 8.0 to
 15.0, which no longer run below PostgreSQL 12. `incubacloud_connect` 1.0.3
 reaches an existing instance with its next rebuild.
 
+Publish this core with the `incubacloud_saas_manager` and
+`incubacloud_tenant` that read a host's `key_file` elevated in their VPS
+provisioning, in the same deployment.
+
+### Added
+
+- **The panel generates a host's SSH key.** A new host with Login Type *SSH
+  Key* offers *Generate a key for me*, selected by default, or *Upload my own
+  private key* as before. The panel's server makes an Ed25519 pair as the form
+  opens (`/cloud/generate_host_key`), so its public half can be pasted into the
+  provider's form before the server, and its address, exist. The private half
+  reaches the browser only sealed with the panel's secret key and is stored in
+  `key_file` when the host is created, as an uploaded key is.
+- **A host's public key stays on its Connection tab,** derived from the stored
+  key (generated or uploaded), with copy buttons for the key and for a command
+  that adds it to a server's `~/.ssh/authorized_keys`. `/cloud/get_host`, and
+  so the MCP's `get_host`, answer it as `ssh_public_key`; the private key is
+  never answered. The line always ends with the comment `incubacloud`, not
+  the uploaded key's own, and the command quotes it. Once the generated key
+  is copied, leaving the new-host form asks first.
+- CI compiles what a deploy ships of `incubacloud_connect` with Python 2.7 and
+  3.5, in their official images (`connect-old-python`).
+
 ### Changed
 
 - **A series runs with every service of the panel or is not offered** (owner,
@@ -59,28 +82,6 @@ reaches an existing instance with its next rebuild.
   option its series' card names (`headless`): `--no-http` from 11.0,
   `--no-xmlrpc` before. `restore.sh ensure-connect` takes it as an argument
   instead of reading `odoo --help`, which from 19.0 lists no server options.
-
-### Added
-
-- CI compiles what a deploy ships of `incubacloud_connect` with Python 2.7 and
-  3.5, in their official images (`connect-old-python`).
-
-### Added
-
-- **The panel generates a host's SSH key.** A new host with Login Type *SSH
-  Key* offers *Generate a key for me*, selected by default, or *Upload my own
-  private key* as before. The panel's server makes an Ed25519 pair as the form
-  opens (`/cloud/generate_host_key`), so its public half can be pasted into the
-  provider's form before the server, and its address, exist. The private half
-  reaches the browser only sealed with the panel's secret key and is stored in
-  `key_file` when the host is created, as an uploaded key is.
-- **A host's public key stays on its Connection tab,** derived from the stored
-  key (generated or uploaded), with copy buttons for the key and for a command
-  that adds it to a server's `~/.ssh/authorized_keys`. `/cloud/get_host`, and
-  so the MCP's `get_host`, answer it as `ssh_public_key`; the private key is
-  never answered. The line always ends with the comment `incubacloud`, not
-  the uploaded key's own, and the command quotes it. Once the generated key
-  is copied, leaving the new-host form asks first.
 
 ### Security
 
