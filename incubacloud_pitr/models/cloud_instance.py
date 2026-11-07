@@ -199,9 +199,9 @@ class CloudInstance(models.Model):
         """Whether this instance's PostgreSQL can be recovered by ``pitr.sh``.
 
         It writes ``recovery.signal``, from 12 on; before, recovery was
-        another file and other settings. Every series may run on 12 or
-        later, 8.0 to 12.0 on nothing older (``_odoo_versions``); 10 and 11
-        remain for 13.0 to 15.0.
+        another file and other settings. No series runs on an older one
+        (``_odoo_versions``): this only holds back a record stored on a
+        PostgreSQL that the table no longer offers.
 
         :rtype: bool
         """

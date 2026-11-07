@@ -150,12 +150,15 @@ VERSIONS = {
     # (incubacloud_pitr's ``_pitr_postgres_supported``: pitr.sh recovers
     # with ``recovery.signal``), which 9.6 lacks as well as a backup
     # service (``POSTGRES_MAJORS``): 8.0 to 10.0, for which the template
-    # allows 9.6 alone, run on 12 alone, and 11.0 and 12.0 on 12 to 13,
-    # with 13 by default as the template recommends (owner, 7-nov-2026;
-    # each checked on 12 that day: database created, modules installed and
-    # updated, click-odoo and duplicity copies restored, login served,
-    # recovery to a point in time). 8.0 to 10.0 are on Debian 8, gone from
-    # the mirrors, and have no ``--no-http`` (7-nov-2026).
+    # allows 9.6 alone, run on 12 alone, 11.0 and 12.0 on 12 to 13, with 13
+    # by default as the template recommends, and 13.0 to 15.0 from 12 up to
+    # the template's latest (owner, 7-nov-2026; 8.0 to 12.0 each checked on
+    # 12 that day: database created, modules installed and updated,
+    # click-odoo and duplicity copies restored, login served, recovery to a
+    # point in time; 13.0 to 15.0 are inside the template's own range, which
+    # starts at 10, and are tried on 12 by the run of the series). 8.0 to
+    # 10.0 are on Debian 8, gone from the mirrors, and have no
+    # ``--no-http`` (7-nov-2026).
     "8.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
@@ -173,9 +176,9 @@ VERSIONS = {
     ),
     "11.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
     "12.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
-    "13.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
-    "14.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
-    "15.0": _card(False, ("10", "17", "17"), "click-odoo", None, "sql"),
+    "13.0": _card(False, ("12", "16", "16"), "click-odoo", None, "sql"),
+    "14.0": _card(False, ("12", "16", "16"), "click-odoo", None, "sql"),
+    "15.0": _card(False, ("12", "17", "17"), "click-odoo", None, "sql"),
     "16.0": _card(False, ("14", "18", "17"), "click-odoo", None),
     "17.0": _card(False, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
