@@ -1,4 +1,4 @@
-# The manifest of 9.0, which reads no other name: the same as
+# The manifest of 8.0 and 9.0, which read no other name: the same as
 # __manifest__.py (incubacloud/tests/test_connect_module_shipped.py).
 {
     'name': 'IncubaCloud Connect',
