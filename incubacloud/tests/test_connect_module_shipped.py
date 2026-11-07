@@ -4,7 +4,10 @@ doodba compiles every addon of the image with the series' own Python:
 2.7 on 7.0 to 10.0, 3.5 on 11.0 and 12.0. What reaches it from the panel
 has to compile there, and the module's code has to import on the oldest
 series it routes for (9.0, ``openerp``). The module's tests are the
-panel's and stay behind (QA of the series, 7-nov-2026).
+panel's and stay behind (QA of the series, 7-nov-2026). CI compiles the
+same copy with a real Python 2.7 and 3.5 (``connect-old-python``,
+``tests/shell/compile_connect_module.py``); the checks here are what the
+panel's own Python can tell.
 """
 import ast
 import os

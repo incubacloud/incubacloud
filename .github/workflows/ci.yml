@@ -436,6 +436,29 @@ jobs:
             nft --version
             for f in /r/*.nft; do echo "== $f"; nft -c -f "$f"; done'
 
+  connect-old-python:
+    name: incubacloud_connect compiles (Python 2.7, 3.5)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # doodba compiles every addon of the image with the series' own
+    # Python: 2.7 on 7.0 to 10.0, 3.5 on 11.0 and 12.0, and one syntax
+    # error stops the image from building. The test job runs 3.10, so
+    # what a deploy ships of incubacloud_connect is compiled here by each
+    # in its official image (QA of the series, 7-nov-2026).
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["python:2.7-slim", "python:3.5-slim"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Compile the module with this Python
+        run: |
+          docker run --rm -v "$PWD:/src:ro" "${{ matrix.python }}" \
+            python /src/incubacloud/tests/shell/compile_connect_module.py \
+            /src/incubacloud_connect
+
   ansible-lint:
     name: Lint (ansible-lint)
     runs-on: ubuntu-latest
