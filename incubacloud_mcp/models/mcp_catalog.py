@@ -34,6 +34,10 @@ CORE_EXCLUDED = {
     "/cloud/<path:subpath>": _SPA,
     "/cloud/get_secret": "Secrets never leave through an agent (decision 6).",
     "/cloud/save_github_pat": "Credentials are only written in the panel (decision 6).",
+    "/cloud/generate_host_key": (
+        "The new server form's SSH key; credentials are only written in the "
+        "panel (decision 6)."
+    ),
     "/cloud/instance/<int:instance_id>/restore": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/begin": _UPLOAD,
     "/cloud/instance/<int:instance_id>/restore/part": _UPLOAD,

@@ -607,7 +607,25 @@
                                     </div>
                                 </t>
                                 <t t-else="">
-                                    <div class="rl-frow rl-full">
+                                    <div class="rl-frow rl-full" t-if="isNew">
+                                        <label id="host-key-source-label">SSH key</label>
+                                        <div class="ic-key-source" role="radiogroup"
+                                             aria-labelledby="host-key-source-label">
+                                            <label class="ic-key-source__option">
+                                                <input type="radio" name="host-key-source" value="generate"
+                                                       t-att-checked="state.form.key_source === 'generate'"
+                                                       t-on-change="() => { this.state.form.key_source = 'generate'; }"/>
+                                                Generate a key for me
+                                            </label>
+                                            <label class="ic-key-source__option">
+                                                <input type="radio" name="host-key-source" value="upload"
+                                                       t-att-checked="state.form.key_source === 'upload'"
+                                                       t-on-change="() => { this.state.form.key_source = 'upload'; }"/>
+                                                Upload my own private key
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="rl-frow rl-full" t-if="!isNew or state.form.key_source === 'upload'">
                                         <label>SSH Private Key <span class="rl-req">*</span></label>
                                         <input type="file" accept=".pem,.key,.txt"
                                                t-on-change="onKeyFileChange"/>
@@ -616,6 +634,39 @@
                                                 <t t-out="env.icon('check', 15)"/> Key stored — upload a new file only to replace it.
                                             </span>
                                         </t>
+                                    </div>
+                                    <div class="rl-frow rl-full ic-host-pubkey" t-if="sshPublicKey">
+                                        <label>Public key</label>
+                                        <div class="ic-copy-field">
+                                            <code class="ic-copy-field__value" t-esc="sshPublicKey"/>
+                                            <button type="button" class="ic-copy-field__btn"
+                                                    title="Copy the public key" aria-label="Copy the public key"
+                                                    t-on-click="() => this.copyText(sshPublicKey, 'key')">
+                                                <i t-att-class="state.copied === 'key' ? 'fa fa-check' : 'fa fa-clipboard'"/>
+                                            </button>
+                                        </div>
+                                        <span class="ic-form-note" t-if="isNew">
+                                            Paste it in your provider's SSH key field when you create the server.
+                                        </span>
+                                        <span class="ic-form-note">
+                                            If the server already exists, run this on it as the user above:
+                                        </span>
+                                        <div class="ic-copy-field">
+                                            <code class="ic-copy-field__value" t-esc="authorizedKeysCommand"/>
+                                            <button type="button" class="ic-copy-field__btn"
+                                                    title="Copy the command" aria-label="Copy the command"
+                                                    t-on-click="() => this.copyText(authorizedKeysCommand, 'command')">
+                                                <i t-att-class="state.copied === 'command' ? 'fa fa-check' : 'fa fa-clipboard'"/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="rl-frow rl-full" t-elif="isNew and state.form.key_source === 'generate'">
+                                        <t t-if="state.keyGenerateFailed">
+                                            <span class="ic-field-error">The key could not be generated.</span>
+                                            <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                                    t-on-click="() => this.generateKey()">Try again</button>
+                                        </t>
+                                        <span class="ic-form-note" t-else="">Generating a key…</span>
                                     </div>
                                 </t>
                             </div>

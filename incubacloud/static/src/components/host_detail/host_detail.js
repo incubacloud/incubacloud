@@ -41,7 +41,11 @@ const EMPTY_FORM = () => ({
     user:                     "",
     login_type:               "ssh_key",
     password:                 "",
+    // "generate": the panel makes the key; "upload": the person's own file.
+    key_source:               "generate",
     key_file:                 null,
+    // The generated private key, sealed by the server: the browser cannot read it.
+    generated_key:            "",
     description:              "",
     wildcard_domain:          "",
     traefik_panel_password:   "",
@@ -112,6 +116,12 @@ export class HostDetail extends Component {
             // whether one is stored, and describes the certificate.
             has_tls_default_key:       false,
             tls_default_info:          null,
+            // The public half of the key the panel generated for a new host,
+            // and whether generating it failed.
+            generatedPublicKey:        "",
+            keyGenerateFailed:         false,
+            // Which copy button just copied: "key", "command" or "".
+            copied:                    "",
             trusting_host_key:         false,
             // Code of the pluggable action being enqueued, "" when idle.
             actionBusy: "",
@@ -166,8 +176,18 @@ export class HostDetail extends Component {
             ],
             key_file: [
                 when(
-                    (form) => this.isNew && form.login_type === "ssh_key",
+                    (form) => this.isNew
+                        && form.login_type === "ssh_key"
+                        && form.key_source === "upload",
                     required(_t("SSH private key is required")),
+                ),
+            ],
+            generated_key: [
+                when(
+                    (form) => this.isNew
+                        && form.login_type === "ssh_key"
+                        && form.key_source === "generate",
+                    required(_t("No key has been generated. Try again, or upload your own.")),
                 ),
             ],
         }));
@@ -231,7 +251,8 @@ export class HostDetail extends Component {
         //    input box. Typing there without hitting Add must not mark
         //    the form as dirty — the persisted value is ``whitelist``,
         //    not the half-typed hostname.
-        const { newWhitelistEntry, ...persisted } = this.state.form;
+        //  - generated_key: the panel fills it in as the form opens.
+        const { newWhitelistEntry, generated_key, ...persisted } = this.state.form;
         return JSON.stringify({
             form: persisted,
             tags: (this.state.selectedTags || []).map(t => t.id).sort(),
@@ -258,6 +279,27 @@ export class HostDetail extends Component {
             this.state.allTags = tagsRes.tags || [];
         } catch (_e) { console.debug("Host tag catalog fetch skipped:", _e); }
         this._snapshotForm();
+        // Not awaited: the form opens without waiting for the key.
+        this.generateKey();
+    }
+
+    /**
+     * Ask the server for a new host's SSH key pair.
+     *
+     * Made as the form opens, before the host has an address, so the
+     * public half can go into the provider's form while the server is
+     * ordered. The private half arrives sealed and is only sent back
+     * with the host.
+     */
+    async generateKey() {
+        this.state.keyGenerateFailed = false;
+        try {
+            const pair = await rpc("/cloud/generate_host_key", {});
+            this.state.form.generated_key = pair.sealed_key;
+            this.state.generatedPublicKey = pair.public_key;
+        } catch (_e) {
+            this.state.keyGenerateFailed = true;
+        }
     }
 
     async loadHost() {
@@ -433,6 +475,47 @@ export class HostDetail extends Component {
     onPasswordChange(field, value) {
         this.state.form[field] = value;
 
+    }
+
+    /**
+     * The public key the Connection tab shows, or "".
+     *
+     * For a new host, the generated one; for a saved host, the half of
+     * the stored key, until a new file is picked to replace it.
+     */
+    get sshPublicKey() {
+        if (this.state.form.login_type !== "ssh_key") return "";
+        if (this.isNew) {
+            return this.state.form.key_source === "generate"
+                ? this.state.generatedPublicKey
+                : "";
+        }
+        if (this.state.form.key_file) return "";
+        return this.state.host?.ssh_public_key || "";
+    }
+
+    /** The command that adds the public key to a server's authorized keys. */
+    get authorizedKeysCommand() {
+        return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "${this.sshPublicKey}" >> ~/.ssh/authorized_keys`;
+    }
+
+    /**
+     * Copy *text* to the clipboard and mark *which* button did it.
+     *
+     * @param {string} text what to copy
+     * @param {string} which "key" or "command", for the button's check mark
+     */
+    async copyText(text, which) {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            this.env.toast?.error(_t("Could not copy. Select the text and copy it."));
+            return;
+        }
+        this.state.copied = which;
+        setTimeout(() => {
+            if (this.state.copied === which) this.state.copied = "";
+        }, 2000);
     }
 
     onKeyFileChange(ev) {
@@ -740,6 +823,10 @@ export class HostDetail extends Component {
         try {
             const vals = { ...this.state.form };
             delete vals.newWhitelistEntry;
+            // Only the key the person chose goes to the server.
+            if (vals.key_source === "generate") delete vals.key_file;
+            else delete vals.generated_key;
+            delete vals.key_source;
             vals.whitelist = Array.from(this.state.form.whitelist || []);
             if (vals.port) vals.port = parseInt(vals.port, 10);
             vals.http_conn_rate = parseInt(vals.http_conn_rate, 10) || 0;
@@ -773,14 +860,19 @@ export class HostDetail extends Component {
     }
 
     /**
-     * Re-read what the server now holds for the default certificate.
+     * Re-read what the server now holds for the default certificate and
+     * the SSH key.
      *
-     * After a save the pasted key must leave the form (it is never shown
-     * again) and the description must follow the certificate just stored.
+     * After a save the pasted keys must leave the form (they are never
+     * shown again), the description must follow the certificate just
+     * stored and the public key the SSH key just uploaded.
      */
     async _refreshDefaultCertificate() {
         const host = await rpc("/cloud/get_host", { host_id: this.props.host_id });
         this.state.form.tls_default_key = "";
+        this.state.form.key_file = null;
+        this.state.host.ssh_public_key = host.ssh_public_key || "";
+        this.state.has_key_file = host.has_key_file || false;
         this.state.has_tls_default_key = host.has_tls_default_key || false;
         this.state.tls_default_info = host.tls_default_info || null;
     }

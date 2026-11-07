@@ -852,6 +852,9 @@ class CrudMixin:
             'login_type': host.login_type,
             'has_password': _has_encrypted(host, 'password'),
             'has_key_file': _has_encrypted(host, 'key_file'),
+            # The public half only, derived from the stored key so it can
+            # be copied again; the private one never leaves the panel.
+            'ssh_public_key': host._ssh_public_key(),
             'has_known_hosts_key': _has_encrypted(host, 'known_hosts_key'),
             'known_hosts_fingerprint': host.known_hosts_fingerprint,
             'revoked_key_fingerprint': host.revoked_key_fingerprint or '',
@@ -963,10 +966,33 @@ class CrudMixin:
             'traefik_yml': defaults.get('traefik_yml', ''),
         }
 
+    @http.route(['/cloud/generate_host_key'], type='jsonrpc', auth='user')
+    def cloud_generate_host_key(self):
+        """Generate the SSH key of a host the new-host form is filling in.
+
+        Answers before the host exists, so its public half can go into the
+        provider's form while the server is ordered. The private half comes
+        back sealed (``cloud.host._generate_ssh_key``): the form sends it
+        back as ``generated_key`` to ``/cloud/create_host``.
+
+        :return: ``{'public_key': ..., 'sealed_key': ...}``
+        :rtype: dict
+        """
+        self._sec()._check_can_manage_hosts()
+        return request.env['cloud.host']._generate_ssh_key()
+
     @http.route(['/cloud/create_host'], type='json', auth='user')
     def cloud_create_host(self, vals):
         self._sec()._check_can_manage_hosts()
         safe = {k: v for k, v in vals.items() if k in self._HOST_ALLOWED}
+        # A key from /cloud/generate_host_key, for a key host given no
+        # file of its own: stored in ``key_file`` as an uploaded one.
+        sealed = vals.get('generated_key')
+        if (sealed and not safe.get('key_file')
+                and safe.get('login_type', 'ssh_key') == 'ssh_key'):
+            safe['key_file'] = request.env['cloud.host']._unseal_ssh_key(
+                sealed,
+            )
         if safe.get('port'):
             safe['port'] = int(safe['port'])
         if 'tag_ids' in safe:
