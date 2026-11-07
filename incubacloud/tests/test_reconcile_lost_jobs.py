@@ -473,7 +473,8 @@ class TestAStopBetweenTwoTicks(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         host = self.env["cloud.host"].create({
             "name": "ticks-host", "ip_address": "10.0.0.81", "user": "ubuntu",
             "wildcard_domain": "ticks.example.com",

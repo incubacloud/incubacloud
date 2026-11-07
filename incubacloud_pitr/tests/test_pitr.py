@@ -1478,7 +1478,8 @@ class TestCancellingARestore(_PitrCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.inst.write({
             "pitr_enabled": True, "pitr_state": "ok", "pitr_cluster_id": "77",
         })
