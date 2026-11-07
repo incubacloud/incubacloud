@@ -606,6 +606,41 @@ Layers 1–5 protect the **instances**; layer 6 protects the **panel**. All of t
 
 Each domain then says how its router gets a certificate (`cloud.instance.domain.cert_resolver`), and only the default defers to the host. **`auto`** (the default) asks the host per name: its held certificate when a CDN answers for the name *and* the certificate covers it, ACME otherwise. **`letsencrypt`**, **`custom`** (the held certificate, whatever the host) and **`none`** are explicit choices a host never overrides. Copier only ever receives the resolved value — `letsencrypt`, `true` or `false` — never `auto`. Every deploy, rebuild and warm claim writes one line per domain saying what its choice resolved to, and refuses `custom` on a host that holds no certificate — neither a default one nor one declared by hand in its `config.yml` (RB-12) — before anything reaches the host. The endpoint that saves an instance reads the options from the field itself: a copy of the list kept there once lacked `auto` and quietly rewrote it to `letsencrypt` on every save.
 
+### Odoo's information page, refused at the edge
+
+Odoo answers `/website/info` to anyone, with the list of installed apps and the exact version: a stranger learns which known flaws to try. Since 1.0.214 (decision of 7-nov-2026) every host's proxy refuses it on every instance, the existing ones included, before any instance sees the request.
+
+The refusal is a document of the proxy's own, `~/traefik/dynamic/ic_guard.yml` (`models/cloud_host_edge_guard.py`), the same on every host: a router on the `https` entrypoint whose only middleware is an `ipWhiteList` admitting no address (`255.255.255.255/32`), with `noop@internal` as its service, so Traefik answers 403 itself, as `direct-deny` does. Traefik 2.11 has no middleware that answers a fixed status, and a 404 would need a backend. Its rule covers the page bare, with a trailing path and behind a language code, which Odoo reroutes to the same page (`/es/website/info`):
+
+```
+Path(`/website/info`) || PathPrefix(`/website/info/`)
+  || Path(`/{lang:[A-Za-z0-9_@-]{2,20}}/website/info`)
+  || PathPrefix(`/{lang:[A-Za-z0-9_@-]{2,20}}/website/info/`)
+```
+
+Traefik matches the decoded, cleaned path, so `/website/%69nfo`, `/es/website/%69nfo` or `//website/info` are refused too (measured on 2.11.44 and 2.11.61). `http` redirects to `https` on the entrypoint, before any router. The entry points are named because Traefik 2.11 hangs a router without them on every one, `direct` and `metrics` included, and `tls: {}` keeps the `default` options, so the CDN's client certificate still applies. The underscore in the file's name keeps it apart from the `{name}.yml` documents a deployment layer writes beside it per tenant: a slug cannot hold one.
+
+| Router (on `https`) | Priority |
+|---|---|
+| The template's `main` | 1 |
+| The template's `/web` and `/website/info` router (`forbiddenCrawlers`) | 10 |
+| Login limit (`LOGIN_ROUTER_PRIORITY`) | 15 |
+| The template's websocket router | 20 |
+| Routers a deployment layer puts in front of an instance (parking, refusing, draining) | 30 to 1000 |
+| **Edge guard** (`EDGE_GUARD_PRIORITY`) | **2000** |
+| **An instance's exception** (`WEBSITE_INFO_EXCEPTION_PRIORITY`) | **2010** |
+| `direct-deny` (`direct` only) | 10000 |
+
+Above everything an instance carries, so a sleeping or parked instance refuses the page without being woken, and a draining one answers 403 instead of its restart page.
+
+**Who writes it.** Full Setup writes it before the proxy starts (`Install the edge guard`, with `--no-mount-check --no-probe`: the proxy neither runs nor mounts the directory yet), and the step is fatal: a Full Setup that did not write it fails, or every instance would serve the page with nothing saying so. A host set up before gets it from `push_edge_guard` (`scripts/edge_guard.sh`): the file replaced only when it differs, atomically, with `sudo -n` when the directory belongs to root; then the proxy must mount the directory (exit 3, the file stays written, a warning `edge_guard_not_mounted` until a run finds it mounted or a Full Setup) and is asked for the page on 127.0.0.1 (403 exits 0; another answer, or a handshake the CDN's client certificate refuses, exits 4, "not verified", only in the log). The proxy is never restarted: the file provider watches the directory. The update to 1.0.214 queues the job once per active host whose proxy the panel set up (`end-migrate.py`: `end`, so every module's hook has been loaded), never a Full Setup. The host Check stays read-only: its playbook exports the file's `sha256sum`, and the job is queued only when the file is missing or differs from the render. What a host's proxy reads is recorded on it (`edge_guard_shipped_hash`, `edge_guard_shipped_at`).
+
+**Who is left alone.** `cloud.host._edge_guard_leaves_alone()` is `False` in core. A deployment layer whose own panel is served by one of its hosts' proxies, set up by hand, can exclude that host there; the update, the Check, Full Setup and the job all ask it.
+
+**The exception.** An instance with `website_info_public` (off by default, not copied to a staging, audited) carries, in its compose labels, a router per group of its names (redirects aside) with the guard's rule behind its hosts, at 2010, to its own `-main` service and with the middlewares the template gives its `forbiddenCrawlers` router, with its TLS twin (`DeployInstanceExecutor._website_info_router_labels`). Labels rather than a file of the host's: they go with the containers, so a deploy, rebuild, move or revive writes them from the field, a rebuild with it off drops them and a deleted instance leaves nothing behind. While the instance sleeps or is stopped, its labels are gone and the guard answers. The config snapshot carries the field only while it is on, so the fleet's hashes did not move with the release; switching it shows the instance's changes for a rebuild.
+
+**What it costs.** Internal users lose the page too: the proxy does not know who is signed in. The refusals are counted under the guard's router and `noop@internal`, not under an instance. Instances with Website keep listing the page in their sitemap; crawlers get 403. The `direct` entrypoint does not carry the guard: it admits only the platform's own peers and refuses everything without a router of its own.
+
 ### The direct entrypoint
 
 Some traffic is the platform talking to itself: agents pushing metrics, panels calling their manager. A CDN in front of it adds a detour and a dependency, and the host behind the CDN refuses everything else on 443. So a host can open a second entrypoint, `direct`, on a port of its own (`direct_port`). It trusts no forwarded header, keys its rate limit on the connecting address, requires no client certificate (its TLS option is `direct`, not `default`) and admits only the addresses on the host's direct list, in nftables (`ic_direct_v4`, on the forward hook like the CDN sets) and in Traefik (`direct-peers`, the entrypoint's first middleware). A router at priority 10000 refuses the rest: Traefik 2.11 attaches a router without entry points to all of them. It answers 403, or 421 from Traefik 2.11.47 on, which refuses at that router before its list a connection negotiated with the `direct` options (the router has no domain, so it keeps `default`); hosts pull different 2.11 releases, so the probe of a direct name takes either (`GET:/flags:403,421`). Its certificates come from the `direct-dns` resolver; names on it must not be covered by the host's default certificate, or the ACME prune would retire them.
