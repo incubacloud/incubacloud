@@ -564,7 +564,7 @@ class TestTheActions(_PitrCase):
         """``pitr.sh`` recovers with ``recovery.signal``, from 12 on. No
         series runs below 12 any more, so a card that did stands in for a
         record stored on an older one."""
-        older = dict(_odoo_versions.VERSIONS["13.0"], postgres=("10", "16", "16"))
+        older = _odoo_versions.VERSIONS["13.0"] | {"postgres": ("10", "16", "16")}
         with patch.dict(_odoo_versions.VERSIONS, {"13.0": older}):
             self.inst.write({"odoo_version": "13.0", "postgres_version": "10"})
         self.assertFalse(self.inst._pitr_applicable())
