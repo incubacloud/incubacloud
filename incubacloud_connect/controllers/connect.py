@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-# Python 2 (9.0 and 10.0) as well as 3, and 9.0's ``openerp`` package: the
-# module is installed on every series a panel deploys, so it keeps to what
-# all of their interpreters and APIs have.
+# Python 2 (8.0 to 10.0) as well as 3, and the ``openerp`` package of 8.0
+# and 9.0: the module is installed on every series a panel deploys, so it
+# keeps to what all of their interpreters and APIs have.
 import errno
 import importlib
 import io
@@ -12,7 +12,7 @@ import time
 
 import werkzeug.utils
 
-# ``openerp`` first: on 9.0, ``import odoo`` finds the source tree's
+# ``openerp`` first: on 8.0 and 9.0, ``import odoo`` finds the source tree's
 # ``odoo.py`` launcher instead. From 10.0 on there is no ``openerp``.
 try:
     import openerp as odoo
@@ -30,6 +30,10 @@ _logger = logging.getLogger(__name__)
 _TOKEN_DIR = '/tmp/ic_tokens'
 _TOKEN_TTL = 60  # seconds
 _MAJOR = int(odoo.release.version_info[0])
+
+if _MAJOR < 9:
+    # 8.0: the session holds a password of its own (``session_password``).
+    from ..models.res_users import password_for
 
 
 class _suppress(object):
@@ -172,7 +176,7 @@ class IncubaCloudConnectController(http.Controller):
         methods=['GET'],
     )
     def ic_login(self, t=None, **_kw):
-        """Magic-link login — Odoo 9.0 through 20.0 (see ``controllers/__init__``).
+        """Magic-link login — Odoo 8.0 through 20.0 (see ``controllers/__init__``).
 
         Validates the one-time token written by the IncubaCloud panel,
         then uses Odoo's own session API to authenticate the user and
@@ -186,7 +190,8 @@ class IncubaCloudConnectController(http.Controller):
         - Every login gets a new session id (``_renew_sid``): none the
           browser brought, logged in or not, is reused
         - Session token is computed by Odoo itself for that new id
-          (v9+; v7-v8 have none)
+          (v9+); v8 has none, and its session holds a signed password
+          of its own instead (``models/session_password``)
         - The session's context is the user's own (``_user_context``,
           v8+): nothing of the session's previous user is kept
         """
@@ -220,7 +225,8 @@ class IncubaCloudConnectController(http.Controller):
 
         # Verify user, renew the sid and compute the session token for
         # the new sid using Odoo's own method (v16+: at save time).
-        # _compute_session_token exists since v9; v7-v8 skip it.
+        # _compute_session_token exists since v9; v8 gets its session
+        # password instead.
         try:
             registry = _registry(db)
             with registry.cursor() as cr:
@@ -230,15 +236,12 @@ class IncubaCloudConnectController(http.Controller):
                     return Response('User not found.', status=400)
                 login = user.login
                 # The user's own language and timezone, not those of
-                # whoever used the browser's session before (8+).
-                context = (
-                    _user_context(
-                        odoo_api.Environment(cr, uid, {}), uid,
-                        request.session,
-                    )
-                    if _MAJOR >= 8 else None
+                # whoever used the browser's session before.
+                context = _user_context(
+                    odoo_api.Environment(cr, uid, {}), uid, request.session,
                 )
                 session_token = None
+                password = password_for(cr, uid) if _MAJOR < 9 else None
                 if not _renew_sid(request.session) and hasattr(
                     user, '_compute_session_token',
                 ):
@@ -269,8 +272,9 @@ class IncubaCloudConnectController(http.Controller):
         request.session['db'] = db
         if session_token is not None:
             request.session['session_token'] = session_token
-        if context is not None:
-            request.session['context'] = context
+        if password is not None:
+            request.session['password'] = password
+        request.session['context'] = context
 
         # Redirect admins to /odoo (v18+), everyone else to /web
         if _MAJOR >= 18:
