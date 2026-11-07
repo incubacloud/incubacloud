@@ -29,6 +29,18 @@ shift 2
 # the build for minutes (5-nov-2026).
 HEADS_TIMEOUT=20
 
+# Seconds set-system-params waits for ``db`` to accept connections. A
+# rebuild and a plan change run it right after ``docker compose up -d``
+# (``--remove-orphans``), which may have just recreated ``db``, and
+# nothing in between waits for it: ``odoo`` depends on ``db`` without
+# ``condition: service_healthy``. psql then met "the database system is
+# starting up" about once in 65 recreations and failed a job whose change
+# was already on the host (QA, 7-nov-2026). A recreated database answers
+# within seconds; 60 is the bound every other wait on ``db`` uses
+# (move_steps.sh, the tenant rebuild's parked database).
+# IC_DB_WAIT_SECONDS overrides it, so a test need not wait a minute.
+DB_WAIT_SECONDS="${IC_DB_WAIT_SECONDS:-60}"
+
 # Print the commit(s) <ref> names at <url>, space-separated, or nothing.
 #
 # Usage: remote_ref_head <git_home> <url> <ref>
@@ -223,8 +235,13 @@ print(f'INCUBACLOUD_SECRET_KEY={Fernet.generate_key().decode()}')" \
         # boot sees the right public URL. Guarded by a DO block so it is a
         # no-op if the DB was not initialised. ``base_url_sql`` arrives
         # already SQL-escaped by the caller (defence in depth on top of the
-        # hostname regex constraint).
+        # hostname regex constraint). A rebuild runs it after the stack
+        # is up again, ``db`` perhaps just recreated: it is waited for
+        # first (see DB_WAIT_SECONDS).
         cd "$dir"
+        timeout "$DB_WAIT_SECONDS" sh -c \
+            'until docker compose exec -T db pg_isready -q; do sleep 1; done' \
+            || ic_die "db did not accept connections within ${DB_WAIT_SECONDS} s"
         docker compose exec -T db psql -U "$pg_user" -d "$dbname" -c \
 "DO \$\$ BEGIN IF EXISTS (SELECT FROM information_schema.tables WHERE \
 table_schema='public' AND table_name='ir_config_parameter') THEN \

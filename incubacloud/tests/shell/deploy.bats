@@ -167,6 +167,49 @@ STUB
     [[ "$(cat "$CALLS")" == *"https://x.io"* ]]
 }
 
+# A docker whose ``pg_isready`` in ``db`` says "rejecting connections"
+# (exit 1, a database still starting up) $1 times before it answers, or
+# every time when $1 is ``never``. Every other call succeeds.
+_docker_db_starting() {
+    export PG_FAILS="$TMP/pg_fails"
+    printf '%s\n' "$1" > "$PG_FAILS"
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"exec -T db pg_isready"*)
+        left="$(cat "$PG_FAILS")"
+        [ "$left" = never ] && exit 1
+        if [ "$left" -gt 0 ]; then
+            echo $((left - 1)) > "$PG_FAILS"
+            exit 1
+        fi
+        ;;
+esac
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+}
+
+@test "set-system-params waits for a db still starting up before psql" {
+    _docker_db_starting 2
+    run bash "$SCRIPT" set-system-params "$DIR" odoo prod "https://x.io" "http://localhost:8069"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'exec -T db pg_isready' "$CALLS")" -eq 3 ]
+    last_ready="$(grep -n 'exec -T db pg_isready' "$CALLS" | tail -1 | cut -d: -f1)"
+    psql_line="$(grep -n 'exec -T db psql' "$CALLS" | head -1 | cut -d: -f1)"
+    [ -n "$psql_line" ]
+    [ "$last_ready" -lt "$psql_line" ]
+}
+
+@test "set-system-params fails without psql when db never accepts connections" {
+    _docker_db_starting never
+    IC_DB_WAIT_SECONDS=2 run bash "$SCRIPT" set-system-params "$DIR" odoo prod "https://x.io" "http://localhost:8069"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"db did not accept connections within 2 s"* ]]
+    [ "$(grep -c 'exec -T db psql' "$CALLS")" -eq 0 ]
+}
+
 @test "an unknown operation is refused" {
     run bash "$SCRIPT" explode "$DIR"
     [ "$status" -eq 1 ]
