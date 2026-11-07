@@ -9,7 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.215] — 2026-11-07
 
 The update needs no migration: no instance of production runs 7.0 or
-PostgreSQL 9.6, which the panel no longer knows. `incubacloud_connect` 1.0.3
+PostgreSQL 9.6, which the panel no longer knows, nor any series from 8.0 to
+12.0, which no longer run below PostgreSQL 12. `incubacloud_connect` 1.0.3
 reaches an existing instance with its next rebuild.
 
 ### Changed
@@ -18,12 +19,16 @@ reaches an existing instance with its next rebuild.
   7-nov-2026). **7.0 is retired**: its click-odoo can neither dump, restore nor
   update its database, so its card is gone from `_odoo_versions.py` and no
   picker, field or tool names it. **PostgreSQL 9.6 is gone** too: doodba's
-  template renders no backup service for it. 8.0 to 10.0, for which the
-  template allows 9.6 alone, run on 10, the nearest major with one. Copier would
-  refuse it, so the copier run of their deploy and rebuild reads a settings file
-  whose defaults give the template's `pg_per_odoo` that range
-  (`postgres_beyond_template`, `IC_COPIER_SETTINGS`): an answer would not reach
-  the replay that `copier update` starts with. 11.0 and 12.0 run on 10 to 13.
+  template renders no backup service for it. **No series runs below
+  PostgreSQL 12**, the first that continuous recovery serves: 8.0 to 10.0, for
+  which the template allows 9.6 alone, run on 12 alone, and 11.0 and 12.0 on 12
+  to 13, with 13 by default. Each was checked on 12: its database created, its
+  modules installed and updated, copied and restored with click-odoo and with
+  the backup service, its login served, and recovered to a point in time.
+  Copier would refuse 12 for 8.0 to 10.0, so the copier run of their deploy and
+  rebuild reads a settings file whose defaults give the template's
+  `pg_per_odoo` that range (`postgres_beyond_template`, `IC_COPIER_SETTINGS`):
+  an answer would not reach the replay that `copier update` starts with.
   The rebuild's boot test no longer turns replication on nor asks
   `pg_basebackup` for `--no-sync`, which only 9.6 lacked.
 

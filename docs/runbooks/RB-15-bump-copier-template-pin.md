@@ -68,11 +68,11 @@ Then verify, at minimum:
   routers in the same release: a mismatch does not break the site —
   Traefik drops the login router and the login falls back to the
   template's own — but the login limit is lost until then.
-- a series with `postgres_beyond_template` (8.0 to 10.0 on PostgreSQL 10)
+- a series with `postgres_beyond_template` (8.0 to 10.0 on PostgreSQL 12)
   still renders, its deploy and its `copier update`, with the copier
   settings file `_odoo_versions.copier_defaults` gives it: the template
   must still check `postgres_version` against `pg_per_odoo[odoo_version]`
-  with `oldest` and `latest`, and render the backup service from 10.
+  with `oldest` and `latest`, and render the backup service on 12.
 
 ## 3. Canary on staging
 
