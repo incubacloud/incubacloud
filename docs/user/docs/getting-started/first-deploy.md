@@ -36,7 +36,8 @@ a new instance takes its project's, and keeps it if the project changes later. T
 version influences which modules are available and which Postgres major versions you
 can pick under the form's **Database** tab: 14 to 18 for Odoo 16.0 to 19.0, 16 to 18
 for Odoo 20.0, with 17 by default. Older versions run on the PostgreSQL that Odoo
-recommends for them: 10 for Odoo 8.0 to 10.0, 10 to 13 for 11.0 and 12.0.
+recommends for them; Odoo 8.0 to 12.0 on nothing older than 12, the first that
+continuous recovery works on: 12 for 8.0 to 10.0, 12 or 13 for 11.0 and 12.0.
 
 If your project has a connected repo with `.copier-answers.yml`, we pre-fill the
 project's version from there; you can still pick another in the project's form.
