@@ -14499,6 +14499,16 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
+"This job had finished and its outcome was saved when the process running it "
+"was lost: it is closed as done, and nothing is undone."
+msgstr ""
+"Este trabajo había terminado y su resultado quedó guardado cuando se perdió "
+"el proceso que lo ejecutaba: se cierra como terminado y no se deshace nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
 "This job waits for an alert and starts by itself once it is resolved. "
 "Resolve it in Alerts."
 msgstr ""
