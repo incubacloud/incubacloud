@@ -20,7 +20,7 @@ from odoo import http
 from odoo.service import security
 from odoo.tests import get_db_name, new_test_user, tagged
 from odoo.tests.common import HttpCase
-from odoo.tests.test_cursor import TestCursor
+from odoo.sql_db import TestCursor
 
 from odoo.addons.incubacloud_connect.controllers import connect
 
