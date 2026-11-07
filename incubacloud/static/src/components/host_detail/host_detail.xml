@@ -638,7 +638,8 @@
                                     <div class="rl-frow rl-full ic-host-pubkey" t-if="sshPublicKey">
                                         <label>Public key</label>
                                         <div class="ic-copy-field">
-                                            <code class="ic-copy-field__value" t-esc="sshPublicKey"/>
+                                            <code class="ic-copy-field__value" t-esc="sshPublicKey"
+                                                  t-on-copy="() => this.markKeyShared()"/>
                                             <button type="button" class="ic-copy-field__btn"
                                                     title="Copy the public key" aria-label="Copy the public key"
                                                     t-on-click="() => this.copyText(sshPublicKey, 'key')">
@@ -648,11 +649,15 @@
                                         <span class="ic-form-note" t-if="isNew">
                                             Paste it in your provider's SSH key field when you create the server.
                                         </span>
+                                        <span class="ic-form-note" t-if="isNew">
+                                            Keep this page open until you create the host.
+                                        </span>
                                         <span class="ic-form-note">
                                             If the server already exists, run this on it as the user above:
                                         </span>
                                         <div class="ic-copy-field">
-                                            <code class="ic-copy-field__value" t-esc="authorizedKeysCommand"/>
+                                            <code class="ic-copy-field__value" t-esc="authorizedKeysCommand"
+                                                  t-on-copy="() => this.markKeyShared()"/>
                                             <button type="button" class="ic-copy-field__btn"
                                                     title="Copy the command" aria-label="Copy the command"
                                                     t-on-click="() => this.copyText(authorizedKeysCommand, 'command')">

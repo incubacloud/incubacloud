@@ -149,15 +149,19 @@ def encrypt_value(value, env=None):
     return f"{_ENCRYPTED_PREFIX}{token}"
 
 
-def decrypt_value(value, env=None):
+def decrypt_value(value, env=None, ttl=None):
     """Decrypt a ``enc:<base64>`` value and return plain text.
 
     Legacy plain-text values (no ``enc:`` prefix) are returned unchanged —
     migration code relies on this pass-through behaviour.
 
+    *ttl*, in seconds, refuses a value encrypted longer ago than that (the
+    time Fernet stamps in every token); None accepts any age.
+
     Raises:
         IncubacloudCryptoError: when the secret key is missing or invalid.
-        ValueError: when decryption fails (key rotated or data corrupted).
+        ValueError: when decryption fails (key rotated, data corrupted or,
+            with *ttl*, the value too old).
     """
     if not value:
         return value
@@ -168,7 +172,7 @@ def decrypt_value(value, env=None):
         raise IncubacloudCryptoError(_key_error_message())
     try:
         token = value[len(_ENCRYPTED_PREFIX):].encode()
-        return f.decrypt(token).decode()
+        return f.decrypt(token, ttl=ttl).decode()
     except Exception as e:
         raise ValueError(
             "Failed to decrypt stored secret; the encryption key may have "

