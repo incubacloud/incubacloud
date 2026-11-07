@@ -464,3 +464,18 @@ STUB
     [ "$status" -eq 3 ]
     [ ! -e "$(cat "$TMP/cache")" ]
 }
+
+@test "ic_copier: the settings file the panel names reaches copier" {
+    export HOME="$TMP/home"
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/copier" <<STUB
+#!/bin/bash
+echo "\${COPIER_SETTINGS_PATH:-none} \$*" > "$TMP/seen"
+STUB
+    chmod +x "$HOME/.local/bin/copier"
+    IC_COPIER_SETTINGS="$TMP/copier-settings.yml" ic_copier update --defaults
+    [ "$(cat "$TMP/seen")" = "$TMP/copier-settings.yml update --defaults" ]
+    unset COPIER_SETTINGS_PATH
+    ic_copier update --defaults
+    [ "$(cat "$TMP/seen")" = "none update --defaults" ]
+}

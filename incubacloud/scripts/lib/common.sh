@@ -61,11 +61,21 @@ ic_expand_home() {
 # and every run already asks GitHub for what is new. Copier 9.15, on the oldest
 # hosts, has no cache and ignores the variable.
 #
+# With IC_COPIER_SETTINGS naming a file, copier reads its settings from it
+# (COPIER_SETTINGS_PATH): the panel writes there the defaults of questions the
+# template never asks, which reach the render and, on an update, the replay of
+# the project's last one (``_odoo_versions.copier_defaults``).
+#
 # Arguments: what copier takes. Returns copier's exit status.
 ic_copier() {
     local cache status=0
+    local -a settings=()
+    if [ -n "${IC_COPIER_SETTINGS:-}" ]; then
+        settings=(env "COPIER_SETTINGS_PATH=$IC_COPIER_SETTINGS")
+    fi
     cache="$(mktemp -d -t ic-copier-cache.XXXXXXXX)"
-    COPIER_CACHE_DIR="$cache" "$HOME/.local/bin/copier" "$@" || status=$?
+    COPIER_CACHE_DIR="$cache" "${settings[@]}" "$HOME/.local/bin/copier" "$@" \
+        || status=$?
     rm -rf "$cache"
     return "$status"
 }

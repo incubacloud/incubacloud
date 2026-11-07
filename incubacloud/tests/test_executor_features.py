@@ -304,7 +304,7 @@ class TestDeployCommandsChecksums(BaseCase):
         )
 
     def test_an_old_click_odoo_stores_them_with_a_plain_run(self):
-        """click-odoo-contrib 1.12, on 7.0 to 10.0, has no such option."""
+        """click-odoo-contrib 1.12, on 8.0 to 10.0, has no such option."""
         self.assertEqual(
             self._container_run("  --list-only  Log the list"), "--database prod",
         )

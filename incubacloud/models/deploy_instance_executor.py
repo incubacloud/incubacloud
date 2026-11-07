@@ -18,7 +18,7 @@ from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..github.http_utils import safe_urlopen
-from ._odoo_versions import VERSIONS, debian_archive
+from ._odoo_versions import VERSIONS, copier_defaults, debian_archive
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -512,6 +512,35 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             settings.copier_template_ref or "",
         )
 
+    #: The copier settings file of the run (``_copier_settings_env``).
+    _COPIER_SETTINGS = "copier-settings.yml"
+
+    def _copier_settings_content(self):
+        """Return the copier settings file of this instance's series, or None.
+
+        Its defaults (``_odoo_versions.copier_defaults``): what a question
+        the template never asks takes, here the PostgreSQL range of 8.0 to
+        10.0, which the template's own does not hold. None for every other
+        series, which runs copier as before.
+
+        :rtype: str
+        """
+        defaults = copier_defaults(self._inst().odoo_version)
+        if not defaults:
+            return None
+        return yaml.dump({"defaults": defaults}, default_flow_style=False)
+
+    def _copier_settings_env(self):
+        """Return the environment that points ``ic_copier`` at the settings file.
+
+        :return: ``{"IC_COPIER_SETTINGS": path}`` where the upload wrote one
+            (``_copier_settings_content``), else empty.
+        :rtype: dict
+        """
+        if self._copier_settings_content() is None:
+            return {}
+        return {"IC_COPIER_SETTINGS": self._tmp(self._COPIER_SETTINGS)}
+
     def _build_answers(self):
         """Return a dict with all copier template answers.
 
@@ -765,9 +794,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _debian_archive_steps(self, d):
         """Return the step that lets an image on an archived Debian build.
 
-        Only for a series whose card says ``debian_archive`` (7.0 to 10.0,
+        Only for a series whose card says ``debian_archive`` (8.0 to 10.0,
         on Debian 8): ``deploy.sh debian-archive`` puts apt's switch to
-        archive.debian.org first in the image's build. Any other series
+        Freexian's Extended LTS first in the image's build. Any other series
         gets no step, and its deploy and rebuild run as they did; so does
         a value the table does not know.
 
@@ -1574,6 +1603,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         resource_override = self._resource_override_content()
         if resource_override is not None:
             files[self._tmp("override.yml")] = resource_override
+        copier_settings = self._copier_settings_content()
+        if copier_settings is not None:
+            files[self._tmp(self._COPIER_SETTINGS)] = copier_settings
 
         await self._upload_private_files(transport, private)
         await self._upload_files(transport, files)
@@ -1858,6 +1890,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                         "copier-deploy", d, tmp_answers,
                         template_url, template_ref,
                     ],
+                    env=self._copier_settings_env(),
                 ),
             ),
             # 2. Fix docker-compose.yml symlink: copier points to devel.yaml;
@@ -1992,10 +2025,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "Write apt.txt",
                 f"mv {tmp_apt} {d}/odoo/custom/dependencies/apt.txt",
             ),
-            # 8. Remove the answers file (others were moved above)
+            # 8. Remove the answers and copier settings files (others were
+            #    moved above).
             (
                 "Remove temp files",
-                f"rm -f {tmp_answers}",
+                f"rm -f {tmp_answers} {self._tmp(self._COPIER_SETTINGS)}",
             ),
             # 8b. Empty Docker's build cache first when the host's disk
             #     is low: a build that runs out of disk fails half-way.
@@ -2028,7 +2062,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             ),
             # 12. Store module checksums baseline so future rebuilds
             #     can detect which modules changed via click-odoo-update.
-            #     The click-odoo-contrib of 7.0 to 10.0's images (1.12, the
+            #     The click-odoo-contrib of 8.0 to 10.0's images (1.12, the
             #     last on Python 2) has no ``--only-compute-hashes``: there
             #     a plain run stores them, after updating the modules of a
             #     database that has just been created (QA of the series,

@@ -200,7 +200,7 @@ class CloudInstance(models.Model):
 
         It writes ``recovery.signal``, from 12 on; before, recovery was
         another file and other settings. That leaves out the series that
-        run only on an older one, 7.0 to 10.0.
+        run only on an older one, 8.0 to 10.0.
 
         :rtype: bool
         """

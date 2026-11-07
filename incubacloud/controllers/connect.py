@@ -38,7 +38,7 @@ _IS_ADMIN_SQL = (
     "AND d.name IN ('group_system', 'group_erp_manager')))"
 )
 
-# Both scripts run on Python 2 too: 7.0 to 10.0 images have no python3
+# Both scripts run on Python 2 too: 8.0 to 10.0 images have no python3
 # (``_CONTAINER_PYTHON``). Hence the coding line (a login may not be
 # ASCII), and nothing newer than 2.7 has.
 _GET_USERS_SCRIPT = """\
@@ -125,7 +125,7 @@ async def _get_container_id(conn, inst_dir, yaml_file):
 
 
 #: The interpreter the scripts run with inside the odoo container: the
-#: one that has psycopg2, Odoo's own. python3 from 11.0 on; 7.0 to 10.0
+#: one that has psycopg2, Odoo's own. python3 from 11.0 on; 8.0 to 10.0
 #: images have Python 2 alone (doodba, QA of the series, 7-nov-2026).
 _CONTAINER_PYTHON = (
     "sh -c 'if python3 -c \"import psycopg2\" 2>/dev/null;"
