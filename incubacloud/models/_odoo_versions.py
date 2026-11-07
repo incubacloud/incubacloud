@@ -44,6 +44,14 @@ Fields of a card:
     (``scripts/doodba/debian_archive.sh``, put in the image's build by
     ``deploy.sh debian-archive``). Without it the image of 7.0 to 10.0,
     on Debian 8, does not build (QA of the series, 7-nov-2026).
+``headless``
+    The option, one of ``HEADLESS_FLAGS``, that runs the series' Odoo
+    with no server listening, so a one-off ``odoo -i`` never takes the
+    port of an Odoo sharing its network: ``--no-http`` from 11.0, where
+    Odoo's ``tools/config.py`` adds it, ``--no-xmlrpc`` before. Handed to
+    ``restore.sh ensure-connect`` by its callers, not read from
+    ``odoo --help``: from 19.0 the help lists the commands, not the
+    server's options (review of the series' fixes, 7-nov-2026).
 """
 import re
 
@@ -58,6 +66,9 @@ DB_TOOLS = ("click-odoo", "odoo-db")
 #: 16.0). ``sql``: older series have no such thing, and
 #: ``scripts/lib/common.sh`` turns off what would reach the outside.
 NEUTRALIZERS = ("odoo", "sql")
+
+#: The options that run Odoo with no server listening (``headless``).
+HEADLESS_FLAGS = ("--no-http", "--no-xmlrpc")
 
 #: The PostgreSQL majors the panel can run, oldest first.
 POSTGRES_MAJORS = (
@@ -75,7 +86,7 @@ _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 def _card(
     offered, postgres, db_tool, template_min, neutralize="odoo",
-    debian_archive=False,
+    debian_archive=False, headless="--no-http",
 ):
     """Build one series' card, checking its values.
 
@@ -86,6 +97,7 @@ def _card(
     :param template_min: ``vX.Y.Z`` or None.
     :param str neutralize: one of ``NEUTRALIZERS``.
     :param bool debian_archive: see the module docstring.
+    :param str headless: one of ``HEADLESS_FLAGS``.
     :rtype: dict
     """
     lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
@@ -95,6 +107,8 @@ def _card(
         raise ValueError(f"unknown db tool {db_tool!r}")
     if neutralize not in NEUTRALIZERS:
         raise ValueError(f"unknown neutralizer {neutralize!r}")
+    if headless not in HEADLESS_FLAGS:
+        raise ValueError(f"unknown headless option {headless!r}")
     if template_min is not None and not _TEMPLATE_TAG_RE.match(template_min):
         raise ValueError(f"template_min must be a vX.Y.Z tag, got {template_min!r}")
     return {
@@ -104,6 +118,7 @@ def _card(
         "neutralize": neutralize,
         "template_min": template_min,
         "debian_archive": bool(debian_archive),
+        "headless": headless,
     }
 
 
@@ -117,22 +132,23 @@ VERSIONS = {
     # can still deploy one, which is how that run tests it.
     # 7.0 to 15.0 run on what the doodba template allows each (v10.0.8's
     # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
-    # 7.0 to 10.0 are on Debian 8, gone from the mirrors (7-nov-2026).
+    # 7.0 to 10.0 are on Debian 8, gone from the mirrors, and have no
+    # ``--no-http`` (7-nov-2026).
     "7.0": _card(
         False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
-        debian_archive=True,
+        debian_archive=True, headless="--no-xmlrpc",
     ),
     "8.0": _card(
         False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
-        debian_archive=True,
+        debian_archive=True, headless="--no-xmlrpc",
     ),
     "9.0": _card(
         False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
-        debian_archive=True,
+        debian_archive=True, headless="--no-xmlrpc",
     ),
     "10.0": _card(
         False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql",
-        debian_archive=True,
+        debian_archive=True, headless="--no-xmlrpc",
     ),
     "11.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
     "12.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
@@ -288,6 +304,20 @@ def debian_archive(version):
     :rtype: bool
     """
     return card(version)["debian_archive"]
+
+
+def headless_flag(version):
+    """Return the option that runs *version*'s Odoo with no server listening.
+
+    :param version: a series; empty or one the table does not know
+        counts as the newest series' option, as ``postgres_has_backup``
+        does with its own default.
+    :return: one of ``HEADLESS_FLAGS``.
+    :rtype: str
+    """
+    if version not in VERSIONS:
+        return HEADLESS_FLAGS[0]
+    return card(version)["headless"]
 
 
 def script_env(version):

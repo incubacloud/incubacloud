@@ -23,7 +23,7 @@ from ..restore_space import (
     room_refusal,
 )
 from ..restore_staging import is_staged_upload
-from ._odoo_versions import script_env
+from ._odoo_versions import headless_flag, script_env
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
@@ -1080,7 +1080,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "Ensure incubacloud_connect",
                 self.run_script(
                     "restore.sh",
-                    ["ensure-connect", d, inst.postgres_username or "odoo", dbname],
+                    [
+                        "ensure-connect", d, inst.postgres_username or "odoo",
+                        dbname, headless_flag(inst.odoo_version),
+                    ],
                 ),
             ),
             (

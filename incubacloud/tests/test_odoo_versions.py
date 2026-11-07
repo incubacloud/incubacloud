@@ -27,6 +27,11 @@ from odoo.addons.incubacloud.tests.test_executor_features import (
     _make_deploy_executor,
     _make_rebuild_executor,
 )
+from odoo.addons.incubacloud.tests.test_refresh_from_production import (
+    _argv,
+    _find,
+    _make_restore_executor,
+)
 
 
 class TestTheSeriesCards(BaseCase):
@@ -40,21 +45,25 @@ class TestTheSeriesCards(BaseCase):
         """
         def card(
             postgres, neutralize="odoo", db_tool="click-odoo", template=None,
-            offered=False, debian_archive=False,
+            offered=False, debian_archive=False, headless="--no-http",
         ):
             return {
                 "offered": offered, "postgres": postgres, "db_tool": db_tool,
                 "neutralize": neutralize, "template_min": template,
-                "debian_archive": debian_archive,
+                "debian_archive": debian_archive, "headless": headless,
             }
 
         expected = {
             # What doodba's template v10.0.8 allows each (its copier.yml),
             # and no neutralization of Odoo's own before 16.0. 7.0 to 10.0
-            # are built on Debian 8, gone from the mirrors (7-nov-2026).
+            # are built on Debian 8, gone from the mirrors, and have no
+            # ``--no-http`` (7-nov-2026).
             **dict.fromkeys(
                 ("7.0", "8.0", "9.0", "10.0"),
-                card(("9.6", "9.6", "9.6"), "sql", debian_archive=True),
+                card(
+                    ("9.6", "9.6", "9.6"), "sql", debian_archive=True,
+                    headless="--no-xmlrpc",
+                ),
             ),
             **dict.fromkeys(("11.0", "12.0"), card(("9.6", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
@@ -78,10 +87,11 @@ class TestTheSeriesCards(BaseCase):
                     set(card),
                     {
                         "offered", "postgres", "db_tool", "neutralize",
-                        "template_min", "debian_archive",
+                        "template_min", "debian_archive", "headless",
                     },
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
+                self.assertIn(card["headless"], versions.HEADLESS_FLAGS)
                 self.assertIn(card["neutralize"], versions.NEUTRALIZERS)
                 lowest, highest, default = (
                     versions.POSTGRES_MAJORS.index(p) for p in card["postgres"]
@@ -96,6 +106,10 @@ class TestTheSeriesCards(BaseCase):
             versions._card(True, ("16", "18", "15"), "click-odoo", None)
         with self.assertRaises(ValueError):
             versions._card(True, ("14", "18", "17"), "click-odoo", "10")
+        with self.assertRaises(ValueError):
+            versions._card(
+                True, ("14", "18", "17"), "click-odoo", None, headless="--dev",
+            )
 
     def test_the_field_knows_every_series_the_pickers_the_offered(self):
         """A series that stops being offered stays a valid value of the
@@ -172,6 +186,60 @@ class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
             for version in ("11.0", "15.0", "18.0", "19.0", "20.0", None):
                 with self.subTest(executor=make.__name__, version=version):
                     self.assertNotIn(self.LABEL, self._steps(make, version))
+
+
+class TestTheConnectModuleInstallsHeadless(BaseCase):
+    """``restore.sh ensure-connect`` gets the series' headless option.
+
+    The panel hands it from the card: Odoo 19's ``odoo --help`` lists the
+    commands, not the server's options, so the script cannot read it
+    there, and 10.0 refuses the ``--no-http`` of 11.0 and later.
+    """
+
+    LABEL = "Ensure incubacloud_connect"
+    EXPECTED = (
+        ("10.0", "--no-xmlrpc"), ("11.0", "--no-http"),
+        ("18.0", "--no-http"), ("19.0", "--no-http"),
+    )
+
+    def _restore_argv(self, version):
+        """The step's script arguments of a restore into a *version* instance.
+
+        :rtype: list
+        """
+        ex = _make_restore_executor({"mode": "from_job"})
+        ex.job.instance_id.odoo_version = version
+        return _argv(_find(ex.get_commands(), self.LABEL))[2:]
+
+    def _rebuild_argv(self, version):
+        """The step's script arguments of a rebuild of a *version* instance.
+
+        :rtype: list
+        """
+        cmds = _make_rebuild_executor(odoo_version=version).get_commands()
+        return _argv(_find(cmds, self.LABEL))[2:]
+
+    def test_a_restore_hands_the_series_option(self):
+        for version, flag in self.EXPECTED:
+            with self.subTest(version=version):
+                self.assertEqual(
+                    self._restore_argv(version),
+                    ["ensure-connect", "~/projects/demo-inst", "odoo", "prod", flag],
+                )
+
+    def test_a_rebuild_hands_the_series_option(self):
+        for version, flag in self.EXPECTED:
+            with self.subTest(version=version):
+                self.assertEqual(
+                    self._rebuild_argv(version),
+                    ["ensure-connect", "~/projects/test-inst", "odoo", "prod", flag],
+                )
+
+    def test_a_series_the_table_does_not_know_gets_the_newest_option(self):
+        for version in (None, False, "", "6.1"):
+            with self.subTest(version=version):
+                self.assertEqual(versions.headless_flag(version), "--no-http")
+        self.assertEqual(self._rebuild_argv(None)[-1], "--no-http")
 
 
 class TestTheTemplateFloor(BaseCase):
