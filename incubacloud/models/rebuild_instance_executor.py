@@ -23,6 +23,7 @@ from odoo import fields
 from odoo.addons.queue_job.exception import RetryableJobError
 from .host_build_lock import HostBuildLockMixin
 
+from ._odoo_versions import headless_flag
 from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
 from .docker_prune_executor import build_cache_prune_if_low
@@ -324,6 +325,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                         "ensure-connect", d,
                         inst.postgres_username or "odoo",
                         inst.postgres_dbname or "prod",
+                        headless_flag(inst.odoo_version),
                     ],
                 ),
             ),

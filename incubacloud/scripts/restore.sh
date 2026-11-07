@@ -6,7 +6,7 @@
 #   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize] [copy|move]
 #   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   restore.sh use-mail-catcher <dir> <pg_user> <dbname>
-#   restore.sh ensure-connect <dir> <dbname>
+#   restore.sh ensure-connect <dir> <pg_user> <dbname> <headless>
 #
 # ``restore-db`` takes an optional 4th argument (0/1, default 0): with 1
 # it adds --neutralize, which runs every installed module's
@@ -42,6 +42,12 @@
 # discovered dynamically (surviving image upgrades) and the chown/chmod
 # use ``sudo`` so it works when the SSH user is a non-root sudoer, which
 # every hardened host is.
+#
+# ``ensure-connect`` installs incubacloud_connect when the database lacks
+# it, with an Odoo that serves nothing. ``headless`` is the option that
+# does that on the instance's series (``--no-http`` from 11.0,
+# ``--no-xmlrpc`` before), from the series' card in the panel: the
+# help of Odoo 19 and later no longer lists the server's options.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -131,8 +137,13 @@ AND smtp_host='invalid'; \
 END IF; END \$\$;"
         ;;
     ensure-connect)
-        ic_require_args 2 "$#" "restore.sh ensure-connect <dir> <pg_user> <dbname>"
-        pg_user="$1"; dbname="$2"
+        ic_require_args 3 "$#" \
+            "restore.sh ensure-connect <dir> <pg_user> <dbname> <headless>"
+        pg_user="$1"; dbname="$2"; headless="$3"
+        case "$headless" in
+            --no-http|--no-xmlrpc) ;;
+            *) ic_die "unknown headless option: $headless" ;;
+        esac
         # Installed already (a panel restored by a move, most instances):
         # booting an Odoo only to learn that took 7 s of the window a
         # moving customer waits through (QA, 2026-10-20). Any other answer,
@@ -146,14 +157,9 @@ END IF; END \$\$;"
         fi
         ic_log "ensuring incubacloud_connect is installed on $dbname"
         # Headless, so it never takes the port of an Odoo sharing its
-        # network: ``--no-http`` from 11.0 on, ``--no-xmlrpc`` before,
-        # where the other does not exist (QA of the series, 7-nov-2026).
-        # shellcheck disable=SC2016  # expanded by the container's shell
-        ic_compose_run --rm odoo sh -c \
-            'headless=--no-http
-             odoo --help | grep -q -- --no-http || headless=--no-xmlrpc
-             exec odoo -d "$0" -i incubacloud_connect --stop-after-init "$headless"' \
-            "$dbname"
+        # network.
+        ic_compose_run --rm odoo \
+            odoo -d "$dbname" -i incubacloud_connect --stop-after-init "$headless"
         ;;
     *)
         ic_die "unknown operation: $op"

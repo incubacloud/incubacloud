@@ -158,60 +158,55 @@ STUB
     [ "$status" -eq 1 ]
 }
 
-# The container's side of ensure-connect: docker runs the ``sh -c`` it is
-# handed, with an ``odoo`` whose --help offers *help* and that records how
-# it was called.
-_stub_container_odoo() {
-    local help="$1"
-    cat > "$TMP/bin/docker" <<STUB
-#!/usr/bin/env bash
-echo "docker \$*" >> "\$CALLS"
-while [ "\$#" -gt 0 ] && [ "\$1" != sh ]; do shift; done
-[ "\$#" -gt 0 ] || exit 0
-shift 2
-PATH="$TMP/odoo-bin:\$PATH" exec sh -c "\$@"
-STUB
-    mkdir -p "$TMP/odoo-bin"
-    cat > "$TMP/odoo-bin/odoo" <<STUB
-#!/usr/bin/env bash
-if [ "\$1" = --help ]; then echo "$help"; exit 0; fi
-echo "odoo \$*" >> "\$CALLS"
-STUB
-    chmod +x "$TMP/bin/docker" "$TMP/odoo-bin/odoo"
-}
-
 @test "ensure-connect installs the connect module headless when it is missing" {
-    _stub_container_odoo "  --no-http   Disable the HTTP and Longpolling services"
-    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-http
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"psql -U odoo -d prod"* ]]
-    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm odoo sh -c"* ]]
-    [[ "$(cat "$CALLS")" == *"odoo -d prod -i incubacloud_connect --stop-after-init --no-http"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm odoo odoo -d prod -i incubacloud_connect --stop-after-init --no-http"* ]]
 }
 
-@test "ensure-connect goes headless with --no-xmlrpc where --no-http does not exist" {
-    _stub_container_odoo "  --no-xmlrpc   disable the XML-RPC protocol"
-    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+@test "ensure-connect goes headless with the option the panel hands it" {
+    # 7.0 to 10.0 have no --no-http; the series' card says --no-xmlrpc.
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-xmlrpc
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"odoo -d prod -i incubacloud_connect --stop-after-init --no-xmlrpc"* ]]
-    [[ "$(cat "$CALLS")" != *"--stop-after-init --no-http"* ]]
+    [[ "$(cat "$CALLS")" != *"--no-http"* ]]
+}
+
+@test "ensure-connect asks Odoo nothing to choose the option" {
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-http
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"--help"* ]]
+}
+
+@test "ensure-connect refuses an option that is not a headless one" {
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --dev=all
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"unknown headless option"* ]]
+    [[ "$(cat "$CALLS")" != *"docker"* ]]
+}
+
+@test "ensure-connect refuses to run without the headless option" {
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    [ "$status" -eq 1 ]
+    [[ "$(cat "$CALLS")" != *"docker"* ]]
 }
 
 @test "ensure-connect boots no Odoo for a module already installed" {
-    CONNECT_STATE=installed run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    CONNECT_STATE=installed run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-http
     [ "$status" -eq 0 ]
     [[ "$output" == *"already installed"* ]]
     [[ "$(cat "$CALLS")" != *"docker compose run"* ]]
 }
 
 @test "ensure-connect installs when the module is only half there" {
-    CONNECT_STATE="to install" run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    CONNECT_STATE="to install" run bash "$SCRIPT" ensure-connect "$DIR" odoo prod --no-http
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"-i incubacloud_connect"* ]]
 }
 
 @test "a tilde instance directory resolves against HOME" {
-    run bash "$SCRIPT" ensure-connect "~/projects/inst" odoo prod
+    run bash "$SCRIPT" ensure-connect "~/projects/inst" odoo prod --no-http
     [ "$status" -eq 0 ]
 }
 
