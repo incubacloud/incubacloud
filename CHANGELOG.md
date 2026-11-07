@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The update needs no migration: no instance of production runs 7.0 or
 PostgreSQL 9.6, which the panel no longer knows, nor any series from 8.0 to
-12.0, which no longer run below PostgreSQL 12. `incubacloud_connect` 1.0.3
+15.0, which no longer run below PostgreSQL 12. `incubacloud_connect` 1.0.3
 reaches an existing instance with its next rebuild.
 
 ### Changed
@@ -21,10 +21,13 @@ reaches an existing instance with its next rebuild.
   picker, field or tool names it. **PostgreSQL 9.6 is gone** too: doodba's
   template renders no backup service for it. **No series runs below
   PostgreSQL 12**, the first that continuous recovery serves: 8.0 to 10.0, for
-  which the template allows 9.6 alone, run on 12 alone, and 11.0 and 12.0 on 12
-  to 13, with 13 by default. Each was checked on 12: its database created, its
-  modules installed and updated, copied and restored with click-odoo and with
-  the backup service, its login served, and recovered to a point in time.
+  which the template allows 9.6 alone, run on 12 alone, 11.0 and 12.0 on 12 to
+  13, with 13 by default, and 13.0 to 15.0 on 12 up to 16 or 17, as they had,
+  without the 10 and 11 that the template also allows them. 8.0 to 12.0 were
+  each checked on 12: its database created, its modules installed and updated,
+  copied and restored with click-odoo and with the backup service, its login
+  served, and recovered to a point in time; 13.0 to 15.0 are tried on 12 by the
+  run of the series.
   Copier would refuse 12 for 8.0 to 10.0, so the copier run of their deploy and
   rebuild reads a settings file whose defaults give the template's
   `pg_per_odoo` that range (`postgres_beyond_template`, `IC_COPIER_SETTINGS`):
