@@ -1,7 +1,6 @@
-# /ic/login needs the session token of 9.0 and later: 7.0 has no
-# ``openerp.http`` to route it, and 8.0 checks every call against the
-# session's password, which a magic link never has. There the module
-# installs without its route.
+# /ic/login needs the session API of 8.0 and later: 7.0 has no
+# ``openerp.http`` to route it. 8.0 checks every call against the
+# session's password, which ``models/res_users`` gives the session.
 # ``openerp`` first: on 9.0 and before, ``odoo`` names the source tree's
 # ``odoo.py`` launcher. From 10.0 on there is no ``openerp``.
 try:
@@ -9,5 +8,5 @@ try:
 except ImportError:
     from odoo.release import version_info
 
-if version_info[0] >= 9:
+if version_info[0] >= 8:
     from . import connect
