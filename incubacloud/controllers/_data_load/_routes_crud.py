@@ -906,7 +906,10 @@ class CrudMixin:
             # The default certificate is shown and described; its key is
             # only ever reported as stored or not, never returned.
             'tls_default_cert': host.tls_default_cert or '',
-            'has_tls_default_key': _has_encrypted(host, 'tls_default_key'),
+            # Read elevated, as the SSH credentials above: a refused read
+            # would count as a stored key.
+            'has_tls_default_key':
+                _has_encrypted(host.sudo(), 'tls_default_key'),
             'tls_default_info':
                 host._tls_certificate_info(host.tls_default_cert),
             # The list the host is actually filtered against, and where
