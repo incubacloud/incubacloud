@@ -561,7 +561,7 @@ class TestTheActions(_PitrCase):
 
     def test_a_postgres_before_twelve_cannot_be_switched_on(self):
         """``pitr.sh`` recovers with ``recovery.signal``, from 12 on."""
-        self.inst.write({"odoo_version": "10.0", "postgres_version": "10"})
+        self.inst.write({"odoo_version": "13.0", "postgres_version": "10"})
         self.assertFalse(self.inst._pitr_applicable())
         with self.assertRaisesRegex(UserError, "PostgreSQL 12"):
             self.inst.action_pitr_enable()
