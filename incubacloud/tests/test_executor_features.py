@@ -3,7 +3,11 @@ Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
 import http.client
+import os
 import shlex
+import subprocess
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 from odoo.tests.common import BaseCase, TransactionCase
@@ -275,11 +279,6 @@ class TestDeployCommandsChecksums(BaseCase):
         :returns: the arguments the stand-in was run with, last call.
         :rtype: str
         """
-        import os
-        import subprocess
-        import tempfile
-        from pathlib import Path
-
         argv = shlex.split(_find_cmd(self.cmds, "Initialize module checksums")[1])
         start = argv.index("odoo", argv.index("--rm")) + 1
         self.assertEqual(argv[start:start + 2], ["sh", "-c"])
@@ -294,7 +293,7 @@ class TestDeployCommandsChecksums(BaseCase):
             tool.chmod(0o755)
             subprocess.run(
                 ["sh", "-c", *argv[start + 2:]], check=True,
-                env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"},
+                env=os.environ | {"PATH": f"{tmp}:{os.environ['PATH']}"},
             )
             return calls.read_text().strip()
 
