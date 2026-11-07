@@ -419,7 +419,8 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
 
     def test_the_steps_still_read_them_where_they_were_staged(self):
         """Copier reads the answers, a step moves backup.env into the
-        instance, another deletes the answers: the staged paths."""
+        instance, another deletes the answers and the copier settings
+        file a series may have: the staged paths."""
         executor = self._executor(DeployInstanceExecutor, "deploy_instance")
         commands = dict(item[:2] for item in executor.get_commands())
         answers, backup = executor._tmp("answers.yml"), executor._tmp("backup.env")
@@ -429,7 +430,10 @@ class TestTheCopierSecretsAreStagedPrivately(_StagingCase):
         self.assertIn(
             f"mv {executor._tmp('repos.yaml')} ", commands["Write repos.yaml"],
         )
-        self.assertEqual(commands["Remove temp files"], f"rm -f {answers}")
+        self.assertEqual(
+            commands["Remove temp files"],
+            f"rm -f {answers} {executor._tmp('copier-settings.yml')}",
+        )
 
     def test_a_run_that_fails_after_the_upload_leaves_none(self):
         """The host's key cannot be read: no step runs, and all go."""
