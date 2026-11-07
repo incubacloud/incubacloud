@@ -210,6 +210,8 @@ class TestPreflightBlocks(_DeployJobCase):
             self.job.queue_job_id.write({
                 "state": "done", "result": BLOCKED_BY_ALERT,
             })
+            # Told once the store of done commits.
+            _run_after_commit(self.env)
         mailed.assert_not_called()
         # 'blocked', which the browser does not toast: "Deploy Instance
         # completed" was shown for a deploy that waited.

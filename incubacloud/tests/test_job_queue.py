@@ -3328,6 +3328,9 @@ class TestDispatchAfterCommit(_QueueCase):
             self.assertLogs(self._LOGGER, "ERROR") as logs,
         ):
             rebuild.queue_job_id.write({"state": "done"})
+            # The layers' hooks of a done wait for its commit.
+            hook.assert_not_called()
+            _run_after_commit(self.env)
         hook.assert_called_once_with(rebuild, "done")
         self.assertIn("_after_job_terminal(done) raised", "\n".join(logs.output))
         self.assertEqual(rebuild.state, "done")
@@ -3335,13 +3338,14 @@ class TestDispatchAfterCommit(_QueueCase):
         self.assertFalse(self.env["cloud.alert"].search([
             ("job_id", "=", rebuild.id), ("code", "=", "job_failed"),
         ]))
-        _run_after_commit(self.env)
         self.assertEqual(restart.state, "pending")
 
     def test_a_concurrent_update_of_the_transition_is_the_runners_to_retry(self):
         """The transition's own writes flush outside the hooks' savepoint:
         a serialization failure reaches queue_job, which postpones the job,
-        instead of being logged as the hook's and failing it."""
+        instead of being logged as the hook's and failing it. A failure:
+        the hooks of a done run after its commit, on a cursor of their
+        own, with no transition left to flush."""
         rebuild = self._enqueue("rebuild_instance")
         rebuild.queue_job_id.write({"state": "started"})
         conflict = SerializationFailure(
@@ -3355,7 +3359,7 @@ class TestDispatchAfterCommit(_QueueCase):
                 type(self.env), "flush_all", autospec=True, side_effect=conflict,
             ),
         ):
-            rebuild.queue_job_id.write({"state": "done"})
+            rebuild.queue_job_id.write({"state": "failed", "exc_message": "boom"})
         hook.assert_not_called()
 
     def test_a_target_busy_for_a_fresh_read_keeps_the_new_job_waiting(self):

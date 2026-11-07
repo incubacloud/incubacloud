@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from .test_cloud_job import _run_after_commit
 from .test_job_queue import _QueueCase
 
 
@@ -16,11 +17,14 @@ class TestStateRefresh(_QueueCase):
         ])
 
     def test_a_stop_that_ends_probes_its_instance(self):
-        """Done or failed, a stop or a restart has its instance probed."""
+        """Done or failed, a stop or a restart has its instance probed,
+        once the end commits (the probe's row keys on the instance)."""
         for code, state in (("stop_instance", "done"), ("restart_instance", "failed")):
             with self.subTest(code=code):
                 inst = self._instance(f"queue-{code.replace('_', '-')}")
                 self._job(code, inst=inst).write({"state": state})
+                self.assertFalse(self._probes(inst), "not before the commit")
+                _run_after_commit(self.env)
                 self.assertEqual(len(self._probes(inst)), 1)
 
     def test_what_changes_nothing_probes_nothing(self):
@@ -28,6 +32,7 @@ class TestStateRefresh(_QueueCase):
         probe to its turn."""
         self._job("backup_create").write({"state": "done"})
         self._job("stop_instance", state="queued").write({"state": "cancelled"})
+        _run_after_commit(self.env)
         self.assertFalse(self._probes())
 
     def test_an_instance_not_deployed_is_not_probed(self):
@@ -40,6 +45,7 @@ class TestStateRefresh(_QueueCase):
         """The probe of a job's end asks for the state alone, so the
         streaks and alerts keep counting the cron's cycles."""
         self._job("restart_instance").write({"state": "done"})
+        _run_after_commit(self.env)
         self.assertEqual(self._probes().payload, {"state_only": True})
 
     def test_a_probe_waiting_to_start_is_not_asked_for_twice(self):

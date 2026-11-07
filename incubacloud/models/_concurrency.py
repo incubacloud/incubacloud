@@ -22,9 +22,12 @@ the race in the first place.
 READ COMMITTED does that: the second writer blocks on the row lock,
 then re-reads and applies. No abort, no ERROR line, no alert.
 """
+import logging
 from contextlib import contextmanager
 
 from odoo.sql_db import Cursor
+
+_logger = logging.getLogger(__name__)
 
 
 def try_advisory_xact_lock(cr, namespace, scope=""):
@@ -82,3 +85,32 @@ def read_committed_cursor(registry):
         if isinstance(cr, Cursor):
             cr.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         yield cr
+
+
+def run_after_commit(cr, label, func):
+    """Run *func* once *cr* commits; log, never raise, what it raises.
+
+    ``cr.postcommit`` runs its callbacks in order after the commit, and
+    one that raises stops the rest and reaches whoever committed: for a
+    job, queue_job's runner, which then stores the job failed although it
+    has just been stored done. So every callback is wrapped here, and
+    what it raises is logged with *label* and its traceback, the only
+    trace left of it. A rollback drops the callbacks, which is the point:
+    what the transaction did not record is not announced.
+
+    *func* opens what cursor it needs itself (``registry.cursor()``):
+    *cr* is committed by then, and its snapshot is not one to act on.
+
+    :param cr: the cursor whose commit *func* waits for
+    :param str label: what *func* does, for the log
+    :param func: a function of no arguments
+    """
+
+    def _guarded():
+        """Call *func*; log what it raises."""
+        try:
+            func()
+        except Exception:
+            _logger.exception("after the commit: %s failed", label)
+
+    cr.postcommit.add(_guarded)
