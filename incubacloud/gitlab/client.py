@@ -12,6 +12,8 @@
   log or an error.
 - Answers are bounded (§9): 4 MB, an error's body 64 KB, of which 200
   characters of GitLab's message are kept.
+- With a ``deadline``, the socket's timeout is reset to what the budget
+  has left before the answer and before each block of its body.
 
 G1 needs only the token's introspection (``token_self``) and its user
 (``current_user``); the calls of webhooks, merge request notes and
@@ -23,7 +25,6 @@ import ssl
 import time
 from urllib.parse import quote, urlsplit
 
-from ..github.http_utils import HTTPBudgetExceeded, read_response_limited
 from ..net.outbound import _PinnedHTTPSConnection
 
 #: Seconds a request to the API may take (§9): shorter than
@@ -38,6 +39,10 @@ MAX_ERROR_BYTES = 64 * 1024
 
 #: Characters of GitLab's message an error keeps.
 MAX_MESSAGE_CHARS = 200
+
+#: Bytes asked of the socket at a time reading an answer: each block
+#: gets its own wait, bounded by what the budget has left.
+READ_BLOCK_BYTES = 16 * 1024
 
 #: The code of an HTTP status that is not a success.
 _STATUS_CODES = {401: "auth", 403: "forbidden", 404: "not_found", 429: "rate_limited"}
@@ -69,8 +74,12 @@ class GitLabError(Exception):
     """A call that failed, with its code, its status and GitLab's message.
 
     ``code``: ``auth``, ``forbidden``, ``not_found``, ``rate_limited``,
-    ``redirect``, ``tls``, ``timeout``, ``unreachable``, ``too_large`` or
-    ``http``. Nothing in it holds the token or a header.
+    ``redirect``, ``tls``, ``budget``, ``timeout``, ``unreachable``,
+    ``too_large`` or ``http``. ``tls`` is a handshake that failed, so
+    nothing was sent; ``budget`` is a shared budget spent before the
+    request was sent. A TLS error after that is ``unreachable`` and a
+    budget spent after it ``timeout``: the server may have applied the
+    request. Nothing in it holds the token or a header.
     """
 
     def __init__(self, code, status=None, message=""):
@@ -231,24 +240,26 @@ class GitLabClient:
             return ssl.create_default_context(cadata=self.ca_pem)
         return ssl.create_default_context()
 
-    def _timeout(self):
-        """Return the seconds the next request may wait: the timeout, or the budget left.
+    def _timeout(self, sent=False):
+        """Return the seconds the next wait may last: the timeout, or the budget left.
 
+        :param bool sent: whether the request already went out; a budget
+            spent after it is ``timeout`` (unclear), before it ``budget``
         :rtype: float
-        :raises GitLabError: ``timeout`` when the budget is spent
+        :raises GitLabError: ``budget`` or ``timeout`` when the budget is spent
         """
         if self.deadline is None:
             return self.timeout
         left = self.deadline - time.monotonic()
         if left <= 0:
-            raise GitLabError("timeout")
+            raise GitLabError("timeout" if sent else "budget")
         return min(self.timeout, left)
 
     def _connection(self):
         """Return a connection to the server, pinned when an address is given.
 
         :rtype: http.client.HTTPSConnection
-        :raises GitLabError: ``timeout`` when the budget is spent
+        :raises GitLabError: ``budget`` when the budget is spent
         """
         timeout = self._timeout()
         if self.pin_ip:
@@ -289,21 +300,65 @@ class GitLabClient:
             headers["Content-Type"] = "application/json"
         conn = self._connection()
         try:
+            try:
+                conn.connect()
+            except ssl.SSLError as exc:
+                # The handshake failed: nothing was sent.
+                raise GitLabError("tls") from exc
+            sock = conn.sock
             conn.request(method, self._path(segments), body=payload, headers=headers)
+            self._bound_wait(sock)
             response = conn.getresponse()
-            return self._answer(response)
-        except ssl.SSLError as exc:
-            raise GitLabError("tls") from exc
+            return self._answer(response, sock)
         except TimeoutError as exc:
             raise GitLabError("timeout") from exc
         except OSError as exc:
+            # A TLS error from here on (``SSLEOFError``, ``SSLZeroReturnError``
+            # reading the answer) may follow a request GitLab applied.
             raise GitLabError("unreachable") from exc
         finally:
             conn.close()
 
-    def _answer(self, response):
+    def _bound_wait(self, sock):
+        """Limit the next wait on *sock* to what the budget has left.
+
+        The connection's timeout was set when it was made: without this a
+        wait could last the whole of it, after the budget ran out.
+
+        :param socket.socket sock: the connection's socket, taken before
+            ``getresponse`` (which detaches it from the connection when
+            the server closes after answering)
+        :raises GitLabError: ``timeout`` when the budget is spent
+        """
+        sock.settimeout(self._timeout(sent=True))
+
+    def _read_body(self, response, sock, limit):
+        """Read at most *limit* bytes of *response*, a block at a time.
+
+        Each block waits at most what the budget has left.
+
+        :param response: the answer
+        :param socket.socket sock: the connection's socket
+        :param int limit: the bytes to read at most
+        :return: the bytes read, and whether the body goes on past *limit*
+        :rtype: tuple
+        :raises GitLabError: ``timeout`` when the budget is spent
+        """
+        blocks, size = [], 0
+        while size <= limit:
+            self._bound_wait(sock)
+            block = response.read1(min(READ_BLOCK_BYTES, limit + 1 - size))
+            if not block:
+                break
+            blocks.append(block)
+            size += len(block)
+        raw = b"".join(blocks)
+        return raw[:limit], len(raw) > limit
+
+    def _answer(self, response, sock):
         """Return the JSON of a successful *response*, or raise its error.
 
+        :param socket.socket sock: the connection's socket
         :rtype: dict or list
         :raises GitLabError: on a redirect, an error status, an answer
             too large or one that is not JSON
@@ -314,26 +369,26 @@ class GitLabClient:
         if status >= 400:
             raise GitLabError(
                 _STATUS_CODES.get(status, "http"), status,
-                self._message(response),
+                self._message(response, sock),
             )
-        try:
-            raw = read_response_limited(response, max_bytes=MAX_RESPONSE_BYTES)
-        except HTTPBudgetExceeded as exc:
-            raise GitLabError("too_large", status) from exc
+        raw, too_large = self._read_body(response, sock, MAX_RESPONSE_BYTES)
+        if too_large:
+            raise GitLabError("too_large", status)
         try:
             return json.loads(raw) if raw else {}
         except ValueError as exc:
             raise GitLabError("http", status) from exc
 
-    def _message(self, response):
+    def _message(self, response, sock):
         """Return GitLab's message of an error *response*, cut and cleaned.
 
+        :param socket.socket sock: the connection's socket
         :rtype: str
         """
         try:
-            raw = response.read(MAX_ERROR_BYTES)
+            raw, _more = self._read_body(response, sock, MAX_ERROR_BYTES)
             data = json.loads(raw) if raw else {}
-        except (ValueError, OSError):
+        except (ValueError, OSError, GitLabError):
             return ""
         text = ""
         if isinstance(data, dict):
