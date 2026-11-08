@@ -659,3 +659,52 @@ STUB
     [[ "$calls" == *"--network ic_boot_42"* ]]
     [[ "$calls" != *"container:"* ]]
 }
+
+# An 8.0 instance after a fetch-repos cut short: trees on disk, a
+# temporary one, the build's Dockerfile.dockerignore, and no exclusions.
+_instance_repo_with_trees() {
+    _instance_repo_with_secrets
+    mkdir -p "$DIR/odoo/custom/src/odoo/addons" "$DIR/odoo/custom/src/addons/mod" \
+        "$DIR/odoo/custom/src/.ic-tmp-web" "$DIR/odoo/custom/src/private/mine"
+    echo IC_FAKE_TREE > "$DIR/odoo/custom/src/odoo/setup.py"
+    echo IC_FAKE_TREE > "$DIR/odoo/custom/src/addons/mod/__openerp__.py"
+    echo IC_FAKE_TREE > "$DIR/odoo/custom/src/.ic-tmp-web/x"
+    echo '!custom/src/odoo' > "$DIR/odoo/Dockerfile.dockerignore"
+    echo "{'name': 'mine'}" > "$DIR/odoo/custom/src/private/mine/__openerp__.py"
+}
+
+@test "commit-dirty keeps fetched repository trees out of the history, private stays in" {
+    _instance_repo_with_trees
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261108T120000Z
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" ls-files -- odoo/custom/src | grep -vE '^odoo/custom/src/(private/|addons\.yaml$)')" ]
+    [ -z "$(git -C "$DIR" ls-files odoo/Dockerfile.dockerignore)" ]
+    [ "$(git -C "$DIR" ls-files odoo/custom/src/private)" = "odoo/custom/src/private/mine/__openerp__.py" ]
+    [ -z "$(git -C "$DIR" log --all -p | grep IC_FAKE_TREE)" ]
+    [ -f "$DIR/odoo/custom/src/odoo/setup.py" ]
+    [ -z "$(git -C "$DIR" status --porcelain)" ]
+}
+
+@test "commit-dirty takes out of the index trees an earlier commit took" {
+    _instance_repo_with_trees
+    git -C "$DIR" add -A
+    git -C "$DIR" -c user.email=t@example.com -c user.name=T commit -qm "an earlier rebuild"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261108T120000Z
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" ls-tree -r --name-only HEAD | grep -E '^odoo/custom/src/(odoo|addons|\.ic-tmp-web)/|Dockerfile\.dockerignore')" ]
+    [ -n "$(git -C "$DIR" ls-tree -r --name-only HEAD | grep '^odoo/custom/src/private/')" ]
+}
+
+@test "commit-dirty stops before committing a tree it could not keep out" {
+    [ "$(id -u)" -ne 0 ] || skip "root writes a read-only exclude file anyway"
+    _instance_repo_with_trees
+    rm -rf "$DIR/odoo/custom/ssh" "$DIR/odoo/custom/conf.d"/*.conf \
+        "$DIR/odoo/custom/src/repos.yaml" "$DIR/odoo/custom/dependencies/pip.txt"
+    mkdir -p "$DIR/.git/info"
+    : > "$DIR/.git/info/exclude"
+    chmod 444 "$DIR/.git/info/exclude"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261108T120000Z
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"fetched repository trees are still in the repository's index"* ]]
+    [ -z "$(git -C "$DIR" rev-parse -q --verify HEAD)" ]
+}

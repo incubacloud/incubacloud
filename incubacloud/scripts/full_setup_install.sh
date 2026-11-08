@@ -3,7 +3,11 @@
 # the Python toolchain (pip/venv/pipx) and the deployment tools
 # (copier, invoke, pre-commit), plus zip and logrotate.
 #
-# Usage: full_setup_install.sh
+# Usage: full_setup_install.sh [git_helper_image]
+#   <git_helper_image>  the git helper image (``alpine/git`` by digest)
+#                       that 8.0 to 10.0 fetch their repositories with,
+#                       pulled now so a first deploy does not depend on
+#                       Docker Hub's anonymous limits
 #
 # Every step is idempotent — re-running only installs what is missing, so
 # this doubles as a repair. Driven by ``full_setup_executor``; the per-tool
@@ -109,5 +113,11 @@ command -v zip >/dev/null 2>&1 || $APT install -y -qq zip \
 ic_log "Installing logrotate..."
 command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
     || ic_warn "logrotate install failed: instance logs will not be archived"
+
+if [ -n "${1:-}" ]; then
+    ic_log "Pulling the git helper image..."
+    sudo docker pull -q "$1" >/dev/null \
+        || ic_warn "could not pull the git helper image: the first deploy that needs it pulls it"
+fi
 
 ic_log "Host toolchain installation complete."

@@ -56,6 +56,33 @@ case "$op" in
         for path in "${secrets[@]}"; do
             ic_git_exclude "$dir" "$path"
         done
+        # And the repository trees that 8.0 to 10.0 fetch before their
+        # build (deploy.sh fetch-repos): every directory of
+        # odoo/custom/src but private, their temporary trees and the
+        # build's Dockerfile.dockerignore. fetch-repos excludes them
+        # itself before fetching; this is the second lock: hundreds of MB
+        # of odoo/odoo committed never leave the history (8-nov-2026).
+        trees=(
+            ':(glob)odoo/custom/src/*/**'
+            ':(exclude,glob)odoo/custom/src/private/**'
+            odoo/Dockerfile.dockerignore
+        )
+        exclude="$dir/.git/info/exclude"
+        mkdir -p "$dir/.git/info" 2>/dev/null || true
+        for line in '/odoo/custom/src/*/' '!/odoo/custom/src/private/' \
+            /odoo/Dockerfile.dockerignore; do
+            if ! grep -qxF -- "$line" "$exclude" 2>/dev/null; then
+                if [ -s "$exclude" ] && [ -n "$(tail -c 1 "$exclude")" ]; then
+                    printf '\n' >> "$exclude" 2>/dev/null || true
+                fi
+                printf '%s\n' "$line" >> "$exclude" 2>/dev/null \
+                    || ic_warn "could not write $exclude: $line"
+            fi
+        done
+        if [ -n "$(git ls-files -- "${trees[@]}")" ]; then
+            git rm -r --cached -f --quiet -- "${trees[@]}" \
+                || ic_warn "could not untrack the fetched repository trees in $dir"
+        fi
         git add -A
         # Fail closed: an exclusion that could not be written, or an
         # untracking git refused, only warns, and the secret is staged
@@ -64,6 +91,10 @@ case "$op" in
         staged="$(git ls-files -- "${secrets[@]}" | tr '\n' ' ')"
         if [ -n "$staged" ]; then
             ic_die "secrets are still in the repository's index after excluding them, so nothing was committed: ${staged% } (check $dir/.git/info/exclude and the warnings above)"
+        fi
+        staged="$(git ls-files -- "${trees[@]}" | sed -n "1,5p" | tr '\n' ' ')"
+        if [ -n "$staged" ]; then
+            ic_die "fetched repository trees are still in the repository's index after excluding them, so nothing was committed: ${staged% } (check $dir/.git/info/exclude and the warnings above)"
         fi
         git diff --cached --quiet || git \
             -c user.email='system@incubacloud' \
