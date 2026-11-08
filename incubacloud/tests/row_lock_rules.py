@@ -175,7 +175,10 @@ class _LockVisitor(ast.NodeVisitor):
     def visit_Call(self, node):
         """Flag ``lock_for_update()``/``try_lock_for_update()`` left strong."""
         func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        if isinstance(func, ast.Attribute):
+            name = func.attr
+        else:
+            name = getattr(func, "id", None)
         if name in LOCK_CALLS and not _soft_call(node):
             self._add(node, node.lineno, f"{name}() without allow_referencing=True")
         self.generic_visit(node)

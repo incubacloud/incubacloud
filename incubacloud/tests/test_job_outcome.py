@@ -60,7 +60,7 @@ class _OutcomeProbe(AbstractSSHExecutor):
         """Finish a removal on the hook's cursor, write the own row, owe the unlink."""
         inst = self.job.instance_id
         inst._finalize_removal(False, unlink=False)
-        self._write_own_job(dict(_OWN))
+        self._write_own_job(_OWN.copy())
         self._unlink_after_job_commit(inst, sudo=True)
 
     async def on_failure(self, results, errors):
