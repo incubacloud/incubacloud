@@ -3473,12 +3473,14 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid ""
 "Could not tell which Odoo series this repository is for. Name its branch "
-"after the series (such as 19.0), or give its modules a version that starts "
-"with it (such as 19.0.1.0.0)."
+"after the series (such as 19.0), give its modules a version that starts with"
+" it (such as 19.0.1.0.0) or, for a Doodba project, set odoo_version in its "
+".copier-answers.yml."
 msgstr ""
 "No se pudo saber para qué serie de Odoo es este repositorio. Dé a su rama el"
-" nombre de la serie (por ejemplo, 19.0) o a sus módulos una versión que "
-"empiece por ella (por ejemplo, 19.0.1.0.0)."
+" nombre de la serie (por ejemplo, 19.0), dé a sus módulos una versión que "
+"empiece por ella (por ejemplo, 19.0.1.0.0) o, en un proyecto Doodba, indique"
+" odoo_version en su .copier-answers.yml."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__count
@@ -13756,6 +13758,12 @@ msgid ""
 msgstr ""
 "El PAT no tiene acceso a este repositorio. Verifique que el token tenga el "
 "ámbito 'repo', o configure una GitHub App."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "The series of .copier-answers.yml is not understood: %s."
+msgstr "La serie de .copier-answers.yml no se entiende: %s."
 
 #. module: incubacloud
 #. odoo-javascript
