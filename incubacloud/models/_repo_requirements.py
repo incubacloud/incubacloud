@@ -542,6 +542,8 @@ def _git_sources(env, repos):
 def _source_addons_or_none(source, branch):
     """Return :func:`git_source_addons`, or None when the read fails.
 
+    :param GitSource source: what :func:`resolve_git_source` returned
+    :param str branch: the branch
     :rtype: list or None
     """
     with suppress(GitReaderError, ValueError):
@@ -1339,7 +1341,14 @@ def fetch_requirements_txt(env, url, branch, deadline=None):
     git (:func:`git_source_requirements`), before *deadline* when one
     is given (a request's :class:`GitReadBudget`); a GitHub one through
     its API (:func:`_fetch_github_requirements_txt`).
-    Returns the file content as str, or ``None`` on failure.
+
+    :param env: an Odoo environment
+    :param str url: the repository URL, of GitHub or of a Git provider
+    :param str branch: the branch
+    :param float deadline: the request's (:class:`GitReadBudget`), or None
+    :return: the file's content, or None when it is missing or the read
+        fails
+    :rtype: str or None
     """
     on_provider, found = _provider_read(
         env, url, git_source_requirements, branch, deadline=deadline,
@@ -1353,7 +1362,13 @@ def _fetch_github_requirements_txt(env, url, branch):
     """Fetch *requirements.txt* from the root of a GitHub repo branch.
 
     Tries: PAT → GitHub App → unauthenticated.
-    Returns the file content as str, or ``None`` on failure.
+
+    :param env: an Odoo environment
+    :param str url: the GitHub repository URL
+    :param str branch: the branch
+    :return: the file's content, or None when it is missing or the read
+        fails
+    :rtype: str or None
     """
     try:
         try:
