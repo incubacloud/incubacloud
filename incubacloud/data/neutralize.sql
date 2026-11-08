@@ -89,7 +89,7 @@ END $$;
 DELETE FROM ir_config_parameter
  WHERE key LIKE 'incubacloud.direct\_checked\_at.%';
 
--- 7. Git providers (1.0.218): their tokens, which reach private
+-- 7. Git providers (1.0.220): their tokens, which reach private
 -- repositories and, with the api scope, write to them. The servers stay,
 -- for the copy to read public repositories. Newer than older copies.
 DO $$ BEGIN
