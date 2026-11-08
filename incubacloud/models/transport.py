@@ -22,6 +22,15 @@ import asyncssh
 # of pinning the worker forever. Executors may override per command.
 DEFAULT_SSH_COMMAND_TIMEOUT = 3600  # 1 hour
 
+# How long a cancelled command is given to end once it was sent TERM, in
+# seconds: what a script's EXIT trap takes to put the stack back (the boot
+# test's took 1.6 s, measured on 8-nov-2026). Kept far below the
+# five-minute tick of the lost-job reconciliation and the runner's
+# ``limit_time_real`` (3600 s), so the wait never turns the job into a lost
+# worker. The executor's loop is not ticking meanwhile: nothing reaches the
+# job's log (``_flush_logs``) until the wait is over, then all of it does.
+CANCEL_TERM_WAIT_S = 60
+
 
 class CommandResult(NamedTuple):
     stdout: str
@@ -66,6 +75,13 @@ class BaseTransport(ABC):
 
         Aborts with ``asyncio.TimeoutError`` if the command is still
         running after *timeout* seconds.
+
+        Cancelled (the executor stops a job a person cancelled), it sends
+        the remote command TERM, waits up to ``CANCEL_TERM_WAIT_S`` for it
+        to end, whatever it writes meanwhile still reaching the callbacks,
+        and raises the ``CancelledError`` again. Without the signal the
+        command went on after the connection closed until it next wrote
+        to its output (8-nov-2026).
         """
 
     @abstractmethod
@@ -79,7 +95,8 @@ class BaseTransport(ABC):
         not needed.  Callers check ``result.exit_status`` themselves.
 
         Aborts with ``asyncio.TimeoutError`` if the command is still
-        running after *timeout* seconds.
+        running after *timeout* seconds. Cancelled, it stops the command
+        as ``execute`` does.
         """
 
     @abstractmethod
@@ -107,6 +124,33 @@ class BaseTransport(ABC):
         """Download *remote_path* to *local_path*."""
 
 
+async def _stop_cancelled(process, drive=None):
+    """Send a cancelled command TERM and give it a while to end.
+
+    OpenSSH (7.9 and later) delivers the request to the session's whole
+    process group: the script, its trap and its foreground children; what
+    a ``docker exec`` runs inside a container is not in it, and goes on
+    (measured on 8-nov-2026). OpenSSH 8.9 ignores it for a session of
+    root, which has no unprivileged child to send it from. Closing the
+    connection instead signals nothing. Raises nothing: a channel already
+    closed, or a command that outlives the wait, is left to the
+    connection's close.
+
+    :param process: the ``SSHClientProcess``, or None when the
+        cancellation came before it existed
+    :param drive: the task reading its output, given the same wait;
+        cancelled if it outlives it
+    """
+    if process is None:
+        return
+    with contextlib.suppress(Exception):
+        process.terminate()
+    waited = drive if drive is not None else process.wait()
+    # The stop goes on whatever the wait meets, its timeout included.
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(waited, timeout=CANCEL_TERM_WAIT_S)
+
+
 class SSHTransport(BaseTransport):
     """asyncssh-backed transport.
 
@@ -123,6 +167,8 @@ class SSHTransport(BaseTransport):
         timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
     ) -> CommandResult:
         stdout_lines = []
+        # Nothing to signal while the session is being opened: a
+        # cancellation there raises before ``process`` exists.
         process = await self._conn.create_process(command)
 
         async def _read_stdout():
@@ -142,9 +188,13 @@ class SSHTransport(BaseTransport):
             await asyncio.gather(_read_stdout(), _read_stderr())
             await process.wait()
 
+        # Shielded, so a cancellation leaves the readers running: what
+        # the command's trap writes once it is sent TERM reaches the log.
+        drive = asyncio.ensure_future(_drive())
         try:
-            await asyncio.wait_for(_drive(), timeout=timeout)
+            await asyncio.wait_for(asyncio.shield(drive), timeout=timeout)
         except asyncio.TimeoutError:
+            drive.cancel()
             # Kill the remote process so SSH closes cleanly and we
             # don't leak server-side state. Re-raise so the executor
             # treats it as a failure.
@@ -153,6 +203,14 @@ class SSHTransport(BaseTransport):
             await on_stderr(
                 f'⚠ Command exceeded {int(timeout)}s timeout — killed.'
             )
+            raise
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await on_stderr(
+                    "⚠ Stopped: the command running on the server was"
+                    " sent TERM."
+                )
+            await _stop_cancelled(process, drive)
             raise
         return CommandResult(
             stdout='\n'.join(stdout_lines),
@@ -163,10 +221,17 @@ class SSHTransport(BaseTransport):
         self, command: str,
         timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
     ) -> CommandResult:
-        result = await asyncio.wait_for(
-            self._conn.run(command, check=False),
-            timeout=timeout,
-        )
+        # ``conn.run`` is ``create_process`` and ``wait``: done here, so a
+        # cancelled command has a process to be sent TERM.
+        process = None
+        try:
+            process = await self._conn.create_process(command)
+            result = await asyncio.wait_for(
+                process.wait(check=False), timeout=timeout,
+            )
+        except asyncio.CancelledError:
+            await _stop_cancelled(process)
+            raise
         return CommandResult(
             stdout=(result.stdout or '').strip(),
             exit_status=result.exit_status,
