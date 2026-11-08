@@ -139,6 +139,47 @@ def _gh_seg(s):
     return _url_quote((s or '').strip(), safe='')
 
 
+def import_series_refusal(env, series, undetected):
+    """Return why an import may not give what it creates *series*, or ``""``.
+
+    An import takes the series its code is for, and only that one. A
+    source that names none is not given the panel's default
+    (``default_version``), which would render its code on a series it was
+    not written for; a series its user may not choose
+    (``_odoo_versions.may_choose``) is refused here, before anything is
+    created, as the project's constraint would refuse it. Asked by
+    ``/cloud/import_project`` and ``/cloud/import_host_instance``, and so
+    by the MCP and assistant tools that call them.
+
+    :param env: the request's environment; its user is the one importing.
+    :param str series: the series the import read from its source; empty
+        when it found none.
+    :param str undetected: why the source names no series, already
+        translated; the refusal for an empty *series*.
+    :return: the refusal, translated, ending with the series the panel
+        offers; empty when the import may take *series*.
+    :rtype: str
+    """
+    # Here, not at the top: ``models`` imports this module while it loads.
+    from ...models import _odoo_versions  # noqa: PLC0415
+
+    pin = _odoo_versions.pinned_template_ref(env)
+    # A series without a card is one no panel deploys, administrators' included.
+    if series in _odoo_versions.VERSIONS and _odoo_versions.may_choose(
+        series, env.user, pin,
+    ):
+        return ""
+    reason = undetected if not series else env._(
+        "The code being imported is for Odoo %(series)s, which this panel "
+        "does not offer.",
+        series=series,
+    )
+    return reason + " " + env._(
+        "This panel offers: %s.",
+        ", ".join(_odoo_versions.offered_versions(pin)),
+    )
+
+
 def _has_pat(env):
     """Check if a PAT is configured in cloud.settings."""
     settings = env["cloud.settings"]._get_system()

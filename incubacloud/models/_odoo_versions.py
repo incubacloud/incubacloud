@@ -438,8 +438,9 @@ def new_record_default(model):
     return default_version(pinned_template_ref(model.env))
 
 
-#: The offered series, kept under the historical name for its readers:
-#: what the importer accepts, whatever a panel's pin.
+#: The offered series, whatever a panel's pin, kept under the historical
+#: name for its readers. The importer reads every series with a card and
+#: asks ``may_choose`` of the one it finds.
 ODOO_VERSIONS = offered_versions()
 
 #: Ready-to-use value for ``fields.Selection(selection=...)``: every

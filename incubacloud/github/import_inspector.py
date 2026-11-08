@@ -11,7 +11,7 @@ import yaml
 
 from .client import GitHubAPIError
 from .http_utils import HTTPBudget, HTTPBudgetExceeded
-from ..models._odoo_versions import ODOO_VERSIONS
+from ..models._odoo_versions import VERSIONS
 
 
 MAX_URL_LENGTH = 2048
@@ -35,7 +35,10 @@ MAX_CONFIG_BYTES = 5 * 1024 * 1024
 IMPORT_TIMEOUT_SECONDS = 120
 
 _ALLOWED_GIT_HOSTS = frozenset({"github.com", "www.github.com"})
-_SUPPORTED_VERSIONS = frozenset(ODOO_VERSIONS)
+# Every series the panel knows, offered or not: the inspector reports the
+# series a repository is for, and the import refuses one its user may not
+# choose rather than read it as no series and give the project the default.
+_KNOWN_SERIES = frozenset(VERSIONS)
 _SSH_URL_RE = re.compile(r"^git@([^:]+):(.+?)(?:\.git)?$")
 _VERSION_BRANCH_RE = re.compile(r"^\d+\.\d$")
 _REGULAR_BLOB_MODES = frozenset({"100644", "100755"})
@@ -93,7 +96,10 @@ def validate_branch(branch):
 
 
 def version_from_manifest_text(text):
-    """Return the supported Odoo series from a bounded literal manifest.
+    """Return the Odoo series a bounded literal manifest is for.
+
+    Any series the panel knows (``_KNOWN_SERIES``), offered or not; the
+    import decides whether its user may take it.
 
     ``ast.literal_eval`` is only called after the parsed AST has passed node
     and depth limits.  This matters even for a byte-limited source: Python
@@ -124,7 +130,7 @@ def version_from_manifest_text(text):
     if len(parts) < 2:
         return ""
     candidate = f"{parts[0]}.{parts[1]}"
-    return candidate if candidate in _SUPPORTED_VERSIONS else ""
+    return candidate if candidate in _KNOWN_SERIES else ""
 
 
 def safe_load_yaml(content, check=None):
@@ -320,7 +326,7 @@ def _parse_copier_answers(content, check=None):
     raw_version = str(data.get("odoo_version", "") or "")
     match = re.match(r"^(\d+\.\d+)", raw_version)
     version = match.group(1) if match else ""
-    if version not in _SUPPORTED_VERSIONS:
+    if version not in _KNOWN_SERIES:
         version = ""
     return {
         "odoo_version": version,
@@ -476,7 +482,7 @@ class GitHubImportInspector:
         version = copier.get("odoo_version", "")
         if not version and _VERSION_BRANCH_RE.fullmatch(view["branch"]):
             version = (
-                view["branch"] if view["branch"] in _SUPPORTED_VERSIONS else ""
+                view["branch"] if view["branch"] in _KNOWN_SERIES else ""
             )
         repos = _parse_repos_yaml(
             self._read_blob(view, "odoo/custom/src/repos.yaml"), version,
@@ -526,7 +532,7 @@ class GitHubImportInspector:
         submodules, warning = self._submodules(view)
         version = (
             view["branch"]
-            if view["branch"] in _SUPPORTED_VERSIONS
+            if view["branch"] in _KNOWN_SERIES
             else self._version_from_tree(
                 view, {sub["path"] for sub in submodules}, view["branch"],
             )
@@ -672,7 +678,7 @@ class GitHubImportInspector:
             self._check_budget()
             if version:
                 return version
-        return branch if branch in _SUPPORTED_VERSIONS else ""
+        return branch if branch in _KNOWN_SERIES else ""
 
     def _read_optional(self, view, path):
         """Read a regular blob when present, otherwise return empty text."""

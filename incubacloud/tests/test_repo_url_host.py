@@ -212,7 +212,12 @@ class TestRepoUrlHost(TransactionCase):
             "  merges:\n  - addons main\n"
         )
         # The route's 13 reads: the copier answers, repos.yaml, the rest empty.
-        reads = [("project_name: Refused host import\n", ""), (repos_yaml, "")]
+        # Answers that name the series, as a Doodba project's do: one that
+        # names none is refused before its repository lines are made.
+        reads = [
+            ("odoo_version: 19.0\nproject_name: Refused host import\n", ""),
+            (repos_yaml, ""),
+        ]
         reads += [("", "")] * 11
         with patch.object(
             _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
@@ -324,7 +329,7 @@ class TestRepoUrlHost(TransactionCase):
             f"  remotes:\n    addons: '{remote}'\n"
             "  target: addons main\n"
         )
-        reads = [(f"project_name: {name}\n", ""), (repos_yaml, "")]
+        reads = [(f"odoo_version: 19.0\nproject_name: {name}\n", ""), (repos_yaml, "")]
         reads += [("", "")] * 11
         with patch.object(
             _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
