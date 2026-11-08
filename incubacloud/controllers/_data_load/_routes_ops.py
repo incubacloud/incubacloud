@@ -18,7 +18,8 @@ from odoo import _, http
 from odoo.exceptions import UserError
 from odoo.http import request
 
-from ...models._repo_requirements import canonical_repo_url
+from ...models._repo_requirements import canonical_repo_url, resolve_repo_ref
+from ...models.cloud_repo_mixin import _url_host
 from .._rate_limit import Rule, rate_gate_json
 from .._safe_error import safe_error_response
 from ..async_utils import run_async
@@ -42,6 +43,10 @@ from ._mailbox import (
 )
 
 _logger = logging.getLogger(__name__)
+
+#: The user and token of an https remote (``https://oauth2:<token>@host/…``),
+#: dropped before the URL is stored.
+_USERINFO_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]*@")
 
 
 class OpsMixin:
@@ -789,11 +794,16 @@ class OpsMixin:
         backup_env = _parse_env(backup_env_raw)
 
         # Parse repos.yaml + addons.yaml (reuse helpers from import_project).
-        # A remote is stored as canonical_repo_url spells it: a github.com
-        # one in https, any other left for the line's check to refuse
+        # A remote is stored canonical, of GitHub or of a configured Git
+        # provider, without the user and token a host's file may carry
         # (git@gitlab.com:x/y.git once became https://github.com/x/y.git).
+        # A remote of a host with no provider is left out and named in
+        # the answer, rather than failing the whole import
+        # (plan-gitlab.md §4.4-6, 8-nov-2026); a malformed github.com one
+        # is left for the line's check to refuse.
         odoo_version = copier.get("odoo_version", "")
         repos_data = []
+        skipped_repos = []
         if repos_raw.strip():
             try:
                 repos_yaml = yaml.safe_load(repos_raw) or {}
@@ -816,7 +826,21 @@ class OpsMixin:
                         continue
                     remotes = cfg.get("remotes", {})
                     repo_url = next(iter(remotes.values()), "") if remotes else ""
-                    repo_url = canonical_repo_url(repo_url or "")
+                    repo_url = _USERINFO_RE.sub(r"\1", str(repo_url or "").strip())
+                    ref = resolve_repo_ref(request.env, repo_url)
+                    host = _url_host(repo_url)
+                    if ref:
+                        repo_url = ref.canonical
+                    elif host and host not in ("github.com", "www.github.com"):
+                        skipped_repos.append(_(
+                            "%(alias)s: there is no Git provider for %(host)s. "
+                            "Add it under Settings → Git providers and import "
+                            "again.",
+                            alias=alias, host=host,
+                        ))
+                        continue
+                    else:
+                        repo_url = canonical_repo_url(repo_url)
                     target = cfg.get("target", "")
                     branch_val = ""
                     if target:
@@ -1117,6 +1141,7 @@ class OpsMixin:
             "project_name": project.name,
             "instance_name": instance.name,
             "is_running": is_running,
+            "skipped_repos": skipped_repos,
         }
 
     # ── Container log streaming ────────────────────────────────────────────────

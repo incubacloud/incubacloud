@@ -27,6 +27,10 @@ _HOST_TERMINAL = "Interactive host console; run_host_command replaces it."
 _FORMS = "Serves the panel's own forms only."
 _GITHUB_APP = "Installs the GitHub App in a browser."
 _PUBLIC = "Public endpoint, not an action of the user."
+_GIT_PROVIDERS = (
+    "Git providers and their tokens are managed in the panel (decision 6); a "
+    "GitLab repository is read through its lines (repo_read, github_repo_info)."
+)
 
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
@@ -34,6 +38,10 @@ CORE_EXCLUDED = {
     "/cloud/<path:subpath>": _SPA,
     "/cloud/get_secret": "Secrets never leave through an agent (decision 6).",
     "/cloud/save_github_pat": "Credentials are only written in the panel (decision 6).",
+    "/cloud/get_git_providers": _GIT_PROVIDERS,
+    "/cloud/save_git_provider": _GIT_PROVIDERS,
+    "/cloud/delete_git_provider": _GIT_PROVIDERS,
+    "/cloud/test_git_provider": _GIT_PROVIDERS,
     "/cloud/generate_host_key": (
         "The new server form's SSH key; credentials are only written in the "
         "panel (decision 6)."

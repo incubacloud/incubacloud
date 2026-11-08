@@ -56,8 +56,10 @@ paths = [
     # to its server and kept out of the audit, the build and the logs.
     # No real token.
     '''incubacloud/tests/test_git_provider\.py''',
+    '''incubacloud/tests/test_git_provider_routes\.py''',
     '''incubacloud/tests/test_gitlab_executor\.py''',
     '''incubacloud/tests/test_repo_url_host\.py''',
+    '''incubacloud_mcp/tests/test_tools_code_gitlab\.py''',
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',

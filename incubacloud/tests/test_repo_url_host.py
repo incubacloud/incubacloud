@@ -346,19 +346,21 @@ class TestRepoUrlHost(TransactionCase):
                 host_id=host.id, path=f"/srv/{name.lower().replace(' ', '-')}",
             )
 
-    def test_a_host_import_keeps_a_github_ssh_remote_and_refuses_another_host(self):
+    def test_a_host_import_keeps_a_github_ssh_remote_and_skips_another_host(self):
         """The import used to turn any ``git@<host>:x/y.git`` into
         ``https://github.com/x/y.git``: a GitLab remote became a GitHub
-        repository of the same path, cloned with the panel's token."""
+        repository of the same path, cloned with the panel's token. A
+        remote of a host with no Git provider is now left out and named,
+        rather than failing the whole import (plan-gitlab.md §4.4-6)."""
         answer = self._import_from_host("git@github.com:acme/addons.git", "SSH github")
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
         self.assertEqual(project.repo_ids.mapped("url"), ["https://github.com/acme/addons.git"])
-        with self.assertRaises(ValidationError), self.env.cr.savepoint():
-            self._import_from_host("git@gitlab.com:acme/addons.git", "SSH gitlab")
-        self.assertFalse(
-            self.env["cloud.project"].search([("name", "=", "SSH gitlab")]),
-        )
+        answer = self._import_from_host("git@gitlab.com:acme/addons.git", "SSH gitlab")
+        self.assertTrue(answer["ok"], answer)
+        project = self.env["cloud.project"].browse(answer["project_id"])
+        self.assertFalse(project.repo_ids)
+        self.assertIn("gitlab.com", answer["skipped_repos"][0])
 
 
 class TestRepoLineProvider(TransactionCase):

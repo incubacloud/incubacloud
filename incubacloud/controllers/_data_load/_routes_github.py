@@ -30,11 +30,21 @@ from ...github.import_inspector import (
     version_from_manifest_text as _api_version_from_manifest_text,
 )
 from ...models._concurrency import read_committed_cursor, try_advisory_xact_lock
-from ...models._repo_requirements import apply_requirements_content
+from ...models._repo_requirements import (
+    apply_requirements_content,
+    git_source_addons,
+    git_source_requirements,
+    is_safe_git_ref,
+    resolve_git_source,
+    resolve_repo_ref,
+)
+from ...models.cloud_repo_mixin import _url_host
+from ...net.git_reader import GitReaderError
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
     import_series_refusal,
 )
+from ._routes_git_providers import git_error_message
 from .._safe_error import safe_error_response
 
 _logger = logging.getLogger(__name__)
@@ -211,7 +221,7 @@ def _version_from_manifest_text(text):
 
 
 def _not_a_repo_url(url):
-    """Say why *url* is not a GitHub repository address, or nothing.
+    """Say why *url* is not a repository address the panel reads, or nothing.
 
     The repository form refuses such an address when it is saved
     (``cloud.repo.mixin``), but the routes that read the repository
@@ -219,20 +229,48 @@ def _not_a_repo_url(url):
     branch folder pasted from the browser (``…/tree/staging/addons``)
     was taken for a missing GitHub App, answered "No GitHub credentials
     configured", and its parse error, logged as an ERROR, raised a log
-    alert on the customer's panel (12-oct-2026).
+    alert on the customer's panel (12-oct-2026). A repository of a
+    configured Git provider (GitLab) is one; another host is named, as
+    the form names it (plan-gitlab.md §4.5, 8-nov-2026).
 
     :param str url: what the person typed.
     :returns: None, or the form's own message, translated.
     """
-    try:
+    with suppress(ValueError):
         _parse_github_repo_path(url)
-    except ValueError:
+        return None
+    if resolve_repo_ref(request.env, url):
+        return None
+    host = _url_host(url)
+    if host and host not in ('github.com', 'www.github.com'):
         return _(
-            "Repository URL '%s' is not a recognised GitHub "
-            "URL. Use the canonical form "
-            "'https://github.com/<owner>/<repo>'.",
-        ) % (url or '')
-    return None
+            "There is no Git provider for %s: add it under "
+            "Settings → Git providers.",
+        ) % host
+    return _(
+        "Repository URL '%s' is not a recognised GitHub "
+        "URL. Use the canonical form "
+        "'https://github.com/<owner>/<repo>'.",
+    ) % (url or '')
+
+
+def _url_refusal(url, **shape):
+    """Return the answer of a read route to a URL it cannot read, or None.
+
+    :param str url: what the person typed
+    :param shape: the fields the SPA reads even on a failure
+    :return: ``{ok: False, error, …}``, with ``settings_hint`` pointing
+        to the Git providers when the host has none
+    :rtype: dict or None
+    """
+    problem = _not_a_repo_url(url)
+    if not problem:
+        return None
+    answer = {'ok': False, 'error': problem} | shape
+    host = _url_host(url)
+    if host and host not in ('github.com', 'www.github.com'):
+        answer['settings_hint'] = 'git_providers'
+    return answer
 
 
 class GitHubMixin:
@@ -404,7 +442,10 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_repo_branches'], type='json', auth='user')
     def cloud_get_repo_branches(self, url):
-        """Return branch names for a GitHub repo.
+        """Return branch names for a GitHub repo, or a Git provider's.
+
+        A Git provider's repository (GitLab) is read with ``ls-remote``
+        (:meth:`_gitlab_read`); the rest of this text is about GitHub.
 
         Tries the App, then the PAT, then GitHub's anonymous API: a public
         repository needs no credentials, which is what the import itself
@@ -414,9 +455,25 @@ class GitHubMixin:
         and left the branch list empty (8-oct-2026).
         """
         self._sec()._check_cloud_group('group_cloud_consultant')
-        problem = _not_a_repo_url(url)
-        if problem:
-            return {'ok': False, 'error': problem, 'branches': []}
+        refusal = _url_refusal(url, branches=[])
+        if refusal:
+            return refusal
+        if self._is_gitlab(url):
+            heads, error = self._gitlab_read(
+                url, lambda s: s.reader.ls_remote(
+                    s.ref, s.credential, ['refs/heads/*'],
+                ),
+            )
+            if error:
+                return {**error, 'branches': []}
+            return {
+                'ok': True,
+                'branches': sorted(
+                    name.removeprefix('refs/heads/') for name in heads
+                ),
+                'provider': 'gitlab',
+                'host': resolve_repo_ref(request.env, url).authority,
+            }
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
@@ -492,7 +549,49 @@ class GitHubMixin:
             _logger.exception("[%s] anonymous unexpected error", tag)
 
         msg = self._build_github_error(app_status, pat_status, bool(pat))
-        return None, {'ok': False, 'error': msg, 'settings_hint': True}
+        return None, {'ok': False, 'error': msg, 'settings_hint': 'github'}
+
+    @staticmethod
+    def _is_gitlab(url):
+        """Return whether *url* names a repository of a Git provider.
+
+        :param str url: the repository URL
+        :rtype: bool
+        """
+        ref = resolve_repo_ref(request.env, url)
+        return bool(ref and ref.kind == 'gitlab')
+
+    def _gitlab_read(self, url, read):
+        """Read a Git provider's repository with the panel's git.
+
+        Counted against ``rate_limit_git_reads_per_hour`` per user: a git
+        process weighs more than a call to GitHub's API (§9).
+
+        :param str url: the repository URL
+        :param read: called with its ``GitSource``; returns the value
+        :return: ``(value, None)``, or ``(None, error)`` with *error* the
+            answer to give: ``ok``, ``error`` and ``settings_hint``
+        :rtype: tuple
+        """
+        env = request.env
+        if not _consume_github_quota(
+            env, f'git_reads_user:{env.user.id}',
+            'rate_limit_git_reads_per_hour',
+        ):
+            return None, {'ok': False, 'error': _(
+                "Git read limit reached. Try again later."
+            )}
+        try:
+            source = resolve_git_source(env, url)
+            return read(source), None
+        except GitReaderError as exc:
+            _logger.info("[git read] %s: %s", url, exc.code)
+            return None, {
+                'ok': False, 'error': git_error_message(exc.code),
+                'settings_hint': 'git_providers',
+            }
+        except ValueError:
+            return None, {'ok': False, 'error': git_error_message('not_found')}
 
     @staticmethod
     def _build_github_error(app_status, pat_status, has_pat):
@@ -538,9 +637,26 @@ class GitHubMixin:
         a repository GitHub does show is named as the problem.
         """
         self._sec()._check_cloud_group('group_cloud_consultant')
-        problem = _not_a_repo_url(url)
-        if problem:
-            return {'ok': False, 'error': problem}
+        refusal = _url_refusal(url)
+        if refusal:
+            return refusal
+        if self._is_gitlab(url):
+            if not is_safe_git_ref(branch or ''):
+                return {'ok': False, 'error': git_error_message('not_found')}
+            heads, error = self._gitlab_read(
+                url, lambda s: s.reader.ls_remote(
+                    s.ref, s.credential, [f'refs/heads/{branch}'],
+                ),
+            )
+            if error:
+                return error
+            sha = heads.get(f'refs/heads/{branch}')
+            if not sha:
+                return {'ok': False, 'error': _(
+                    "Branch %(branch)s does not exist in this repository.",
+                    branch=branch,
+                )}
+            return {'ok': True, 'sha': sha}
         owner, repo = _parse_github_repo_path(url)
 
         def _fetch(client):
@@ -626,11 +742,21 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_repo_modules'], type='json', auth='user')
     def cloud_get_repo_modules(self, url, branch):
-        """Return Odoo addon module names found at the root of a branch."""
+        """Return Odoo addon module names found at the root of a branch.
+
+        Of GitHub through its API, of a Git provider with git.
+        """
         self._sec()._check_cloud_group('group_cloud_consultant')
-        problem = _not_a_repo_url(url)
-        if problem:
-            return {'ok': False, 'error': problem, 'modules': []}
+        refusal = _url_refusal(url, modules=[])
+        if refusal:
+            return refusal
+        if self._is_gitlab(url):
+            modules, error = self._gitlab_read(
+                url, lambda s: git_source_addons(s, branch),
+            )
+            if error:
+                return {**error, 'modules': []}
+            return {'ok': True, 'modules': modules}
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
@@ -683,14 +809,24 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_repo_requirements'], type='json', auth='user')
     def cloud_get_repo_requirements(self, url, branch):
-        """Fetch requirements.txt from the root of a GitHub repo branch."""
+        """Fetch requirements.txt from the root of a repository branch.
+
+        Of GitHub through its API, of a Git provider with git.
+        """
         self._sec()._check_cloud_group('group_cloud_consultant')
 
-        problem = _not_a_repo_url(url)
-        if problem:
-            return {
-                'ok': False, 'error': problem, 'content': '', 'found': False,
-            }
+        refusal = _url_refusal(url, content='', found=False)
+        if refusal:
+            return refusal
+        if self._is_gitlab(url):
+            content, error = self._gitlab_read(
+                url, lambda s: git_source_requirements(s, branch),
+            )
+            if error:
+                return {**error, 'content': '', 'found': False}
+            if content is None:
+                return {'ok': True, 'found': False, 'content': ''}
+            return {'ok': True, 'found': True, 'content': content}
         owner, repo_name = _parse_github_repo_path(url)
 
         def _fetch(client):

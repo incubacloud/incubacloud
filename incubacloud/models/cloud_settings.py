@@ -395,6 +395,13 @@ class CloudSettings(models.Model):
              'An admitted attempt counts even if GitHub or parsing fails '
              'later. 0 falls back to the default (5).',
     )
+    rate_limit_git_reads_per_hour = fields.Integer(
+        string='Git provider reads (per user, per hour)',
+        default=120,
+        help='Max reads of a Git provider repository (branches, head, '
+             'modules, requirements) per panel user and hour. Each one '
+             'runs git on the panel. 0 falls back to the default (120).',
+    )
 
     # ── Backup usage alert default ────────────────────────────────────────
     # Per-backend ``alert_threshold_pct`` can opt in (1–100), opt out
