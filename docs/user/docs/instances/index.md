@@ -3,6 +3,20 @@
 An **instance** is a running Odoo deployment — one container, one database,
 one filestore. It belongs to a project and runs on a host.
 
+!!! warning "Before you create the first instance"
+    - **Production comes first.** A staging is a copy of production: until the
+      project has a production instance, the staging section's **+** stays
+      disabled. Deploy production, then use **Clone to Staging**, next to it
+      in the project's side menu, for a staging with production's data.
+    - **Production needs a backup destination.** Deploying one without any is
+      refused (*No backup backend configured for this instance*). Register a
+      destination first ([Backups](../backups/index.md#backup-destinations))
+      and choose it on the instance, on its project, or for every production
+      instance in **Settings → General → Default Backup Destination**.
+
+    An instance's environment is chosen when it is created and cannot be
+    changed later.
+
 ## Concepts
 
 - **Production instance** — customer-facing. Re-deploys go through the safe-rebuild
@@ -10,10 +24,10 @@ one filestore. It belongs to a project and runs on a host.
 - **Staging instance** — test copy. Re-deploys are direct. As many as you like:
   stagings run on servers you already pay for, so they never count against the
   instance allowance of a SaaS plan.
-- **Odoo version** — any from 8.0 to 20.0, taken from the project when the instance
-  is created and fixed once it is deployed. Odoo 20.0 runs on PostgreSQL 16 to 18;
-  16.0 to 19.0, on 14 to 18; the older ones, on the PostgreSQL Odoo recommends for
-  them.
+- **Odoo version** — one the panel offers, 18.0 to 20.0, taken from the project
+  when the instance is created and fixed once it is deployed. Odoo 20.0 runs on
+  PostgreSQL 16 to 18; 18.0 and 19.0, on 14 to 18. Older series open as they pass
+  their tests.
 - **Sleeping** (SaaS Free plan) — on Free it is your control plane, not your
   instances, that is suspended after ~30 minutes without traffic to save
   resources. It wakes up on the next request (the first request after a nap takes
@@ -182,6 +196,16 @@ If you push commits to a connected repo, two settings control what happens:
   only the modules whose checksum changed. On by default.
 
 Both live under `Instance detail → Networking`.
+
+**Auto-rebuild** acts on GitHub's push notifications, which reach the panel
+through the [GitHub App](../projects/index.md#private-repositories), so the
+panel must be reachable from the internet.
+
+!!! info "IncubaCloud SaaS"
+    On the Free plan the control plane sleeps after 30 minutes without use, and
+    a push notification that arrives while it sleeps only wakes it: the push is
+    not acted on. Rebuilding on push needs a paid plan, whose control plane
+    never sleeps; on Free, rebuild by hand.
 
 ## Pull request previews
 

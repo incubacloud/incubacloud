@@ -117,6 +117,7 @@ nav:
   - Hosts:
     - hosts/index.md
     - Connect your own VPS: hosts/connect.md
+    - Panel on an internal network: hosts/internal-network.md
     - Order a VPS: hosts/hire.md
   - Backups:
     - backups/index.md

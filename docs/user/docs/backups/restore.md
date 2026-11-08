@@ -90,11 +90,79 @@ size limit. `https://`, `sftp://` and `ftp://` are accepted, and a link carrying
 a user and password works too; the password is stored encrypted and never shown
 again.
 
+### Bring an Odoo you run elsewhere
+
+To move the data of an Odoo installed somewhere else — a package install, a
+container, another provider — into a **new production instance**:
+
+1. **Check the three things a restore needs.**
+    - **The same Odoo series** as the database: a database of another version
+      has to be upgraded first.
+    - **Every module the database has installed**, available to the instance:
+      put the repositories that carry them in the project
+      ([which modules a repository brings](../projects/index.md#which-modules-a-repository-brings)).
+    - **PostgreSQL** of the source's major version or a newer one, chosen on the
+      instance form's **Database** tab.
+2. **Make the ZIP** on the source.
+
+    === "With Odoo's database manager"
+
+        Open `/web/database/manager`, **Backup** the database with the format
+        **zip** (the other one leaves the filestore out). For small databases:
+        the download goes through Odoo's web server.
+
+    === "By hand, on the source server"
+
+        ```bash
+        mkdir odoo-export && cd odoo-export
+        pg_dump --no-owner --format=plain --dbname=<database> > dump.sql
+        cp -r <data_dir>/filestore/<database> filestore
+        zip -r ../odoo-export.zip dump.sql filestore
+        ```
+
+        `<data_dir>` is the `data_dir` of the source's Odoo configuration
+        (`~/.local/share/Odoo` of the user Odoo runs as, when unset). Run
+        `pg_dump` with the client of the source server's PostgreSQL.
+
+    Either way, `unzip -l` shows `dump.sql` and `filestore/…` at the top of
+    the archive, not inside another folder.
+
+3. **Create the instance**: a production instance in a project with those
+   repositories and a [backup destination](index.md#backup-destinations).
+   **Deploy** it: it comes up with an empty database, which the restore
+   replaces.
+4. **Restore Database**, by one of the three routes above. On a panel or a host
+   only your network reaches, use the browser or SSH: a link is fetched from
+   the internet only.
+
+The job stops Odoo, replaces the database and the filestore, installs the
+panel's sign-in module if it is missing, and starts Odoo again. The archive is
+loaded as a **copy**: the database gets a new unique id and a new secret, so it
+does not pass for the source database.
+
+!!! warning "Nothing is switched off"
+    The data comes back as it was: scheduled actions, outgoing mail servers,
+    users. If the source installation still runs, both now send mail and run
+    the same scheduled actions. Stop the source first, or switch them off on
+    one side.
+
+The restore does not update modules. If the code in your repositories is newer
+than the one the database last ran, **Rebuild** the instance: a production
+rebuild tries the new code on a copy of the database first, then updates the
+modules whose code changed. Sign in with the users and passwords of the source
+database.
+
 ## Verify it worked
 
 For downloads:
 
 - [x] The ZIP opens and contains `dump.sql` + `filestore/`.
+
+For an Odoo brought from elsewhere:
+
+- [x] The instance opens on your data, attachments and images included.
+- [x] **Settings → Technical → Automation → Scheduled Actions** shows the ones
+  you expect active, and only those.
 
 For in-place restore:
 
@@ -108,6 +176,15 @@ For in-place restore:
     The backup was encrypted with a different passphrase than the one currently
     configured on the backend. Check `Backend detail → Passphrase`. If you've
     rotated passphrases, you need the original to read older backups.
+
+??? note "The restore of an archive from elsewhere fails while loading it"
+    Check the archive's layout first: `dump.sql`, in plain SQL, at the top of
+    the ZIP, with `filestore/` beside it (`unzip -l`).
+
+??? note "The instance starts but Odoo fails on a module"
+    A module installed in the database is not available to the instance: its
+    repository is missing, or left out by the repository's **Modules** list.
+    Add it and rebuild.
 
 ??? note "Restore failed: schema version mismatch"
     The backup was taken from a different Odoo version than the instance you're

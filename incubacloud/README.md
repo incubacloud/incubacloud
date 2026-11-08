@@ -96,7 +96,9 @@ Requirements
 
 - Odoo 19.0
 - `queue_job` (OCA)
-- Python: `asyncssh`, `cryptography`, `PyJWT`, `PyYAML`, `boto3`
+- Python: the repository's `requirements.txt` (`asyncssh`, `cryptography`,
+  `ansible-core`, `ansible-runner`, `boto3`, `PyYAML`, `bcrypt`, `joserfc`…)
+  and OCA/queue's (`openupgradelib`, `requests`)
 - Docker image: `ghcr.io/tecnativa/doodba` (includes `click-odoo-contrib`;
   on Odoo 20 its database commands refuse to run, so the panel dumps and
   loads with `odoo db` there)
@@ -188,15 +190,20 @@ installed — add to your ``odoo.conf`` under ``/etc/odoo/`` or via
 .. code-block:: ini
 
     [options]
-    workers = 3
-    server_wide_modules = web,queue_job
+    workers = 5
+    server_wide_modules = base,rpc,web,queue_job
+    limit_time_real = 3600
 
     [queue_job]
     channels = root:3,root.user:2,root.bg:1
 
 This gives you up to 3 concurrent SSH jobs, with **hard isolation** between
 user-initiated work (capacity 2) and background jobs (capacity 1). Within
-``root.user``, production jobs jump ahead of staging by priority.
+``root.user``, production jobs jump ahead of staging by priority. Each running
+job holds a worker for its whole run, so ``workers`` stays above ``root``'s
+capacity, and ``limit_time_real`` lets a job's commands run their hour. Why
+each value, the rest of the configuration and a dedicated job runner: the
+repository's ``INSTALL.md``.
 
 **Tuning the tier of a specific job type:** go to Settings → Technical →
 Cloud Job Types (admin only) and change the ``Priority Tier`` field.
