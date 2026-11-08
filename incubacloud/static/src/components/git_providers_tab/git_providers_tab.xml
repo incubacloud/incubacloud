@@ -29,12 +29,11 @@
             </p>
             <div class="rl-set-hintbox">
                 <i class="fa fa-key"/>
-                <strong>Tokens.</strong>
-                To deploy, a deploy token or a project token with
-                <code>read_repository</code> per repository is enough. Push-to-rebuild,
-                merge request notes and the assistant's writes will need a group or
-                personal token with <code>api</code> and the Maintainer role, limited to
-                your team's namespace. Deploy tokens do not answer on the API.
+                To deploy, a deploy token or a project token with the read_repository
+                scope, one per repository, is enough. Rebuild on push, merge request
+                notes and the assistant's writes will need a group or personal token
+                with the api scope and the Maintainer role, limited to your team's
+                namespace. Deploy tokens do not answer on the API.
             </div>
 
             <!-- ── Providers ─────────────────────────────────────────── -->
@@ -82,9 +81,8 @@
                                         <span t-if="cred.token_user" class="ic-gitp-meta">
                                             @<t t-esc="cred.token_user"/>
                                         </span>
-                                        <span t-if="cred.expires_on" class="ic-gitp-meta">
-                                            expires <t t-esc="cred.expires_on"/>
-                                        </span>
+                                        <span t-if="cred.expires_on" class="ic-gitp-meta"
+                                              t-esc="expiresLabel(cred)"/>
                                     </div>
                                 </t>
                             </div>

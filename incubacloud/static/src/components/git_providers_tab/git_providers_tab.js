@@ -105,6 +105,16 @@ export class GitProvidersTab extends Component {
     }
 
     /**
+     * When a credential's token expires, as the list says it.
+     *
+     * @param {Object} cred a credential with ``expires_on``
+     * @returns {string}
+     */
+    expiresLabel(cred) {
+        return _t("expires on %(date)s", { date: cred.expires_on });
+    }
+
+    /**
      * The label of a token kind.
      *
      * @param {string} kind one of CREDENTIAL_KINDS
