@@ -64,8 +64,9 @@ git tag relay-oauth-v16.0.1-0.28-2
 git push origin relay-oauth-v16.0.1-0.28-2
 ```
 
-The workflow refuses a tag that does not match the Dockerfile's versions or
-that is already published. It builds and tests again, pushes the tested
+The workflow refuses a tag that does not match the Dockerfile's versions,
+that points to a commit that is not on `19.0`, or that is already published.
+It builds and tests again, pushes the tested
 images, signs the multi-arch index with cosign (keyless) and attaches the
 build provenance. The job summary ends with the line for core:
 
@@ -81,6 +82,22 @@ cosign verify ghcr.io/incubacloud/relay-oauth@sha256:<digest> \
   --certificate-identity-regexp '^https://github.com/incubacloud/incubacloud/\.github/workflows/relay-oauth-image\.yml@refs/tags/relay-oauth-v'
 gh attestation verify oci://ghcr.io/incubacloud/relay-oauth@sha256:<digest> --repo incubacloud/incubacloud
 ```
+
+**If the signing step fails** (cosign, the attestation), the images and the
+index are already pushed, so running the `publish` job again cannot work: it
+stops at "already exists". Do not delete or move the tag. Cut the next
+revision (`…-3` after `…-2`) on the same commit and tag it; the unsigned
+revision is left unused and no core release names it.
+
+**Owner steps in the repository's settings** (not in the code, so they are
+done once by hand, and checked again if the tag name changes):
+
+- A tag ruleset for `relay-oauth-v*`: only maintainers may create it, and
+  nobody may update or delete it. The workflow publishes whatever tag
+  matches, so who can push one decides who can publish.
+- Optional: in Settings → Environments, `relay-oauth-publish` (the `publish`
+  job's environment) with required reviewers, so that a publication waits
+  for a person even after a tag is pushed.
 
 **First publication only:** the package is created private. An organisation
 owner makes it public once (GitHub → the organisation → Packages →
