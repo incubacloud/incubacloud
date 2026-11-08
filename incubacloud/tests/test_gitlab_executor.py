@@ -260,13 +260,13 @@ class TestStepTimeout(TransactionCase):
 
     def test_a_step_timeout_reaches_the_transport(self):
         ex = _make_deploy_executor()
-        ex._sys = MagicMock()
         ex.on_stdout = ex.on_stderr = None
         transport = MagicMock(spec=SSHTransport)
         transport.execute.return_value = CommandResult(stdout="", exit_status=0)
-        asyncio.run(abstract_executor.AbstractSSHExecutor._run_steps(
-            ex, transport, [("A", "true", {"timeout": 7200}), ("B", "true")],
-        ))
+        with patch.object(type(ex), "_sys", autospec=True):
+            asyncio.run(abstract_executor.AbstractSSHExecutor._run_steps(
+                ex, transport, [("A", "true", {"timeout": 7200}), ("B", "true")],
+            ))
         first, second = transport.execute.call_args_list
         self.assertEqual(first.kwargs["timeout"], 7200)
         self.assertNotIn("timeout", second.kwargs)

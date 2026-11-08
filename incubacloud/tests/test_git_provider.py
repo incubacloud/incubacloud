@@ -8,7 +8,7 @@ the panel may connect is ``_network_policy``: ``'any'`` in the core,
 """
 import socket
 from datetime import date, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import DEFAULT, MagicMock, patch
 
 from psycopg2 import IntegrityError
 
@@ -286,7 +286,8 @@ class TestNetworkPolicy(_ProviderCase):
     def _public(self):
         """Patch the provider model's policy to ``'public'``."""
         return patch.object(
-            type(self.Provider), "_network_policy", lambda self: "public",
+            type(self.Provider), "_network_policy", autospec=True,
+            return_value="public",
         )
 
     def test_public_refuses_non_public_addresses(self):
@@ -336,18 +337,14 @@ class TestExpiryCron(_ProviderCase):
             "provider_id": other.id, "namespace": "z",
             "token": "glpat-abcdefgh12", "expires_on": date.today(),
         })
-        real = type(self.env["cloud.alert"]).raise_alert
-        calls = []
-
-        def flaky(alert, code, message, **kw):
-            calls.append(kw.get("key"))
-            if len(calls) == 1:
-                raise RuntimeError("boom")
-            return real(alert, code, message, **kw)
-
-        with patch.object(type(self.env["cloud.alert"]), "raise_alert", flaky):
+        Alert = type(self.env["cloud.alert"])
+        # The first alert fails; the second is raised for real.
+        with patch.object(
+            Alert, "raise_alert", autospec=True, wraps=Alert.raise_alert,
+            side_effect=[RuntimeError("boom"), DEFAULT],
+        ) as raise_alert:
             self.Provider._cron_check_git_providers()
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(raise_alert.call_count, 2)
         self.assertEqual(len(self._alerts()), 1)
 
     def test_warning_days(self):

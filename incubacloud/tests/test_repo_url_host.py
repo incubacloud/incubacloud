@@ -10,6 +10,8 @@ the imports from GitHub and from a host) ends in the model, which now
 stores a github.com repository in its canonical form and refuses the
 rest (5-nov-2026).
 """
+import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from odoo import http as odoo_http
@@ -26,6 +28,7 @@ from odoo.addons.incubacloud.controllers._data_load import (
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.models import _repo_requirements
 from odoo.addons.incubacloud.models._repo_requirements import (
+    RESERVED_REPO_ALIASES,
     canonical_any_repo_url,
     canonical_repo_url,
     fetch_repo_addons,
@@ -458,6 +461,19 @@ class TestRepoLineProvider(TransactionCase):
                 ValidationError, "repos.yaml is a name doodba keeps",
             ), self.env.cr.savepoint():
                 line.write({"url": "https://gitlab.com/acme/repos.yaml"})
+
+    def test_the_model_and_deploy_sh_reserve_the_same_aliases(self):
+        # The model refuses a line with one of these names, and deploy.sh's
+        # ic_reserved_alias refuses it again on the host: a name added to
+        # one and not to the other would reach custom/src by that path.
+        script = (
+            Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh"
+        ).read_text(encoding="utf-8")
+        body = script[script.index("ic_reserved_alias() {"):]
+        body = body[:body.index("\n}\n")]
+        arm = re.search(r"^\s*([^\s()]+)\)\s*return 0", body, re.MULTILINE)
+        self.assertTrue(arm, "ic_reserved_alias has no case arm that returns 0")
+        self.assertEqual(set(arm.group(1).split("|")), RESERVED_REPO_ALIASES)
 
     def test_capabilities_say_what_each_provider_offers_in_this_version(self):
         line = self._new(
