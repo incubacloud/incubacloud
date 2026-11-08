@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.216] — 2026-11-08
+
+The update needs no migration.
+
+### Fixed
+
+- **The metrics and Docker prune crons run again.** They pick the hosts the
+  panel can reach by their SSH credentials, which 1.0.215 keeps for system
+  administrators, and they run as the cron bot, which is not one: every pass
+  failed with *Access Denied by ACLs* on `cloud.host.key_file`. The hosts are
+  now chosen elevated and the jobs queued as the bot, as before; the
+  credentials stay for system administrators only.
+
 ## [1.0.215] — 2026-11-07
 
 The update needs no migration: no instance of production runs 7.0 or
