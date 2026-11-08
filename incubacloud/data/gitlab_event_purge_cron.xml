@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_purge_gitlab_events" model="ir.cron">
+        <field name="name">Reprocess and Purge GitLab Webhook Events</field>
+        <field name="model_id" ref="model_cloud_gitlab_event"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_purge_gitlab_events()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+    </record>
+</odoo>

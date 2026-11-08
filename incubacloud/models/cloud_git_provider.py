@@ -466,7 +466,7 @@ class CloudGitProvider(models.Model):
 
     @api.model
     def _cron_check_git_providers(self):
-        """Warn about tokens about to expire, and clear the warning after a rotation.
+        """Warn about tokens about to expire, and check the panel's webhooks.
 
         One alert per credential whose ``expires_on`` is within
         :data:`EXPIRY_WARNING_DAYS` days (or past); a credential that
@@ -500,6 +500,26 @@ class CloudGitProvider(models.Model):
                 _logger.exception(
                     "Git provider %s: the expiry check failed", provider.id,
                 )
+            provider._check_hooks()
+
+    def _check_hooks(self):
+        """Read the state of the panel's webhooks in GitLab and sweep the orphans.
+
+        Each webhook in its own savepoint, so one GitLab that fails does
+        not stop the others. Never sends a test nor re-enables a webhook
+        (§4.7.5).
+        """
+        self.ensure_one()
+        for hook in self.env["cloud.gitlab.hook"].sudo().search(
+            [("provider_id", "=", self.id)],
+        ):
+            try:
+                with self.env.cr.savepoint():
+                    if hook.remote_hook_id and hook.state != "orphan":
+                        hook._check_remote_state()
+                    hook._sweep_orphan()
+            except Exception:
+                _logger.exception("GitLab webhook %s: the check failed", hook.id)
 
 
 class CloudGitCredential(models.Model):

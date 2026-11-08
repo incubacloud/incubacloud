@@ -125,3 +125,72 @@ class TestGitLabClientRequest(_ClientCase):
                     "https://gitlab.example/api/v4", _TOKEN,
                 ).current_user()
             self.assertEqual(caught.exception.code, code)
+
+
+class TestGitLabClientHooks(BaseCase):
+    """The webhook calls of G3 (plan-gitlab.md §4.7.2, §4.7.4)."""
+
+    def _send(self, call, response=None):
+        """Run *call* on a client and return ``(result, method, path, body)``.
+
+        :param call: a function taking the client
+        :rtype: tuple
+        """
+        conn = MagicMock(spec=http.client.HTTPSConnection)
+        conn.getresponse.return_value = response or _response(201, {"id": 7})
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ):
+            result = call(client_mod.GitLabClient(
+                "https://gitlab.example/api/v4", _TOKEN,
+            ))
+        method, path = conn.request.call_args.args[:2]
+        body = conn.request.call_args.kwargs.get("body")
+        return result, method, path, json.loads(body) if body else None
+
+    def test_update_hook_always_sends_the_url_and_the_token_together(self):
+        """A PUT that changes the URL without the token wipes the secret in GitLab."""
+        _r, method, path, body = self._send(lambda c: c.update_hook(
+            "projects", 12, 7, "https://panel/cloud/gitlab/webhook/ab", "s3cret",
+        ), _response(200, {"id": 7}))
+        self.assertEqual((method, path), ("PUT", "/api/v4/projects/12/hooks/7"))
+        self.assertEqual(body["url"], "https://panel/cloud/gitlab/webhook/ab")
+        self.assertEqual(body["token"], "s3cret")
+        self.assertTrue(body["push_events"])
+        self.assertTrue(body["merge_requests_events"])
+        self.assertTrue(body["enable_ssl_verification"])
+
+    def test_create_hook_posts_the_events_the_panel_uses(self):
+        result, method, path, body = self._send(lambda c: c.create_hook(
+            "groups", "acme/sub", "https://panel/cloud/gitlab/webhook/ab", "t",
+        ))
+        self.assertEqual(result, {"id": 7})
+        self.assertEqual((method, path), ("POST", "/api/v4/groups/acme%2Fsub/hooks"))
+        self.assertEqual(body["token"], "t")
+        self.assertFalse(body["tag_push_events"])
+
+    def test_the_test_delivery_is_a_tag_push(self):
+        """Never push_events (repeats the last push) nor merge_requests_events."""
+        _r, method, path, _b = self._send(
+            lambda c: c.test_hook("projects", 12, 7),
+        )
+        self.assertEqual(
+            (method, path), ("POST", "/api/v4/projects/12/hooks/7/test/tag_push_events"),
+        )
+
+    def test_the_other_calls(self):
+        for call, expected in (
+            (lambda c: c.get_project("Acme/Web"), ("GET", "/api/v4/projects/Acme%2FWeb")),
+            (lambda c: c.list_hooks("projects", 12), ("GET", "/api/v4/projects/12/hooks")),
+            (lambda c: c.get_hook("projects", 12, 7), ("GET", "/api/v4/projects/12/hooks/7")),
+            (lambda c: c.delete_hook("groups", 3, 7), ("DELETE", "/api/v4/groups/3/hooks/7")),
+        ):
+            with self.subTest(expected=expected):
+                _r, method, path, _b = self._send(call, _response(200, {}))
+                self.assertEqual((method, path), expected)
+
+    def test_an_unknown_kind_is_refused(self):
+        client = client_mod.GitLabClient("https://gitlab.example/api/v4", _TOKEN)
+        with self.assertRaises(ValueError):
+            client.list_hooks("users", 1)

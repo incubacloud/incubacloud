@@ -269,3 +269,6 @@ from . import test_git_reader
 from . import test_gitlab_client
 from . import test_gitlab_executor
 from . import test_merge_queued_payload
+from . import test_cloud_gitlab_event
+from . import test_gitlab_webhook
+from . import test_gitlab_receiver_real_cursors

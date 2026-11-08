@@ -484,8 +484,21 @@ class TestRepoLineProvider(TransactionCase):
         self.assertEqual(caps["provider"], "gitlab")
         self.assertEqual(caps["host"], "gitlab.com")
         self.assertTrue(caps["read"])
-        self.assertEqual(caps["push_rebuild"], "unsupported")
+        self.assertEqual(caps["push_rebuild"], "no_hook")
+        self.assertFalse(caps["hook_id"])
         self.assertEqual(caps["previews"], "unsupported")
+        hook = self.env["cloud.gitlab.hook"].create({
+            "provider_id": line.provider_id.id, "scope": "group", "path": "acme",
+        })
+        line.invalidate_recordset(["repo_capabilities"])
+        self.assertEqual(
+            line.repo_capabilities["push_rebuild"], "no_hook",
+            "a group's webhook covers the path only once it is active",
+        )
+        hook.state = "active"
+        line.invalidate_recordset(["repo_capabilities"])
+        self.assertEqual(line.repo_capabilities["push_rebuild"], "ok")
+        self.assertEqual(line.repo_capabilities["hook_id"], hook.id)
         self.assertEqual(caps["code_tools"], {"read": True, "write": False})
         github = self._new(
             "cloud.project.repo", "project_id", self.project,
