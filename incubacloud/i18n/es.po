@@ -39,6 +39,16 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid ""
+"%(count)s GitLab repositories without a working webhook: their pushes do not"
+" rebuild."
+msgstr ""
+"%(count)s repositorios de GitLab sin un webhook que funcione: sus pushes no "
+"reconstruyen."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #, python-format
 msgid "%(count)s of %(total)s requests"
 msgstr "%(count)s de %(total)s peticiones"
@@ -49,6 +59,16 @@ msgstr "%(count)s de %(total)s peticiones"
 #, python-format
 msgid "%(count)s of 1 request"
 msgstr "%(count)s de 1 petición"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"%(count)s repository lines or webhooks use %(name)s: change or remove them "
+"first."
+msgstr ""
+"%(count)s líneas de repositorio o webhooks usan %(name)s: cámbielos o "
+"elimínelos primero."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -446,6 +466,15 @@ msgstr ".zip"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid ""
+"1 GitLab repository without a working webhook: its pushes do not rebuild."
+msgstr ""
+"1 repositorio de GitLab sin un webhook que funcione: sus pushes no "
+"reconstruyen."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "1 request"
 msgstr "1 petición"
 
@@ -610,6 +639,18 @@ msgid ""
 msgstr ""
 "Una credencial Git no puede pasar a otro proveedor Git: añádala allí con su "
 "propio token."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"A GitLab webhook tells the panel about each push, so the instances\n"
+"                    that follow the branch rebuild. Register it from a GitLab repository\n"
+"                    line of a project or an instance."
+msgstr ""
+"Un webhook de GitLab avisa al panel de cada push, para que se\n"
+"                    reconstruyan las instancias que siguen la rama. Regístrelo desde una\n"
+"                    línea de repositorio de GitLab de un proyecto o de una instancia."
 
 #. module: incubacloud
 #. odoo-python
@@ -809,6 +850,12 @@ msgstr ""
 "Una rama de submódulo no se pudo verificar dentro del presupuesto de "
 "seguridad y se normalizó a la versión del proyecto. Revísela antes de "
 "desplegar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid "A test was asked for a moment ago: wait a few seconds."
+msgstr "Se pidió una prueba hace un momento: espere unos segundos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3841,6 +3888,27 @@ msgid "DB only"
 msgstr "Solo BD"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid ""
+"Delete the webhook of %(path)s? Pushes to it stop rebuilding until it is "
+"registered again."
+msgstr ""
+"¿Eliminar el webhook de %(path)s? Sus pushes dejan de reconstruir hasta que "
+"se registre de nuevo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Delete webhook"
+msgstr "Eliminar webhook"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__delivery_key
+msgid "Delivery Key"
+msgstr "Clave de entrega"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__edge_guard_shipped_hash
 msgid ""
 "Digest of the edge guard (ic_guard.yml) last written to this host's proxy "
@@ -4414,6 +4482,12 @@ msgstr "Puerto directo aplicado"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Disabled by GitLab"
+msgstr "Desactivado por GitLab"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
 "Disabling email does not affect other notification\n"
@@ -4519,6 +4593,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Dismisses this alert for all users"
 msgstr "Descarta esta alerta para todos los usuarios"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__dispatch_attempts
+msgid "Dispatch Attempts"
+msgstr "Intentos de despacho"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job__queue_head
@@ -5330,6 +5409,12 @@ msgstr "Error al cargar el proyecto."
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.js:0
 msgid "Failed to load rate-limit settings."
 msgstr "Falló al cargar los ajustes de rate-limit."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Failed to load the webhooks."
+msgstr "No se pudieron cargar los webhooks."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6167,10 +6252,134 @@ msgid "GitHub webhook silence alert (hours)"
 msgstr "Aviso por silencio de webhooks de GitHub (horas)"
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_gitlab_event
+msgid "GitLab Webhook Event"
+msgstr "Evento de webhook de GitLab"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid "GitLab answered %(code)s; check that GitLab reaches %(url)s."
+msgstr "GitLab respondió %(code)s; compruebe que GitLab llega a %(url)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid "GitLab did not accept the webhook (%(code)s)."
+msgstr "GitLab no aceptó el webhook (%(code)s)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid ""
+"GitLab did not delete the webhook: delete it there by hand (Settings → "
+"Webhooks), then here."
+msgstr ""
+"GitLab no eliminó el webhook: elimínelo allí a mano (Settings → Webhooks) y "
+"después aquí."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid "GitLab did not take the new secret (%(code)s)."
+msgstr "GitLab no aceptó el secreto nuevo (%(code)s)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid ""
+"GitLab disabled the webhook: pushes do not rebuild. Verify it in Git "
+"providers."
+msgstr ""
+"GitLab desactivó el webhook: los pushes no reconstruyen. Verifíquelo en "
+"Proveedores Git."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"GitLab disabled this webhook after failed deliveries: the pushes of that "
+"time were lost. Press Verify, then rebuild by hand the instances that need "
+"it."
+msgstr ""
+"GitLab desactivó este webhook tras varias entregas fallidas: los pushes de "
+"ese tiempo se perdieron. Pulse Verificar y reconstruya a mano las instancias"
+" que lo necesiten."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__gitlab_event_retention_days
+msgid "GitLab event retention (days)"
+msgstr "Retención de eventos de GitLab (días)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid ""
+"GitLab has disabled the webhook of %(path)s after failed deliveries: the "
+"pushes of that time were lost. Press Verify under Settings → Git providers "
+"and rebuild by hand the instances that need it."
+msgstr ""
+"GitLab ha desactivado el webhook de %(path)s tras varias entregas fallidas: "
+"los pushes de ese tiempo se perdieron. Pulse Verificar en Ajustes → "
+"Proveedores Git y reconstruya a mano las instancias que lo necesiten."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__gitlab_id
+msgid "GitLab id"
+msgstr "Id en GitLab"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid "GitLab limits the tests: wait a minute."
+msgstr "GitLab limita las pruebas: espere un minuto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid ""
+"GitLab sent the test, but the panel received nothing: check that GitLab "
+"reaches %(url)s."
+msgstr ""
+"GitLab envió la prueba, pero el panel no recibió nada: compruebe que GitLab "
+"llega a %(url)s."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_gitlab_hook
+msgid "GitLab webhook"
+msgstr "Webhook de GitLab"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "GitLab's test delivery arrived: the webhook is active."
+msgstr "Llegó la entrega de prueba de GitLab: el webhook está activo."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Give me an upload key"
 msgstr "Deme una clave de subida"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid ""
+"Give the webhook of %(path)s a new secret? Deliveries fail until you paste "
+"it in GitLab."
+msgstr ""
+"¿Dar un secreto nuevo al webhook de %(path)s? Las entregas fallarán hasta "
+"que lo pegue en GitLab."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid ""
+"Give the webhook of %(path)s a new secret? The panel updates it in GitLab "
+"too."
+msgstr ""
+"¿Dar un secreto nuevo al webhook de %(path)s? El panel también lo actualiza "
+"en GitLab."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6236,6 +6445,11 @@ msgstr "El identificador de la concesión debe ser único."
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_restore_upload_grant__state__granted
 msgid "Granted"
 msgstr "Concedida"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_gitlab_hook__scope__group
+msgid "Group"
+msgstr "Grupo"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_webhook_secret
@@ -6443,10 +6657,26 @@ msgid "Hide earlier history"
 msgstr "Ocultar el historial anterior"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Hide secret"
+msgstr "Ocultar secreto"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__scheduling_priority__high
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__high
 msgid "High"
 msgstr "Alta"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__hook_id
+msgid "Hook"
+msgstr "Webhook"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__hook_key
+msgid "Hook Key"
+msgstr "Clave del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6924,6 +7154,25 @@ msgid "IP:"
 msgstr "IP:"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_hook__gitlab_id
+msgid "Id of the project or group in GitLab."
+msgstr "Id del proyecto o del grupo en GitLab."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_hook__remote_hook_id
+msgid ""
+"Id of the webhook in GitLab when the panel created it; empty when it was set"
+" up by hand."
+msgstr ""
+"Id del webhook en GitLab cuando lo creó el panel; vacío si se configuró a "
+"mano."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_event__delivery_key
+msgid "Idempotency-Key; empty when GitLab sends none."
+msgstr "Idempotency-Key; vacía si GitLab no la envía."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_account
 msgid ""
 "Identity this panel authenticates as against the central, and the label the "
@@ -7061,6 +7310,20 @@ msgstr "Importando instancia…"
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 msgid "Importing project…"
 msgstr "Importando proyecto…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"In GitLab, open Settings → Webhooks → Add new webhook, paste the URL and the"
+" secret, tick Push events and Merge request events, keep Enable SSL "
+"verification, and save. Then press Test → Tag push events, never Push "
+"events, which would rebuild."
+msgstr ""
+"En GitLab, abra Settings → Webhooks → Add new webhook, pegue la URL y el "
+"secreto, marque Push events y Merge request events, deje Enable SSL "
+"verification y guarde. Después pulse Test → Tag push events, nunca Push "
+"events, que reconstruiría."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7993,6 +8256,11 @@ msgid "Last Specs Probe"
 msgstr "Última verificación"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__last_status_check
+msgid "Last Status Check"
+msgstr "Última comprobación del estado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_touched_at
 msgid "Last Touched At"
 msgstr "Última actividad en el panel el"
@@ -8080,6 +8348,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Last check"
 msgstr "Última verificación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Last delivery:"
+msgstr "Última entrega:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8692,6 +8966,12 @@ msgid "Memory usage"
 msgstr "Uso de memoria"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Merge request previews: coming in a next version."
+msgstr "Vistas previas de merge requests: en una próxima versión."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__message
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__message
 msgid "Message"
@@ -9231,9 +9511,27 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "No delivery yet"
+msgstr "Sin entregas aún"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "No key has been generated. Try again, or upload your own."
 msgstr "No se ha generado ninguna clave. Inténtelo de nuevo o suba la suya."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"No repository line uses this webhook. The panel deletes it 7 days after the "
+"last line went; one set up by hand must be deleted in GitLab too."
+msgstr ""
+"Ninguna línea de repositorio usa este webhook. El panel lo elimina 7 días "
+"después de que se fuera la última línea; uno configurado a mano debe "
+"eliminarse también en GitLab."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9586,6 +9884,18 @@ msgid "No usage measured yet"
 msgstr "Aún no se ha medido el uso"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "No webhook: pushes do not rebuild."
+msgstr "Sin webhook: los pushes no reconstruyen."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "No webhooks yet."
+msgstr "Aún no hay webhooks."
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__retention_owner__none
 msgid "Nobody — infinite archive"
 msgstr "Nadie — archivo infinito"
@@ -9711,6 +10021,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "Nothing to reprocess."
+msgstr "No hay nada que reprocesar."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Nothing to roll back."
 msgstr "Nada que revertir."
@@ -9765,6 +10081,17 @@ msgstr ""
 "Número de días que se conservan las filas cloud.github.event procesadas. Las"
 " filas no procesadas/con error nunca se borran automáticamente. Ponga 0 para"
 " desactivar la eliminación completamente."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__gitlab_event_retention_days
+msgid ""
+"Number of days to keep processed cloud.gitlab.event rows; the body is never "
+"stored, so nothing is truncated first. Unprocessed/error rows are never "
+"auto-deleted. Set to 0 to disable deletion entirely."
+msgstr ""
+"Días que se conservan las filas procesadas de cloud.gitlab.event; el cuerpo "
+"nunca se guarda, así que antes no se trunca nada. Las filas sin procesar o "
+"con error nunca se borran solas. Ponga 0 para no borrar nunca."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__job_retention_days
@@ -10098,9 +10425,20 @@ msgid "One suspicion per alert code and target."
 msgstr "Una sola sospecha por código de alerta y destino."
 
 #. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_gitlab_hook_path_uniq
+msgid "One webhook per provider, scope and path."
+msgstr "Un webhook por proveedor, ámbito y ruta."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__block_direct_access
 msgid "Only Accept Traffic From Trusted Proxies"
 msgstr "Aceptar tráfico solo de los proxies de confianza"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "Only GitLab lines take a webhook."
+msgstr "Solo las líneas de GitLab llevan webhook."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10387,6 +10725,16 @@ msgid "Originating Job"
 msgstr "Tarea originante"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_gitlab_hook__state__orphan
+msgid "Orphan"
+msgstr "Huérfano"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__orphan_since
+msgid "Orphan Since"
+msgstr "Huérfano desde"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "Other services lose their ports."
@@ -10469,7 +10817,8 @@ msgstr "Valores de la fila del trabajo"
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__user_id
 msgid "Ownership for quick ACL check on every proxy call."
-msgstr "Propiedad, para comprobar los permisos rápidamente en cada llamada al proxy."
+msgstr ""
+"Propiedad, para comprobar los permisos rápidamente en cada llamada al proxy."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11073,6 +11422,11 @@ msgstr "El nombre del proyecto es obligatorio"
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Project not found"
 msgstr "Proyecto no encontrado"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_hook__path
+msgid "Project or group path, lower case."
+msgstr "Ruta del proyecto o del grupo, en minúsculas."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11744,9 +12098,20 @@ msgstr ""
 " vacía no significa eso, ya que la lista puede aportarla la plataforma."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Register webhook"
+msgstr "Registrar webhook"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__remote_folder
 msgid "Remote Folder"
 msgstr "Carpeta remota"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__remote_hook_id
+msgid "Remote Hook"
+msgstr "Webhook remoto"
 
 #. module: incubacloud
 #. odoo-python
@@ -12062,6 +12427,12 @@ msgstr "Línea de repositorio (base compartida)"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "Repository line not found."
+msgstr "No se encontró la línea de repositorio."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Repository manifest is too complex."
 msgstr "El manifest del repositorio es demasiado complejo."
@@ -12083,6 +12454,17 @@ msgstr "El archivo de requisitos del repositorio es demasiado grande."
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Repository tree is too large."
 msgstr "El árbol del repositorio es demasiado grande."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Reprocess"
+msgstr "Reprocesar"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_purge_gitlab_events_ir_actions_server
+msgid "Reprocess and Purge GitLab Webhook Events"
+msgstr "Reprocesar y purgar los eventos de webhooks de GitLab"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12399,9 +12781,27 @@ msgid "Rolling back…"
 msgstr "Revirtiendo…"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Rotate"
+msgstr "Rotar"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_rotate_encrypted_secrets_ir_actions_server
 msgid "Rotate Encrypted Secrets (MultiFernet)"
 msgstr "Rotar secretos cifrados (MultiFernet)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Rotate secret"
+msgstr "Rotar secreto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Rotate webhook secret"
+msgstr "Rotar el secreto del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12486,6 +12886,12 @@ msgstr "Error S3 %(code)s: %(msg)s"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "SSH key"
 msgstr "Clave SSH"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Save the line to register its webhook."
+msgstr "Guarde la línea para registrar su webhook."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12857,6 +13263,11 @@ msgstr ""
 "coincidencias."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__secret
+msgid "Secret"
+msgstr "Secreto"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_secret_access_key
@@ -12870,6 +13281,12 @@ msgid "Secret stored. Leave blank to keep, or enter a new secret to replace."
 msgstr ""
 "Secreto guardado. Deje en blanco para mantenerlo, o introduzca un nuevo "
 "secreto para reemplazarlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Secret token"
+msgstr "Token secreto"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_app__webhook_secret
@@ -12924,6 +13341,11 @@ msgstr "Seleccione una instancia"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__type__self_hosted
 msgid "Self-hosted"
 msgstr "Auto-alojado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__semantic_key
+msgid "Semantic Key"
+msgstr "Clave semántica"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_notification_digest_ir_actions_server
@@ -13045,6 +13467,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Set it up by hand with the URL and secret in Git providers."
+msgstr "Configúrelo a mano con la URL y el secreto de Proveedores Git."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 msgid "Set the Grafana base URL in Settings to embed the dashboards here."
 msgstr ""
@@ -13085,6 +13513,12 @@ msgid ""
 msgstr ""
 "Configure un destino compatible con S3 para habilitar copias automáticas en "
 "sus instancias."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Set up by hand →"
+msgstr "Configurar a mano →"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13176,6 +13610,12 @@ msgstr "Mostrar el historial anterior"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Show last 7 days"
 msgstr "Mostrar últimos 7 días"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Show secret"
+msgstr "Mostrar secreto"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13503,6 +13943,11 @@ msgstr "Asunto"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__succeeded_before_cancel
 msgid "Succeeded Before the Cancel"
 msgstr "Terminó bien antes de la cancelación"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__summary
+msgid "Summary"
+msgstr "Resumen"
 
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.sync_direct_path
@@ -13909,6 +14354,12 @@ msgid ""
 "offer."
 msgstr ""
 "El código que se importa es de Odoo %(series)s, que este panel no ofrece."
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid ""
+"The credential does not have the Maintainer role in the project (Owner for a"
+" group)."
+msgstr ""
+"La credencial no tiene el rol Maintainer en el proyecto (Owner en un grupo)."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13919,6 +14370,18 @@ msgid ""
 msgstr ""
 "El backend de respaldo por defecto que se usa para las instancias de producción cuando\n"
 "                        no se selecciona un backend específico a nivel de proyecto o instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "The delivery failed again: %(error)s"
+msgstr "La entrega volvió a fallar: %(error)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "The delivery was processed."
+msgstr "La entrega se procesó."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_reach_urls
@@ -14177,6 +14640,12 @@ msgstr ""
 "elimínela si ya no necesita lo que guarda."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "The panel could not register the webhook:"
+msgstr "El panel no pudo registrar el webhook:"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__port
 msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
@@ -14201,8 +14670,8 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
-"The process running this job died and queue_job gave up on it; closed by "
-"the reconciliation of lost jobs."
+"The process running this job died and queue_job gave up on it; closed by the"
+" reconciliation of lost jobs."
 msgstr ""
 "El proceso que ejecutaba este trabajo murió y queue_job lo dio por perdido; "
 "lo cerró la conciliación de trabajos perdidos."
@@ -14274,16 +14743,32 @@ msgstr ""
 "nombre. Elija otra carpeta remota."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_event.py:0
+msgid ""
+"The repository %(old)s is now %(new)s in GitLab: update the URL of its "
+"repository lines."
+msgstr ""
+"El repositorio %(old)s ahora es %(new)s en GitLab: actualice la URL de sus "
+"líneas de repositorio."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_gitlab_hook_key_uniq
+msgid "The routing key is unique."
+msgstr "La clave de enrutado es única."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job__succeeded_before_cancel
 msgid ""
 "The run's success hook had returned when a person's cancel reached it: the "
-"job is stored done, not cancelled (AbstractExecutor."
-"_mark_success_before_cancel). Cleared when the job starts again."
+"job is stored done, not cancelled "
+"(AbstractExecutor._mark_success_before_cancel). Cleared when the job starts "
+"again."
 msgstr ""
 "El hook de éxito de la ejecución ya había terminado cuando le llegó la "
 "cancelación de una persona: el trabajo se guarda como hecho, no como "
-"cancelado (AbstractExecutor._mark_success_before_cancel). Se borra cuando "
-"el trabajo vuelve a empezar."
+"cancelado (AbstractExecutor._mark_success_before_cancel). Se borra cuando el"
+" trabajo vuelve a empezar."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14409,6 +14894,12 @@ msgstr ""
 "ejecuta una vez confirmada la transacción del propio job (véase "
 "AbstractExecutor._unlink_after_job_commit). Una repetición del desmontaje "
 "que encuentre esto marcado no tiene nada más que hacer en el host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "The webhook has a new secret."
+msgstr "El webhook tiene un secreto nuevo."
 
 #. module: incubacloud
 #. odoo-python
@@ -14826,6 +15317,14 @@ msgstr "Este staging todavía no se ha desplegado."
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This staging is stopped. Start it to read its mailbox."
 msgstr "Este staging está parado. Arránquelo para leer su buzón."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
+msgid ""
+"This webhook was set up by hand: press Test → Tag push events in GitLab."
+msgstr ""
+"Este webhook se configuró a mano: pulse Test → Tag push events en GitLab."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15330,6 +15829,12 @@ msgstr "Escriba para buscar hosts…"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "URL"
+msgstr "URL"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "UTC"
 msgstr "UTC"
@@ -15435,6 +15940,12 @@ msgstr "Fichero de log desconocido"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "Unknown repository line."
+msgstr "Línea de repositorio desconocida."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Unknown service"
 msgstr "Servicio desconocido"
@@ -15477,6 +15988,12 @@ msgstr "No soportado"
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Unsupported repository content encoding."
 msgstr "La codificación del contenido del repositorio no es compatible."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Unused"
+msgstr "Sin uso"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15668,6 +16185,17 @@ msgstr ""
 " host (cambia host_id y redirige el DNS)."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Verify"
+msgstr "Verificar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__verify_requested_at
+msgid "Verify Requested At"
+msgstr "Verificación pedida el"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_verify_archived_copies_ir_actions_server
 msgid "Verify archived instance copies"
 msgstr "Verificar las copias de instancias archivadas"
@@ -15782,6 +16310,12 @@ msgid "Waiting for the alert to be resolved: %s"
 msgstr "Esperando a que se resuelva la alerta: %s"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Waiting for the delivery…"
+msgstr "Esperando la entrega…"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__wait_dependencies
 msgid "Waiting on Dependencies"
 msgstr "Esperando dependencias"
@@ -15868,6 +16402,23 @@ msgstr "La URL del webhook es obligatoria si se configura un secreto de firma"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Webhook active: a push rebuilds."
+msgstr "Webhook activo: un push reconstruye."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_repo_event_mixin
+msgid "Webhook event of a git provider"
+msgstr "Evento de webhook de un proveedor Git"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "Webhook not found."
+msgstr "No se encontró el webhook."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Webhook payloads are large (100 KB+ for monorepo pushes).\n"
@@ -15881,6 +16432,18 @@ msgstr ""
 "                        en bruto se reemplaza por un resumen compacto; tras el periodo de retención,\n"
 "                        la fila misma se elimina. Los eventos sin procesar o con error nunca se\n"
 "                        eliminan automáticamente. Ponga cualquiera de los dos en 0 para desactivarlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Webhook registered, no delivery yet: verify it in Git providers."
+msgstr "Webhook registrado, sin entregas aún: verifíquelo en Proveedores Git."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Webhooks"
+msgstr "Webhooks"
 
 #. module: incubacloud
 #. odoo-python
@@ -15920,6 +16483,11 @@ msgstr ""
 "resuelven por la etiqueta de instancia que ponen los agentes y levantan su "
 "alerta contra esa instancia, así que aparece en su propia página en vez de "
 "enterrada en la del host."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_event__summary
+msgid "What is kept of the body, as compact JSON."
+msgstr "Lo que se guarda del cuerpo, como JSON compacto."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_notification_level
@@ -16489,6 +17057,11 @@ msgstr ""
 "que el proxy la rechaza. Nunca reinicia el proxy."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_event__event_type
+msgid "X-Gitlab-Event"
+msgstr "X-Gitlab-Event"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
@@ -16537,6 +17110,12 @@ msgstr ""
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "You are on PRODUCTION. Be careful."
 msgstr "Está en PRODUCCIÓN. Tenga cuidado."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid "You cannot edit a project this webhook serves."
+msgstr "No puede editar ningún proyecto al que sirva este webhook."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16954,6 +17533,12 @@ msgstr "globalwhitelist"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "group"
+msgstr "grupo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
 "header for your endpoint to\n"
@@ -16981,7 +17566,6 @@ msgstr "host"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "http://172.17.0.1:8428/r/"
 msgstr "http://172.17.0.1:8428/r/"
-
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17282,6 +17866,11 @@ msgid "psql -U odoo -d <dbname>"
 msgstr "psql -U odoo -d <dbname>"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_event__semantic_key
+msgid "push:<path>:<ref>:<before>:<after>, pushes only."
+msgstr "push:<path>:<ref>:<before>:<after>, solo en pushes."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -17355,6 +17944,18 @@ msgstr "scopes sin leer"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "set up by hand"
+msgstr "configurado a mano"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "set up by the panel"
+msgstr "configurado por el panel"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "skip"
 msgstr "omitir"
@@ -17423,6 +18024,12 @@ msgstr "el CDN de la plataforma, refrescado a diario"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "this host's own override, below"
 msgstr "la excepción propia de este anfitrión, abajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "this panel's address"
+msgstr "la dirección de este panel"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17636,13 +18243,13 @@ msgstr "⚠ No se pudo deshacer lo que el trabajo había preparado: %s"
 #. odoo-python
 #: code:addons/incubacloud/models/move_steps_executor.py:0
 msgid ""
-"The old copy of %(name)s on %(host)s could not be stopped after its move and "
-"may still be running. It is removed on %(until)s UTC, or now with «Clean "
+"The old copy of %(name)s on %(host)s could not be stopped after its move and"
+" may still be running. It is removed on %(until)s UTC, or now with «Clean "
 "frozen copy now»."
 msgstr ""
-"La copia antigua de %(name)s en %(host)s no se pudo detener tras su traslado "
-"y puede seguir en marcha. Se elimina el %(until)s UTC, o ahora con «Limpiar "
-"la copia congelada ahora»."
+"La copia antigua de %(name)s en %(host)s no se pudo detener tras su traslado"
+" y puede seguir en marcha. Se elimina el %(until)s UTC, o ahora con «Limpiar"
+" la copia congelada ahora»."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17869,8 +18476,8 @@ msgid ""
 "Stopped now, the database would be left empty or half loaded. Let it end; it"
 " takes as long as loading the backup does."
 msgstr ""
-"El trabajo n.º %(job)s ya no se puede detener: está en «%(step)s», que ya ha "
-"borrado la base de datos de la instancia para cargar la copia de seguridad "
+"El trabajo n.º %(job)s ya no se puede detener: está en «%(step)s», que ya ha"
+" borrado la base de datos de la instancia para cargar la copia de seguridad "
 "en su lugar. Si se detuviera ahora, la base de datos quedaría vacía o "
 "cargada a medias. Deje que termine; tarda lo que tarde en cargarse la copia "
 "de seguridad."
@@ -17901,13 +18508,6 @@ msgid ""
 msgstr ""
 "%(alias)s: no hay un proveedor Git para %(host)s. Añádalo en Ajustes → "
 "Proveedores Git y vuelva a importar."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
-msgid "%(count)s repository lines use %(name)s: change or remove them first."
-msgstr ""
-"%(count)s líneas de repositorio usan %(name)s: cámbielas o quítelas primero."
 
 #. module: incubacloud
 #. odoo-python
@@ -18338,14 +18938,6 @@ msgstr "Token de acceso de proyecto"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__provider_id
 msgid "Provider"
 msgstr "Proveedor"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-msgid "Rebuild on push and merge request previews: coming in a next version."
-msgstr ""
-"Reconstrucción con cada push y vistas previas de merge requests: en una "
-"próxima versión."
 
 #. module: incubacloud
 #. odoo-javascript
