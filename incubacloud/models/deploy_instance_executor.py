@@ -110,6 +110,19 @@ GATEKEEPER_IMAGE = (
     "ghcr.io/tecnativa/egress-gatekeeper@sha256:"
     "ade54ca95d21abaf858c77f5949f8dbbff946a2e9b621b5775aabc33bf0243a8"
 )
+#: The docker-mailserver release a production instance's ``smtp`` relay
+#: runs. The copier answers say ``smtp_relay_version: latest`` and every
+#: deploy pulls, so the template's tag moved with upstream: v17.0.0 became
+#: ``latest`` on 2026-11-05, and each deploy, rebuild or move after it
+#: started v17 while the instances deployed before kept what they had
+#: pulled. 16.0.1 is the release the tenant panels already run
+#: (``incubacloud_saas_manager``) and was chosen on 2026-11-08. A release
+#: tag, not a digest: upstream rebuilds it for Debian security updates
+#: (``16.0.1-rN``) without moving the release. The pin rides the override
+#: and stays out of the answers, whose hash a new value would change for
+#: the whole fleet. Moving it is a decision: read the release's breaking
+#: changes against the relay's settings in the template's ``common.yaml``.
+SMTP_RELAY_IMAGE = "ghcr.io/docker-mailserver/docker-mailserver:16.0.1"
 
 # Path to the incubacloud_connect module.  Navigate from __file__ via
 # abspath (stays in auto/addons/) then realpath the result to resolve
@@ -1197,10 +1210,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         value; each limit is logged and kept in ``_cpu_clamps`` for the
         end hooks. Nothing is limited when the count could not be read.
 
-        The ``smtp`` service gets ``ENABLE_UPDATE_CHECK=0``. It belongs
-        in the override rather than in ``.docker/smtp.env`` or the
-        compose files because ``copier update`` regenerates all three on
-        every rebuild, which would drop it.
+        The production ``smtp`` service gets ``ENABLE_UPDATE_CHECK=0`` and
+        the image :data:`SMTP_RELAY_IMAGE`. Both belong in the override
+        rather than in ``.docker/smtp.env`` or the compose files because
+        ``copier update`` regenerates all three on every rebuild, which
+        would drop them.
 
         A staging with an egress whitelist of its own also carries
         ``odoo_net_setup``, whose template defaults are corrected here;
@@ -1345,6 +1359,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # Sablier wake, turning "once per start" into dozens of
             # identical mails a day.
             services["smtp"]["environment"] = {"ENABLE_UPDATE_CHECK": "0"}
+            # The release is the panel's too: see SMTP_RELAY_IMAGE.
+            services["smtp"]["image"] = SMTP_RELAY_IMAGE
         elif "smtp" in allowed:
             # A staging's ``smtp`` is a different animal: the mail
             # catcher (MailHog), so there is no update check to switch
