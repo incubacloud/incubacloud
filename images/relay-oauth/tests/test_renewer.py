@@ -2,7 +2,10 @@
 
 import json
 import os
+import signal
 import stat
+import subprocess
+import sys
 import threading
 import time
 
@@ -92,6 +95,20 @@ def test_next_renewal_follows_expires_in(renewer, token_server, expires_in, wait
     assert renewer.Renewer().step() == wait
 
 
+def test_an_expires_in_of_a_day_is_the_most_accepted(renewer, token_server):
+    """A day is taken as sent: only what is beyond it is a bad answer."""
+    token_server.answers = [(200, {"access_token": "at", "expires_in": 86400})]
+    assert renewer.Renewer().step() == 86400 - renewer.RENEW_MARGIN
+    assert _status(renewer)["state"] == "ok"
+
+
+def test_a_huge_expires_in_writes_no_token(renewer, token_server):
+    """An absurd expiry never reaches the token file the plugin trusts."""
+    token_server.answers = [(200, {"access_token": "at", "expires_in": 10**12})]
+    renewer.Renewer().step()
+    assert not os.path.exists(renewer.token_path())
+
+
 # --- Failures -------------------------------------------------------------------
 
 
@@ -108,11 +125,21 @@ def test_next_renewal_follows_expires_in(renewer, token_server, expires_in, wait
                 "error_description": "AADSTS90002: Tenant 'x' not found."}),
          "AADSTS90002", "Tenant 'x' not found."),
         ((429, {"error": "too_many_requests"}), "HTTP 429", "too_many_requests"),
+        # error_codes[0] goes to status.json: only an integer is an AADSTS code.
+        ((400, {"error": "invalid_request", "error_codes": ["AADSTS1; <b>"]}),
+         "HTTP 400", "invalid_request"),
+        ((400, {"error": "invalid_request", "error_codes": [{"a": 1}]}),
+         "HTTP 400", "invalid_request"),
+        ((400, {"error": "invalid_request", "error_codes": [True]}),
+         "HTTP 400", "invalid_request"),
         ((503, b"<html>down</html>"), "HTTP 503", ""),
         ((200, b"{not json"), "bad_response", "access_token"),
         ((200, {"token_type": "Bearer"}), "bad_response", "access_token"),
         ((200, {"access_token": "", "expires_in": 3600}), "bad_response", "empty"),
         ((200, {"access_token": "at", "expires_in": 0}), "bad_response", "positive"),
+        ((200, {"access_token": "at", "expires_in": 10**12}), "bad_response", "expires_in"),
+        ((200, {"access_token": "at", "expires_in": 86401}), "bad_response", "expires_in"),
+        ((200, b'{"access_token": "at", "expires_in": Infinity}'), "bad_response", "access_token"),
         ((302, b""), "HTTP 302", ""),
         ("hang", "network", ""),
     ],
@@ -371,10 +398,72 @@ def test_unknown_subcommand(renewer, capsys):
     assert "usage" in capsys.readouterr().err
 
 
-def test_sigusr1_wakes_the_sleep(renewer):
-    """Setting the wake event (SIGUSR1's handler) ends the sleep at once."""
-    threading.Timer(0.1, renewer._wake.set).start()
-    start = time.monotonic()
-    renewer._sleep(30)
-    assert time.monotonic() - start < 5
-    assert not renewer._wake.is_set()
+def test_sigusr1_ends_the_sleep_at_once(renewer):
+    """With the signal blocked as run() does, a SIGUSR1 sent to the sleeping thread ends the sleep."""
+    old = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    try:
+        renewer._prepare_wake_signal()
+        assert signal.SIGUSR1 in signal.pthread_sigmask(signal.SIG_BLOCK, set())
+        threading.Timer(0.1, signal.pthread_kill,
+                        (threading.get_ident(), signal.SIGUSR1)).start()
+        start = time.monotonic()
+        renewer._sleep(30)
+        assert time.monotonic() - start < 5
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
+
+
+def test_sigusr1_sent_before_the_sleep_is_not_lost(renewer):
+    """A renewal asked for while a step runs makes the next sleep return at once, once."""
+    old = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    try:
+        renewer._prepare_wake_signal()
+        signal.raise_signal(signal.SIGUSR1)
+        start = time.monotonic()
+        renewer._sleep(30)
+        assert time.monotonic() - start < 5
+        start = time.monotonic()
+        renewer._sleep(0.3)
+        assert time.monotonic() - start >= 0.3
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
+
+
+_RUN_SCRIPT = """
+import grp, importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("renewer_run", sys.argv[1])
+renewer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(renewer)
+renewer.TOKEN_GROUP = grp.getgrgid(os.getgid()).gr_name
+renewer.flush_queue = lambda: None
+renewer.run()
+"""
+
+
+def test_run_renews_again_on_a_real_sigusr1_and_ends_on_sigterm(renewer, token_server):
+    """``run`` as a process: os.kill(SIGUSR1) renews at once (the next one is 40 min away); SIGTERM exits 0."""
+    env = dict(os.environ,
+               IC_RELAY_OAUTH_SECRETS=str(renewer.secrets_file),
+               IC_RELAY_OAUTH_DIR=renewer.STATE_DIR,
+               IC_RELAY_OAUTH_TOKEN_URL=token_server.url)
+    proc = subprocess.Popen(
+        [sys.executable, "-I", "-c", _RUN_SCRIPT, str(renewer.__file__)], env=env
+    )
+    try:
+        def wait_requests(count):
+            """Wait up to 15 s for the endpoint to have been asked ``count`` times."""
+            deadline = time.monotonic() + 15
+            while len(token_server.requests) < count and time.monotonic() < deadline:
+                time.sleep(0.05)
+            return len(token_server.requests) >= count
+
+        assert wait_requests(1)
+        time.sleep(0.3)  # run() is asleep now: its first step ends with the status write
+        os.kill(proc.pid, signal.SIGUSR1)
+        assert wait_requests(2)
+        proc.terminate()
+        assert proc.wait(timeout=15) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
