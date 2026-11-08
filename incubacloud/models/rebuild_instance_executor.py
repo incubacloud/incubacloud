@@ -25,7 +25,7 @@ from .host_build_lock import HostBuildLockMixin
 
 from ._odoo_versions import headless_flag
 from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
-from .deploy_instance_executor import DeployInstanceExecutor
+from .deploy_instance_executor import DeployInstanceExecutor, _build_retried_once
 from .docker_prune_executor import build_cache_prune_if_low
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
@@ -40,8 +40,6 @@ _CRONS_BUSY_PATIENCE = timedelta(minutes=30)
 #: boot test — so they are five minutes apart: within the half hour of
 #: patience that is six of them, not thirty.
 _CRONS_BUSY_RETRY_S = 300
-#: What a failed image build waits before its one repetition, in seconds.
-_BUILD_RETRY_WAIT_S = 60
 #: The step that rewrites the stack's files on the host, and the one that
 #: puts what they describe in service (``on_cancelled_running``).
 _LABEL_COPIER = "Update with copier"
@@ -53,34 +51,15 @@ _LABEL_UPDATE = "Update changed modules"
 _LABEL_RESTART = "Restart instance"
 
 
-def _build_retried_once(build):
-    """Return a shell command that repeats a failed image build once.
-
-    The build clones every repository of the image, so a passing failure
-    at GitHub would otherwise fail the whole rebuild (QA, 31-oct-2026). The
-    repetition also runs for a build that fails for good: it only costs that
-    build's time, and the job then fails with the same error.
-
-    :param str build: the ``docker compose build`` command to run.
-    :return: the command, exiting with the status of its last attempt.
-    :rtype: str
-    """
-    return (
-        f"{{ {build} || {{"
-        f" echo 'The image build failed: trying once more"
-        f" in {_BUILD_RETRY_WAIT_S} s.';"
-        f" sleep {_BUILD_RETRY_WAIT_S}; {build}; }}; }}"
-    )
-
-
 class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     """Rebuild a running doodba instance using copier update.
 
     ``HostBuildLockMixin`` is first in the bases so its
-    ``pre_run_checks`` runs and chains: this is the only class in the
-    codebase that issues ``docker compose build``, and every rebuild
-    variant inherits from it, so putting the per-host build lock here
-    covers manual, tenant and warm rebuilds at once.
+    ``pre_run_checks`` runs and chains: every rebuild variant inherits
+    from this class, so putting the per-host build lock here covers
+    manual, tenant and warm rebuilds at once. Core's deploy, which builds
+    in «Build Odoo image», takes none: the lock, transactional, would
+    serialise whole deploys (see ``docker_prune_executor.BUILD_CACHE_KEEP``).
     """
 
     _job_type = "rebuild_instance"

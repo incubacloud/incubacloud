@@ -143,7 +143,7 @@ class TestBuildsCleanFirstOnALowDisk(BaseCase):
     def test_a_deploy_checks_before_it_pulls_and_builds(self):
         labels = self._labels(_make_deploy_executor())
         self.assertIn(_LOW_DISK_STEP, labels)
-        self.assertLess(labels.index(_LOW_DISK_STEP), labels.index("Pull images"))
+        self.assertLess(labels.index(_LOW_DISK_STEP), labels.index("Build Odoo image"))
         self.assertLess(labels.index(_LOW_DISK_STEP), labels.index("Initialize database"))
 
     def test_a_rebuild_checks_before_it_builds(self):

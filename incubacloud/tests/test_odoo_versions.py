@@ -253,7 +253,7 @@ class TestAnImageOnAnArchivedDebianBuilds(BaseCase):
                     )
                     build = next(
                         i for i, label in enumerate(labels)
-                        if label in ("Pull images", "Rebuild Odoo image")
+                        if label in ("Build Odoo image", "Rebuild Odoo image")
                     )
                     self.assertLess(labels.index(self.LABEL), build)
 

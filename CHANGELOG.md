@@ -49,6 +49,20 @@ database.
   cancelling is refused with a message saying why. A move's restore has none:
   it loads a copy on the new host that a rollback removes, the source
   untouched.
+- **A deploy tries a failed image build once more.** The deploy had no build
+  step: the first `docker compose run` or `up` that found the image missing
+  built it, never twice, so a passing failure at GitHub while the image cloned
+  its repositories (`curl 55`, `100-repos-aggregate`) failed the whole deploy,
+  in «Start instance» for a move (QA, 8-nov-2026). A new step, «Build Odoo
+  image», runs `docker compose build odoo` between «Pull images» and «Start
+  database», cached and without a pull as before, and stops the deploy if it
+  fails; a failed build waits 60 s and runs once more, as the rebuild's has
+  since 1-nov-2026. A first attempt that ran 900 s or more is not repeated, in
+  the deploy or the rebuild: the job runner kills a job at 3600 s, and that
+  kill leaves the job orphaned and the instance in `deploying`. Tenants',
+  warm spares', staging and moves' deploys get the step too.
+- **An addon conflict is named once in its alert,** where a build repeated
+  once printed it, and the alert listed it, twice.
 
 ## [1.0.217] — 2026-11-08
 
