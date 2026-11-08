@@ -25,9 +25,10 @@ DEFAULT_SSH_COMMAND_TIMEOUT = 3600  # 1 hour
 # How long a cancelled command is given to end once it was sent TERM, in
 # seconds: what a script's EXIT trap takes to put the stack back (the boot
 # test's took 1.6 s, measured on 8-nov-2026). Kept far below the
-# five-minute tick of the lost-job reconciliation and the runner's
-# ``limit_time_real`` (3600 s), so the wait never turns the job into a lost
-# worker. The executor's loop is not ticking meanwhile: nothing reaches the
+# five-minute tick of the lost-job reconciliation and the ``limit_time_real``
+# of the workers that run jobs (3600 s on the platform's job runner, which
+# overrides the 1200 s its web workers keep), so the wait never turns the
+# job into a lost worker. The executor's loop is not ticking meanwhile: nothing reaches the
 # job's log (``_flush_logs``) until the wait is over, then all of it does.
 CANCEL_TERM_WAIT_S = 60
 
