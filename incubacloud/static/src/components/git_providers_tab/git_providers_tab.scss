@@ -58,19 +58,21 @@
 
     .ic-gitp-credhead { margin-top: 18px; }
 
+    // The fields share the row and wrap when it is narrow; the remove
+    // button keeps its size at the end.
     .ic-gitp-credrow {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto;
+        display: flex;
+        flex-wrap: wrap;
         gap: 8px 12px;
-        align-items: end;
+        align-items: flex-end;
         padding: 10px 0;
         border-bottom: 1px solid var(--rl-line);
         margin-bottom: 10px;
 
-        .rl-frow { margin-bottom: 0; }
+        .rl-frow { margin-bottom: 0; flex: 1 1 170px; min-width: 0; }
     }
 
-    .ic-gitp-credrm { align-self: center; }
+    .ic-gitp-credrm { flex: none; margin-bottom: 6px; }
 
     // A field's help, as Settings' toggles show theirs.
     .rl-th {
@@ -83,8 +85,8 @@
 }
 
 @media (max-width: 480px) {
-    .ic-app .ic-gitp .ic-gitp-credrow { grid-template-columns: minmax(0, 1fr); }
-    .ic-app .ic-gitp .ic-gitp-credrm { justify-self: end; }
+    .ic-app .ic-gitp .ic-gitp-credrow .rl-frow { flex-basis: 100%; }
+    .ic-app .ic-gitp .ic-gitp-credrm { margin-left: auto; }
     .ic-app .ic-gitp .rl-set-status { grid-template-columns: 1fr; }
     .ic-app .ic-gitp .ic-gitp-test .rl-frow-inline { flex-wrap: wrap; }
 }
