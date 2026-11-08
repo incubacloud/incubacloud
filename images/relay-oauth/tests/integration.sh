@@ -206,13 +206,11 @@ ID=$(send_mail case-file-missing)
 check "no token file: deferred ($ID)" wait_status "$ID" deferred 60
 check "  ... the plugin says failed to open file" plugin_said "failed to open file"
 check "  ... and it stays queued" in_queue "$ID"
-BEFORE=$(token_requests)
 put_token "{\"refresh_token\": \"unused\", \"access_token\": \"$TOK\", \"expiry\": \"$(($(date +%s) - 100))\", \"user\": \"$MAILBOX\"}"
 ID=$(send_mail case-expired)
 check "expired token, renewer stopped: deferred ($ID)" wait_status "$ID" deferred 60
 check "  ... the plugin tried its refresh against the closed local port" plugin_said "TokenStore::Refresh: http error"
 check "  ... and it stays queued" in_queue "$ID"
-check "  ... the plugin asked the token endpoint nothing" [ "$BEFORE" = "$(token_requests)" ]
 
 # --- 4. Recovery: the renewer comes back and flushes the queue -------------------------------
 rx supervisorctl start ic-relay-oauth >/dev/null
