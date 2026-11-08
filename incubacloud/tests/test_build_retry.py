@@ -10,6 +10,11 @@ runner kills a job at 3600 s, and its SIGKILL leaves the job orphaned.
 
 The repetition is decided on the host, so the command is run here with a
 stand-in ``docker`` and ``sleep`` on the ``PATH`` that record their calls.
+
+The step runs in whatever shell the host's user has: bash for root, but a
+user made with ``useradd`` and no ``-s`` has ``/bin/sh``, which is dash on
+Debian. The shell tests therefore run in bash, ``sh`` and, if installed,
+dash. The clock is a stand-in ``date``, so a long attempt costs no time.
 """
 import asyncio
 import os
@@ -19,6 +24,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from unittest import skipUnless
 from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import BaseCase
@@ -40,24 +46,32 @@ _REAL_SLEEP = shutil.which("sleep")
 
 
 class _FakeHost:
-    """A directory with a stand-in ``docker`` and ``sleep`` on the ``PATH``.
+    """A directory with a stand-in ``docker``, ``sleep`` and ``date``.
 
-    ``docker`` logs each call and exits with the next status of
-    *statuses* (0 once they run out); ``sleep`` logs its argument and
-    returns at once. Either hangs instead when its ``*_hangs`` says so,
-    for a test that sends the TERM while it runs.
+    ``docker`` logs each call, moves the clock forward by *docker_secs*
+    and exits with the next status of *statuses* (0 once they run out);
+    ``sleep`` logs its argument and returns at once; ``date`` prints the
+    clock, whatever its arguments. Either of the first two hangs instead
+    when its ``*_hangs`` says so, for a test that sends the TERM while it
+    runs.
     """
 
-    def __init__(self, tmp, statuses=(), docker_hangs=False, sleep_hangs=False):
+    def __init__(
+        self, tmp, statuses=(), docker_hangs=False, sleep_hangs=False,
+        docker_secs=0,
+    ):
         """Write the stand-ins into *tmp*.
 
         :param str tmp: an empty directory
         :param statuses: the exit status of each ``docker`` call, in order
         :param bool docker_hangs: the first ``docker`` call runs until killed
         :param bool sleep_hangs: ``sleep`` runs until killed
+        :param int docker_secs: the seconds each ``docker`` call «takes»
         """
         self.log = Path(tmp, "calls")
         counter = Path(tmp, "count")
+        clock = Path(tmp, "clock")
+        clock.write_text("1800000000\n", encoding="utf-8")
         cases = "".join(
             f"  {n}) exit {status} ;;\n" for n, status in enumerate(statuses, 1)
         )
@@ -66,11 +80,13 @@ class _FakeHost:
             f'echo "docker $*" >> {self.log}\n'
             f"n=$(( $(cat {counter} 2>/dev/null || echo 0) + 1 ))\n"
             f"echo $n > {counter}\n"
+            f"echo $(( $(cat {clock}) + {docker_secs} )) > {clock}\n"
             f"{hang}"
             'case "$n" in\n'
             f"{cases}"
             "esac\nexit 0\n"
         ))
+        self._write(tmp, "date", f"cat {clock}\n")
         self._write(tmp, "sleep", (
             f'echo "sleep $*" >> {self.log}\n'
             + (f"exec {_REAL_SLEEP} 30\n" if sleep_hangs else "exit 0\n")
@@ -93,14 +109,15 @@ class _FakeHost:
             return []
         return self.log.read_text(encoding="utf-8").splitlines()
 
-    def run(self, command):
-        """Run *command* in bash, as sshd runs a step with root's shell.
+    def run(self, command, shell="bash"):
+        """Run *command* with ``<shell> -c``, as sshd runs a step.
 
+        :param str shell: the user's login shell
         :return: the exit status and the output
         :rtype: tuple[int, str]
         """
         done = subprocess.run(
-            ["bash", "-c", command], capture_output=True, text=True,
+            [shell, "-c", command], capture_output=True, text=True,
             env=self.env, timeout=30, check=False,
         )
         return done.returncode, done.stdout
@@ -109,15 +126,21 @@ class _FakeHost:
 class TestTheBuildIsRepeatedOnce(BaseCase):
     """``_build_retried_once`` on the host, with stand-in commands."""
 
-    def _run(self, statuses, build=_COMPOSE_BUILD):
-        """Run the wrapped *build* with ``docker`` exiting *statuses*.
+    #: The shell that runs the step.
+    _SHELL = "bash"
 
+    def _run(self, statuses, docker_secs=0):
+        """Run the wrapped build with ``docker`` exiting *statuses*.
+
+        :param int docker_secs: the seconds each ``docker`` call «takes»
         :return: the exit status, the output and the calls
         :rtype: tuple[int, str, list[str]]
         """
         with tempfile.TemporaryDirectory() as tmp:
-            host = _FakeHost(tmp, statuses)
-            status, out = host.run(_build_retried_once(build))
+            host = _FakeHost(tmp, statuses, docker_secs=docker_secs)
+            status, out = host.run(
+                _build_retried_once(_COMPOSE_BUILD), self._SHELL,
+            )
             return status, out, host.calls()
 
     def test_a_build_that_goes_through_runs_once(self):
@@ -145,23 +168,15 @@ class TestTheBuildIsRepeatedOnce(BaseCase):
 
     def test_a_long_first_attempt_is_not_repeated(self):
         """900 s or more: the job runner's 3600 s would not hold another."""
-        # Bash's SECONDS counts from what it is set to: the stand-in
-        # attempt "takes" the cap.
-        build = (
-            f"{{ SECONDS=$(( SECONDS + {_BUILD_RETRY_MAX_FIRST_S} ));"
-            f" {_COMPOSE_BUILD}; }}"
-        )
-        status, out, calls = self._run([3, 0], build=build)
+        status, out, calls = self._run([3, 0], docker_secs=_BUILD_RETRY_MAX_FIRST_S)
         self.assertEqual(status, 3)
         self.assertEqual(calls, ["docker compose build odoo"])
         self.assertIn("not trying again", out)
 
     def test_a_first_attempt_just_under_the_cap_is_repeated(self):
-        build = (
-            f"{{ SECONDS=$(( SECONDS + {_BUILD_RETRY_MAX_FIRST_S - 2} ));"
-            f" {_COMPOSE_BUILD}; }}"
+        status, _out, calls = self._run(
+            [3, 0], docker_secs=_BUILD_RETRY_MAX_FIRST_S - 2,
         )
-        status, _out, calls = self._run([3, 0], build=build)
         self.assertEqual(status, 0)
         self.assertEqual(
             [c for c in calls if c.startswith("docker")],
@@ -179,7 +194,7 @@ class TestTheBuildIsRepeatedOnce(BaseCase):
         with tempfile.TemporaryDirectory() as tmp:
             host = _FakeHost(tmp, [1, 0], **hangs)
             proc = subprocess.Popen(
-                ["bash", "-c", _build_retried_once(_COMPOSE_BUILD)],
+                [self._SHELL, "-c", _build_retried_once(_COMPOSE_BUILD)],
                 env=host.env, start_new_session=True,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
@@ -204,6 +219,22 @@ class TestTheBuildIsRepeatedOnce(BaseCase):
         self.assertEqual(
             calls, ["docker compose build odoo", f"sleep {_BUILD_RETRY_WAIT_S}"],
         )
+
+
+class TestTheBuildIsRepeatedOnceInSh(TestTheBuildIsRepeatedOnce):
+    """The same, in ``/bin/sh``: the shell of a user made without ``-s``."""
+
+    #: Odoo collects only the methods a class defines, unless told otherwise.
+    allow_inherited_tests_method = True
+    _SHELL = "sh"
+
+
+@skipUnless(shutil.which("dash"), "dash is not installed")
+class TestTheBuildIsRepeatedOnceInDash(TestTheBuildIsRepeatedOnce):
+    """The same, in dash, which has no ``SECONDS``."""
+
+    allow_inherited_tests_method = True
+    _SHELL = "dash"
 
 
 class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
