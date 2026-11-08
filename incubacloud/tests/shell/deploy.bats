@@ -1148,3 +1148,92 @@ $HEADS_SHA	refs/heads/8.0
     [ "$status" -eq 0 ]
     grep -q '^leftover present at docker rm -f c0ffee$' "$CALLS"
 }
+
+@test "record-heads removes a killed run's containers before its temporary HOMEs" {
+    _stub_timeout_any
+    _stub_docker_helper
+    mkdir -p "$DIR/odoo/custom" "$TMP/tmp"
+    export TMPDIR="$TMP/tmp"
+    token="$(printf '%s' "$DIR" | sha256sum | cut -c1-16)"
+    mkdir -p "$TMPDIR/ic-git-$token-dead"
+    printf 'gl\tref\tmain\t%s\t%s\t\t%s\n' "$GL_URL" "$GL_AUTH" 203.0.113.7 > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" DOCKER_PS_IDS="c0ffee" LEFTOVER_PROBE="$TMPDIR/ic-git-$token-dead"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec" "$HELPER"
+    [ "$status" -eq 0 ]
+    grep -q '^leftover present at docker rm -f c0ffee$' "$CALLS"
+    [ ! -e "$TMPDIR/ic-git-$token-dead" ]
+}
+
+@test "fetch-repos removes a killed run's containers before its temporary HOMEs" {
+    _instance_80
+    mkdir -p "$TMP/tmp"
+    export TMPDIR="$TMP/tmp"
+    token="$(printf '%s' "$DIR" | sha256sum | cut -c1-16)"
+    mkdir -p "$TMPDIR/ic-git-$token-dead"
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" DOCKER_PS_IDS="c0ffee" LEFTOVER_PROBE="$TMPDIR/ic-git-$token-dead"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    grep -q '^leftover present at docker rm -f c0ffee$' "$CALLS"
+    [ ! -e "$TMPDIR/ic-git-$token-dead" ]
+}
+
+@test "fetch-repos removes at its start the markers' temporary files a killed run left" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    mkdir -p "$DIR/odoo/custom/src/.ic-heads"
+    echo 1111 > "$DIR/odoo/custom/src/.ic-heads/.tmp-dead1234"
+    # Even a run that fails afterwards.
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" FETCH_FAILS=2
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -ne 0 ]
+    [ ! -e "$DIR/odoo/custom/src/.ic-heads/.tmp-dead1234" ]
+    : > "$CALLS.fetches"
+    echo 1111 > "$DIR/odoo/custom/src/.ic-heads/.tmp-dead5678"
+    export FETCH_FAILS=0
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ -z "$(find "$DIR/odoo/custom/src/.ic-heads" -name '.tmp-*')" ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
+}
+
+@test "fetch-repos removes no file through a markers directory that is a link" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    src="$DIR/odoo/custom/src"
+    # The instance's tree carries .ic-heads as a link to a directory
+    # whose files look like markers: one at the head of addons, so its
+    # tree is not fetched again, and one of an alias it does not have.
+    mkdir -p "$TMP/victim-dir" "$src/addons" "$src/gone"
+    echo "$HEADS_SHA" > "$TMP/victim-dir/addons"
+    echo kept > "$TMP/victim-dir/gone"
+    echo kept > "$src/gone/x"
+    ln -s "$TMP/victim-dir" "$src/.ic-heads"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/victim-dir/gone")" = kept ]
+    [ "$(cat "$TMP/victim-dir/addons")" = "$HEADS_SHA" ]
+    [ -f "$src/gone/x" ]
+    [ ! -L "$src/.ic-heads" ]
+    [ "$(cat "$src/.ic-heads/addons")" = "$HEADS_SHA" ]
+}
+
+@test "fetch-repos refuses an alias doodba keeps for itself in custom/src" {
+    _instance_80
+    src="$DIR/odoo/custom/src"
+    for alias in repos.yaml repos.yml addons.yaml addons.yml private; do
+        : > "$CALLS"
+        [ -d "$src/$alias" ] || echo "own $alias" > "$src/$alias"
+        printf '%s\tref\tmain\t%s\t%s\t\t\n' "$alias" "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+        run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"invalid repository alias: $alias"* ]]
+        ! grep -q '^docker run' "$CALLS"
+        [ -d "$src/$alias" ] || [ "$(cat "$src/$alias")" = "own $alias" ]
+    done
+}
