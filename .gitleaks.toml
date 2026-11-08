@@ -51,21 +51,22 @@ paths = [
     # Test of the agents' issuer key cache: a made-up, unsigned JWT
     # whose header names a key id. No real token.
     '''incubacloud_mcp/tests/test_jwks_cache\.py''',
-    # Tests of the GitLab providers: made-up deploy and access tokens
-    # (``gldt-…``, ``glpat-…``) prove a credential is chosen, sent only
-    # to its server and kept out of the audit, the build and the logs.
-    # No real token.
-    '''incubacloud/tests/test_git_provider\.py''',
-    '''incubacloud/tests/test_git_provider_routes\.py''',
-    '''incubacloud/tests/test_gitlab_executor\.py''',
-    '''incubacloud/tests/test_repo_url_host\.py''',
-    '''incubacloud_mcp/tests/test_tools_code_gitlab\.py''',
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',
     # CI workflow pins a CI-only Fernet key so the password_utils
     # module can boot in the test container. Not a production secret.
     '''\.github/workflows/ci\.yml''',
+]
+# Tests of the GitLab providers: made-up deploy and access tokens prove a
+# credential is chosen, sent only to its server and kept out of the
+# audit, the build and the logs. Allowed by their own text, not by file,
+# so a real token pasted in those tests is still caught (security review
+# of GitLab G1, 8-nov-2026). Each is ``gldt-`` or ``glpat-`` and a word
+# no generated token has; a new made-up token in a test is added here.
+regexes = [
+    '''^gldt-(?:AbC_123\.x|abcdefgh12|deploy1234|deploysave1|mcpread01|supersecret12|tokenOfTheDeploy)$''',
+    '''^glpat-(?:abcdefgh|abcdefgh12|capped1234|groupsave1|hostimport1|othersecret99|readonly12|routes12|secret-token-123|supersecret12|supersecret99|warnsave1)$''',
 ]
 commits = [
     # password_utils.py historically contained a base64 dev fallback
