@@ -671,7 +671,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         changed modules» and «Restart instance» that any attempt of the
         job started, read from
         the job log's "Running:" lines (each attempt's, a step cut off
-        included), unless *results* holds the restart.
+        included), unless *results* holds the restart. Whether the
+        database moved on is the job's mark (``_database_left_ahead``),
+        not that last line: an attempt that began the update and died,
+        then one cut short in copier, leave the database ahead all the
+        same.
 
         :param results: what the steps answered, or None
         :return: ``_LABEL_UPDATE``, ``_LABEL_BUILD`` or ``_LABEL_COPIER``,
@@ -689,6 +693,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         label = lines.get(last.content)
         if label == _LABEL_RESTART:
             return None
+        if label != _LABEL_UPDATE and self._database_left_ahead():
+            return _LABEL_UPDATE
         if label is None and results and _LABEL_COPIER in results:
             # The log was capped before the line.
             for later in (_LABEL_UPDATE, _LABEL_BUILD):
@@ -696,6 +702,33 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                     return later
             return _LABEL_COPIER
         return label
+
+    def _database_left_ahead(self):
+        """Whether an attempt began the database update and none restarted after.
+
+        The job's mark (``cloud.job.no.return``), which the executor
+        commits right before «Update changed modules» starts and which
+        outlives the attempt; then no «Restart instance» line in the log
+        after the last line of the update, as a restart puts the image
+        the database was updated to in service. A log capped before
+        both lines leaves the mark alone to tell.
+
+        :rtype: bool
+        """
+        if not self.env["cloud.job.no.return"].sudo().search_count(
+            [("job_id", "=", self.job.id)], limit=1,
+        ):
+            return False
+        last = self.env["cloud.job.log.chunk"].sudo().search(
+            [
+                ("job_id", "=", self.job.id),
+                ("content", "in", [
+                    f"Running: {_LABEL_UPDATE}", f"Running: {_LABEL_RESTART}",
+                ]),
+            ],
+            order="id desc", limit=1,
+        )
+        return last.content != f"Running: {_LABEL_RESTART}"
 
     async def on_failure(self, results, errors):
         for err in errors:

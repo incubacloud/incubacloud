@@ -14,7 +14,10 @@ lock of the job (``NO_RETURN_LOCK_NAMESPACE``, the job's id):
   step runs (``AbstractExecutor._pass_no_return``). With the flag, the
   step does not start.
 * Whoever writes the flag on a started job takes the same lock and, with
-  the mark there, refuses (``cloud.job._refuse_stop_past_no_return``).
+  the mark there, refuses (``cloud.job._refuse_stop_past_no_return``), as
+  ``cancel_job`` does for a job in any state. A caller about to discard
+  the instance forces the stop with ``ic_stop_past_no_return``
+  (``cloud.job.write``).
 
 The mark is a row of its own and not a column of ``cloud_job``: the
 job's transaction stores ``done`` on that row at the end, and a write of
@@ -22,7 +25,14 @@ it committed by another cursor meanwhile would make that store fail to
 serialize (``AbstractExecutor._write_own_job``). Nor is it a kind of
 ``cloud.job.outcome``, whose presence means the success hook committed
 and the next attempt runs nothing: every reader of it would have to tell
-the two apart. A new attempt of the job clears it (``queue_job_ext``).
+the two apart.
+
+The mark is the instance's, not an attempt's: a database updated stays
+ahead whichever attempt updated it. A new attempt (a postpone, a worker
+that died) keeps it, and a stop between two attempts is refused too. It
+goes once the job ends done or cancelled, after that end commits
+(``queue.job._forget_no_return_after_commit``); a failed job keeps it,
+as queue_job may be told to run it again.
 """
 from odoo import fields, models
 

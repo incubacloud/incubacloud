@@ -2310,14 +2310,21 @@ class CloudJob(models.Model):
 
         The stop flag written on a started job is refused once the job is
         past its point of no return (``_refuse_stop_past_no_return``):
-        here, so ``cancel_job`` and every other way of writing it (a
-        tenant's provisioning started again) go through it. Not what the
+        here, so every way of writing it goes through it. Not what the
         mirror writes with ``ic_skip_state_hook``: that stores a stop
-        already taken.
+        already taken. Nor with ``ic_stop_past_no_return``: the key of a
+        caller that is about to discard the instance the job works on,
+        whose database no longer matters (a tenant's provisioning started
+        again archives its instances right after). Only code sets it:
+        what a person asks for goes through ``cancel_job``, which refuses
+        whatever context it is called with.
         """
         self._check_queue_control_vals([vals])
-        if vals.get("state") == "cancelled" and not self.env.context.get(
-            "ic_skip_state_hook",
+        context = self.env.context
+        if (
+            vals.get("state") == "cancelled"
+            and not context.get("ic_skip_state_hook")
+            and not context.get("ic_stop_past_no_return")
         ):
             self.filtered(
                 lambda job: job.state == "started",
@@ -4018,8 +4025,13 @@ class CloudJob(models.Model):
         when the runner picked it up. A started job cannot be
         force-cancelled by queue_job (its runner is mid-flight), so we
         set ``state`` cancelled as a cooperative stop flag the executor
-        polls on a separate cursor (``_check_cancel``), unless the job has
-        started a step it cannot be stopped in (``write``).
+        polls on a separate cursor (``_check_cancel``).
+
+        A job past its point of no return is refused whatever its state
+        (``_refuse_stop_past_no_return``): started, or back in the queue
+        between two attempts (``pending``), whose database the attempt
+        before already moved on. Here, whatever the call's context: the
+        browser writes it.
 
         Every way needs the caller's write access to the job. What is
         written on the job itself is written with ``sudo``: ``state`` is
@@ -4053,6 +4065,7 @@ class CloudJob(models.Model):
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
         self.check_access("write")
+        self._refuse_stop_past_no_return()
         if self.state == "started" or not self.queue_job_id:
             self.sudo().write({"state": "cancelled"})
         else:

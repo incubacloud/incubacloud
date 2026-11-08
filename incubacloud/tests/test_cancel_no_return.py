@@ -23,12 +23,14 @@ from odoo import SUPERUSER_ID, api
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
-from ..models.abstract_executor import JobCancelled
+from ..models.abstract_executor import CANCELLED_WHILE_RUNNING, JobCancelled
 from ..models.cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from ..models.deploy_instance_executor import DeployInstanceExecutor
 from ..models.host_probe_executor import HostProbeExecutor
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
 from ..models.transport import CommandResult, SSHTransport
+from .test_cloud_job import _run_after_commit
+from .test_job_queue import _QueueCase
 
 #: The step the tests treat as past undoing.
 _STEP = "Update changed modules"
@@ -211,3 +213,111 @@ class TestTheStepsAroundThePointOfNoReturn(TransactionCase):
         stopped halfway is removed, so a deploy has no such step."""
         self.assertEqual(RebuildInstanceExecutor._no_return_from, _STEP)
         self.assertIsNone(DeployInstanceExecutor._no_return_from)
+
+
+class TestThePointOfNoReturnOutlivesTheAttempt(_QueueCase):
+    """The mark is the instance's database having moved on, not an attempt's.
+
+    A rebuild put back in the queue after its update had started (a
+    postpone, a worker that died) carries on over a database that is
+    already ahead: a stop is refused in the next attempt and between the
+    two as well. The mark goes once the job ends done or cancelled.
+    """
+
+    def _past_the_point(self):
+        """A rebuild started and marked past «Update changed modules»."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        self.env["cloud.job.no.return"].create({
+            "job_id": rebuild.id, "step": _STEP,
+        })
+        self.env.flush_all()
+        return rebuild
+
+    def _mark(self, job):
+        """The step *job*'s mark names, or None, as stored."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT step FROM cloud_job_no_return WHERE job_id = %s", (job.id,),
+        )
+        row = self.env.cr.fetchone()
+        return row and row[0]
+
+    def test_a_new_attempt_keeps_the_mark_and_refuses_the_stop(self):
+        """Postponed, then started again: the stop is refused all the same."""
+        rebuild = self._past_the_point()
+        rebuild.queue_job_id.write({"state": "pending"})
+        rebuild.queue_job_id.write({"state": "started"})
+        self.assertEqual(rebuild.state, "started")
+        self.assertEqual(self._mark(rebuild), _STEP)
+        with self.assertRaises(UserError):
+            rebuild.cancel_job()
+        self.assertEqual(rebuild.state, "started")
+
+    def test_a_stop_between_two_attempts_is_refused(self):
+        """Back in the queue (``pending``): its queue.job is not cancelled."""
+        rebuild = self._past_the_point()
+        rebuild.queue_job_id.write({"state": "pending"})
+        self.assertEqual(rebuild.state, "pending")
+        with self.assertRaises(UserError) as caught:
+            rebuild.cancel_job()
+        self.assertIn(_STEP, str(caught.exception))
+        self.assertEqual(rebuild.queue_job_id.state, "pending")
+        self.assertEqual(rebuild.state, "pending")
+
+    def test_a_stop_between_two_attempts_without_the_mark_is_taken(self):
+        """No mark: the queue.job is cancelled, as before."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        rebuild.queue_job_id.write({"state": "pending"})
+        rebuild.cancel_job()
+        self.assertEqual(rebuild.queue_job_id.state, "cancelled")
+        self.assertEqual(rebuild.state, "cancelled")
+
+    def test_the_context_of_a_call_does_not_lift_the_refusal(self):
+        """``cancel_job`` is called from the browser, whose context the
+        caller writes: neither the mirror's key nor the forcing one let a
+        person stop the job."""
+        rebuild = self._past_the_point()
+        with self.assertRaises(UserError):
+            rebuild.with_context(
+                ic_skip_state_hook=True, ic_stop_past_no_return=True,
+            ).cancel_job()
+        self.assertEqual(rebuild.state, "started")
+
+    def test_whoever_discards_the_instance_may_force_the_stop(self):
+        """``ic_stop_past_no_return``: the flag is written all the same."""
+        rebuild = self._past_the_point()
+        rebuild.sudo().with_context(ic_stop_past_no_return=True).write(
+            {"state": "cancelled"},
+        )
+        self.assertEqual(rebuild.state, "cancelled")
+
+    def test_the_mark_goes_once_the_job_is_done(self):
+        rebuild = self._past_the_point()
+        rebuild.queue_job_id.write({"state": "done"})
+        self.assertEqual(self._mark(rebuild), _STEP, "not before the commit")
+        _run_after_commit(self.env)
+        self.assertIsNone(self._mark(rebuild))
+
+    def test_the_mark_goes_once_a_forced_stop_ends_the_job(self):
+        rebuild = self._past_the_point()
+        rebuild.sudo().with_context(ic_stop_past_no_return=True).write(
+            {"state": "cancelled"},
+        )
+        self.env.flush_all()
+        rebuild.queue_job_id.write({
+            "state": "done", "result": CANCELLED_WHILE_RUNNING,
+        })
+        self.assertEqual(rebuild.state, "cancelled")
+        _run_after_commit(self.env)
+        self.assertIsNone(self._mark(rebuild))
+
+    def test_a_failed_job_keeps_its_mark(self):
+        """queue_job may be told to run a failed job again (Requeue): the
+        database it left ahead is still ahead."""
+        rebuild = self._past_the_point()
+        rebuild.queue_job_id.write({"state": "failed"})
+        self.assertEqual(rebuild.state, "failed")
+        _run_after_commit(self.env)
+        self.assertEqual(self._mark(rebuild), _STEP)

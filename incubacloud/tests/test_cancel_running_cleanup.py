@@ -224,6 +224,56 @@ class TestACancelledRunIsClosed(_DeployJobCase):
         self.assertIn("updated the modules of the instance's database", self._log())
         self.assertNotIn("neither boot-tested nor applied", self._log())
 
+    def _rebuild_aborted_after(self, lines, marked):
+        """Close a rebuild whose attempts logged *lines*, its worker lost.
+
+        :param lines: the steps the attempts started, in order
+        :param bool marked: whether one of them passed its point of no
+            return (``cloud.job.no.return``)
+        """
+        self.inst._transition("deployed")
+        self.inst.status = "ok"
+        self.env["cloud.job.log.chunk"].create([
+            {"job_id": self.job.id, "source": "system", "content": f"Running: {line}"}
+            for line in lines
+        ])
+        if marked:
+            self.env["cloud.job.no.return"].create({
+                "job_id": self.job.id, "step": "Update changed modules",
+            })
+        self.env.flush_all()
+        executor = RebuildInstanceExecutor(self.job, self.host)
+        with patch.object(
+            RebuildInstanceExecutor, "_refresh_host_disk", autospec=True,
+        ), patch.object(RebuildInstanceExecutor, "_publish_bus", autospec=True):
+            asyncio.run(executor._dispatch_abort(JobWorkerLost("lost")))
+            executor._flush_logs()
+
+    def test_a_later_attempt_cut_short_still_says_the_database_moved_on(self):
+        """The first attempt began the update and died; the next one died in
+        copier. The database is ahead all the same: the mark says so, not
+        the last line of the log."""
+        self._rebuild_aborted_after([
+            "Update with copier", "Rebuild Odoo image", "Update changed modules",
+            "Update with copier",
+        ], marked=True)
+        self.assertIn("updated the modules of the instance's database", self._log())
+
+    def test_a_database_restarted_on_after_its_update_is_not_said_to_lag(self):
+        """The first attempt restarted the instance after its update: what
+        the next one left is only its copier."""
+        self._rebuild_aborted_after([
+            "Update with copier", "Rebuild Odoo image", "Update changed modules",
+            "Restart instance", "Update with copier",
+        ], marked=True)
+        self.assertNotIn("updated the modules of the instance's database", self._log())
+        self.assertIn("rewrote the instance's files", self._log())
+
+    def test_a_capped_log_with_the_mark_still_says_the_database_moved_on(self):
+        """No line left to read: the mark alone tells it."""
+        self._rebuild_aborted_after([], marked=True)
+        self.assertIn("updated the modules of the instance's database", self._log())
+
     def test_a_rebuild_handed_no_results_reads_its_log(self):
         """A stop whose worker died: the steps an earlier attempt logged."""
         self._rebuild_closed_by("_dispatch_cancel", JobCancelled("stop"))

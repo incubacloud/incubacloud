@@ -377,14 +377,10 @@ class QueueJob(models.Model):
             mirror = {"state": new_state} | self._new_attempt_clears(
                 cjob, new_state,
             )
+            # An earlier attempt's point of no return stays with a new
+            # one: the database it updated is ahead all the same
+            # (``cloud.job.no.return``).
             cjob.sudo().with_context(ic_skip_state_hook=True).write(mirror)
-            if new_state == "started":
-                # An earlier attempt's point of no return is not this
-                # one's: it starts from the first step again.
-                self.env.cr.execute(
-                    "DELETE FROM cloud_job_no_return WHERE job_id = %s",
-                    (cjob.id,),
-                )
             # To the row now: ``_check_cancel`` and the stop detection
             # above read it with SQL, from other transactions and from
             # this one.
@@ -395,6 +391,8 @@ class QueueJob(models.Model):
             )
             if new_state not in _TERMINAL:
                 continue
+            if new_state in ("done", "cancelled"):
+                self._forget_no_return_after_commit(cjob)
 
             # Cancelled dispatched before it started (``cancel_job`` →
             # ``button_cancelled``): it never runs, so its executor lets
@@ -627,6 +625,38 @@ class QueueJob(models.Model):
                 _logger.warning(
                     "Job %s: on_never_run raised.", job.id, exc_info=True,
                 )
+
+    def _forget_no_return_after_commit(self, cjob):
+        """Delete *cjob*'s point-of-no-return mark once its end commits.
+
+        A job done or cancelled never runs again, and its mark has been
+        read by then: the terminal hooks that say what was left
+        (``_warn_unapplied``) ran before the end was stored. A failed job
+        keeps it: queue_job may be told to run it again (Requeue), over a
+        database it left ahead. After the commit, on a cursor of its own:
+        the mark was committed by the executor after this transaction's
+        snapshot, which does not see it, and a store that then fails (a
+        lost serialization race, the job runs again) drops the delete
+        with it. A worker that dies in between leaves the row, which
+        harms nothing and goes with the job.
+
+        :param cjob: the ``cloud.job`` stored done or cancelled
+        """
+        registry = self.env.registry
+        job_id = cjob.id
+
+        def _forget():
+            """Delete the mark, if there is one."""
+            with registry.cursor() as cr:
+                cr.execute(
+                    "DELETE FROM cloud_job_no_return WHERE job_id = %s",
+                    (job_id,),
+                )
+
+        run_after_commit(
+            self.env.cr, f"the point-of-no-return mark of cloud.job {job_id}",
+            _forget,
+        )
 
     def _announce_done_after_commit(self, cjob, blocked):
         """Tell the watchers and the subscribers once *cjob*'s ``done`` commits.
