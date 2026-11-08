@@ -6,7 +6,16 @@
 
 **IncubaCloud** is an Odoo-native platform for deploying, managing and monitoring remote Odoo instances — host management, instance lifecycle, GitHub integration, backups, terminals and audit trails, all from inside your ERP.
 
-Built on Odoo Community: the panel itself uses no Enterprise modules, so you don't need an Enterprise license to run it. It deploys both editions.
+Built on Odoo Community: the panel itself uses no Enterprise modules, so you don't need an Enterprise license to run it. It deploys both editions. The code is on GitHub, free to install and use under the [Elastic License 2.0](#licensing).
+
+| | |
+|---|---|
+| **Install and update the panel** | [INSTALL.md](INSTALL.md) — reference Docker Compose setup, Odoo settings, recommended configuration, safe updates |
+| **Use it** | [docs.incubacloud.io](https://docs.incubacloud.io/) — hosts, projects, instances, backups, agents |
+| **How it is built** | [architecture](docs/architecture.md), [API endpoints](docs/api-endpoints.md), [MCP server](docs/mcp.md), [assistant](docs/assistant.md), [observability](docs/observability-operations.md), [runbooks](docs/runbooks/README.md), [roadmap](docs/roadmap.md) |
+| **Contribute** | [CONTRIBUTING.md](CONTRIBUTING.md), [CLA.md](CLA.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
+| **Report a vulnerability** | [SECURITY.md](SECURITY.md) — not in a public issue |
+| **What changed** | [CHANGELOG.md](CHANGELOG.md) |
 
 ---
 
@@ -20,7 +29,7 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 - Connect-as: passwordless login to managed instances
 - 5-tier role-based access control with full audit trail
 - AI assistant inside the panel, with your own AI key
-- MCP server: Claude, Cursor or another AI agent looks at projects, reads logs, deploys, backs up or clones a staging, under your permissions, and asks for approval before deleting or spending ([guide](https://www.incubacloud.io/docs/ai-agents))
+- MCP server: Claude, Cursor or another AI agent looks at projects, reads logs, deploys, backs up or clones a staging, under your permissions, and asks for approval before deleting or spending ([guide](https://docs.incubacloud.io/agents/))
 
 ---
 
@@ -84,7 +93,14 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 | Module | Description |
 |---|---|
 | `incubacloud` | Core platform — hosts, projects, instances, jobs, GitHub, backups, terminals and UI |
+| `incubacloud_mcp` | MCP server: AI agents work on the panel under the user's permissions |
+| `incubacloud_pitr` | Continuous recovery: restore an instance to any minute |
+| `incubacloud_mcp_pitr` | Continuous recovery for agents |
+| `incubacloud_assistant` | AI assistant inside the panel, with your own AI key |
+| `auth_oauth_github` | Sign-in with GitHub |
 | `incubacloud_connect` | Companion module: magic-link passwordless login installed on managed instances |
+
+Which of them to install on the panel: [INSTALL.md](INSTALL.md#what-the-panel-needs).
 
 ---
 
@@ -142,21 +158,11 @@ See [docs/architecture.md](docs/architecture.md) for the full module structure a
 
 ## Installation
 
-Standard Odoo 19.0 module. Add this repository to your `addons_path`, install the Python dependencies and the OCA `queue_job` module.
+Standard Odoo 19.0 modules. Add this repository and OCA's `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0) to your `addons_path`, install the Python packages of this repository's [`requirements.txt`](requirements.txt) and of OCA/queue's (`openupgradelib`, `requests`), and give Odoo the settings the panel's jobs need: `queue_job` in `server_wide_modules`, `limit_time_real = 3600`, and enough workers for the running jobs and the people using the panel at once.
 
-**Python dependencies:** `asyncssh`, `cryptography`, `boto3`, `PyYAML`, `bcrypt`
+[INSTALL.md](INSTALL.md) does it step by step with Docker Compose, explains each setting, gives the configuration we run in production, and shows how to update the panel without losing running jobs.
 
-**Odoo dependencies:** `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0)
-
----
-
-## Running tests
-
-```bash
-odoo --test-enable --stop-after-init --workers=0 \
-     -u incubacloud \
-     --test-tags /incubacloud
-```
+Running the tests: [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 
 ---
 
@@ -173,9 +179,7 @@ odoo --test-enable --stop-after-init --workers=0 \
 Highlights (see [docs/roadmap.md](docs/roadmap.md) for the full picture):
 
 - **Agentless monitoring** — metric history, external HTTP/TLS health checks, configurable alert thresholds, dashboard sparklines
-- **Instance log rotation and log access** — guaranteed rotation per instance plus a better container log viewer
 - **User SSH keys and direct shell access** — per-user keys (manual or imported from GitHub), per-instance grants, full audit
-- **Login with GitHub** — platform sign-in via GitHub OAuth
 - **Managed version upgrades** — staging upgrade, smoke tests, approval, cutover with rollback (OpenUpgrade / Enterprise upgrade service)
 - **Data migrations (ETL)** — assisted data onboarding from spreadsheets, other Odoo databases or other ERPs
 

@@ -18,7 +18,6 @@ with the project form.
 
 - **Name** — your customer's name or the product name. Shows up in lists and breadcrumbs.
 - **Description** (optional) — a short note for your team.
-- **Default environment** — leave on `production` unless you know you want a staging-first project.
 
 ## 3. Connect a Git repository (optional, recommended)
 
@@ -38,13 +37,15 @@ If you don't have a repo yet, skip this step. You can add it later from
     (`https://<token>@github.com/your-org/your-repo.git`) is refused:
     credentials never travel in the URL.
 
-## 4. Pick a backup backend (optional, recommended)
+## 4. Pick a backup destination
 
-Select an existing backup backend or skip and configure one later from
-`Settings → Backups`. See [Set up backups](../backups/index.md) for the full walkthrough.
-
-The backend you select here applies to every instance created under this project,
-unless an instance overrides it.
+**Backup Destination** applies to every production instance of the project,
+unless an instance sets its own. A production instance cannot be deployed
+without a destination: choose one here, on the instance, or for every
+production instance in **Settings → General → Default Backup Destination**.
+See [Set up backups](../backups/index.md) for the full walkthrough, and
+[Before you create the first instance](../instances/index.md) for what the
+first deploy needs.
 
 ## 5. Save
 

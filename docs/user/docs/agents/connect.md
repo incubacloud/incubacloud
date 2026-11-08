@@ -99,11 +99,23 @@ OAuth, send an API key in a header.
 Without an OAuth provider for agents, the page says *This panel accepts API
 keys only*, and every command it shows carries the key.
 
-1. Open your preferences (the page links them), **Security**, **API Keys**,
-   and choose **Add API Key**. Treat it like a password.
-2. Use the commands the page shows. Where one says `<API_KEY>`, put your
+1. Open your preferences (the page links them), tab **Security**, **API
+   Keys**, and choose **Add API Key**.
+2. Odoo asks you to confirm who you are first: your password, or, with
+   two-factor authentication, the code of your authenticator app (or a
+   passkey, where your account has one).
+3. Give the key a **Description** — the client's name, for instance — and a
+   **Duration** (the longest Odoo offers depends on your user's groups), then
+   **Generate key**. Copy it: it is shown once. Treat it
+   like a password; the agent acts with it as you, with your role, until you
+   [revoke it](revoke.md).
+4. Use the commands the page shows. Where one says `<API_KEY>`, put your
    key; where it names the environment variable `INCUBACLOUD_API_KEY`, set
    that variable to your key before you start the client.
+
+Every command the agent then wants to run on a server or on a production
+instance, and every deletion or restore, waits for your approval, with the
+exact command shown: see [Approvals](confirmations.md).
 
 | Client | How it sends the key |
 |---|---|
@@ -120,3 +132,13 @@ keys only*, and every command it shows carries the key.
 
 A server with several databases needs a `dbfilter` that selects the
 database by host name; without it, `/mcp` answers 404.
+
+The address the page puts in every command is **Settings → Agents (MCP) → MCP
+address**; left empty, it is the panel's own address (`web.base.url`) followed
+by `/mcp`. Odoo rewrites `web.base.url` to the address in the browser each time
+a user with access to Odoo's Settings signs in, so the default follows whoever
+signed in last. Set the MCP address to the address your computers reach the
+panel at, or fix `web.base.url` with the system parameter
+`web.base.url.freeze` set to `True`. A panel
+only your network reaches, with Claude Desktop:
+[Panel on an internal network](../hosts/internal-network.md#ai-agents).

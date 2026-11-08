@@ -38,9 +38,15 @@ For a standard Odoo setup, add the path to `odoo.conf` and install via CLI or UI
 
 ### Python dependencies
 
+The panel's pinned packages, OCA/queue's (`queue_job` does not install without
+`openupgradelib`), and the linter:
+
 ```bash
-pip install asyncssh cryptography boto3 PyYAML bcrypt refurb
+pip install -r requirements.txt -r /path/to/OCA/queue/requirements.txt refurb
 ```
+
+Running a full panel, with the Odoo settings its jobs need:
+[INSTALL.md](INSTALL.md).
 
 ---
 

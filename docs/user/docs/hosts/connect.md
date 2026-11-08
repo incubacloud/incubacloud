@@ -6,9 +6,50 @@ and request HTTPS automatically.
 ## Prerequisites
 
 - A VPS with **Ubuntu 22.04** or newer (Debian 12 also works).
-- SSH access for a sudo-capable user. The user can be `root`.
-- Outbound HTTPS allowed from the VPS (we pull container images from Docker Hub
-  and the OCA mirror).
+- SSH access for a user with passwordless `sudo` that can use Docker: `root`,
+  or a user prepared as in [The user the panel connects as](#the-user-the-panel-connects-as).
+- Ports **80 and 443 free**: Full Setup puts the proxy there
+  ([what it changes](#what-full-setup-changes-on-the-host)).
+- Outbound HTTPS from the VPS to Docker Hub, `ghcr.io`, GitHub and PyPI, and
+  during Full Setup to Docker's and the distribution's package servers:
+  [the full list](internal-network.md#what-needs-the-internet).
+
+!!! info "A server only your network reaches"
+    For a host and a panel without public access — an office VM — see also
+    [Panel on an internal network](internal-network.md): names, certificates,
+    and what needs the internet.
+
+## The user the panel connects as
+
+The panel needs a user that can:
+
+- **run `sudo` without a password** — Full Setup installs packages and writes
+  under `/etc`, and hardening checks `sudo -n` before it starts;
+- **use Docker without `sudo`** — deploys run `docker compose` directly, so the
+  user must be in the `docker` group.
+
+`root` meets both. For a dedicated user, run this on the VPS, with the public
+key the panel shows (step 3 below) in place of `ssh-ed25519 AAAA...`:
+
+```bash
+sudo useradd --create-home --shell /bin/bash incubacloud
+echo 'incubacloud ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/incubacloud >/dev/null
+sudo chmod 440 /etc/sudoers.d/incubacloud
+sudo visudo -cf /etc/sudoers.d/incubacloud
+
+# Created before Docker is: a Docker that Full Setup installs later
+# already counts this user in.
+sudo groupadd -f docker
+sudo usermod -aG docker incubacloud
+
+sudo install -d -m 700 -o incubacloud -g incubacloud /home/incubacloud/.ssh
+echo 'ssh-ed25519 AAAA... incubacloud' | sudo tee -a /home/incubacloud/.ssh/authorized_keys >/dev/null
+sudo chown incubacloud:incubacloud /home/incubacloud/.ssh/authorized_keys
+sudo chmod 600 /home/incubacloud/.ssh/authorized_keys
+```
+
+Full Setup also adds the user to the `docker` group, but a group counts from
+the user's next login: add it beforehand, as above.
 
 ## Walkthrough
 
@@ -72,6 +113,36 @@ and run a final probe. Watch the log to follow each step.
 
 When it ends in green, the host is ready to receive instances.
 
+## What Full Setup changes on the host
+
+Every step checks before it changes anything, so running Full Setup again is a
+repair, not a reinstall.
+
+| Where | What |
+|---|---|
+| Packages | Installs git, Docker CE (through `get.docker.com`), the Compose plugin, `python3-pip`, `python3-venv`, pipx, zip and logrotate, when missing. |
+| The user | pipx installs copier (pinned), invoke and pre-commit in `~/.local/bin`, added to `PATH` in `~/.bashrc`; `git config --global init.defaultBranch master` if unset; the user joins the `docker` group. |
+| `/etc/docker/daemon.json` | Only while no container exists: Docker's bridge at 172.17.0.1/16 and an address pool of 10.200.0.0/14 in /24 networks, so the host can hold many instances (each takes a network). Docker restarts. With containers running, it is left alone. |
+| `~/traefik/` | The proxy: Traefik and a read-only proxy of the Docker socket, Compose project `inverseproxy`, publishing **ports 80 and 443** (and 8082 on the loopback, for metrics). Its settings are the host's **Traefik** tab. |
+| `/var/log/traefik/` | The proxy's access log, rotated daily and kept 30 days. |
+| `~/globalwhitelist/` | The proxies of the host's **Whitelist** tab (Compose project `globalwhitelist`): the names stagings may reach. |
+
+Each instance you deploy later lives in `~/<project folder>/<instance name>/`
+of the same user.
+
+!!! warning "A web server already on 80 or 443"
+    The proxy must own ports 80 and 443, and the panel has no setting to move
+    it. With nginx, Apache or anything else bound there, *Start Traefik* fails.
+    See what holds them with
+    `sudo ss -tlpn | grep -E ':(80|443)\s'`, and move that service to other
+    ports or to another machine first.
+
+!!! warning "Addresses your network already uses"
+    Docker's networks on the host come from 172.17.0.0/16 and 10.200.0.0/14,
+    and the host routes those ranges to its containers. If machines of your
+    network have addresses there, the host cannot reach them. Check before you
+    run Full Setup: the panel has no setting for these ranges.
+
 ## Hardening (optional)
 
 The first time you trust a new host's SSH key, the panel offers to harden it.
@@ -120,7 +191,8 @@ Re-running it is safe: every step checks the host before it changes anything.
 
 For Let's Encrypt to issue a cert when you deploy a domain on this host,
 the domain must already point (A or AAAA) to the VPS IP **at the moment of
-deployment**. Set DNS first, then deploy.
+deployment**. Set DNS first, then deploy. A host the internet cannot reach never
+gets one this way: see [Panel on an internal network](internal-network.md#certificates).
 
 ## Troubleshooting
 
@@ -138,6 +210,14 @@ deployment**. Set DNS first, then deploy.
     Check that ports 80 and 443 are free on the host (no nginx, apache, or
     other webserver running): `sudo ss -tulpn | grep -E ':80|:443'`.
     If something is bound, stop it first.
+
+??? note "Full Setup fails on Docker with *permission denied* on its socket"
+    The user is not in the `docker` group for this connection yet: add it as
+    in [The user the panel connects as](#the-user-the-panel-connects-as), and
+    run Full Setup again.
+
+??? note "Hardening refuses to start: sudo asks for a password"
+    The user needs `NOPASSWD` in its sudoers line.
 
 ## See also
 

@@ -8,6 +8,18 @@ log in real time.
     - A project ([create one](first-project.md)).
     - A host: either [your own VPS](../hosts/connect.md) or
       [one ordered through the platform](../hosts/hire.md).
+    - For production, a [backup destination](../backups/index.md#backup-destinations).
+
+!!! warning "Before you create the first instance"
+    - **Production comes first.** A staging is a copy of production: until the
+      project has a production instance, the staging section's **+** stays
+      disabled. Deploy production, then use **Clone to Staging**, next to it
+      in the project's side menu, for a staging with production's data.
+    - **Production needs a backup destination.** Deploying one without any is
+      refused (*No backup backend configured for this instance*). Register a
+      destination first ([Backups](../backups/index.md#backup-destinations))
+      and choose it on the instance, on its project, or for every production
+      instance in **Settings → General → Default Backup Destination**.
 
 ## 1. Open the project and click `Deploy instance`
 
@@ -18,7 +30,8 @@ re-deploys, so it's worth getting comfortable with each field.
 
 - **Production** — the customer-facing instance. Re-deploys go through the safe-rebuild
   flow: if the new image fails its boot test, the previous version keeps serving.
-- **Staging** — test copy. You can have many. Re-deploys are direct.
+- **Staging** — a test copy of production: the project needs its production
+  instance first. You can have many. Re-deploys are direct.
 
 ## 3. Pick the host
 
@@ -30,15 +43,13 @@ or [connect another](../hosts/connect.md).
 
 The instance runs its project's Odoo version, which you pick in the project's form
 (**Odoo Version**, when you create the project or later under its **General** tab):
-versions 8.0 to 20.0 are supported, and a new project starts on the newest one your
-panel offers (20.0) unless you pick another. The deployment form does not ask for it:
-a new instance takes its project's, and keeps it if the project changes later. The
-version influences which modules are available and which Postgres major versions you
-can pick under the form's **Database** tab: 14 to 18 for Odoo 16.0 to 19.0, 16 to 18
-for Odoo 20.0, with 17 by default. Older versions run on the PostgreSQL that Odoo
-recommends for them, on nothing older than 12, the first that continuous
-recovery works on: 12 for Odoo 8.0 to 10.0, 12 or 13 for 11.0 and 12.0, 12 to 16
-for 13.0 and 14.0, and 12 to 17 for 15.0.
+the panel offers 18.0, 19.0 and 20.0, and a new project starts on the newest one
+(20.0) unless you pick another. Older series open as they pass their tests. The
+deployment form does not ask for it: a new instance takes its project's, and keeps
+it if the project changes later. The version influences which modules are
+available and which Postgres major versions you can pick under the form's
+**Database** tab: 14 to 18 for Odoo 18.0 and 19.0, 16 to 18 for Odoo 20.0, with 17
+by default.
 
 If your project has a connected repo with `.copier-answers.yml`, we pre-fill the
 project's version from there; you can still pick another in the project's form.
@@ -105,7 +116,7 @@ When the job ends in green, your instance is up.
 
 ## What happens next
 
-- Set up a [backup backend](../backups/index.md) so your data is safe.
+- Check that your production instance's [backups](../backups/index.md) run.
 - Add the rest of your team via `Settings → Users`.
 - Read about [environments](first-project.md#environments) if you'll use stagings.
 
