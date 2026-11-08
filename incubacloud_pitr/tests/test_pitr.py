@@ -1060,6 +1060,10 @@ class TestASwitchOnThatFails(_PitrCase):
         alert = self._alerts("pitr_failing")
         self.assertEqual(alert.level, "warning")
         self.assertIn("goes on as it was", alert.message)
+        # Nothing applies the new objective by itself: the alert says so,
+        # and how.
+        self.assertIn("new objective was not applied", alert.message)
+        self.assertIn("retry this job", alert.message)
 
     def test_a_first_switch_the_host_kept_is_handed_to_the_watch(self):
         """'Switching on' would never be read: 'failed' is, and corrected."""

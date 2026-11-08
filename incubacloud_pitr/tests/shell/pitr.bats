@@ -477,7 +477,7 @@ STUB
 }
 
 @test "switching off a stopped database starts it, drops the settings, stops it again" {
-    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_MODE=on
+    export STUB_RUNNING='\n' STUB_ARCHIVE_MODE=on
     run bash "$SCRIPT" disable "$DIR" odoo
     [ "$status" -eq 0 ]
     up="$(grep -n "compose up -d db" "$CALLS" | cut -d: -f1)"
@@ -486,6 +486,20 @@ STUB
     [ "$up" -lt "$reset" ] && [ "$reset" -lt "$stop" ]
     # Not Odoo: it was not the one stopped.
     ! grep -q "compose stop odoo" "$CALLS"
+}
+
+@test "switching off a database restarting under a running Odoo leaves it up" {
+    # Odoo up and the database not: a restart in progress, not a stopped
+    # instance. Stopping it would take the instance down.
+    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_MODE=on
+    run bash "$SCRIPT" disable "$DIR" odoo
+    [ "$status" -eq 0 ]
+    ! grep -q "compose stop db" "$CALLS"
+    # Its restart goes around Odoo, as for any running instance.
+    stop="$(grep -n "compose stop odoo" "$CALLS" | cut -d: -f1)"
+    restart="$(grep -n "compose restart db" "$CALLS" | cut -d: -f1)"
+    start="$(grep -n "compose start odoo" "$CALLS" | cut -d: -f1)"
+    [ -n "$stop" ] && [ "$stop" -lt "$restart" ] && [ "$restart" -lt "$start" ]
 }
 
 @test "switching off a database the stack keeps archiving lets its segments go, without a restart" {
@@ -610,7 +624,7 @@ STUB
 }
 
 @test "settling a stopped database starts it, writes, and stops it again" {
-    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_COMMAND=''
+    export STUB_RUNNING='\n' STUB_ARCHIVE_COMMAND=''
     run bash "$SCRIPT" settle "$DIR" odoo -
     [ "$status" -eq 0 ]
     grep -qx "IC_PITR_SETTLED parked" <<< "$output"
@@ -622,10 +636,24 @@ STUB
 }
 
 @test "settling a stopped database it keeps stops it again too" {
-    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
+    export STUB_RUNNING='\n' STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
     run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
     grep -qx "IC_PITR_SETTLED kept" <<< "$output"
     grep -q "compose stop db" "$CALLS"
+}
+
+@test "settling a database restarting under a running Odoo leaves it up" {
+    # A TERM during the switch's restart, or an abort meeting one: Odoo
+    # is up and the database is coming back. Stopping it would take the
+    # instance down.
+    for command in '' '/opt/walg/archive %f' '/bin/true'; do
+        : > "$CALLS"
+        export STUB_RUNNING='odoo\n' STUB_ARCHIVE_COMMAND="$command"
+        run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+        [ "$status" -eq 0 ]
+        grep -q "IC_PITR_SETTLED" <<< "$output"
+        ! grep -q "compose stop" "$CALLS"
+    done
 }
 
 @test "settling during a restore touches nothing" {

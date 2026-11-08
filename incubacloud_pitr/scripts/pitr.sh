@@ -97,6 +97,17 @@ running() {
     ic_running_services 2>/dev/null | grep -x "$1" >/dev/null
 }
 
+# Stop again a database this run started, unless Odoo runs: with Odoo
+# up, the database was not stopped but restarting (a TERM during
+# restart_db, an abort meeting a restart), and stopping it would take
+# the instance down.
+#   $1  1 when this run started the database
+stop_again() {
+    if [ "$1" -eq 1 ] && ! running odoo; then
+        docker compose stop db
+    fi
+}
+
 # Wait until the database answers.
 #   $1  database user
 wait_db() {
@@ -877,9 +888,9 @@ EOF
             ic_die "a restore is running: wait for it"
         fi
         # The settings live in the database. A stopped one is started to
-        # drop them, and stopped again: left in place, its next start
-        # would archive to a command the rebuild removes, fail for ever
-        # and keep every segment.
+        # drop them, and stopped again unless Odoo runs (stop_again):
+        # left in place, its next start would archive to a command the
+        # rebuild removes, fail for ever and keep every segment.
         started=0
         if ! running db; then
             docker compose up -d db
@@ -905,17 +916,13 @@ EOF
             -c "ALTER SYSTEM RESET archive_mode"
         if [ "$from" = "command line" ]; then
             db_psql "$user" -c "SELECT pg_reload_conf()" >/dev/null
-        elif [ "$mode" = "on" ] && [ "$started" -eq 1 ]; then
-            docker compose restart db
-            wait_db "$user"
         elif [ "$mode" = "on" ]; then
+            # Odoo stopped around it when it runs, as for any instance.
             restart_db "$user"
         else
             db_psql "$user" -c "SELECT pg_reload_conf()" >/dev/null
         fi
-        if [ "$started" -eq 1 ]; then
-            docker compose stop db
-        fi
+        stop_again "$started"
         docker compose rm -sf "$AGENT" >/dev/null 2>&1 || true
         # The agent's environment stays (0600, like backup.env): deleting
         # the instance purges the archive with it.
@@ -944,8 +951,9 @@ EOF
             exit 0
         fi
         # The settings live in the database: a stopped one is started to
-        # read and write them, and stopped again. Left as it is, its next
-        # start would keep every segment.
+        # read and write them, and stopped again unless Odoo runs
+        # (stop_again). Left as it is, its next start would keep every
+        # segment.
         started=0
         if ! running db; then
             docker compose up -d db
@@ -970,9 +978,7 @@ EOF
                 -c "SELECT pg_reload_conf()" >/dev/null
             answer=parked
         fi
-        if [ "$started" -eq 1 ]; then
-            docker compose stop db
-        fi
+        stop_again "$started"
         echo "IC_PITR_SETTLED $answer"
         ;;
 
