@@ -475,6 +475,7 @@ class CloudGitHubEvent(models.Model):
             'push_sha': head_sha,
             'push_message': head_msg,
             'push_by': pusher,
+            'push_provider': 'github',
         }
 
         for repo in matched:
