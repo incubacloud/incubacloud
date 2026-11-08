@@ -478,10 +478,27 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         )
         self._call_addon_hook(inst, "_after_stack_rendered")
 
-    #: The payload keys that describe one GitHub push.
+    #: The payload keys that describe one push, of GitHub or GitLab.
     _PUSH_KEYS = (
         'push_repo', 'push_branch', 'push_sha', 'push_message', 'push_by',
+        'push_provider',
     )
+
+    @staticmethod
+    def _push_identity(push):
+        """Return what makes two pushes the same delivery.
+
+        ``(push_repo, push_branch, push_sha, push_provider)``; a push
+        queued before ``push_provider`` existed carries none and is
+        GitHub's (J2, Fable's review of G3).
+
+        :param dict push: a push's payload keys
+        :rtype: tuple
+        """
+        return (
+            push.get('push_repo', ''), push.get('push_branch', ''),
+            push.get('push_sha', ''), push.get('push_provider') or 'github',
+        )
 
     @classmethod
     def _merge_queued_payload(cls, waiting_job, payload):
@@ -496,7 +513,9 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         pulls every repository's branch head when it runs, so one build
         covers them all and every push stays visible in the job. A
         rebuild someone asked for by hand, or one already dispatched, is
-        not merged into.
+        not merged into. A push already in the list (the same delivery
+        sent again: a GitLab «Resend», a GitHub redelivery) is absorbed
+        without being added twice (J2).
 
         :param waiting_job: a ``queued`` rebuild of the instance
         :param dict payload: the new request's payload
@@ -512,6 +531,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         pushes = list(waiting.get('coalesced_pushes') or [])
         if not pushes:
             pushes.append({key: waiting.get(key, '') for key in cls._PUSH_KEYS})
+        if any(
+            cls._push_identity(known) == cls._push_identity(push)
+            for known in pushes if isinstance(known, dict)
+        ):
+            return True
         pushes.append(push)
         waiting.update(trigger='coalesced', coalesced_pushes=pushes)
         # Under the queue's lock, but on this transaction's snapshot: if a

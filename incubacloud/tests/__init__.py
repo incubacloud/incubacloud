@@ -266,3 +266,4 @@ from . import test_server_only_methods
 from . import test_git_reader
 from . import test_gitlab_client
 from . import test_gitlab_executor
+from . import test_merge_queued_payload
