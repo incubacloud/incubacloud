@@ -16917,11 +16917,6 @@ msgstr "host"
 msgid "http://172.17.0.1:8428/r/"
 msgstr "http://172.17.0.1:8428/r/"
 
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-msgid "https://github.com/org/repo"
-msgstr "https://github.com/org/repo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17825,3 +17820,837 @@ msgid "The label of the step the job had started, for the refusal."
 msgstr ""
 "El nombre del paso que el trabajo había empezado, para el mensaje de "
 "rechazo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid ""
+"%(alias)s: there is no Git provider for %(host)s. Add it under Settings → "
+"Git providers and import again."
+msgstr ""
+"%(alias)s: no hay un proveedor Git para %(host)s. Añádalo en Ajustes → "
+"Proveedores Git y vuelva a importar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "%(count)s repository lines use %(name)s: change or remove them first."
+msgstr ""
+"%(count)s líneas de repositorio usan %(name)s: cámbielas o quítelas primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid ""
+"%(host)s must resolve to public addresses only: this panel connects only to "
+"Git servers on a public address."
+msgstr ""
+"%(host)s debe resolver solo a direcciones públicas: este panel solo se "
+"conecta a servidores Git con dirección pública."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "%(provider)s did not answer about the token (%(code)s)."
+msgstr "%(provider)s no respondió sobre el token (%(code)s)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"-----BEGIN CERTIFICATE-----\n"
+"...\n"
+"-----END CERTIFICATE-----"
+msgstr ""
+"-----BEGIN CERTIFICATE-----\n"
+"...\n"
+"-----END CERTIFICATE-----"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "A Git provider cannot be archived while repository lines use it."
+msgstr ""
+"No se puede archivar un proveedor Git mientras lo usen líneas de "
+"repositorio."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "A deploy token needs its own user name (gitlab+deploy-token-N)."
+msgstr ""
+"Un deploy token necesita su propio nombre de usuario (gitlab+deploy-"
+"token-N)."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__api_url
+msgid "API URL"
+msgstr "URL de la API"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "API:"
+msgstr "API:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Add a GitLab server"
+msgstr "Añadir un servidor GitLab"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Add credential"
+msgstr "Añadir credencial"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__authority
+msgid "Authority"
+msgstr "Autoridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__base_url
+msgid "Base URL"
+msgstr "URL base"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "CA (SHA-256)"
+msgstr "CA (SHA-256)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__ca_bundle
+msgid "CA bundle"
+msgstr "Certificados de la CA"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "CA certificate (PEM)"
+msgstr "Certificado de la CA (PEM)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__ca_fingerprints
+msgid "CA fingerprints"
+msgstr "Huellas de la CA"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_check_git_providers_ir_actions_server
+msgid "Check Git Provider Credentials"
+msgstr "Comprobar credenciales de proveedores Git"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Could not reach the server."
+msgstr "No se pudo contactar con el servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Could not save the Git provider."
+msgstr "No se pudo guardar el proveedor Git."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__credential_ids
+msgid "Credentials"
+msgstr "Credenciales"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid ""
+"Delete %(name)s and its credentials? Repository lines that use it must be "
+"changed first."
+msgstr ""
+"¿Eliminar %(name)s y sus credenciales? Antes hay que cambiar las líneas de "
+"repositorio que lo usan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Delete Git provider"
+msgstr "Eliminar proveedor Git"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_git_credential__kind__deploy
+msgid "Deploy token"
+msgstr "Deploy token"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"Each token covers a namespace: empty for the whole server, a group, a\n"
+"            subgroup or a project path. A repository uses the token of the longest\n"
+"            namespace that covers it."
+msgstr ""
+"Cada token cubre un namespace: vacío para todo el servidor, un grupo, un\n"
+"            subgrupo o la ruta de un proyecto. Un repositorio usa el token del namespace\n"
+"            más largo que lo cubre."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Edit"
+msgstr "Editar"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_repo__provider_id
+#: model:ir.model.fields,help:incubacloud.field_cloud_project_repo__provider_id
+#: model:ir.model.fields,help:incubacloud.field_cloud_repo_mixin__provider_id
+msgid "Empty for GitHub. Written with the URL, never by hand."
+msgstr "Vacío para GitHub. Se escribe con la URL, nunca a mano."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_credential__namespace
+msgid "Empty for the whole server; group, group/subgroup or a project path."
+msgstr ""
+"Vacío para todo el servidor; grupo, grupo/subgrupo o la ruta de un proyecto."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__expires_on
+msgid "Expires On"
+msgstr "Caduca el"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Expires on"
+msgstr "Caduca el"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Failed to load the Git providers."
+msgstr "No se pudieron cargar los proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "Git credential not found."
+msgstr "No se encontró la credencial Git."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_git_provider
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__provider_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__provider_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__provider_id
+msgid "Git provider"
+msgstr "Proveedor Git"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_git_credential
+msgid "Git provider credential"
+msgstr "Credencial de proveedor Git"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "Git provider not found."
+msgstr "No se encontró el proveedor Git."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_git_reads_per_hour
+msgid "Git provider reads (per user, per hour)"
+msgstr "Lecturas de proveedores Git (por usuario y hora)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Git providers"
+msgstr "Proveedores Git"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Git read limit reached. Try again later."
+msgstr "Se alcanzó el límite de lecturas Git. Vuelva a intentarlo más tarde."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_git_provider__kind__gitlab
+msgid "GitLab"
+msgstr "GitLab"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "GitLab of Acme"
+msgstr "GitLab de Acme"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"GitLab servers the panel deploys and rebuilds from: gitlab.com or your\n"
+"                own. Repositories on GitHub use the GitHub tab."
+msgstr ""
+"Servidores GitLab desde los que el panel despliega y reconstruye: gitlab.com o\n"
+"                uno propio. Los repositorios de GitHub usan la pestaña GitHub."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "GitLab ·"
+msgstr "GitLab ·"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_git_credential__kind__group
+msgid "Group access token"
+msgstr "Token de acceso de grupo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "Invalid base URL: %s"
+msgstr "URL base no válida: %s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "Invalid namespace."
+msgstr "Namespace no válido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "Invalid user name."
+msgstr "Nombre de usuario no válido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "It works."
+msgstr "Funciona."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__last_check_api
+msgid "Last Check Api"
+msgstr "Última prueba de la API"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__last_check_at
+msgid "Last Check At"
+msgstr "Fecha de la última prueba"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__last_check_git
+msgid "Last Check Git"
+msgstr "Última prueba de git"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Last test"
+msgstr "Última prueba"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_repo__requirements_read_at
+msgid ""
+"Last time the panel read this line's requirements.txt, whether it existed or"
+" not. A deploy that cannot reach the Git server goes on with what it read "
+"then, and fails when it never read them."
+msgstr ""
+"Última vez que el panel leyó el requirements.txt de esta línea, existiera o "
+"no. Un despliegue que no llega al servidor Git sigue con lo que leyó "
+"entonces, y falla si nunca los leyó."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_git_reads_per_hour
+msgid ""
+"Max reads of a Git provider repository (branches, head, modules, "
+"requirements) per panel user and hour. Each one runs git on the panel. 0 "
+"falls back to the default (120)."
+msgstr ""
+"Máximo de lecturas de un repositorio de un proveedor Git (ramas, cabeza, "
+"módulos, requirements) por usuario del panel y hora. Cada una ejecuta git en"
+" el panel. 0 usa el valor por defecto (120)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__namespace
+msgid "Namespace"
+msgstr "Namespace"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "No Git providers yet."
+msgstr "Todavía no hay proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "No credential covers this repository: it is read as a public one."
+msgstr "Ninguna credencial cubre este repositorio: se lee como uno público."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid ""
+"No credential of %(provider)s covers %(path)s: add one under Settings → Git "
+"providers."
+msgstr ""
+"Ninguna credencial de %(provider)s cubre %(path)s: añada una en Ajustes → "
+"Proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "No credential of %(provider)s for %(path)s has the scope %(scope)s."
+msgstr ""
+"Ninguna credencial de %(provider)s para %(path)s tiene el scope %(scope)s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "No credentials: repositories of this server are read as public ones."
+msgstr ""
+"Sin credenciales: los repositorios de este servidor se leen como públicos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"Only for a server whose certificate a private CA signs. Public: it is not a "
+"secret."
+msgstr ""
+"Solo para un servidor cuyo certificado firma una CA privada. Es público: no "
+"es un secreto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Open Git providers →"
+msgstr "Abrir proveedores Git →"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_provider__ca_bundle
+msgid ""
+"PEM certificates of a private CA the server's certificate chains to. Public:"
+" it is not a secret."
+msgstr ""
+"Certificados PEM de la CA privada con la que encadena el certificado del "
+"servidor. Es público: no es un secreto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_git_credential__kind__personal
+msgid "Personal access token"
+msgstr "Token de acceso personal"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_git_credential__kind__project
+msgid "Project access token"
+msgstr "Token de acceso de proyecto"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__provider_id
+msgid "Provider"
+msgstr "Proveedor"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_credential__scopes
+msgid ""
+"Read from GitLab when the token is tested or saved. Empty: the token does "
+"not answer on the API (a deploy token)."
+msgstr ""
+"Se leen de GitLab al probar o guardar el token. Vacío: el token no responde "
+"en la API (un deploy token)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Rebuild on push and merge request previews: coming in a next version."
+msgstr ""
+"Reconstrucción con cada push y vistas previas de merge requests: en una "
+"próxima versión."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Remove credential"
+msgstr "Quitar credencial"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__repo_capabilities
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__repo_capabilities
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__repo_capabilities
+msgid "Repo Capabilities"
+msgstr "Capacidades del repositorio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Repository URL to test"
+msgstr "URL del repositorio para probar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__repo_path
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__repo_path
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__repo_path
+msgid "Repository path"
+msgstr "Ruta del repositorio"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__requirements_read_at
+msgid "Requirements Read At"
+msgstr "Requirements leídos el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__scopes
+msgid "Scopes"
+msgstr "Scopes"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The CA bundle has no CA certificate (BasicConstraints CA=TRUE)."
+msgstr ""
+"Los certificados no incluyen ningún certificado de CA (BasicConstraints "
+"CA=TRUE)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The CA bundle is larger than 64 KB."
+msgstr "Los certificados de la CA ocupan más de 64 KB."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The CA bundle is not valid PEM."
+msgstr "Los certificados de la CA no son PEM válido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The CA bundle must contain PEM certificates only."
+msgstr "Los certificados de la CA solo pueden contener certificados PEM."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git provider could not be saved."
+msgstr "No se pudo guardar el proveedor Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git provider needs a base URL."
+msgstr "El proveedor Git necesita una URL base."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git provider needs a name."
+msgstr "El proveedor Git necesita un nombre."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The Git server answered with a redirect, which the panel does not follow: "
+"check that the repository has not moved."
+msgstr ""
+"El servidor Git respondió con una redirección, que el panel no sigue: "
+"compruebe que el repositorio no se ha movido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git server answered with an error."
+msgstr "El servidor Git respondió con un error."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git server asks to wait: try again in a minute."
+msgstr "El servidor Git pide esperar: vuelva a intentarlo en un minuto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The Git server took too long to answer."
+msgstr "El servidor Git tardó demasiado en responder."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The base URL of %s cannot change while repository lines use it."
+msgstr ""
+"La URL base de %s no puede cambiar mientras la usen líneas de repositorio."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The panel cannot reach the Git server."
+msgstr "El panel no llega al servidor Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The panel's git is too old to pin the server's address (2.37 or later is "
+"needed)."
+msgstr ""
+"El git del panel es demasiado antiguo para fijar la dirección del servidor "
+"(hace falta 2.37 o posterior)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "The repository is too large to read from the panel."
+msgstr "El repositorio es demasiado grande para leerlo desde el panel."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The repository or branch was not found, or the credential cannot see it."
+msgstr ""
+"No se encontró el repositorio o la rama, o la credencial no tiene acceso."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The server refused the credential: check the token and its scopes under "
+"Settings → Git providers."
+msgstr ""
+"El servidor rechazó la credencial: revise el token y sus scopes en Ajustes →"
+" Proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The server's certificate is not trusted: add the CA of the server under "
+"Settings → Git providers."
+msgstr ""
+"El certificado del servidor no es de confianza: añada la CA del servidor en "
+"Ajustes → Proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The token does not answer on the API (a deploy token): the panel reads the "
+"repository, nothing more."
+msgstr ""
+"El token no responde en la API (un deploy token): el panel lee el "
+"repositorio, nada más."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The token lacks the scope or role this needs: check it under Settings → Git "
+"providers."
+msgstr ""
+"Al token le falta el scope o el rol que hace falta: revíselo en Ajustes → "
+"Proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The token may hold only letters, digits, '_', '.' and '-' (8 to 255)."
+msgstr ""
+"El token solo puede contener letras, dígitos, '_', '.' y '-' (de 8 a 255)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid "The token of %(provider)s for %(ns)s expires on %(date)s."
+msgstr "El token de %(provider)s para %(ns)s caduca el %(date)s."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_git_provider_authority_unique
+msgid "There is already a Git provider for this server."
+msgstr "Ya hay un proveedor Git para este servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+#: code:addons/incubacloud/models/cloud_repo_mixin.py:0
+msgid ""
+"There is no Git provider for %s: add it under Settings → Git providers."
+msgstr ""
+"No hay un proveedor Git para %s: añádalo en Ajustes → Proveedores Git."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "This is not the URL of a repository of %s."
+msgstr "Esta no es la URL de un repositorio de %s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid "This panel connects only to Git servers on a public address."
+msgstr "Este panel solo se conecta a servidores Git con dirección pública."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "This panel only accepts GitLab servers on a public address."
+msgstr "Este panel solo admite servidores GitLab con dirección pública."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_git_credential_provider_namespace_unique
+msgid "This provider already has a credential for that namespace."
+msgstr "Este proveedor ya tiene una credencial para ese namespace."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"To deploy, a deploy token or a project token with the read_repository\n"
+"                scope, one per repository, is enough. Rebuild on push, merge request\n"
+"                notes and the assistant's writes will need a group or personal token\n"
+"                with the api scope and the Maintainer role, limited to your team's\n"
+"                namespace. Deploy tokens do not answer on the API."
+msgstr ""
+"Para desplegar basta un deploy token o un token de proyecto con el scope\n"
+"                read_repository, uno por repositorio. La reconstrucción con cada push, las\n"
+"                notas en los merge requests y las escrituras del asistente necesitarán un\n"
+"                token de grupo o personal con el scope api y el rol Maintainer, limitado al\n"
+"                namespace de su equipo. Los deploy tokens no responden en la API."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__token_user
+msgid "Token User"
+msgstr "Usuario del token"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "Token type"
+msgstr "Tipo de token"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "Type the URL of a repository of this server."
+msgstr "Escriba la URL de un repositorio de este servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "User name"
+msgstr "Nombre de usuario"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__username
+msgid "Username"
+msgstr "Nombre de usuario"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_repo__repo_capabilities
+#: model:ir.model.fields,help:incubacloud.field_cloud_project_repo__repo_capabilities
+#: model:ir.model.fields,help:incubacloud.field_cloud_repo_mixin__repo_capabilities
+msgid "What the panel does with this repository, for the SPA and the MCP."
+msgstr "Lo que el panel hace con este repositorio, para la SPA y el MCP."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "expires on %(date)s"
+msgstr "caduca el %(date)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "git:"
+msgstr "git:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "gitlab+deploy-token-1"
+msgstr "gitlab+deploy-token-1"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "group/subgroup"
+msgstr "grupo/subgrupo"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_repo__repo_path
+#: model:ir.model.fields,help:incubacloud.field_cloud_project_repo__repo_path
+#: model:ir.model.fields,help:incubacloud.field_cloud_repo_mixin__repo_path
+msgid ""
+"group/subgroup/project on GitLab, owner/repo on GitHub, in lower case. "
+"Written with the URL, never by hand."
+msgstr ""
+"grupo/subgrupo/proyecto en GitLab, propietario/repositorio en GitHub, en "
+"minúsculas. Se escribe con la URL, nunca a mano."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_provider__authority
+msgid "host[:port] of the base URL: one provider per server."
+msgstr "host[:puerto] de la URL base: un proveedor por servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "https only; a port or a path prefix if the server has one."
+msgstr "Solo https; un puerto o un prefijo de ruta si el servidor los tiene."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "https:// URL of a GitHub or GitLab repository"
+msgstr "URL https:// de un repositorio de GitHub o GitLab"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "https://gitlab.com"
+msgstr "https://gitlab.com"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_provider__base_url
+msgid "https://gitlab.com, or https://git.example.com[:port][/prefix]"
+msgstr "https://gitlab.com, o https://git.example.com[:puerto][/prefijo]"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "no API"
+msgstr "sin API"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_credential__username
+msgid ""
+"oauth2 for personal, group and project tokens; the deploy token's own user "
+"name (gitlab+deploy-token-N)."
+msgstr ""
+"oauth2 para los tokens personales, de grupo y de proyecto; el nombre de "
+"usuario propio del deploy token (gitlab+deploy-token-N)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "· API:"
+msgstr "· API:"
