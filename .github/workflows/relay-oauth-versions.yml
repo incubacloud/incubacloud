@@ -1,0 +1,115 @@
+name: relay-oauth versions
+
+# Weekly: is there anything newer than what the relay-oauth image is built
+# from? Opens one issue per finding (never twice while it is open), so the
+# image's update (docs/runbooks/RB-31-bump-relay-oauth-image.md) does not
+# depend on someone looking:
+#   - a newer docker-mailserver release in the series the Dockerfile uses
+#     (16.0.x for 16.0.1): a newer series is a decision, only reported;
+#   - a newer sasl-xoauth2 release tag;
+#   - the docker-mailserver tag rebuilt upstream (Debian security updates)
+#     since the newest published relay-oauth image of that version.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+# CN-010: Deny all permissions by default; grant per job.
+permissions: {}
+
+# A manual run and the weekly one would open the same issue twice.
+concurrency:
+  group: relay-oauth-versions
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE: ghcr.io/incubacloud/relay-oauth
+
+jobs:
+  check:
+    name: Compare with upstream
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write  # open an issue per finding
+    steps:
+      # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Compare and open issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          arg() { sed -n "s/^ARG $1=//p" images/relay-oauth/Dockerfile; }
+          dms_image=$(arg DMS_IMAGE)
+          dms_version=$(arg DMS_VERSION)
+          sx_tag=$(arg SX_TAG)
+          base_tag="${dms_version}-${sx_tag#release-}"
+          series="${dms_version%.*}"
+          tags() { # tags URL PATTERN: tag names, newest last
+            git ls-remote --tags --refs "$1" "$2" | sed 's#.*refs/tags/##' | sort -V
+          }
+          open_issue() { # open_issue TITLE BODY: unless one with that title is open
+            local title="$1" body="$2"
+            if gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" \
+                --json title --jq '.[].title' | grep -qxF "$title"; then
+              echo "already open: $title"
+            else
+              gh issue create --repo "$REPO" --title "$title" --body "$body"
+            fi
+          }
+          runbook="docs/runbooks/RB-31-bump-relay-oauth-image.md"
+          summary() { echo "$*" >>"$GITHUB_STEP_SUMMARY"; }
+          summary "### relay-oauth versions (Dockerfile: docker-mailserver ${dms_version}, sasl-xoauth2 ${sx_tag})"
+
+          dms_tags=$(tags https://github.com/docker-mailserver/docker-mailserver 'v*' \
+            | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)
+          in_series=$(grep -E "^${series//./\\.}\.[0-9]+$" <<<"$dms_tags" | tail -1 || true)
+          newest=$(tail -1 <<<"$dms_tags")
+          summary "- docker-mailserver: newest ${series}.x ${in_series:-none}, newest release ${newest}"
+          if [[ -n "$in_series" && "$in_series" != "$dms_version" \
+                && "$(printf '%s\n%s\n' "$dms_version" "$in_series" | sort -V | tail -1)" == "$in_series" ]]; then
+            open_issue "relay-oauth: docker-mailserver ${in_series} is out" \
+              "The relay-oauth image and core's \`SMTP_RELAY_IMAGE\` use docker-mailserver ${dms_version}; ${in_series} is out in the same series. Read its release notes and follow ${runbook}: the two move together."
+          fi
+
+          sx_newest=$(tags https://github.com/tarickb/sasl-xoauth2 'release-*' \
+            | grep -E '^release-[0-9]+(\.[0-9]+)*$' | sort -V | tail -1 || true)
+          summary "- sasl-xoauth2: newest tag ${sx_newest:-none}"
+          if [[ -n "$sx_newest" && "$sx_newest" != "$sx_tag" \
+                && "$(printf '%s\n%s\n' "$sx_tag" "$sx_newest" | sort -V | tail -1)" == "$sx_newest" ]]; then
+            open_issue "relay-oauth: sasl-xoauth2 ${sx_newest} is out" \
+              "The relay-oauth image builds sasl-xoauth2 ${sx_tag}; ${sx_newest} is tagged. Read its changes against the token file contract in images/relay-oauth/README.md and follow ${runbook}."
+          fi
+
+          # The published images of this base, read anonymously like any
+          # puller: GHCR refuses the token while the package does not exist
+          # or is not public.
+          published=""
+          if token=$(curl -fsS "https://ghcr.io/token?scope=repository:${IMAGE#ghcr.io/}:pull" 2>/dev/null \
+                | jq -r .token); then
+            published=$(curl -fsS -H "Authorization: Bearer ${token}" \
+              "https://ghcr.io/v2/${IMAGE#ghcr.io/}/tags/list" 2>/dev/null \
+              | jq -r '.tags[]?' | grep -E "^${base_tag//./\\.}-[0-9]+$" | sort -V | tail -1 || true)
+          fi
+          if [[ -z "$published" ]]; then
+            summary "- ${IMAGE}: nothing public for ${base_tag} yet"
+            exit 0
+          fi
+          upstream=$(docker buildx imagetools inspect "${dms_image}:${dms_version}" \
+            --format '{{json .Manifest}}' | jq -r .digest)
+          built_on=$(docker buildx imagetools inspect "${IMAGE}:${published}" --format '{{json .Image}}' \
+            | jq -r '(if has("linux/amd64") then .["linux/amd64"] else . end)
+                     | .config.Labels["org.opencontainers.image.base.digest"] // empty')
+          summary "- ${IMAGE}:${published} built on ${built_on:-unknown}; ${dms_image}:${dms_version} is now ${upstream}"
+          if [[ -n "$built_on" && "$built_on" != "$upstream" ]]; then
+            open_issue "relay-oauth: docker-mailserver ${dms_version} was rebuilt upstream" \
+              "${IMAGE}:${published} was built on ${dms_image}:${dms_version}@${built_on}; the tag now points to ${upstream} (upstream rebuilds a release for Debian security updates). Build a new revision of the image (${runbook}) and move core's \`RELAY_OAUTH_IMAGE\` to it."
+          fi
