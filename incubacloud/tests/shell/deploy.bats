@@ -580,3 +580,458 @@ HEADS_PLAIN_URL="https://github.com/acme/addons.git"
     cmp "$DIR/odoo/custom/build.d/05-incubacloud-debian-archive" \
         "${BATS_TEST_DIRNAME}/../../scripts/doodba/debian_archive.sh"
 }
+
+# ── Git providers other than GitHub and the helper container (8-nov-2026) ──
+
+GL_TOKEN="gldt-tokenOfTheDeploy"
+GL_URL="https://gitlab+deploy-token-7:${GL_TOKEN}@git.acme.tld:8443/team/addons.git"
+GL_PLAIN="https://git.acme.tld:8443/team/addons.git"
+GL_AUTH="git.acme.tld:8443"
+HELPER="alpine/git:2.54.0@sha256:0000"
+
+# The host's git, recording also the whole config each ls-remote ran with.
+_stub_git_config() {
+    _stub_git
+    sed -i 's|^\(    "[^"]*" "\${pre\[@\]}"\) config --get-all http.extraHeader >> "\$CALLS.headers"$|&\n\1 config --list >> "$CALLS.config"|' \
+        "$TMP/bin/git"
+    grep -q 'CALLS.config' "$TMP/bin/git"
+}
+
+# A timeout that runs whatever command follows its options.
+_stub_timeout_any() {
+    cat > "$TMP/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+echo "timeout $*" >> "$CALLS"
+[ -z "${LS_REMOTE_HANG:-}" ] || exit "${LS_REMOTE_HANG_STATUS:-124}"
+[ "$1" != -k ] || shift 2
+shift
+exec "$@"
+STUB
+    chmod +x "$TMP/bin/timeout"
+}
+
+# docker as the helper container answers it. ``run`` records its argv,
+# copies the mounted HOME's .gitconfig to $CALLS.gitconfig.<n>, and
+# - for ``--entrypoint git … ls-remote``, prints $LS_REMOTE_OUT;
+# - for ``--entrypoint sh … -c <script> sh <url> <target> <expect>``,
+#   fails the first $FETCH_FAILS times (status $FETCH_FAIL_STATUS), or
+#   writes a tree into the /w mount and prints the commit: <expect>, else
+#   $FETCH_SHA. With $FETCH_SLEEP it sleeps first (for the traps).
+# ``ps`` prints $DOCKER_PS_IDS; everything else is recorded and succeeds.
+_stub_docker_helper() {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$1" in
+    ps) [ -z "${DOCKER_PS_IDS:-}" ] || printf '%s\n' $DOCKER_PS_IDS; exit 0 ;;
+    run) ;;
+    *) exit 0 ;;
+esac
+shift
+home="" work="" entry=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -v) case "$2" in *:/h:ro) home="${2%:/h:ro}" ;; *:/w) work="${2%:/w}" ;; esac; shift 2 ;;
+        --entrypoint) entry="$2"; shift 2 ;;
+        --name|--label|--user|-e|-w|--add-host) shift 2 ;;
+        --rm) shift ;;
+        *) break ;;
+    esac
+done
+shift  # the image
+n="$(find "$(dirname "$CALLS")" -maxdepth 1 -name 'calls.gitconfig.*' | wc -l)"
+cp "$home/.gitconfig" "$CALLS.gitconfig.$n" 2>/dev/null || : > "$CALLS.gitconfig.$n"
+[ ! -f "$home/ca.pem" ] || cp "$home/ca.pem" "$CALLS.ca.$n"
+[ -z "${FETCH_SLEEP:-}" ] || sleep "$FETCH_SLEEP"
+if [ "$entry" = git ]; then
+    printf '%s' "${LS_REMOTE_OUT:-}"
+    exit 0
+fi
+url="$4" target="$5" expect="$6"
+[ -z "${EXCLUDE_COPY:-}" ] || cp "$EXCLUDE_COPY" "$CALLS.exclude-at-fetch"
+count="$CALLS.fetches"
+echo "$url $target" >> "$count"
+if [ "$(wc -l < "$count")" -le "${FETCH_FAILS:-0}" ]; then
+    echo partial > "$work/half-written"
+    exit "${FETCH_FAIL_STATUS:-2}"
+fi
+echo "tree of $target" > "$work/README"
+echo "${expect:-${FETCH_SHA:-4444444444444444444444444444444444444444}}"
+STUB
+    chmod +x "$TMP/bin/docker"
+}
+
+@test "record-heads sends a GitLab token to its own server and port only" {
+    _stub_git_config
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\tmain\t%s\t%s\t\t\n' \
+        good "$GL_URL" "$GL_AUTH" \
+        noport "https://gitlab+deploy-token-7:${GL_TOKEN}@git.acme.tld/team/a.git" "$GL_AUTH" \
+        other "https://gitlab+deploy-token-7:${GL_TOKEN}@evil.example:8443/team/a.git" "$GL_AUTH" \
+        http "http://git.acme.tld:8443/team/a.git" "$GL_AUTH" \
+        > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c ls-remote "$CALLS")" -eq 1 ]
+    [[ "$(cat "$CALLS")" == *"ls-remote -- $GL_PLAIN refs/heads/main"* ]]
+    ! grep -q "$GL_TOKEN" "$CALLS"
+    basic="$(printf 'gitlab+deploy-token-7:%s' "$GL_TOKEN" | base64 -w0)"
+    [ "$(cat "$CALLS.headers")" = "Authorization: Basic $basic" ]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    [[ "$heads" == *"good main $HEADS_SHA"* ]]
+    [[ "$heads" == *"noport main unknown-"* ]]
+    [[ "$heads" == *"other main unknown-"* ]]
+    [[ "$heads" == *"http main unknown-"* ]]
+    [[ "$output" != *"$GL_TOKEN"* ]]
+}
+
+@test "record-heads refuses redirects and trusts the CA off GitHub only" {
+    _stub_git_config
+    mkdir -p "$DIR/odoo/custom"
+    printf 'pem\n' > "$TMP/ca.pem"
+    printf 'gl\tref\tmain\t%s\t%s\t%s\t\n' "$GL_URL" "$GL_AUTH" "$TMP/ca.pem" > "$TMP/spec"
+    printf 'gh\tref\tmain\t%s\n' "$HEADS_URL" >> "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c "^http.https://$GL_AUTH/.followredirects=false$" "$CALLS.config")" -eq 1 ]
+    [ "$(grep -c "^http.https://$GL_AUTH/.sslcainfo=$TMP/ca.pem$" "$CALLS.config")" -eq 1 ]
+    [ "$(grep -c 'followredirects' "$CALLS.config")" -eq 1 ]
+    ! grep -qi curloptresolve "$CALLS.config"
+}
+
+@test "record-heads asks a pinned server from the helper container, never the host's git" {
+    _stub_git_config
+    _stub_timeout_any
+    _stub_docker_helper
+    mkdir -p "$DIR/odoo/custom"
+    printf 'pem\n' > "$TMP/ca.pem"
+    printf 'gl\tref\tmain\t%s\t%s\t%s\t%s\n' "$GL_URL" "$GL_AUTH" "$TMP/ca.pem" 203.0.113.7 > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec" "$HELPER"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "gl main $HEADS_SHA" ]
+    run_line="$(grep '^docker run' "$CALLS")"
+    [[ "$run_line" == *"--add-host git.acme.tld:203.0.113.7"* ]]
+    [[ "$run_line" == *"--label ic.job="* ]]
+    [[ "$run_line" == *":/h:ro"* ]]
+    [[ "$run_line" == *"--entrypoint git $HELPER -c credential.helper= -c protocol.version=2 ls-remote -- $GL_PLAIN refs/heads/main refs/tags/main"* ]]
+    [[ "$(cat "$CALLS")" == *"timeout -k 5 20 docker run"* ]]
+    ! grep -q "$GL_TOKEN" "$CALLS"
+    ! grep -q '^git ' "$CALLS"
+    grep -q 'sslCAInfo = /h/ca.pem' "$CALLS.gitconfig.0"
+    cmp "$CALLS.ca.0" "$TMP/ca.pem"
+    ! grep -qi curloptresolve "$CALLS.gitconfig.0"
+    # The containers an earlier run on this directory left go first.
+    [[ "$(head -1 "$CALLS")" == "docker ps -aq --filter label=ic.job="* ]]
+}
+
+@test "record-heads removes the helper container that ran out of time" {
+    _stub_timeout_any
+    _stub_docker_helper
+    mkdir -p "$DIR/odoo/custom"
+    printf 'gl\tref\tmain\t%s\t%s\t\t%s\n' "$GL_URL" "$GL_AUTH" 203.0.113.7 > "$TMP/spec"
+    export LS_REMOTE_HANG=1
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec" "$HELPER"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" == "gl main unknown-"* ]]
+    grep -q '^docker rm -f ic-git-' "$CALLS"
+}
+
+@test "record-heads with a pin and no helper image asks nothing" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom"
+    printf 'gl\tref\tmain\t%s\t%s\t\t%s\n' "$GL_URL" "$GL_AUTH" 203.0.113.7 > "$TMP/spec"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" == "gl main unknown-"* ]]
+    ! grep -q ls-remote "$CALLS"
+}
+
+@test "git-trust writes the image's git settings for each Git server, and removes them" {
+    mkdir -p "$DIR/odoo/custom"
+    git init -q "$DIR"
+    printf 'pem-of-acme\n' > "$TMP/ca.pem"
+    printf '%s\tref\tmain\t%s\t%s\t%s\t\n' \
+        a "$GL_URL" "$GL_AUTH" "$TMP/ca.pem" \
+        b "https://oauth2:${GL_TOKEN}@gitlab.com/x/b.git" gitlab.com "" \
+        c "https://gitlab.com/x/c.git" gitlab.com "" > "$TMP/spec"
+    printf 'gh\tref\tmain\t%s\n' "$HEADS_URL" >> "$TMP/spec"
+    run bash "$SCRIPT" git-trust "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    step="$DIR/odoo/custom/build.d/060-incubacloud-git"
+    [ -x "$step" ]
+    sh -n "$step"
+    grep -qxF "git config --system http.https://$GL_AUTH/.followRedirects false" "$step"
+    grep -qxF "git config --system http.https://$GL_AUTH/.sslCAInfo /opt/odoo/custom/incubacloud-git/git.acme.tld_8443.pem" "$step"
+    grep -qxF "git config --system http.https://gitlab.com/.followRedirects false" "$step"
+    [ "$(grep -c 'gitlab.com/' "$step")" -eq 1 ]
+    ! grep -q github "$step"
+    ! grep -q "$GL_TOKEN" "$step"
+    cmp "$DIR/odoo/custom/incubacloud-git/git.acme.tld_8443.pem" "$TMP/ca.pem"
+    grep -qxF /odoo/custom/build.d/060-incubacloud-git "$DIR/.git/info/exclude"
+    grep -qxF /odoo/custom/incubacloud-git/ "$DIR/.git/info/exclude"
+    # With no such server left, nothing stays behind.
+    printf 'gh\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    run bash "$SCRIPT" git-trust "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ ! -e "$step" ]
+    [ ! -e "$DIR/odoo/custom/incubacloud-git" ]
+}
+
+@test "git-trust refuses a server name that would break the step" {
+    mkdir -p "$DIR/odoo/custom"
+    printf 'a\tref\tmain\t%s\t%s\t\t\n' "$GL_PLAIN" 'git.acme.tld;rm' > "$TMP/spec"
+    run bash "$SCRIPT" git-trust "$DIR" "$TMP/spec"
+    [ "$status" -ne 0 ]
+    [ ! -e "$DIR/odoo/custom/build.d/060-incubacloud-git" ]
+}
+
+@test "debian-archive installs the ISRG roots step too" {
+    mkdir -p "$DIR/odoo/custom/build.d"
+    run bash "$SCRIPT" debian-archive "$DIR"
+    [ "$status" -eq 0 ]
+    step="$DIR/odoo/custom/build.d/06-incubacloud-isrg-roots"
+    [ -x "$step" ]
+    cmp "$step" "${BATS_TEST_DIRNAME}/../../scripts/doodba/isrg_roots.sh"
+}
+
+@test "the ISRG roots step installs both roots, and refuses a certificate that is not theirs" {
+    command -v openssl >/dev/null || skip "no openssl"
+    cat > "$TMP/bin/update-ca-certificates" <<'STUB'
+#!/usr/bin/env bash
+echo "update-ca-certificates" >> "$CALLS"
+STUB
+    chmod +x "$TMP/bin/update-ca-certificates"
+    roots="${BATS_TEST_DIRNAME}/../../scripts/doodba/isrg_roots.sh"
+    IC_CA_DIR="$TMP/ca" run bash "$roots"
+    [ "$status" -eq 0 ]
+    [ -f "$TMP/ca/isrg-root-yr.crt" ]
+    [ -f "$TMP/ca/isrg-root-ye.crt" ]
+    grep -q update-ca-certificates "$CALLS"
+    # One character of Root YE changed: its SHA-256 no longer matches.
+    sed 's/LTDzGYgtQKO1jl63uAIwGV7m$/LTDzGYgtQKO1jl63uAIwGV7n/' "$roots" > "$TMP/tampered.sh"
+    ! cmp -s "$roots" "$TMP/tampered.sh"
+    IC_CA_DIR="$TMP/ca2" run bash "$TMP/tampered.sh"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ISRG YE"* ]]
+    [ ! -e "$TMP/ca2/isrg-root-ye.crt" ]
+}
+
+# An 8.0 instance as fetch-repos finds it, a git repository with the
+# template's .dockerignore.
+_instance_80() {
+    mkdir -p "$DIR/odoo/custom/src/private"
+    git init -q "$DIR"
+    printf '# Ignore all src directories except private and files with a dot\ncustom/src/*\n!custom/src/private\n!custom/src/*.*\nauto\n' \
+        > "$DIR/odoo/.dockerignore"
+    _stub_timeout_any
+    _stub_docker_helper
+}
+
+_spec_80() {
+    printf 'odoo\tref\t8.0\thttps://github.com/odoo/odoo.git\t\t\t\n' > "$TMP/spec"
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" >> "$TMP/spec"
+    printf 'priv\tpin\t%s\t%s\t\t\t\n' "$PIN_SHA" "$HEADS_URL" >> "$TMP/spec"
+}
+
+@test "fetch-repos fetches every repository at its head, out of git and into the build" {
+    _instance_80
+    _spec_80
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+$HEADS_SHA	refs/heads/8.0
+" FETCH_SHA="$HEADS_SHA"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    src="$DIR/odoo/custom/src"
+    for alias in odoo addons priv; do
+        [ -f "$src/$alias/README" ]
+        [ ! -e "$src/$alias/.git" ]
+    done
+    [ "$(cat "$src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
+    [ "$(cat "$src/priv/.incubacloud-head")" = "$PIN_SHA" ]
+    [ -z "$(find "$src" -maxdepth 1 -name '.ic-tmp-*')" ]
+    # The pinned one is fetched by its commit, the others by their head.
+    grep -qx "https://github.com/acme/addons.git $PIN_SHA" "$CALLS.fetches"
+    grep -qx "$GL_PLAIN $HEADS_SHA" "$CALLS.fetches"
+    # Nothing of the tokens on any command line or in the output.
+    ! grep -q "$GL_TOKEN" "$CALLS"
+    ! grep -q "$HEADS_TOKEN" "$CALLS"
+    [[ "$output" != *"$GL_TOKEN"* && "$output" != *"$HEADS_TOKEN"* ]]
+    # Every container refused redirects, and none saw both tokens.
+    gl_basic="$(printf 'gitlab+deploy-token-7:%s' "$GL_TOKEN" | base64 -w0)"
+    gh_basic="$(printf 'x-access-token:%s' "$HEADS_TOKEN" | base64 -w0)"
+    for cfg in "$CALLS".gitconfig.*; do
+        grep -q 'followRedirects = false' "$cfg"
+        ! { grep -q "$gl_basic" "$cfg" && grep -q "$gh_basic" "$cfg"; }
+    done
+    grep -lq "$gl_basic" "$CALLS".gitconfig.*
+    grep -lq "$gh_basic" "$CALLS".gitconfig.*
+    # The build lets the trees in, and keeps the temporary ones out.
+    ignore="$DIR/odoo/Dockerfile.dockerignore"
+    head -5 "$ignore" | cmp - "$DIR/odoo/.dockerignore"
+    for alias in odoo addons priv; do grep -qxF "!custom/src/$alias" "$ignore"; done
+    [ "$(tail -1 "$ignore")" = 'custom/src/.ic-*' ]
+    # Out of the instance's history.
+    for line in /odoo/custom/src/odoo/ /odoo/custom/src/addons/ /odoo/custom/src/priv/ \
+        '/odoo/custom/src/.ic-*' /odoo/Dockerfile.dockerignore; do
+        grep -qxF "$line" "$DIR/.git/info/exclude"
+    done
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=all -- odoo/custom/src odoo/Dockerfile.dockerignore)" ]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    [[ "$heads" == *"addons main $HEADS_SHA"* ]]
+}
+
+@test "fetch-repos writes the exclusions before the first download" {
+    _instance_80
+    _spec_80
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" EXCLUDE_COPY="$DIR/.git/info/exclude"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    grep -qxF /odoo/custom/src/addons/ "$CALLS.exclude-at-fetch"
+    grep -qxF '/odoo/custom/src/.ic-*' "$CALLS.exclude-at-fetch"
+    grep -qxF /odoo/Dockerfile.dockerignore "$CALLS.exclude-at-fetch"
+}
+
+@test "fetch-repos does not fetch a tree already at its head" {
+    _instance_80
+    _spec_80
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+$HEADS_SHA	refs/heads/8.0
+" FETCH_SHA="$HEADS_SHA"
+    bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    : > "$CALLS.fetches"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ ! -s "$CALLS.fetches" ]
+    [[ "$output" == *"addons is at $HEADS_SHA already"* ]]
+    [[ "$output" == *"3 repositories ready for the build, 0 fetched"* ]]
+}
+
+@test "fetch-repos keeps the old tree when the download fails, and retries once" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    mkdir -p "$DIR/odoo/custom/src/addons"
+    echo old > "$DIR/odoo/custom/src/addons/README"
+    echo 1111 > "$DIR/odoo/custom/src/addons/.incubacloud-head"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" FETCH_FAILS=2 FETCH_FAIL_STATUS=137
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -ne 0 ]
+    [ "$(wc -l < "$CALLS.fetches")" -eq 2 ]
+    [[ "$output" == *"addons: the download failed twice (status 137)"* ]]
+    [[ "$output" != *"git.acme.tld"* ]]
+    [ "$(cat "$DIR/odoo/custom/src/addons/README")" = old ]
+    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = 1111 ]
+    [ -z "$(find "$DIR/odoo/custom/src" -maxdepth 1 -name '.ic-tmp-*')" ]
+    grep -q '^docker rm -f ic-git-' "$CALLS"
+    # One failure, then a good download: it ends well.
+    : > "$CALLS.fetches"
+    export FETCH_FAILS=1
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"trying again in 0s"* ]]
+    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
+    [ ! -e "$DIR/odoo/custom/src/addons/half-written" ]
+}
+
+@test "fetch-repos starts over from what a killed run left" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    # A run killed mid-download: a partial temporary tree, no marker, and
+    # its container still up.
+    mkdir -p "$DIR/odoo/custom/src/.ic-tmp-addons"
+    echo partial > "$DIR/odoo/custom/src/.ic-tmp-addons/half-written"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" DOCKER_PS_IDS="c0ffee"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    grep -q '^docker rm -f c0ffee$' "$CALLS"
+    [ ! -e "$DIR/odoo/custom/src/.ic-tmp-addons" ]
+    [ ! -e "$DIR/odoo/custom/src/addons/half-written" ]
+    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
+}
+
+@test "fetch-repos removes the container in flight when the job is cancelled" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    for signal in TERM HUP; do
+        : > "$CALLS"
+        FETCH_SLEEP=3 bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0 \
+            >/dev/null 2>&1 &
+        pid=$!
+        for _ in $(seq 100); do
+            [ "$(grep -c 'entrypoint sh' "$CALLS")" -lt 1 ] || break
+            sleep 0.1
+        done
+        kill -s "$signal" "$pid"
+        status=0
+        wait "$pid" || status=$?
+        [ "$status" -ne 0 ]
+        grep -q '^docker rm -f ic-git-' "$CALLS"
+        [ ! -e "$DIR/odoo/custom/src/addons/.incubacloud-head" ]
+    done
+}
+
+@test "fetch-repos fetches a branch whose head could not be read by its name" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="" FETCH_SHA="5555555555555555555555555555555555555555"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    grep -qx "$GL_PLAIN main" "$CALLS.fetches"
+    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$FETCH_SHA" ]
+    [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "addons main $FETCH_SHA" ]
+}
+
+@test "fetch-repos refuses a repository with several merges" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"addons has several merges"* ]]
+    ! grep -q '^docker run' "$CALLS"
+}
+
+@test "fetch-repos fails, naming the alias, when the server redirects" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" FETCH_FAILS=1 FETCH_FAIL_STATUS=4
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"addons: the server redirects; update the repository's URL"* ]]
+}
+
+@test "fetch-repos removes the trees of repositories the instance dropped" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    mkdir -p "$DIR/odoo/custom/src/gone" "$DIR/odoo/custom/src/mine"
+    echo 1111 > "$DIR/odoo/custom/src/gone/.incubacloud-head"
+    echo kept > "$DIR/odoo/custom/src/mine/x"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ ! -e "$DIR/odoo/custom/src/gone" ]
+    [ -f "$DIR/odoo/custom/src/mine/x" ]
+    [ -d "$DIR/odoo/custom/src/private" ]
+}
+
+@test "fetch-repos pins a server's address in its container" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t%s\n' "$GL_URL" "$GL_AUTH" 203.0.113.7 > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ "$(grep '^docker run' "$CALLS" | grep -c -- '--add-host git.acme.tld:203.0.113.7')" -eq 2 ]
+    [[ "$(cat "$CALLS")" == *"timeout -k 5 600 docker run"* ]]
+}

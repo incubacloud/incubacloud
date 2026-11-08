@@ -31,11 +31,21 @@ archive="$(ic_expand_home "$3")"
 #    env file (``.docker/`` holds nothing else), the instance's logs, the
 #    override that carries the platform's resource limits and the
 #    continuous recovery agent's ``.walg/`` (wal-g, the host's libraries it
-#    runs with, the logs of past restores).
+#    runs with, the logs of past restores). Nor what the platform writes
+#    for the image's build: the trees 8.0 to 10.0 fetch into
+#    ``odoo/custom/src`` (every directory there but ``private``; a
+#    developer clones them with ``invoke git-aggregate``), their
+#    Dockerfile.dockerignore, and the git settings and CA certificates of
+#    the instance's Git servers.
 ic_log "copying $inst_dir to a staging area"
-rm -rf "$staging"
+rm -rf "${staging:?}"
 mkdir -p "$staging"
 rsync -a \
+    --include='/odoo/custom/src/private/' \
+    --exclude='/odoo/custom/src/*/' \
+    --exclude='/odoo/Dockerfile.dockerignore' \
+    --exclude='/odoo/custom/build.d/060-incubacloud-git' \
+    --exclude='/odoo/custom/incubacloud-git' \
     --exclude='.git' \
     --exclude='odoo/auto' \
     --exclude='dumps' \
@@ -51,10 +61,12 @@ rsync -a \
     --exclude='docker-compose.override.yml' \
     "$inst_dir/" "$staging/"
 
-# 2. Strip access tokens from the repository URLs.
+# 2. Strip access tokens from the repository URLs: any user information,
+#    GitHub's ``x-access-token:``, GitLab's ``oauth2:`` and a deploy
+#    token's ``gitlab+deploy-token-N:`` alike.
 if [ -f "$staging/odoo/custom/src/repos.yaml" ]; then
     ic_log "stripping tokens from repos.yaml"
-    sed -i 's|://x-access-token:[^@]*@|://|g' \
+    sed -i 's|://[^/@[:space:]]*@|://|g' \
         "$staging/odoo/custom/src/repos.yaml"
 fi
 

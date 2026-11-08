@@ -244,3 +244,43 @@ run_export() {
     grep -q "odoo db load --neutralize --force devel /tmp/backup.zip" "$OUT/DEVELOPMENT.md"
     ! grep -q "click-odoo-restoredb" "$OUT/DEVELOPMENT.md"
 }
+
+@test "any user information is stripped from the repository URLs, GitLab's too" {
+    cat >> "$INST/odoo/custom/src/repos.yaml" <<'YAML'
+gl:
+  remotes:
+    gl: https://oauth2:glpat-supersecret12@gitlab.com/acme/gl.git
+dep:
+  remotes:
+    dep: https://gitlab+deploy-token-7:gldt-supersecret12@git.acme.tld:8443/team/dep.git
+YAML
+    run_export
+    ! grep -q supersecret "$OUT/odoo/custom/src/repos.yaml"
+    ! grep -q '@' "$OUT/odoo/custom/src/repos.yaml"
+    grep -q "https://gitlab.com/acme/gl.git" "$OUT/odoo/custom/src/repos.yaml"
+    grep -q "https://git.acme.tld:8443/team/dep.git" "$OUT/odoo/custom/src/repos.yaml"
+}
+
+@test "the trees fetched for the build and the Git servers' settings are left out" {
+    mkdir -p "$INST/odoo/custom/src/odoo" "$INST/odoo/custom/src/addons" \
+        "$INST/odoo/custom/src/.ic-tmp-addons" "$INST/odoo/custom/src/private/mod" \
+        "$INST/odoo/custom/build.d" "$INST/odoo/custom/incubacloud-git"
+    echo tree > "$INST/odoo/custom/src/odoo/setup.py"
+    echo tree > "$INST/odoo/custom/src/addons/README"
+    echo half > "$INST/odoo/custom/src/.ic-tmp-addons/x"
+    echo mine > "$INST/odoo/custom/src/private/mod/__manifest__.py"
+    echo '!custom/src/odoo' > "$INST/odoo/Dockerfile.dockerignore"
+    echo 'git config' > "$INST/odoo/custom/build.d/060-incubacloud-git"
+    echo 'apt' > "$INST/odoo/custom/build.d/05-incubacloud-debian-archive"
+    echo pem > "$INST/odoo/custom/incubacloud-git/git.acme.tld.pem"
+    run_export
+    [ ! -e "$OUT/odoo/custom/src/odoo" ]
+    [ ! -e "$OUT/odoo/custom/src/addons" ]
+    [ ! -e "$OUT/odoo/custom/src/.ic-tmp-addons" ]
+    [ ! -e "$OUT/odoo/Dockerfile.dockerignore" ]
+    [ ! -e "$OUT/odoo/custom/build.d/060-incubacloud-git" ]
+    [ ! -e "$OUT/odoo/custom/incubacloud-git" ]
+    [ -f "$OUT/odoo/custom/src/private/mod/__manifest__.py" ]
+    [ -f "$OUT/odoo/custom/build.d/05-incubacloud-debian-archive" ]
+    [ -f "$OUT/odoo/custom/src/addons.yaml" ]
+}

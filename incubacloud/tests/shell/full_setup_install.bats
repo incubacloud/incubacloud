@@ -95,3 +95,24 @@ teardown() {
     [ "$status" -eq 0 ]
     [ ! -e "$TMP/systemctl_calls" ]
 }
+
+@test "pulls the git helper image when given one" {
+    _stub docker 'echo "docker $*" >> "$TMP/docker_calls"; case "$*" in "--version") echo "Docker version 27";; *) exit 0;; esac'
+    run bash "$SCRIPT" "alpine/git:2.54.0@sha256:abc"
+    [ "$status" -eq 0 ]
+    grep -qx "docker pull -q alpine/git:2.54.0@sha256:abc" "$TMP/docker_calls"
+}
+
+@test "a helper image that cannot be pulled only warns" {
+    _stub docker 'case "$*" in "--version") echo "Docker version 27";; pull*) exit 1;; *) exit 0;; esac'
+    run bash "$SCRIPT" "alpine/git:2.54.0@sha256:abc"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"could not pull the git helper image"* ]]
+}
+
+@test "pulls nothing without a helper image" {
+    _stub docker 'echo "docker $*" >> "$TMP/docker_calls"; case "$*" in "--version") echo "Docker version 27";; *) exit 0;; esac'
+    run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    ! grep -q pull "$TMP/docker_calls" 2>/dev/null
+}
