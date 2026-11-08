@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The update creates the `cloud_job_no_return` table and, with `incubacloud_pitr`
 1.0.11, turns `failure_holds_queue` off for `pitr_enable`; nothing else changes
-in the database.
+in the database. No instance shows changes to apply for the SMTP relay's pin:
+each takes it at its next deploy, rebuild, move or plan change.
 
 ### Added
 
@@ -157,6 +158,18 @@ in the database.
   The domains are checked before anything is created, and the project, its
   lines and the instance are made or none is.
 - Spanish: «salva» reads «copia de seguridad», as in the rest of the panel.
+- **A production instance's SMTP relay runs docker-mailserver 16.0.1, not
+  whatever `latest` is.** The copier answers say `smtp_relay_version: latest`
+  and every deploy pulls, so since docker-mailserver v17.0.0 became `latest`
+  on 2026-11-05 each deploy, rebuild or move started v17 while the instances
+  deployed before kept the release they had pulled. The deploy override now
+  names `ghcr.io/docker-mailserver/docker-mailserver:16.0.1`, the release the
+  tenant panels already run, next to `ENABLE_UPDATE_CHECK=0`. The answers are
+  unchanged, so the configuration hash of the fleet is too. A staging's mail
+  catcher keeps its image. v17's breaking changes (LDAP, Rspamd's Redis to
+  Valkey, Dovecot's Xapian) do not reach a relay with `SMTP_ONLY=1`, and its
+  relay script is the same as 16.0.1's: an instance already on v17 goes back
+  to 16.0.1 at its next deploy, its queue kept in the mail state volume.
 
 ## [1.0.217] — 2026-11-08
 

@@ -153,6 +153,7 @@ from . import test_deploy_override_mailcatcher
 from . import test_copier_answers_whitelist
 from . import test_deploy_override_smtp_update_check
 from . import test_deploy_override_cpus
+from . import test_deploy_override_smtp_relay_image
 from . import test_instance_log_archive
 from . import test_instance_log_health
 from . import test_instance_log_commands
