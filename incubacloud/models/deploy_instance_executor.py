@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager, suppress
 
+import asyncssh
 import yaml
 
 from ..controllers._data_load._helpers import _parse_github_repo_path
@@ -1654,7 +1655,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         comes from the metrics, up to five minutes late after a resize
         and 0 on a host never measured. That field is the fallback when
         the daemon fails, answers no positive count or does not answer
-        within :data:`HOST_CPUS_TIMEOUT_S`; when it is 0 too, nothing is
+        within :data:`HOST_CPUS_TIMEOUT_S`, or the link to the host fails
+        (``asyncssh.Error``, ``OSError``); when it is 0 too, nothing is
         limited and the log says so. Sets ``self._host_cpus``; writes
         nothing to the database.
 
@@ -1665,7 +1667,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "docker info --format '{{.NCPU}}'", timeout=HOST_CPUS_TIMEOUT_S,
             )
             ncpu = int(result.stdout.strip()) if result.exit_status == 0 else 0
-        except (TimeoutError, ValueError):
+        except (TimeoutError, ValueError, asyncssh.Error, OSError):
             ncpu = 0
         if ncpu <= 0:
             ncpu = self._host().cpu_cores or 0
