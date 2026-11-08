@@ -172,10 +172,10 @@
                     that follow the branch rebuild. Register it from a GitLab repository
                     line of a project or an instance.
                 </p>
-                <p t-if="state.hooksError" class="rl-set-inline-msg rl-set-inline-msg--error"
-                   t-esc="state.hooksError"/>
                 <p t-if="state.hooksNotice" class="rl-set-inline-msg rl-set-inline-msg--error"
                    t-esc="state.hooksNotice"/>
+                <p t-if="state.hooksError" class="rl-set-inline-msg rl-set-inline-msg--error"
+                   t-esc="state.hooksError"/>
                 <p t-elif="!state.hooks.length" class="rl-set-hint">No webhooks yet.</p>
                 <t t-foreach="state.hooks" t-as="hook" t-key="hook.id">
                     <div class="ic-gitp-hook">

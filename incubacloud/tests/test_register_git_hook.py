@@ -43,7 +43,7 @@ class TestRegisterGitHook(_RoutesCase):
         patcher = patch.object(
             cloud_gitlab_hook, "GitLabClient", autospec=True, return_value=self.api,
         )
-        patcher.start()
+        self.client_cls = patcher.start()
         self.addCleanup(patcher.stop)
 
     def _register(self, **kwargs):
@@ -168,6 +168,68 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertFalse(answer["ok"])
         hook.invalidate_recordset(["secret"])
         self.assertEqual(hook.secret, old)
+        self.assertEqual(self.api.update_hook.call_count, 1, "a refusal is clear: no second PUT")
+
+    def test_an_unclear_rotation_gives_gitlab_the_old_secret_back(self):
+        """A timeout may hide a PUT GitLab took: the old secret is put back, as the panel keeps it."""
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        old = hook.secret
+        self.api.update_hook.side_effect = [GitLabError("timeout"), {"id": 9}]
+        answer = self._serve("cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True)
+        self.assertFalse(answer["ok"])
+        self.assertIn("did not take the new secret", answer["error"])
+        hook.invalidate_recordset(["secret"])
+        self.assertEqual(hook.secret, old)
+        self.assertEqual(self.api.update_hook.call_count, 2)
+        _kind, _target, _id, url, token = self.api.update_hook.call_args.args
+        self.assertEqual((url, token), (hook._url(), old))
+
+    def test_an_unclear_rotation_that_cannot_be_undone_says_to_rotate_again(self):
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        old = hook.secret
+        for first in (GitLabError("http", 502), GitLabError("unreachable")):
+            self.api.update_hook.reset_mock()
+            self.api.update_hook.side_effect = [first, GitLabError("timeout")]
+            with self.subTest(code=first.code):
+                answer = self._serve(
+                    "cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True,
+                )
+                self.assertFalse(answer["ok"])
+                self.assertIn("Rotate secret", answer["error"])
+                self.assertEqual(self.api.update_hook.call_count, 2)
+                hook.invalidate_recordset(["secret"])
+                self.assertEqual(hook.secret, old)
+
+    def test_rotating_locks_the_row_on_a_committed_cursor_before_gitlab(self):
+        """The rotation takes the row as registering does, then calls GitLab."""
+        hook_id = self._register()["hook"]["id"]
+        order = []
+
+        def cursor(registry):
+            """Record that the rotation's cursor was opened."""
+            order.append("cursor")
+            return read_committed_cursor(registry)
+
+        self.api.update_hook.side_effect = lambda *_a: order.append("gitlab")
+        with patch.object(
+            cloud_gitlab_hook, "read_committed_cursor", autospec=True,
+            side_effect=cursor,
+        ):
+            answer = self._serve(
+                "cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True,
+            )
+        self.assertTrue(answer["ok"])
+        self.assertEqual(order, ["cursor", "gitlab"])
+
+    def test_registering_gives_gitlab_one_budget_for_all_its_calls(self):
+        """The row is held while GitLab is called: the calls share one deadline."""
+        before = cloud_gitlab_hook.time.monotonic()
+        self._register()
+        deadline = self.client_cls.call_args.kwargs["deadline"]
+        self.assertLessEqual(deadline - before, cloud_gitlab_hook.GITLAB_BUDGET_S + 1)
+        self.assertGreater(deadline, before)
 
     def test_a_manual_webhook_rotates_in_the_panel_only(self):
         hook = self.env["cloud.gitlab.hook"].create({
@@ -225,12 +287,37 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertFalse(self.env["cloud.gitlab.hook"].browse(hook_id).exists())
         self.api.delete_hook.assert_not_called()
 
-    def test_delete_that_gitlab_refuses_keeps_the_webhook(self):
+    def test_delete_that_gitlab_fails_keeps_the_webhook(self):
         hook_id = self._register()["hook"]["id"]
-        self.api.delete_hook.side_effect = GitLabError("forbidden", 403)
+        self.api.delete_hook.side_effect = GitLabError("http", 500)
         answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
         self.assertFalse(answer["ok"])
         self.assertTrue(self.env["cloud.gitlab.hook"].browse(hook_id).exists())
+
+    def test_delete_with_a_refused_credential_deletes_in_the_panel_and_warns(self):
+        """A 401 or 403 is a credential that cannot delete it: as without one."""
+        for code, status in (("auth", 401), ("forbidden", 403)):
+            with self.subTest(code=code):
+                hook_id = self._register()["hook"]["id"]
+                self.api.delete_hook.side_effect = GitLabError(code, status)
+                answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
+                self.assertTrue(answer["ok"])
+                self.assertIn("Delete it in GitLab by hand", answer["warning"])
+                self.assertFalse(self.env["cloud.gitlab.hook"].browse(hook_id).exists())
+
+    def test_deleting_a_failing_webhook_resolves_its_alert(self):
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        hook.state = "failing"
+        Alert = self.env["cloud.alert"].sudo()
+        Alert.raise_alert(
+            "gitlab_hook_failing", "disabled", key=f"gitlab_hook:{hook_id}",
+        )
+        answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
+        self.assertTrue(answer["ok"])
+        self.assertFalse(Alert.search([
+            ("code", "=", "gitlab_hook_failing"), ("state", "=", "active"),
+        ]))
 
 
 @tagged("post_install", "-at_install")
@@ -303,6 +390,18 @@ class TestGitHookCron(_RoutesCase):
         self.env["cloud.git.provider"]._cron_check_git_providers()
         self.assertFalse(self.hook.exists())
         self.api.delete_hook.assert_called_once()
+
+    def test_an_orphan_deleted_resolves_the_alert_it_had_when_it_failed(self):
+        """Disabled by GitLab, then no line uses it: its alert goes with it."""
+        self.api.get_hook.return_value = {"id": 9, "alert_status": "disabled"}
+        self.env["cloud.git.provider"]._cron_check_git_providers()
+        self.assertTrue(self._alert())
+        self.env["cloud.project.repo"].search([("repo_path", "=", "acme/web")]).unlink()
+        self.env["cloud.git.provider"]._cron_check_git_providers()
+        self.hook.orphan_since = fields.Datetime.now() - timedelta(days=8)
+        self.env["cloud.git.provider"]._cron_check_git_providers()
+        self.assertFalse(self.hook.exists())
+        self.assertFalse(self._alert())
 
     def test_an_orphan_used_again_is_active_when_it_had_deliveries(self):
         self.hook.write({

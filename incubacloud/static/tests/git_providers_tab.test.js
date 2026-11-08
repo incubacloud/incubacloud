@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
+import { getTemplate } from "@web/core/templates";
 import {
     blankCredential,
     CREDENTIAL_KINDS,
@@ -256,5 +257,40 @@ describe("GitProvidersTab — webhooks (G3)", () => {
         await done;
         expect(comp.state.hooks).toEqual([]);
         expect(comp.state.hooksNotice).toBe(warning);
+    });
+});
+
+/**
+ * The webhooks' list in the tab's template: the notice of a webhook
+ * deleted in the panel only, the load error and the empty list are three
+ * messages, and none hides another. The notice once sat between the
+ * error's ``t-if`` and the empty list's ``t-elif``, which then hung on the
+ * notice: a notice hid «No webhooks yet.», and a load error showed it.
+ *
+ * Read from the template rather than mounted (see ic_confirm_dialog.test.js).
+ */
+describe("GitProvidersTab — webhooks list (G3)", () => {
+    /**
+     * The message of the list whose condition is *condition*.
+     *
+     * @param {string} attribute ``t-if`` or ``t-elif``
+     * @param {string} condition its expression
+     * @returns {Element} the element
+     */
+    function message(attribute, condition) {
+        return getTemplate("incubacloud.GitProvidersTab").querySelector(
+            `[${attribute}="${condition}"]`,
+        );
+    }
+
+    test("the empty list hangs on the load error, not on the notice", () => {
+        const empty = message("t-elif", "!state.hooks.length");
+        expect(empty.previousElementSibling.getAttribute("t-if")).toBe("state.hooksError");
+    });
+
+    test("the notice stands on its own, before the error and the list", () => {
+        const notice = message("t-if", "state.hooksNotice");
+        expect(notice.nextElementSibling.getAttribute("t-if")).toBe("state.hooksError");
+        expect(notice.hasAttribute("t-elif")).toBe(false);
     });
 });

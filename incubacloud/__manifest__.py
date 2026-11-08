@@ -136,8 +136,9 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "incubacloud/static/src/toast/**/*.js",
             "incubacloud/static/src/store/**/*.js",
             "incubacloud/static/src/components/**/*.js",
-            # The templates of the components a test mounts.
+            # The templates of the components a test mounts or reads.
             "incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml",
+            "incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml",
             "incubacloud/static/src/components/ic_menu/ic_menu.xml",
             "incubacloud/static/src/components/alert_history/alert_history.xml",
             "incubacloud/static/src/components/ic_modal/ic_modal.xml",

@@ -126,6 +126,32 @@ class TestGitLabClientRequest(_ClientCase):
                 ).current_user()
             self.assertEqual(caught.exception.code, code)
 
+    def test_a_spent_budget_fails_before_dialling(self):
+        """A registration's calls share one budget: past it, no call is made."""
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+        ) as made, self.assertRaises(client_mod.GitLabError) as caught:
+            client_mod.GitLabClient(
+                "https://gitlab.example/api/v4", _TOKEN,
+                deadline=client_mod.time.monotonic() - 1,
+            ).current_user()
+        self.assertEqual(caught.exception.code, "timeout")
+        made.assert_not_called()
+
+    def test_a_call_waits_no_longer_than_the_budget_left(self):
+        conn = MagicMock(spec=http.client.HTTPSConnection)
+        conn.getresponse.return_value = _response(body={})
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ) as made:
+            client_mod.GitLabClient(
+                "https://gitlab.example/api/v4", _TOKEN,
+                deadline=client_mod.time.monotonic() + 5,
+            ).current_user()
+        self.assertLessEqual(made.call_args.kwargs["timeout"], 5)
+        self.assertGreater(made.call_args.kwargs["timeout"], 0)
+
 
 class TestGitLabClientHooks(BaseCase):
     """The webhook calls of G3 (plan-gitlab.md §4.7.2, §4.7.4)."""

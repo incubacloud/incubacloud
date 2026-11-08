@@ -20,6 +20,7 @@ writes arrive with G3 to G5.
 import http.client
 import json
 import ssl
+import time
 from urllib.parse import quote, urlsplit
 
 from ..github.http_utils import HTTPBudgetExceeded, read_response_limited
@@ -91,10 +92,13 @@ class GitLabClient:
     :param str ca_pem: the server's private CA bundle, or None
     :param str pin_ip: the address to dial (``public`` policy), or None
     :param int timeout: seconds per request
+    :param float deadline: a ``time.monotonic()`` past which no request
+        starts and none waits, or None: the calls of one operation share
+        one budget (a registration holds the webhook's row meanwhile)
     """
 
     def __init__(self, api_url, token, ca_pem=None, pin_ip=None,
-                 timeout=REQUEST_TIMEOUT):
+                 timeout=REQUEST_TIMEOUT, deadline=None):
         parts = urlsplit(api_url)
         if parts.scheme != "https" or not parts.hostname:
             raise ValueError("the API URL must be https")
@@ -105,6 +109,7 @@ class GitLabClient:
         self.ca_pem = ca_pem
         self.pin_ip = pin_ip
         self.timeout = timeout
+        self.deadline = deadline
 
     # ── Calls ──────────────────────────────────────────────────────────
 
@@ -226,18 +231,33 @@ class GitLabClient:
             return ssl.create_default_context(cadata=self.ca_pem)
         return ssl.create_default_context()
 
+    def _timeout(self):
+        """Return the seconds the next request may wait: the timeout, or the budget left.
+
+        :rtype: float
+        :raises GitLabError: ``timeout`` when the budget is spent
+        """
+        if self.deadline is None:
+            return self.timeout
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            raise GitLabError("timeout")
+        return min(self.timeout, left)
+
     def _connection(self):
         """Return a connection to the server, pinned when an address is given.
 
         :rtype: http.client.HTTPSConnection
+        :raises GitLabError: ``timeout`` when the budget is spent
         """
+        timeout = self._timeout()
         if self.pin_ip:
             return _PinnedHTTPSConnection(
-                self.host, self.pin_ip, port=self.port, timeout=self.timeout,
+                self.host, self.pin_ip, port=self.port, timeout=timeout,
                 context=self._context(),
             )
         return http.client.HTTPSConnection(
-            self.host, port=self.port, timeout=self.timeout,
+            self.host, port=self.port, timeout=timeout,
             context=self._context(),
         )
 
