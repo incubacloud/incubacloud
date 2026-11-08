@@ -354,7 +354,7 @@ class _Session:
         """
         env = {
             key: value for key, value in os.environ.items()
-            if not key.startswith("GIT_") and key not in ("SSH_ASKPASS",)
+            if not key.startswith("GIT_") and key != "SSH_ASKPASS"
         }
         env.update({
             "HOME": self.home,

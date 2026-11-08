@@ -487,10 +487,9 @@ def git_source_requirements(source, branch):
     :raises GitReaderError: when the server cannot be read
     :raises ValueError: on a branch that could be an option
     """
-    files = source.reader.read_files(
+    return source.reader.read_files(
         source.ref, source.credential, branch, ['requirements.txt'],
-    )
-    return files.get('requirements.txt')
+    ).get('requirements.txt')
 
 
 def _provider_read(env, url, read, branch, deadline=None):
