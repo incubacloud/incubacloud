@@ -33,15 +33,14 @@ from contextlib import suppress
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion
 
-from odoo import api
 from odoo.exceptions import UserError
 
 from ..github.http_utils import read_json_limited, safe_urlopen
 
 from ..github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
 from ..net.git_reader import GitReaderError
-from ._concurrency import read_committed_cursor
 from ._git_urls import RepoRef, parse_provider_repo_url
+from .cloud_rate_limit import consume_quota
 
 #: What a read of a GitLab repository needs, resolved from the ORM on
 #: the calling thread so the read itself may run in a worker thread:
@@ -277,15 +276,9 @@ def canonical_any_repo_url(env, url):
 def consume_hourly_quota(env, bucket, cap_key):
     """Count one hit on *bucket* against an hourly cap, in its own transaction.
 
-    Committed at once, so a hit refused later still counts and parallel
-    requests do not fight over the bucket's row inside their own
-    transactions. The cursor runs at READ COMMITTED
-    (:func:`read_committed_cursor`): at Odoo's REPEATABLE READ a hit that
-    met a row another hit had just created or committed was aborted with
-    a serialization failure, logged at ERROR, and the request was run
-    again. Here the second hit waits for the row and adds to it, and the
-    atomic upsert of ``cloud.rate.limit.hit`` hands each hit its own
-    count, so parallel hits never pass the cap.
+    :func:`~.cloud_rate_limit.consume_quota` with a window of an hour:
+    committed at once, at READ COMMITTED, so parallel hits wait for the
+    bucket's row and never pass the cap.
 
     :param env: an Odoo environment, of the user who asks (its user and
         context are kept)
@@ -294,15 +287,7 @@ def consume_hourly_quota(env, bucket, cap_key):
     :return: whether the hit is within the cap
     :rtype: bool
     """
-    with read_committed_cursor(env.registry) as cr:
-        quota_env = api.Environment(cr, env.uid, dict(env.context))
-        allowed = quota_env['cloud.rate.limit'].sudo().hit(
-            bucket,
-            cap_key=cap_key,
-            window_seconds=3600,
-        )
-        cr.commit()
-        return allowed
+    return consume_quota(env, bucket, cap_key=cap_key, window_seconds=3600)
 
 
 def consume_git_read(env):

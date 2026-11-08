@@ -19,7 +19,7 @@ from joserfc.errors import JoseError
 from odoo import SUPERUSER_ID, api, models, tools
 
 from odoo.addons.base.models.res_users import KEY_CRYPT_CONTEXT
-from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
+from odoo.addons.incubacloud.models.cloud_rate_limit import consume_quota
 
 from ..controllers._issuer_metadata import issuer_spellings, jwks_uri_for
 from ..controllers._jwks_cache import get_keyset, unverified_kid
@@ -302,23 +302,21 @@ class McpAuth(models.AbstractModel):
     def _count_failure(self, ip):
         """Count a failed authentication of *ip*, in a cursor of its own.
 
-        Its own transaction: the request's may roll back, and parallel
-        failures must not fight over the bucket's row inside it. The
-        cursor runs at READ COMMITTED (:func:`read_committed_cursor`):
-        at REPEATABLE READ a failure that met a row another had just
-        created or committed was aborted with a serialization failure,
-        and the failure went uncounted.
+        Its own transaction, with :func:`consume_quota`: the request's may
+        roll back, and parallel failures must not fight over the bucket's
+        row inside it. At READ COMMITTED a failure that meets a row
+        another has just created or committed waits for it and adds to
+        it, instead of going uncounted.
 
+        :param str ip: the address that failed to authenticate
         :return: whether *ip* is still within its failures of the minute
         :rtype: bool
         """
-        with read_committed_cursor(self.env.registry) as cr:
-            env = api.Environment(cr, SUPERUSER_ID, dict(self.env.context))
-            within = env["cloud.rate.limit"].hit(
-                self._failure_bucket(ip), max_per_window=AUTH_FAILURES_PER_MIN
-            )
-            cr.commit()
-        return within
+        return consume_quota(
+            self.env(user=SUPERUSER_ID),
+            self._failure_bucket(ip),
+            max_per_window=AUTH_FAILURES_PER_MIN,
+        )
 
     @api.model
     def _auth_reply(self, error):
