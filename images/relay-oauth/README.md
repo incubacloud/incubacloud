@@ -102,7 +102,9 @@ lost, it is retried.
 2. `POST https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token`,
    `grant_type=client_credentials`, scope
    `https://outlook.office365.com/.default`, 30 s timeout, TLS checked
-   against the system's CAs, redirects refused.
+   against the system's CAs, redirects refused. An answer without a
+   token, or with an `expires_in` that is not positive or is over a day, is
+   `bad_response`.
 3. Writes the token file atomically (temporary file in the same directory,
    group `postfix`, `0640`, rename).
 4. Sleeps until 20 min before `expires_in` ends (60 s at least). On a
