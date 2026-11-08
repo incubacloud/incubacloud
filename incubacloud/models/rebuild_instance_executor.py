@@ -418,6 +418,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
 
     async def on_success(self, results):
         self._cancel_stale_waits()
+        self._report_cpu_clamps()
         inst = self._inst()
         # The template this rebuild rendered with: from now on the stack's.
         write_vals = {
@@ -709,9 +710,22 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         )
         return last.content != f"Running: {_LABEL_RESTART}"
 
+    def _failure_leaves_error(self, results):
+        """Whether a failed run leaves the instance in error.
+
+        Always, here: the run stopped somewhere between copier and the
+        restart, and what runs is not known to be sound. A layer whose
+        failure put the stack back as it was says so for that outcome.
+
+        :param dict results: what the steps answered
+        :rtype: bool
+        """
+        return True
+
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        self._report_cpu_clamps()
         inst = self._inst()
-        if inst:
+        if inst and self._failure_leaves_error(results):
             inst.write({"status": "error"})

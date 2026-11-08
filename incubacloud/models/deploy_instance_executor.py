@@ -55,6 +55,11 @@ LOGS_DIRNAME = "logs"
 ODOO_LOG_DIR = "/var/log/odoo"
 ODOO_LOGFILE = f"{ODOO_LOG_DIR}/odoo.log"
 
+#: Seconds the job waits for the host's daemon to say how many CPUs it
+#: has (``_read_host_cpus``). It answers in well under a second; one that
+#: hangs costs this, and the job goes on with the measured cores.
+HOST_CPUS_TIMEOUT_S = 15
+
 #: The endpoints that check a password: the web form and its second
 #: factor, the JSON session login, the password reset and the XML-RPC
 #: ``common`` service whose ``authenticate`` the RPC clients call. Each
@@ -383,6 +388,15 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     _job_type = "deploy_instance"
     # The disk shown is read from metrics as soon as the job ends.
     _refreshes_host_disk = True
+
+    #: The host's CPUs as its Docker daemon counts them, read by
+    #: :meth:`_read_host_cpus` before the override is rendered; None
+    #: limits nothing. On the class, so an executor built without
+    #: ``__init__`` renders as before.
+    _host_cpus = None
+    #: What the last render limited: ``((service, set, given), ...)``,
+    #: handed to :meth:`_report_cpu_clamps` by the end hooks.
+    _cpu_clamps = ()
 
     def pre_run_checks(self):
         """Never build a move's destination over the copy a move froze there.
@@ -1176,6 +1190,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         one hash take 1 GiB, more than most databases the panel deploys
         are given.
 
+        A service's ``cpus`` is at most the host's CPUs as its daemon
+        counts them (:meth:`_read_host_cpus`): Docker refuses to create a
+        container that asks for more. The instance's field keeps its
+        value; each limit is logged and kept in ``_cpu_clamps`` for the
+        end hooks. Nothing is limited when the count could not be read.
+
         The ``smtp`` service gets ``ENABLE_UPDATE_CHECK=0``. It belongs
         in the override rather than in ``.docker/smtp.env`` or the
         compose files because ``copier update`` regenerates all three on
@@ -1249,6 +1269,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             "smtp": ("smtp_memory_limit", "smtp_cpus"),
         }
         services = {}
+        clamps = []
         for svc in allowed:
             # Not every expected service has limit fields: the egress
             # sidecars are two shell scripts and a dnsmasq, and giving
@@ -1260,6 +1281,17 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             mem_field, cpu_field = field_map[svc]
             mem = getattr(inst, mem_field, "") or ""
             cpus = getattr(inst, cpu_field, 0) or 0
+            # Docker refuses a container whose ``cpus`` is above the
+            # daemon's count, and compose has recreated ``db`` by then
+            # (job 457397, 8-nov-2026). The field keeps what was set;
+            # only what the host is given is limited.
+            if self._host_cpus and cpus > self._host_cpus:
+                clamps.append((svc, cpus, self._host_cpus))
+                self._sys(
+                    f"{svc}: {cpus:g} CPUs set, the server has"
+                    f" {self._host_cpus}: limited to {self._host_cpus}."
+                )
+                cpus = self._host_cpus
             if mem or cpus:
                 entry = {}
                 if mem:
@@ -1267,6 +1299,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 if cpus:
                     entry["cpus"] = cpus
                 services[svc] = entry
+        self._cpu_clamps = tuple(clamps)
         # PostgreSQL's memory follows the database's limit. The override
         # replaces the template's whole CONF_EXTRA (its only line is
         # ``work_mem = 512MB``), and the template's files stay untouched.
@@ -1613,8 +1646,51 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             inst.sudo().with_context(pip_provenance_managed=True), vals,
         )
 
+    async def _read_host_cpus(self, transport):
+        """Read how many CPUs the host's Docker daemon has, for the render.
+
+        ``docker info``'s ``NCPU`` is the number Docker checks a
+        container's ``cpus`` against, read now: the host's ``cpu_cores``
+        comes from the metrics, up to five minutes late after a resize
+        and 0 on a host never measured. That field is the fallback when
+        the daemon fails, answers no positive count or does not answer
+        within :data:`HOST_CPUS_TIMEOUT_S`; when it is 0 too, nothing is
+        limited and the log says so. Sets ``self._host_cpus``; writes
+        nothing to the database.
+
+        :param transport: the job's open transport
+        """
+        try:
+            result = await transport.run(
+                "docker info --format '{{.NCPU}}'", timeout=HOST_CPUS_TIMEOUT_S,
+            )
+            ncpu = int(result.stdout.strip()) if result.exit_status == 0 else 0
+        except (TimeoutError, ValueError):
+            ncpu = 0
+        if ncpu <= 0:
+            ncpu = self._host().cpu_cores or 0
+        self._host_cpus = ncpu if ncpu > 0 else None
+        if self._host_cpus is None:
+            self._sys(
+                "⚠ The server's CPUs could not be read: each service's"
+                " CPUs are written as set, not limited to the server's."
+            )
+
+    def _report_cpu_clamps(self):
+        """Report what the render limited to the host's CPUs (``_cpu_clamps``).
+
+        Called from the end hooks, on their durable cursor, whatever the
+        outcome. Core says it in the job's log only, as the render does:
+        a layer that sells limits extends this to tell its operator.
+        """
+
     async def _upload_copier_files(self, transport):
-        """Upload all files needed by copier copy/update to the remote host."""
+        """Upload all files needed by copier copy/update to the remote host.
+
+        The host's CPUs are read first (:meth:`_read_host_cpus`): the
+        override rendered here is limited to them.
+        """
+        await self._read_host_cpus(transport)
         await self._resync_repo_requirements()
         inst = self._inst()
         answers_yml = yaml.dump(
@@ -2276,6 +2352,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
     async def on_success(self, results):
         self._sys("✓ Instance deployed successfully.")
+        self._report_cpu_clamps()
         self._dismiss_pip_conflict_alerts()
         self._dismiss_addon_conflict_alerts()
         self._cancel_stale_waits()
@@ -2321,6 +2398,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        self._report_cpu_clamps()
         self._detect_pip_conflicts()
         self._detect_addon_conflicts()
         inst = self._inst()

@@ -31,6 +31,21 @@ in the database.
 
 ### Fixed
 
+- **An instance's CPUs fit the server it is deployed on.** Docker refuses a
+  container whose `cpus` is above the daemon's count of CPUs, and by then
+  `docker compose up -d` had recreated `db`: a plan of 2.5 CPUs applied on a
+  server of 2 left the database `Created`, never started, and the panel down.
+  Every deploy, rebuild and warm claim now writes each service's `cpus` as at
+  most the host's CPUs, read from `docker info` when the job uploads its files
+  (15 s at most), with the host's measured `cpu_cores` as the fallback and no
+  limit when neither is known. The instance's fields, the host's accounting and
+  the configuration's hash keep the value set; each limit is a line in the
+  job's log, and the end hooks hand it to `_report_cpu_clamps` for a layer to
+  tell its operator. A rebuild whose failure a layer put back as it was can
+  say so (`_failure_leaves_error`) and leave the instance's status alone, and
+  a layer can give the refusal to stop a job of its own type its own reason
+  (`cloud.job._no_return_refusal`). See *CPUs an instance is deployed with* in
+  `docs/architecture.md`.
 - **Cancelling a running job stops what it runs on the server.** The stop
   cancelled the job's task and closed the connection, which signals nothing: the
   step in progress went on on the host until it next wrote to its output, or to
