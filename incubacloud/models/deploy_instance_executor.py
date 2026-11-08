@@ -15,11 +15,16 @@ from contextlib import contextmanager, suppress
 import asyncssh
 import yaml
 
+from odoo import fields
+from odoo.exceptions import UserError
+
 from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..net import real_ip
+from ..net.git_reader import GitReader, GitReaderError
 from ..github.http_utils import safe_urlopen
-from ._odoo_versions import VERSIONS, copier_defaults, debian_archive
+from ._git_urls import clone_url_with_credential, parse_provider_repo_url
+from ._odoo_versions import VERSIONS, copier_defaults, debian_archive, prefetch_repos
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -31,6 +36,8 @@ from ._repo_requirements import (
     detect_pip_conflicts,
     fetch_repo_addons,
     fetch_requirements_txt_with_client,
+    GitSource,
+    git_source_requirements,
     is_safe_repo_url,
     merge_pip_requirements,
     resolve_github_client,
@@ -167,6 +174,52 @@ def _ic_connect_for_instances():
 # keeping dependencies in step with the code a rebuild ships is the
 # desired steady state, and an operator who wants the old frozen
 # behaviour sets the parameter to '0' explicitly.
+#: The git helper container (plan-gitlab.md §4.4-9): ``alpine/git``
+#: pinned by digest, like ``GATEKEEPER_IMAGE``, taken from Docker Hub on
+#: 8-nov-2026 (paso 0-7). ``deploy.sh`` runs it for ``record-heads`` of a
+#: server whose address is pinned and for ``fetch-repos`` (8.0 to 10.0);
+#: ``full_setup_install.sh`` pulls it when a host is prepared.
+GIT_HELPER_IMAGE = (
+    "alpine/git:2.54.0@sha256:"
+    "ac6c828f15d82775d204d3d75112e1d34af8945da80ccf922713c9891ba68e7a"
+)
+
+#: Seconds one repository's download may take in ``fetch-repos`` (§9).
+_FETCH_ONE_S = 600
+
+#: Seconds ``fetch-repos`` waits before its one retry of an alias: the
+#: rebuild's ``_BUILD_RETRY_WAIT_S``, which no longer covers a clone that
+#: left the build (Fable's review of G1, 8-nov-2026).
+_FETCH_RETRY_WAIT_S = 60
+
+#: What the image's build may take after the downloads, in a rebuild's
+#: build step: the transport's own default per command.
+_BUILD_BUDGET_S = 3600
+
+
+def _fetch_timeout(aliases):
+    """Return the timeout of a step that runs ``fetch-repos`` (§4.4-8).
+
+    Each download may take :data:`_FETCH_ONE_S` and is retried once after
+    :data:`_FETCH_RETRY_WAIT_S`; the build may follow in the same step.
+    Below that, the transport would kill the command halfway through a
+    download, leaving its container writing on the host.
+
+    :param int aliases: the repositories of ``repos.yaml``, odoo included
+    :rtype: int
+    """
+    return aliases * (2 * _FETCH_ONE_S + _FETCH_RETRY_WAIT_S) + _BUILD_BUDGET_S
+
+
+def _strip_userinfo(url):
+    """Return *url* without its user and token.
+
+    :param str url: a remote of ``repos.yaml``
+    :rtype: str
+    """
+    return re.sub(r"^(https?://)[^/@]*@", r"\1", url or "")
+
+
 _ICP_RESYNC = "incubacloud.requirements_resync_enabled"
 
 
@@ -676,6 +729,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         }
 
         token_cache = {}  # owner → token
+        self._git_servers = {}
 
         for repo in inst.repo_ids:
             raw_url = (repo.url or "").strip()
@@ -683,13 +737,17 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             branch = (repo.branch or "main").strip()
             if not alias or not raw_url:
                 continue
-            token = self._get_token_for_repo(
-                raw_url,
-                app_token,
-                pat,
-                token_cache,
-            )
-            url = _github_authed_url(raw_url, token)
+            provider = getattr(repo, "provider_id", False)
+            if provider:
+                url = self._gitlab_clone_url(raw_url, provider)
+            else:
+                token = self._get_token_for_repo(
+                    raw_url,
+                    app_token,
+                    pat,
+                    token_cache,
+                )
+                url = _github_authed_url(raw_url, token)
             merge_ref = self._repo_merge_ref(repo, branch)
             # _repo_merge_ref answers a commit or the branch itself; a
             # repository that replaces an alias replaces its pin too.
@@ -710,6 +768,203 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             sort_keys=False,
             allow_unicode=True,
         )
+
+    # ── Git providers other than GitHub (plan-gitlab.md §4.4) ──────────────
+
+    #: ``{authority: {"provider_id", "ca_pem", "pin_ip"}}`` of the GitLab
+    #: servers ``_repos_yaml_content`` rendered, for the spec, the CA
+    #: files and the override.
+    _git_servers = None
+
+    def _git_pin(self, provider):
+        """Return the address this job pins for *provider*, or ''.
+
+        Resolved once per job and kept: the spec, the override and the
+        panel's reads all use the same one. A retry is a new job run and
+        resolves and checks it again (J4).
+
+        :param provider: a ``cloud.git.provider``
+        :rtype: str
+        :raises UserError: under the ``public`` policy, when the name does
+            not resolve to public addresses only
+        """
+        cache = self.__dict__.setdefault("_git_pin_cache", {})
+        if provider.id not in cache:
+            cache[provider.id] = provider.sudo()._resolve_pin() or ""
+        return cache[provider.id]
+
+    def _gitlab_clone_url(self, raw_url, provider):
+        """Return the URL the build clones a GitLab line from, with its token.
+
+        The credential of the longest namespace covering the path
+        (``_credential_for(path, 'git_read')``), or none for a public
+        repository; the URL rebuilt from the provider's base, with
+        ``.git``. The server is noted for the spec and the override.
+
+        :param str raw_url: the line's URL
+        :param provider: the line's ``cloud.git.provider``
+        :rtype: str
+        :raises JobRefused: when the URL is not the provider's
+        """
+        provider = provider.sudo()
+        ref = parse_provider_repo_url(raw_url, [provider.base_url])
+        if not ref:
+            raise JobRefused(
+                f"{raw_url} is not a repository of {provider.name}."
+            )
+        self._git_servers[ref.authority] = {
+            "provider_id": provider.id,
+            "ca_pem": provider.ca_bundle or "",
+            "pin_ip": self._git_pin(provider),
+        }
+        return clone_url_with_credential(ref, provider._git_credential(ref.path))
+
+    def _git_server_columns(self, url):
+        """Return the spec's last three columns for *url*, or None for GitHub.
+
+        ``(cred_authority, ca_file, pin_ip)``: ``cred_authority`` is
+        filled for every GitLab line, with a credential or not, since
+        ``git-trust`` tells them from GitHub by it.
+
+        :param str url: a remote of ``repos.yaml``
+        :rtype: tuple or None
+        """
+        authority = _strip_userinfo(url).partition("://")[2].partition("/")[0]
+        server = (self._git_servers or {}).get(authority)
+        if not server:
+            return None
+        ca_file = (
+            self._tmp(f"git-ca-{server['provider_id']}.pem")
+            if server["ca_pem"] else ""
+        )
+        return authority, ca_file, server["pin_ip"]
+
+    def _git_private_files(self):
+        """Return ``{staged path: PEM}`` of the servers with their own CA.
+
+        :rtype: dict
+        """
+        files = {}
+        for authority, server in (self._git_servers or {}).items():
+            if server["ca_pem"]:
+                files[self._git_server_columns(f"https://{authority}/")[1]] = (
+                    server["ca_pem"]
+                )
+        return files
+
+    def _prefetches(self):
+        """Whether this series fetches its repositories before the build.
+
+        :rtype: bool
+        """
+        version = self._inst().odoo_version or ""
+        return version in VERSIONS and prefetch_repos(version)
+
+    @staticmethod
+    def _strip_repo_credentials(repos_yaml):
+        """Return *repos_yaml* with no user or token in any remote.
+
+        What 8.0 to 10.0 write on the host: with ``AGGREGATE=false``
+        nobody clones from it, but it enters the image.
+
+        :param str repos_yaml: the rendered file, with tokens
+        :rtype: str
+        """
+        data = yaml.safe_load(repos_yaml) or {}
+        for entry in data.values():
+            remotes = entry.get("remotes") or {}
+            for name, url in remotes.items():
+                remotes[name] = _strip_userinfo(url)
+        return yaml.dump(
+            data, default_flow_style=False, sort_keys=False, allow_unicode=True,
+        )
+
+    def _alias_count(self):
+        """Return the repositories of ``repos.yaml``, odoo included.
+
+        :rtype: int
+        """
+        return 1 + len([
+            r for r in self._inst().repo_ids
+            if (r.url or "").strip() and _repo_alias((r.url or "").strip())
+        ])
+
+    def _fetch_repos_command(self, d):
+        """Return the command that fetches every repository before the build.
+
+        :param str d: the instance's directory on the host
+        :rtype: str
+        """
+        return self.run_script(
+            "deploy.sh", [
+                "fetch-repos", d, self._tmp(self._HEADS_SPEC),
+                GIT_HELPER_IMAGE, str(_FETCH_RETRY_WAIT_S),
+            ],
+        )
+
+    def _git_trust_steps(self, d):
+        """Return the step that writes the image's git settings (11.0 to 19.0).
+
+        ``deploy.sh git-trust`` writes ``build.d/060-incubacloud-git`` and
+        the servers' CAs for the image's git, and removes them when no
+        line is of GitLab. Not in 8.0 to 10.0, whose image clones nothing.
+
+        :param str d: the instance's directory on the host
+        :rtype: list
+        """
+        if self._prefetches():
+            return []
+        return [(
+            "Trust the Git servers",
+            self.run_script(
+                "deploy.sh", ["git-trust", d, self._tmp(self._HEADS_SPEC)],
+            ),
+        )]
+
+    def _heads_steps(self, d):
+        """Return the steps that name, or fetch, each repository's head.
+
+        8.0 to 10.0 fetch every repository on the host
+        (``fetch-repos``), with a timeout that covers each download, its
+        retry and a build; the others record the heads and trust their
+        Git servers.
+
+        :param str d: the instance's directory on the host
+        :rtype: list
+        """
+        if self._prefetches():
+            return [(
+                "Fetch the repositories",
+                self._fetch_repos_command(d),
+                {
+                    "stop_on_failure": True,
+                    "timeout": _fetch_timeout(self._alias_count()),
+                },
+            )]
+        return [
+            ("Record repository heads", self._record_heads_command(d)),
+            *self._git_trust_steps(d),
+        ]
+
+    def _odoo_build_override(self):
+        """Return ``{"build": …}`` for the odoo service in the override, or {}.
+
+        8.0 to 10.0 build with ``AGGREGATE=false``; the others, under the
+        ``public`` policy, pin each GitLab server with ``extra_hosts``.
+        Neither enters ``rebuild_fingerprint`` nor the configuration
+        snapshot: an address that rotates must not mark the instance as
+        changed (J4).
+
+        :rtype: dict
+        """
+        if self._prefetches():
+            return {"build": {"args": {"AGGREGATE": "false"}}}
+        hosts = [
+            f"{re.sub(r':[0-9]+$', '', authority)}:{server['pin_ip']}"
+            for authority, server in sorted((self._git_servers or {}).items())
+            if server["pin_ip"]
+        ]
+        return {"build": {"extra_hosts": hosts}} if hosts else {}
 
     #: The staged list of what ``deploy.sh record-heads`` resolves.
     _HEADS_SPEC = "repo-heads.tsv"
@@ -734,6 +989,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :rtype: str
         """
         version = self._inst().odoo_version or ""
+        prefetch = self._prefetches()
         lines = []
         for alias, repo in (yaml.safe_load(repos_yaml) or {}).items():
             remotes = repo.get("remotes") or {}
@@ -742,11 +998,15 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ref = string.Template(ref.strip()).safe_substitute(
                     ODOO_VERSION=version,
                 )
+                url = remotes.get(remote, "")
+                columns = self._git_server_columns(url)
                 if alias in pinned:
-                    lines.append(f"{alias}\tpin\t{ref}\t")
+                    line = f"{alias}\tpin\t{ref}\t{url if prefetch else ''}"
                 else:
-                    url = remotes.get(remote, "")
-                    lines.append(f"{alias}\tref\t{ref}\t{url}")
+                    line = f"{alias}\tref\t{ref}\t{url}"
+                if columns:
+                    line += "\t" + "\t".join(columns)
+                lines.append(line)
         return "".join(f"{line}\n" for line in lines)
 
     def _record_heads_command(self, d):
@@ -760,9 +1020,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :param str d: the instance's directory on the host
         :rtype: str
         """
-        return self.run_script(
-            "deploy.sh", ["record-heads", d, self._tmp(self._HEADS_SPEC)],
-        )
+        args = ["record-heads", d, self._tmp(self._HEADS_SPEC)]
+        if any(s["pin_ip"] for s in (self._git_servers or {}).values()):
+            args.append(GIT_HELPER_IMAGE)
+        return self.run_script("deploy.sh", args)
 
     async def _addons_yaml_content(self):
         """Build addons.yaml from the instance's repo addons config.
@@ -1399,6 +1660,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             services["odoo"]["volumes"] = [
                 f"./{LOGS_DIRNAME}:{ODOO_LOG_DIR}",
             ]
+            services["odoo"].update(self._odoo_build_override())
         for svc, fragment in self._addon_override_fragments().items():
             _merge_override_fragment(services.setdefault(svc, {}), fragment)
         data = {"services": services}
@@ -1562,10 +1824,15 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         added, updated, conflicts = [], [], []
         for repo in repos:
             label = f"{_repo_alias(repo.url)}@{repo.branch}"
-            content = await asyncio.to_thread(
-                fetch_requirements_txt_with_client,
-                client, repo.url, repo.branch,
-            )
+            if repo.provider_id:
+                read, content = await self._gitlab_requirements(repo)
+                if not read:
+                    continue
+            else:
+                content = await asyncio.to_thread(
+                    fetch_requirements_txt_with_client,
+                    client, repo.url, repo.branch,
+                )
             if content is None:
                 # No requirements.txt, or GitHub unreachable. Both are
                 # indistinguishable from here and neither is worth
@@ -1633,6 +1900,70 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             )
         if not (added or updated):
             self._sys("✓ Dependencies already in sync with the repos.")
+
+    async def _gitlab_requirements(self, repo):
+        """Read a GitLab line's ``requirements.txt`` for the re-sync (J5).
+
+        - A correct read, with the file or without it, stamps the line's
+          ``requirements_read_at`` and closes the provider's
+          ``gitlab_unreachable`` alert.
+        - A server the panel cannot reach (``unreachable``, ``timeout``)
+          is tolerated only when the line's requirements were read
+          before: the job says so, keeps or opens the alert and goes on,
+          as the host builds and may reach what the panel does not.
+          Never read before, the job fails rather than build blind.
+        - Anything else (``private_address`` under the ``public``
+          policy, a refused token, a missing repository) fails the job.
+
+        :param repo: a ``cloud.instance.repo`` of a Git provider
+        :return: ``(read, content)``: *read* False when the stored
+            dependencies are kept; *content* None when there is no file
+        :rtype: tuple
+        :raises JobRefused: when the job must not build
+        """
+        provider = repo.provider_id.sudo()
+        host = provider.authority
+        ref = parse_provider_repo_url(repo.url, [provider.base_url])
+        key = f"git_provider:{provider.id}"
+        try:
+            source = GitSource(
+                GitReader(
+                    ca_pem=provider.ca_bundle or None,
+                    pin_ip=self._git_pin(provider) or None,
+                ),
+                ref, provider._git_credential(ref.path),
+            )
+            content = await asyncio.to_thread(
+                git_source_requirements, source, repo.branch,
+            )
+        except UserError as exc:
+            raise JobRefused(str(exc)) from exc
+        except GitReaderError as exc:
+            if exc.code not in ("unreachable", "timeout"):
+                raise JobRefused(
+                    f"The panel could not read the requirements of "
+                    f"{ref.path} on {host} ({exc.code})."
+                ) from exc
+            if not repo.requirements_read_at:
+                raise JobRefused(
+                    f"The panel cannot reach {host} and never read the "
+                    f"requirements of {ref.path}: not building blind."
+                ) from exc
+            message = (
+                f"The panel cannot reach {host}: requirements.txt of "
+                f"{ref.path} was not read again; building with the last "
+                f"ones known."
+            )
+            self._sys(f"⚠ {message}")
+            with self._durable_env() as env:
+                env["cloud.alert"].sudo().raise_alert(
+                    "gitlab_unreachable", message, level="warning", key=key,
+                )
+            return False, None
+        self._persist(repo.sudo(), {"requirements_read_at": fields.Datetime.now()})
+        with self._durable_env() as env:
+            env["cloud.alert"].sudo().resolve_alert("gitlab_unreachable", key=key)
+        return True, content
 
     def _persist_resynced_requirements(self, inst, text, sources):
         """Store the merged dependency list durably, and let the job see it.
@@ -1734,10 +2065,16 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         repos_yaml = self._repos_yaml_content(pinned)
         private = {
             self._tmp("answers.yml"): answers_yml,
-            self._tmp("repos.yaml"): repos_yaml,
+            # 8.0 to 10.0 fetch on the host: the file the image gets has
+            # no credential (plan-gitlab.md §4.4-8).
+            self._tmp("repos.yaml"): (
+                self._strip_repo_credentials(repos_yaml)
+                if self._prefetches() else repos_yaml
+            ),
             self._tmp(self._HEADS_SPEC): self._repo_heads_spec(
                 repos_yaml, pinned,
             ),
+            **self._git_private_files(),
         }
         files = {
             self._tmp("addons.yaml"): await self._addons_yaml_content(),
@@ -2143,7 +2480,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     image is built by «Build Odoo image» below, and Docker's
             #     cache of the clone has to follow the branches, not the
             #     token in repos.yaml.
-            ("Record repository heads", self._record_heads_command(d)),
+            *self._heads_steps(d),
             # 5. Copy incubacloud_connect into the private src tree so Odoo
             #    can find and install it at init time, over no copy of an
             #    older one: ``cp -r`` would leave behind what this one no

@@ -37,8 +37,9 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
         domain='test.example.com',
         project_id=SimpleNamespace(remote_folder='projects'),
         odoo_initial_lang=None,
-        # Not moving, unless a test says it is.
-        **({'move_origin_host_id': False} | extra),
+        # Not moving, unless a test says it is; no repository line, as the
+        # executor reads them to count what 8.0 to 10.0 fetch first.
+        **({'move_origin_host_id': False, 'repo_ids': []} | extra),
     )
 
     ex = object.__new__(DeployInstanceExecutor)
@@ -86,6 +87,8 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
         # A test of the smart rebuild names its own.
         "rebuild_fingerprint": 'fp1',
         "last_rebuild_fingerprint": 'fp0',
+        # No repository line, unless a test says so.
+        "repo_ids": [],
     } | extra)
 
     ex = object.__new__(RebuildInstanceExecutor)

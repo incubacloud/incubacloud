@@ -88,3 +88,11 @@ EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
 DELETE FROM ir_config_parameter
  WHERE key LIKE 'incubacloud.direct\_checked\_at.%';
+
+-- 7. Git providers (1.0.218): their tokens, which reach private
+-- repositories and, with the api scope, write to them. The servers stay,
+-- for the copy to read public repositories. Newer than older copies.
+DO $$ BEGIN
+    UPDATE cloud_git_credential SET token = NULL;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
