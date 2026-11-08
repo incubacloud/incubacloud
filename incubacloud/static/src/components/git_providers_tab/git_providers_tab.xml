@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud.GitProvidersTab">
+    <div class="ic-gitp">
+        <t t-if="state.loading">
+            <div class="ic-detail-loading">Loading…</div>
+        </t>
+        <t t-elif="state.loadError">
+            <div class="rl-stub" role="alert">
+                <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                <p t-esc="state.loadError"/>
+                <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                        t-on-click="() => this.load()">
+                    Retry
+                </button>
+            </div>
+        </t>
+        <t t-else="">
+
+            <div class="rl-saas-fsec">Git providers</div>
+            <p class="rl-tabnote">
+                GitLab servers the panel deploys and rebuilds from: gitlab.com or your
+                own. Repositories on GitHub use the GitHub tab.
+            </p>
+            <p t-if="state.network === 'public'" class="rl-set-warning">
+                <i class="fa fa-globe"/>
+                This panel only accepts GitLab servers on a public address.
+            </p>
+            <div class="rl-set-hintbox">
+                <i class="fa fa-key"/>
+                <strong>Tokens.</strong>
+                To deploy, a deploy token or a project token with
+                <code>read_repository</code> per repository is enough. Push-to-rebuild,
+                merge request notes and the assistant's writes will need a group or
+                personal token with <code>api</code> and the Maintainer role, limited to
+                your team's namespace. Deploy tokens do not answer on the API.
+            </div>
+
+            <!-- ── Providers ─────────────────────────────────────────── -->
+            <t t-foreach="state.providers" t-as="provider" t-key="provider.id">
+                <div class="rl-ghcard ic-gitp-card"
+                     t-if="!(state.draft and state.draft.id === provider.id)">
+                    <div class="rl-ghi"><t t-out="env.icon('git', 20)"/></div>
+                    <div class="ic-gitp-body">
+                        <div class="ic-gitp-head">
+                            <h3 t-esc="provider.name"/>
+                            <span class="ic-gitp-badge">GitLab · <t t-esc="provider.authority"/></span>
+                        </div>
+                        <div class="rl-set-status">
+                            <span class="rl-set-status-k">Base URL</span>
+                            <span class="rl-set-status-v" t-esc="provider.base_url"/>
+                            <t t-if="provider.has_ca">
+                                <span class="rl-set-status-k">CA (SHA-256)</span>
+                                <span class="rl-set-status-v">
+                                    <t t-foreach="provider.ca_fingerprints" t-as="fp" t-key="fp_index">
+                                        <div t-esc="fp"/>
+                                    </t>
+                                </span>
+                            </t>
+                            <t t-if="provider.last_check_at">
+                                <span class="rl-set-status-k">Last test</span>
+                                <span class="rl-set-status-v">
+                                    git: <t t-esc="provider.last_check_git"/>
+                                    · API: <t t-esc="provider.last_check_api"/>
+                                </span>
+                            </t>
+                        </div>
+
+                        <t t-if="provider.credentials">
+                            <div class="ic-gitp-creds">
+                                <t t-if="!provider.credentials.length">
+                                    <p class="rl-set-hint">
+                                        No credentials: repositories of this server are read as public ones.
+                                    </p>
+                                </t>
+                                <t t-foreach="provider.credentials" t-as="cred" t-key="cred.id">
+                                    <div class="ic-gitp-cred">
+                                        <span class="ic-gitp-ns" t-esc="cred.namespace || provider.authority"/>
+                                        <span class="ic-gitp-kind" t-esc="kindLabel(cred.kind)"/>
+                                        <span class="ic-gitp-scopes" t-esc="scopesLabel(cred)"/>
+                                        <span t-if="cred.token_user" class="ic-gitp-meta">
+                                            @<t t-esc="cred.token_user"/>
+                                        </span>
+                                        <span t-if="cred.expires_on" class="ic-gitp-meta">
+                                            expires <t t-esc="cred.expires_on"/>
+                                        </span>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <t t-foreach="state.warnings[provider.id] || []" t-as="warning" t-key="warning_index">
+                            <p class="rl-set-inline-msg rl-set-inline-msg--error" t-esc="warning"/>
+                        </t>
+
+                        <t t-if="state.canManage">
+                            <div class="ic-gitp-test">
+                                <input type="text"
+                                       t-att-placeholder="provider.base_url + '/group/repository'"
+                                       aria-label="Repository URL to test"
+                                       t-att-value="state.testUrl[provider.id] || ''"
+                                       t-on-input="(ev) => state.testUrl[provider.id] = ev.target.value"/>
+                                <button class="rl-btn rl-btn-ghost"
+                                        t-att-disabled="state.testing === provider.id"
+                                        t-on-click="() => this.testProvider(provider)">
+                                    <i t-att-class="'fa ' + (state.testing === provider.id ? 'fa-spinner fa-spin' : 'fa-plug')"/>
+                                    Test connection
+                                </button>
+                            </div>
+                            <t t-set="result" t-value="state.testResult[provider.id]"/>
+                            <t t-if="result">
+                                <p t-if="result.error" class="rl-set-inline-msg rl-set-inline-msg--error" t-esc="result.error"/>
+                                <t t-if="result.git">
+                                    <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + (result.git.code === 'ok' ? 'success' : 'error')">
+                                        <strong>git:</strong> <t t-esc="result.git.message"/>
+                                    </p>
+                                    <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + (result.api.code === 'ok' ? 'success' : 'info')">
+                                        <strong>API:</strong> <t t-esc="result.api.message"/>
+                                    </p>
+                                </t>
+                            </t>
+                            <div class="rl-set-actions ic-gitp-actions">
+                                <button class="rl-btn rl-btn-ghost" t-att-disabled="!!state.draft"
+                                        t-on-click="() => this.editProvider(provider)">
+                                    <i class="fa fa-pencil"/> Edit
+                                </button>
+                                <button class="rl-btn rl-btn-danger" t-att-disabled="!!state.draft"
+                                        t-on-click="() => this.deleteProvider(provider)">
+                                    <i class="fa fa-trash-o"/> Delete
+                                </button>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+                <t t-else="">
+                    <t t-call="incubacloud.GitProviderEditor"/>
+                </t>
+            </t>
+
+            <t t-if="state.draft and !state.draft.id">
+                <t t-call="incubacloud.GitProviderEditor"/>
+            </t>
+
+            <t t-if="!state.providers.length and !state.draft">
+                <p class="rl-set-hint">No Git providers yet.</p>
+            </t>
+
+            <div t-if="state.canManage and !state.draft" class="rl-set-actions ic-gitp-add">
+                <button class="rl-btn rl-btn-primary" t-on-click="addProvider">
+                    <i class="fa fa-plus"/> Add a GitLab server
+                </button>
+            </div>
+        </t>
+
+        <IcConfirmDialog t-if="state.confirmDialog"
+                         title="state.confirmDialog.title"
+                         message="state.confirmDialog.message"
+                         confirmLabel="state.confirmDialog.confirmLabel"
+                         isDanger="state.confirmDialog.isDanger"
+                         onConfirm="state.confirmDialog.onConfirm"
+                         onCancel="state.confirmDialog.onCancel"/>
+    </div>
+</t>
+
+<t t-name="incubacloud.GitProviderEditor">
+    <div class="rl-set-manual ic-gitp-editor">
+        <div class="rl-fgrid">
+            <div class="rl-frow">
+                <label for="ic-gitp-name">Name <span class="rl-req">*</span></label>
+                <input id="ic-gitp-name" type="text" placeholder="GitLab of Acme"
+                       t-att-value="state.draft.name"
+                       t-on-input="(ev) => state.draft.name = ev.target.value"/>
+            </div>
+            <div class="rl-frow">
+                <label for="ic-gitp-base">Base URL <span class="rl-req">*</span></label>
+                <input id="ic-gitp-base" type="text" placeholder="https://gitlab.com"
+                       t-att-value="state.draft.base_url"
+                       t-on-input="(ev) => state.draft.base_url = ev.target.value"/>
+                <span class="rl-th">https only; a port or a path prefix if the server has one.</span>
+            </div>
+            <div class="rl-frow rl-full">
+                <label for="ic-gitp-ca">CA certificate (PEM)</label>
+                <textarea id="ic-gitp-ca" rows="4" class="rl-set-pem"
+                          placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                          t-att-value="state.draft.ca_bundle"
+                          t-on-input="(ev) => state.draft.ca_bundle = ev.target.value"/>
+                <span class="rl-th">
+                    Only for a server whose certificate a private CA signs. Public: it is not a secret.
+                </span>
+            </div>
+        </div>
+
+        <div class="rl-saas-fsec ic-gitp-credhead">Credentials</div>
+        <p class="rl-tabnote">
+            Each token covers a namespace: empty for the whole server, a group, a
+            subgroup or a project path. A repository uses the token of the longest
+            namespace that covers it.
+        </p>
+        <t t-foreach="state.draft.credentials" t-as="cred" t-key="cred_index">
+            <div class="ic-gitp-credrow">
+                <div class="rl-frow">
+                    <label>Namespace</label>
+                    <input type="text" placeholder="group/subgroup"
+                           t-att-value="cred.namespace"
+                           t-on-input="(ev) => cred.namespace = ev.target.value"/>
+                </div>
+                <div class="rl-frow">
+                    <label>Type</label>
+                    <RlSelect options="kindOptions" value="cred.kind"
+                              onChange="(value) => cred.kind = value"
+                              ariaLabel.translate="Token type"/>
+                </div>
+                <div class="rl-frow" t-if="cred.kind === 'deploy'">
+                    <label>User name</label>
+                    <input type="text" placeholder="gitlab+deploy-token-1"
+                           t-att-value="cred.username"
+                           t-on-input="(ev) => cred.username = ev.target.value"/>
+                </div>
+                <div class="rl-frow">
+                    <label>Token</label>
+                    <input type="password" autocomplete="new-password"
+                           t-att-placeholder="cred.has_token ? '•••••••• (stored, leave blank to keep)' : 'glpat-… or gldt-…'"
+                           t-att-value="cred.token"
+                           t-on-input="(ev) => cred.token = ev.target.value"/>
+                </div>
+                <div class="rl-frow" t-if="cred.kind === 'deploy'">
+                    <label>Expires on</label>
+                    <input type="date" t-att-value="cred.expires_on"
+                           t-on-input="(ev) => cred.expires_on = ev.target.value"/>
+                </div>
+                <button class="rl-repo-rm ic-gitp-credrm" title="Remove credential"
+                        t-on-click="() => this.removeCredential(cred_index)">
+                    <t t-out="env.icon('x', 13)"/>
+                </button>
+            </div>
+        </t>
+        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="addCredential">
+            <i class="fa fa-plus"/> Add credential
+        </button>
+
+        <p t-if="state.saveError" class="rl-set-inline-msg rl-set-inline-msg--error" t-esc="state.saveError"/>
+        <div class="rl-set-actions ic-gitp-actions">
+            <button class="rl-btn rl-btn-primary" t-att-disabled="state.saving" t-on-click="save">
+                <i t-if="state.saving" class="fa fa-spinner fa-spin"/>
+                Save
+            </button>
+            <button class="rl-btn rl-btn-ghost" t-att-disabled="state.saving" t-on-click="cancelEdit">
+                Cancel
+            </button>
+        </div>
+    </div>
+</t>
+
+</templates>

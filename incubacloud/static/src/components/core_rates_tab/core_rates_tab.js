@@ -16,6 +16,7 @@ export const CORE_RATE_DEFAULTS = Object.freeze({
     rate_limit_log_search_per_min: 6,
     rate_limit_github_previews_per_hour: 10,
     rate_limit_github_imports_per_hour: 5,
+    rate_limit_git_reads_per_hour: 120,
 });
 
 export class CoreRatesTab extends Component {
@@ -83,6 +84,9 @@ export class CoreRatesTab extends Component {
                 rate_limit_github_imports_per_hour: Number(
                     d.rate_limit_github_imports_per_hour || 5,
                 ),
+                rate_limit_git_reads_per_hour: Number(
+                    d.rate_limit_git_reads_per_hour || 120,
+                ),
             });
             this.loaded = true;
         } catch {
@@ -147,6 +151,8 @@ export class CoreRatesTab extends Component {
                     this.state.form.rate_limit_github_previews_per_hour,
                 rate_limit_github_imports_per_hour:
                     this.state.form.rate_limit_github_imports_per_hour,
+                rate_limit_git_reads_per_hour:
+                    this.state.form.rate_limit_git_reads_per_hour,
             },
         });
     }

@@ -116,6 +116,10 @@ export class RemoteFileBrowser extends Component {
             this._addMessage(
                 result.is_running ? _t("Status: running") : _t("Status: stopped"),
             );
+            // Repositories of a server with no Git provider were left out.
+            for (const skipped of result.skipped_repos || []) {
+                this.state.messages.push({ text: skipped, status: "warning" });
+            }
 
             this.state.result = result;
             this.state.step = "done";

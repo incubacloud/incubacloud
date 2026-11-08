@@ -4,6 +4,7 @@ import { _t } from "@web/core/l10n/translation";
 import { announceJob } from "../../utils/job_queue";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
+import { GitProvidersTab } from "../git_providers_tab/git_providers_tab";
 import { RlSelect } from "../rl_select/rl_select";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
@@ -14,7 +15,7 @@ export const OWN_SETTINGS_TABS = Object.freeze(["general", "github", "monitoring
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";
-    static components = { IcConfirmDialog, CoreRatesTab, RlSelect };
+    static components = { IcConfirmDialog, CoreRatesTab, GitProvidersTab, RlSelect };
     static props = {
         initialTab: { type: String, optional: true },
     };

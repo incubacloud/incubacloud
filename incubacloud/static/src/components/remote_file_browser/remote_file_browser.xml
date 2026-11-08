@@ -178,8 +178,8 @@
                     <section class="ic-modal__body">
                         <div class="ic-fb-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="rl-jstep done">
-                                    <span class="rl-si2"><t t-out="env.icon('check', 15)"/></span>
+                                <div t-att-class="'rl-jstep ' + (msg.status === 'warning' ? 'run' : 'done')">
+                                    <span class="rl-si2"><t t-out="env.icon(msg.status === 'warning' ? 'alert' : 'check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>

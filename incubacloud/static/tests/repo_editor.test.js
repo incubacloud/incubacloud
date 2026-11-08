@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { RepoEditor } from "@incubacloud/components/repo_editor/repo_editor";
+import { RepoEditor, settingsTab } from "@incubacloud/components/repo_editor/repo_editor";
 
 /**
  * RepoEditor pure-logic tests.
@@ -230,5 +230,15 @@ describe("RepoEditor — branch auto-selection logic", () => {
     test("works without preferred branch", () => {
         expect(selectBest(["main", "dev"], "")).toBe("main");
         expect(selectBest(["main", "dev"], null)).toBe("main");
+    });
+});
+
+describe("RepoEditor — which settings tab a read error opens", () => {
+    test("a Git provider's error opens Git providers, any other GitHub", () => {
+        expect(settingsTab("git_providers")).toBe("git_providers");
+        expect(settingsTab("github")).toBe("github");
+        expect(settingsTab(true)).toBe("github");
+        expect(settingsTab(false)).toBe(false);
+        expect(settingsTab(undefined)).toBe(false);
     });
 });

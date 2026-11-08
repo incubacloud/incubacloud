@@ -9,7 +9,7 @@
                 <!-- URL input + inline branch-fetch spinner -->
                 <input type="text"
                        class="rl-repo-url"
-                       placeholder="https://github.com/org/repo"
+                       placeholder="https:// URL of a GitHub or GitLab repository"
                        t-att-value="props.repo.url"
                        t-on-input="onUrlInput"
                        t-on-blur="onUrlBlur"/>
@@ -54,11 +54,26 @@
             <!-- URL / branch error -->
             <div t-if="state.branchError" class="ic-repo-fetch-error">
                 <span t-esc="state.branchError"/>
-                <a t-if="state.branchSettingsHint and env.permissions?.can_manage_settings"
-                   class="ic-repo-fetch-error-link"
-                   t-on-click.prevent="() => env.navigate('settings', { tab: 'github' })">
-                    Open GitHub settings →
-                </a>
+                <t t-if="state.branchSettingsHint and env.permissions?.can_manage_settings">
+                    <a t-if="state.branchSettingsHint === 'git_providers'"
+                       class="ic-repo-fetch-error-link"
+                       t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                        Open Git providers →
+                    </a>
+                    <a t-else=""
+                       class="ic-repo-fetch-error-link"
+                       t-on-click.prevent="() => env.navigate('settings', { tab: 'github' })">
+                        Open GitHub settings →
+                    </a>
+                </t>
+            </div>
+
+            <!-- A GitLab line: its server, and what this version does not do yet -->
+            <div t-if="gitlabHost" class="ic-repo-provider">
+                <span class="ic-repo-provider-badge">GitLab · <t t-esc="gitlabHost"/></span>
+                <span class="ic-repo-provider-next">
+                    Rebuild on push and merge request previews: coming in a next version.
+                </span>
             </div>
 
             <!-- ── Modules (instance repos only) ─────────────────────────── -->
