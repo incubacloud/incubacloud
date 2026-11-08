@@ -317,9 +317,10 @@ class GitProvidersMixin:
         """Test a provider with a repository of it, on both channels.
 
         Git: the repository's ``HEAD`` with ``ls-remote`` and the
-        credential that covers it (none: as a public one). API: the
-        introspection of that credential (§4.3). Each answers with a code
-        and its text; the codes are kept on the provider.
+        credential git reads it with (none: as a public one). API: the
+        introspection of that same credential (§4.3), so both channels
+        speak of one token. Each answers with a code and its text; the
+        codes are kept on the provider.
 
         :param int provider_id: the provider
         :param str url: a repository of the provider
@@ -342,8 +343,9 @@ class GitProvidersMixin:
             return {'ok': False, 'error': _(
                 "Git read limit reached. Try again later."
             )}
-        git_code = self._test_git_channel(provider, ref)
-        api_code = self._test_api_channel(provider, ref)
+        cred = provider._git_read_credential(ref.path)
+        git_code = self._test_git_channel(provider, ref, cred)
+        api_code = self._test_api_channel(cred)
         provider.sudo().write({
             'last_check_at': fields.Datetime.now(),
             'last_check_git': git_code,
@@ -357,14 +359,19 @@ class GitProvidersMixin:
         }
 
     @staticmethod
-    def _test_git_channel(provider, ref):
-        """Return the code of ``ls-remote HEAD`` on *ref*.
+    def _test_git_channel(provider, ref, cred):
+        """Return the code of ``ls-remote HEAD`` on *ref* with *cred*.
 
+        :param provider: the ``cloud.git.provider`` tested
+        :param ref: the repository of it to read (``RepoRef``)
+        :param cred: the ``cloud.git.credential`` git reads it with, or an
+            empty recordset to read it as a public one
+        :return: ``ok``, or the code of the failure
         :rtype: str
         """
         try:
             provider._git_reader().ls_remote(
-                ref, provider._git_credential(ref.path), ['HEAD'],
+                ref, cred._git_pair() if cred else None, ['HEAD'],
             )
         except GitReaderError as exc:
             return exc.code
@@ -373,14 +380,17 @@ class GitProvidersMixin:
         return 'ok'
 
     @staticmethod
-    def _test_api_channel(provider, ref):
-        """Return the code of the introspection of *ref*'s credential.
+    def _test_api_channel(cred):
+        """Return the code of the introspection of *cred*.
 
+        :param cred: the ``cloud.git.credential`` the git channel read
+            with, or an empty recordset
+        :return: ``ok``; ``no_credential`` without one; ``no_api`` for a
+            deploy token or one GitLab answers without API; or the code
+            of the failure
         :rtype: str
         """
-        try:
-            cred = provider._credential_for(ref.path, 'git_read')
-        except UserError:
+        if not cred:
             return 'no_credential'
         if cred.kind == 'deploy':
             return 'no_api'

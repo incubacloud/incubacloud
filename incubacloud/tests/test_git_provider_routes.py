@@ -279,6 +279,20 @@ class TestProviderRoutes(_RoutesCase):
         self.assertEqual(answer["git"]["code"], "ok")
         self.assertEqual(answer["api"]["code"], "no_api")
 
+    def test_both_channels_test_the_credential_git_reads_with(self):
+        # The deploy token of the group only reads, so git clones with it
+        # rather than with the project's token that writes; the API
+        # channel tests that same credential, not the longest namespace.
+        self._cred("acme", kind="deploy", username="gitlab+deploy-token-7",
+                   token="gldt-deploy1234")
+        self._cred("acme/addons", kind="personal", scopes="api")
+        answer, ls = self._test()
+        self.assertEqual(
+            ls.call_args.args[2], ("gitlab+deploy-token-7", "gldt-deploy1234"),
+        )
+        self.assertEqual(answer["git"]["code"], "ok")
+        self.assertEqual(answer["api"]["code"], "no_api")
+
     def test_testing_a_url_of_another_server_is_refused(self):
         answer, ls = self._test(url="https://gitlab.example.org/acme/addons")
         self.assertFalse(answer["ok"])

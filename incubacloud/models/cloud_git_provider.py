@@ -372,29 +372,42 @@ class CloudGitProvider(models.Model):
             key=lambda c: len(c.namespace.split("/")) if c.namespace else 0,
         )
 
-    def _git_credential(self, path):
-        """Return ``(username, token)`` to read *path* with git, or None.
+    def _git_read_credential(self, path):
+        """Return the credential git reads *path* with, or an empty recordset.
 
         Of the credentials with a token that cover the path, one that
         cannot write first (a deploy token, or a token without ``api`` nor
         ``write_repository``): the build of 11.0 to 19.0 carries it inside
         the image (security review of G1, 8-nov-2026); then the longest
-        namespace. None when none covers the path: the repository is
-        read as a public one.
+        namespace. Empty when none covers the path: the repository is
+        read as a public one. «Test connection» tests this same
+        credential on both channels.
 
         :param str path: a project path, lower case
-        :rtype: tuple or None
+        :rtype: cloud.git.credential (sudo, one record or empty)
         """
         self.ensure_one()
         covering = self.sudo().credential_ids.filtered(
             lambda c: c.token and namespace_covers(c.namespace or "", path),
         )
         if not covering:
-            return None
+            return covering
         return max(covering, key=lambda c: (
             not c._writes(),
             len(c.namespace.split("/")) if c.namespace else 0,
-        ))._git_pair()
+        ))
+
+    def _git_credential(self, path):
+        """Return ``(username, token)`` to read *path* with git, or None.
+
+        The pair of :meth:`_git_read_credential`; None when no credential
+        covers the path.
+
+        :param str path: a project path, lower case
+        :rtype: tuple or None
+        """
+        cred = self._git_read_credential(path)
+        return cred._git_pair() if cred else None
 
     def _git_reader(self):
         """Return the panel's git reader for this provider.
