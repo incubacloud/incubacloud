@@ -262,3 +262,4 @@ from . import test_job_server_limits
 from . import test_job_output_by_role
 from . import test_server_only_methods
 from . import test_git_reader
+from . import test_gitlab_client

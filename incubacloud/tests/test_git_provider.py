@@ -8,13 +8,14 @@ the panel may connect is ``_network_policy``: ``'any'`` in the core,
 """
 import socket
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from psycopg2 import IntegrityError
 
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import TransactionCase, new_test_user, tagged
 
+from odoo.addons.incubacloud.gitlab import client as client_mod
 from odoo.addons.incubacloud.models import cloud_git_provider as provider_mod
 from odoo.addons.incubacloud.tests import _certs
 
@@ -276,3 +277,60 @@ class TestExpiryCron(_ProviderCase):
 
     def test_warning_days(self):
         self.assertEqual(provider_mod.EXPIRY_WARNING_DAYS, 14)
+
+
+class TestCredentialIntrospection(_ProviderCase):
+    """What GitLab says of a token is read, not typed (§4.3, spike §2)."""
+
+    def _introspect(self, cred, token_self, user=None):
+        """Introspect *cred* with the API answering *token_self* and *user*.
+
+        :rtype: MagicMock (the client class)
+        """
+        client = MagicMock(spec=client_mod.GitLabClient)
+        if isinstance(token_self, Exception):
+            client.token_self.side_effect = token_self
+        else:
+            client.token_self.return_value = token_self
+        client.current_user.return_value = user or {"username": "qa-bot"}
+        with patch.object(
+            provider_mod, "GitLabClient", autospec=True, return_value=client,
+        ) as made:
+            cred._introspect()
+        return made, client
+
+    def test_a_read_repository_token_has_its_scopes_and_expiry_but_no_user(self):
+        cred = self._cred("acme")
+        made, client = self._introspect(cred, {
+            "scopes": ["read_repository"], "expires_at": "2027-01-31",
+            "active": True,
+        })
+        self.assertEqual(cred.scopes, "read_repository")
+        self.assertEqual(cred.expires_on, date(2027, 1, 31))
+        self.assertFalse(cred.token_user)
+        client.current_user.assert_not_called()
+        self.assertEqual(made.call_args.args[:2], (
+            "https://gitlab.com/api/v4", "glpat-abcdefgh12",
+        ))
+
+    def test_an_api_token_names_its_user(self):
+        for scope in ("api", "read_api"):
+            with self.subTest(scope=scope):
+                cred = self._cred(f"acme-{scope}")
+                self._introspect(cred, {"scopes": [scope, "read_repository"]})
+                self.assertEqual(cred.token_user, "qa-bot")
+
+    def test_a_401_leaves_the_credential_without_api(self):
+        cred = self._cred(
+            "acme", kind="deploy", username="gitlab+deploy-token-1",
+            scopes="api",
+        )
+        self._introspect(cred, client_mod.GitLabError("auth", status=401))
+        self.assertEqual(cred.scopes, "")
+        self.assertFalse(cred.token_user)
+
+    def test_another_failure_is_raised_without_the_token(self):
+        cred = self._cred("acme")
+        with self.assertRaises(UserError) as caught:
+            self._introspect(cred, client_mod.GitLabError("unreachable"))
+        self.assertNotIn("glpat-abcdefgh12", str(caught.exception))
