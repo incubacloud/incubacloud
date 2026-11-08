@@ -15,6 +15,7 @@ G1, 8-nov-2026).
 import os
 import subprocess
 import time
+from pathlib import Path
 from unittest.mock import patch
 
 from odoo.tests.common import BaseCase
@@ -36,10 +37,10 @@ def _env_config(env):
     :param dict env: a git call's environment
     :rtype: str
     """
-    lines = []
-    for i in range(int(env.get("GIT_CONFIG_COUNT") or 0)):
-        lines.append(f"{env[f'GIT_CONFIG_KEY_{i}']} = {env[f'GIT_CONFIG_VALUE_{i}']}")
-    return "\n".join(lines)
+    return "\n".join(
+        f"{env[f'GIT_CONFIG_KEY_{i}']} = {env[f'GIT_CONFIG_VALUE_{i}']}"
+        for i in range(int(env.get("GIT_CONFIG_COUNT") or 0))
+    )
 
 
 def _feed(done, kwargs):
@@ -88,7 +89,7 @@ class _Calls:
         home = env.get("HOME")
         self.calls.append({
             "argv": list(argv), "env": dict(env), "config": _env_config(env),
-            "kwargs": dict(kwargs),
+            "kwargs": kwargs.copy(),
             "files": sorted(os.listdir(home)) if home and os.path.isdir(home) else [],
         })
         return _feed(self.answers(argv), kwargs)
@@ -166,7 +167,7 @@ class TestGitReaderCommand(BaseCase):
     def test_the_home_is_private_and_removed(self):
         calls = self._run(_version())
         home = calls[-1]["env"]["HOME"]
-        self.assertFalse(os.path.exists(home))
+        self.assertFalse(Path(home).exists())
 
     def test_a_ca_goes_in_a_file_scoped_to_the_server(self):
         calls = self._run(_version(), ca_pem="-----BEGIN CERTIFICATE-----\nx\n")
