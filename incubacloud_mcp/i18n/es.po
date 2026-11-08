@@ -2379,3 +2379,37 @@ msgstr ""
 #: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
 msgid "Stop your Telegram notifications."
 msgstr "Dejar de enviarle las notificaciones por Telegram."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "%s is not in this branch."
+msgstr "%s no está en esta rama."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"The panel could not read this repository with git (%s). Check the address, "
+"the branch and the credential under Settings → Git providers."
+msgstr ""
+"El panel no pudo leer este repositorio con git (%s). Revise la dirección, la"
+" rama y la credencial en Ajustes → Proveedores Git."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"There is no Git provider for %s: add it under Settings → Git providers."
+msgstr ""
+"No hay un proveedor Git para %s: añádalo en Ajustes → Proveedores Git."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Writing to GitLab repositories comes in a next version: for now the panel "
+"only reads this repository."
+msgstr ""
+"La escritura en repositorios de GitLab llega en una próxima versión: por "
+"ahora el panel solo lee este repositorio."
