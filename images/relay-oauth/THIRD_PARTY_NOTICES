@@ -1,0 +1,25 @@
+IncubaCloud relay-oauth image: third-party software
+===================================================
+
+This image is docker-mailserver with two additions. The software below keeps
+its own licence; the IncubaCloud files (ic-relay-oauth and its configuration)
+are under the licence of the repository they come from,
+https://github.com/incubacloud/incubacloud (images/relay-oauth/).
+
+docker-mailserver
+    https://github.com/docker-mailserver/docker-mailserver
+    The base image, unchanged except for the files named in images/relay-oauth/
+    Dockerfile. MIT licence; the Debian packages it installs keep theirs
+    (/usr/share/doc/*/copyright).
+
+sasl-xoauth2
+    https://github.com/tarickb/sasl-xoauth2
+    Built from source, unmodified, at the tag and commit written in
+    /usr/share/doc/sasl-xoauth2/VERSION. Copyright 2020 Google LLC, Apache
+    License 2.0: its notice is /usr/share/doc/sasl-xoauth2/COPYING and the
+    licence's full text /usr/share/common-licenses/Apache-2.0.
+
+libjsoncpp26 (Debian package)
+    https://github.com/open-source-parsers/jsoncpp
+    Installed from Debian for the plugin. MIT licence (or public domain where
+    recognised); /usr/share/doc/libjsoncpp26/copyright.
