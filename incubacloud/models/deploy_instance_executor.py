@@ -179,16 +179,17 @@ def _build_retried_once(build):
     fails for good: it only costs that build's time, and the job then
     fails with the same error. A first attempt that ran
     ``_BUILD_RETRY_MAX_FIRST_S`` or more is not repeated. It is timed
-    with the shell's ``SECONDS``: bash, root's login shell on the hosts.
-    A shell without it counts nothing and always repeats.
+    with ``date +%s`` (coreutils and busybox), as the step runs in the
+    login shell of the host's user: dash, with no ``SECONDS``, when a
+    self-hosted user was made with ``useradd`` and no ``-s``.
 
     :param str build: the ``docker compose build`` command to run.
     :return: the command, exiting with the status of its last attempt.
     :rtype: str
     """
     return (
-        f"{{ ic_build_t0=${{SECONDS:-0}}; {build} || {{ ic_build_s=$?;"
-        f" if [ $(( ${{SECONDS:-0}} - ic_build_t0 ))"
+        f"{{ ic_build_t0=$(date +%s); {build} || {{ ic_build_s=$?;"
+        f" if [ $(( $(date +%s) - ic_build_t0 ))"
         f" -lt {_BUILD_RETRY_MAX_FIRST_S} ]; then"
         f" echo 'The image build failed: trying once more"
         f" in {_BUILD_RETRY_WAIT_S} s.';"
