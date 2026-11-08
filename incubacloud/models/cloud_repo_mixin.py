@@ -14,6 +14,8 @@ from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
 from ._repo_requirements import (
+    RESERVED_REPO_ALIASES,
+    _repo_alias,
     apply_requirements_content,
     canonical_repo_url,
     consume_git_read,
@@ -195,6 +197,13 @@ class CloudRepoMixin(models.AbstractModel):
                     "URL. Use the canonical form "
                     "'https://github.com/<owner>/<repo>'.",
                 ) % url)
+            alias = _repo_alias(url)
+            if alias in RESERVED_REPO_ALIASES:
+                raise ValidationError(_(
+                    "%s is a name doodba keeps for itself in custom/src, "
+                    "where each repository is fetched under its own name: "
+                    "use a repository with another name.",
+                ) % alias)
             branch = (repo.branch or '').strip()
             if branch and not is_safe_git_ref(branch):
                 raise ValidationError(_(

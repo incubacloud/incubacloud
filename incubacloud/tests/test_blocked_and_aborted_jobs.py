@@ -420,7 +420,7 @@ class TestWaitingDeploy(_DeployJobCase):
         """It may be the one that conflicts."""
         delay = self._dispatching()
 
-        async def unread(env, repos, unread=None, budget=None):
+        async def unread(env, repos, unread=None, budget=None, git_budget=None):
             """GitHub lists one repository and not the other."""
             unread.append("odoo-addons")
             return []

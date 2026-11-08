@@ -593,6 +593,10 @@ export class ProjectDetail extends Component {
             if (this.isCreate) {
                 const result = await rpc("/cloud/create_project", { vals });
                 this.env.refreshNavCounts?.();
+                // GitLab repositories the request had no Git reads left for.
+                if (result?.warning) {
+                    this.env.toast?.warning(result.warning);
+                }
                 // Clear the dirty baseline before navigating so the
                 // nav guard doesn't fire on this programmatic
                 // transition (matches the pattern HostDetail.save()

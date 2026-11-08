@@ -24,6 +24,7 @@ import base64
 import json
 import logging
 import re
+import time
 import urllib.error
 import urllib.request
 from collections import namedtuple
@@ -56,6 +57,16 @@ def _repo_alias(url):
     """Derive a short alias from a repo URL: last path component without .git."""
     url = (url or "").strip().rstrip("/").removesuffix(".git")
     return url.split("/")[-1] or ""
+
+
+#: What doodba keeps in ``custom/src`` for itself, which a repository
+#: fetched into ``custom/src/<alias>`` would replace: its private addons
+#: and its repos and addons files, read as .yaml or .yml (doodbalib).
+#: ``deploy.sh``'s ``ic_reserved_alias`` refuses the same (security
+#: review of G1, 8-nov-2026).
+RESERVED_REPO_ALIASES = frozenset({
+    'private', 'repos.yaml', 'repos.yml', 'addons.yaml', 'addons.yml',
+})
 
 
 def _parse_repo_addons(addons_str):
@@ -284,6 +295,102 @@ def consume_git_read(env):
         return allowed
 
 
+#: The GitLab repositories one panel request reads with git at most,
+#: besides the user's hourly cap: each read is a git process and a
+#: temporary fetch of up to 64 MB, and a request lists them all at once
+#: (security review of G1, 8-nov-2026).
+REQUEST_GIT_READS = 10
+
+#: Seconds all of one panel request's GitLab reads take at most: what
+#: the module check gives GitHub (``cloud_instance.ADDON_CHECK_SECONDS``).
+REQUEST_GIT_SECONDS = 20
+
+
+class GitReadBudget:
+    """The GitLab reads one panel request may still make.
+
+    At most :data:`REQUEST_GIT_READS`, all before one deadline
+    (:data:`REQUEST_GIT_SECONDS` from now), and each one also one read of
+    the user's hourly cap (:func:`consume_git_read`). Taken on the
+    calling thread, which holds the ORM. A read past it is not made, and
+    the request says so without failing: the deploy reads what it needs
+    without any (security review of G1, 8-nov-2026).
+
+    :param env: an Odoo environment, of the user who reads
+    :param int max_reads: reads at most; None: :data:`REQUEST_GIT_READS`
+    :param float seconds: seconds for them all; None:
+        :data:`REQUEST_GIT_SECONDS`
+    """
+
+    def __init__(self, env, max_reads=None, seconds=None):
+        """Start the request's count and its deadline now."""
+        self.env = env
+        self.left = REQUEST_GIT_READS if max_reads is None else max_reads
+        self.deadline = time.monotonic() + (
+            REQUEST_GIT_SECONDS if seconds is None else seconds
+        )
+        self.skipped = 0
+
+    def take(self):
+        """Count one read, and return whether it may be made.
+
+        The hourly cap is asked last, so a read the request had no room
+        for does not count against it.
+
+        :rtype: bool
+        """
+        if (
+            self.left <= 0
+            or time.monotonic() >= self.deadline
+            or not consume_git_read(self.env)
+        ):
+            self.skipped += 1
+            return False
+        self.left -= 1
+        return True
+
+    def requirements_warning(self):
+        """Return what the request says of the requirements it did not read.
+
+        :return: the text, or None when it read them all
+        :rtype: str or None
+        """
+        if not self.skipped:
+            return None
+        return self.env._(
+            "Limit of Git reads reached: the requirements.txt of %(count)s "
+            "GitLab repositories was not read now. A deploy reads it from "
+            "each branch that is not pinned.",
+            count=self.skipped,
+        )
+
+    def addons_warning(self):
+        """Return what the request says of the module lists it did not read.
+
+        :return: the text, or None when it read them all
+        :rtype: str or None
+        """
+        if not self.skipped:
+            return None
+        return self.env._(
+            "Limit of Git reads reached: %(count)s GitLab repositories were "
+            "not checked now for modules another repository also defines. "
+            "The deploy checks them.",
+            count=self.skipped,
+        )
+
+
+def on_git_provider(env, url):
+    """Return whether *url* names a repository of a Git provider (GitLab).
+
+    :param env: an Odoo environment
+    :param str url: a repository URL
+    :rtype: bool
+    """
+    ref = resolve_repo_ref(env, url)
+    return bool(ref) and ref.kind == 'gitlab'
+
+
 def user_may_use_credential(env, provider, path):
     """Return whether the user of *env* may read *path* with the panel's credential.
 
@@ -374,23 +481,24 @@ def git_source_requirements(source, branch):
     return files.get('requirements.txt')
 
 
-def _provider_read(env, url, read, branch):
+def _provider_read(env, url, read, branch, deadline=None):
     """Read a repository of a Git provider with *read*, if *url* names one.
 
     :param env: an Odoo environment
     :param str url: the repository URL
     :param read: :func:`git_source_addons` or :func:`git_source_requirements`
     :param str branch: the branch
+    :param float deadline: the request's (:class:`GitReadBudget`), or None
     :return: ``(False, None)`` when *url* is not a provider's repository,
         else ``(True, what *read* returned or None when it failed)``
     :rtype: tuple
     """
-    ref = resolve_repo_ref(env, url)
-    if not ref or ref.kind != 'gitlab':
+    if not on_git_provider(env, url):
         return False, None
     with suppress(GitReaderError, ValueError):
         source = resolve_git_source(env, url)
         if source:
+            source.reader.deadline = deadline
             return True, read(source, branch)
     return True, None
 
@@ -1204,15 +1312,18 @@ def fetch_repo_addons(env, url, branch):
         return None
 
 
-def fetch_requirements_txt(env, url, branch):
+def fetch_requirements_txt(env, url, branch, deadline=None):
     """Fetch *requirements.txt* from the root of a repository branch.
 
     A repository of a Git provider (GitLab) is read with the panel's
-    git (:func:`git_source_requirements`); a GitHub one through its API
-    (:func:`_fetch_github_requirements_txt`).
+    git (:func:`git_source_requirements`), before *deadline* when one
+    is given (a request's :class:`GitReadBudget`); a GitHub one through
+    its API (:func:`_fetch_github_requirements_txt`).
     Returns the file content as str, or ``None`` on failure.
     """
-    on_provider, found = _provider_read(env, url, git_source_requirements, branch)
+    on_provider, found = _provider_read(
+        env, url, git_source_requirements, branch, deadline=deadline,
+    )
     if on_provider:
         return found
     return _fetch_github_requirements_txt(env, url, branch)
@@ -1667,7 +1778,29 @@ def apply_sync(instance, actions):
 _ADDON_TREE_BYTES = 8 * 1024 * 1024
 
 
-async def detect_addon_conflicts(env, repos, unread=None, budget=None):
+def _listed_modules(repo):
+    """Return the modules a line names itself, or None when it lists all.
+
+    :param repo: a repository line
+    :return: its ``addons`` less its ``excludes``; None for a wildcard,
+        whose modules only a read of the repository says
+    :rtype: set or None
+    """
+    addons_str = (repo.addons or "").strip()
+    if not addons_str:
+        return None
+    modules = _parse_repo_addons(addons_str)
+    excludes_str = (repo.excludes or "").strip()
+    if excludes_str:
+        modules = _apply_excludes(modules, excludes_str)
+    if modules == ["*"]:
+        return None
+    return set(modules)
+
+
+async def detect_addon_conflicts(
+    env, repos, unread=None, budget=None, git_budget=None,
+):
     """Fetch module lists from all repos and find cross-repo duplicates.
 
     For each repo, resolves its effective module set by applying the
@@ -1681,6 +1814,9 @@ async def detect_addon_conflicts(env, repos, unread=None, budget=None):
         not be read are appended to it
     :param budget: an ``HTTPBudget`` every GitHub request is charged to
         and timed against; a repository it leaves no room for is unread
+    :param GitReadBudget git_budget: a panel request's: each GitLab
+        repository read takes one of its reads, and one it has none left
+        for is unread. None in the deploy, which reads them all.
     :return: a list of ``{'addon': str, 'repos': [alias, ...]}``
     """
     repo_modules: dict[str, set[str]] = {}
@@ -1696,8 +1832,18 @@ async def detect_addon_conflicts(env, repos, unread=None, budget=None):
         with suppress(Exception):
             _client = GitHubAppClient(svc.get_credentials())
 
-    # GitLab repositories: their reader and credential, from the ORM too.
+    # GitLab repositories: their reader and credential, from the ORM too,
+    # and here the reads the request has room for.
     sources = _git_sources(env, repos)
+    no_room = set()
+    if git_budget is not None:
+        for repo in repos:
+            if repo.url not in sources or _listed_modules(repo) is not None:
+                continue
+            if git_budget.take():
+                sources[repo.url].reader.deadline = git_budget.deadline
+            else:
+                no_room.add(repo)
 
     def _fetch_addons_with_client(url, branch):
         """Thread-safe: uses pre-resolved client, no env access."""
@@ -1756,16 +1902,19 @@ async def detect_addon_conflicts(env, repos, unread=None, budget=None):
         alias = _repo_alias(repo.url)
         if not alias:
             return
-        addons_str = (repo.addons or "").strip()
         excludes_str = (repo.excludes or "").strip()
-
-        if addons_str:
-            modules = _parse_repo_addons(addons_str)
-            if excludes_str:
-                modules = _apply_excludes(modules, excludes_str)
-            if modules != ["*"]:
-                repo_modules[alias] = set(modules)
-                return
+        listed = _listed_modules(repo)
+        if listed is not None:
+            repo_modules[alias] = listed
+            return
+        if repo in no_room:
+            _logger.info(
+                "Addon check: %s@%s not read: git read limit of the request",
+                alias, repo.branch,
+            )
+            if unread is not None:
+                unread.append(alias)
+            return
 
         # Wildcard: fetch full list from GitHub
         all_mods = await asyncio.to_thread(

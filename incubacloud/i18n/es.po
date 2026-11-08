@@ -225,6 +225,17 @@ msgid "%s failed"
 msgstr "%s falló"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_repo_mixin.py:0
+msgid ""
+"%s is a name doodba keeps for itself in custom/src, where each repository is"
+" fetched under its own name: use a repository with another name."
+msgstr ""
+"%s es un nombre que doodba reserva para sí en custom/src, donde cada "
+"repositorio se descarga con su propio nombre: use un repositorio con otro "
+"nombre."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/pip_focus.js:0
 msgid ""
@@ -589,6 +600,16 @@ msgstr ""
 msgid "A %(type)s is already queued for this instance; cancel it first."
 msgstr ""
 "Ya hay un trabajo «%(type)s» en cola para esta instancia; cancélelo primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_git_provider.py:0
+msgid ""
+"A Git credential cannot move to another Git provider: add it there with its "
+"own token."
+msgstr ""
+"Una credencial Git no puede pasar a otro proveedor Git: añádala allí con su "
+"propio token."
 
 #. module: incubacloud
 #. odoo-python
@@ -8192,6 +8213,29 @@ msgid "Light theme"
 msgstr "Tema claro"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/_repo_requirements.py:0
+msgid ""
+"Limit of Git reads reached: %(count)s GitLab repositories were not checked "
+"now for modules another repository also defines. The deploy checks them."
+msgstr ""
+"Se alcanzó el límite de lecturas Git: %(count)s repositorios de GitLab no se"
+" han comprobado ahora en busca de módulos que otro repositorio también "
+"define. El despliegue los comprueba."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/_repo_requirements.py:0
+msgid ""
+"Limit of Git reads reached: the requirements.txt of %(count)s GitLab "
+"repositories was not read now. A deploy reads it from each branch that is "
+"not pinned."
+msgstr ""
+"Se alcanzó el límite de lecturas Git: el requirements.txt de %(count)s "
+"repositorios de GitLab no se ha leído ahora. Un despliegue lo lee de cada "
+"rama que no esté fijada."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Link to the backup"
@@ -11367,6 +11411,17 @@ msgid "Read Last Login"
 msgstr "Leer último inicio de sesión"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_git_credential__scopes
+msgid ""
+"Read from GitLab when the token is tested or saved, and emptied when the "
+"token changes. Empty: a deploy token, or one whose scopes were not read, "
+"taken as one that can write."
+msgstr ""
+"Se lee de GitLab al probar o guardar el token, y se vacía cuando el token "
+"cambia. Vacío: un deploy token, o uno cuyos scopes no se han leído, que se "
+"trata como uno que puede escribir."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Read from the proxy on this host. Nothing is stored."
@@ -14229,6 +14284,16 @@ msgstr ""
 "cancelación de una persona: el trabajo se guarda como hecho, no como "
 "cancelado (AbstractExecutor._mark_success_before_cancel). Se borra cuando "
 "el trabajo vuelve a empezar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"The scopes of this token have not been read from GitLab, so it is taken as "
+"one that can write. Use Test connection to read them."
+msgstr ""
+"Los scopes de este token no se han leído de GitLab, así que se trata como "
+"uno que puede escribir. Use Probar conexión para leerlos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17284,6 +17349,12 @@ msgstr "s"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "scopes not read"
+msgstr "scopes sin leer"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "skip"
 msgstr "omitir"
@@ -18267,15 +18338,6 @@ msgstr "Token de acceso de proyecto"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__provider_id
 msgid "Provider"
 msgstr "Proveedor"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_git_credential__scopes
-msgid ""
-"Read from GitLab when the token is tested or saved. Empty: the token does "
-"not answer on the API (a deploy token)."
-msgstr ""
-"Se leen de GitLab al probar o guardar el token. Vacío: el token no responde "
-"en la API (un deploy token)."
 
 #. module: incubacloud
 #. odoo-javascript

@@ -67,7 +67,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/get_projects` | record rules | Paginated project list (`{items, total, truncated, limit}`). |
 | `/cloud/get_project` | record rules | Project detail (repos, dependencies, backup backend). |
 | `/cloud/get_project_full` | record rules | Project + instances + jobs in one payload (SPA store). |
-| `/cloud/create_project` | create project | Create project (field whitelist enforced). |
+| `/cloud/create_project` | create project | Create project (field whitelist enforced). Reads each line's `requirements.txt`; a GitLab one within the request's Git reads (below), else `warning` says how many were not read. |
 | `/cloud/save_project` | consultant | Update project; repos replaced by the `repos` array. |
 | `/cloud/delete_project` | delete project | Delete project (fails if instances exist). |
 | `/cloud/get_project_instances` | record rules | Instances in a project. |
@@ -78,8 +78,8 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | Path | Gate | Description |
 |---|---|---|
 | `/cloud/get_instance` | record rules | Full instance detail (Odoo config, DB, SMTP, repos, domains). |
-| `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`). Each domain's `cert_resolver` is clamped to the field's options; anything else becomes the field's default (`auto`). |
-| `/cloud/save_instance` | consultant | Update instance (field whitelist enforced). Rewrites the domain list from the request, with `cert_resolver` clamped as in `create_instance`. |
+| `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`), and `warning` when GitLab repositories were left out of the module check (below). Each domain's `cert_resolver` is clamped to the field's options; anything else becomes the field's default (`auto`). |
+| `/cloud/save_instance` | consultant | Update instance (field whitelist enforced); `warning` as in `create_instance`. Rewrites the domain list from the request, with `cert_resolver` clamped as in `create_instance`. |
 | `/cloud/keep_instance` | consultant | Reset a staging's autopurge window and clear its expiry warnings. |
 | `/cloud/delete_instance` | delete instance | Tear down and delete/archive the instance. |
 | `/cloud/deploy_instance` | deploy | Enqueue `deploy_instance` job. |
@@ -211,7 +211,11 @@ Repository operations (all gated on **consultant**). A repository of a Git
 provider (GitLab) is read with the panel's git and the provider's credential,
 with the same answers, and counts against `rate_limit_git_reads_per_hour`;
 an error that a provider's setting fixes says `settings_hint: "git_providers"`,
-one of GitHub's `settings_hint: "github"`:
+one of GitHub's `settings_hint: "github"`. A request that reads several
+GitLab repositories (creating a project, the module check of an instance's
+save, creation or import) makes at most 10 reads, all within 20 s, each one
+of the hourly cap too; a read past them is not made and the answer says so,
+and the deploy reads without them:
 
 | Path | Description |
 |---|---|

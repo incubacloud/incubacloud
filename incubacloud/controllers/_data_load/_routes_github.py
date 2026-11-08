@@ -31,6 +31,7 @@ from ...github.import_inspector import (
 )
 from ...models._concurrency import read_committed_cursor, try_advisory_xact_lock
 from ...models._repo_requirements import (
+    GitReadBudget,
     apply_requirements_content,
     git_source_addons,
     git_source_requirements,
@@ -1089,24 +1090,34 @@ class GitHubMixin:
         # sense of a module two of them define. Only within the import's
         # time: a spent budget leaves it to the deploy's pre-flight
         # rather than fail an import that is done.
+        git_budget = None
         try:
             _check_budget()
         except ImportInspectionError:
             conflicts = []
         else:
+            seconds = budget.remaining_seconds() if budget else None
+            git_budget = GitReadBudget(request.env, seconds=seconds)
             conflicts = instance._check_addon_conflicts(
-                seconds=budget.remaining_seconds() if budget else None,
+                seconds=seconds, git_budget=git_budget,
             )
+        warnings = []
         if conflicts:
             names = ', '.join(c['addon'] for c in conflicts[:5])
             if len(conflicts) > 5:
                 names += f' (+{len(conflicts) - 5})'
-            result['addon_conflict_warning'] = _(
+            warnings.append(_(
                 '%(count)s module(s) are defined in more than one '
                 'repository: %(names)s. Choose which repository keeps each '
                 'one in Alerts before deploying.',
                 count=len(conflicts), names=names,
-            )
+            ))
+        # GitLab repositories the import's reads had no room for.
+        skipped = git_budget and git_budget.addons_warning()
+        if skipped:
+            warnings.append(skipped)
+        if warnings:
+            result['addon_conflict_warning'] = ' '.join(warnings)
         return result
 
     # ── Project import (unified: doodba / odoo.sh / simple) ─────────────────

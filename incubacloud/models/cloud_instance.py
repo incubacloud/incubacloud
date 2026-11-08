@@ -23,6 +23,7 @@ from . import _odoo_versions
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import (
+    GitReadBudget,
     _normalize_url,
     detect_addon_conflicts,
     detect_pip_conflicts,
@@ -1675,7 +1676,7 @@ class CloudInstance(models.Model):
             return Job.browse(last.id)
         return Job
 
-    def _check_addon_conflicts(self, seconds=None):
+    def _check_addon_conflicts(self, seconds=None, git_budget=None):
         """Compare this instance's repositories now, not at the next deploy.
 
         Doodba refuses an addon two repositories define, and the deploy's
@@ -1694,6 +1695,10 @@ class CloudInstance(models.Model):
 
         :param float seconds: at most this long, every GitHub request
             included; a repository there is no time left for is unread
+        :param GitReadBudget git_budget: the request's GitLab reads, whose
+            ``skipped`` the caller then tells the user of; None: one of
+            its own, of *seconds*. Every caller is a request: the deploy
+            reads in its executor, without it.
         :return: the conflicts found (empty when none or unknown)
         :rtype: list
         """
@@ -1708,9 +1713,12 @@ class CloudInstance(models.Model):
             budget = HTTPBudget(
                 3 * len(self.repo_ids) + 2, _ADDON_CHECK_MAX_BYTES, seconds,
             )
+        if git_budget is None:
+            git_budget = GitReadBudget(self.env, seconds=seconds)
         try:
             conflicts = asyncio.run(detect_addon_conflicts(
                 self.env, self.repo_ids, unread=unread, budget=budget,
+                git_budget=git_budget,
             ))
             with self.env.cr.savepoint():
                 if conflicts:

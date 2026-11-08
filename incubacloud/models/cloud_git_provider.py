@@ -479,11 +479,13 @@ class CloudGitCredential(models.Model):
         help="oauth2 for personal, group and project tokens; the deploy "
         "token's own user name (gitlab+deploy-token-N).",
     )
-    token = EncryptedChar(groups="incubacloud.group_cloud_manager")
+    # Never copied: a token is entered for its credential alone.
+    token = EncryptedChar(groups="incubacloud.group_cloud_manager", copy=False)
     scopes = fields.Char(
         readonly=True,
-        help="Read from GitLab when the token is tested or saved. Empty: "
-        "the token does not answer on the API (a deploy token).",
+        help="Read from GitLab when the token is tested or saved, and "
+        "emptied when the token changes. Empty: a deploy token, or one "
+        "whose scopes were not read, taken as one that can write.",
     )
     token_user = fields.Char(readonly=True)
     expires_on = fields.Date()
@@ -506,17 +508,33 @@ class CloudGitCredential(models.Model):
             return False
         return bool(wanted & set((self.scopes or "").replace(",", " ").split()))
 
+    def _scopes_unread(self):
+        """Return whether nothing is known of this token's scopes.
+
+        A token that is not a deploy token and has no scopes: they were
+        not read (a save past the hourly cap, a new token not tested
+        yet), or GitLab did not answer about it.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return self.kind != "deploy" and not (self.scopes or "").strip()
+
     def _writes(self):
         """Return whether this credential's token can write to repositories.
 
-        ``api`` or ``write_repository`` among its scopes; a deploy token
-        never, as the panel keeps none that writes.
+        ``api`` or ``write_repository`` among its scopes, or scopes not
+        read (:meth:`_scopes_unread`), which could be any (security review
+        of G1, 8-nov-2026); a deploy token never, as the panel keeps none
+        that writes.
 
         :rtype: bool
         """
         self.ensure_one()
         if self.kind == "deploy":
             return False
+        if self._scopes_unread():
+            return True
         return bool(
             {"api", "write_repository"}
             & set((self.scopes or "").replace(",", " ").split())
@@ -617,7 +635,28 @@ class CloudGitCredential(models.Model):
         return records
 
     def write(self, vals):
+        """Write *vals*, keeping each token with its server and what was read of it.
+
+        A credential never moves to another provider: its token was given
+        for that server, and a move would send it elsewhere without the
+        base URL changing (security review of G1, 8-nov-2026). A new
+        token empties the scopes and user read for the old one, unless
+        the same write sets them.
+
+        :param dict vals: the values to write
+        :raises UserError: when *vals* moves a credential to another provider
+        """
         vals = self._normalize_vals(vals)
+        if "provider_id" in vals and any(
+            rec.provider_id.id != vals["provider_id"] for rec in self
+        ):
+            raise UserError(_(
+                "A Git credential cannot move to another Git provider: add "
+                "it there with its own token."
+            ))
+        if "token" in vals:
+            vals.setdefault("scopes", False)
+            vals.setdefault("token_user", False)
         result = super().write(vals)
         for rec in self:
             rec._audit("Git credential changed", sorted(vals))

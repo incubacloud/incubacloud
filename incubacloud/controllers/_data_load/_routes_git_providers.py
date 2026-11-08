@@ -132,8 +132,10 @@ def _serialize_provider(provider, with_credentials):
             if cred.expires_on else False,
             'has_token': bool(cred.sudo().token),
             # A token that can write travels inside the image of 11.0 to
-            # 19.0 when it is the one that clones: the tab says so.
+            # 19.0 when it is the one that clones: the tab says so, and
+            # of one whose scopes were not read, that it is taken as such.
             'writes': cred._writes(),
+            'scopes_unchecked': cred._scopes_unread(),
         } for cred in provider.credential_ids]
     return row
 

@@ -1290,6 +1290,10 @@ export class InstanceDetail extends JobsMixin(
           );
           return;
         }
+        // GitLab repositories the request had no Git reads left for.
+        if (result?.warning) {
+          this.env.toast?.warning(result.warning);
+        }
         // Clear the dirty baseline before navigating so the nav
         // guard doesn't fire on the programmatic transition from
         // the create route to the new instance's detail route.
@@ -1302,12 +1306,15 @@ export class InstanceDetail extends JobsMixin(
           instance_id: result.id,
         });
       } else {
-        await rpc("/cloud/save_instance", {
+        const saved = await rpc("/cloud/save_instance", {
           instance_id: this.props.instance_id,
           vals,
         });
         this.state.inst.name = vals.name;
         this.env.toast?.success(_t("Changes saved"));
+        if (saved?.warning) {
+          this.env.toast?.warning(saved.warning);
+        }
         this._savedForm = JSON.stringify(this.state.form);
       }
     } catch (e) {

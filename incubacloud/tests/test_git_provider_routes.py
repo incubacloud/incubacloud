@@ -6,6 +6,7 @@ requirements, freeze) go to that server with git when the line is
 GitLab's, and to GitHub as before otherwise (plan-gitlab.md §4.5,
 §4.11, 8-nov-2026).
 """
+import asyncio
 from unittest.mock import MagicMock, patch
 
 from odoo import http as odoo_http
@@ -21,6 +22,7 @@ from odoo.addons.incubacloud.controllers._data_load import (
 )
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.gitlab.client import GitLabError
+from odoo.addons.incubacloud.models import _repo_requirements
 from odoo.addons.incubacloud.models import cloud_git_provider as provider_mod
 from odoo.addons.incubacloud.net import git_reader
 from odoo.addons.incubacloud.net.git_reader import GitReaderError
@@ -113,7 +115,7 @@ class TestProviderRoutes(_RoutesCase):
             "id": cred.id, "namespace": "acme", "kind": "deploy",
             "username": "gitlab+deploy-token-7", "scopes": "",
             "token_user": "", "expires_on": False, "has_token": True,
-            "writes": False,
+            "writes": False, "scopes_unchecked": False,
         }])
         self.assertNotIn("glpat-routes12", repr(answer))
 
@@ -577,6 +579,21 @@ class TestBaseUrlChangeAsksForTheTokensAgain(_RoutesCase):
         self.assertEqual(writes, {"acme": True, "acme/sub": False})
 
 
+    def test_a_token_whose_scopes_were_not_read_is_flagged_for_the_tab(self):
+        self._cred("acme")
+        self._cred("dep", kind="deploy", username="gitlab+deploy-token-7")
+        self._cred("ro", scopes="read_repository")
+        answer = self._serve("cloud_get_git_providers", user=self.manager)
+        row = next(p for p in answer["providers"] if p["id"] == self.provider.id)
+        flags = {
+            c["namespace"]: (c["writes"], c["scopes_unchecked"])
+            for c in row["credentials"]
+        }
+        self.assertEqual(flags, {
+            "acme": (True, True), "dep": (False, False), "ro": (False, False),
+        })
+
+
 @tagged("post_install", "-at_install")
 class TestImportFromHostWithProviders(_RoutesCase):
     """A host's repos.yaml: userinfo dropped, a host without provider
@@ -627,3 +644,174 @@ class TestImportFromHostWithProviders(_RoutesCase):
         self.assertEqual(len(answer["skipped_repos"]), 1)
         self.assertIn("git.unknown.example", answer["skipped_repos"][0])
         self.assertNotIn("glpat-hostimport1", repr(answer))
+
+
+@tagged("post_install", "-at_install")
+class TestARequestsGitReadsHaveABudget(_RoutesCase):
+    """Creating a project reads each line's requirements and saving an
+    instance checks its modules: each GitLab read counts against the hourly
+    cap, and a request makes a few of them, within one deadline. Past
+    either the read is not made and the answer says so; the deploy reads
+    without them (security review of G1, 8-nov-2026)."""
+
+    def setUp(self):
+        super().setUp()
+        self._cred("acme", kind="deploy", username="gitlab+deploy-token-7")
+        patcher = patch.object(
+            _repo_requirements, "_fetch_github_requirements_txt",
+            autospec=True, return_value=None,
+        )
+        self.github = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _cap(self, *answers):
+        """Patch the hourly cap to answer *answers* in turn.
+
+        :return: the mock
+        """
+        patcher = patch.object(
+            _repo_requirements, "consume_git_read", side_effect=list(answers),
+        )
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
+    def _create_project(self, *urls):
+        """Create a project with a line for each of *urls*, as the SPA does.
+
+        :return: the route's answer
+        """
+        return self._serve("cloud_create_project", vals={
+            "name": "Budget", "repos": [
+                {"url": url, "branch": "19.0"} for url in urls
+            ],
+        })
+
+    def test_creating_a_project_reads_requirements_within_the_cap(self):
+        cap = self._cap(True, False)
+        with patch.object(
+            git_reader.GitReader, "read_files", autospec=True,
+            return_value={"requirements.txt": "requests==2.32.3\n"},
+        ) as read:
+            answer = self._create_project(
+                "https://gitlab.com/acme/one", "https://github.com/acme/gh",
+                "https://gitlab.com/acme/two",
+            )
+        self.assertEqual(cap.call_count, 2)
+        self.assertEqual(read.call_count, 1)
+        # The read that went had the request's deadline.
+        self.assertIsNotNone(read.call_args.args[0].deadline)
+        self.github.assert_called_once()
+        project = self.env["cloud.project"].browse(answer["id"])
+        self.assertEqual(len(project.repo_ids), 3)
+        self.assertIn("requests==2.32.3", project.pip_dependencies)
+        self.assertIn("requirements.txt of 1 GitLab", answer["warning"])
+        self.assertIn("deploy", answer["warning"])
+
+    def test_creating_a_project_makes_a_few_reads_at_most(self):
+        self._cap(*[True] * 5)
+        with patch.object(_repo_requirements, "REQUEST_GIT_READS", 2), \
+                patch.object(
+                    git_reader.GitReader, "read_files", autospec=True,
+                    return_value={"requirements.txt": None},
+                ) as read:
+            answer = self._create_project(*(
+                f"https://gitlab.com/acme/r{i}" for i in range(3)
+            ))
+        self.assertEqual(read.call_count, 2)
+        self.assertIn("requirements.txt of 1 GitLab", answer["warning"])
+
+    def test_creating_a_project_reads_nothing_past_the_deadline(self):
+        cap = self._cap(True)
+        with patch.object(_repo_requirements, "REQUEST_GIT_SECONDS", 0), \
+                patch.object(
+                    git_reader.GitReader, "read_files", autospec=True,
+                ) as read:
+            answer = self._create_project("https://gitlab.com/acme/one")
+        read.assert_not_called()
+        cap.assert_not_called()
+        self.assertIn("requirements.txt of 1 GitLab", answer["warning"])
+
+    def test_a_project_within_the_budget_has_no_warning(self):
+        self._cap(True)
+        with patch.object(
+            git_reader.GitReader, "read_files", autospec=True,
+            return_value={"requirements.txt": None},
+        ):
+            answer = self._create_project("https://gitlab.com/acme/one")
+        self.assertNotIn("warning", answer)
+
+    def _instance(self, *urls):
+        """An instance with a line, listing all its modules, for each of *urls*.
+
+        :rtype: cloud.instance
+        """
+        project = self.env["cloud.project"].create({"name": "Check"})
+        instance = self.env["cloud.instance"].create({
+            "name": "check-inst", "project_id": project.id,
+            "environment": "production",
+        })
+        self.env["cloud.instance.repo"].with_context(
+            skip_apply_requirements=True,
+        ).create([
+            {"instance_id": instance.id, "url": url, "branch": "19.0"}
+            for url in urls
+        ])
+        return instance
+
+    def test_saving_an_instance_checks_its_modules_within_the_cap(self):
+        instance = self._instance(
+            "https://gitlab.com/acme/one", "https://gitlab.com/acme/two",
+        )
+        cap = self._cap(True, False)
+        with patch.object(
+            git_reader.GitReader, "tree", autospec=True,
+            return_value=["mod_a/__manifest__.py"],
+        ) as tree:
+            answer = self._serve(
+                "cloud_save_instance", instance_id=instance.id, vals={
+                    "repos": [
+                        {"url": "https://gitlab.com/acme/one", "branch": "19.0"},
+                        {"url": "https://gitlab.com/acme/two", "branch": "18.0"},
+                    ],
+                },
+            )
+        self.assertTrue(answer["ok"])
+        self.assertEqual(cap.call_count, 2)
+        self.assertEqual(tree.call_count, 1)
+        self.assertIsNotNone(tree.call_args.args[0].deadline)
+        self.assertIn("1 GitLab repositories were not checked", answer["warning"])
+        self.assertIn("deploy", answer["warning"])
+
+    def test_the_deploy_checks_every_repository_without_the_cap(self):
+        instance = self._instance(*(
+            f"https://gitlab.com/acme/r{i}" for i in range(3)
+        ))
+        cap = self._cap()
+        with patch.object(_repo_requirements, "REQUEST_GIT_READS", 1), \
+                patch.object(
+                    git_reader.GitReader, "tree", autospec=True,
+                    return_value=["mod_a/__manifest__.py"],
+                ) as tree:
+            conflicts = asyncio.run(_repo_requirements.detect_addon_conflicts(
+                self.env, instance.repo_ids,
+            ))
+        cap.assert_not_called()
+        self.assertEqual(tree.call_count, 3)
+        self.assertIsNone(tree.call_args.args[0].deadline)
+        self.assertEqual(conflicts, [{"addon": "mod_a", "repos": ["r0", "r1", "r2"]}])
+
+    def test_a_check_past_the_cap_leaves_the_conflict_open(self):
+        instance = self._instance(
+            "https://gitlab.com/acme/one", "https://gitlab.com/acme/two",
+        )
+        budget = _repo_requirements.GitReadBudget(instance.env)
+        self._cap(True, False)
+        with patch.object(
+            git_reader.GitReader, "tree", autospec=True,
+            return_value=["mod_a/__manifest__.py"],
+        ), patch.object(
+            type(instance), "_release_addon_conflict", autospec=True,
+        ) as release:
+            instance._check_addon_conflicts(seconds=20, git_budget=budget)
+        self.assertEqual(budget.skipped, 1)
+        release.assert_not_called()
