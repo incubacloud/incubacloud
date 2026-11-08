@@ -22,6 +22,30 @@ _logger = logging.getLogger(__name__)
 #: The repository-line models a webhook can be registered from.
 _LINE_MODELS = {'project': 'cloud.project.repo', 'instance': 'cloud.instance.repo'}
 
+#: How many failed deliveries of a webhook the SPA lists, newest first.
+_FAILED_EVENTS_SHOWN = 5
+
+
+def _failed_events(hook):
+    """Return the newest deliveries of *hook* whose dispatch failed.
+
+    They are the ones a manager may reprocess (``/cloud/reprocess_git_event``).
+
+    :param hook: a ``cloud.gitlab.hook`` (sudo)
+    :return: ``[{id, event_type, error, attempts, created_at}]``
+    :rtype: list
+    """
+    events = hook.env['cloud.gitlab.event'].sudo().search([
+        ('hook_id', '=', hook.id), ('processed', '=', False), ('error', '!=', False),
+    ], order='id desc', limit=_FAILED_EVENTS_SHOWN)
+    return [{
+        'id': ev.id,
+        'event_type': ev.event_type or '',
+        'error': ev.error or '',
+        'attempts': ev.dispatch_attempts,
+        'created_at': fields.Datetime.to_string(ev.create_date),
+    } for ev in events]
+
 
 def _serialize_hook(hook, with_secret_state):
     """Return what the SPA shows of a webhook.
@@ -43,6 +67,7 @@ def _serialize_hook(hook, with_secret_state):
         'verify_requested_at': fields.Datetime.to_string(hook.verify_requested_at)
         if hook.verify_requested_at else False,
         'url': hook._url() if with_secret_state else False,
+        'failed_events': _failed_events(hook) if with_secret_state else [],
     }
 
 

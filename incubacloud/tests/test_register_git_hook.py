@@ -130,6 +130,22 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertFalse(row["last_delivery_at"])
         self.assertFalse(row["url"], "the URL is shown to managers only")
 
+    def test_get_git_hooks_lists_failed_deliveries_to_managers_only(self):
+        hook_id = self._register()["hook"]["id"]
+        Event = self.env["cloud.gitlab.event"].sudo()
+        failed = Event.create({
+            "hook_id": hook_id, "event_type": "Push Hook",
+            "error": "RuntimeError: boom", "dispatch_attempts": 1,
+        })
+        Event.create({"hook_id": hook_id, "event_type": "Push Hook", "processed": True})
+        rows = self._serve("cloud_get_git_hooks", user=self.manager)["hooks"]
+        row = next(h for h in rows if h["id"] == hook_id)
+        self.assertEqual([e["id"] for e in row["failed_events"]], [failed.id])
+        self.assertEqual(row["failed_events"][0]["attempts"], 1)
+        rows = self._serve("cloud_get_git_hooks", user=self.consultant)["hooks"]
+        row = next(h for h in rows if h["id"] == hook_id)
+        self.assertEqual(row["failed_events"], [])
+
 
 @tagged("post_install", "-at_install")
 class TestGitHookCron(_RoutesCase):

@@ -68,12 +68,51 @@
                 </t>
             </div>
 
-            <!-- A GitLab line: its server, and what this version does not do yet -->
+            <!-- A GitLab line: its server, its webhook, and what this version does not do yet -->
             <div t-if="gitlabHost" class="ic-repo-provider">
                 <span class="ic-repo-provider-badge">GitLab · <t t-esc="gitlabHost"/></span>
-                <span class="ic-repo-provider-next">
-                    Rebuild on push and merge request previews: coming in a next version.
+                <t t-set="push" t-value="pushRebuild"/>
+                <span t-if="push === 'ok'" class="ic-repo-hook ic-repo-hook--ok">
+                    <i class="fa fa-check"/> Webhook active: a push rebuilds.
                 </span>
+                <span t-elif="push === 'hook_pending'" class="ic-repo-hook ic-repo-hook--warn">
+                    Webhook registered, no delivery yet: verify it in Git providers.
+                </span>
+                <span t-elif="push === 'hook_failing'" class="ic-repo-hook ic-repo-hook--error">
+                    GitLab disabled the webhook: pushes do not rebuild. Verify it in Git providers.
+                </span>
+                <span t-elif="push === 'no_hook'" class="ic-repo-hook ic-repo-hook--warn">
+                    No webhook: pushes do not rebuild.
+                </span>
+                <span t-else="" class="ic-repo-provider-next">
+                    Save the line to register its webhook.
+                </span>
+                <button t-if="push === 'no_hook' and props.repoModel"
+                        class="ic-repo-hook-action"
+                        t-att-disabled="state.registering"
+                        t-on-click.stop="registerHook">
+                    <i t-if="state.registering" class="fa fa-spinner fa-spin"/>
+                    Register webhook
+                </button>
+                <a t-if="(push === 'hook_pending' or push === 'hook_failing') and env.permissions?.can_manage_settings"
+                   class="ic-repo-fetch-error-link"
+                   t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                    Open Git providers →
+                </a>
+                <span class="ic-repo-provider-next">
+                    Merge request previews: coming in a next version.
+                </span>
+            </div>
+            <div t-if="state.hookError" class="ic-repo-fetch-error">
+                <span t-esc="state.hookError"/>
+            </div>
+            <div t-if="state.hookManualReason" class="ic-repo-fetch-error">
+                <span>The panel could not register the webhook: <t t-esc="state.hookManualReason"/> Set it up by hand with the URL and secret in Git providers.</span>
+                <a t-if="env.permissions?.can_manage_settings"
+                   class="ic-repo-fetch-error-link"
+                   t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                    Set up by hand →
+                </a>
             </div>
 
             <!-- ── Modules (instance repos only) ─────────────────────────── -->

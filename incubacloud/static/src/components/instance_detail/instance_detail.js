@@ -10,7 +10,7 @@ import {
 import {rpc} from "@web/core/network/rpc";
 import {useService} from "@web/core/utils/hooks";
 import {_t} from "@web/core/l10n/translation";
-import {RepoEditor} from "../repo_editor/repo_editor";
+import {RepoEditor, gitlabReposWithoutHook} from "../repo_editor/repo_editor";
 import {agoText, parseUTC} from "../../utils/dates";
 import {useSafePoll} from "../../utils/use_safe_poll";
 import {useVisibilityRefresh} from "../../utils/use_visibility_refresh";
@@ -229,6 +229,23 @@ export class InstanceDetail extends JobsMixin(
 
   get isCreate() {
     return !this.props.instance_id;
+  }
+
+  /**
+   * What «Auto-rebuild on push» cannot do: how many of the instance's
+   * GitLab lines have no working webhook, said as the toggle shows it,
+   * or "" when every line has one (plan-gitlab.md §4.11-3).
+   *
+   * @returns {string}
+   */
+  get gitlabHookWarning() {
+    const count = gitlabReposWithoutHook(this.state.form.repos).length;
+    if (!count) {
+      return "";
+    }
+    return count === 1
+      ? _t("1 GitLab repository without a working webhook: its pushes do not rebuild.")
+      : _t("%(count)s GitLab repositories without a working webhook: their pushes do not rebuild.", {count});
   }
 
   /**

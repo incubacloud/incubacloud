@@ -2496,6 +2496,8 @@
                         <div>
                             <div class="rl-tl-label">Auto-rebuild on push</div>
                             <div class="rl-th">rebuild on push to unfrozen repos</div>
+                            <div t-if="gitlabHookWarning" class="rl-th ic-gitlab-hook-warn"
+                                 t-esc="gitlabHookWarning"/>
                         </div>
                         <button
               type="button"

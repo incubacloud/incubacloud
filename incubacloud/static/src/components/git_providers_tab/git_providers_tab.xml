@@ -163,6 +163,102 @@
                     <i class="fa fa-plus"/> Add a GitLab server
                 </button>
             </div>
+
+            <!-- ── Webhooks (G3) ─────────────────────────────────────── -->
+            <t t-if="state.providers.length">
+                <div class="rl-saas-fsec ic-gitp-hookhead">Webhooks</div>
+                <p class="rl-tabnote">
+                    A GitLab webhook tells the panel about each push, so the instances
+                    that follow the branch rebuild. Register it from a GitLab repository
+                    line of a project or an instance.
+                </p>
+                <p t-if="state.hooksError" class="rl-set-inline-msg rl-set-inline-msg--error"
+                   t-esc="state.hooksError"/>
+                <p t-elif="!state.hooks.length" class="rl-set-hint">No webhooks yet.</p>
+                <t t-foreach="state.hooks" t-as="hook" t-key="hook.id">
+                    <div class="ic-gitp-hook">
+                        <div class="ic-gitp-hookrow">
+                            <span class="ic-gitp-ns" t-esc="hook.path"/>
+                            <span t-if="hook.scope === 'group'" class="ic-gitp-kind">group</span>
+                            <span t-att-class="'rl-pill ' + hookStatePill(hook.state)">
+                                <span class="rl-d"/><t t-esc="hookStateLabel(hook.state)"/>
+                            </span>
+                            <span class="ic-gitp-meta" t-esc="hook.provider"/>
+                            <span class="ic-gitp-meta">
+                                <t t-if="hook.by_api">set up by the panel</t>
+                                <t t-else="">set up by hand</t>
+                            </span>
+                            <span t-if="hook.last_delivery_at" class="ic-gitp-meta">
+                                Last delivery: <t t-esc="dateLabel(hook.last_delivery_at)"/>
+                            </span>
+                        </div>
+                        <p t-if="hook.state === 'failing'" class="rl-set-inline-msg rl-set-inline-msg--error">
+                            GitLab disabled this webhook after failed deliveries: the pushes of that time were lost. Press Verify, then rebuild by hand the instances that need it.
+                        </p>
+                        <p t-elif="hook.state === 'orphan'" class="rl-set-hint">
+                            No repository line uses this webhook. The panel deletes it 7 days after the last line went; one set up by hand must be deleted in GitLab too.
+                        </p>
+                        <p t-elif="!hook.by_api and hook.state === 'pending'" class="rl-set-hint">
+                            In GitLab, open Settings → Webhooks → Add new webhook, paste the URL and the secret, tick Push events and Merge request events, keep Enable SSL verification, and save. Then press Test → Tag push events, never Push events, which would rebuild.
+                        </p>
+
+                        <div t-if="state.hookSecret[hook.id]" class="rl-set-status ic-gitp-secret">
+                            <span class="rl-set-status-k">URL</span>
+                            <span class="rl-set-status-v" t-esc="state.hookSecret[hook.id].url"/>
+                            <span class="rl-set-status-k">Secret token</span>
+                            <span class="rl-set-status-v" t-esc="state.hookSecret[hook.id].secret"/>
+                        </div>
+
+                        <t t-foreach="hook.failed_events" t-as="event" t-key="event.id">
+                            <div class="ic-gitp-event">
+                                <span class="ic-gitp-meta" t-esc="dateLabel(event.created_at)"/>
+                                <span class="ic-gitp-kind" t-esc="event.event_type"/>
+                                <span class="ic-gitp-error" t-esc="event.error"/>
+                                <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                                        t-att-disabled="state.hookBusy === hook.id"
+                                        t-on-click="() => this.reprocessEvent(hook, event)">
+                                    <i class="fa fa-repeat"/> Reprocess
+                                </button>
+                            </div>
+                        </t>
+
+                        <t t-set="hookRes" t-value="state.hookResult[hook.id]"/>
+                        <p t-if="hookRes and hookRes.error" class="rl-set-inline-msg rl-set-inline-msg--error" t-esc="hookRes.error"/>
+                        <p t-if="hookRes and hookRes.success" class="rl-set-inline-msg rl-set-inline-msg--success" t-esc="hookRes.success"/>
+
+                        <div class="rl-set-actions ic-gitp-hookactions">
+                            <button t-if="hook.by_api" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-disabled="state.verifying === hook.id"
+                                    t-on-click="() => this.verifyHook(hook)">
+                                <i t-att-class="'fa ' + (state.verifying === hook.id ? 'fa-spinner fa-spin' : 'fa-check-circle-o')"/>
+                                <t t-if="state.verifying === hook.id">Waiting for the delivery…</t>
+                                <t t-else="">Verify</t>
+                            </button>
+                            <t t-if="state.canManage">
+                                <button t-if="!state.hookSecret[hook.id]" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                        t-att-disabled="state.hookBusy === hook.id"
+                                        t-on-click="() => this.revealHookSecret(hook)">
+                                    <i class="fa fa-eye"/> Show secret
+                                </button>
+                                <button t-else="" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                        t-on-click="() => this.hideHookSecret(hook)">
+                                    <i class="fa fa-eye-slash"/> Hide secret
+                                </button>
+                                <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                                        t-att-disabled="state.hookBusy === hook.id"
+                                        t-on-click="() => this.revealHookSecret(hook, true)">
+                                    <i class="fa fa-refresh"/> Rotate secret
+                                </button>
+                                <button class="rl-btn rl-btn-danger rl-btn-sm"
+                                        t-att-disabled="state.hookBusy === hook.id"
+                                        t-on-click="() => this.deleteHook(hook)">
+                                    <i class="fa fa-trash-o"/> Delete
+                                </button>
+                            </t>
+                        </div>
+                    </div>
+                </t>
+            </t>
         </t>
 
         <IcConfirmDialog t-if="state.confirmDialog"

@@ -1,5 +1,12 @@
-import { describe, expect, test } from "@odoo/hoot";
-import { RepoEditor, settingsTab } from "@incubacloud/components/repo_editor/repo_editor";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { rpc } from "@web/core/network/rpc";
+import {
+    gitlabReposWithoutHook,
+    pushRebuildOfHook,
+    RepoEditor,
+    settingsTab,
+} from "@incubacloud/components/repo_editor/repo_editor";
 
 /**
  * RepoEditor pure-logic tests.
@@ -240,5 +247,93 @@ describe("RepoEditor — which settings tab a read error opens", () => {
         expect(settingsTab(true)).toBe("github");
         expect(settingsTab(false)).toBe(false);
         expect(settingsTab(undefined)).toBe(false);
+    });
+});
+
+/**
+ * A RepoEditor stand-in on a saved GitLab line (no mounting, as
+ * git_providers_tab.test.js does).
+ *
+ * @param {Object} caps the line's ``repo_capabilities``
+ * @param {Object} repo values over the saved line
+ * @returns {Object} the stand-in
+ */
+function gitlabEditor(caps = {}, repo = {}) {
+    const comp = Object.create(RepoEditor.prototype);
+    comp.props = {
+        repoModel: "cloud.project.repo",
+        repo: {
+            id: 12, url: "https://gitlab.com/acme/web.git", branch: "main",
+            repo_capabilities: { provider: "gitlab", host: "gitlab.com", push_rebuild: "no_hook", ...caps },
+            ...repo,
+        },
+    };
+    comp.savedUrl = "https://gitlab.com/acme/web.git";
+    comp.state = {
+        pushRebuild: null, registering: false, hookManualReason: null, hookError: null,
+    };
+    return comp;
+}
+
+describe("RepoEditor — the webhook of a GitLab line (G3)", () => {
+    beforeEach(() => allowTranslations());
+
+    test("the saved capabilities say what a push does", () => {
+        expect(gitlabEditor().pushRebuild).toBe("no_hook");
+        expect(gitlabEditor({ push_rebuild: "ok" }).pushRebuild).toBe("ok");
+        expect(gitlabEditor({ push_rebuild: "hook_failing" }).pushRebuild).toBe("hook_failing");
+    });
+
+    test("a line not saved, or with a URL typed since, has no webhook to show", () => {
+        expect(gitlabEditor({}, { id: false }).pushRebuild).toBe("unsaved");
+        expect(gitlabEditor({}, { url: "https://gitlab.com/acme/other.git" }).pushRebuild).toBe("unsaved");
+    });
+
+    test("a webhook's state maps to push-to-rebuild as the server's", () => {
+        expect(pushRebuildOfHook("active")).toBe("ok");
+        expect(pushRebuildOfHook("pending")).toBe("hook_pending");
+        expect(pushRebuildOfHook("failing")).toBe("hook_failing");
+        expect(pushRebuildOfHook("orphan")).toBe("hook_pending");
+    });
+
+    test("Register webhook registers the saved line and shows its new state", async () => {
+        const calls = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                calls.push([url, params]);
+                return Promise.resolve({ ok: true, hook: { state: "pending" }, manual: false });
+            },
+        });
+        const comp = gitlabEditor();
+        await comp.registerHook();
+        expect(calls).toEqual([["/cloud/register_git_hook", { line_model: "project", line_id: 12 }]]);
+        expect(comp.pushRebuild).toBe("hook_pending");
+        expect(comp.state.hookManualReason).toBe(null);
+    });
+
+    test("a webhook GitLab refused says to set it up by hand, and why", async () => {
+        patchWithCleanup(rpc, {
+            _rpc: () => Promise.resolve({
+                ok: true, hook: { state: "pending" }, manual: true,
+                reason: "The credential does not have the Maintainer role",
+            }),
+        });
+        const comp = gitlabEditor();
+        await comp.registerHook();
+        expect(comp.state.hookManualReason).toMatch(/Maintainer/);
+        expect(comp.state.registering).toBe(false);
+    });
+
+    test("only unfrozen GitLab lines without a working webhook are counted", () => {
+        const gl = (push, sha = "") => ({
+            commit_sha: sha, repo_capabilities: { provider: "gitlab", push_rebuild: push },
+        });
+        const repos = [
+            gl("no_hook"), gl("hook_failing"), gl("ok"), gl("no_hook", "abc1234"),
+            { commit_sha: "", repo_capabilities: { provider: "github", push_rebuild: "no_hook" } },
+            { commit_sha: "" },
+        ];
+        expect(gitlabReposWithoutHook(repos)).toEqual([repos[0], repos[1]]);
+        expect(gitlabReposWithoutHook(undefined)).toEqual([]);
     });
 });

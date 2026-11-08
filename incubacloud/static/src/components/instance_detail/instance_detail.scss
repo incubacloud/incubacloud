@@ -1764,3 +1764,6 @@
 .ic-status-3 { background: var(--rl-cyan-soft); color: var(--rl-cyan-text); }
 .ic-status-4 { background: var(--rl-amber-soft); color: var(--rl-amber-text); }
 .ic-status-5 { background: var(--rl-red-soft); color: var(--rl-red-text); }
+
+// «Auto-rebuild on push» with GitLab lines whose webhook does not deliver.
+.ic-app .rl-th.ic-gitlab-hook-warn { color: var(--rl-amber-text); }

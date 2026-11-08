@@ -1,5 +1,6 @@
 import { Component, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { _t } from "@web/core/l10n/translation";
 import { ModuleSelector } from "../module_selector/module_selector";
 import { SearchSelect } from "../search_select/search_select";
 
@@ -15,6 +16,41 @@ export function settingsTab(hint) {
         return false;
     }
     return hint === "git_providers" ? "git_providers" : "github";
+}
+
+/** The ``line_model`` of ``/cloud/register_git_hook``, per repository model. */
+export const HOOK_LINE_MODELS = Object.freeze({
+    "cloud.project.repo": "project",
+    "cloud.instance.repo": "instance",
+});
+
+/** What a webhook's state means for push-to-rebuild (``repo_capabilities``). */
+const HOOK_STATE_CAPABILITY = Object.freeze({
+    pending: "hook_pending", active: "ok", failing: "hook_failing", orphan: "hook_pending",
+});
+
+/**
+ * The push-to-rebuild state of a webhook, as ``repo_capabilities`` says it.
+ *
+ * @param {string} state a webhook's state (``cloud.gitlab.hook``)
+ * @returns {string} ``ok``, ``hook_pending`` or ``hook_failing``
+ */
+export function pushRebuildOfHook(state) {
+    return HOOK_STATE_CAPABILITY[state] || "hook_pending";
+}
+
+/**
+ * The GitLab lines whose pushes do not rebuild: unfrozen, saved with a
+ * webhook that is missing, without deliveries or disabled by GitLab.
+ *
+ * @param {Object[]} repos repository lines with ``repo_capabilities``
+ * @returns {Object[]} those lines
+ */
+export function gitlabReposWithoutHook(repos) {
+    return (repos || []).filter((repo) => {
+        const caps = repo.repo_capabilities;
+        return caps?.provider === "gitlab" && !repo.commit_sha && caps.push_rebuild !== "ok";
+    });
 }
 
 /**
@@ -57,6 +93,13 @@ export class RepoEditor extends Component {
             // The Git provider's host the last branch read named, for a
             // line not saved yet (GitLab only), or null.
             providerHost:    null,
+            // The webhook's push-to-rebuild state after «Register
+            // webhook», over the saved capabilities, or null.
+            pushRebuild:     null,
+            registering:     false,
+            // Why the panel could not register the webhook by itself.
+            hookManualReason: null,
+            hookError:       null,
         });
         // The URL the line was saved with: its capabilities describe it,
         // not one typed since.
@@ -89,6 +132,59 @@ export class RepoEditor extends Component {
         }
         const saved = this.props.repo.url === this.savedUrl;
         return saved && this.capabilities?.provider === "gitlab" ? this.capabilities.host : null;
+    }
+
+    /**
+     * Whether the line on screen is the one saved: a webhook is registered
+     * from a saved line, with the URL it was saved with.
+     */
+    get isSavedLine() {
+        return !!this.props.repo.id && this.props.repo.url === this.savedUrl;
+    }
+
+    /**
+     * The push-to-rebuild state of this GitLab line: ``ok``, ``no_hook``,
+     * ``hook_pending``, ``hook_failing``, or ``unsaved`` for a line not
+     * saved yet (or with a URL typed since).
+     */
+    get pushRebuild() {
+        if (!this.isSavedLine || this.capabilities?.provider !== "gitlab") {
+            return "unsaved";
+        }
+        return this.state.pushRebuild || this.capabilities.push_rebuild || "no_hook";
+    }
+
+    /**
+     * «Register webhook»: create the webhook of this line's path in
+     * GitLab, or say why it must be set up by hand.
+     *
+     * @returns {Promise<void>}
+     */
+    async registerHook() {
+        const lineModel = HOOK_LINE_MODELS[this.props.repoModel];
+        if (!lineModel || !this.isSavedLine) {
+            return;
+        }
+        this.state.registering = true;
+        this.state.hookError = null;
+        this.state.hookManualReason = null;
+        try {
+            const res = await rpc("/cloud/register_git_hook", {
+                line_model: lineModel, line_id: this.props.repo.id,
+            });
+            if (!res.ok) {
+                this.state.hookError = res.error;
+                return;
+            }
+            this.state.pushRebuild = pushRebuildOfHook(res.hook.state);
+            if (res.manual) {
+                this.state.hookManualReason = res.reason;
+            }
+        } catch {
+            this.state.hookError = _t("Could not reach the server.");
+        } finally {
+            this.state.registering = false;
+        }
     }
 
     // ── GitHub fetchers ────────────────────────────────────────────────────
