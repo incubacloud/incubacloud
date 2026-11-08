@@ -4,7 +4,7 @@
 These tests print the resolved table, so a change to it is read whole,
 and check that what hangs off a card — the PostgreSQL picker and its
 constraint, the database tool the scripts get, the template a deploy
-needs, the importer's acceptance — comes from the card and nowhere else.
+needs, the series the importer refuses — comes from the card and nowhere else.
 """
 from unittest.mock import MagicMock, patch
 
@@ -12,7 +12,7 @@ import yaml
 
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import Request
-from odoo.tests.common import BaseCase, TransactionCase
+from odoo.tests.common import BaseCase, TransactionCase, new_test_user
 
 from odoo import http as odoo_http
 from odoo.addons.incubacloud.controllers._data_load import (
@@ -22,6 +22,7 @@ from odoo.addons.incubacloud.controllers._data_load import (
 )
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.github import import_inspector
+from odoo.addons.incubacloud.github.client import GitHubAnonymousClient
 from odoo.addons.incubacloud.models import _odoo_versions as versions
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
     DeployInstanceExecutor,
@@ -35,6 +36,7 @@ from odoo.addons.incubacloud.tests.test_executor_features import (
     _make_deploy_executor,
     _make_rebuild_executor,
 )
+from odoo.addons.incubacloud.tests.test_github_import_limits import _blob, _entry
 from odoo.addons.incubacloud.tests.test_refresh_from_production import (
     _argv,
     _find,
@@ -507,19 +509,27 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         """A repository of a series not offered is read as that series,
         not as none: read as none, its project took the default, 20.0,
         and its code was deployed on a series it was not written for.
-        Whether the import may take it is the route's to say."""
+        Whether the import may take it is the route's to say. A manifest
+        names a series only by a version of at least four parts; the
+        answers, like a branch, by any ``X.0``, so that a series the panel
+        has no card for is refused as not offered."""
         self.assertEqual(import_inspector._KNOWN_SERIES, set(versions.VERSIONS))
         manifest = import_inspector.version_from_manifest_text
         self.assertEqual(manifest("{'version': '16.0.1.0.0'}"), "16.0")
         self.assertEqual(manifest("{'version': '17.0.1.0.0'}"), "17.0")
         self.assertEqual(manifest("{'version': '19.0.1.0.0'}"), "19.0")
         self.assertEqual(manifest("{'version': '20.0.1.0.0'}"), "20.0")
+        self.assertEqual(manifest("{'version': '8.0.1.0'}"), "8.0")
         self.assertEqual(manifest("{'version': '21.0.1.0.0'}"), "")
-        self.assertEqual(manifest("{'version': '1.0'}"), "")
+        for version in ("1.0", "12.0", "8.0.1", "17.0.1"):
+            with self.subTest(version=version):
+                self.assertEqual(manifest(f"{{'version': '{version}'}}"), "")
         answers = import_inspector._parse_copier_answers
         self.assertEqual(answers('odoo_version: "17.0"\n')["odoo_version"], "17.0")
         self.assertEqual(answers('odoo_version: "19.0"\n')["odoo_version"], "19.0")
-        self.assertEqual(answers('odoo_version: "21.0"\n')["odoo_version"], "")
+        self.assertEqual(answers('odoo_version: "7.0"\n')["odoo_version"], "7.0")
+        self.assertEqual(answers('odoo_version: "21.0"\n')["odoo_version"], "21.0")
+        self.assertEqual(answers('odoo_version: "8.1"\n')["odoo_version"], "")
 
 
 class TestANewRecordGetsTheNewestSeriesItsPanelOffers(TransactionCase):
@@ -830,18 +840,20 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
             patch.object(odoo_http, "request", fake_request),
         )
 
-    def _import_from_github(self, env, series, name):
+    def _import_from_github(self, env, series, name, repos_data=()):
         """Create what the GitHub importer would from a repository of *series*.
 
         :param env: the environment the import runs as.
         :param str series: what the inspector read; empty for none.
         :param str name: the repository's name, the project's.
+        :param repos_data: the repository lines the inspector read.
         :return: what the route answers.
         """
         inspected = {
             "ok": True, "repo_name": name, "repo_type": "odoosh",
-            "repos_data": [], "copier": {}, "pip_deps": "", "apt_deps": "",
-            "odoo_conf": "", "odoo_version": series, "submodules": [],
+            "repos_data": list(repos_data), "copier": {}, "pip_deps": "",
+            "apt_deps": "", "odoo_conf": "", "odoo_version": series,
+            "submodules": [],
         }
         github, ops, http = self._request(env)
         with github, ops, http:
@@ -849,12 +861,62 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
                 inspected,
             )
 
-    def _import_from_host(self, env, copier_answers, path):
+    def _import_from_doodba(self, env, copier_answers, name, branch="main"):
+        """Inspect a Doodba repository, then import what the inspector read.
+
+        The inspector reads a served tree (its ``.copier-answers.yml`` and
+        a ``repos.yaml`` of one repository line) and the route creates
+        from what it found, as ``/cloud/import_project`` does.
+
+        :param env: the environment the import runs as.
+        :param str copier_answers: the ``.copier-answers.yml``'s text.
+        :param str name: the repository's name.
+        :param str branch: the branch imported.
+        :return: what the route answers.
+        """
+        files = {
+            ".copier-answers.yml": copier_answers,
+            "odoo/custom/src/repos.yaml": (
+                "./odoo: {}\ncustom:\n  remotes:\n"
+                "    origin: https://github.com/acme/addons.git\n"
+                "  target: origin 19.0\n"
+            ),
+        }
+        entries = list(map(_entry, files, files.values()))
+        blobs = {e["sha"]: _blob(files[e["path"]]) for e in entries}
+        client = MagicMock(spec=GitHubAnonymousClient)
+
+        def _get(endpoint, *, budget=None, max_bytes=None):
+            """Serve the repository's metadata, branch, tree and blobs."""
+            if endpoint == f"/repos/acme/{name}":
+                return {"default_branch": "main"}
+            if endpoint == f"/repos/acme/{name}/branches/{branch}":
+                return {"commit": {"sha": "a" * 40}}
+            if "/git/trees/" in endpoint:
+                return {"tree": entries, "truncated": False}
+            if "/git/blobs/" in endpoint:
+                return blobs[endpoint.rsplit("/", 1)[1]]
+            raise AssertionError(f"unexpected endpoint: {endpoint}")
+
+        client.get.side_effect = _get
+        inspected = import_inspector.GitHubImportInspector([client]).inspect_import(
+            f"https://github.com/acme/{name}", branch,
+        )
+        self.assertEqual(inspected["repo_type"], "doodba")
+        self.assertEqual(len(inspected["repos_data"]), 1)
+        github, ops, http = self._request(env)
+        with github, ops, http:
+            return CloudDataLoadController()._create_bounded_github_import(
+                inspected,
+            )
+
+    def _import_from_host(self, env, copier_answers, path, repos_yaml=""):
         """Import a host's instance whose ``.copier-answers.yml`` is *copier_answers*.
 
         :param env: the environment the import runs as.
         :param str copier_answers: the file's text; empty for none.
         :param str path: the instance's directory.
+        :param str repos_yaml: the host's ``repos.yaml``; empty for none.
         :return: what the route answers.
         """
         host = self.env["cloud.host"].create({
@@ -865,7 +927,7 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         controller = _routes_ops.OpsMixin()
         controller._sec = lambda: env["cloud.security.mixin"]
         # The host's answers to the route's 13 reads.
-        reads = [(copier_answers, "")] + [("", "")] * 12
+        reads = [(copier_answers, ""), (repos_yaml, "")] + [("", "")] * 11
         github, ops, http = self._request(env)
         with github, ops, http, patch.object(
             _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
@@ -873,16 +935,46 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         ):
             return controller.cloud_import_host_instance(host.id, path)
 
-    def test_a_repository_on_17_is_refused_naming_both(self):
-        answer = self._import_from_github(self.env(user=self.manager), "17.0", "odoosh-17")
-        self.assertEqual(answer, {
+    _REPOS_YAML = (
+        "addons:\n  remotes:\n    origin: https://github.com/acme/addons.git\n"
+        "  target: origin 19.0\n"
+    )
+
+    def _refusal(self, series):
+        """The refusal of a series the panel does not offer.
+
+        :param str series: the series the code is for.
+        :return: the answer a route gives, as a dict.
+        """
+        return {
             "ok": False,
-            "error": "The code being imported is for Odoo 17.0, which this "
+            "error": f"The code being imported is for Odoo {series}, which this "
                      f"panel does not offer. This panel offers: {self.offered}.",
-        })
-        self.assertFalse(self.env["cloud.project"].search(
-            [("name", "=", "odoosh-17")],
+        }
+
+    def _assert_nothing_created(self, name):
+        """Assert a refused or failed import left no project of that name.
+
+        Nor a repository line of the project's, nor an instance in it.
+
+        :param str name: the project's name.
+        """
+        project = self.env["cloud.project"].search([("name", "=", name)])
+        self.assertFalse(project)
+        self.assertFalse(self.env["cloud.project.repo"].search(
+            [("url", "=", "https://github.com/acme/addons.git"),
+             ("project_id.name", "=", name)],
         ))
+        self.assertFalse(self.env["cloud.instance"].search(
+            [("project_id.name", "=", name)],
+        ))
+
+    def test_a_repository_on_17_is_refused_naming_both(self):
+        """A manager importing an Odoo.sh repository of 17.0, which the
+        panel does not offer, is told so and gets no project."""
+        answer = self._import_from_github(self.env(user=self.manager), "17.0", "odoosh-17")
+        self.assertEqual(answer, self._refusal("17.0"))
+        self._assert_nothing_created("odoosh-17")
 
     def test_a_repository_that_names_no_series_is_refused(self):
         """Not given the default: nothing says its code runs on it."""
@@ -891,15 +983,16 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         self.assertTrue(answer["error"].startswith(
             "Could not tell which Odoo series this repository is for.",
         ), answer)
+        self.assertIn(".copier-answers.yml", answer["error"])
         self.assertTrue(answer["error"].endswith(
             f"This panel offers: {self.offered}.",
         ), answer)
-        self.assertFalse(self.env["cloud.project"].search(
-            [("name", "=", "odoosh-none")],
-        ))
+        self._assert_nothing_created("odoosh-none")
 
     def test_a_repository_of_an_offered_series_takes_it(self):
-        answer = self._import_from_github(self.env, "19.0", "odoosh-19")
+        """A manager, not an administrator, imports a repository of 19.0:
+        project and production instance are made on it."""
+        answer = self._import_from_github(self.env(user=self.manager), "19.0", "odoosh-19")
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
         instance = self.env["cloud.instance"].browse(answer["instance_id"])
@@ -907,31 +1000,91 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         self.assertEqual(instance.odoo_version, "19.0")
 
     def test_an_administrator_imports_a_series_not_offered(self):
-        """As the project form lets him (``may_choose``)."""
-        answer = self._import_from_github(self.env, "17.0", "odoosh-17-admin")
+        """As the project form lets him (``may_choose``): a user of the Odoo
+        administrators' group with a cloud role, not the superuser."""
+        admin = new_test_user(
+            self.env, login="import_admin",
+            groups="base.group_user,base.group_system,"
+                   "incubacloud.group_cloud_manager",
+        )
+        answer = self._import_from_github(
+            self.env(user=admin), "17.0", "odoosh-17-admin",
+        )
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
         self.assertEqual(project.odoo_version, "17.0")
 
+    def test_a_series_without_a_card_is_refused_even_to_an_administrator(self):
+        """7.0 has no card, so no panel deploys it: the administrator's
+        privilege covers the series with one, not this."""
+        for series in ("7.0", "21.0"):
+            with self.subTest(series=series):
+                answer = self._import_from_github(
+                    self.env, series, f"odoosh-{series}",
+                )
+                self.assertEqual(answer, self._refusal(series))
+                self._assert_nothing_created(f"odoosh-{series}")
+        answer = self._import_from_host(
+            self.env, "odoo_version: 7.0\nproject_name: Host on 7\n",
+            "/srv/on7", self._REPOS_YAML,
+        )
+        self.assertEqual(answer, self._refusal("7.0"))
+        self._assert_nothing_created("Host on 7")
+
+    def test_a_doodba_repository_is_inspected_and_refused_end_to_end(self):
+        """From the served tree to the route: the answers' 17.0 is read
+        and refused for a manager, with the repository line it would
+        have made; an administrator's 7.0, too."""
+        manager = self.env(user=self.manager)
+        answer = self._import_from_doodba(
+            manager, "odoo_version: '17.0'\nproject_name: Doodba 17\n", "doodba17",
+        )
+        self.assertEqual(answer, self._refusal("17.0"))
+        self._assert_nothing_created("Doodba 17")
+        answer = self._import_from_doodba(
+            self.env, "odoo_version: '7.0'\nproject_name: Doodba 7\n", "doodba7",
+        )
+        self.assertEqual(answer, self._refusal("7.0"))
+        self._assert_nothing_created("Doodba 7")
+
+    def test_a_doodba_repository_naming_no_series_is_refused_naming_its_answers(self):
+        """The branch is ``main`` and the answers name none: the message
+        points to ``odoo_version`` in the answers."""
+        answer = self._import_from_doodba(
+            self.env(user=self.manager), "project_name: Doodba none\n", "doodbanone",
+        )
+        self.assertFalse(answer["ok"])
+        self.assertIn("odoo_version in its .copier-answers.yml", answer["error"])
+        self._assert_nothing_created("Doodba none")
+
+    def test_a_doodba_repository_of_an_offered_series_takes_it_with_its_lines(self):
+        """The same path on 19.0 creates the project, its line and instance."""
+        answer = self._import_from_doodba(
+            self.env(user=self.manager),
+            "odoo_version: '19.0'\nproject_name: Doodba 19\n", "doodba19",
+        )
+        self.assertTrue(answer["ok"], answer)
+        project = self.env["cloud.project"].browse(answer["project_id"])
+        self.assertEqual(project.odoo_version, "19.0")
+        self.assertEqual(
+            project.repo_ids.mapped("url"), ["https://github.com/acme/addons.git"],
+        )
+
     def test_a_host_s_instance_on_16_is_refused_naming_both(self):
+        """A manager importing a host's instance whose answers say 16.0."""
         answer = self._import_from_host(
             self.env(user=self.manager), "odoo_version: 16.0\nproject_name: Host on 16\n",
-            "/srv/on16",
+            "/srv/on16", self._REPOS_YAML,
         )
-        self.assertEqual(answer, {
-            "ok": False,
-            "error": "The code being imported is for Odoo 16.0, which this "
-                     f"panel does not offer. This panel offers: {self.offered}.",
-        })
-        self.assertFalse(self.env["cloud.project"].search(
-            [("name", "=", "Host on 16")],
-        ))
+        self.assertEqual(answer, self._refusal("16.0"))
+        self._assert_nothing_created("Host on 16")
 
     def test_a_host_s_instance_that_names_no_series_is_refused(self):
         """Outside a project: inside one it takes the project's
         (``test_a_host_import_into_a_project_takes_its_series``)."""
         answer = self._import_from_host(
-            self.env(user=self.manager), "project_name: Host on nothing\n", "/srv/onnone",
+            self.env(user=self.manager), "project_name: Host on nothing\n",
+            "/srv/onnone", self._REPOS_YAML,
         )
         self.assertEqual(answer, {
             "ok": False,
@@ -939,6 +1092,74 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
                      ".copier-answers.yml names none. This panel offers: "
                      f"{self.offered}.",
         })
-        self.assertFalse(self.env["cloud.project"].search(
-            [("name", "=", "Host on nothing")],
-        ))
+        self._assert_nothing_created("Host on nothing")
+
+    def test_a_host_s_instance_into_a_project_not_offered_is_refused(self):
+        """Answers that name none take the existing project's series; if it
+        is one the panel does not offer (an administrator made it), a
+        manager's import is refused, not given an instance on it."""
+        project = self.env["cloud.project"].create(
+            {"name": "Held on 17", "odoo_version": "17.0"},
+        )
+        answer = self._import_from_host(
+            self.env(user=self.manager), "project_name: Held on 17\n", "/srv/held17",
+        )
+        self.assertEqual(answer, self._refusal("17.0"))
+        self.assertFalse(project.instance_ids)
+
+    def test_a_series_that_reads_as_none_is_said(self):
+        """``odoo_version: abc`` is told, and not dropped with the rest of
+        the answers; an existing project's series does not stand in."""
+        project = self.env["cloud.project"].create(
+            {"name": "Held on 19", "odoo_version": "19.0"},
+        )
+        for name in ("Held on 19", "Not held"):
+            with self.subTest(name=name):
+                answer = self._import_from_host(
+                    self.env(user=self.manager),
+                    f"odoo_version: abc\nproject_name: {name}\n",
+                    f"/srv/{name.replace(' ', '-')}", self._REPOS_YAML,
+                )
+                self.assertEqual(answer, {
+                    "ok": False,
+                    "error": "The series of .copier-answers.yml is not "
+                             "understood: abc. This panel offers: "
+                             f"{self.offered}.",
+                })
+        self.assertFalse(project.instance_ids)
+        self._assert_nothing_created("Not held")
+
+    def test_a_domain_another_instance_holds_stops_the_import_before_it_creates(self):
+        """The route answers ``ok: False`` and the request's transaction is
+        kept: the project and its lines must not be created before."""
+        holder = self._create_instance(self._create_project("Holder"))
+        self.env["cloud.instance.domain"].create(
+            {"instance_id": holder.id, "hostname": "taken.series-import.example.com"},
+        )
+        answer = self._import_from_host(
+            self.env(user=self.manager),
+            "odoo_version: 19.0\nproject_name: Wants the domain\n"
+            "domains_prod:\n  - hosts: [taken.series-import.example.com]\n",
+            "/srv/wants", self._REPOS_YAML,
+        )
+        self.assertFalse(answer["ok"])
+        self.assertIn("taken.series-import.example.com", answer["error"])
+        self._assert_nothing_created("Wants the domain")
+
+    def test_an_instance_that_cannot_be_created_leaves_no_project(self):
+        """The same, when the instance's creation fails after the project
+        and its lines were made: they are rolled back with it."""
+        with patch.object(
+            self.env.registry["cloud.instance"], "create", autospec=True,
+            side_effect=ValueError("no instance"),
+        ), self.assertLogs(_routes_ops._logger.name, level="ERROR"):
+            answer = self._import_from_host(
+                self.env(user=self.manager),
+                "odoo_version: 19.0\nproject_name: Fails late\n",
+                "/srv/fails", self._REPOS_YAML,
+            )
+        self.assertEqual(answer, {
+            "ok": False,
+            "error": "An internal error occurred. Check server logs.",
+        })
+        self._assert_nothing_created("Fails late")

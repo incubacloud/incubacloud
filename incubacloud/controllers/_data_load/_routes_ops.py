@@ -26,6 +26,7 @@ from ._helpers import (
     _is_safe_remote_path,
     _job_response,
     _quote_remote_path,
+    copier_series,
     import_series_refusal,
     is_safe_log_archive,
     log_archive_list_command,
@@ -611,7 +612,9 @@ class OpsMixin:
         Reads all config files via SSH, creates project + instance. An
         instance of a series the user may not choose, or whose series
         neither its answers nor its project name, is refused before
-        anything is created (``import_series_refusal``).
+        anything is created (``import_series_refusal``), as is one whose
+        domains another instance holds. The project, its repository lines
+        and the instance are created together or not at all.
         """
         # Manager-gated like browse_host_dir: importing reads the host's
         # ``.docker/*.env`` secrets over SSH and materialises them as
@@ -710,6 +713,7 @@ class OpsMixin:
 
         # Parse .copier-answers.yml
         copier = {}
+        unreadable_series = ""
         if copier_raw.strip():
             with suppress(Exception):
                 data = yaml.safe_load(copier_raw) or {}
@@ -723,9 +727,14 @@ class OpsMixin:
                                     "redirect_to": d.get("redirect_to", ""),
                                 }
                             )
-                ov = data.get("odoo_version", "")
+                # A series this panel does not know is still the series,
+                # for the import to say it does not offer it; one that
+                # reads as none is told, not dropped with the rest.
+                odoo_version, unreadable_series = copier_series(
+                    data.get("odoo_version", ""),
+                )
                 copier = {
-                    "odoo_version": f"{float(ov):.1f}" if ov else "",
+                    "odoo_version": odoo_version,
                     "project_author": data.get("project_author", ""),
                     "project_license": data.get("project_license", ""),
                     "project_name": data.get("project_name", ""),
@@ -875,51 +884,54 @@ class OpsMixin:
             limit=1,
         )
         # Into a project, an instance whose answers name no series takes
-        # the project's; a new project takes none but the answers'.
-        refusal = import_series_refusal(
-            request.env,
-            odoo_version or project.odoo_version,
-            request.env._(
+        # the project's; a new project takes none but the answers'. A series
+        # the answers spell in a way that reads as none is not replaced by
+        # the project's either: it is said.
+        if unreadable_series:
+            undetected = request.env._(
+                "The series of .copier-answers.yml is not understood: %s.",
+                unreadable_series,
+            )
+            series = ""
+        else:
+            undetected = request.env._(
                 "Could not tell which Odoo series this instance runs: its "
                 ".copier-answers.yml names none."
-            ),
-        )
+            )
+            series = odoo_version or project.odoo_version
+        refusal = import_series_refusal(request.env, series, undetected)
         if refusal:
             return {"ok": False, "error": refusal}
-        if not project:
-            proj_vals = {"name": project_name}
-            if odoo_version:
-                proj_vals["odoo_version"] = odoo_version
-            if copier.get("project_author"):
-                proj_vals["project_author"] = copier["project_author"]
-            if copier.get("project_license"):
-                proj_vals["project_license"] = copier["project_license"]
-            if pip_raw.strip():
-                proj_vals["pip_dependencies"] = pip_raw.strip()
-            if apt_raw.strip():
-                proj_vals["apt_dependencies"] = apt_raw.strip()
-            project = request.env["cloud.project"].create(proj_vals)
 
-            # Create project repos
-            Repo = request.env["cloud.project.repo"].with_context(
-                skip_apply_requirements=True,
+        # A domain another instance holds stops the import here, before it
+        # creates the project and its lines: the answer is a refusal, and
+        # the request's transaction would keep what was created.
+        hostnames = [
+            (d.get("hostname") or "").strip()
+            for d in copier.get("domains") or []
+            if (d.get("hostname") or "").strip()
+        ]
+        if hostnames:
+            conflicts = set(
+                request.env["cloud.instance.domain"]
+                .search([("hostname", "in", hostnames)])
+                .mapped("hostname")
             )
-            for seq, r in enumerate(repos_data, start=10):
-                if r.get("url"):
-                    Repo.create(
-                        {
-                            "project_id": project.id,
-                            "sequence": seq,
-                            "url": r["url"],
-                            "branch": r.get("branch", "main"),
-                            "addons": r.get("addons", ""),
-                        }
-                    )
+            if conflicts:
+                return {
+                    "ok": False,
+                    "error": _(
+                        "The following domains are already "
+                        "assigned to another instance: %s. "
+                        "Remove them from the existing instance "
+                        "first, then retry the import.",
+                        ", ".join(sorted(conflicts)),
+                    ),
+                }
 
-        # ── Create instance ───────────────────────────────────────────
+        # ── Create instance (and, in a new project, the project) ──────
         inst_vals = {
             "name": path.rstrip("/").split("/")[-1],
-            "project_id": project.id,
             "host_id": host_id,
             "environment": environment,
             "custom_remote_dir": path,
@@ -953,42 +965,19 @@ class OpsMixin:
                     inst_vals[k] = copier[k]
             if copier.get("smtp_relay_port"):
                 inst_vals["smtp_relay_port"] = int(copier["smtp_relay_port"])
-            if copier.get("domains"):
-                hostnames = [
-                    (d.get("hostname") or "").strip()
+            if hostnames:
+                inst_vals["domain_ids"] = [
+                    (
+                        0,
+                        0,
+                        {
+                            "hostname": d["hostname"].strip(),
+                            "redirect_to": d.get("redirect_to", ""),
+                        },
+                    )
                     for d in copier["domains"]
                     if (d.get("hostname") or "").strip()
                 ]
-                if hostnames:
-                    taken = set(
-                        request.env["cloud.instance.domain"]
-                        .search([("hostname", "in", hostnames)])
-                        .mapped("hostname")
-                    )
-                    conflicts = taken & set(hostnames)
-                    if conflicts:
-                        return {
-                            "ok": False,
-                            "error": _(
-                                "The following domains are already "
-                                "assigned to another instance: %s. "
-                                "Remove them from the existing instance "
-                                "first, then retry the import.",
-                                ", ".join(sorted(conflicts)),
-                            ),
-                        }
-                    inst_vals["domain_ids"] = [
-                        (
-                            0,
-                            0,
-                            {
-                                "hostname": d["hostname"].strip(),
-                                "redirect_to": d.get("redirect_to", ""),
-                            },
-                        )
-                        for d in copier["domains"]
-                        if (d.get("hostname") or "").strip()
-                    ]
 
         # Secrets from .env files
         if odoo_env.get("ADMIN_PASSWORD"):
@@ -1001,14 +990,51 @@ class OpsMixin:
         # Resource limits
         inst_vals.update(resource_limits)
 
-        try:
-            instance = request.env["cloud.instance"].create(inst_vals)
-        except Exception:
-            _logger.exception("Failed to create instance during import")
-            return {
-                "ok": False,
-                "error": _("An internal error occurred. Check server logs."),
-            }
+        # The project, its lines and the instance are made or none is: an
+        # answer of ``ok: False`` is committed with the request, and a
+        # project without its instance would be left behind. A line the
+        # check refuses still raises, as it did, and rolls the savepoint
+        # back as it leaves.
+        with request.env.cr.savepoint() as savepoint:
+            if not project:
+                proj_vals = {"name": project_name}
+                if odoo_version:
+                    proj_vals["odoo_version"] = odoo_version
+                if copier.get("project_author"):
+                    proj_vals["project_author"] = copier["project_author"]
+                if copier.get("project_license"):
+                    proj_vals["project_license"] = copier["project_license"]
+                if pip_raw.strip():
+                    proj_vals["pip_dependencies"] = pip_raw.strip()
+                if apt_raw.strip():
+                    proj_vals["apt_dependencies"] = apt_raw.strip()
+                project = request.env["cloud.project"].create(proj_vals)
+
+                # Create project repos
+                Repo = request.env["cloud.project.repo"].with_context(
+                    skip_apply_requirements=True,
+                )
+                for seq, r in enumerate(repos_data, start=10):
+                    if r.get("url"):
+                        Repo.create(
+                            {
+                                "project_id": project.id,
+                                "sequence": seq,
+                                "url": r["url"],
+                                "branch": r.get("branch", "main"),
+                                "addons": r.get("addons", ""),
+                            }
+                        )
+            inst_vals["project_id"] = project.id
+            try:
+                instance = request.env["cloud.instance"].create(inst_vals)
+            except Exception:
+                _logger.exception("Failed to create instance during import")
+                savepoint.close()
+                return {
+                    "ok": False,
+                    "error": _("An internal error occurred. Check server logs."),
+                }
 
         # Handle backup backend from backup.env + copier backup fields
         if backup_env.get("AWS_ACCESS_KEY_ID"):

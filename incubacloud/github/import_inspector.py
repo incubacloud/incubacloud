@@ -41,6 +41,10 @@ _ALLOWED_GIT_HOSTS = frozenset({"github.com", "www.github.com"})
 _KNOWN_SERIES = frozenset(VERSIONS)
 _SSH_URL_RE = re.compile(r"^git@([^:]+):(.+?)(?:\.git)?$")
 _VERSION_BRANCH_RE = re.compile(r"^\d+\.\d$")
+# What a series looks like, known to the panel or not: ``7.0``, ``21.0``. A
+# branch or an answers file of one is read as that series, so the import
+# can say the panel does not offer it rather than that it found none.
+_SERIES_RE = re.compile(r"^\d+\.0$")
 _REGULAR_BLOB_MODES = frozenset({"100644", "100755"})
 
 
@@ -99,7 +103,10 @@ def version_from_manifest_text(text):
     """Return the Odoo series a bounded literal manifest is for.
 
     Any series the panel knows (``_KNOWN_SERIES``), offered or not; the
-    import decides whether its user may take it.
+    import decides whether its user may take it. Only a version in a
+    series' format counts, ``X.0.a.b`` with at least four parts as Odoo
+    writes it: ``"12.0"`` or ``"8.0.1"`` is an add-on's own version, not
+    the series.
 
     ``ast.literal_eval`` is only called after the parsed AST has passed node
     and depth limits.  This matters even for a byte-limited source: Python
@@ -127,7 +134,7 @@ def version_from_manifest_text(text):
     if not isinstance(data, dict):
         return ""
     parts = str(data.get("version", "")).split(".")
-    if len(parts) < 2:
+    if len(parts) < 4:
         return ""
     candidate = f"{parts[0]}.{parts[1]}"
     return candidate if candidate in _KNOWN_SERIES else ""
@@ -326,7 +333,7 @@ def _parse_copier_answers(content, check=None):
     raw_version = str(data.get("odoo_version", "") or "")
     match = re.match(r"^(\d+\.\d+)", raw_version)
     version = match.group(1) if match else ""
-    if version not in _KNOWN_SERIES:
+    if not _SERIES_RE.fullmatch(version):
         version = ""
     return {
         "odoo_version": version,
@@ -480,10 +487,8 @@ class GitHubImportInspector:
                 check=self._check_budget,
             )
         version = copier.get("odoo_version", "")
-        if not version and _VERSION_BRANCH_RE.fullmatch(view["branch"]):
-            version = (
-                view["branch"] if view["branch"] in _KNOWN_SERIES else ""
-            )
+        if not version and _SERIES_RE.fullmatch(view["branch"]):
+            version = view["branch"]
         repos = _parse_repos_yaml(
             self._read_blob(view, "odoo/custom/src/repos.yaml"), version,
             check=self._check_budget,
@@ -532,7 +537,7 @@ class GitHubImportInspector:
         submodules, warning = self._submodules(view)
         version = (
             view["branch"]
-            if view["branch"] in _KNOWN_SERIES
+            if _SERIES_RE.fullmatch(view["branch"])
             else self._version_from_tree(
                 view, {sub["path"] for sub in submodules}, view["branch"],
             )
@@ -678,7 +683,7 @@ class GitHubImportInspector:
             self._check_budget()
             if version:
                 return version
-        return branch if branch in _KNOWN_SERIES else ""
+        return branch if _SERIES_RE.fullmatch(branch) else ""
 
     def _read_optional(self, view, path):
         """Read a regular blob when present, otherwise return empty text."""

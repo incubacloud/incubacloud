@@ -238,7 +238,8 @@ TOOLS = (
         route="/cloud/import_project",
         requires=(
             "a GitHub repository the panel's GitHub App or token can read, laid "
-            "out by Doodba's copier (its .copier-answers.yml)."
+            "out by Doodba's copier (its .copier-answers.yml); a series this "
+            "panel offers."
         ),
     ),
     ToolSpec(

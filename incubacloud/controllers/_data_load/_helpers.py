@@ -180,6 +180,30 @@ def import_series_refusal(env, series, undetected):
     )
 
 
+def copier_series(raw):
+    """Read the series a ``.copier-answers.yml`` names in ``odoo_version``.
+
+    Any ``X.0`` is the series, whether the panel knows it or not (``7.0``,
+    ``21.0``): ``import_series_refusal`` then says the panel does not offer
+    it, rather than that none was found. YAML reads ``19.0`` unquoted as a
+    float and ``"19.0"`` as text; both come out ``"19.0"``.
+
+    :param raw: the answers' ``odoo_version``, of any type; empty when the
+        file names none.
+    :return: ``(series, unreadable)``: the series, ``""`` when *raw* is
+        empty or not one; and *raw* as text, cut to 40 characters, when
+        it is not empty and not a series, ``""`` otherwise.
+    :rtype: tuple[str, str]
+    """
+    if raw is None or raw == "":
+        return "", ""
+    text = str(raw).strip()
+    match = re.match(r"^(\d+\.0)(?:\.\d+)*$", text)
+    if match:
+        return match.group(1), ""
+    return "", text[:40]
+
+
 def _has_pat(env):
     """Check if a PAT is configured in cloud.settings."""
     settings = env["cloud.settings"]._get_system()
