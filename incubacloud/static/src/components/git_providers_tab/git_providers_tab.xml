@@ -84,6 +84,12 @@
                                         <span t-if="cred.expires_on" class="ic-gitp-meta"
                                               t-esc="expiresLabel(cred)"/>
                                     </div>
+                                    <p t-if="!cred.has_token" class="rl-set-inline-msg rl-set-inline-msg--error">
+                                        This credential has no token: enter it again.
+                                    </p>
+                                    <p t-elif="cred.writes" class="rl-set-hint ic-gitp-writes">
+                                        This token can write to repositories. When no token that only reads covers a repository, this one clones it and travels inside the image of instances from 11.0 to 19.0: add a deploy token, or a token with read_repository only.
+                                    </p>
                                 </t>
                             </div>
                         </t>

@@ -85,6 +85,18 @@ class TestCodeToolsOnGitLab(
         self.assertEqual(rev, "main")
         self.assertNotIn("gldt-mcpread01", result["content"][-1]["text"])
 
+    def test_a_read_counts_against_the_hourly_cap_of_git_reads(self):
+        from odoo.addons.incubacloud_mcp.models import mcp_tools_code
+        tree, _read = self._patch_git(["acme_base/__manifest__.py"])
+        with patch.object(
+            mcp_tools_code, "consume_git_read", return_value=False,
+        ) as consume:
+            result = self._read("")
+        consume.assert_called_once()
+        self.assertTrue(result["isError"], result)
+        self.assertIn("limit", str(result))
+        tree.assert_not_called()
+
     def test_a_folder_is_listed_one_level_deep(self):
         self._patch_git(
             ["README.md", "acme_base/__manifest__.py", "acme_base/models/x.py"]

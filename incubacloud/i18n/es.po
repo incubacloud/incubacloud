@@ -18666,3 +18666,42 @@ msgstr "Token de acceso"
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
 msgid "•••••••• (stored, leave blank to keep)"
 msgstr "•••••••• (guardado, déjelo en blanco para conservarlo)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"Git read limit reached: the new tokens were saved without asking GitLab what"
+" they are. Test the provider later."
+msgstr ""
+"Se alcanzó el límite de lecturas Git: los tokens nuevos se guardaron sin "
+"preguntar a GitLab qué son. Pruebe el proveedor más tarde."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
+msgid ""
+"The token of the credential for %s must be entered again: a token is kept "
+"only for the server it was given for."
+msgstr ""
+"Debe volver a introducir el token de la credencial de %s: un token solo se "
+"conserva para el servidor para el que se dio."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid "This credential has no token: enter it again."
+msgstr "Esta credencial no tiene token: vuelva a introducirlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
+msgid ""
+"This token can write to repositories. When no token that only reads covers a"
+" repository, this one clones it and travels inside the image of instances "
+"from 11.0 to 19.0: add a deploy token, or a token with read_repository only."
+msgstr ""
+"Este token puede escribir en los repositorios. Cuando ningún token que solo "
+"lee cubre un repositorio, este lo clona y viaja dentro de la imagen de las "
+"instancias de 11.0 a 19.0: añada un deploy token o un token con solo "
+"read_repository."
