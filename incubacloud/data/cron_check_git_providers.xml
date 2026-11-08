@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_check_git_providers" model="ir.cron">
+        <field name="name">Check Git Provider Credentials</field>
+        <field name="model_id" ref="model_cloud_git_provider"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_check_git_providers()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+    </record>
+</odoo>

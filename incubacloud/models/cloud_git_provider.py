@@ -1,0 +1,538 @@
+"""Git providers other than GitHub (GitLab), and their credentials.
+
+A provider is one GitLab server: gitlab.com or a self-hosted one, maybe
+behind a private CA. Its credentials are tokens scoped to a namespace;
+the one a repository uses is the credential of the longest namespace
+that covers its path and has the scopes the operation needs, never a
+second one "just in case" after a refusal (``plan-gitlab.md`` §2.1-2.2,
+8-nov-2026).
+
+Where the panel may connect is one decision, :meth:`_network_policy`:
+``'any'`` here, in the core, where a self-hosted panel reaches any
+GitLab its owner adds, private or public; ``'public'`` in a tenant's
+panel (``incubacloud_tenant`` overrides it), whose GitLab must have only
+public addresses, pinned at the moment they are checked (§3).
+"""
+import hashlib
+import logging
+import re
+from datetime import timedelta
+
+from cryptography import x509
+
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
+
+from ..net.outbound import OutboundError, _resolve_public
+from ._git_urls import (
+    base_authority,
+    canonical_base_url,
+    namespace_covers,
+    normalize_namespace,
+)
+from .encrypted_char import EncryptedChar
+
+_logger = logging.getLogger(__name__)
+
+#: A CA bundle holds a few dozen certificates at most (§9).
+_MAX_CA_BUNDLE_BYTES = 64 * 1024
+
+#: The PEM blocks a CA bundle may hold: certificates and nothing else,
+#: so a private key pasted by mistake is refused rather than stored.
+_PEM_BLOCK_RE = re.compile(r"-----BEGIN ([A-Z0-9 ]+)-----")
+
+#: Days before a token's expiry that the daily check warns (§9: a
+#: working week of margin).
+EXPIRY_WARNING_DAYS = 14
+
+#: Which scopes each need is met by. ``git_read`` is met by any token,
+#: a deploy token included; the API is never reached with a deploy
+#: token, which GitLab answers 401 (spike of 8-nov-2026, §2).
+_NEED_SCOPES = {
+    "git_read": None,
+    "api_read": frozenset({"read_api", "api"}),
+    "api_write": frozenset({"api"}),
+}
+
+_USERNAME_RE = re.compile(r"[A-Za-z0-9_.+-]{1,255}")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_.-]{8,255}")
+
+
+def ca_bundle_fingerprints(pem):
+    """Return the SHA-256 fingerprint of each certificate in *pem*.
+
+    :param str pem: a CA bundle, already validated
+    :return: ``AA:BB:…`` strings, in the bundle's order
+    :rtype: list
+    """
+    certs = x509.load_pem_x509_certificates(pem.encode())
+    fingerprints = []
+    for cert in certs:
+        digest = hashlib.sha256(
+            cert.public_bytes(encoding=_der_encoding()),
+        ).hexdigest().upper()
+        fingerprints.append(":".join(
+            digest[i:i + 2] for i in range(0, len(digest), 2)
+        ))
+    return fingerprints
+
+
+def _der_encoding():
+    """Return the DER encoding enum of ``cryptography``.
+
+    :rtype: cryptography.hazmat.primitives.serialization.Encoding
+    """
+    from cryptography.hazmat.primitives.serialization import Encoding
+    return Encoding.DER
+
+
+def validate_ca_bundle(pem):
+    """Check *pem* is a bundle of certificates with at least one CA.
+
+    :param str pem: the bundle as pasted
+    :raises ValidationError: when it is too large, holds anything that
+        is not a certificate, does not parse, or has no CA certificate
+    """
+    if len(pem.encode()) > _MAX_CA_BUNDLE_BYTES:
+        raise ValidationError(_("The CA bundle is larger than 64 KB."))
+    kinds = set(_PEM_BLOCK_RE.findall(pem))
+    if kinds != {"CERTIFICATE"}:
+        raise ValidationError(_(
+            "The CA bundle must contain PEM certificates only."
+        ))
+    try:
+        certs = x509.load_pem_x509_certificates(pem.encode())
+    except ValueError as exc:
+        raise ValidationError(_("The CA bundle is not valid PEM.")) from exc
+    for cert in certs:
+        try:
+            constraints = cert.extensions.get_extension_for_class(
+                x509.BasicConstraints,
+            ).value
+        except x509.ExtensionNotFound:
+            continue
+        if constraints.ca:
+            return
+    raise ValidationError(_(
+        "The CA bundle has no CA certificate (BasicConstraints CA=TRUE)."
+    ))
+
+
+class CloudGitProvider(models.Model):
+    _name = "cloud.git.provider"
+    _description = "Git provider"
+    _order = "name, id"
+
+    name = fields.Char(required=True)
+    kind = fields.Selection(
+        [("gitlab", "GitLab")], required=True, default="gitlab",
+    )
+    base_url = fields.Char(
+        string="Base URL", required=True,
+        help="https://gitlab.com, or https://git.example.com[:port][/prefix]",
+    )
+    authority = fields.Char(
+        compute="_compute_authority", store=True, index=True,
+        help="host[:port] of the base URL: one provider per server.",
+    )
+    api_url = fields.Char(string="API URL", compute="_compute_api_url")
+    ca_bundle = fields.Text(
+        string="CA bundle",
+        help="PEM certificates of a private CA the server's certificate "
+        "chains to. Public: it is not a secret.",
+    )
+    ca_fingerprints = fields.Text(
+        string="CA fingerprints", compute="_compute_ca_fingerprints",
+    )
+    credential_ids = fields.One2many(
+        "cloud.git.credential", "provider_id", string="Credentials",
+    )
+    active = fields.Boolean(default=True)
+    last_check_at = fields.Datetime(readonly=True)
+    last_check_git = fields.Char(readonly=True)
+    last_check_api = fields.Char(readonly=True)
+
+    _authority_unique = models.Constraint(
+        "UNIQUE(authority)",
+        "There is already a Git provider for this server.",
+    )
+
+    @api.depends("base_url")
+    def _compute_authority(self):
+        for rec in self:
+            try:
+                rec.authority = base_authority(canonical_base_url(rec.base_url))
+            except ValueError:
+                rec.authority = False
+
+    @api.depends("base_url")
+    def _compute_api_url(self):
+        for rec in self:
+            rec.api_url = f"{rec.base_url}/api/v4" if rec.base_url else False
+
+    @api.depends("ca_bundle")
+    def _compute_ca_fingerprints(self):
+        for rec in self:
+            try:
+                rec.ca_fingerprints = (
+                    "\n".join(ca_bundle_fingerprints(rec.ca_bundle))
+                    if rec.ca_bundle else False
+                )
+            except ValueError:
+                rec.ca_fingerprints = False
+
+    # ── Network policy ─────────────────────────────────────────────────
+
+    @api.model
+    def _network_policy(self):
+        """Return where this panel may connect to a Git provider.
+
+        ``'any'`` in the core: a self-hosted panel reaches any GitLab its
+        manager adds, private addresses included (owner's decision,
+        8-nov-2026). ``incubacloud_tenant`` answers ``'public'``.
+
+        :rtype: str
+        """
+        return "any"
+
+    def _host_port(self):
+        """Return the ``(host, port)`` of the provider's base URL.
+
+        :rtype: tuple
+        """
+        self.ensure_one()
+        host, sep, port = self.authority.rpartition(":")
+        if sep and port.isdigit():
+            return host, int(port)
+        return self.authority, 443
+
+    def _resolve_pin(self):
+        """Return the address every connection to this provider dials, or None.
+
+        With the ``'public'`` policy the name is resolved and each of its
+        addresses must be public (``net.outbound._resolve_public``); the
+        one returned is pinned in the panel, on the host and in the
+        build, so a later DNS change cannot point it inward. With
+        ``'any'`` nothing is pinned.
+
+        :rtype: str or None
+        :raises UserError: when the policy is ``'public'`` and the name
+            does not resolve to public addresses only
+        """
+        self.ensure_one()
+        if self._network_policy() != "public":
+            return None
+        host, port = self._host_port()
+        try:
+            return _resolve_public(host, port, version=4)
+        except OutboundError as exc:
+            raise UserError(_(
+                "%(host)s must resolve to public addresses only: this panel "
+                "connects only to Git servers on a public address.",
+                host=host,
+            )) from exc
+
+    # ── Constraints and writes ─────────────────────────────────────────
+
+    @api.model
+    def _normalize_vals(self, vals):
+        """Return *vals* with the base URL and CA bundle normalized.
+
+        :param dict vals: values for ``create`` or ``write``
+        :rtype: dict
+        :raises ValidationError: on a base URL or bundle that is refused
+        """
+        vals = dict(vals)
+        if vals.get("base_url"):
+            try:
+                vals["base_url"] = canonical_base_url(vals["base_url"])
+            except ValueError as exc:
+                raise ValidationError(_(
+                    "Invalid base URL: %s", str(exc),
+                )) from exc
+        if vals.get("ca_bundle"):
+            vals["ca_bundle"] = vals["ca_bundle"].strip() + "\n"
+            validate_ca_bundle(vals["ca_bundle"])
+        return vals
+
+    def _check_public_address(self):
+        """Refuse a provider the network policy does not let the panel reach."""
+        for rec in self:
+            if rec._network_policy() == "public":
+                rec._resolve_pin()
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create([self._normalize_vals(v) for v in vals_list])
+        records._check_public_address()
+        for rec in records:
+            rec._audit("Git provider added")
+        return records
+
+    def write(self, vals):
+        vals = self._normalize_vals(vals)
+        if "base_url" in vals:
+            for rec in self:
+                if rec.base_url != vals["base_url"] and rec._lines_in_use():
+                    raise UserError(_(
+                        "The base URL of %s cannot change while repository "
+                        "lines use it.", rec.name,
+                    ))
+        if vals.get("active") is False and any(r._lines_in_use() for r in self):
+            raise UserError(_(
+                "A Git provider cannot be archived while repository lines use it."
+            ))
+        result = super().write(vals)
+        if "base_url" in vals:
+            self._check_public_address()
+        for rec in self:
+            rec._audit("Git provider changed", sorted(vals))
+        return result
+
+    def unlink(self):
+        for rec in self:
+            rec._audit("Git provider removed")
+        return super().unlink()
+
+    def _lines_in_use(self):
+        """Return whether a repository line of a project or instance uses it.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        domain = [("provider_id", "=", self.id)]
+        for model in ("cloud.project.repo", "cloud.instance.repo"):
+            if "provider_id" in self.env[model]._fields and self.env[
+                model
+            ].sudo().with_context(active_test=False).search_count(domain, limit=1):
+                return True
+        return False
+
+    def _audit(self, action, field_names=()):
+        """Write an audit row naming the provider and the fields, never values.
+
+        :param str action: the audit action
+        :param field_names: the fields written, if any
+        """
+        self.ensure_one()
+        details = f"{self.name} ({self.authority})"
+        if field_names:
+            details += ": " + ", ".join(field_names)
+        self.env["cloud.audit.log"].sudo().create({
+            "action": action, "details": details[:255],
+        })
+
+    # ── Credentials ────────────────────────────────────────────────────
+
+    def _credential_for(self, path, need):
+        """Return the credential for the repository *path* and *need*.
+
+        The credential of the longest namespace covering *path* by
+        segments, among those meeting *need*: ``git_read`` (any token),
+        ``api_read`` (``read_api`` or ``api``), ``api_write`` (``api``).
+        A deploy token never meets an API need.
+
+        :param str path: a project path, lower case
+        :param str need: ``git_read``, ``api_read`` or ``api_write``
+        :rtype: cloud.git.credential (sudo, one record)
+        :raises UserError: naming what is missing when none qualifies
+        """
+        self.ensure_one()
+        wanted = _NEED_SCOPES[need]
+        covering = self.sudo().credential_ids.filtered(
+            lambda c: namespace_covers(c.namespace or "", path),
+        )
+        fitting = covering.filtered(lambda c: c._meets(wanted))
+        if not fitting:
+            if not covering:
+                raise UserError(_(
+                    "No credential of %(provider)s covers %(path)s: add one "
+                    "under Settings → Git providers.",
+                    provider=self.name, path=path,
+                ))
+            raise UserError(_(
+                "No credential of %(provider)s for %(path)s has the scope "
+                "%(scope)s.",
+                provider=self.name, path=path,
+                scope=" or ".join(sorted(wanted)),
+            ))
+        return max(
+            fitting,
+            key=lambda c: len(c.namespace.split("/")) if c.namespace else 0,
+        )
+
+    # ── Expiry check (daily cron) ──────────────────────────────────────
+
+    @api.model
+    def _cron_check_git_providers(self):
+        """Warn about tokens about to expire, and clear the warning after a rotation.
+
+        One alert per credential whose ``expires_on`` is within
+        :data:`EXPIRY_WARNING_DAYS` days (or past); a credential that
+        is no longer due has its alert resolved. Each provider in its
+        own savepoint, so one that fails does not stop the others.
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        horizon = fields.Date.context_today(self) + timedelta(
+            days=EXPIRY_WARNING_DAYS,
+        )
+        for provider in self.sudo().search([]):
+            try:
+                with self.env.cr.savepoint():
+                    for cred in provider.credential_ids:
+                        key = f"git_credential:{cred.id}"
+                        if cred.expires_on and cred.expires_on <= horizon:
+                            Alert.raise_alert(
+                                "git_token_expiring",
+                                _(
+                                    "The token of %(provider)s for %(ns)s "
+                                    "expires on %(date)s.",
+                                    provider=provider.name,
+                                    ns=cred.namespace or provider.authority,
+                                    date=cred.expires_on,
+                                ),
+                                key=key,
+                            )
+                        else:
+                            Alert.resolve_alert("git_token_expiring", key=key)
+            except Exception:
+                _logger.exception(
+                    "Git provider %s: the expiry check failed", provider.id,
+                )
+
+
+class CloudGitCredential(models.Model):
+    _name = "cloud.git.credential"
+    _description = "Git provider credential"
+    _order = "provider_id, namespace, id"
+
+    provider_id = fields.Many2one(
+        "cloud.git.provider", required=True, ondelete="cascade", index=True,
+    )
+    namespace = fields.Char(
+        default="",
+        help="Empty for the whole server; group, group/subgroup or a "
+        "project path.",
+    )
+    kind = fields.Selection(
+        [
+            ("personal", "Personal access token"),
+            ("group", "Group access token"),
+            ("project", "Project access token"),
+            ("deploy", "Deploy token"),
+        ],
+        required=True, default="project",
+    )
+    username = fields.Char(
+        help="oauth2 for personal, group and project tokens; the deploy "
+        "token's own user name (gitlab+deploy-token-N).",
+    )
+    token = EncryptedChar(groups="incubacloud.group_cloud_manager")
+    scopes = fields.Char(
+        readonly=True,
+        help="Read from GitLab when the token is tested or saved. Empty: "
+        "the token does not answer on the API (a deploy token).",
+    )
+    token_user = fields.Char(readonly=True)
+    expires_on = fields.Date()
+
+    _provider_namespace_unique = models.UniqueIndex(
+        "(provider_id, COALESCE(namespace, ''))",
+        "This provider already has a credential for that namespace.",
+    )
+
+    def _meets(self, wanted):
+        """Return whether this credential meets the scopes *wanted*.
+
+        :param wanted: a value of ``_NEED_SCOPES`` (None = any token)
+        :rtype: bool
+        """
+        self.ensure_one()
+        if wanted is None:
+            return True
+        if self.kind == "deploy":
+            return False
+        return bool(wanted & set((self.scopes or "").replace(",", " ").split()))
+
+    def _git_pair(self):
+        """Return ``(username, token)`` for git over https.
+
+        :rtype: tuple
+        """
+        self.ensure_one()
+        cred = self.sudo()
+        return cred.username or "oauth2", cred.token
+
+    @api.model
+    def _normalize_vals(self, vals):
+        """Return *vals* with the namespace, user and token checked.
+
+        :param dict vals: values for ``create`` or ``write``
+        :rtype: dict
+        :raises ValidationError: on a namespace, user name or token that
+            is refused
+        """
+        vals = dict(vals)
+        if "namespace" in vals:
+            try:
+                vals["namespace"] = normalize_namespace(vals["namespace"])
+            except ValueError as exc:
+                raise ValidationError(_("Invalid namespace.")) from exc
+        if vals.get("username") and not _USERNAME_RE.fullmatch(vals["username"]):
+            raise ValidationError(_("Invalid user name."))
+        if vals.get("token") and not _TOKEN_RE.fullmatch(vals["token"]):
+            raise ValidationError(_(
+                "The token may hold only letters, digits, '_', '.' and '-' "
+                "(8 to 255)."
+            ))
+        return vals
+
+    @api.constrains("kind", "username")
+    def _check_username(self):
+        for rec in self:
+            if rec.kind == "deploy" and not rec.username:
+                raise ValidationError(_(
+                    "A deploy token needs its own user name "
+                    "(gitlab+deploy-token-N)."
+                ))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        vals_list = [self._normalize_vals(v) for v in vals_list]
+        for vals in vals_list:
+            vals.setdefault("namespace", "")
+            if vals.get("kind", "project") != "deploy" and not vals.get("username"):
+                vals["username"] = "oauth2"
+        records = super().create(vals_list)
+        for rec in records:
+            rec._audit("Git credential added")
+        return records
+
+    def write(self, vals):
+        vals = self._normalize_vals(vals)
+        result = super().write(vals)
+        for rec in self:
+            rec._audit("Git credential changed", sorted(vals))
+        return result
+
+    def unlink(self):
+        for rec in self:
+            rec._audit("Git credential removed")
+        return super().unlink()
+
+    def _audit(self, action, field_names=()):
+        """Write an audit row naming the credential and fields, never values.
+
+        :param str action: the audit action
+        :param field_names: the fields written, if any
+        """
+        self.ensure_one()
+        details = (
+            f"{self.provider_id.name} ({self.provider_id.authority}), "
+            f"namespace '{self.namespace or ''}'"
+        )
+        if field_names:
+            details += ": " + ", ".join(field_names)
+        self.env["cloud.audit.log"].sudo().create({
+            "action": action, "details": details[:255],
+        })

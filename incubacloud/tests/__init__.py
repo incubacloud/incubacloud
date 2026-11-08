@@ -219,6 +219,7 @@ from . import test_github_setup_state
 from . import test_repo_url_not_a_repo
 from . import test_repo_url_host
 from . import test_git_urls
+from . import test_git_provider
 from . import test_repo_pin
 from . import test_weblogin_jail
 from . import test_proxy_access_log_file

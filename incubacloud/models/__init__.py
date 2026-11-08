@@ -19,6 +19,7 @@ from . import cloud_project
 from . import cloud_github_app
 from . import cloud_github_event
 from . import cloud_github_credential_service
+from . import cloud_git_provider
 from . import cloud_project_repo
 from . import cloud_instance_repo
 from . import cloud_alert
