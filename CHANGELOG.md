@@ -104,9 +104,12 @@ in the database.
   base copies of archives with its own command; a switch on that fails or is
   cancelled before archiving works asks the host to settle again on a
   connection of its own. Parked, it is off with a warning and retried in a
-  day; kept, the archiving it had goes on; a host that does not answer leaves
-  a critical alert, also for a cancelled job, as the database may be keeping
-  its log. `settle` leaves the agent as it is. A failed `pitr_enable` no longer
+  day; kept, the archiving it had goes on, and the alert says that a new
+  objective was not applied and that retrying the job applies it; a host that
+  does not answer leaves a critical alert, also for a cancelled job, as the
+  database may be keeping its log. `settle` leaves the agent as it is, and
+  neither it nor switching off stops a database it started while Odoo runs:
+  that one was restarting, not stopped. A failed `pitr_enable` no longer
   holds the queue. The state no longer reads «off» when a new objective failed
   to apply while the previous archiving went on. Switching off now sets
   `/bin/true` before anything else, so a cut halfway, or a rebuild that drops

@@ -518,7 +518,8 @@ class PitrEnableExecutor(_PitrExecutor):
         again in a day. ``kept``: the archive of the cluster the panel has
         copies of goes on; failing if this switch rewrote its command and
         the upload test failed, else as it was (``failed`` for a first
-        switch, so the watch reads it). Anything else: the database may be
+        switch, so the watch reads it), with a new objective not applied:
+        the watch switches on and off only, so the alert says to retry. Anything else: the database may be
         keeping its log, critical even for a cancelled job; off if it was
         being switched on, else as it was.
 
@@ -554,8 +555,9 @@ class PitrEnableExecutor(_PitrExecutor):
             self._pitr_alert(
                 ALERT_FAILING,
                 f"Continuous recovery could not be switched on again for "
-                f"'{inst.name}': the archiving it had goes on as it was. "
-                f"See the job's log.",
+                f"'{inst.name}': the archiving it had goes on as it was, and "
+                f"a new objective was not applied: retry this job to apply "
+                f"it. See the job's log.",
             )
         else:
             if state == "enabling":
