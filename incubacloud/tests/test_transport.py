@@ -14,7 +14,7 @@ Covers:
 import asyncio
 import shlex
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 
@@ -167,18 +167,171 @@ class TestSSHTransportExecute(BaseCase):
         self.assertIn("real", captured)
 
 
+def _running_process():
+    """A remote process that runs until it is sent TERM, as the spike's did.
+
+    Its output streams stay open until ``terminate()``; then its trap
+    writes one line on stderr and both streams end (8-nov-2026: the
+    boot test's trap took 1.6 s).
+
+    :return: the ``SSHClientProcess`` mock
+    """
+    process = MagicMock(spec=asyncssh.SSHClientProcess)
+    termed = asyncio.Event()
+
+    async def _stdout():
+        await termed.wait()
+        if False:  # pragma: no cover — makes this an async generator
+            yield ""
+
+    async def _stderr():
+        yield "working\n"
+        await termed.wait()
+        yield "trap: put the stack back\n"
+
+    process.stdout = _stdout()
+    process.stderr = _stderr()
+    process.terminate.side_effect = termed.set
+    process.exit_status = None
+
+    async def _wait(*_args, **_kwargs):
+        await termed.wait()
+
+    process.wait.side_effect = _wait
+    return process
+
+
+async def _cancel_after_start(coro):
+    """Run *coro* as a task and cancel it once it is under way.
+
+    :return: whether it raised ``CancelledError`` again
+    :rtype: bool
+    """
+    task = asyncio.ensure_future(coro)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return True
+    return False
+
+
+class TestSSHTransportCancel(BaseCase):
+    """A stop sends the remote command TERM (8-nov-2026).
+
+    Cancelled, ``execute`` only closed the connection, which signals
+    nothing: the step went on on the host until it next wrote to its
+    output, or to its end — a boot test copying for half an hour, the
+    update of the live database through.
+    """
+
+    def test_a_cancelled_command_is_sent_term_and_the_stop_goes_on(self):
+        """TERM once, the trap's lines still logged, the stop raised again."""
+        from odoo.addons.incubacloud.models.transport import SSHTransport
+
+        process = _running_process()
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.create_process = AsyncMock(return_value=process)
+        collect, stderr = _collector()
+
+        raised = _run(_cancel_after_start(
+            SSHTransport(conn).execute("cmd", AsyncMock(), collect),
+        ))
+
+        self.assertTrue(raised)
+        process.terminate.assert_called_once_with()
+        self.assertIn(
+            "⚠ Stopped: the command running on the server was sent TERM.",
+            stderr,
+        )
+        self.assertEqual(stderr[-1], "trap: put the stack back")
+
+    def test_a_cancel_while_the_session_opens_signals_nothing(self):
+        """Stopped inside ``create_process``: no process, nothing to send."""
+        from odoo.addons.incubacloud.models.transport import SSHTransport
+
+        async def _opening(*_args, **_kwargs):
+            await asyncio.sleep(30)
+
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.create_process = AsyncMock(side_effect=_opening)
+
+        raised = _run(_cancel_after_start(
+            SSHTransport(conn).execute("cmd", AsyncMock(), AsyncMock()),
+        ))
+
+        self.assertTrue(raised)
+        conn.create_process.assert_awaited_once_with("cmd")
+
+    def test_a_command_that_ignores_term_is_waited_for_a_while_only(self):
+        """A host that drops the signal (root on OpenSSH 8.9, measured)
+        holds the stop for the cap, not for ever."""
+        from odoo.addons.incubacloud.models import transport as transport_mod
+
+        process = _running_process()
+        process.terminate.side_effect = None
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.create_process = AsyncMock(return_value=process)
+
+        with patch.object(transport_mod, "CANCEL_TERM_WAIT_S", 0.1):
+            raised = _run(asyncio.wait_for(_cancel_after_start(
+                transport_mod.SSHTransport(conn).execute(
+                    "cmd", AsyncMock(), AsyncMock(),
+                ),
+            ), timeout=5))
+
+        self.assertTrue(raised)
+        process.terminate.assert_called_once_with()
+
+    def test_the_wait_stays_under_the_reconciliation_and_the_runner(self):
+        """Never long enough to make the job a lost worker."""
+        from odoo.addons.incubacloud.models.transport import (
+            CANCEL_TERM_WAIT_S,
+            DEFAULT_SSH_COMMAND_TIMEOUT,
+        )
+
+        self.assertLess(CANCEL_TERM_WAIT_S, 5 * 60)
+        self.assertLess(CANCEL_TERM_WAIT_S, DEFAULT_SSH_COMMAND_TIMEOUT)
+
+    def test_a_cancelled_run_sends_term_too(self):
+        """``run`` does not go through ``execute``: it stops the same way."""
+        from odoo.addons.incubacloud.models.transport import SSHTransport
+
+        process = _running_process()
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.create_process = AsyncMock(return_value=process)
+
+        raised = _run(_cancel_after_start(SSHTransport(conn).run("cmd")))
+
+        self.assertTrue(raised)
+        process.terminate.assert_called_once_with()
+
+
 # ---------------------------------------------------------------------------
 # 3. SSHTransport.run()
 # ---------------------------------------------------------------------------
+
+
+def _conn_answering(stdout, exit_status):
+    """A connection whose process ends at once with *stdout* and status.
+
+    :return: ``(connection mock, process mock)``
+    """
+    process = MagicMock(spec=asyncssh.SSHClientProcess)
+    process.wait = AsyncMock(return_value=MagicMock(
+        spec=asyncssh.SSHCompletedProcess, stdout=stdout, exit_status=exit_status,
+    ))
+    conn = MagicMock(spec=asyncssh.SSHClientConnection)
+    conn.create_process = AsyncMock(return_value=process)
+    return conn, process
 
 
 class TestSSHTransportRun(BaseCase):
     def test_returns_stdout_and_exit_status(self):
         from odoo.addons.incubacloud.models.transport import SSHTransport
 
-        fake_result = SimpleNamespace(stdout="output\n", exit_status=0)
-        conn = MagicMock(spec=asyncssh.SSHClientConnection)
-        conn.run = AsyncMock(return_value=fake_result)
+        conn, _process = _conn_answering("output\n", 0)
         transport = SSHTransport(conn)
 
         result = _run(transport.run("uname -s"))
@@ -188,9 +341,7 @@ class TestSSHTransportRun(BaseCase):
     def test_none_stdout_becomes_empty_string(self):
         from odoo.addons.incubacloud.models.transport import SSHTransport
 
-        fake_result = SimpleNamespace(stdout=None, exit_status=1)
-        conn = MagicMock(spec=asyncssh.SSHClientConnection)
-        conn.run = AsyncMock(return_value=fake_result)
+        conn, _process = _conn_answering(None, 1)
         transport = SSHTransport(conn)
 
         result = _run(transport.run("false"))
@@ -200,13 +351,12 @@ class TestSSHTransportRun(BaseCase):
     def test_run_passes_check_false(self):
         from odoo.addons.incubacloud.models.transport import SSHTransport
 
-        fake_result = SimpleNamespace(stdout="", exit_status=0)
-        conn = MagicMock(spec=asyncssh.SSHClientConnection)
-        conn.run = AsyncMock(return_value=fake_result)
+        conn, process = _conn_answering("", 0)
         transport = SSHTransport(conn)
 
         _run(transport.run("cmd"))
-        conn.run.assert_called_once_with("cmd", check=False)
+        conn.create_process.assert_awaited_once_with("cmd")
+        process.wait.assert_awaited_once_with(check=False)
 
 
 # ---------------------------------------------------------------------------
