@@ -30,6 +30,7 @@ from odoo.addons.incubacloud.github.client import GitHubAPIError, GitHubAppClien
 from odoo.addons.incubacloud.models._repo_requirements import (
     _parse_github_repo_path,
     is_safe_git_ref,
+    consume_git_read,
     resolve_git_source,
     resolve_repo_ref,
 )
@@ -580,8 +581,15 @@ class McpToolsCode(models.AbstractModel):
         :param dict args: the tool's arguments
         :param str path: the checked path, '' for the top
         :rtype: dict
-        :raises UserError: when git cannot read it, saying why
+        :raises UserError: when git cannot read it, saying why, or past the
+            user's hourly cap of git reads
         """
+        # Each read runs git on the panel: the editor's hourly cap
+        # (security review of G1, 8-nov-2026).
+        if not consume_git_read(self.env):
+            raise UserError(
+                self.env._("Git read limit reached. Try again later.")
+            )
         try:
             source = resolve_git_source(self.env, args["url"])
             paths = source.reader.tree(

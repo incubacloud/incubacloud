@@ -582,7 +582,7 @@ class GitHubMixin:
                 "Git read limit reached. Try again later."
             )}
         try:
-            source = resolve_git_source(env, url)
+            source = resolve_git_source(env, url, for_user=True)
             return read(source), None
         except GitReaderError as exc:
             _logger.info("[git read] %s: %s", url, exc.code)

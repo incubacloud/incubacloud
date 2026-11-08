@@ -284,9 +284,18 @@ class CloudGitProvider(models.Model):
             raise UserError(_(
                 "A Git provider cannot be archived while repository lines use it."
             ))
+        moved = self.filtered(
+            lambda r: "base_url" in vals and r.base_url != vals["base_url"]
+        )
         result = super().write(vals)
         if "base_url" in vals:
             self._check_public_address()
+        # A token is for the server it was given for: with a new server or
+        # prefix, none is sent there before someone enters it again
+        # («Test connection» would have; security review of G1, 8-nov-2026).
+        moved.sudo().credential_ids.write(
+            {"token": False, "scopes": False, "token_user": False},
+        )
         for rec in self:
             rec._audit("Git provider changed", sorted(vals))
         return result
@@ -342,7 +351,7 @@ class CloudGitProvider(models.Model):
         self.ensure_one()
         wanted = _NEED_SCOPES[need]
         covering = self.sudo().credential_ids.filtered(
-            lambda c: namespace_covers(c.namespace or "", path),
+            lambda c: c.token and namespace_covers(c.namespace or "", path),
         )
         fitting = covering.filtered(lambda c: c._meets(wanted))
         if not fitting:
@@ -366,17 +375,26 @@ class CloudGitProvider(models.Model):
     def _git_credential(self, path):
         """Return ``(username, token)`` to read *path* with git, or None.
 
-        None when no credential covers the path: the repository is read
-        as a public one.
+        Of the credentials with a token that cover the path, one that
+        cannot write first (a deploy token, or a token without ``api`` nor
+        ``write_repository``): the build of 11.0 to 19.0 carries it inside
+        the image (security review of G1, 8-nov-2026); then the longest
+        namespace. None when none covers the path: the repository is
+        read as a public one.
 
         :param str path: a project path, lower case
         :rtype: tuple or None
         """
         self.ensure_one()
-        try:
-            return self._credential_for(path, "git_read")._git_pair()
-        except UserError:
+        covering = self.sudo().credential_ids.filtered(
+            lambda c: c.token and namespace_covers(c.namespace or "", path),
+        )
+        if not covering:
             return None
+        return max(covering, key=lambda c: (
+            not c._writes(),
+            len(c.namespace.split("/")) if c.namespace else 0,
+        ))._git_pair()
 
     def _git_reader(self):
         """Return the panel's git reader for this provider.
@@ -487,6 +505,22 @@ class CloudGitCredential(models.Model):
         if self.kind == "deploy":
             return False
         return bool(wanted & set((self.scopes or "").replace(",", " ").split()))
+
+    def _writes(self):
+        """Return whether this credential's token can write to repositories.
+
+        ``api`` or ``write_repository`` among its scopes; a deploy token
+        never, as the panel keeps none that writes.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self.kind == "deploy":
+            return False
+        return bool(
+            {"api", "write_repository"}
+            & set((self.scopes or "").replace(",", " ").split())
+        )
 
     def _git_pair(self):
         """Return ``(username, token)`` for git over https.

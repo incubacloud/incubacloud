@@ -7,6 +7,7 @@ on one copy and the other keeps accepting what the first now refuses.
 Everything except the owner FK lives here; each concrete model says
 who owns the line via :meth:`_repo_owner`.
 """
+import logging
 from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
@@ -15,6 +16,7 @@ from odoo.exceptions import ValidationError
 from ._repo_requirements import (
     apply_requirements_content,
     canonical_repo_url,
+    consume_git_read,
     fetch_requirements_txt,
     is_safe_git_ref,
     is_safe_git_sha,
@@ -22,6 +24,8 @@ from ._repo_requirements import (
     provider_of,
     resolve_repo_ref,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def _with_canonical_url(env, vals):
@@ -267,6 +271,15 @@ class CloudRepoMixin(models.AbstractModel):
             return
         for repo in self:
             if not repo.url or not repo.branch:
+                continue
+            # A Git provider's line runs git on the panel: one read of the
+            # user's hourly cap, or none at all past it (security review
+            # of G1, 8-nov-2026).
+            if repo.provider_id and not consume_git_read(self.env):
+                _logger.info(
+                    "requirements of %s not read: git read limit reached",
+                    repo.url,
+                )
                 continue
             content = fetch_requirements_txt(
                 self.env, repo.url, repo.branch,

@@ -32,6 +32,7 @@ from contextlib import suppress
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion
 
+from odoo import api
 from odoo.exceptions import UserError
 
 from ..github.http_utils import read_json_limited, safe_urlopen
@@ -261,7 +262,54 @@ def canonical_any_repo_url(env, url):
     return ref.canonical if ref else url.strip()
 
 
-def resolve_git_source(env, url):
+def consume_git_read(env):
+    """Count one read of a Git provider against the user's hourly cap.
+
+    ``rate_limit_git_reads_per_hour``, in the bucket the editor's reads
+    use, in a transaction of its own so a read refused later still
+    counts: each one runs git or asks GitLab (plan-gitlab.md §9).
+
+    :param env: an Odoo environment, of the user who reads
+    :return: whether the read is within the cap
+    :rtype: bool
+    """
+    with env.registry.cursor() as cr:
+        quota_env = api.Environment(cr, env.uid, dict(env.context))
+        allowed = quota_env['cloud.rate.limit'].sudo().hit(
+            f'git_reads_user:{env.uid}',
+            cap_key='rate_limit_git_reads_per_hour',
+            window_seconds=3600,
+        )
+        cr.commit()
+        return allowed
+
+
+def user_may_use_credential(env, provider, path):
+    """Return whether the user of *env* may read *path* with the panel's credential.
+
+    A credential covers a whole namespace, more than any one user works
+    on. It is used for a repository of a line the user sees under their
+    record rules (a project's or an instance's), or, to add a new one,
+    for a developer of a project they can edit; any other read goes as
+    a public one (security review of G1, 8-nov-2026).
+
+    :param env: an Odoo environment, of the user who reads
+    :param provider: the ``cloud.git.provider``
+    :param str path: the repository's path, lower case
+    :rtype: bool
+    """
+    if env.su:
+        return True
+    domain = [('provider_id', '=', provider.id), ('repo_path', '=', path)]
+    for model in ('cloud.project.repo', 'cloud.instance.repo'):
+        if env[model].search_count(domain, limit=1):
+            return True
+    if not env['cloud.security.mixin']._has_cloud_group('group_cloud_developer'):
+        return False
+    return bool(env['cloud.project'].search([])._filtered_access('write'))
+
+
+def resolve_git_source(env, url, for_user=False):
     """Return the :data:`GitSource` of a GitLab repository *url*, or None.
 
     None for a GitHub repository or an unknown host. Runs on the calling
@@ -269,6 +317,8 @@ def resolve_git_source(env, url):
 
     :param env: an Odoo environment
     :param str url: the repository URL
+    :param bool for_user: a read a user asked for: the credential only
+        when :func:`user_may_use_credential`, else none (a public read)
     :rtype: GitSource or None
     :raises GitReaderError: ``private_address`` when the provider no
         longer resolves to public addresses under the ``public`` policy
@@ -277,9 +327,10 @@ def resolve_git_source(env, url):
     provider = provider_of(env, ref)
     if not provider:
         return None
-    return GitSource(
-        provider._git_reader(), ref, provider._git_credential(ref.path),
-    )
+    credential = None
+    if not for_user or user_may_use_credential(env, provider, ref.path):
+        credential = provider._git_credential(ref.path)
+    return GitSource(provider._git_reader(), ref, credential)
 
 
 def _addons_in(paths):

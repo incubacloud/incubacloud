@@ -113,6 +113,7 @@ class TestProviderRoutes(_RoutesCase):
             "id": cred.id, "namespace": "acme", "kind": "deploy",
             "username": "gitlab+deploy-token-7", "scopes": "",
             "token_user": "", "expires_on": False, "has_token": True,
+            "writes": False,
         }])
         self.assertNotIn("glpat-routes12", repr(answer))
 
@@ -393,6 +394,187 @@ class TestReadsDispatchOnTheProvider(_RoutesCase):
             )
         self.assertEqual(answer, {"ok": True, "sha": _SHA})
         self.assertEqual(line.commit_sha, _SHA)
+
+
+@tagged("post_install", "-at_install")
+class TestReadsUseTheCredentialOnlyForTheUsersRepositories(_RoutesCase):
+    """The panel's credential covers a whole namespace: a user reads with it
+    only a repository of a line they see, or, to add one, as a developer of
+    a project they can edit; any other is read as a public one (security
+    review of G1, 8-nov-2026)."""
+
+    def setUp(self):
+        super().setUp()
+        self._cred("acme", kind="deploy", username="gitlab+deploy-token-7")
+        self.developer = new_test_user(
+            self.env, login="git-routes-developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        self.project = self.env["cloud.project"].create({
+            "name": "Reads of GitLab",
+            "member_ids": [(6, 0, [self.consultant.id, self.developer.id])],
+        })
+
+    def _line(self, project):
+        """Give *project* a line of the test repository.
+
+        :rtype: cloud.project.repo
+        """
+        return self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True,
+        ).create({"project_id": project.id, "url": _URL, "branch": "19.0"})
+
+    def _credential_used(self, user, route="cloud_get_repo_branches", **kwargs):
+        """Return the credential *route* read the repository with.
+
+        :rtype: tuple or None
+        """
+        kwargs.setdefault("url", _URL)
+        with patch.object(
+            git_reader.GitReader, "ls_remote", autospec=True,
+            return_value={"refs/heads/19.0": _SHA},
+        ) as ls, patch.object(
+            git_reader.GitReader, "tree", autospec=True, return_value=[],
+        ) as tree, patch.object(
+            git_reader.GitReader, "read_files", autospec=True,
+            return_value={"requirements.txt": None},
+        ) as read:
+            self._serve(route, user=user, **kwargs)
+        called = next(m for m in (ls, tree, read) if m.called)
+        return called.call_args.args[2]
+
+    def test_a_repository_of_no_line_of_theirs_is_read_as_public(self):
+        for route, kwargs in (
+            ("cloud_get_repo_branches", {}),
+            ("cloud_get_branch_head", {"branch": "19.0"}),
+            ("cloud_get_repo_modules", {"branch": "19.0"}),
+            ("cloud_get_repo_requirements", {"branch": "19.0"}),
+        ):
+            with self.subTest(route=route):
+                self.assertIsNone(
+                    self._credential_used(self.consultant, route, **kwargs),
+                )
+
+    def test_a_repository_of_a_line_they_see_uses_the_credential(self):
+        self._line(self.project)
+        self.assertEqual(
+            self._credential_used(self.consultant),
+            ("gitlab+deploy-token-7", "glpat-routes12"),
+        )
+
+    def test_a_line_of_a_project_they_do_not_see_does_not_count(self):
+        self._line(self.env["cloud.project"].create({"name": "Someone else's"}))
+        self.assertIsNone(self._credential_used(self.consultant))
+
+    def test_a_developer_of_a_project_may_read_a_repository_to_add(self):
+        # A developer edits every project (rule «Project: all (PM+)»), so
+        # the stakeholders and consultants are the ones read as public.
+        self.assertEqual(
+            self._credential_used(self.developer),
+            ("gitlab+deploy-token-7", "glpat-routes12"),
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestGitReadsCountAgainstTheHourlyCap(_RoutesCase):
+    """Testing a provider, introspecting a saved token and reading a line's
+    requirements on save run git or GitLab too: they count against
+    ``rate_limit_git_reads_per_hour`` (security review, 8-nov-2026)."""
+
+    def _cap(self, allowed):
+        """Patch the hourly cap of the provider routes to answer *allowed*.
+
+        :return: the mock
+        """
+        patcher = patch.object(
+            _routes_git_providers, "consume_git_read", return_value=allowed,
+        )
+        self.addCleanup(patcher.stop)
+        return patcher.start()
+
+    def test_testing_a_provider_counts_and_stops_at_the_cap(self):
+        cap = self._cap(True)
+        with patch.object(
+            git_reader.GitReader, "ls_remote", autospec=True, return_value={},
+        ) as ls:
+            answer = self._serve(
+                "cloud_test_git_provider", user=self.manager,
+                provider_id=self.provider.id, url=_URL,
+            )
+            self.assertTrue(answer["ok"])
+            cap.assert_called_once()
+            cap.return_value = False
+            ls.reset_mock()
+            answer = self._serve(
+                "cloud_test_git_provider", user=self.manager,
+                provider_id=self.provider.id, url=_URL,
+            )
+        self.assertFalse(answer["ok"])
+        self.assertIn("limit", answer["error"])
+        ls.assert_not_called()
+
+    def test_saving_a_token_past_the_cap_saves_without_introspecting(self):
+        self._cap(False)
+        with patch.object(
+            type(self.env["cloud.git.credential"]), "_introspect", autospec=True,
+        ) as introspect:
+            answer = self._serve(
+                "cloud_save_git_provider", user=self.manager, vals={
+                    "id": self.provider.id, "name": "GitLab.com",
+                    "base_url": "https://gitlab.com",
+                    "credentials": [{
+                        "namespace": "acme", "kind": "project",
+                        "token": "glpat-capped1234",
+                    }],
+                },
+            )
+        self.assertTrue(answer["ok"])
+        introspect.assert_not_called()
+        self.assertTrue(any("limit" in w for w in answer["warnings"]))
+        cred = self.provider.credential_ids
+        self.assertEqual(cred.sudo().token, "glpat-capped1234")
+
+    def test_reading_requirements_on_save_counts_and_stops_at_the_cap(self):
+        from odoo.addons.incubacloud.models import cloud_repo_mixin
+        project = self.env["cloud.project"].create({"name": "Cap on save"})
+        for allowed in (True, False):
+            with self.subTest(allowed=allowed), patch.object(
+                cloud_repo_mixin, "consume_git_read", return_value=allowed,
+            ) as consume, patch.object(
+                git_reader.GitReader, "read_files", autospec=True,
+                return_value={"requirements.txt": None},
+            ) as read:
+                self.env["cloud.project.repo"].create({
+                    "project_id": project.id, "url": _URL, "branch": "19.0",
+                }).unlink()
+            consume.assert_called_once()
+            self.assertEqual(read.called, allowed)
+
+
+@tagged("post_install", "-at_install")
+class TestBaseUrlChangeAsksForTheTokensAgain(_RoutesCase):
+
+    def test_saving_a_new_base_url_warns_that_the_tokens_were_dropped(self):
+        cred = self._cred("acme", scopes="api")
+        answer = self._serve(
+            "cloud_save_git_provider", user=self.manager, vals={
+                "id": self.provider.id, "name": "GitLab.com",
+                "base_url": "https://git.acme.tld",
+                "credentials": [{"id": cred.id, "namespace": "acme", "kind": "project"}],
+            },
+        )
+        self.assertTrue(answer["ok"])
+        self.assertFalse(cred.sudo().token)
+        self.assertFalse(answer["provider"]["credentials"][0]["has_token"])
+        self.assertTrue(any("acme" in w for w in answer["warnings"]))
+
+    def test_a_credential_that_can_write_is_flagged_for_the_tab(self):
+        self._cred("acme", scopes="api")
+        self._cred("acme/sub", scopes="read_repository")
+        answer = self._serve("cloud_get_git_providers", user=self.manager)
+        row = next(p for p in answer["providers"] if p["id"] == self.provider.id)
+        writes = {c["namespace"]: c["writes"] for c in row["credentials"]}
+        self.assertEqual(writes, {"acme": True, "acme/sub": False})
 
 
 @tagged("post_install", "-at_install")

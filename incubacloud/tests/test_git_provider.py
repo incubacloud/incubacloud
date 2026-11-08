@@ -95,6 +95,33 @@ class TestProviderBaseUrl(_ProviderCase):
         self.assertNotIn("othersecret", details)
 
 
+class TestBaseUrlChangeDropsTheTokens(_ProviderCase):
+    """A token is for one server: a new base URL asks for it again (security
+    review of G1, 8-nov-2026)."""
+
+    def test_a_new_server_or_prefix_empties_every_token(self):
+        for base in ("https://git.acme.tld", "https://gitlab.com/prefix"):
+            with self.subTest(base=base):
+                cred = self._cred("acme", scopes="api", token_user="bot")
+                self.provider.write({"base_url": base})
+                self.assertFalse(cred.sudo().token)
+                self.assertFalse(cred.scopes)
+                self.assertFalse(cred.token_user)
+                cred.unlink()
+
+    def test_the_same_base_url_keeps_them(self):
+        cred = self._cred("acme", scopes="api", token_user="bot")
+        self.provider.write({"base_url": "https://GITLAB.com/", "name": "Renamed"})
+        self.assertEqual(cred.sudo().token, "glpat-abcdefgh12")
+        self.assertEqual(cred.scopes, "api")
+        self.assertEqual(cred.token_user, "bot")
+
+    def test_a_credential_without_token_reads_as_public(self):
+        self._cred("acme")
+        self.provider.write({"base_url": "https://git.acme.tld"})
+        self.assertIsNone(self.provider._git_credential("acme/addons"))
+
+
 class TestCaBundle(_ProviderCase):
 
     def test_ca_bundle_accepted_with_fingerprint(self):
@@ -155,6 +182,37 @@ class TestCredentialFor(_ProviderCase):
         self._cred("acme")
         with self.assertRaisesRegex(UserError, "No credential"):
             self.provider._credential_for("zeta/x", "git_read")
+
+    def test_git_prefers_a_read_only_credential_that_covers_it(self):
+        # A token that can write travels inside the image of 11.0 to 19.0:
+        # one that only reads is taken first (security review, 8-nov-2026).
+        self._cred("acme/sub", scopes="api")
+        reader = self._cred("acme", scopes="read_repository", token="glpat-readonly12")
+        self.assertEqual(
+            self.provider._git_credential("acme/sub/x"), ("oauth2", "glpat-readonly12"),
+        )
+        reader.unlink()
+        deploy = self._cred(
+            "acme", kind="deploy", username="gitlab+deploy-token-7",
+            token="gldt-deploy1234",
+        )
+        self.assertEqual(
+            self.provider._git_credential("acme/sub/x"),
+            ("gitlab+deploy-token-7", "gldt-deploy1234"),
+        )
+        deploy.unlink()
+        # Only one that writes: that one, as before.
+        self.assertEqual(
+            self.provider._git_credential("acme/sub/x"), ("oauth2", "glpat-abcdefgh12"),
+        )
+
+    def test_a_credential_says_whether_it_can_write(self):
+        self.assertTrue(self._cred("a", scopes="api")._writes())
+        self.assertTrue(self._cred("b", scopes="read_api write_repository")._writes())
+        self.assertFalse(self._cred("c", scopes="read_repository read_api")._writes())
+        self.assertFalse(self._cred(
+            "d", kind="deploy", username="gitlab+deploy-token-7",
+        )._writes())
 
     def test_default_usernames(self):
         self.assertEqual(self._cred("a").username, "oauth2")

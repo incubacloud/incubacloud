@@ -18,6 +18,7 @@ from odoo.http import request
 
 from ...gitlab.client import GitLabError
 from ...models._git_urls import parse_provider_repo_url
+from ...models._repo_requirements import consume_git_read
 from ...net.git_reader import GitReaderError
 from ...net.outbound import OutboundError
 from .._safe_error import safe_error_response
@@ -130,6 +131,9 @@ def _serialize_provider(provider, with_credentials):
             'expires_on': fields.Date.to_string(cred.expires_on)
             if cred.expires_on else False,
             'has_token': bool(cred.sudo().token),
+            # A token that can write travels inside the image of 11.0 to
+            # 19.0 when it is the one that clones: the tab says so.
+            'writes': cred._writes(),
         } for cred in provider.credential_ids]
     return row
 
@@ -189,7 +193,22 @@ class GitProvidersMixin:
             return {'ok': False, 'error': str(exc)}
         except Exception as exc:
             return safe_error_response(exc, _("The Git provider could not be saved."))
-        warnings = []
+        warnings = [
+            _(
+                "The token of the credential for %s must be entered again: "
+                "a token is kept only for the server it was given for.",
+                cred.namespace or provider.authority,
+            )
+            for cred in provider.credential_ids if not cred.sudo().token
+        ]
+        # Each introspection asks GitLab: one read of the hourly cap for
+        # the save (security review of G1, 8-nov-2026).
+        if to_introspect and not consume_git_read(env):
+            warnings.append(_(
+                "Git read limit reached: the new tokens were saved without "
+                "asking GitLab what they are. Test the provider later."
+            ))
+            to_introspect = env['cloud.git.credential']
         for cred in to_introspect:
             try:
                 cred._introspect()
@@ -316,6 +335,10 @@ class GitProvidersMixin:
         if not ref:
             return {'ok': False, 'error': _(
                 "This is not the URL of a repository of %s.", provider.name,
+            )}
+        if not consume_git_read(request.env):
+            return {'ok': False, 'error': _(
+                "Git read limit reached. Try again later."
             )}
         git_code = self._test_git_channel(provider, ref)
         api_code = self._test_api_channel(provider, ref)

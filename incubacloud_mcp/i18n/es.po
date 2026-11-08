@@ -2413,3 +2413,9 @@ msgid ""
 msgstr ""
 "La escritura en repositorios de GitLab llega en una próxima versión: por "
 "ahora el panel solo lee este repositorio."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "Git read limit reached. Try again later."
+msgstr "Se alcanzó el límite de lecturas Git. Vuelva a intentarlo más tarde."
