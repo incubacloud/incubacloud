@@ -492,6 +492,91 @@ class TestSshReadyDomain(TransactionCase):
         )
 
 
+class TestSshReadyCronsAsCronBot(TransactionCase):
+    """The crons that pick the hosts to reach run as the cron bot, which is
+    not a system administrator, and ``_ssh_ready_domain`` looks at the SSH
+    credentials, which only a system administrator reads (1.0.215): the
+    choice is made elevated, and the jobs are queued as before."""
+
+    def setUp(self):
+        super().setUp()
+        self.bot = self.env.ref("incubacloud.user_incubacloud_cron")
+        Host = self.env["cloud.host"]
+        common = {
+            "ip_address": "10.0.0.43",
+            "user": "ubuntu",
+            "wildcard_domain": "example.com",
+            "password": "pw-default",
+            "known_hosts_key": "ssh-ed25519 AAAA... fake",
+            "login_type": "ssh_key",
+            "key_file": "-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n",
+        }
+        self.key_host = Host.create(common | {"name": "Cron Bot Key Host"})
+        self.password_host = Host.create(
+            common | {
+                "name": "Cron Bot Password Host",
+                "login_type": "password",
+                "key_file": False,
+            },
+        )
+        self.keyless_host = Host.create(
+            common | {"name": "Cron Bot Keyless Host", "key_file": False},
+        )
+        # What the creation cached must not stand in for the bot's reads.
+        self.env.invalidate_all()
+
+    def _run_cron(self, xmlid, method):
+        """Run a cron's method as the user the cron runs as.
+
+        :param str xmlid: the ``ir.cron`` record
+        :param str method: the ``cloud.host`` method the cron calls
+        :return: the ``enqueue`` mock, called with the job model first
+        """
+        cron = self.env.ref(xmlid)
+        self.assertEqual(cron.user_id, self.bot)
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", autospec=True,
+        ) as enqueue:
+            getattr(self.env["cloud.host"].with_user(cron.user_id), method)()
+        return enqueue
+
+    def _queued_host_ids(self, enqueue):
+        """Return the ids of the hosts *enqueue* was called for."""
+        return {call.args[1] for call in enqueue.call_args_list}
+
+    def test_the_bot_does_not_read_the_credentials(self):
+        """The restriction stays: the bot cannot filter by a credential."""
+        with self.assertRaises(AccessError):
+            self.env["cloud.host"].with_user(self.bot).search(
+                [("key_file", "!=", False)],
+            )
+
+    def test_metrics_cron_queues_the_ready_hosts(self):
+        enqueue = self._run_cron(
+            "incubacloud.cron_collect_host_metrics", "cron_collect_metrics",
+        )
+        queued = self._queued_host_ids(enqueue)
+        self.assertIn(self.key_host.id, queued)
+        self.assertIn(self.password_host.id, queued)
+        self.assertNotIn(self.keyless_host.id, queued)
+        # Queued as the bot, not elevated: the job runs as its author.
+        job_env = enqueue.call_args_list[0].args[0].env
+        self.assertEqual(job_env.uid, self.bot.id)
+        self.assertFalse(job_env.su)
+
+    def test_prune_cron_queues_the_ready_hosts(self):
+        enqueue = self._run_cron(
+            "incubacloud.cron_docker_prune", "cron_docker_prune",
+        )
+        queued = self._queued_host_ids(enqueue)
+        self.assertIn(self.key_host.id, queued)
+        self.assertIn(self.password_host.id, queued)
+        self.assertNotIn(self.keyless_host.id, queued)
+        self.assertEqual(
+            enqueue.call_args_list[0].args[0].env.uid, self.bot.id,
+        )
+
+
 class TestSshConnectKwargsTimeouts(TransactionCase):
     """A dead/unreachable host must fail fast instead of hanging a job
     forever — ``connect_timeout``/``login_timeout`` bound both phases

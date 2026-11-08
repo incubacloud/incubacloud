@@ -2489,6 +2489,9 @@ class CloudHost(models.Model):
         them at the cron level avoids spawning jobs that would fail on
         ``ssh_connect_kwargs()`` for hosts the operator hasn't finished
         configuring yet.
+
+        It looks at ``key_file`` and ``password``, which only a system
+        administrator reads: search it elevated (:meth:`_ssh_ready_hosts`).
         """
         return [
             ("ip_address", "!=", False),
@@ -2504,9 +2507,23 @@ class CloudHost(models.Model):
         ]
 
     @api.model
+    def _ssh_ready_hosts(self):
+        """Return the hosts of :meth:`_ssh_ready_domain`, in this environment.
+
+        The search runs elevated, since the domain looks at the SSH
+        credentials and the crons run as the cron bot, which is not a system
+        administrator; the records come back as the caller, so the jobs are
+        queued as before. ``cloud.host`` has no record rule, so the elevated
+        search finds the hosts the caller would.
+
+        :return: ``cloud.host`` records bound to the caller's environment
+        """
+        return self.browse(self.sudo().search(self._ssh_ready_domain()).ids)
+
+    @api.model
     def cron_collect_metrics(self):
         """Called by ir.cron — queue a host_metrics job for each reachable host."""
-        hosts = self.search(self._ssh_ready_domain())
+        hosts = self._ssh_ready_hosts()
         for host in hosts:
             try:
                 self.env["cloud.job"].enqueue(host.id, False, "host_metrics")
@@ -2520,7 +2537,7 @@ class CloudHost(models.Model):
     @api.model
     def cron_docker_prune(self):
         """Called by ir.cron — queue a docker_prune job for each configured host."""
-        hosts = self.search(self._ssh_ready_domain())
+        hosts = self._ssh_ready_hosts()
         for host in hosts:
             try:
                 # docker_prune is a manager-gated job type; the cron bot is
