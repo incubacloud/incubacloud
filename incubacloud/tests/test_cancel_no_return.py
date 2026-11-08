@@ -28,12 +28,15 @@ from ..models.cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from ..models.deploy_instance_executor import DeployInstanceExecutor
 from ..models.host_probe_executor import HostProbeExecutor
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
+from ..models.restore_instance_executor import RestoreInstanceExecutor
 from ..models.transport import CommandResult, SSHTransport
 from .test_cloud_job import _run_after_commit
 from .test_job_queue import _QueueCase
 
 #: The step the tests treat as past undoing.
 _STEP = "Update changed modules"
+#: A restore's: its ``--force`` drops the database before it loads the dump.
+_RESTORE_STEP = "Restore database"
 
 
 class TestStopAgainstThePointOfNoReturn(TransactionCase):
@@ -321,3 +324,197 @@ class TestThePointOfNoReturnOutlivesTheAttempt(_QueueCase):
         self.assertEqual(rebuild.state, "failed")
         _run_after_commit(self.env)
         self.assertEqual(self._mark(rebuild), _STEP)
+
+
+class TestARestoreAgainstThePointOfNoReturn(TransactionCase):
+    """«Restore database» drops the instance's database (``--force``) and
+    loads the dump in its place: stopped there, the database is left empty
+    or half loaded, where without the stop the load ran on to its end. So
+    a stop is taken before that step and refused from it on.
+
+    Real cursors, as in ``TestStopAgainstThePointOfNoReturn``: a started
+    restore committed, the steps run by the executor with a transport that
+    stands in for the host, and the stop asked for on a cursor of its own
+    while a step runs, as a person's request would.
+    """
+
+    def setUp(self):
+        """Commit a host and a started restore on it."""
+        super().setUp()
+        self.registry = self.env.registry
+        with self.registry.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            host = env["cloud.host"].create({
+                "name": "restore-no-return-host", "ip_address": "192.0.2.94",
+                "port": 22, "user": "root", "login_type": "ssh_key",
+                "wildcard_domain": "restore-no-return-host.example.com",
+                "status": "compatible",
+            })
+            job_type = env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            )
+            job = env["cloud.job"].create({
+                "name": "restore-no-return-job", "host_id": host.id,
+                "job_type_id": job_type.id,
+            })
+            cr.execute(
+                "UPDATE cloud_job SET state = 'started' WHERE id = %s", (job.id,),
+            )
+            cr.commit()
+            self.host_id, self.job_id = host.id, job.id
+        self.addCleanup(self._remove_fixture)
+
+    def _remove_fixture(self):
+        """Delete the committed rows, children first."""
+        with self.registry.cursor() as cr:
+            for table in ("cloud_job_no_return", "cloud_job_log_chunk",
+                          "cloud_audit_log", "cloud_alert"):
+                cr.execute(f"DELETE FROM {table} WHERE job_id = %s", (self.job_id,))
+            cr.execute("DELETE FROM cloud_job WHERE id = %s", (self.job_id,))
+            for table in ("cloud_alert", "cloud_audit_log", "cloud_host_whitelist"):
+                cr.execute(f"DELETE FROM {table} WHERE host_id = %s", (self.host_id,))
+            cr.execute("DELETE FROM cloud_host WHERE id = %s", (self.host_id,))
+            cr.commit()
+
+    def _state_and_mark(self):
+        """``(state, step of the mark or None)``, as committed."""
+        with self.registry.cursor() as cr:
+            cr.execute("SELECT state FROM cloud_job WHERE id = %s", (self.job_id,))
+            state = cr.fetchone()[0]
+            cr.execute(
+                "SELECT step FROM cloud_job_no_return WHERE job_id = %s",
+                (self.job_id,),
+            )
+            row = cr.fetchone()
+        return state, row and row[0]
+
+    def _run_restore_steps(self, while_running):
+        """Run a restore's steps; call *while_running* as each one runs.
+
+        :param while_running: called with the command the host is given,
+            on the steps loop, before that command answers
+        :return: the commands the host was given, in order, and the
+            ``JobCancelled`` that ended the run, or None
+        """
+        transport = MagicMock(spec=SSHTransport)
+        given = []
+
+        async def _execute(command, *_args, **_kwargs):
+            """Record the command and let the test act while it runs."""
+            given.append(command)
+            while_running(command)
+            return CommandResult(stdout="", exit_status=0)
+
+        transport.execute.side_effect = _execute
+        steps = [
+            ("Stop Odoo service", "stop"),
+            (_RESTORE_STEP, "restore"),
+            ("Start Odoo service", "start"),
+        ]
+        # The cursor stays open while the steps run: the executor reads
+        # its job's payload and instance through it.
+        with self.registry.cursor() as cr:
+            job = api.Environment(cr, SUPERUSER_ID, {})["cloud.job"].browse(
+                self.job_id,
+            )
+            executor = RestoreInstanceExecutor(job, job.host_id)
+            try:
+                asyncio.run(executor._run_steps(transport, steps))
+            except JobCancelled as stop:
+                return given, stop
+        return given, None
+
+    def _stop(self, how):
+        """Ask for the stop on a cursor of its own, as a person's request.
+
+        :param how: ``cancel_job`` or ``write``
+        :return: the ``UserError`` that refused it, or None once committed
+        """
+        with self.registry.cursor() as cr:
+            job = api.Environment(cr, SUPERUSER_ID, {})["cloud.job"].browse(
+                self.job_id,
+            )
+            try:
+                if how == "cancel_job":
+                    job.cancel_job()
+                else:
+                    job.write({"state": "cancelled"})
+            except UserError as refusal:
+                cr.rollback()
+                return refusal
+            cr.commit()
+        return None
+
+    def test_a_stop_before_the_restore_is_taken_and_the_database_left_alone(self):
+        """Stopped while Odoo stops: the restore of the database never runs."""
+        refusals = []
+
+        def _stop_while_odoo_stops(command):
+            """The person's stop, while the step before the restore runs."""
+            if command == "stop":
+                refusals.append(self._stop("cancel_job"))
+
+        given, stop = self._run_restore_steps(_stop_while_odoo_stops)
+        self.assertEqual(refusals, [None], "the stop was refused")
+        self.assertIsNotNone(stop, "the run went on past the stop")
+        self.assertEqual(given, ["stop"])
+        self.assertEqual(self._state_and_mark(), ("cancelled", None))
+
+    def test_a_stop_during_the_restore_is_refused_and_the_restore_ends(self):
+        """Stopped while the dump loads, by the panel's Cancel and by a
+        plain write of the flag: both refused, saying why, and the steps
+        after the load run."""
+        refusals = {}
+
+        def _stop_while_the_dump_loads(command):
+            """Both ways of stopping, while the database is restored."""
+            if command == "restore":
+                refusals["cancel_job"] = self._stop("cancel_job")
+                refusals["write"] = self._stop("write")
+
+        given, stop = self._run_restore_steps(_stop_while_the_dump_loads)
+        self.assertIsNone(stop)
+        self.assertEqual(given, ["stop", "restore", "start"])
+        self.assertIsInstance(refusals["cancel_job"], UserError)
+        self.assertIsInstance(refusals["write"], UserError)
+        message = str(refusals["cancel_job"])
+        self.assertIn(f"#{self.job_id}", message)
+        self.assertIn(_RESTORE_STEP, message)
+        self.assertIn("empty or half loaded", message)
+        self.assertEqual(self._state_and_mark(), ("started", _RESTORE_STEP))
+
+
+class TestWhichRestoreHasThePoint(_QueueCase):
+    """A restore into the instance has the point; a move's restore has not.
+
+    A move loads the dump into a copy of the instance on its new host,
+    which nothing uses yet: a rollback cancels the restore and removes
+    the copy, the source untouched. Refusing that stop would only keep the
+    customer's instance down until a load nobody wants ends.
+    """
+
+    def _executor(self, payload, moving_to=None):
+        """A restore's executor on a host of its own.
+
+        :param dict payload: the job's payload
+        :param bool moving_to: whether the instance is moving to that host
+        """
+        target = self.env["cloud.host"].create({
+            "name": "restore-target", "ip_address": "10.0.0.82",
+            "user": "ubuntu", "wildcard_domain": "target.example.com",
+            "status": "compatible",
+        })
+        if moving_to:
+            self.inst.sudo().write({"move_target_host_id": target.id})
+        job = self._job("restore_instance", host=target, payload=payload)
+        return RestoreInstanceExecutor(job, target)
+
+    def test_a_restore_into_the_instance_cannot_be_stopped_in_its_load(self):
+        executor = self._executor({"mode": "from_job"})
+        self.assertEqual(executor._no_return_from, _RESTORE_STEP)
+
+    def test_a_moves_restore_can_be_stopped_all_the_way(self):
+        executor = self._executor(
+            {"mode": "from_host", "as_move": True}, moving_to=True,
+        )
+        self.assertIsNone(executor._no_return_from)

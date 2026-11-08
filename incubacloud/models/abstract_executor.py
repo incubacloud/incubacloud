@@ -545,10 +545,11 @@ class AbstractExecutor(ABC):
 
     # The label of the first step a stop must not cut, or None: from it on
     # the job cannot be put back as it was (a rebuild's database update,
-    # which commits module by module). Before the step starts, the stop
-    # and the step are decided under one lock (``_pass_no_return``): a stop
-    # already asked for ends the job there; otherwise the job is marked,
-    # and a stop asked for later is refused (``cloud.job.no.return``).
+    # which commits module by module; a restore's load, which drops the
+    # database first). Before the step starts, the stop and the step are
+    # decided under one lock (``_pass_no_return``): a stop already asked
+    # for ends the job there; otherwise the job is marked, and a stop
+    # asked for later is refused (``cloud.job.no.return``).
     _no_return_from = None
 
     def __init_subclass__(cls, **kwargs):
