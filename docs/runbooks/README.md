@@ -41,6 +41,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-28](RB-28-personal-data-breach.md) | A personal-data breach | critical | Personal data may have been read, copied, changed or lost by someone who should not have, or a sub-processor reports a breach |
 | [RB-29](RB-29-tenant-placement-and-moves.md) | A tenant's placement and its moves between hosts | warning | *Moves paused* on a tenant; `move_pending`, `move_postponed`, `move_slow_cut`; a dump of, or disk from, the frozen copy a move left |
 | [RB-30](RB-30-roll-back-a-release.md) | Roll back a release in place, keeping the data | critical | A deployed release must be left for `prod-prev` after customers wrote to it; from release C to B |
+| [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 
 ## Conventions
 
