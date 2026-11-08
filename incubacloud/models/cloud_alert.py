@@ -38,6 +38,8 @@ PROVIDER_ALERT_CODES = frozenset({
     # A prune that swept what the protect label should have spared.
     "prune_swept_managed",
     "prune_swept_network",
+    # Odoo limits of the server that runs the jobs (``_job_server_limits``).
+    "job_server_limits_too_low",
 })
 
 

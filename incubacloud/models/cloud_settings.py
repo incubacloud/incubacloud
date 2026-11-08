@@ -7,9 +7,15 @@ from urllib.parse import urlsplit
 from psycopg2 import sql
 
 from odoo import _, api, fields, models, tools
+from odoo import cli as odoo_cli
 from odoo.exceptions import UserError, ValidationError
+from odoo.service import server as odoo_server
 
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
+from ._job_server_limits import (
+    JOB_LIMITS_ALERT_CODE,
+    job_server_limit_problems,
+)
 from .cloud_instance import AUTOPURGE_FINAL_DAYS, AUTOPURGE_WARN_DAYS
 from .cloud_instance_domain import _HOSTNAME_RE
 from .encrypted_char import (
@@ -1028,18 +1034,22 @@ class CloudSettings(models.Model):
     # ── Startup check: INCUBACLOUD_SECRET_KEY ──────────────────────────────
 
     def _register_hook(self):
-        """Warn loudly at registry load if the encryption key is missing.
+        """Warn loudly at registry load about a misconfigured server.
 
-        The actual fail-loud behaviour lives in ``password_utils``: any
-        attempt to encrypt/decrypt raises. This hook only surfaces the
-        misconfiguration at startup so operators don't discover it at the
-        first write. Suppressed during tests (the key is patched per-test)
-        and behind ``INCUBACLOUD_ALLOW_NO_KEY=1`` for ad-hoc dev scripts
-        that deliberately avoid the key.
+        Two checks. The Odoo limits of a server that runs the panel's
+        jobs, which may cut them short (``_warn_job_server_limits``).
+        And the encryption key: the actual fail-loud behaviour lives in
+        ``password_utils``, where any attempt to encrypt/decrypt raises;
+        this hook only surfaces the misconfiguration at startup so
+        operators don't discover it at the first write, and is skipped
+        behind ``INCUBACLOUD_ALLOW_NO_KEY=1`` for ad-hoc dev scripts that
+        deliberately avoid the key. Both are suppressed during tests
+        (the key is patched per-test).
         """
         super()._register_hook()
         if tools.config.get('test_enable'):
             return
+        self._warn_job_server_limits(tools.config)
         if os.environ.get('INCUBACLOUD_ALLOW_NO_KEY'):
             _logger.warning(
                 "INCUBACLOUD_ALLOW_NO_KEY=1 — any write to an encrypted "
@@ -1070,6 +1080,53 @@ class CloudSettings(models.Model):
                     "Could not schedule the readable-secrets pass at "
                     "startup.", exc_info=True,
                 )
+
+    @api.model
+    def _warn_job_server_limits(self, options):
+        """Say at startup when this server's limits cut the panel's jobs short.
+
+        Logs one warning per problem and keeps the panel's alert
+        ``job_server_limits_too_low`` in step: raised with the problems,
+        resolved once a restart brings limits that let jobs finish. A
+        server that runs no jobs (``job_server_limit_problems`` returns
+        None) leaves the alert to the one that does. The alert is a
+        provider's: the server's configuration belongs to whoever runs
+        the panel, not to the people working in it. Never blocks the
+        startup.
+
+        Only a server started by ``odoo server`` is judged. ``click-odoo``
+        tools (``click-odoo-update`` in every deploy) and scripts load
+        the registry without starting a server, and ``odoo shell``
+        starts one and stops it before it loads the registry; both read
+        the configuration file, whose ``limit_time_real`` is the web
+        service's when a dedicated runner raises it on its command line,
+        and would raise the alert on every deploy.
+
+        :param options: Odoo's configuration, ``tools.config`` at startup
+        """
+        if odoo_server.server is None or odoo_cli.COMMAND != "server":
+            return
+        problems = job_server_limit_problems(options)
+        if problems is None:
+            return
+        for problem in problems:
+            _logger.warning(problem)
+        Alert = self.env["cloud.alert"].sudo()
+        try:
+            with self.env.cr.savepoint():
+                if problems:
+                    Alert.raise_alert(
+                        JOB_LIMITS_ALERT_CODE,
+                        " ".join(problems),
+                        audience="provider",
+                    )
+                else:
+                    Alert.resolve_alert(JOB_LIMITS_ALERT_CODE)
+        except Exception:  # noqa: BLE001 — never block the startup
+            _logger.warning(
+                "Could not update the alert about the job server's "
+                "limits.", exc_info=True,
+            )
 
     # ── Secret rotation ────────────────────────────────────────────────────
     # Rotation workflow (operator-driven, not time-based):
