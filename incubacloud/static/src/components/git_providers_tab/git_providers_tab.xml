@@ -129,6 +129,9 @@
                                     </p>
                                 </t>
                             </t>
+                            <p t-if="state.deleteError[provider.id]"
+                               class="rl-set-inline-msg rl-set-inline-msg--error"
+                               t-esc="state.deleteError[provider.id]"/>
                             <div class="rl-set-actions ic-gitp-actions">
                                 <button class="rl-btn rl-btn-ghost" t-att-disabled="!!state.draft"
                                         t-on-click="() => this.editProvider(provider)">

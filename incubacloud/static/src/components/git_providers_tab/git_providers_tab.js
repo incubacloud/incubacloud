@@ -55,6 +55,8 @@ export class GitProvidersTab extends Component {
             testUrl: {},
             testing: null,
             testResult: {},
+            // Why the last delete of a provider failed, per id.
+            deleteError: {},
             confirmDialog: null,
         });
         onWillStart(() => this.load());
@@ -246,9 +248,15 @@ export class GitProvidersTab extends Component {
         if (!ok) {
             return;
         }
-        const res = await rpc("/cloud/delete_git_provider", { provider_id: provider.id });
-        if (!res.ok) {
-            this.state.testResult[provider.id] = { error: res.error };
+        delete this.state.deleteError[provider.id];
+        try {
+            const res = await rpc("/cloud/delete_git_provider", { provider_id: provider.id });
+            if (!res.ok) {
+                this.state.deleteError[provider.id] = res.error;
+                return;
+            }
+        } catch {
+            this.state.deleteError[provider.id] = _t("Could not reach the server.");
             return;
         }
         await this.load();
