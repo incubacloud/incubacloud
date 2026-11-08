@@ -256,10 +256,12 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
         self.assertTrue(command.startswith("cd ~/projects/test-inst && "))
 
     def test_it_builds_after_the_context_and_before_anything_starts(self):
-        for name, inst in (
-            ("production", {}),
-            ("staging", {"environment": "staging"}),
-            ("8.0", {"odoo_version": "8.0"}),
+        # 8.0 to 10.0 fetch every repository instead of recording the
+        # heads (plan-gitlab.md §4.4-8): the build takes the fetched trees.
+        for name, inst, heads in (
+            ("production", {}, "Record repository heads"),
+            ("staging", {"environment": "staging"}, "Record repository heads"),
+            ("8.0", {"odoo_version": "8.0"}, "Fetch the repositories"),
         ):
             with self.subTest(name):
                 labels = self._labels(**inst)
@@ -267,7 +269,7 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
                 self.assertEqual(labels[build - 1], "Pull images")
                 self.assertEqual(labels[build + 1], "Start database")
                 for before in (
-                    "Record repository heads",
+                    heads,
                     "Install incubacloud_connect",
                     "Free the build cache if the disk is low",
                 ):
