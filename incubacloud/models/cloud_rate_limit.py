@@ -16,6 +16,7 @@ Settings → Rates without redeploying:
   * ``rate_limit_connect_user_per_min``   (default 10)
   * ``rate_limit_github_previews_per_hour`` (default 10)
   * ``rate_limit_github_imports_per_hour``  (default 5)
+  * ``rate_limit_git_reads_per_hour``       (default 120)
 
 Inheriting modules can ship their own rate-limit model (with their
 own caps, buckets and GC cadence) as a sibling rather than reusing
@@ -60,6 +61,10 @@ RATE_LIMIT_DEFAULTS = {
     'rate_limit_mail_reads_per_min': 30,
     'rate_limit_github_previews_per_hour': 10,
     'rate_limit_github_imports_per_hour': 5,
+    # Reads of a Git provider's repository (GitLab) from the editor:
+    # each one is a git process on the panel, heavier than a call to
+    # GitHub's API (plan-gitlab.md §9, 8-nov-2026).
+    'rate_limit_git_reads_per_hour': 120,
 }
 
 

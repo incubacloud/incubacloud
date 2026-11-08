@@ -2,7 +2,7 @@
 
 Historically this file held every /cloud/* JSON-RPC route in a single
 3.6k-line controller. The routes are now organised by domain under the
-``_data_load/`` package (crud / github / ops / backends), and this
+``_data_load/`` package (crud / github / git providers / ops / backends), and this
 module just re-exports the public symbols and composes the final
 ``CloudDataLoadController`` out of the mixins.
 
@@ -37,6 +37,7 @@ from ._data_load._helpers import (  # noqa: F401
 )
 from ._data_load._routes_backends import BackendsMixin
 from ._data_load._routes_crud import CrudMixin
+from ._data_load._routes_git_providers import GitProvidersMixin
 from ._data_load._routes_github import GitHubMixin
 from ._data_load._routes_ops import OpsMixin
 
@@ -44,6 +45,7 @@ from ._data_load._routes_ops import OpsMixin
 class CloudDataLoadController(
     CrudMixin,
     GitHubMixin,
+    GitProvidersMixin,
     OpsMixin,
     BackendsMixin,
     Controller,

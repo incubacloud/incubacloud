@@ -128,6 +128,13 @@ class CrudMixin:
                 # "configure it in Settings" — the one tab it hides.
                 # See cloud.settings._observability_capabilities.
                 'observability': Settings._observability_capabilities(),
+                # Where this panel may reach a Git provider: 'any' in the
+                # core, 'public' in a tenant's panel (plan-gitlab.md §3).
+                'git_providers': {
+                    'network': request.env[
+                        'cloud.git.provider'
+                    ].sudo()._network_policy(),
+                },
             },
             'role': perms.pop('role', 'stakeholder'),
             'permissions': perms,
@@ -1308,6 +1315,7 @@ class CrudMixin:
                     'addons': r.addons or '',
                     'excludes': r.excludes or '',
                     'commit_sha': r.commit_sha or '',
+                    'repo_capabilities': r.repo_capabilities,
                 }
                 for r in project.repo_ids
             ],
@@ -2152,6 +2160,9 @@ class CrudMixin:
             'rate_limit_github_imports_per_hour': (
                 s.rate_limit_github_imports_per_hour or 0
             ),
+            'rate_limit_git_reads_per_hour': (
+                s.rate_limit_git_reads_per_hour or 0
+            ),
         }
 
     @http.route(['/cloud/save_core_rate_limits'], type='jsonrpc', auth='user')
@@ -2173,6 +2184,7 @@ class CrudMixin:
             'rate_limit_log_search_per_min',
             'rate_limit_github_previews_per_hour',
             'rate_limit_github_imports_per_hour',
+            'rate_limit_git_reads_per_hour',
         }
         safe = {
             k: max(0, int(v or 0))
@@ -2333,6 +2345,7 @@ class CrudMixin:
                     'addons': r.addons or '',
                     'excludes': r.excludes or '',
                     'commit_sha': r.commit_sha or '',
+                    'repo_capabilities': r.repo_capabilities,
                 }
                 for r in inst.repo_ids
             ],
