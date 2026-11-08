@@ -133,7 +133,14 @@ def is_transient_connection_error(exc):
         return True
     return False
 
-_TOKEN_RE = re.compile(r'https://[^@\s]*@(github\.com)', re.IGNORECASE)
+#: The credential of an ``http(s)`` URL, whatever the server: the
+#: ``user:token@`` or ``token@`` between ``://`` and the host, which git-aggregator
+#: logs with the remote (``Adding remote origin https://oauth2:<token>@host/…``)
+#: and git repeats in its ``fatal: unable to access '…'``. It ends at the last
+#: ``@`` before a ``/``, ``?``, ``#``, a quote, an angle bracket or a space,
+#: so a token with an ``@`` of its own goes whole and a ``@`` further on, in a
+#: path or another word, is left alone.
+_TOKEN_RE = re.compile(r'(https?://)[^/?#\s\'"<>]+@', re.IGNORECASE)
 #: What ``run_script`` accepts as the name of an environment variable.
 _ENV_NAME_RE = re.compile(r'^[A-Z_][A-Z0-9_]*$')
 
@@ -198,8 +205,13 @@ DURABLE_LOCK_TIMEOUT = "30s"
 
 
 def _redact_tokens(text):
-    """Remove embedded credentials from GitHub HTTPS URLs in log lines."""
-    return _TOKEN_RE.sub(r'https://\1', text)
+    """Remove the embedded credential from every http(s) URL in *text*.
+
+    Any server (GitHub, GitLab, a self-hosted one), any shape
+    (``user:token@``, ``token@``) and any port; a URL without credential is
+    returned as it was.
+    """
+    return _TOKEN_RE.sub(r'\1', text)
 
 
 #: Prefix of the directory a ``backup_download`` with ``handoff='host'``
@@ -1613,7 +1625,7 @@ class AbstractExecutor(ABC):
         with self._durable_env() as env:
             env['cloud.job.log.chunk'].sudo().create({
                 'job_id': self.job.id,
-                'content': msg,
+                'content': _redact_tokens(msg),
                 'source': 'system',
             })
 
