@@ -162,6 +162,14 @@ Standard Odoo 19.0 modules, for an Odoo 19.0 you already run or a new one; Commu
 
 [INSTALL.md](INSTALL.md) lists what the panel needs, explains each setting and what the proxy must pass, recommends a dedicated job runner, and shows how to update the panel without losing running jobs.
 
+**GitLab webhooks:** a GitLab server must reach the panel at
+`/cloud/gitlab/webhook/` for pushes to rebuild. Leave that path out of any
+basic authentication in front of the panel (each delivery carries its own
+token). A GitLab server of your own that delivers to an address of its own
+network needs **Admin → Settings → Network → Outbound requests → Allow
+requests to the local network from webhooks and integrations**. An internal
+GitLab is fine: the core sets no network limits on Git servers.
+
 Running the tests: [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 
 ---

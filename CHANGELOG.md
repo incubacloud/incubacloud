@@ -12,7 +12,9 @@ GitLab: deploy from gitlab.com or a GitLab server of one's own, and a push
 rebuilds. The new tables need no data migration, the new columns accept
 nulls, and the new daily crons are given to the cron bot. Publish this core
 with `incubacloud_tenant` 1.0.57, which limits a tenant's panel to GitLab
-servers on a public address, in the same deployment.
+servers on a public address, and `incubacloud_saas_manager` 1.196, which
+moves its routing of webhook rebuilds onto the new event mixin, in the same
+deployment.
 
 The update also rewrites the record rules of `cloud.job.log.chunk` and adds
 two rules on `ir.attachment`. A panel whose server has no `sshpass` now
@@ -56,6 +58,32 @@ they are.
   `project_connect_repo` and `github_repo_info` take a GitLab address;
   `get_project` and `get_instance` give each line's `repo_capabilities`. The
   tools that write answer that GitLab comes in a next version.
+- **GitLab webhooks.** `cloud.gitlab.hook` holds a webhook of the panel for a
+  project or a group (`/cloud/gitlab/webhook/<hook_key>`, a 32-hex key, and an
+  encrypted secret); `cloud.gitlab.event` records each delivery without its
+  body or any e-mail address. The receiver counts the per-IP bucket at READ
+  COMMITTED, refuses an unknown key or a wrong `X-Gitlab-Token` with 401
+  before reading the body, and answers 200 to everything after: a repeated
+  delivery (same `Idempotency-Key`, which GitLab's «Resend» keeps) or the same
+  push (`push:<path>:<ref>:<before>:<after>`) is not dispatched again, and a
+  dispatch that fails keeps its error for the daily cron (up to 3 attempts) or
+  `/cloud/reprocess_git_event`, since GitLab never retries and counts errors
+  towards disabling the webhook. A push rebuilds every instance whose GitLab
+  line follows the branch, unfrozen, with `push_provider: 'gitlab'`.
+- **Registering and verifying.** `/cloud/register_git_hook` creates the webhook
+  in GitLab with the line's credential (`api`, Maintainer), adopts the panel's
+  own when it is there, and otherwise says why it must be set up by hand;
+  `/cloud/verify_git_hook` asks for a tag-push test and returns at once, one
+  every 15 s; `/cloud/get_git_hooks`, `/cloud/reveal_git_hook_secret` (rotation
+  rewrites GitLab's webhook with URL and token together) and
+  `/cloud/delete_git_hook`. `repo_capabilities.push_rebuild` of a GitLab line
+  follows its webhook's state.
+- **Daily checks.** `cron_check_git_providers` also reads each panel's webhook
+  in GitLab and raises `gitlab_hook_failing` when GitLab disabled it (it never
+  sends a test nor re-enables it), and deletes the panel's webhooks no line has
+  used for 7 days. `cron_purge_gitlab_events` deletes processed events after
+  `gitlab_event_retention_days` (30). A project renamed in GitLab raises
+  `gitlab_repo_moved` and rebuilds nothing.
 - **The encryption key can come from a file or from Odoo's configuration
   file.** The panel reads the first of these that is set:
   `INCUBACLOUD_SECRET_KEY` in the environment, as before; the file
@@ -92,6 +120,15 @@ they are.
   transaction of its own at READ COMMITTED: the hourly caps of GitHub previews
   and imports and of git reads (`consume_hourly_quota`), and the assistant's
   tool calls and failed authentications, which had a copy each.
+- **The rebuild loop of a push is shared** (`cloud.repo.event.mixin`):
+  `_rebuild_job_type`, `_pr_preview_allowed` and `_rebuild_for_push` live on a
+  mixin both event models inherit, and each instance's enqueue runs in a
+  savepoint of its own, so a database error on one no longer aborts the
+  others, GitHub's included.
+- **A push already in a waiting rebuild is not added twice** (J2):
+  `coalesced_pushes` compares `(push_repo, push_branch, push_sha,
+  push_provider)`; GitHub's pushes carry `push_provider: 'github'`, and a job
+  queued before this version, without the key, counts as GitHub's.
 
 ### Security
 

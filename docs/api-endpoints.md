@@ -236,6 +236,13 @@ and the deploy reads without them:
 | `/cloud/delete_git_provider` | manage settings | Refused, with how many, while repository lines use it. |
 | `/cloud/test_git_provider` | manage settings | With a repository URL of the provider: `git` (`ls-remote HEAD`) and `api` (token introspection), each a code (`ok`, `auth`, `tls`, `not_found`, `unreachable`, `private_address`, `timeout`, `redirect`, `no_api`, `no_credential`, …) and its message; kept on the provider. |
 
+| `/cloud/get_git_hooks` | consultant | The panel's GitLab webhooks: provider, scope, path, state (`pending`, `active`, `failing`, `orphan`), whether the panel created it, the last delivery and the last «Verify»; the URL for a manager. |
+| `/cloud/register_git_hook` | write on the line | `{line_model, line_id, scope}`: creates or reuses the webhook of a GitLab line's path (`ON CONFLICT`) and registers it in GitLab, adopting the panel's own; `{manual: true, reason}` when it must be set up by hand. `scope='group'` is for managers. |
+| `/cloud/reveal_git_hook_secret` | manager | URL and secret to paste in GitLab; `rotate=true` makes a new secret and rewrites GitLab's webhook with URL and token together. Audited. |
+| `/cloud/verify_git_hook` | write on a line it serves | Asks GitLab for a tag-push test and returns `verify_requested_at` at once; one per webhook every 15 s; GitLab's 429 is translated. The SPA polls `get_git_hooks`. |
+| `/cloud/delete_git_hook` | manager | Deletes the webhook in GitLab (when it is the panel's; a 404 is done) and in the panel. |
+| `/cloud/reprocess_git_event` | manager | Dispatches again a GitLab delivery whose dispatch failed. |
+
 `/cloud/get_config` answers `features.git_providers = {network}`: `any` in the
 core, `public` in a tenant's panel.
 
@@ -304,6 +311,7 @@ The assistant's chat and its settings, for the panel's own pages; the MCP exclud
 | POST | `/cloud/instance/<id>/restore` | user (manage backups) | Upload a backup ZIP (≤ 2 GiB) and enqueue restore. Rate-limited. |
 | GET | `/cloud/terminal/<sid>` | user (owner) | xterm.js terminal page. |
 | GET | `/cloud/health` | **public** | DB liveness probe → 200/503 (429 when rate-limited). |
+| POST | `/cloud/gitlab/webhook/<hook_key>` | **public** | GitLab webhook receiver. Per-IP limit (the GitHub bucket, counted at READ COMMITTED), 8 MB, `X-Gitlab-Token` compared in constant time before the body is read (401), duplicates by `Idempotency-Key` and by push answered 200. Every answer after the token is 200, a failed dispatch included. |
 | POST | `/cloud/github/webhook` | **public** | GitHub App webhook receiver. HMAC-SHA256 signature required, per-IP rate limit, replay protection by delivery id. |
 | GET | `/cloud/github/setup` | user (manage settings) | Start GitHub App creation via manifest flow. |
 | GET | `/cloud/github/callback` | user (manage settings) | Exchange the manifest code for credentials (state token, 10 min TTL). |
@@ -319,6 +327,7 @@ DB-backed tumbling counters (`cloud.rate.limit`), 60-second windows, atomic upse
 | `POST /cloud/instance/<id>/restore` | per user | 2/min | no |
 | `GET /cloud/health` | per IP | 60/min | no |
 | `POST /cloud/github/webhook` | per IP | 300/min | yes |
+| `POST /cloud/gitlab/webhook/<hook_key>` | per IP (same bucket) | 300/min | yes; a 429 is a lost delivery, GitLab does not retry |
 | `/cloud/terminal/open` | per user | 10/min | yes |
 | `/cloud/terminal/open` | per instance | 30/min | yes |
 | `POST /mcp` (failed authentications) | per IP (IPv6 /64) | 60/min; refused only where trusted proxies are declared, else logged | no |
