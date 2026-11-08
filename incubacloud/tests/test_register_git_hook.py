@@ -1,9 +1,14 @@
 """Registering, verifying and rotating GitLab webhooks (G3, §4.7.2, §4.7.4)."""
+import http.client
+import json
+import socket
+import ssl
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from odoo import fields
 from odoo.addons.incubacloud.controllers._data_load import _routes_git_hooks
+from odoo.addons.incubacloud.gitlab import client as client_mod
 from odoo.addons.incubacloud.gitlab.client import GitLabClient, GitLabError
 from odoo.addons.incubacloud.models import cloud_gitlab_hook
 from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
@@ -202,6 +207,76 @@ class TestRegisterGitHook(_RoutesCase):
                 hook.invalidate_recordset(["secret"])
                 self.assertEqual(hook.secret, old)
 
+    def test_a_rotation_cut_by_the_budget_before_the_put_is_clear(self):
+        """Nothing was sent: no second PUT, and the panel keeps its secret."""
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        old = hook.secret
+        self.api.update_hook.side_effect = GitLabError("budget")
+        answer = self._serve("cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True)
+        self.assertFalse(answer["ok"])
+        self.assertIn("did not take the new secret", answer["error"])
+        self.assertEqual(self.api.update_hook.call_count, 1)
+        hook.invalidate_recordset(["secret"])
+        self.assertEqual(hook.secret, old)
+
+    def test_a_rotation_whose_answer_is_cut_by_tls_is_unclear(self):
+        """A dropped TLS session reading the answer may hide a PUT GitLab took.
+
+        Through the real client: the connection delivers the request and
+        fails reading its answer, so the old secret is put back.
+        """
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        old = hook.secret
+        conn = MagicMock(spec=http.client.HTTPSConnection)
+        conn.sock = MagicMock(spec=socket.socket)
+        answer_ok = MagicMock(spec=http.client.HTTPResponse)
+        answer_ok.status = 200
+        answer_ok.read1.side_effect = [b"{}", b""]
+        conn.getresponse.side_effect = [ssl.SSLEOFError("EOF"), answer_ok]
+        self.client_cls.return_value = GitLabClient("https://gitlab.example/api/v4", "tok")
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ):
+            answer = self._serve(
+                "cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True,
+            )
+        self.assertFalse(answer["ok"])
+        self.assertEqual(conn.request.call_count, 2, "the rotation and the old secret again")
+        first, second = (json.loads(c.kwargs["body"]) for c in conn.request.call_args_list)
+        self.assertNotEqual(first["token"], old)
+        self.assertEqual(second["token"], old)
+        hook.invalidate_recordset(["secret"])
+        self.assertEqual(hook.secret, old)
+
+    def test_the_new_secret_is_written_before_gitlab_is_called(self):
+        """Between GitLab taking it and the commit nothing else may fail.
+
+        The write is flushed on the rotation's cursor before the PUT: a
+        failure there rolls it back, and after the PUT only the commit is left.
+        """
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+
+        def stored():
+            """Return the secret as the row stores it (encrypted)."""
+            self.env.cr.execute(
+                "SELECT secret FROM cloud_gitlab_hook WHERE id = %s", (hook_id,),
+            )
+            return self.env.cr.fetchone()[0]
+
+        before = stored()
+        seen = []
+        self.api.update_hook.side_effect = lambda *_a: seen.append(stored())
+        answer = self._serve("cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True)
+        self.assertTrue(answer["ok"])
+        self.assertEqual(len(seen), 1)
+        self.assertNotEqual(seen[0], before, "the row held the old secret during the PUT")
+        hook.invalidate_recordset(["secret"])
+        self.assertEqual(hook.secret, answer["secret"])
+
     def test_rotating_locks_the_row_on_a_committed_cursor_before_gitlab(self):
         """The rotation takes the row as registering does, then calls GitLab."""
         hook_id = self._register()["hook"]["id"]
@@ -317,6 +392,19 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertTrue(answer["ok"])
         self.assertFalse(Alert.search([
             ("code", "=", "gitlab_hook_failing"), ("state", "=", "active"),
+        ]))
+
+    def test_deleting_a_webhook_resolves_its_repo_moved_alert(self):
+        """The alert of a project that moved in GitLab names the webhook: it goes with it."""
+        hook_id = self._register()["hook"]["id"]
+        Alert = self.env["cloud.alert"].sudo()
+        Alert.raise_alert(
+            "gitlab_repo_moved", "moved", key=f"gitlab_hook:{hook_id}",
+        )
+        answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
+        self.assertTrue(answer["ok"])
+        self.assertFalse(Alert.search([
+            ("code", "=", "gitlab_repo_moved"), ("state", "=", "active"),
         ]))
 
 

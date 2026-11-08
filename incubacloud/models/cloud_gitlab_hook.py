@@ -19,6 +19,7 @@ from odoo.exceptions import UserError
 from ..gitlab.client import GitLabClient, GitLabError
 from ._concurrency import read_committed_cursor
 from ._git_urls import namespace_covers
+from .cloud_gitlab_event import GITLAB_REPO_MOVED_CODE
 from .encrypted_char import EncryptedChar
 
 _logger = logging.getLogger(__name__)
@@ -84,14 +85,16 @@ def _is_panel_hook(remote_url, own_url):
 def _unclear(exc):
     """Return whether a write GitLab failed may still have been applied.
 
-    A timeout, a dropped connection, a 5xx or a 2xx whose body could not
-    be read may hide a ``PUT`` GitLab took; a 3xx or a 4xx refuses it,
-    and TLS fails at the handshake, before anything is sent.
+    A timeout, a dropped connection (a TLS session cut while the answer is
+    read included), a 5xx or a 2xx whose body could not be read may hide a
+    ``PUT`` GitLab took; a 3xx or a 4xx refuses it, TLS fails at the
+    handshake, and a spent budget stops the call, both before anything is
+    sent.
 
     :param GitLabError exc: the failure
     :rtype: bool
     """
-    if exc.code == "tls":
+    if exc.code in ("tls", "budget"):
         return False
     return not (exc.status and 300 <= exc.status < 500)
 
@@ -142,14 +145,16 @@ class CloudGitLabHook(models.Model):
     _key_uniq = models.Constraint("unique (hook_key)", "The routing key is unique.")
 
     def unlink(self):
-        """Delete webhooks, and resolve the «disabled by GitLab» alert of each.
+        """Delete webhooks, and resolve the alerts of each: disabled, repository moved.
 
-        One deleted while ``failing``, by hand or by the orphan sweep
-        after its grace, leaves no alert about a webhook that is gone.
+        One deleted while ``failing`` or after its project moved, by hand
+        or by the orphan sweep after its grace, leaves no alert about a
+        webhook that is gone.
         """
         Alert = self.env["cloud.alert"].sudo()
         for hook in self:
-            Alert.resolve_alert(GITLAB_HOOK_FAILING_CODE, key=f"gitlab_hook:{hook.id}")
+            for code in (GITLAB_HOOK_FAILING_CODE, GITLAB_REPO_MOVED_CODE):
+                Alert.resolve_alert(code, key=f"gitlab_hook:{hook.id}")
         return super().unlink()
 
     # ── Matching ───────────────────────────────────────────────────────
@@ -340,7 +345,10 @@ class CloudGitLabHook(models.Model):
         Under the lock registering takes: a READ COMMITTED cursor of its
         own holds the row ``FOR NO KEY UPDATE`` while GitLab is called
         and commits the secret, so a registration and a rotation never
-        write GitLab one over the other (Fable's re-review of G3).
+        write GitLab one over the other (Fable's re-review of G3). The
+        secret is written and flushed on that cursor before GitLab is
+        called: a failure of GitLab rolls it back, and once GitLab took
+        it only the commit is left to fail.
 
         :return: the new secret, as committed (the caller's snapshot may
             still read the old one)
@@ -359,23 +367,27 @@ class CloudGitLabHook(models.Model):
                 raise UserError(_("Webhook not found."))
             env = api.Environment(cr, self.env.uid, dict(self.env.context))
             hook = env[self._name].sudo().browse(self.id)
-            if hook.remote_hook_id:
-                hook._put_secret(new_secret)
+            old_secret = hook.secret
             hook.secret = new_secret
+            hook.flush_recordset()
+            if hook.remote_hook_id:
+                hook._put_secret(new_secret, old_secret)
             cr.commit()
         self.invalidate_recordset(["secret"])
         return new_secret
 
-    def _put_secret(self, new_secret):
+    def _put_secret(self, new_secret, old_secret):
         """Give GitLab *new_secret*, with the webhook's URL.
 
         An unclear failure (:func:`_unclear`) may hide a ``PUT`` GitLab
-        took: the secret the panel keeps is then sent again, best effort,
-        so both sides hold the same one. When that fails too, GitLab may
-        hold a secret the panel does not: a new rotation, once GitLab
-        answers, rewrites both.
+        took: *old_secret*, the one the panel keeps when this raises, is
+        then sent again, best effort, so both sides hold the same one.
+        When that fails too, GitLab may hold a secret the panel does not:
+        a new rotation, once GitLab answers, rewrites both.
 
         :param str new_secret: the secret to give
+        :param str old_secret: the secret the panel keeps if GitLab does
+            not take *new_secret*
         :raises UserError: when GitLab did not take it, or no credential
             may change it
         """
@@ -389,7 +401,7 @@ class CloudGitLabHook(models.Model):
             failure = exc
         if _unclear(failure):
             try:
-                client.update_hook(kind, target, self.remote_hook_id, url, self.secret)
+                client.update_hook(kind, target, self.remote_hook_id, url, old_secret)
             except GitLabError as exc:
                 raise UserError(_(
                     "GitLab did not answer clearly (%(code)s), so it may hold a "

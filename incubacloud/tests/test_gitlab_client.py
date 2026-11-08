@@ -7,6 +7,7 @@ policy, and bounded answers.
 """
 import http.client
 import json
+import socket
 import ssl
 from unittest.mock import MagicMock, patch
 
@@ -27,7 +28,28 @@ def _response(status=200, body=None, raw=None):
     response.status = status
     data = raw if raw is not None else json.dumps(body or {}).encode()
     response.read.side_effect = lambda n=-1: data if n < 0 else data[:n]
+    # ``read1`` hands out the body in blocks, as the socket does.
+    left = [data]
+
+    def read1(n=-1):
+        """Return the next block of at most *n* bytes of the body."""
+        block, left[0] = left[0][:n], left[0][n:]
+        return block
+
+    response.read1.side_effect = read1
     return response
+
+
+def _connection(response=None):
+    """Return a connection mock that has a socket and answers *response*.
+
+    :rtype: MagicMock
+    """
+    conn = MagicMock(spec=http.client.HTTPSConnection)
+    conn.sock = MagicMock(spec=socket.socket)
+    if response is not None:
+        conn.getresponse.return_value = response
+    return conn
 
 
 class _ClientCase(BaseCase):
@@ -39,8 +61,7 @@ class _ClientCase(BaseCase):
         :return: ``(result or exception, connection class mock, connection)``
         :rtype: tuple
         """
-        conn = MagicMock(spec=http.client.HTTPSConnection)
-        conn.getresponse.return_value = response
+        conn = _connection(response)
         cls = "_PinnedHTTPSConnection" if pin_ip else "HTTPSConnection"
         target = client_mod if pin_ip else client_mod.http.client
         with patch.object(target, cls, autospec=True, return_value=conn) as made:
@@ -110,13 +131,14 @@ class TestGitLabClientRequest(_ClientCase):
         self.assertTrue(context.check_hostname)
 
     def test_tls_and_network_failures_have_their_codes(self):
+        """A TLS failure of the handshake is ``tls``: nothing was sent."""
         for error, code in (
             (ssl.SSLCertVerificationError("bad"), "tls"),
             (TimeoutError(), "timeout"),
             (ConnectionRefusedError(), "unreachable"),
         ):
-            conn = MagicMock(spec=http.client.HTTPSConnection)
-            conn.request.side_effect = error
+            conn = _connection()
+            conn.connect.side_effect = error
             with self.subTest(code=code), patch.object(
                 client_mod.http.client, "HTTPSConnection", autospec=True,
                 return_value=conn,
@@ -125,9 +147,31 @@ class TestGitLabClientRequest(_ClientCase):
                     "https://gitlab.example/api/v4", _TOKEN,
                 ).current_user()
             self.assertEqual(caught.exception.code, code)
+            conn.request.assert_not_called()
+
+    def test_a_tls_failure_after_the_request_is_sent_is_not_tls(self):
+        """A dropped session sending or reading may hide a write GitLab took."""
+        for step, error in (
+            ("request", ssl.SSLError("bad record")),
+            ("getresponse", ssl.SSLEOFError("EOF")),
+            ("getresponse", ssl.SSLZeroReturnError("closed")),
+        ):
+            conn = _connection()
+            getattr(conn, step).side_effect = error
+            with self.subTest(step=step, error=type(error).__name__), patch.object(
+                client_mod.http.client, "HTTPSConnection", autospec=True,
+                return_value=conn,
+            ), self.assertRaises(client_mod.GitLabError) as caught:
+                client_mod.GitLabClient(
+                    "https://gitlab.example/api/v4", _TOKEN,
+                ).update_hook("projects", 1, 2, "https://panel/x", "s")
+            self.assertEqual(caught.exception.code, "unreachable")
 
     def test_a_spent_budget_fails_before_dialling(self):
-        """A registration's calls share one budget: past it, no call is made."""
+        """A registration's calls share one budget: past it, no call is made.
+
+        The code is ``budget``, not ``timeout``: nothing was sent.
+        """
         with patch.object(
             client_mod.http.client, "HTTPSConnection", autospec=True,
         ) as made, self.assertRaises(client_mod.GitLabError) as caught:
@@ -135,12 +179,11 @@ class TestGitLabClientRequest(_ClientCase):
                 "https://gitlab.example/api/v4", _TOKEN,
                 deadline=client_mod.time.monotonic() - 1,
             ).current_user()
-        self.assertEqual(caught.exception.code, "timeout")
+        self.assertEqual(caught.exception.code, "budget")
         made.assert_not_called()
 
     def test_a_call_waits_no_longer_than_the_budget_left(self):
-        conn = MagicMock(spec=http.client.HTTPSConnection)
-        conn.getresponse.return_value = _response(body={})
+        conn = _connection(_response(body={}))
         with patch.object(
             client_mod.http.client, "HTTPSConnection", autospec=True,
             return_value=conn,
@@ -152,6 +195,101 @@ class TestGitLabClientRequest(_ClientCase):
         self.assertLessEqual(made.call_args.kwargs["timeout"], 5)
         self.assertGreater(made.call_args.kwargs["timeout"], 0)
 
+    def _budgeted(self, conn, deadline):
+        """Call ``current_user`` on a client with *deadline* over *conn*.
+
+        :return: the error it raised, or None
+        :rtype: GitLabError
+        """
+        client = client_mod.GitLabClient(
+            "https://gitlab.example/api/v4", _TOKEN, deadline=deadline,
+        )
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ):
+            try:
+                client.current_user()
+            except client_mod.GitLabError as exc:
+                return exc
+        return None
+
+    def test_each_wait_is_bounded_by_what_the_budget_has_left(self):
+        """The socket's timeout is reset before the answer and before each block."""
+        calls = []
+        body = b'{"id": 1, "name": "' + b"x" * 40000 + b'"}'
+        response = _response(raw=body)
+        read1 = response.read1.side_effect
+
+        def block(n=-1):
+            """Record the read, then hand out the block."""
+            calls.append("read1")
+            return read1(n)
+
+        response.read1.side_effect = block
+        conn = _connection(response)
+        conn.sock.settimeout.side_effect = lambda t: calls.append(("settimeout", t))
+        conn.getresponse.side_effect = lambda: calls.append("getresponse") or response
+        error = self._budgeted(conn, client_mod.time.monotonic() + 8)
+        self.assertIsNone(error)
+        self.assertEqual(calls[:3], [calls[0], "getresponse", calls[2]])
+        self.assertEqual(calls[0][0], "settimeout")
+        reads = [i for i, c in enumerate(calls) if c == "read1"]
+        self.assertGreater(len(reads), 1, "the body is read in blocks")
+        for i in reads:
+            self.assertEqual(calls[i - 1][0], "settimeout", "each block resets the wait")
+        for call in calls:
+            if call not in ("getresponse", "read1"):
+                self.assertLessEqual(call[1], 8)
+                self.assertGreater(call[1], 0)
+
+    def test_a_budget_spent_while_the_answer_is_read_is_a_timeout(self):
+        """The request was sent: not ``budget``, and no block is read past it."""
+        response = _response(raw=b'{"a": "' + b"x" * 200000 + b'"}')
+        conn = _connection(response)
+        blocks = []
+        client = client_mod.GitLabClient(
+            "https://gitlab.example/api/v4", _TOKEN,
+            deadline=client_mod.time.monotonic() + 30,
+        )
+        read1 = response.read1.side_effect
+
+        def block(n=-1):
+            """Spend the budget after the first block."""
+            blocks.append(n)
+            client.deadline = client_mod.time.monotonic() - 1
+            return read1(n)
+
+        response.read1.side_effect = block
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ), self.assertRaises(client_mod.GitLabError) as caught:
+            client.current_user()
+        self.assertEqual(caught.exception.code, "timeout")
+        self.assertEqual(len(blocks), 1)
+
+    def test_a_budget_spent_after_the_request_is_sent_is_a_timeout(self):
+        """Sent, so GitLab may have applied it: ``timeout``, which is unclear."""
+        conn = _connection(_response(body={}))
+        client = client_mod.GitLabClient(
+            "https://gitlab.example/api/v4", _TOKEN,
+            deadline=client_mod.time.monotonic() + 30,
+        )
+
+        def send(*_args, **_kwargs):
+            """Spend the budget as the request goes out."""
+            client.deadline = client_mod.time.monotonic() - 1
+
+        conn.request.side_effect = send
+        with patch.object(
+            client_mod.http.client, "HTTPSConnection", autospec=True,
+            return_value=conn,
+        ), self.assertRaises(client_mod.GitLabError) as caught:
+            client.update_hook("projects", 1, 2, "https://panel/x", "s")
+        self.assertEqual(caught.exception.code, "timeout")
+        conn.getresponse.assert_not_called()
+
 
 class TestGitLabClientHooks(BaseCase):
     """The webhook calls of G3 (plan-gitlab.md §4.7.2, §4.7.4)."""
@@ -162,8 +300,7 @@ class TestGitLabClientHooks(BaseCase):
         :param call: a function taking the client
         :rtype: tuple
         """
-        conn = MagicMock(spec=http.client.HTTPSConnection)
-        conn.getresponse.return_value = response or _response(201, {"id": 7})
+        conn = _connection(response or _response(201, {"id": 7}))
         with patch.object(
             client_mod.http.client, "HTTPSConnection", autospec=True,
             return_value=conn,

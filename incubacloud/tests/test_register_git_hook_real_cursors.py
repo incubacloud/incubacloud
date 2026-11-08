@@ -235,9 +235,9 @@ class TestRegisterGitHookRealCursors(TransactionCase):
         self.assertTrue(in_gitlab.wait(10))
         second, second_out = self._in_thread(self._register_in_thread)
         # The second waits on the row; without the lock it reaches GitLab too.
-        self._until(
+        self.assertTrue(self._until(
             lambda: self._waiting_on_a_lock() or self.api.create_hook.call_count > 1,
-        )
+        ))
         release.set()
         first.join(20)
         second.join(20)
