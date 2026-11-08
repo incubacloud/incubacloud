@@ -275,7 +275,7 @@ class IdempotencyCase(TransactionCase):
         ledger = Ledger()
         if spec.remote:
             ledger.remote |= set(spec.remote(self, job))
-        try:
+        with contextlib.suppress(_Rollback):
             with self.env.cr.savepoint():
                 baseline = self._baseline(tracked)
                 for index, step in enumerate(plan):
@@ -284,8 +284,6 @@ class IdempotencyCase(TransactionCase):
                     self._attempt(spec, job, ledger, step)
                 world = self.world(tracked, baseline)
                 raise _Rollback
-        except _Rollback:
-            pass
         self.env.invalidate_all()
         return world, ledger
 

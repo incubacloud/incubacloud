@@ -2414,7 +2414,7 @@ class CloudJob(models.Model):
             """Run the layers' hooks on a cursor of their own."""
             with env.registry.cursor() as cr:
                 jobs = env(
-                    cr=cr, context=dict(env.context, ic_after_job_commit=True),
+                    cr=cr, context=env.context | {"ic_after_job_commit": True},
                 )["cloud.job"].browse(ids).exists()
                 jobs._run_after_terminal(new_state)
 
