@@ -19,6 +19,7 @@ from joserfc.errors import JoseError
 from odoo import SUPERUSER_ID, api, models, tools
 
 from odoo.addons.base.models.res_users import KEY_CRYPT_CONTEXT
+from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
 
 from ..controllers._issuer_metadata import issuer_spellings, jwks_uri_for
 from ..controllers._jwks_cache import get_keyset, unverified_kid
@@ -302,12 +303,16 @@ class McpAuth(models.AbstractModel):
         """Count a failed authentication of *ip*, in a cursor of its own.
 
         Its own transaction: the request's may roll back, and parallel
-        failures must not fight over the bucket's row inside it.
+        failures must not fight over the bucket's row inside it. The
+        cursor runs at READ COMMITTED (:func:`read_committed_cursor`):
+        at REPEATABLE READ a failure that met a row another had just
+        created or committed was aborted with a serialization failure,
+        and the failure went uncounted.
 
         :return: whether *ip* is still within its failures of the minute
         :rtype: bool
         """
-        with self.env.registry.cursor() as cr:
+        with read_committed_cursor(self.env.registry) as cr:
             env = api.Environment(cr, SUPERUSER_ID, dict(self.env.context))
             within = env["cloud.rate.limit"].hit(
                 self._failure_bucket(ip), max_per_window=AUTH_FAILURES_PER_MIN

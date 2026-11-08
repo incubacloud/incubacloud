@@ -63,6 +63,16 @@ database.
   warm spares', staging and moves' deploys get the step too.
 - **An addon conflict is named once in its alert,** where a build repeated
   once printed it, and the alert listed it, twice.
+- **An agent's parallel calls no longer fail on their quota.** The counters
+  of the MCP tools (the user's terminal and host-console buckets, the user's
+  MCP bucket) and of the authentication failures counted on a cursor at
+  Odoo's REPEATABLE READ: a call that met a row another call had just created
+  or committed was aborted with «could not serialize access due to concurrent
+  update», logged at ERROR, and the tool call failed. They now run at READ
+  COMMITTED (`read_committed_cursor`), as do the GitHub preview and import
+  quotas, which had the same pattern: the second call waits for the row and
+  adds to it, and the atomic upsert hands each call its own count, so parallel
+  calls never pass the cap. No new row lock.
 
 ## [1.0.217] — 2026-11-08
 

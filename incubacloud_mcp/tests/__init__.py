@@ -40,3 +40,4 @@ from . import test_settings_tabs
 from . import test_github_write
 from . import test_tools_code
 from . import test_tools_truthful
+from . import test_quota_concurrency
