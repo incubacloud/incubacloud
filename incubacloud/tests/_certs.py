@@ -61,3 +61,37 @@ def make_pair(hostnames=DEFAULT_HOSTNAMES, issuer="Test CA", with_san=True):
             encryption_algorithm=serialization.NoEncryption(),
         ).decode(),
     )
+
+
+def ca_pem(name="Test Root CA"):
+    """Return the PEM of a self-signed CA certificate (BasicConstraints CA=TRUE).
+
+    :param str name: subject and issuer common name
+    :rtype: str
+    """
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = datetime.datetime.now(datetime.UTC)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
+    return (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=None), critical=True,
+        )
+        .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+        .decode()
+    )
+
+
+def leaf_pem():
+    """Return the PEM of a certificate that is not a CA.
+
+    :rtype: str
+    """
+    return make_pair()[0]
