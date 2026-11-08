@@ -2346,9 +2346,8 @@ class CloudJob(models.Model):
         is read on a cursor of its own: this transaction's snapshot may
         predate its commit.
 
-        The refusal says why that step cannot be cut, by job type: a
-        rebuild's update leaves the database half updated, a restore's
-        load leaves it empty or half loaded.
+        The refusal says why that step cannot be cut, by job type
+        (:meth:`_no_return_refusal`).
 
         :raises UserError: when one of them is marked
         """
@@ -2366,26 +2365,40 @@ class CloudJob(models.Model):
                 (tuple(self.ids),),
             )
             row = fresh.fetchone()
-        if row and self.browse(row[0]).job_type_id.code == "restore_instance":
-            raise UserError(_(
+        if row:
+            raise UserError(self.browse(row[0])._no_return_refusal(row[1]))
+
+    def _no_return_refusal(self, step):
+        """Say why this job cannot be stopped at *step*, by its type.
+
+        A rebuild's update leaves the database half updated, a restore's
+        load leaves it empty or half loaded. A layer that gives a job
+        type of its own a point of no return adds its reason here.
+
+        :param str step: the label of the step the job is at
+        :return: the refusal, translated
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.job_type_id.code == "restore_instance":
+            return _(
                 "Job #%(job)s cannot be stopped any more: it is at"
                 " '%(step)s', which has already removed the instance's"
                 " database to load the backup in its place. Stopped now,"
                 " the database would be left empty or half loaded. Let it"
                 " end; it takes as long as loading the backup does.",
-                job=row[0],
-                step=row[1],
-            ))
-        if row:
-            raise UserError(_(
-                "Job #%(job)s cannot be stopped any more: it is at"
-                " '%(step)s', which stores its changes in the instance's"
-                " database as it goes. Stopped now, the database would be"
-                " left half updated under the image that runs. Let it end;"
-                " it takes a few minutes.",
-                job=row[0],
-                step=row[1],
-            ))
+                job=self.id,
+                step=step,
+            )
+        return _(
+            "Job #%(job)s cannot be stopped any more: it is at"
+            " '%(step)s', which stores its changes in the instance's"
+            " database as it goes. Stopped now, the database would be"
+            " left half updated under the image that runs. Let it end;"
+            " it takes a few minutes.",
+            job=self.id,
+            step=step,
+        )
 
     def _adopt_queue_job_state(self):
         """Give a job linked to a queue.job that queue.job's state.

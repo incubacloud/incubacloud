@@ -518,3 +518,34 @@ class TestWhichRestoreHasThePoint(_QueueCase):
             {"mode": "from_host", "as_move": True}, moving_to=True,
         )
         self.assertIsNone(executor._no_return_from)
+
+
+class TestTheRefusalSaysWhyByType(TransactionCase):
+    """``cloud.job._no_return_refusal``: the reason a stop is refused,
+    by job type, which a layer that adds a type extends."""
+
+    def _job(self, code):
+        """A job of type *code* on a host of its own."""
+        host = self.env["cloud.host"].create({
+            "name": f"refusal-{code}", "ip_address": "192.0.2.94",
+            "user": "ubuntu",
+            "wildcard_domain": f"{code.replace('_', '-')}.example.com",
+        })
+        return self.env["cloud.job"].create({
+            "name": "refusal", "host_id": host.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", code)], limit=1,
+            ).id,
+        })
+
+    def test_a_rebuild_names_its_half_updated_database(self):
+        job = self._job("rebuild_instance")
+        text = job._no_return_refusal(_STEP)
+        self.assertIn(f"Job #{job.id} cannot be stopped any more", text)
+        self.assertIn(_STEP, text)
+        self.assertIn("half updated", text)
+
+    def test_a_restore_names_its_emptied_database(self):
+        text = self._job("restore_instance")._no_return_refusal(_RESTORE_STEP)
+        self.assertIn(_RESTORE_STEP, text)
+        self.assertIn("empty or half loaded", text)
