@@ -42,6 +42,13 @@ class _ProviderCase(TransactionCase):
         super().setUpClass()
         cls.Provider = cls.env["cloud.git.provider"]
         cls.Credential = cls.env["cloud.git.credential"]
+        # A tenant's panel (the saas CI's leg that runs this suite with
+        # incubacloud_tenant installed) admits no Git server until the
+        # master has named its own servers: one is named, which is no
+        # test's. The core does not read the parameter.
+        cls.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.platform_addresses", "192.0.2.1",
+        )
         cls.provider = cls.Provider.create({
             "name": "GitLab.com", "base_url": "https://GitLab.com/",
         })
