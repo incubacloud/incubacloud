@@ -13,6 +13,7 @@
 #   pitr.sh restore-wait  <dir> <job> <max_s>   (0 also while it still runs)
 #   pitr.sh restore-cancel <dir> <job> <max_s>
 #   pitr.sh disable       <dir> <pg_user>
+#   pitr.sh settle        <dir> <pg_user> <cluster|->
 #
 # Two pieces run in the instance's stack, both from ``<dir>/.walg``:
 #
@@ -222,10 +223,14 @@ case "$op" in
             # switched on at once.
             part="$(mktemp "$cache/.part.XXXXXX")"
             trap 'rm -f "$part"' EXIT
-            # A passing GitHub error (a 504) must not fail the install: it
-            # holds the instance's queue. --retry-all-errors needs curl 7.71
-            # (Debian 12 and Ubuntu 22.04 ship 7.88 and 7.81).
-            curl -fsSL --retry 6 --retry-delay 10 --retry-all-errors \
+            # A passing GitHub error (a 504, a 503 for minutes) must not
+            # fail the install. Without --retry-delay curl waits 1 s, then
+            # twice as long each time (up to 10 min); --retry-max-time
+            # stops the retries after 15 min, within the step's hour
+            # (a 503 outlasted 6 tries 10 s apart, QA 8-nov-2026).
+            # --retry-all-errors needs curl 7.71 (Debian 12 and Ubuntu
+            # 22.04 ship 7.88 and 7.81).
+            curl -fsSL --retry 10 --retry-max-time 900 --retry-all-errors \
                 --connect-timeout 20 --max-time 300 -o "$part" \
                 "https://github.com/wal-g/wal-g/releases/download/$version/wal-g-pg-20.04-$arch"
             echo "$sha  $part" | sha256sum -c --status \
@@ -881,18 +886,21 @@ EOF
             wait_db "$user"
             started=1
         fi
+        # The segments are let go first, with a command that needs no
+        # mount: a cut anywhere after this, or a rebuild that drops the
+        # mount before the rest is done, leaves no database keeping every
+        # segment for a command that cannot run. With archive_mode off
+        # the command is never used; switching on again overwrites it.
+        db_psql "$user" \
+            -c "ALTER SYSTEM SET archive_command = '/bin/true'" \
+            -c "SELECT pg_reload_conf()" >/dev/null
         mode="$(db_psql "$user" -c "SHOW archive_mode")"
         # On from the stack's command line, it stays on until the rebuild
         # that follows drops the flag, whatever restarts it: the segments
-        # are let go until then instead of kept, and nothing restarts.
+        # are let go until then, and nothing restarts.
         from="$(db_psql "$user" -c \
             "SELECT source FROM pg_settings WHERE name = 'archive_mode'")"
-        command="RESET archive_command"
-        if [ "$from" = "command line" ]; then
-            command="SET archive_command = '/bin/true'"
-        fi
         db_psql "$user" \
-            -c "ALTER SYSTEM $command" \
             -c "ALTER SYSTEM RESET archive_timeout" \
             -c "ALTER SYSTEM RESET archive_mode"
         if [ "$from" = "command line" ]; then
@@ -914,6 +922,58 @@ EOF
         rm -rf "${W:?}/wal-g" "${W:?}/lib" "${W:?}/run" "${W:?}/archive" \
             "$W/pitr_agent.sh" "$W/spool/done" "$RESTORE"
         echo "IC_PITR_DISABLED"
+        ;;
+
+    settle)
+        # What a switch on that failed or was stopped leaves: never a
+        # database keeping its segments for a command that does not work.
+        # Only the archive of the cluster the panel has base copies of
+        # (the argument, - for none), archiving with its own command, is
+        # kept as it is: it was there before the job, and the watch reads
+        # it. Anything else is parked: /bin/true lets the segments go,
+        # which, without a base copy before them, restore nothing. No
+        # network, no restart, and the agent is left as it is: a switch
+        # on still running somewhere may be about to write the real
+        # command, which an idle agent would leave failing for ever.
+        ic_require_args 2 "$#" "pitr.sh settle <dir> <pg_user> <cluster|->"
+        user="$1"; known="$2"
+        [[ "$known" =~ ^([0-9]+|-)$ ]] || ic_die "bad cluster: $known"
+        if [ -f "$RESTORE/lock" ]; then
+            # The database may be down on purpose, or replaced.
+            echo "IC_PITR_SETTLED restoring"
+            exit 0
+        fi
+        # The settings live in the database: a stopped one is started to
+        # read and write them, and stopped again. Left as it is, its next
+        # start would keep every segment.
+        started=0
+        if ! running db; then
+            docker compose up -d db
+            wait_db "$user"
+            started=1
+        fi
+        cluster="$(cluster_id "$user")"
+        command="$(db_psql "$user" -c "SELECT current_setting('archive_command')")"
+        if [ "$command" = "/opt/walg/archive %f" ] && [ "$cluster" = "$known" ]; then
+            answer=kept
+        elif [ "$command" = "/bin/true" ]; then
+            answer=parked
+        else
+            ic_log "parking archiving (command: '${command:-none}', cluster $cluster)"
+            # archive_mode on from the stack's command line stays on and
+            # discards; from postgresql.auto.conf it goes off at the next
+            # start, and discards until then.
+            db_psql "$user" \
+                -c "ALTER SYSTEM SET archive_command = '/bin/true'" \
+                -c "ALTER SYSTEM RESET archive_timeout" \
+                -c "ALTER SYSTEM RESET archive_mode" \
+                -c "SELECT pg_reload_conf()" >/dev/null
+            answer=parked
+        fi
+        if [ "$started" -eq 1 ]; then
+            docker compose stop db
+        fi
+        echo "IC_PITR_SETTLED $answer"
         ;;
 
     *)

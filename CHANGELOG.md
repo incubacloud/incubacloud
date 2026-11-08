@@ -8,8 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.219] — 2026-11-08
 
-The update creates the `cloud_job_no_return` table; nothing else changes in the
-database.
+The update creates the `cloud_job_no_return` table and, with `incubacloud_pitr`
+1.0.11, turns `failure_holds_queue` off for `pitr_enable`; nothing else changes
+in the database.
 
 ### Added
 
@@ -90,6 +91,30 @@ database.
   quotas, which had the same pattern: the second call waits for the row and
   adds to it, and the atomic upsert hands each call its own count, so parallel
   calls never pass the cap. No new row lock.
+- **A failed switch on of continuous recovery no longer leaves the database
+  keeping its log** (`incubacloud_pitr` 1.0.11). The rebuild before
+  `pitr_enable` starts the database with `archive_mode` on and no archive
+  command, which keeps every WAL segment until a command works: a download of
+  wal-g that GitHub answered with 503s (QA, 8-nov-2026), or an upload test that
+  failed, left it so with nothing to undo it, and the job's failure held the
+  instance's queue, so the retry its alert promised waited behind it with the
+  base copies and the backups. A new first step, «Settle archiving»
+  (`pitr.sh settle`, no network), parks archiving with `archive_command =
+  '/bin/true'` and a reload, never a restart, unless the cluster the panel has
+  base copies of archives with its own command; a switch on that fails or is
+  cancelled before archiving works asks the host to settle again on a
+  connection of its own. Parked, it is off with a warning and retried in a
+  day; kept, the archiving it had goes on; a host that does not answer leaves
+  a critical alert, also for a cancelled job, as the database may be keeping
+  its log. `settle` leaves the agent as it is. A failed `pitr_enable` no longer
+  holds the queue. The state no longer reads «off» when a new objective failed
+  to apply while the previous archiving went on. Switching off now sets
+  `/bin/true` before anything else, so a cut halfway, or a rebuild that drops
+  the mount first, no longer leaves a command that cannot run. The wal-g
+  download retries for up to 15 minutes, its wait doubling from 1 s, instead
+  of six times 10 s apart. Not covered: a rebuild of that chain that fails
+  after starting the database, or a `pitr_enable` cancelled while it waits,
+  runs no hook of the module (documented in `docs/architecture.md`).
 
 ## [1.0.217] — 2026-11-08
 

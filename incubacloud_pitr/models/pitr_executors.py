@@ -1,6 +1,6 @@
 """The jobs of continuous recovery, each a few ``pitr.sh`` steps.
 
-``pitr_enable``     install wal-g, archiving on, first base copy
+``pitr_enable``     settle, install wal-g, archiving on, first base copy
 ``pitr_disable``    archiving off, the agent removed
 ``pitr_base_backup`` daily: a base copy, then whatever left the window
 ``pitr_status``     every ten minutes: what the archiver and the agent say
@@ -56,12 +56,17 @@ CANCEL_WAIT_OUTSIDE_RUN_S = 30
 #: What the connection, the upload and the host's first wait for the
 #: process (up to 10 s) add to a cancel's wait.
 CANCEL_SSH_MARGIN_S = 120
+#: How long a switch on that failed or was stopped gives the host to
+#: settle archiving (``pitr.sh settle``: a read and a reload, a stopped
+#: database started and stopped again), on a connection of its own.
+SETTLE_TIMEOUT_S = 60 + CANCEL_SSH_MARGIN_S
 
 _CLUSTER_RE = re.compile(r"^IC_PITR_CLUSTER (\d+)", re.MULTILINE)
 _BASES_RE = re.compile(r"^IC_PITR_BASES (\d+) (\[.*\])\s*$", re.MULTILINE)
 _STATUS_RE = re.compile(r"^IC_PITR_STATUS (.+)$", re.MULTILINE)
 _RESTORE_RE = re.compile(r"^IC_PITR_RESTORE (.+)$", re.MULTILINE)
 _PURGED_RE = re.compile(r"^IC_PITR_PURGED (\d+)$", re.MULTILINE)
+_SETTLED_RE = re.compile(r"^IC_PITR_SETTLED (\w+)$", re.MULTILINE)
 #: The line ``restart_db`` prints once it started odoo again.
 _ODOO_RESTARTED = "IC_PITR_ODOO_RESTARTED"
 
@@ -248,15 +253,20 @@ class _PitrExecutor(AbstractSSHExecutor):
             }
         inst.sudo().write(vals)
 
-    def _pitr_alert(self, code, message, level="warning"):
+    def _pitr_alert(self, code, message, level="warning", even_if_cancelled=False):
         """Raise *code* on the instance, from an outcome hook (durable).
 
         Not core's ``_alert``, which is about the job's host and opens a
         cursor of its own.
+
+        :param bool even_if_cancelled: raise it from the hook closing a
+            job a person cancelled too (``ic_job_cancelled``): for what
+            the stop left, not for the failure the person stopped
         """
-        self.env["cloud.alert"].raise_alert(
-            code, message, level=level, instance=self._inst(),
-        )
+        alerts = self.env["cloud.alert"]
+        if even_if_cancelled:
+            alerts = alerts.with_context(ic_job_cancelled=False)
+        alerts.raise_alert(code, message, level=level, instance=self._inst())
 
     def _pitr_resolve(self, *codes):
         """Close *codes* on the instance, from an outcome hook (durable)."""
@@ -285,6 +295,58 @@ class _PitrExecutor(AbstractSSHExecutor):
         """Put a failure's errors in the job's log."""
         for err in errors:
             self._sys(f"✗ {err}")
+
+    async def _live_line(self, line):
+        """Log a line of the host's answer and write it to the job log now.
+
+        A terminal hook runs outside ``run``'s ticks, which write the log
+        while the steps run: the person who cancelled sees the host undo
+        what the job did as it does.
+
+        :param str line: a line of the command's output, stripped
+        """
+        await self.on_stdout(line)
+        if self._flush_logs():
+            self._publish_bus()
+
+    async def _ask_host(self, args, timeout):
+        """Run ``pitr.sh <args>`` on the job's host, on a connection of its own.
+
+        A terminal hook after a stop finds the run's connection closed and
+        its directory removed, or there never was one (an executor built
+        anew); one after a failure runs before the run removes its
+        directory. Either way a new directory, the scripts uploaded to
+        it, and everything removed once the host answered; the run's own
+        directory is known again afterwards, for the run to remove.
+
+        :param list args: the arguments of ``pitr.sh``
+        :param int timeout: seconds the command may take
+        :return: the command's ``CommandResult``
+        :raise Exception: whatever the connection or the command raised
+        """
+        run_staging = (
+            self._job_dir_path, self._job_dir_created,
+            self._scripts_uploaded, self._private_uploads,
+        )
+        self._job_dir_path = None
+        self._job_dir_created = False
+        self._scripts_uploaded = False
+        self._private_uploads = ()
+        try:
+            command = self.run_script("pitr.sh", args)
+            async with self._host_record.get_transport() as transport:
+                try:
+                    await self._upload_scripts(transport)
+                    return await transport.execute(
+                        command, self._live_line, self._live_line, timeout=timeout,
+                    )
+                finally:
+                    await self._discard_staging(transport)
+        finally:
+            (
+                self._job_dir_path, self._job_dir_created,
+                self._scripts_uploaded, self._private_uploads,
+            ) = run_staging
 
     async def on_stdout(self, line):
         """Log *line*; on odoo's restart, confirm the instance running.
@@ -317,12 +379,33 @@ class _PitrExecutor(AbstractSSHExecutor):
 
 
 class PitrEnableExecutor(_PitrExecutor):
-    """Install wal-g, switch archiving on and take the first base copy."""
+    """Install wal-g, switch archiving on and take the first base copy.
+
+    The rebuild before it starts the database with archiving on and no
+    command, which keeps every segment until a command works. The job
+    settles that first (``pitr.sh settle``), and again on the host when
+    it fails or is stopped before archiving works: no database is left
+    keeping its log for nothing, and a failure holds no queue.
+    """
 
     _job_type = "pitr_enable"
 
+    def _settle_args(self):
+        """``pitr.sh settle`` arguments, read from the instance now.
+
+        The cluster whose archive is kept, when it archives with its own
+        command: the one the panel has base copies of. ``-`` without a
+        copy: its log restores nothing without a base before it, and is
+        let go. A new cluster recorded by the switch (``_record_cluster``)
+        has none.
+        """
+        inst = self._inst()
+        d, user = self._common()
+        known = inst.pitr_cluster_id if inst.pitr_last_base_at else None
+        return ["settle", d, user, known or "-"]
+
     def get_commands(self):
-        """Install, enable (which starts the agent), first base copy.
+        """Settle, install, enable (which starts the agent), first base copy.
 
         The base copy is a full one only when the cluster has none on its
         timeline: a changed objective does not upload the database again.
@@ -330,6 +413,11 @@ class PitrEnableExecutor(_PitrExecutor):
         inst = self._inst()
         d, user = self._common()
         return [
+            (
+                "Settle archiving",
+                self.run_script("pitr.sh", self._settle_args()),
+                {"stop_on_failure": True},
+            ),
             (
                 "Install wal-g",
                 self.run_script("pitr.sh", [
@@ -357,33 +445,39 @@ class PitrEnableExecutor(_PitrExecutor):
         self._pitr_resolve(ALERT_FAILING, ALERT_BASE_MISSING)
         self._sys("✓ Continuous recovery is on.")
 
-    def _record_archiving(self, results):
-        """Record the cluster archiving now and its base copies.
-
-        :return: whether archiving was switched on and checked to work
-        """
+    def _record_seen(self, results):
+        """Record the cluster the switch read and the base copies listed."""
         out = _stdout(results)
         match = _CLUSTER_RE.search(out)
         if match:
             self._record_cluster(match.group(1))
         self._record_pitr_bases(out)
-        works = _ran(results, "Switch archiving on")
+
+    def _record_archiving(self, results):
+        """Record the cluster archiving now, its base copies, and 'ok'."""
+        self._record_seen(results)
         self._inst().sudo().write({
-            "pitr_state": "ok" if works else "failed",
-            "pitr_checked_at": fields.Datetime.now(),
+            "pitr_state": "ok", "pitr_checked_at": fields.Datetime.now(),
         })
-        return works
 
     async def on_failure(self, results, errors):
-        """Archiving may be on with no base copy yet: say which.
+        """Archiving works with no base copy yet, or is settled on the host.
 
-        A switch that never reached the database waits a day before the
-        next try (``_pitr_reconcile``); one whose upload does not work is
-        failing, which the watch keeps reading.
+        Past «Switch archiving on», archiving works and only the first
+        copy is missing. Before it, or when it failed, the host is asked
+        to settle archiving again, after whatever the failed or stopped
+        step left (a stop waited for its trap, ``transport.py``); the
+        state and the alert follow its answer (``_judge_settled``). Also
+        the path of a cancel (core's ``on_cancelled_running``) and of a
+        run that never reached its steps (``on_abort``).
+
+        :param dict results: what the steps answered, ``{}`` for none
+        :param list errors: why it failed
         """
         self._log_errors(errors)
         inst = self._inst()
-        if self._record_archiving(results):
+        if _ran(results, "Switch archiving on"):
+            self._record_archiving(results)
             self._pitr_alert(
                 ALERT_BASE_MISSING,
                 f"Continuous recovery is on for '{inst.name}', but its first "
@@ -391,14 +485,91 @@ class PitrEnableExecutor(_PitrExecutor):
                 f"taken (retried within the hour). See the job's log.",
             )
             return
-        if not _CLUSTER_RE.search(_stdout(results)):
-            inst.sudo().pitr_state = "off"
-        self._pitr_alert(
-            ALERT_FAILING,
-            f"Continuous recovery could not be switched on for "
-            f"'{inst.name}'; it is retried in a day. See the job's log.",
-            level="critical",
+        self._record_seen(results)
+        answer, why = await self._settle()
+        self._judge_settled(answer, why, "Switch archiving on" in results)
+
+    async def _settle(self):
+        """Ask the host to settle archiving, on a connection of its own.
+
+        :return: ``(answer, why)``: ``parked``, ``kept`` or ``restoring``
+            and ``""``, or None and what went wrong
+        """
+        self._sys(
+            f"Asking the host to settle the archiving of "
+            f"'{self._inst().name}'; waiting up to {SETTLE_TIMEOUT_S} s."
         )
+        self._flush_logs()
+        try:
+            result = await self._ask_host(
+                self._settle_args(), timeout=SETTLE_TIMEOUT_S,
+            )
+        except Exception as err:  # noqa: BLE001 — said, and alerted
+            return None, f"{type(err).__name__}: {err}"
+        answers = _SETTLED_RE.findall(result.stdout or "")
+        if not answers:
+            return None, f"exit {result.exit_status}, no answer"
+        return answers[-1], ""
+
+    def _judge_settled(self, answer, why, switched):
+        """Set the state and raise the alert a settled switch on leaves.
+
+        ``parked``: off, the database keeps no log, and the watch tries
+        again in a day. ``kept``: the archive of the cluster the panel has
+        copies of goes on; failing if this switch rewrote its command and
+        the upload test failed, else as it was (``failed`` for a first
+        switch, so the watch reads it). Anything else: the database may be
+        keeping its log, critical even for a cancelled job; off if it was
+        being switched on, else as it was.
+
+        :param str answer: ``pitr.sh settle``'s answer, or None
+        :param str why: what went wrong when there is no answer
+        :param bool switched: whether «Switch archiving on» ran
+        """
+        inst = self._inst()
+        state = inst.pitr_state or "off"
+        if answer == "parked":
+            inst.sudo().pitr_state = "off"
+            self._sys("✓ The database keeps no log meanwhile.")
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"Continuous recovery could not be switched on for "
+                f"'{inst.name}'; the database keeps no log meanwhile, and it "
+                f"is retried in a day. See the job's log.",
+            )
+        elif answer == "kept" and switched:
+            inst.sudo().pitr_state = "failed"
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"Continuous recovery could not be switched on for "
+                f"'{inst.name}': its archiving is set but uploads nothing, "
+                f"and the database keeps its log until it does; the watch "
+                f"keeps reading it. See the job's log.",
+                level="critical",
+            )
+        elif answer == "kept":
+            if state == "enabling":
+                inst.sudo().pitr_state = "failed"
+            self._sys("The archiving the instance had goes on.")
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"Continuous recovery could not be switched on again for "
+                f"'{inst.name}': the archiving it had goes on as it was. "
+                f"See the job's log.",
+            )
+        else:
+            if state == "enabling":
+                inst.sudo().pitr_state = "off"
+            if answer == "restoring":
+                why = "a restore holds the instance"
+            self._sys(f"✗ The host could not settle archiving: {why}.")
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"Continuous recovery could not be switched on for "
+                f"'{inst.name}', and the database may be keeping its log: "
+                f"check the host's disk ({why}). See the job's log.",
+                level="critical", even_if_cancelled=True,
+            )
 
     async def on_abort(self, exc):
         """A run that never reached its steps failed like one that did."""
@@ -876,45 +1047,6 @@ class PitrRestoreExecutor(_PitrExecutor):
         :rtype: bool
         """
         return self._loop is not None
-
-    async def _live_line(self, line):
-        """Log a line of the host's answer and write it to the job log now.
-
-        A terminal hook runs outside ``run``'s ticks, which write the log
-        while the steps run: the person who cancelled sees the host undo
-        the restore as it does.
-
-        :param str line: a line of the command's output, stripped
-        """
-        await self.on_stdout(line)
-        if self._flush_logs():
-            self._publish_bus()
-
-    async def _ask_host(self, args, timeout):
-        """Run ``pitr.sh <args>`` on the job's host, on a connection of its own.
-
-        A terminal hook after a stop finds the run's connection closed and
-        its directory removed, or there never was one (an executor built
-        anew): a new directory, the scripts uploaded to it, and everything
-        removed once the host answered.
-
-        :param list args: the arguments of ``pitr.sh``
-        :param int timeout: seconds the command may take
-        :return: the command's ``CommandResult``
-        :raise Exception: whatever the connection or the command raised
-        """
-        self._job_dir_path = None
-        self._job_dir_created = False
-        self._scripts_uploaded = False
-        command = self.run_script("pitr.sh", args)
-        async with self._host_record.get_transport() as transport:
-            try:
-                await self._upload_scripts(transport)
-                return await transport.execute(
-                    command, self._live_line, self._live_line, timeout=timeout,
-                )
-            finally:
-                await self._discard_staging(transport)
 
     async def on_cancelled_running(self, results, exc):
         """Stop the restore on the host and wait for it to put back what it did.

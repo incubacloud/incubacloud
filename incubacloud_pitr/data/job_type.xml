@@ -8,7 +8,10 @@
             <field name="apply_to">instance</field>
             <field name="description">Installs wal-g for the instance, turns database archiving on (one restart of the database) and takes the first base copy.</field>
             <field name="priority_tier">normal</field>
-            <field name="failure_holds_queue">True</field>
+            <!-- A failure settles archiving on the host first (pitr.sh
+                 settle): held, the queue would only stop the retry its
+                 alert promises, the base copies and the backups. -->
+            <field name="failure_holds_queue">False</field>
         </record>
 
         <record id="pitr_disable" model="cloud.job.type">

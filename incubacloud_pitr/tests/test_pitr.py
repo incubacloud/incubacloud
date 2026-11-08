@@ -816,7 +816,10 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
         executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
         self.assertEqual(
             [c[0] for c in executor.get_commands()],
-            ["Install wal-g", "Switch archiving on", "First base copy"],
+            [
+                "Settle archiving", "Install wal-g", "Switch archiving on",
+                "First base copy",
+            ],
         )
         out = (
             "IC_PITR_CLUSTER 77 restarted=1\nIC_PITR_BASES 77 "
@@ -844,14 +847,6 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
             ("code", "=", "pitr_base_missing"), ("instance_id", "=", self.inst.id),
         ]))
         self.assertFalse(self._alerts("pitr_failing"))
-
-    def test_a_switch_that_never_reached_the_database_is_off_and_critical(self):
-        executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
-        asyncio.run(executor.on_failure({
-            "Install wal-g": {"stdout": "checksum mismatch", "exit_status": 1},
-        }, ["Install failed"]))
-        self.assertEqual(self.inst.pitr_state, "off")
-        self.assertEqual(self._alerts("pitr_failing").level, "critical")
 
     def test_a_new_cluster_keeps_the_old_one_until_the_window_passes(self):
         self.inst.pitr_cluster_id = "66"
@@ -953,6 +948,244 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
         self.assertEqual(
             [c.args[3] for c in enqueue.call_args_list], ["pitr_base_backup"],
         )
+
+
+class TestASwitchOnThatFails(_PitrCase):
+    """A switch on settles the database first, and again when it fails.
+
+    The rebuild before it starts the database with archiving on and no
+    command, which keeps every segment until one works. ``pitr.sh settle``
+    lets them go (``parked``) unless the cluster the panel has base copies
+    of archives with its own command (``kept``); the state and the alert
+    follow the answer. No answer leaves the database possibly keeping its
+    log: that one is critical, even for a cancelled job.
+    """
+
+    SETTLED = {"stdout": "IC_PITR_SETTLED parked", "exit_status": 0}
+    INSTALL_FAILED = {
+        "Settle archiving": SETTLED,
+        "Install wal-g": {"stdout": "curl: (22) 503", "exit_status": 22},
+    }
+    SWITCH_FAILED = {
+        "Settle archiving": SETTLED,
+        "Install wal-g": {"stdout": "", "exit_status": 0},
+        "Switch archiving on": {
+            "stdout": "IC_PITR_CLUSTER 77 restarted=0", "exit_status": 1,
+        },
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.inst.write({"pitr_enabled": True, "pitr_state": "enabling"})
+        for name in ("_refresh_host_disk", "_publish_bus"):
+            patcher = patch.object(ex.PitrEnableExecutor, name, autospec=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _known(self):
+        """The panel has base copies of cluster 77."""
+        self.inst.write({
+            "pitr_cluster_id": "77", "pitr_last_base_at": "2026-11-07 03:00:00",
+            "pitr_oldest_base_at": "2026-11-01 03:00:00",
+        })
+
+    def _fail(self, results, answer="", error=None, exit_status=0, call=None):
+        """Fail a switch on with *results*, the host answering *answer*.
+
+        :param call: what to run instead of ``on_failure``, given the executor
+        :return: ``(executor, transport)``
+        """
+        executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
+        patcher, transport = TestCancellingARestore._host(
+            self, answer, exit_status=exit_status, error=error,
+        )
+        with patcher:
+            asyncio.run(
+                call(executor) if call
+                else executor.on_failure(results, ["failed"]),
+            )
+        self.inst.invalidate_recordset()
+        return executor, transport
+
+    def _asked(self, transport):
+        """The ``pitr.sh`` command the host was asked to run."""
+        transport.execute.assert_awaited_once()
+        return transport.execute.await_args.args[0]
+
+    def _first_step(self):
+        """The first step of a new switch on: ``(label, command, opts)``."""
+        executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
+        return executor.get_commands()[0]
+
+    def test_the_database_is_settled_before_anything_is_installed(self):
+        """A cluster with no base copy of the panel's is never kept."""
+        label, command, opts = self._first_step()
+        self.assertEqual(label, "Settle archiving")
+        self.assertIn(" settle ", command)
+        self.assertTrue(command.endswith(" odoo -"))
+        self.assertTrue(opts["stop_on_failure"])
+        self.inst.pitr_cluster_id = "77"
+        self.assertTrue(self._first_step()[1].endswith(" odoo -"))
+        self._known()
+        self.assertTrue(self._first_step()[1].endswith(" odoo 77"))
+
+    def test_an_install_that_failed_on_a_new_cluster_is_parked_and_off(self):
+        """The QA's GitHub 503: the database keeps no log meanwhile."""
+        _executor, transport = self._fail(
+            self.INSTALL_FAILED, "IC_PITR_SETTLED parked",
+        )
+        command = self._asked(transport)
+        self.assertIn(" settle ", command)
+        self.assertTrue(command.endswith(" odoo -"))
+        self.assertEqual(
+            transport.execute.await_args.kwargs["timeout"], ex.SETTLE_TIMEOUT_S,
+        )
+        self.assertEqual(self.inst.pitr_state, "off")
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("keeps no log meanwhile", alert.message)
+        self.assertIn("retried in a day", alert.message)
+
+    def test_an_install_that_failed_beside_an_archive_that_works_leaves_it(self):
+        """A new objective not applied: the archiving it had goes on, read."""
+        self._known()
+        self.inst.pitr_state = "ok"
+        _executor, transport = self._fail(
+            self.INSTALL_FAILED, "IC_PITR_SETTLED kept",
+        )
+        self.assertTrue(self._asked(transport).endswith(" odoo 77"))
+        self.assertEqual(self.inst.pitr_state, "ok")
+        self.assertEqual(self.inst.pitr_last_base_at, datetime(2026, 11, 7, 3, 0))
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("goes on as it was", alert.message)
+
+    def test_a_first_switch_the_host_kept_is_handed_to_the_watch(self):
+        """'Switching on' would never be read: 'failed' is, and corrected."""
+        self._known()
+        self._fail(self.INSTALL_FAILED, "IC_PITR_SETTLED kept")
+        self.assertEqual(self.inst.pitr_state, "failed")
+        self.assertEqual(self._alerts("pitr_failing").level, "warning")
+
+    def test_a_switch_that_uploads_nothing_on_a_known_cluster_is_failing(self):
+        self._known()
+        _executor, transport = self._fail(self.SWITCH_FAILED, "IC_PITR_SETTLED kept")
+        self.assertTrue(self._asked(transport).endswith(" odoo 77"))
+        self.assertEqual(self.inst.pitr_state, "failed")
+        self.assertEqual(self._alerts("pitr_failing").level, "critical")
+
+    def test_a_switch_that_uploads_nothing_on_a_new_cluster_is_parked(self):
+        """The cluster read is recorded, its log let go: it has no base."""
+        self._known()
+        results = self.SWITCH_FAILED | {"Switch archiving on": {
+            "stdout": "IC_PITR_CLUSTER 88 restarted=0", "exit_status": 1,
+        }}
+        _executor, transport = self._fail(results, "IC_PITR_SETTLED parked")
+        self.assertTrue(self._asked(transport).endswith(" odoo -"))
+        self.assertEqual(self.inst.pitr_cluster_id, "88")
+        self.assertEqual(self.inst.pitr_state, "off")
+        self.assertEqual(self._alerts("pitr_failing").level, "warning")
+
+    def test_a_host_that_cannot_be_asked_is_critical(self):
+        """It may be keeping its log: the disk is to be checked."""
+        self._fail(self.INSTALL_FAILED, error=OSError("unreachable"))
+        self.assertEqual(self.inst.pitr_state, "off")
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("check the host's disk", alert.message)
+        self.assertIn("unreachable", alert.message)
+
+    def test_a_host_that_does_not_answer_leaves_an_archiving_state(self):
+        self._known()
+        self.inst.pitr_state = "ok"
+        self._fail(self.INSTALL_FAILED, "boom", exit_status=1)
+        self.assertEqual(self.inst.pitr_state, "ok")
+        self.assertEqual(self._alerts("pitr_failing").level, "critical")
+
+    def test_during_a_restore_nothing_is_settled_and_it_is_said(self):
+        self._fail(self.INSTALL_FAILED, "IC_PITR_SETTLED restoring")
+        self.assertEqual(self.inst.pitr_state, "off")
+        alert = self._alerts("pitr_failing")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("a restore", alert.message)
+
+    def test_a_first_base_copy_that_failed_asks_the_host_nothing(self):
+        """Archiving works: only the copy is missing."""
+        _executor, transport = self._fail({
+            "Settle archiving": self.SETTLED,
+            "Install wal-g": {"stdout": "", "exit_status": 0},
+            "Switch archiving on": {
+                "stdout": "IC_PITR_CLUSTER 77 restarted=0", "exit_status": 0,
+            },
+            "First base copy": {"stdout": "boom", "exit_status": 1},
+        })
+        transport.execute.assert_not_awaited()
+        self.assertEqual(self.inst.pitr_state, "ok")
+        self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_a_run_that_never_reached_its_steps_is_settled(self):
+        """A worker that died: the executor built anew knows no step."""
+        _executor, transport = self._fail(
+            None, "IC_PITR_SETTLED parked",
+            call=lambda e: e.on_abort(JobWorkerLost("worker died")),
+        )
+        self.assertIn(" settle ", self._asked(transport))
+        self.assertEqual(self.inst.pitr_state, "off")
+
+    def test_a_cancel_settles_and_raises_nothing_once_parked(self):
+        def cancel(executor):
+            executor._step_results = {"Settle archiving": self.SETTLED}
+            return executor._dispatch_cancel(JobCancelled())
+
+        self.env.flush_all()
+        _executor, transport = self._fail(None, "IC_PITR_SETTLED parked", call=cancel)
+        self.assertIn(" settle ", self._asked(transport))
+        self.assertEqual(self.inst.pitr_state, "off")
+        self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_a_cancel_the_host_could_not_settle_raises_its_alert(self):
+        """Not the failure a person stopped: what the stop may have left."""
+        def cancel(executor):
+            executor._step_results = {"Settle archiving": self.SETTLED}
+            return executor._dispatch_cancel(JobCancelled())
+
+        self.env.flush_all()
+        self._fail(None, error=OSError("unreachable"), call=cancel)
+        self.assertEqual(self._alerts("pitr_failing").level, "critical")
+
+    def test_the_settle_has_a_directory_of_its_own_and_leaves_the_run_s(self):
+        """The run removes its own directory after the hook: still known."""
+        executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
+        executor.get_commands()
+        executor._job_dir_created = True
+        executor._scripts_uploaded = True
+        old = executor._job_dir()
+        patcher, transport = TestCancellingARestore._host(
+            self, "IC_PITR_SETTLED parked",
+        )
+        with patcher:
+            asyncio.run(executor.on_failure(self.INSTALL_FAILED, ["failed"]))
+        transport.upload_text_files.assert_awaited()
+        cleanup = transport.run.await_args_list[-1].args[0]
+        self.assertTrue(cleanup.startswith("rm -rf "))
+        self.assertNotIn(old, cleanup)
+        self.assertEqual(executor._job_dir(), old)
+        self.assertTrue(executor._job_dir_created)
+        self.assertTrue(executor._scripts_uploaded)
+
+    def test_a_failed_switch_on_holds_no_queue(self):
+        """The retry the alert promises, the base and the backup copies
+        are not held behind it; a failed switch off still holds."""
+        Job = self.env["cloud.job"]
+        for cls, code, holds in (
+            (ex.PitrEnableExecutor, "pitr_enable", False),
+            (ex.PitrDisableExecutor, "pitr_disable", True),
+        ):
+            failed = self._executor(cls, code, state="failed").job
+            self.assertEqual(failed.job_type_id.failure_holds_queue, holds)
+            Job._create_job_failed_alert(failed, exc_message="boom")
+            self.assertEqual(bool(Job._queue_held_by(self.inst.id, None)), holds)
 
 
 class TestOdooRestartedAroundTheDatabase(JobEndAssertions, _PitrCase):
@@ -1573,11 +1806,13 @@ class TestCancellingARestore(_PitrCase):
         transport, _enqueue = self._cancel(
             executor, "IC_PITR_RESTORE state=none",
         )
-        self.assertNotEqual(executor._job_dir(), old)
         transport.upload_text_files.assert_awaited()
+        uploaded = next(iter(transport.upload_text_files.await_args.args[0]))
         cleanup = transport.run.await_args_list[-1].args[0]
         self.assertTrue(cleanup.startswith("rm -rf "))
-        self.assertIn(executor._job_dir(), cleanup)
+        new = cleanup.removeprefix("rm -rf ")
+        self.assertNotEqual(new, old)
+        self.assertTrue(uploaded.startswith(f"{new}/"))
 
     def test_one_that_never_started_changed_nothing(self):
         executor = self._restore()

@@ -39,7 +39,10 @@ db$ SELECT i.name, a.code, a.level, a.message, a.create_date
 
 | Code | Message starts with | Meaning |
 |---|---|---|
-| `pitr_failing` | *could not be switched on* | The `pitr_enable` job failed. The watch retries in a day, not before. |
+| `pitr_failing` (warning) | *could not be switched on … keeps no log meanwhile* | The `pitr_enable` job failed or was stopped, and the host parked archiving (`pitr.sh settle`: `archive_command = '/bin/true'`). The watch retries in a day, not before; a failure holds no queue. |
+| `pitr_failing` (warning) | *could not be switched on again … goes on as it was* | A switch on again (a new objective) failed before it rewrote the archive command: the archiving the instance had goes on. |
+| `pitr_failing` | *could not be switched on … uploads nothing* | The archive command is set but the upload test failed (bucket, credentials): PostgreSQL keeps every segment until it works. As *cannot upload its database log* below. |
+| `pitr_failing` | *could not be switched on, and the database may be keeping its log* | The host could not be asked to park archiving (unreachable, no answer, a restore holding it). Check the disk and `SHOW archive_command` (§2); park it by hand in `db` (`ALTER SYSTEM SET archive_command = '/bin/true'`, then `SELECT pg_reload_conf()`), or switch off from the card. |
 | `pitr_failing` | *is not archiving its database* | `archive_mode` is off or the cluster changed (a move, a new deploy). The watch switches it on again. |
 | `pitr_failing` | *agent … is not running* | The `pitr` container is down: nothing uploads. |
 | `pitr_failing` | *cannot upload its database log* | Uploads fail (`N failures, M segments waiting`): bucket, credentials or network. PostgreSQL keeps the segments and retries. |
