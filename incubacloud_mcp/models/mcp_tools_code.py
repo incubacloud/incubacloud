@@ -1,7 +1,10 @@
 """Code tools: read a repository, branch, commit, pull requests, repositories.
 
 They work on a repository of the user's projects or instances only, with
-the panel's GitHub access. Reading goes as every repository read of the
+the panel's GitHub access. A repository of a Git provider (GitLab) is
+read with the panel's git and its provider's credential; the tools that
+write to one answer that it comes in a next version (plan-gitlab.md
+§4.10, 8-nov-2026). Reading goes as every repository read of the
 panel goes: the App, then the personal access token, then anonymously.
 Writing goes with the App and, when GitHub refuses it (the App the panel
 creates may only read contents), with the personal access token. A
@@ -27,7 +30,11 @@ from odoo.addons.incubacloud.github.client import GitHubAPIError, GitHubAppClien
 from odoo.addons.incubacloud.models._repo_requirements import (
     _parse_github_repo_path,
     is_safe_git_ref,
+    resolve_git_source,
+    resolve_repo_ref,
 )
+from odoo.addons.incubacloud.models.cloud_repo_mixin import _url_host
+from odoo.addons.incubacloud.net.git_reader import GitReaderError
 
 from ..github_write import GitHubWriter, path_of, segment
 from ..protocol.limits import cap_text
@@ -44,7 +51,7 @@ from .mcp_tools import quoted
 _logger = logging.getLogger(__name__)
 
 _DEVELOPER = "group_cloud_developer"
-_URL = string("The repository's https URL on GitHub.", max_length=500)
+_URL = string("The repository's https URL on GitHub or GitLab.", max_length=500)
 _BRANCH = string("The branch.", max_length=200)
 #: Files one commit may write.
 MAX_FILES = 50
@@ -60,7 +67,8 @@ _GIT_SSH_USER = "://git@"
 TOOLS = (
     ToolSpec(
         "repo_read",
-        "Read a file of a GitHub repository's branch, or list a folder (path empty "
+        "Read a file of a GitHub or GitLab repository's branch, or list a folder (path "
+        "empty "
         "for the top). Only repositories of the user's projects and instances. Long "
         "files come in pages: pass the next_offset back.",
         _DEVELOPER,
@@ -78,7 +86,7 @@ TOOLS = (
         untrusted=True,
         requires=(
             "a repository of the user's projects or instances, readable by the "
-            "panel's GitHub App or token."
+            "panel's GitHub App or token, or by its Git provider's credential."
         ),
     ),
     ToolSpec(
@@ -188,7 +196,8 @@ TOOLS = (
     ),
     ToolSpec(
         "project_connect_repo",
-        "Add an existing GitHub repository to a project's repositories. The user "
+        "Add an existing GitHub or GitLab repository to a project's repositories. The "
+        "user "
         "approves it first: instances created from the project afterwards clone it.",
         _DEVELOPER,
         obj(
@@ -206,8 +215,8 @@ TOOLS = (
         handler="_tool_project_connect_repo",
         confirm="always",
         requires=(
-            "a repository the panel's GitHub App or token can read, and a "
-            "project the user can change."
+            "a repository the panel's GitHub App or token, or a Git provider's "
+            "credential, can read, and a project the user can change."
         ),
     ),
 )
@@ -266,6 +275,27 @@ def _check_repo_path(path):
         )
 
 
+def _folder_entries(paths, folder):
+    """Return the entries one level under *folder* among a tree's file *paths*.
+
+    :param list paths: file paths of the repository, under *folder*
+    :param str folder: the folder, '' for the top
+    :return: ``[{name, type, size}]``, sorted by name; ``size`` is None
+    :rtype: list
+    """
+    prefix = f"{folder}/" if folder else ""
+    entries = {}
+    for path in paths:
+        rest = path.removeprefix(prefix)
+        name, sep, _rest = rest.partition("/")
+        if name:
+            entries.setdefault(name, "dir" if sep else "file")
+    return [
+        {"name": name, "type": kind, "size": None}
+        for name, kind in sorted(entries.items())
+    ]
+
+
 class McpCatalogCode(models.AbstractModel):
     """The code tools; they call no route of their own."""
 
@@ -294,6 +324,15 @@ class McpToolsCode(models.AbstractModel):
             owner, name = _parse_github_repo_path(url)
         except ValueError:
             owner = name = ""
+        host = _url_host(url)
+        if not owner and host and host not in ("github.com", "www.github.com"):
+            raise UserError(
+                self.env._(
+                    "There is no Git provider for %s: add it under "
+                    "Settings → Git providers.",
+                    host,
+                )
+            )
         if not (_is_repo_segment(owner) and _is_repo_segment(name)):
             raise UserError(
                 self.env._(
@@ -317,10 +356,18 @@ class McpToolsCode(models.AbstractModel):
         here. ``repo_create`` and ``project_connect_repo`` make that link
         themselves, once the user approves.
 
+        A repository of a Git provider (GitLab) is matched by its provider
+        and path, and returned as its ``RepoRef``; writing to one comes in
+        a next version.
+
         :param bool write: the call writes to the repository
+        :return: ``(owner, name)`` of GitHub, or a GitLab ``RepoRef``
         :raises UserError: when *url* is not a GitHub address, or no
             project (or, to read, instance) of the user's has it
         """
+        ref = self._gitlab_ref(url)
+        if ref:
+            return self._authorized_gitlab_repo(url, ref, write)
         owner, name = self._repo_of(url)
         key = (owner.lower(), name.lower())
         models_ = ("cloud.project.repo",)
@@ -339,6 +386,48 @@ class McpToolsCode(models.AbstractModel):
                     quoted(url),
                 )
             )
+        raise UserError(
+            self.env._(
+                "%s is not a repository of a project or an instance you can see in "
+                "the panel. Connect it to a project first (project_connect_repo).",
+                quoted(url),
+            )
+        )
+
+    @api.model
+    def _gitlab_ref(self, url):
+        """Return the ``RepoRef`` of *url* when a Git provider has it, or None.
+
+        :param str url: the address the agent gave
+        :rtype: RepoRef or None
+        """
+        ref = resolve_repo_ref(self.env, url)
+        return ref if ref and ref.kind == "gitlab" else None
+
+    @api.model
+    def _authorized_gitlab_repo(self, url, ref, write):
+        """Return *ref* when a line of the user's has it; never to write.
+
+        :param str url: the address the agent gave
+        :param RepoRef ref: its reference
+        :param bool write: the call writes to the repository
+        :rtype: RepoRef
+        :raises UserError: to write, or when no line of the user's has it
+        """
+        if write:
+            raise UserError(
+                self.env._(
+                    "Writing to GitLab repositories comes in a next version: for now "
+                    "the panel only reads this repository."
+                )
+            )
+        provider = self.env["cloud.git.provider"].sudo().search(
+            [("base_url", "=", ref.base)], limit=1
+        )
+        domain = [("provider_id", "=", provider.id), ("repo_path", "=", ref.path)]
+        for model in ("cloud.project.repo", "cloud.instance.repo"):
+            if self.env[model].search_count(domain, limit=1):
+                return ref
         raise UserError(
             self.env._(
                 "%s is not a repository of a project or an instance you can see in "
@@ -440,11 +529,14 @@ class McpToolsCode(models.AbstractModel):
     @api.model
     def _tool_repo_read(self, args):
         """A file's text, in pages, or a folder's entries."""
-        owner, name = self._authorized_repo(args["url"])
+        repo = self._authorized_repo(args["url"])
         self._check_branch(args["branch"])
         path = (args.get("path") or "").strip("/")
         if path:
             _check_repo_path(path)
+        if getattr(repo, "kind", None) == "gitlab":
+            return self._gitlab_repo_read(args, path)
+        owner, name = repo
         ref = urllib.parse.quote(args["branch"], safe="")
         data = self._repo_get(
             f"/repos/{segment(owner)}/{segment(name)}/contents/{path_of(path)}?ref={ref}"
@@ -470,6 +562,63 @@ class McpToolsCode(models.AbstractModel):
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             return {"ok": True, "path": path, "type": "binary", "size": len(raw)}
+        return {
+            "ok": True,
+            "path": path,
+            "type": "file",
+            **cap_text(text, args.get("offset") or 0),
+        }
+
+    @api.model
+    def _gitlab_repo_read(self, args, path):
+        """``repo_read`` of a GitLab repository, with the panel's git.
+
+        The tree under *path* first: a single entry equal to it is a
+        file, read and paged as GitHub's; more are a folder, listed one
+        level deep. Sizes are not known without the blobs.
+
+        :param dict args: the tool's arguments
+        :param str path: the checked path, '' for the top
+        :rtype: dict
+        :raises UserError: when git cannot read it, saying why
+        """
+        try:
+            source = resolve_git_source(self.env, args["url"])
+            paths = source.reader.tree(
+                source.ref, source.credential, args["branch"], path
+            )
+            if path and paths == [path]:
+                text = source.reader.read_files(
+                    source.ref, source.credential, args["branch"], [path]
+                )[path]
+            elif paths:
+                return {
+                    "ok": True, "path": path, "type": "dir",
+                    "entries": _folder_entries(paths, path),
+                }
+            else:
+                text = None
+        except GitReaderError as exc:
+            if exc.code == "too_large":
+                return {"ok": True, "path": path, "type": "too_large", "size": None}
+            raise UserError(
+                self.env._(
+                    "The panel could not read this repository with git (%s). Check "
+                    "the address, the branch and the credential under Settings → Git "
+                    "providers.",
+                    exc.code,
+                )
+            ) from exc
+        except UnicodeDecodeError:
+            return {"ok": True, "path": path, "type": "binary", "size": None}
+        except ValueError as exc:
+            raise UserError(
+                self.env._("%s is not a valid branch name.", quoted(args["branch"]))
+            ) from exc
+        if text is None:
+            raise UserError(
+                self.env._("%s is not in this branch.", quoted(path or "/"))
+            )
         return {
             "ok": True,
             "path": path,
@@ -859,14 +1008,15 @@ class McpToolsCode(models.AbstractModel):
         and the project's access as in the panel. A repository already
         there under another spelling of its address is not added again.
 
-        :param str url: the canonical address (``https://github.com/o/n``)
+        :param str url: the canonical address (``https://github.com/o/n``,
+            or a Git provider's ``https://host/group/name.git``)
         """
         project = self._route("/cloud/get_project", project_id=project_id)
         if project.get("ok") is False:
             return project
         repos = project.get("repos") or []
-        key = _repo_key(url)
-        if any(_repo_key(repo["url"]) == key for repo in repos):
+        key = self._line_key(url)
+        if any(self._line_key(repo["url"]) == key for repo in repos):
             return {"ok": True, "already_connected": True}
         lines = [
             {
@@ -889,6 +1039,21 @@ class McpToolsCode(models.AbstractModel):
         )
 
     @api.model
+    def _line_key(self, url):
+        """Return what makes two addresses one repository, or None.
+
+        GitHub's ``(owner, name)`` in lower case; a Git provider's
+        ``(base URL, path)``.
+
+        :param str url: an address as a line keeps it
+        :rtype: tuple or None
+        """
+        ref = self._gitlab_ref(url)
+        if ref:
+            return (ref.base, ref.path)
+        return _repo_key(url)
+
+    @api.model
     def _confirm_project_connect_repo(self, args):
         """What connecting a repository changes in the project."""
         return self.env._(
@@ -903,14 +1068,16 @@ class McpToolsCode(models.AbstractModel):
     @api.model
     def _tool_project_connect_repo(self, args):
         """Check the address and the branch, then connect it under one spelling."""
-        owner, name = self._repo_of(args["url"])
+        ref = self._gitlab_ref(args["url"])
+        if ref:
+            url = ref.canonical
+        else:
+            owner, name = self._repo_of(args["url"])
+            url = f"https://github.com/{owner}/{name}"
         branch = args.get("branch") or "main"
         self._check_branch(branch)
         return self._connect_repo(
-            args["project_id"],
-            f"https://github.com/{owner}/{name}",
-            branch,
-            args.get("addons") or "",
+            args["project_id"], url, branch, args.get("addons") or ""
         )
 
     # ── repo_create ────────────────────────────────────────────────────────

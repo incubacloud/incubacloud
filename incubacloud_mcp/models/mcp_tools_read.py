@@ -238,8 +238,8 @@ TOOLS = (
     ),
     ToolSpec(
         "github_repo_info",
-        "Read a GitHub repository: its branches, a branch's head, its Odoo modules or "
-        "its Python requirements.",
+        "Read a GitHub or GitLab repository: its branches, a branch's head, its Odoo "
+        "modules or its Python requirements.",
         _CONSULTANT,
         obj(
             {
@@ -256,8 +256,8 @@ TOOLS = (
         read_only=True,
         untrusted=True,
         requires=(
-            "a repository the panel's GitHub App or token can read; branch for "
-            "all but branches."
+            "a repository the panel's GitHub App or token, or a Git provider's "
+            "credential, can read; branch for all but branches."
         ),
     ),
     ToolSpec(
