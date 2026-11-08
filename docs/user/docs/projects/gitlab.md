@@ -1,0 +1,80 @@
+# Repositories on GitLab
+
+A project can deploy and rebuild from GitLab repositories, on gitlab.com or on
+a GitLab server of your own, alone or mixed with GitHub repositories in the same
+project.
+
+## Add the server
+
+**Settings → Git providers → Add a GitLab server.**
+
+- **Base URL**: `https://gitlab.com`, or your server's address. https only; add
+  the port or the path prefix if your server has one
+  (`https://git.example.com:8443/gitlab`).
+- **CA certificate**: only when a private CA signs your server's certificate.
+  Paste the CA's certificate (PEM); the panel shows its SHA-256 fingerprint so
+  you can check it. The panel never turns certificate checks off.
+- **Credentials**: one token per namespace. The namespace is empty for the whole
+  server, or a group, a subgroup or a project path (`acme`, `acme/odoo`,
+  `acme/odoo/addons`). A repository uses the token of the longest namespace that
+  covers it. A repository no token covers is read as a public one.
+
+The token is stored encrypted and never shown again; leave the field empty to
+keep it. It only travels to its own server: in a project that mixes GitLab and
+GitHub, each repository is cloned with its own credential.
+
+**Test connection**, with the URL of one of your repositories, checks two
+things and says what failed in each:
+
+- **git**: the panel can read the repository with its credential;
+- **API**: the token answers on GitLab's API, with its scopes and expiry.
+
+On IncubaCloud's hosted panels, a GitLab server must have a public address. A
+self-hosted panel reaches any GitLab its network reaches.
+
+## Which token
+
+| What the panel does | Scope | Token types |
+|---|---|---|
+| Deploy, rebuild, list branches and modules, pin a commit, the assistant's reads | `read_repository` (Reporter role) | deploy token, project, group or personal token |
+| Show a token's scopes and expiry | any scope | project, group or personal token |
+
+- **To deploy**, a **deploy token** or a **project access token** with
+  `read_repository`, one per repository, is enough. A deploy token needs its own
+  user name (`gitlab+deploy-token-N`) and does not answer on GitLab's API, so
+  the panel shows it as *no API*; set its expiry by hand if it has one.
+- Project, group and personal tokens expire (one year at most by default). The
+  panel warns two weeks before a token it knows the expiry of runs out.
+- On gitlab.com Free there are no project or group tokens: use a deploy token,
+  or a personal token of a bot user.
+
+Rebuild on push and previews of merge requests are coming in a next version;
+they will need a token with `api` and the Maintainer role. Until then a GitLab
+repository line says so under its address, and you rebuild by hand.
+
+## Repository URLs
+
+Type the repository's address in the project's or the instance's repository
+list, as `https://gitlab.com/acme/addons`, `gitlab.com/acme/addons` or
+`git@gitlab.com:acme/addons.git`. The panel stores it as
+`https://gitlab.com/acme/addons.git`: GitLab answers an address without `.git`
+with a redirect, and the panel follows no redirects. A line shows its server
+as **GitLab · gitlab.com**.
+
+An address of a server that is not under Settings → Git providers is refused,
+naming the server. Importing an instance from a host leaves such repositories
+out and lists them: add the server and import again.
+
+## Odoo 8.0 to 10.0
+
+The images of these series carry a git too old to be trusted with a token. For
+them the panel downloads every repository of the instance before the build,
+with git of its own, and the image's git touches none: no token reaches the
+image. A repository whose address redirects (a moved project) fails: correct
+its address.
+
+## What the panel does not do with GitLab
+
+- Importing a project from Odoo.sh reads GitHub only: Odoo.sh works with GitHub.
+- The assistant reads GitLab repositories but does not write to them yet:
+  branches, commits and merge requests come in a next version.

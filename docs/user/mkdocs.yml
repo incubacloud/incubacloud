@@ -109,7 +109,9 @@ nav:
     - Create your account: getting-started/signup.md
     - Create your first project: getting-started/first-project.md
     - Deploy your first instance: getting-started/first-deploy.md
-  - Projects: projects/index.md
+  - Projects:
+    - projects/index.md
+    - Repositories on GitLab: projects/gitlab.md
   - Instances:
     - instances/index.md
     - Logs: instances/logs.md

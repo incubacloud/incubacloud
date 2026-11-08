@@ -206,6 +206,14 @@ may connect the repository to the project).
   and writes only one of a project (`_authorized_repo`, comparing `(owner, name)` in
   lower case); `repo_create` and `project_connect_repo` add the repository to the
   project under its canonical address.
+- **GitLab.** A repository of a Git provider (Settings → Git providers) is the user's
+  when a line of theirs has the same provider and path (`repo_path`). `repo_read`
+  reads it with the panel's git and the provider's credential (`net/git_reader.py`):
+  the tree under the path, one file read and paged as GitHub's, or a folder listed one
+  level deep, without sizes. `project_connect_repo` and `github_repo_info` take its
+  address too. `repo_create_branch`, `repo_write_files` and `repo_open_pull_request`
+  answer that writing to GitLab comes in a next version; `repo_create` is GitHub's.
+  `get_project` and `get_instance` give each line's `repo_capabilities`.
 - **The branch rule is by user.** A new branch needs no approval: `incubacloud.mcp.agent.branch`
   records the branches an agent created, per user, so a branch any agent of the user
   created counts as the agent's, from another conversation or client. Writing to a

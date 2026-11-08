@@ -8,8 +8,9 @@ its instances, its repositories, its environments.
 - **Project** — top-level container. Owned by your account.
 - **Environment** — production or staging. Each project has one production and
   any number of stagings.
-- **Repository** — Git URL where your custom modules live. Detected as doodba
-  (via `.copier-answers.yml`) or Odoo.sh (via `.gitmodules`).
+- **Repository** — Git URL where your custom modules live, on GitHub or on
+  [GitLab](gitlab.md). Detected as doodba (via `.copier-answers.yml`) or Odoo.sh
+  (via `.gitmodules`).
 - **Backup backend** — the S3 destination for backups. Inherited from project
   unless overridden per instance.
 
