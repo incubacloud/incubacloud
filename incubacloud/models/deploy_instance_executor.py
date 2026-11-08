@@ -155,6 +155,49 @@ _ADDONS_CONFLICT_RE = re.compile(
     r"AddonsConfigError: Addon (\w+) defined in several repos \{([^}]+)\}"
 )
 
+#: The deploy's step that builds the instance's image. Not the rebuild's
+#: «Rebuild Odoo image», which ``apply_plan`` leaves out by its label.
+_LABEL_BUILD_DEPLOY = "Build Odoo image"
+#: What a failed image build waits before its one repetition, in seconds.
+_BUILD_RETRY_WAIT_S = 60
+#: The longest a failed first build may have run and still be repeated,
+#: in seconds (8-nov-2026). The passing failure the
+#: repetition is for comes in the image's first layer
+#: (``100-repos-aggregate``, cloning from GitHub). The job runner kills a
+#: job at 3600 s (``limit_time_real``), and that SIGKILL leaves the job
+#: orphaned and the instance in ``deploying``: a first attempt that ran
+#: this long leaves no room for a second.
+_BUILD_RETRY_MAX_FIRST_S = 900
+
+
+def _build_retried_once(build):
+    """Return a shell command that repeats a failed image build once.
+
+    The build clones every repository of the image, so a passing failure
+    at GitHub would otherwise fail the whole rebuild (QA, 31-oct-2026) or
+    deploy (QA, 8-nov-2026). The repetition also runs for a build that
+    fails for good: it only costs that build's time, and the job then
+    fails with the same error. A first attempt that ran
+    ``_BUILD_RETRY_MAX_FIRST_S`` or more is not repeated. It is timed
+    with the shell's ``SECONDS``: bash, root's login shell on the hosts.
+    A shell without it counts nothing and always repeats.
+
+    :param str build: the ``docker compose build`` command to run.
+    :return: the command, exiting with the status of its last attempt.
+    :rtype: str
+    """
+    return (
+        f"{{ ic_build_t0=${{SECONDS:-0}}; {build} || {{ ic_build_s=$?;"
+        f" if [ $(( ${{SECONDS:-0}} - ic_build_t0 ))"
+        f" -lt {_BUILD_RETRY_MAX_FIRST_S} ]; then"
+        f" echo 'The image build failed: trying once more"
+        f" in {_BUILD_RETRY_WAIT_S} s.';"
+        f" sleep {_BUILD_RETRY_WAIT_S}; {build};"
+        f" else echo 'The image build failed after"
+        f" {_BUILD_RETRY_MAX_FIRST_S} s or more: not trying again.';"
+        f" (exit $ic_build_s); fi; }}; }}"
+    )
+
 
 def _github_authed_url(url, token):
     """Normalize a GitHub repo URL to HTTPS and inject a token if available.
@@ -1992,9 +2035,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 f"mv {tmp_repos} {src}/repos.yaml",
             ),
             # 4b. Name each repository's head in the build context: the
-            #     image is built by the first ``docker compose run`` (or
-            #     ``up``), and Docker's cache of the clone has to follow
-            #     the branches, not the token in repos.yaml.
+            #     image is built by «Build Odoo image» below, and Docker's
+            #     cache of the clone has to follow the branches, not the
+            #     token in repos.yaml.
             ("Record repository heads", self._record_heads_command(d)),
             # 5. Copy incubacloud_connect into the private src tree so Odoo
             #    can find and install it at init time, over no copy of an
@@ -2045,6 +2088,17 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             (
                 "Pull images",
                 f"cd {d} && docker compose pull --ignore-pull-failures || true",
+            ),
+            # 9b. Build the image in a step of its own, repeated once if
+            #     it fails. The first ``compose run`` or ``up`` that found
+            #     it missing built it, never twice, and a passing failure
+            #     of GitHub failed a deploy in «Start instance» (QA,
+            #     8-nov-2026). Cached and without a pull, as that build
+            #     was; with the image there, nothing after it builds.
+            (
+                _LABEL_BUILD_DEPLOY,
+                f"cd {d} && " + _build_retried_once("docker compose build odoo"),
+                {"stop_on_failure": True},
             ),
             # 10. Start the database service first so it is ready for init.
             (
@@ -2152,18 +2206,19 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ("content", "ilike", "AddonsConfigError"),
             ]
         )
-        conflicts = []
+        # By addon: a build repeated once prints the same error twice.
+        conflicts = {}
         for chunk in chunks:
             m = _ADDONS_CONFLICT_RE.search(chunk.content)
             if m:
                 addon = m.group(1)
                 repos = [r.strip().strip("'\"") for r in m.group(2).split(",")]
-                conflicts.append({"addon": addon, "repos": repos})
+                conflicts.setdefault(addon, {"addon": addon, "repos": repos})
         if not conflicts:
             return
         # ``on_failure`` runs on a durable cursor already (see
         # ``_dispatch_outcome``), so the alert outlives the failed job.
-        inst._raise_addon_conflict_alert(conflicts, job=self.job)
+        inst._raise_addon_conflict_alert(list(conflicts.values()), job=self.job)
 
     def _dismiss_addon_conflict_alerts(self):
         """Close this instance's addon_conflict alert: the deploy went through.

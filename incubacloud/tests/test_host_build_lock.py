@@ -108,9 +108,8 @@ class TestHostBuildLock(_HostLockBase):
     def test_every_rebuild_variant_inherits_the_lock(self):
         """The lock must sit on the class that issues the build.
 
-        ``RebuildInstanceExecutor`` is the only place in the codebase
-        that runs ``docker compose build``; every other rebuild — tenant,
-        warm, apply-plan — subclasses it. Asserting it here is what makes
+        Every rebuild — tenant, warm, apply-plan — subclasses
+        ``RebuildInstanceExecutor``; core's deploy takes no lock. Asserting it here is what makes
         "one build per host" true for all of them rather than for the one
         that happened to be wired.
         """

@@ -132,6 +132,7 @@ from . import test_refresh_from_production
 from . import test_host_handoff
 from . import test_docker_prune_executor
 from . import test_build_cache_prune
+from . import test_build_retry
 from . import test_host_disk_refresh
 from . import test_nav_counts_route
 from . import test_deploy_retries_failed

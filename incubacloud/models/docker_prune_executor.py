@@ -28,9 +28,10 @@ BUILD_CACHE_MIN_FREE_GB = 8
 
 #: How recent what a job's cleanup keeps is: the build cache used and the
 #: images made within it. A delete or a rebuild holds the host's build lock
-#: (``HostBuildLockMixin``), but a deploy holds none, so the cleanup of one
-#: may run while the other builds: the cache that build is filling, and the
-#: image it has just built and not started yet, are that recent.
+#: (``HostBuildLockMixin``), but a deploy holds none (its «Build Odoo
+#: image» builds without it), so the cleanup of one may run while the
+#: other builds: the cache that build is filling, and the image it has
+#: just built and not started yet, are that recent.
 BUILD_CACHE_KEEP = "1h"
 
 #: The cleanup the daily prune does for disk, without the containers:
