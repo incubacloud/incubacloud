@@ -270,3 +270,4 @@ from . import test_merge_queued_payload
 from . import test_cloud_gitlab_event
 from . import test_gitlab_webhook
 from . import test_gitlab_receiver_real_cursors
+from . import test_register_git_hook

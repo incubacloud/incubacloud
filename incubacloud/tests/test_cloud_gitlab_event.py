@@ -79,7 +79,7 @@ class TestGitLabPush(GitLabHookCase):
         self.assertTrue(event.processed)
         self.assertFalse(self._rebuilds())
         alert = self.env["cloud.alert"].search([
-            ("code", "=", "gitlab_repo_moved"), ("state", "!=", "resolved"),
+            ("code", "=", "gitlab_repo_moved"), ("state", "=", "active"),
         ])
         self.assertTrue(alert)
         self.assertIn("acme/site", alert.message)

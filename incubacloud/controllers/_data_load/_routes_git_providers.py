@@ -324,11 +324,13 @@ class GitProvidersMixin:
                 [('provider_id', '=', provider.id)],
             )
             for model in ('cloud.project.repo', 'cloud.instance.repo')
+        ) + env['cloud.gitlab.hook'].sudo().search_count(
+            [('provider_id', '=', provider.id)],
         )
         if in_use:
             return {'ok': False, 'error': _(
-                "%(count)s repository lines use %(name)s: change or remove "
-                "them first.",
+                "%(count)s repository lines or webhooks use %(name)s: change "
+                "or remove them first.",
                 count=in_use, name=provider.name,
             )}
         provider.unlink()
