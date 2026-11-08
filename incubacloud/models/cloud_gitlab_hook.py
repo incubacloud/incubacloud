@@ -16,6 +16,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from ..gitlab.client import GitLabClient, GitLabError
+from ._concurrency import read_committed_cursor
 from ._git_urls import namespace_covers
 from .encrypted_char import EncryptedChar
 
@@ -43,6 +44,19 @@ def new_hook_key():
     :rtype: str
     """
     return secrets.token_hex(16)
+
+
+def _like_prefix(path):
+    """Return *path* escaped for a ``=like`` pattern, followed by ``/%``.
+
+    ``_`` and ``%`` in a GitLab path are literal: ``acm_`` must not
+    cover ``acme/web`` (Fable's review of the result of G3).
+
+    :param str path: a group path
+    :rtype: str
+    """
+    escaped = path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}/%"
 
 
 def _is_panel_hook(remote_url, own_url):
@@ -130,7 +144,7 @@ class CloudGitLabHook(models.Model):
         if self.scope == "project":
             domain.append(("repo_path", "=", self.path))
         else:
-            domain.append(("repo_path", "=like", f"{self.path}/%"))
+            domain.append(("repo_path", "=like", _like_prefix(self.path)))
         return tuple(
             self.env[model].sudo().search(domain)
             for model in ("cloud.instance.repo", "cloud.project.repo")
@@ -165,14 +179,23 @@ class CloudGitLabHook(models.Model):
         )
 
     def _mark_delivered(self):
-        """Turn the webhook ``active`` after a valid delivery.
+        """Turn a ``pending`` or ``failing`` webhook ``active`` after a valid delivery.
 
         Written only when it changes, so deliveries do not rewrite the
-        same row (Fable's review of G3).
+        same row (Fable's review of G3). An ``orphan`` stays one: no line
+        uses it, and a delivery must not restart its grace, or a webhook
+        that keeps receiving pushes would never be deleted; the daily
+        check turns it back when a line uses it again. A ``failing`` one
+        has its ``gitlab_hook_failing`` alert resolved, since GitLab
+        delivers to it again (Fable's review of the result of G3).
         """
+        Alert = self.env["cloud.alert"].sudo()
         for hook in self.sudo():
-            if hook.state != "active":
-                hook.write({"state": "active", "orphan_since": False})
+            if hook.state not in ("pending", "failing"):
+                continue
+            if hook.state == "failing":
+                Alert.resolve_alert(GITLAB_HOOK_FAILING_CODE, key=f"gitlab_hook:{hook.id}")
+            hook.write({"state": "active"})
 
     def _url(self):
         """Return the URL GitLab delivers to.
@@ -270,21 +293,53 @@ class CloudGitLabHook(models.Model):
     def _rotate_secret(self):
         """Give the webhook a new secret, and GitLab too when the webhook is the panel's.
 
-        :raises UserError: when GitLab refuses the new secret
+        The panel keeps the new secret only once GitLab took it: one that
+        GitLab refused would leave GitLab on the old one, and every
+        delivery would be a 401 (Fable's review of the result of G3). A
+        webhook set up by hand gets it at once, to be pasted in GitLab.
+
+        :raises UserError: when GitLab refuses the new secret, or no
+            credential may change it
         """
         self.ensure_one()
         hook = self.sudo()
-        hook.secret = secrets.token_urlsafe(32)
+        new_secret = secrets.token_urlsafe(32)
         if hook.remote_hook_id:
             try:
                 hook._client("api_write").update_hook(
                     hook._kind(), hook.gitlab_id or hook.path,
-                    hook.remote_hook_id, hook._url(), hook.secret,
+                    hook.remote_hook_id, hook._url(), new_secret,
                 )
             except GitLabError as exc:
                 raise UserError(_(
                     "GitLab did not take the new secret (%(code)s).", code=exc.code,
                 )) from exc
+        hook.secret = new_secret
+
+    def _stamp_verify_request(self, now):
+        """Record that a test was asked at *now*, unless one was in the last 15 s.
+
+        On a READ COMMITTED cursor of its own, committed before GitLab is
+        called: the test delivery arrives in another request, and two
+        «Verify» at once meet the same row instead of both passing
+        (§4.7.4, Fable's review of the result of G3).
+
+        :param datetime now: the moment of the request
+        :return: whether the stamp was written
+        :rtype: bool
+        """
+        self.ensure_one()
+        with read_committed_cursor(self.env.registry) as cr:
+            cr.execute("""
+                UPDATE cloud_gitlab_hook SET verify_requested_at = %s
+                 WHERE id = %s
+                   AND (verify_requested_at IS NULL OR verify_requested_at <= %s)
+                RETURNING id
+            """, (now, self.id, now - timedelta(seconds=VERIFY_INTERVAL_S)))
+            stamped = bool(cr.fetchone())
+            cr.commit()
+        self.invalidate_recordset(["verify_requested_at"])
+        return stamped
 
     def _request_test(self):
         """Ask GitLab for a test delivery, at most one per webhook every 15 s.
@@ -295,17 +350,15 @@ class CloudGitLabHook(models.Model):
         self.ensure_one()
         hook = self.sudo()
         now = fields.Datetime.now()
-        last = hook.verify_requested_at
-        if last and now - last < timedelta(seconds=VERIFY_INTERVAL_S):
-            return {"ok": False, "error": _(
-                "A test was asked for a moment ago: wait a few seconds."
-            )}
         if not hook.remote_hook_id:
             return {"ok": False, "error": _(
                 "This webhook was set up by hand: press Test → Tag push events "
                 "in GitLab."
             )}
-        hook.verify_requested_at = now
+        if not hook._stamp_verify_request(now):
+            return {"ok": False, "error": _(
+                "A test was asked for a moment ago: wait a few seconds."
+            )}
         try:
             hook._client("api_write").test_hook(
                 hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
@@ -331,9 +384,20 @@ class CloudGitLabHook(models.Model):
         """
         self.ensure_one()
         hook = self.sudo()
-        remote = hook._client("api_read").get_hook(
-            hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
-        )
+        try:
+            remote = hook._client("api_read").get_hook(
+                hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
+            )
+        except GitLabError as exc:
+            if exc.code != "forbidden":
+                raise
+            # A credential without the Maintainer role (Owner for a group)
+            # cannot read the webhook: nothing is known of its state.
+            _logger.warning(
+                "GitLab webhook %s of %s: the credential cannot read it (403); "
+                "its state is not checked", hook.id, hook.path,
+            )
+            return
         hook.last_status_check = fields.Datetime.now()
         disabled = remote.get("alert_status") in ("disabled", "temporarily_disabled") \
             or bool(remote.get("disabled_until"))
@@ -362,7 +426,10 @@ class CloudGitLabHook(models.Model):
         hook = self.sudo()
         if any(hook._lines()):
             if hook.state == "orphan":
-                hook.write({"state": "pending", "orphan_since": False})
+                # Deliveries leave an orphan alone (``_mark_delivered``):
+                # one that had them is active again, not waiting for one.
+                state = "active" if hook._last_delivery_at() else "pending"
+                hook.write({"state": state, "orphan_since": False})
             return
         now = fields.Datetime.now()
         if hook.state != "orphan":

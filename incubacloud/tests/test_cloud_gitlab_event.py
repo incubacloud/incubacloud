@@ -185,6 +185,38 @@ class TestGitLabDispatchFailure(GitLabHookCase):
         self.assertEqual(len(self._rebuilds(second)), 1)
 
 
+    def test_mark_delivered_that_raises_does_not_stop_the_dispatch(self):
+        """Its own savepoint: the receiver must not answer 500 for it."""
+        event = self._event(push_body())
+        with patch.object(
+            type(self.Hook), "_mark_delivered", side_effect=RuntimeError("boom"),
+        ), mute_logger("odoo.addons.incubacloud.models.cloud_gitlab_event"):
+            self.assertTrue(event._dispatch_safely())
+        self.assertTrue(event.processed)
+        self.assertEqual(len(self._rebuilds()), 1)
+
+
+class TestGitLabDeliveryState(GitLabHookCase):
+
+    def test_a_delivery_to_a_failing_hook_resolves_its_alert(self):
+        self.hook.state = "failing"
+        Alert = self.env["cloud.alert"].sudo()
+        Alert.raise_alert(
+            "gitlab_hook_failing", "disabled", key=f"gitlab_hook:{self.hook.id}",
+        )
+        self._event(push_body(ref="refs/tags/v3"), "Tag Push Hook")._dispatch_safely()
+        self.assertEqual(self.hook.state, "active")
+        self.assertFalse(Alert.search([
+            ("code", "=", "gitlab_hook_failing"), ("state", "=", "active"),
+        ]))
+
+    def test_a_delivery_to_an_orphan_leaves_it_orphan(self):
+        since = fields.Datetime.now() - timedelta(days=3)
+        self.hook.write({"state": "orphan", "orphan_since": since})
+        self._event(push_body(ref="refs/tags/v4"), "Tag Push Hook")._dispatch_safely()
+        self.assertEqual((self.hook.state, self.hook.orphan_since), ("orphan", since))
+
+
 class TestGitLabPurge(GitLabHookCase):
 
     def test_old_processed_events_go_and_failed_ones_stay(self):

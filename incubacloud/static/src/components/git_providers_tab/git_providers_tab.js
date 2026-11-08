@@ -88,6 +88,8 @@ export class GitProvidersTab extends Component {
             // to each, per id.
             hooks: [],
             hooksError: null,
+            // What the last delete of a webhook left in GitLab, or null.
+            hooksNotice: null,
             verifying: null,
             hookResult: {},
             // The URL and secret shown for a webhook, per id.
@@ -274,6 +276,7 @@ export class GitProvidersTab extends Component {
             return;
         }
         this.state.hookBusy = hook.id;
+        this.state.hooksNotice = null;
         delete this.state.hookResult[hook.id];
         try {
             const res = await rpc("/cloud/delete_git_hook", { hook_id: hook.id });
@@ -281,6 +284,8 @@ export class GitProvidersTab extends Component {
                 this.state.hookResult[hook.id] = { error: res.error };
                 return;
             }
+            // The webhook leaves the list: what GitLab keeps of it is said above.
+            this.state.hooksNotice = res.warning || null;
             delete this.state.hookSecret[hook.id];
             await this.loadHooks();
         } catch {

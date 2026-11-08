@@ -237,5 +237,24 @@ describe("GitProvidersTab — webhooks (G3)", () => {
         comp.state.confirmDialog.onConfirm();
         await done;
         expect(comp.state.hooks).toEqual([]);
+        expect(comp.state.hooksNotice).toBe(null);
+    });
+
+    test("a webhook deleted in the panel only says that GitLab keeps it", async () => {
+        const warning = "The panel cannot delete the webhook in GitLab";
+        patchWithCleanup(rpc, {
+            _rpc(url) {
+                return Promise.resolve(
+                    url === "/cloud/delete_git_hook" ? { ok: true, warning } : { hooks: [] },
+                );
+            },
+        });
+        const comp = tab();
+        comp.state.hooks = [hook()];
+        const done = comp.deleteHook(hook());
+        comp.state.confirmDialog.onConfirm();
+        await done;
+        expect(comp.state.hooks).toEqual([]);
+        expect(comp.state.hooksNotice).toBe(warning);
     });
 });

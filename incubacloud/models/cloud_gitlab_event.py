@@ -159,9 +159,15 @@ class CloudGitLabEvent(models.Model):
         self.ensure_one()
         event = as_platform(self)
         attempts = event.dispatch_attempts + 1
-        # Outside the savepoint: a valid delivery makes the webhook
-        # active even when its dispatch fails.
-        event.hook_id._mark_delivered()
+        # Outside the dispatch's savepoint: a valid delivery makes the
+        # webhook active even when its dispatch fails. In one of its own:
+        # a state that cannot be written must not cost the delivery nor
+        # answer 500 (Fable's review of the result of G3).
+        try:
+            with self.env.cr.savepoint():
+                event.hook_id._mark_delivered()
+        except Exception:
+            _logger.exception("GitLab event %s: the webhook's state was not written", event.id)
         try:
             with self.env.cr.savepoint():
                 event._dispatch()
