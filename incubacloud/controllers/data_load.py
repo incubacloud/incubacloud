@@ -37,6 +37,7 @@ from ._data_load._helpers import (  # noqa: F401
 )
 from ._data_load._routes_backends import BackendsMixin
 from ._data_load._routes_crud import CrudMixin
+from ._data_load._routes_git_hooks import GitHooksMixin
 from ._data_load._routes_git_providers import GitProvidersMixin
 from ._data_load._routes_github import GitHubMixin
 from ._data_load._routes_ops import OpsMixin
@@ -46,6 +47,7 @@ class CloudDataLoadController(
     CrudMixin,
     GitHubMixin,
     GitProvidersMixin,
+    GitHooksMixin,
     OpsMixin,
     BackendsMixin,
     Controller,
