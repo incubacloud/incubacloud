@@ -6280,6 +6280,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
+msgid ""
+"The panel cannot delete the webhook in GitLab (%(reason)s): it is deleted "
+"here only. Delete it in GitLab by hand (Settings → Webhooks)."
+msgstr ""
+"El panel no puede eliminar el webhook en GitLab (%(reason)s): solo se elimina "
+"aquí. Elimínelo a mano en GitLab (Settings → Webhooks)."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
 msgid "GitLab did not take the new secret (%(code)s)."
 msgstr "GitLab no aceptó el secreto nuevo (%(code)s)."
