@@ -67,6 +67,28 @@
     &:hover { text-decoration: underline; }
 }
 
+// A GitLab line: its server, and a quiet note of what comes later.
+.ic-repo-provider {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    margin-top: 6px;
+    font-size: 11px;
+}
+
+.ic-repo-provider-badge {
+    font-family: var(--rl-fm);
+    color: var(--rl-fg2);
+    background: var(--rl-surf3);
+    border-radius: var(--rl-rsm);
+    padding: 1px 7px;
+}
+
+.ic-repo-provider-next {
+    color: var(--rl-faint);
+}
+
 // ─── Shared module chip + dropdown (used by module_selector.xml) ──────────────
 
 .ic-module-selector {

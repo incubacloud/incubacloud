@@ -16,6 +16,8 @@
                         t-on-click="() => this.setTab('general')">General</button>
                 <button t-att-class="state.tab === 'github' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('github')">GitHub</button>
+                <button t-att-class="state.tab === 'git_providers' ? 'rl-tab active' : 'rl-tab'"
+                        t-on-click="() => this.setTab('git_providers')">Git providers</button>
                 <button t-att-class="state.tab === 'rates' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('rates')">Rates</button>
                 <t t-if="env.features?.observability?.configure !== false">
@@ -530,6 +532,11 @@
                         </t>
                     </div>
 
+                </t>
+
+                <!-- ── Git providers tab: each provider saves on its own ───── -->
+                <t t-if="state.tab === 'git_providers'">
+                    <GitProvidersTab/>
                 </t>
 
                 <!-- ── Rates tab (core endpoints) ──────────────────────────── -->

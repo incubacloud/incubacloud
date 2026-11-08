@@ -97,6 +97,12 @@
                        t-att-value="state.form.rate_limit_github_imports_per_hour"
                        t-on-change="(ev) => this.onIntInput('rate_limit_github_imports_per_hour', ev)"/>
             </div>
+            <div class="rl-frow">
+                <label>Git provider reads (per user, per hour)</label>
+                <input type="number" min="1"
+                       t-att-value="state.form.rate_limit_git_reads_per_hour"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_git_reads_per_hour', ev)"/>
+            </div>
         </div>
 
     </t>

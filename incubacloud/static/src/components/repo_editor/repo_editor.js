@@ -4,10 +4,26 @@ import { ModuleSelector } from "../module_selector/module_selector";
 import { SearchSelect } from "../search_select/search_select";
 
 /**
- * RepoEditor — single repo card with GitHub-backed branch and module selectors.
+ * The settings tab a read error points to.
+ *
+ * @param {string|boolean} hint the route's ``settings_hint``: "github",
+ *     "git_providers", or true from an older answer (GitHub)
+ * @returns {string|boolean} the tab, or false for none
+ */
+export function settingsTab(hint) {
+    if (!hint) {
+        return false;
+    }
+    return hint === "git_providers" ? "git_providers" : "github";
+}
+
+/**
+ * RepoEditor — single repo card with branch and module selectors read from
+ * GitHub or from a Git provider (GitLab).
  *
  * Props:
- *   repo      — { id, url, branch, addons?, excludes?, commit_sha? }
+ *   repo      — { id, url, branch, addons?, excludes?, commit_sha?,
+ *                 repo_capabilities? }
  *   hasAddons — bool (true for instance repos, false for project repos)
  *   onChange  — (field, value) => void
  *   onRemove  — () => void
@@ -33,10 +49,18 @@ export class RepoEditor extends Component {
             loadingBranches: false,
             loadingModules:  false,
             branchError:     null,
+            // Which settings tab fixes the read error: "github",
+            // "git_providers", or false.
             branchSettingsHint: false,
             moduleError:     null,
             freezing:        false,
+            // The Git provider's host the last branch read named, for a
+            // line not saved yet (GitLab only), or null.
+            providerHost:    null,
         });
+        // The URL the line was saved with: its capabilities describe it,
+        // not one typed since.
+        this.savedUrl = this.props.repo.url;
     }
 
     get isFrozen() {
@@ -47,6 +71,26 @@ export class RepoEditor extends Component {
         return (this.props.repo.commit_sha || "").slice(0, 7);
     }
 
+    /**
+     * What the panel does with this line's repository, as the server said
+     * (``repo_capabilities``), or null for a line not saved yet.
+     */
+    get capabilities() {
+        return this.props.repo.repo_capabilities || null;
+    }
+
+    /**
+     * The GitLab host of this line, from the last branch read or the
+     * saved line's capabilities, or null for GitHub.
+     */
+    get gitlabHost() {
+        if (this.state.providerHost) {
+            return this.state.providerHost;
+        }
+        const saved = this.props.repo.url === this.savedUrl;
+        return saved && this.capabilities?.provider === "gitlab" ? this.capabilities.host : null;
+    }
+
     // ── GitHub fetchers ────────────────────────────────────────────────────
 
     async _fetchBranches(url) {
@@ -55,12 +99,14 @@ export class RepoEditor extends Component {
         this.state.branchError = null;
         this.state.branchSettingsHint = false;
         this.state.branches = [];
+        this.state.providerHost = null;
         try {
             const data = await rpc("/cloud/get_repo_branches", { url });
             this.state.branches = data.branches || [];
+            this.state.providerHost = data.provider === "gitlab" ? data.host : null;
             if (!data.ok && data.error) {
                 this.state.branchError = data.error;
-                this.state.branchSettingsHint = !!data.settings_hint;
+                this.state.branchSettingsHint = settingsTab(data.settings_hint);
             }
         } catch {
             this.state.branchError = "Could not reach Odoo server";
@@ -198,7 +244,7 @@ export class RepoEditor extends Component {
                     sha = res.sha;
                 } else {
                     this.state.branchError = res.error || "Could not freeze";
-                    this.state.branchSettingsHint = !!res.settings_hint;
+                    this.state.branchSettingsHint = settingsTab(res.settings_hint);
                     return;
                 }
             } else {
@@ -208,7 +254,7 @@ export class RepoEditor extends Component {
                     sha = res.sha;
                 } else {
                     this.state.branchError = res.error || "Could not fetch HEAD";
-                    this.state.branchSettingsHint = !!res.settings_hint;
+                    this.state.branchSettingsHint = settingsTab(res.settings_hint);
                     return;
                 }
             }

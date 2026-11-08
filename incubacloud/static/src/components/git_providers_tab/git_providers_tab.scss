@@ -1,0 +1,91 @@
+// ── Settings → Git providers ──────────────────────────────────────────────────
+// Cards, status grid, hint box and inline messages come from relay.scss and
+// settings.scss; only the provider card's inner layout lives here.
+
+.ic-app .ic-gitp {
+
+    .ic-gitp-card { margin-bottom: 12px; }
+
+    .ic-gitp-body { flex: 1; min-width: 0; }
+
+    .ic-gitp-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+
+        h3 { margin-bottom: 4px; }
+    }
+
+    .ic-gitp-badge {
+        font-family: var(--rl-fm);
+        font-size: 11px;
+        color: var(--rl-muted);
+        background: var(--rl-surf3);
+        border-radius: var(--rl-rsm);
+        padding: 2px 8px;
+    }
+
+    .ic-gitp-creds {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 4px 0 12px;
+    }
+
+    .ic-gitp-cred {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        align-items: baseline;
+        font-size: 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-rsm);
+    }
+
+    .ic-gitp-ns { font-family: var(--rl-fm); color: var(--rl-fg); word-break: break-all; }
+    .ic-gitp-kind { color: var(--rl-fg2); }
+    .ic-gitp-scopes { font-family: var(--rl-fm); color: var(--rl-muted); }
+    .ic-gitp-meta { color: var(--rl-faint); }
+
+    .ic-gitp-test {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+
+        input { flex: 1 1 240px; min-width: 0; }
+    }
+
+    .ic-gitp-actions { margin-top: 12px; }
+    .ic-gitp-add { margin-top: 16px; }
+
+    .ic-gitp-editor { margin-bottom: 12px; }
+
+    .ic-gitp-credhead { margin-top: 18px; }
+
+    .ic-gitp-credrow {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto;
+        gap: 8px 12px;
+        align-items: end;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--rl-line);
+        margin-bottom: 10px;
+
+        .rl-frow { margin-bottom: 0; }
+    }
+
+    .ic-gitp-credrm { align-self: center; }
+
+    code {
+        font-family: var(--rl-fm);
+        font-size: 11.5px;
+    }
+}
+
+@media (max-width: 480px) {
+    .ic-app .ic-gitp .ic-gitp-credrow { grid-template-columns: 1fr auto; }
+    .ic-app .ic-gitp .rl-set-status { grid-template-columns: 1fr; }
+}
