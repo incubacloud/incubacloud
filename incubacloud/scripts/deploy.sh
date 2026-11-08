@@ -394,6 +394,30 @@ ic_marker_read() {
     fi
 }
 
+# Remove <src>'s markers' directory when it is a link or not a
+# directory: it is never read or written through.
+#
+# Usage: ic_heads_dir_unlink <src>
+ic_heads_dir_unlink() {
+    local dir
+    dir="$(ic_heads_dir "$1")"
+    if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
+        rm -f "${dir:?}"
+    fi
+}
+
+# Return whether <alias> names what doodba keeps in custom/src for
+# itself: its private addons and its repos and addons files, which a
+# tree of that name would replace (doodbalib reads .yaml or .yml).
+#
+# Usage: ic_reserved_alias <alias>
+ic_reserved_alias() {
+    case "$1" in
+        private|repos.yaml|repos.yml|addons.yaml|addons.yml) return 0 ;;
+    esac
+    return 1
+}
+
 # Write <sha> as <src>'s marker for <alias>, replacing whatever entry is
 # there (a rename replaces a link, never writes through it); the
 # directory is made again when it is not a plain one.
@@ -402,9 +426,7 @@ ic_marker_read() {
 ic_marker_write() {
     local dir tmp
     dir="$(ic_heads_dir "$1")"
-    if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
-        rm -f "${dir:?}"
-    fi
+    ic_heads_dir_unlink "$1"
     mkdir -p "$dir"
     tmp="$(mktemp "$dir/.tmp-XXXXXXXX")"
     printf '%s\n' "$3" > "$tmp"
@@ -661,8 +683,10 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         # helper container (<helper_image>).
         heads="$dir/odoo/custom/incubacloud-heads.txt"
         ic_git_traps
-        ic_git_sweep
+        # The containers a killed run left go before its HOMEs: one still
+        # running reads its token from the HOME it mounts.
         [ -z "$GIT_HELPER_IMAGE" ] || ic_git_reap
+        ic_git_sweep
         ic_resolve_heads "$spec" "$heads"
         # Rewritten by every build: kept out of the instance's history.
         ic_git_exclude "$dir" odoo/custom/incubacloud-heads.txt
@@ -746,18 +770,26 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         [ -d "$src" ] || ic_die "build context not found: $src"
         IC_GIT_ALL_IN_CONTAINER=1
         ic_git_traps
-        ic_git_sweep
         # 1. Before fetching anything: what a run cut short left, and the
         #    exclusions from the instance's history, so that a job killed
         #    between moving a tree and excluding it never lets
         #    ``rebuild.sh commit-dirty`` commit the trees. The containers
         #    first: one still running would write into a temporary tree
-        #    removed under it.
+        #    removed under it, or read its token from a HOME removed.
         ic_git_reap
+        ic_git_sweep
         for leftover in "$src"/.ic-tmp-*; do
             [ -e "$leftover" ] || [ -L "$leftover" ] || continue
             rm -rf "${leftover:?}"
         done
+        # The markers' directory is never read or written through a
+        # link, and the temporary markers of a killed ic_marker_write,
+        # which the removal of dropped trees does not see, go too.
+        heads_dir="$(ic_heads_dir "$src")"
+        ic_heads_dir_unlink "$src"
+        if [ -d "$heads_dir" ]; then
+            rm -f "$heads_dir"/.tmp-*
+        fi
         declare -A seen=()
         rows=()
         while IFS= read -r line; do
@@ -765,7 +797,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             alias="${IC_COLS[0]}"
             [ -n "$alias" ] || continue
             if [[ ! "$alias" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] \
-                || [ "$alias" = private ]; then
+                || ic_reserved_alias "$alias"; then
                 ic_die "invalid repository alias: $alias"
             fi
             [ -z "${seen[$alias]+x}" ] \
@@ -829,12 +861,17 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             fi
         done
         # Trees of repositories the instance no longer has (only those
-        # this step wrote, which have a marker).
-        heads_dir="$(ic_heads_dir "$src")"
-        for marker in "$heads_dir"/*; do
+        # this step wrote, which have a marker), from a markers'
+        # directory that is a plain one: through a link, the files of
+        # another directory would be taken for markers and removed.
+        markers=()
+        if [ -d "$heads_dir" ] && [ ! -L "$heads_dir" ]; then
+            markers=("$heads_dir"/*)
+        fi
+        for marker in "${markers[@]}"; do
             [ -e "$marker" ] || [ -L "$marker" ] || continue
             name="${marker##*/}"
-            if [ "$name" = private ] || [ -n "${seen[$name]+x}" ]; then
+            if ic_reserved_alias "$name" || [ -n "${seen[$name]+x}" ]; then
                 continue
             fi
             rm -f "${marker:?}"
