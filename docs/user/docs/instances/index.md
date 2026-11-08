@@ -198,14 +198,15 @@ If you push commits to a connected repo, two settings control what happens:
 Both live under `Instance detail → Networking`.
 
 **Auto-rebuild** acts on GitHub's push notifications, which reach the panel
-through the [GitHub App](../projects/index.md#private-repositories), so the
+through the [GitHub App](../projects/index.md#private-repositories), and on
+[GitLab's webhooks](../projects/gitlab.md#rebuild-on-push-webhooks), so the
 panel must be reachable from the internet.
 
 !!! info "IncubaCloud SaaS"
     On the Free plan the control plane sleeps after 30 minutes without use, and
-    a push notification that arrives while it sleeps only wakes it: the push is
-    not acted on. Rebuilding on push needs a paid plan, whose control plane
-    never sleeps; on Free, rebuild by hand.
+    a push notification of GitHub or GitLab that arrives while it sleeps only
+    wakes it: the push is not acted on. Rebuilding on push needs a paid plan,
+    whose control plane never sleeps; on Free, rebuild by hand.
 
 ## Pull request previews
 

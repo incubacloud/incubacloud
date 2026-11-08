@@ -73,6 +73,42 @@ with git of its own, and the image's git touches none: no token reaches the
 image. A repository whose address redirects (a moved project) fails: correct
 its address.
 
+## Rebuild on push: webhooks
+
+A GitLab repository rebuilds its instances on every push through a webhook of
+the panel. After you save GitLab lines, the repository editor shows the state
+of each one's webhook:
+
+- **Register webhook**: with a credential that has the `api` scope and the
+  **Maintainer** role in the project (**Owner** for a group), the panel creates
+  the webhook in GitLab itself, with push and merge request events and SSL
+  verification. Without that role, it says why and you set it up by hand.
+- **Set up by hand**: a manager sees the URL and the secret under **Settings →
+  Git providers → Webhooks**. In GitLab, open **Settings → Webhooks → Add new
+  webhook**, paste both, tick **Push events** and **Merge request events**,
+  keep **Enable SSL verification** and save. Then press **Test → Tag push
+  events**: never **Push events**, which repeats your last push and rebuilds.
+- A manager can register one webhook for a whole **group**, on GitLab tiers
+  that have group webhooks: it covers every project below the group.
+
+**Verify** asks GitLab for a test delivery (a tag push, which rebuilds nothing)
+and the list shows when it arrived. GitLab allows five tests a minute per
+webhook, so the panel waits 15 seconds between two.
+
+GitLab never resends a delivery on its own: one that failed is lost, and on
+gitlab.com four failures in a row disable the webhook for a while (forty, for
+good). The panel checks every day and warns you when GitLab disabled it; press
+**Verify** to enable it again, and rebuild by hand the instances that missed a
+push. On a GitLab server of your own this switch is off unless its
+administrator turned on `auto_disabling_web_hooks`.
+
+The same delivery sent twice (GitLab's **Resend**) or the same push twice does
+not rebuild twice: press **Rebuild** if you want another build.
+
+On the **Free plan** the panel sleeps when nobody uses it, and webhooks that
+arrive meanwhile (GitLab's and GitHub's) are lost: rebuild by hand after a
+push. Paid plans do not sleep.
+
 ## What the panel does not do with GitLab
 
 - Importing a project from Odoo.sh reads GitHub only: Odoo.sh works with GitHub.
