@@ -797,10 +797,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _gitlab_clone_url(self, raw_url, provider):
         """Return the URL the build clones a GitLab line from, with its token.
 
-        The credential of the longest namespace covering the path
-        (``_credential_for(path, 'git_read')``), or none for a public
-        repository; the URL rebuilt from the provider's base, with
-        ``.git``. The server is noted for the spec and the override.
+        The credential git reads the path with
+        (``cloud.git.provider._git_credential``): one that cannot write
+        first, as 11.0 to 19.0 carry it inside the image, then the longest
+        namespace; none for a public repository. The URL is rebuilt from
+        the provider's base, with ``.git``. The server is noted for the
+        spec and the override.
 
         :param str raw_url: the line's URL
         :param provider: the line's ``cloud.git.provider``
@@ -926,9 +928,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """Return the steps that name, or fetch, each repository's head.
 
         8.0 to 10.0 fetch every repository on the host
-        (``fetch-repos``), with a timeout that covers each download, its
-        retry and a build; the others record the heads and trust their
-        Git servers.
+        (``fetch-repos``), with a timeout that covers each download and
+        its retry (:func:`_fetch_timeout`; the build is a step of its
+        own); the others record the heads and trust their Git servers.
 
         :param str d: the instance's directory on the host
         :rtype: list

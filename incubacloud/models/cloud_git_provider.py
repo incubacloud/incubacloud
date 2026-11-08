@@ -161,6 +161,7 @@ class CloudGitProvider(models.Model):
 
     @api.depends("base_url")
     def _compute_authority(self):
+        """Compute ``host[:port]`` of the base URL, or False when it is invalid."""
         for rec in self:
             try:
                 rec.authority = base_authority(canonical_base_url(rec.base_url))
@@ -169,11 +170,16 @@ class CloudGitProvider(models.Model):
 
     @api.depends("base_url")
     def _compute_api_url(self):
+        """Compute the REST API's root: the base URL and ``/api/v4``."""
         for rec in self:
             rec.api_url = f"{rec.base_url}/api/v4" if rec.base_url else False
 
     @api.depends("ca_bundle")
     def _compute_ca_fingerprints(self):
+        """Compute the SHA-256 fingerprint of each CA certificate, one per line.
+
+        False without a bundle, or with one that does not parse.
+        """
         for rec in self:
             try:
                 rec.ca_fingerprints = (
@@ -265,6 +271,15 @@ class CloudGitProvider(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """Create providers with their base URL and CA bundle normalized.
+
+        Each is checked against the network policy and audited.
+
+        :param list vals_list: the values of each provider
+        :rtype: cloud.git.provider
+        :raises ValidationError: on a base URL or bundle that is refused
+        :raises UserError: when the ``public`` policy refuses the server
+        """
         records = super().create([self._normalize_vals(v) for v in vals_list])
         records._check_public_address()
         for rec in records:
@@ -272,6 +287,21 @@ class CloudGitProvider(models.Model):
         return records
 
     def write(self, vals):
+        """Write *vals*, keeping the tokens with the server they were given for.
+
+        A new base URL empties the token, scopes and user of each
+        credential of a provider it moves, so none is sent to the new
+        server before it is entered again; it is refused while
+        repository lines use the provider, and so is archiving it. A new
+        base URL is checked against the network policy. Each provider
+        is audited with the fields written.
+
+        :param dict vals: the values to write
+        :raises ValidationError: on a base URL or bundle that is refused
+        :raises UserError: when lines use a provider whose base URL
+            changes or that is archived, or when the ``public`` policy
+            refuses the new server
+        """
         vals = self._normalize_vals(vals)
         if "base_url" in vals:
             for rec in self:
@@ -301,6 +331,12 @@ class CloudGitProvider(models.Model):
         return result
 
     def unlink(self):
+        """Delete the providers, audited; their credentials go with them.
+
+        A provider that repository lines use is refused by the database
+        (``ondelete='restrict'``); the delete route counts them first to
+        say how many.
+        """
         for rec in self:
             rec._audit("Git provider removed")
         return super().unlink()
@@ -628,6 +664,10 @@ class CloudGitCredential(models.Model):
 
     @api.constrains("kind", "username")
     def _check_username(self):
+        """Require a deploy token's own user name (``gitlab+deploy-token-N``).
+
+        :raises ValidationError: for a deploy token without one
+        """
         for rec in self:
             if rec.kind == "deploy" and not rec.username:
                 raise ValidationError(_(

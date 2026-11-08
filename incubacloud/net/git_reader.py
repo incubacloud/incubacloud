@@ -256,6 +256,12 @@ class GitReader:
 
         The remote is named: without a named remote git keeps no
         promisor and cannot fetch a blob on demand (spike, 8-nov-2026).
+
+        :param run: the session's runner (:meth:`_Session._run`)
+        :param RepoRef ref: the repository
+        :param str rev: the branch, tag or commit to fetch, already checked
+        :raises GitReaderError: when git fails, or ``too_large`` when what
+            was fetched passes :data:`MAX_FETCH_BYTES`
         """
         run(["init", "-q", "--bare", "repo"], FETCH_TIMEOUT)
         run(["-C", "repo", "remote", "add", "origin", ref.canonical], FETCH_TIMEOUT)
@@ -270,6 +276,8 @@ class GitReader:
     def _session(self, ref, credential):
         """Return a context manager giving a ``run(argv, timeout)``.
 
+        :param RepoRef ref: the repository the session reads
+        :param credential: ``(username, token)``, or None for a public one
         :rtype: _Session
         """
         return _Session(self, ref, credential)
@@ -277,6 +285,9 @@ class GitReader:
     def _version_ok(self, env):
         """Return whether the panel's git honours ``http.curloptResolve``.
 
+        :param dict env: the environment git runs with (the session's)
+        :return: False when git does not run or its version is older than
+            :data:`_MIN_PIN_VERSION`
         :rtype: bool
         """
         try:
@@ -296,7 +307,14 @@ class _Session:
     """One call's private HOME, git settings and runner."""
 
     def __init__(self, reader, ref, credential):
-        """Keep what the session builds its settings from."""
+        """Keep what the session builds its settings from.
+
+        Nothing is made until ``__enter__``.
+
+        :param GitReader reader: the reader the session runs git for
+        :param RepoRef ref: the repository the session reads
+        :param credential: ``(username, token)``, or None for a public one
+        """
         self.reader = reader
         self.ref = ref
         self.credential = credential
