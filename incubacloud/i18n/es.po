@@ -18660,3 +18660,9 @@ msgstr "· API:"
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "Access token"
 msgstr "Token de acceso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
+msgid "•••••••• (stored, leave blank to keep)"
+msgstr "•••••••• (guardado, déjelo en blanco para conservarlo)"

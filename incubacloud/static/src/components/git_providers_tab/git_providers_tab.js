@@ -115,6 +115,19 @@ export class GitProvidersTab extends Component {
     }
 
     /**
+     * The placeholder of a credential's token field: a stored token is
+     * kept when the field is left blank.
+     *
+     * @param {Object} cred a credential row of the editor
+     * @returns {string}
+     */
+    tokenPlaceholder(cred) {
+        return cred.has_token
+            ? _t("•••••••• (stored, leave blank to keep)")
+            : "glpat-… / gldt-…";
+    }
+
+    /**
      * The label of a token kind.
      *
      * @param {string} kind one of CREDENTIAL_KINDS
