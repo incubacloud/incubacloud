@@ -11,11 +11,12 @@ Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 import logging
 
-from odoo import _, fields, http
+from odoo import _, api, fields, http
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 
 from ...gitlab.client import GitLabError
+from ...models._concurrency import read_committed_cursor
 
 _logger = logging.getLogger(__name__)
 
@@ -71,6 +72,18 @@ def _serialize_hook(hook, with_secret_state):
     }
 
 
+def _readable_by(hook, env):
+    """Return whether the user of *env* may read a repository line *hook* serves.
+
+    :param hook: a ``cloud.gitlab.hook`` (sudo)
+    :param env: the environment of the user who asks
+    :rtype: bool
+    """
+    return any(
+        lines.with_env(env)._filtered_access('read') for lines in hook._lines()
+    )
+
+
 class GitHooksMixin:
 
     def _hook_or_error(self, hook_id):
@@ -114,6 +127,9 @@ class GitHooksMixin:
         sec._check_cloud_group('group_cloud_consultant')
         can_manage = sec._has_cloud_group('group_cloud_manager')
         hooks = request.env['cloud.gitlab.hook'].sudo().search([])
+        if not can_manage:
+            # The paths of the lines the user may read, no other.
+            hooks = hooks.filtered(lambda h: _readable_by(h, request.env))
         return {
             'ok': True, 'can_manage': can_manage,
             'hooks': [_serialize_hook(h, can_manage) for h in hooks],
@@ -124,8 +140,13 @@ class GitHooksMixin:
         """Create or reuse the webhook of a GitLab line's path, and register it.
 
         ``scope='group'`` (managers only) covers the line's group.
-        Idempotent: ``INSERT … ON CONFLICT DO NOTHING`` and a re-read, and
-        in GitLab the panel's webhook is adopted rather than doubled.
+        Idempotent, on a READ COMMITTED cursor of its own committed at
+        the end: ``INSERT … ON CONFLICT DO NOTHING``, then the row held
+        ``FOR NO KEY UPDATE`` while GitLab is called. A second request at
+        once waits for the first and reads its ``remote_hook_id``, so it
+        adopts the webhook instead of creating another; at the request's
+        REPEATABLE READ it met a row its snapshot could not see and
+        answered 500 (Fable's review of the result of G3).
 
         :param str line_model: ``project`` or ``instance``
         :param int line_id: the repository line
@@ -149,23 +170,37 @@ class GitHooksMixin:
         if scope == 'group':
             sec._check_cloud_group('group_cloud_manager')
             path = path.rsplit('/', 1)[0]
-        hook = self._ensure_hook(line.provider_id, scope, path)
-        reason = hook._register_remote()
-        return {
-            'ok': True, 'hook': _serialize_hook(hook, sec._has_cloud_group('group_cloud_manager')),
-            'manual': bool(reason), 'reason': reason or '',
-        }
+        can_manage = sec._has_cloud_group('group_cloud_manager')
+        provider_id = line.provider_id.id
+        with read_committed_cursor(request.env.registry) as cr:
+            env = api.Environment(cr, request.env.uid, dict(request.env.context))
+            hook = self._ensure_hook(env, provider_id, scope, path)
+            reason = hook._register_remote()
+            answer = {
+                'ok': True, 'hook': _serialize_hook(hook, can_manage),
+                'manual': bool(reason), 'reason': reason or '',
+            }
+            cr.commit()
+        return answer
 
     @staticmethod
-    def _ensure_hook(provider, scope, path):
-        """Return the webhook of ``(provider, scope, path)``, created if missing.
+    def _ensure_hook(env, provider_id, scope, path):
+        """Return the webhook of ``(provider, scope, path)``, created if missing, locked.
 
-        Two users pressing at once, or a retry, meet the same row.
+        Two users pressing at once, or a retry, meet the same row: the
+        second waits on the lock until the first commits, then reads
+        what it wrote. Run it on a READ COMMITTED cursor, where the
+        conflict and the re-read see a row committed by another
+        request after this one began.
 
+        :param env: an environment on a READ COMMITTED cursor
+        :param int provider_id: the ``cloud.git.provider``
+        :param str scope: ``project`` or ``group``
+        :param str path: the project or group path
         :rtype: cloud.gitlab.hook (sudo)
         """
-        Hook = request.env['cloud.gitlab.hook'].sudo()
-        cr = request.env.cr
+        Hook = env['cloud.gitlab.hook'].sudo()
+        cr = env.cr
         defaults = Hook.default_get(['hook_key', 'secret'])
         cr.execute("""
             INSERT INTO cloud_gitlab_hook
@@ -175,16 +210,20 @@ class GitHooksMixin:
                     %s, now() at time zone 'utc')
             ON CONFLICT (provider_id, scope, path) DO NOTHING
             RETURNING id
-        """, (provider.id, scope, path, defaults['hook_key'],
-              request.env.uid, request.env.uid))
+        """, (provider_id, scope, path, defaults['hook_key'], env.uid, env.uid))
         row = cr.fetchone()
         if row:
             hook = Hook.browse(row[0])
             hook.secret = defaults['secret']
             return hook
-        return Hook.search([
-            ('provider_id', '=', provider.id), ('scope', '=', scope), ('path', '=', path),
-        ], limit=1)
+        # Held while GitLab is called; FOR NO KEY UPDATE, as the row lock
+        # rule asks: no column of a unique index changes.
+        cr.execute("""
+            SELECT id FROM cloud_gitlab_hook
+             WHERE provider_id = %s AND scope = %s AND path = %s
+               FOR NO KEY UPDATE
+        """, (provider_id, scope, path))
+        return Hook.browse(cr.fetchone()[0])
 
     @http.route(['/cloud/reveal_git_hook_secret'], type='jsonrpc', auth='user')
     def cloud_reveal_git_hook_secret(self, hook_id, rotate=False):
@@ -227,26 +266,42 @@ class GitHooksMixin:
     def cloud_delete_git_hook(self, hook_id):
         """Delete a webhook in GitLab (when it is the panel's) and in the panel.
 
-        :return: ``{ok}`` or ``{ok: False, error}``
+        Without a credential that may delete it in GitLab, it is deleted
+        in the panel only, and ``warning`` says it is left in GitLab.
+
+        :return: ``{ok, warning}`` or ``{ok: False, error}``
         :rtype: dict
         """
         self._sec()._check_cloud_group('group_cloud_manager')
         hook = self._hook_or_error(hook_id)
         if not hook:
             return {'ok': False, 'error': _("Webhook not found.")}
+        warning = ''
         if hook.remote_hook_id:
             try:
-                hook._client('api_write').delete_hook(
-                    hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
+                client = hook._client('api_write')
+            except UserError as exc:
+                # No credential may delete it (or the server is refused):
+                # the panel forgets it, and says that GitLab keeps it.
+                client = None
+                warning = _(
+                    "The panel cannot delete the webhook in GitLab (%(reason)s): "
+                    "it is deleted here only. Delete it in GitLab by hand "
+                    "(Settings → Webhooks).", reason=exc.args[0],
                 )
-            except (GitLabError, UserError) as exc:
-                if getattr(exc, 'code', '') != 'not_found':
-                    return {'ok': False, 'error': _(
-                        "GitLab did not delete the webhook: delete it there "
-                        "by hand (Settings → Webhooks), then here."
-                    )}
+            if client:
+                try:
+                    client.delete_hook(
+                        hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
+                    )
+                except GitLabError as exc:
+                    if exc.code != 'not_found':
+                        return {'ok': False, 'error': _(
+                            "GitLab did not delete the webhook: delete it there "
+                            "by hand (Settings → Webhooks), then here."
+                        )}
         hook.unlink()
-        return {'ok': True}
+        return {'ok': True, 'warning': warning}
 
     @http.route(['/cloud/reprocess_git_event'], type='jsonrpc', auth='user')
     def cloud_reprocess_git_event(self, event_id):

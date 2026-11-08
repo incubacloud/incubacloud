@@ -6,6 +6,7 @@ from odoo import fields
 from odoo.addons.incubacloud.controllers._data_load import _routes_git_hooks
 from odoo.addons.incubacloud.gitlab.client import GitLabClient, GitLabError
 from odoo.addons.incubacloud.models import cloud_gitlab_hook
+from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
 from odoo.exceptions import AccessError
 from odoo.tests import tagged
 
@@ -16,8 +17,16 @@ from .test_git_provider_routes import _RoutesCase
 class TestRegisterGitHook(_RoutesCase):
 
     def setUp(self):
-        """A project with a GitLab line, a credential with api, a mocked API client."""
+        """A project with a GitLab line, a credential with api, a mocked API client.
+
+        The registry is in test mode: registering and «Verify» write on a
+        READ COMMITTED cursor of their own, which then rides on the test's.
+        """
         super().setUp()
+        self.registry_enter_test_mode()
+        # The routes run under a stand-in request, which carries no test
+        # cursor cookie.
+        self.http_request_allow_all = True
         self.env["ir.config_parameter"].sudo().set_param(
             "web.base.url", "https://panel.example.com",
         )
@@ -53,6 +62,7 @@ class TestRegisterGitHook(_RoutesCase):
         :rtype: dict
         """
         env = self.env(user=user) if user else self.env
+        env.flush_all()
         with patch.object(_routes_git_hooks, "request", MagicMock(env=env)):
             return super()._serve(route, user=user, **kwargs)
 
@@ -124,6 +134,7 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertIn("wait a minute", limited["error"])
 
     def test_get_git_hooks_shows_the_last_delivery(self):
+        self.project.member_ids = self.consultant
         hook_id = self._register()["hook"]["id"]
         hooks = self._serve("cloud_get_git_hooks", user=self.consultant)["hooks"]
         row = next(h for h in hooks if h["id"] == hook_id)
@@ -131,6 +142,7 @@ class TestRegisterGitHook(_RoutesCase):
         self.assertFalse(row["url"], "the URL is shown to managers only")
 
     def test_get_git_hooks_lists_failed_deliveries_to_managers_only(self):
+        self.project.member_ids = self.consultant
         hook_id = self._register()["hook"]["id"]
         Event = self.env["cloud.gitlab.event"].sudo()
         failed = Event.create({
@@ -145,6 +157,80 @@ class TestRegisterGitHook(_RoutesCase):
         rows = self._serve("cloud_get_git_hooks", user=self.consultant)["hooks"]
         row = next(h for h in rows if h["id"] == hook_id)
         self.assertEqual(row["failed_events"], [])
+
+    def test_a_rotation_gitlab_refuses_keeps_the_secret(self):
+        """GitLab keeps the old secret, so the panel must too: else every delivery is a 401."""
+        hook_id = self._register()["hook"]["id"]
+        hook = self.env["cloud.gitlab.hook"].browse(hook_id)
+        old = hook.secret
+        self.api.update_hook.side_effect = GitLabError("forbidden", 403)
+        answer = self._serve("cloud_reveal_git_hook_secret", hook_id=hook_id, rotate=True)
+        self.assertFalse(answer["ok"])
+        hook.invalidate_recordset(["secret"])
+        self.assertEqual(hook.secret, old)
+
+    def test_a_manual_webhook_rotates_in_the_panel_only(self):
+        hook = self.env["cloud.gitlab.hook"].create({
+            "provider_id": self.provider.id, "path": "acme/manual",
+        })
+        old = hook.secret
+        answer = self._serve("cloud_reveal_git_hook_secret", hook_id=hook.id, rotate=True)
+        self.assertTrue(answer["ok"])
+        self.assertNotEqual(answer["secret"], old)
+        self.api.update_hook.assert_not_called()
+
+    def test_verify_stamps_its_request_on_a_committed_cursor_before_gitlab(self):
+        """The delivery arrives in another request: the stamp must be committed first."""
+        hook_id = self._register()["hook"]["id"]
+        order = []
+
+        def cursor(registry):
+            """Record that the stamp's cursor was opened."""
+            order.append("cursor")
+            return read_committed_cursor(registry)
+
+        self.api.test_hook.side_effect = lambda *_a: order.append("gitlab")
+        with patch.object(
+            cloud_gitlab_hook, "read_committed_cursor", autospec=True,
+            side_effect=cursor,
+        ):
+            answer = self._serve("cloud_verify_git_hook", hook_id=hook_id)
+        self.assertTrue(answer["ok"])
+        self.assertEqual(order, ["cursor", "gitlab"])
+
+    def test_get_git_hooks_shows_a_consultant_the_paths_he_reads_only(self):
+        self.project.member_ids = self.consultant
+        mine = self._register()["hook"]["id"]
+        other_project = self.env["cloud.project"].create({"name": "Not his"})
+        self.env["cloud.project.repo"].create({
+            "project_id": other_project.id,
+            "url": "https://gitlab.com/acme/secret.git", "branch": "main",
+        })
+        other = self.env["cloud.gitlab.hook"].create({
+            "provider_id": self.provider.id, "path": "acme/secret",
+        })
+        ids = {h["id"] for h in self._serve("cloud_get_git_hooks", user=self.consultant)["hooks"]}
+        self.assertEqual(ids & {mine, other.id}, {mine})
+        ids = {h["id"] for h in self._serve("cloud_get_git_hooks", user=self.manager)["hooks"]}
+        self.assertLessEqual({mine, other.id}, ids)
+
+    def test_delete_without_a_credential_deletes_in_the_panel_and_warns(self):
+        hook_id = self._register()["hook"]["id"]
+        self.env["cloud.git.credential"].search([
+            ("provider_id", "=", self.provider.id),
+        ]).unlink()
+        answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
+        self.assertTrue(answer["ok"])
+        self.assertIn("GitLab", answer["warning"])
+        self.assertFalse(self.env["cloud.gitlab.hook"].browse(hook_id).exists())
+        self.api.delete_hook.assert_not_called()
+
+    def test_delete_that_gitlab_refuses_keeps_the_webhook(self):
+        hook_id = self._register()["hook"]["id"]
+        self.api.delete_hook.side_effect = GitLabError("forbidden", 403)
+        answer = self._serve("cloud_delete_git_hook", hook_id=hook_id)
+        self.assertFalse(answer["ok"])
+        self.assertTrue(self.env["cloud.gitlab.hook"].browse(hook_id).exists())
 
 
 @tagged("post_install", "-at_install")
@@ -207,3 +293,48 @@ class TestGitHookCron(_RoutesCase):
             ("message", "ilike", "acme/web2"),
         ]))
 
+    def test_an_orphan_that_keeps_receiving_pushes_is_still_deleted(self):
+        """A delivery does not reset the grace of a webhook no line uses."""
+        self.env["cloud.project.repo"].search([("repo_path", "=", "acme/web")]).unlink()
+        since = fields.Datetime.now() - timedelta(days=8)
+        self.hook.write({"state": "orphan", "orphan_since": since})
+        self.hook._mark_delivered()
+        self.assertEqual((self.hook.state, self.hook.orphan_since), ("orphan", since))
+        self.env["cloud.git.provider"]._cron_check_git_providers()
+        self.assertFalse(self.hook.exists())
+        self.api.delete_hook.assert_called_once()
+
+    def test_an_orphan_used_again_is_active_when_it_had_deliveries(self):
+        self.hook.write({
+            "state": "orphan", "orphan_since": fields.Datetime.now() - timedelta(days=2),
+        })
+        self.env["cloud.gitlab.event"].sudo().create({
+            "hook_id": self.hook.id, "event_type": "Push Hook", "processed": True,
+        })
+        self.hook._sweep_orphan()
+        self.assertEqual(self.hook.state, "active")
+        self.assertFalse(self.hook.orphan_since)
+
+    def test_an_orphan_used_again_without_deliveries_is_pending(self):
+        self.hook.write({
+            "state": "orphan", "orphan_since": fields.Datetime.now() - timedelta(days=2),
+        })
+        self.hook._sweep_orphan()
+        self.assertEqual(self.hook.state, "pending")
+
+    def test_a_group_path_matches_its_underscore_literally(self):
+        group = self.env["cloud.gitlab.hook"].create({
+            "provider_id": self.provider.id, "scope": "group", "path": "acm_",
+        })
+        instance_lines, project_lines = group._lines()
+        self.assertFalse(project_lines, "acm_ does not cover acme/web")
+        self.assertFalse(instance_lines)
+
+    def test_a_403_on_the_daily_check_is_logged_not_raised(self):
+        """A credential without Maintainer cannot read the webhook: a warning, not a failure."""
+        self.api.get_hook.side_effect = GitLabError("forbidden", 403)
+        with self.assertLogs(cloud_gitlab_hook._logger.name, "WARNING") as logs:
+            self.hook._check_remote_state()
+        self.assertIn("acme/web", logs.output[0])
+        self.assertEqual(self.hook.state, "active")
+        self.assertFalse(self._alert())
