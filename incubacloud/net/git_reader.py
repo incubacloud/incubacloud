@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 #: ``ls-remote`` from a panel route: what the editor waits for (§9).
 LS_REMOTE_TIMEOUT = 15
@@ -136,12 +137,16 @@ class GitReader:
     :param str pin_ip: the address to dial, checked by the caller under
         the ``public`` policy; None with ``any``
     :param str git: the git binary
+    :param float deadline: a ``time.monotonic()`` no git call outlasts,
+        those of a panel request's reads together; None: each call has
+        its own timeout only
     """
 
-    def __init__(self, ca_pem=None, pin_ip=None, git="git"):
+    def __init__(self, ca_pem=None, pin_ip=None, git="git", deadline=None):
         self.ca_pem = ca_pem
         self.pin_ip = pin_ip
         self.git = git
+        self.deadline = deadline
 
     # ── Public reads ───────────────────────────────────────────────────
 
@@ -379,12 +384,19 @@ class _Session:
         stdout is read only when it is within *limit* bytes.
 
         :param list argv: git's arguments
-        :param int timeout: seconds
+        :param int timeout: seconds, or less when the reader's deadline
+            comes first
         :param int limit: the most bytes of stdout read
         :rtype: str
         :raises GitReaderError: on any failure, with its code; ``too_large``
-            when the output passes *limit*
+            when the output passes *limit*; ``timeout``, running nothing,
+            when the reader's deadline has passed
         """
+        if self.reader.deadline is not None:
+            left = self.reader.deadline - time.monotonic()
+            if left <= 0:
+                raise GitReaderError("timeout")
+            timeout = min(timeout, left)
         blocks = MAX_FETCH_BYTES // 512
         full = [
             "/bin/sh", "-c", f'ulimit -f {blocks} && exec "$@"', "sh",

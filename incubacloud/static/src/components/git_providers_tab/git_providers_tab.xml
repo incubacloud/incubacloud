@@ -87,6 +87,9 @@
                                     <p t-if="!cred.has_token" class="rl-set-inline-msg rl-set-inline-msg--error">
                                         This credential has no token: enter it again.
                                     </p>
+                                    <p t-elif="cred.scopes_unchecked" class="rl-set-hint ic-gitp-writes">
+                                        The scopes of this token have not been read from GitLab, so it is taken as one that can write. Use Test connection to read them.
+                                    </p>
                                     <p t-elif="cred.writes" class="rl-set-hint ic-gitp-writes">
                                         This token can write to repositories. When no token that only reads covers a repository, this one clones it and travels inside the image of instances from 11.0 to 19.0: add a deploy token, or a token with read_repository only.
                                     </p>

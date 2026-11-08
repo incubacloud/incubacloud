@@ -14,6 +14,7 @@ G1, 8-nov-2026).
 """
 import os
 import subprocess
+import time
 from unittest.mock import patch
 
 from odoo.tests.common import BaseCase
@@ -240,6 +241,27 @@ class TestGitReaderErrors(BaseCase):
         self.assertEqual(
             self._code(lambda argv, **kw: _fail("", code=-25)), "too_large",
         )
+
+
+class TestGitReaderDeadline(BaseCase):
+    """A panel request's reads share one deadline (security review of G1,
+    8-nov-2026)."""
+
+    def test_no_call_waits_past_the_deadline(self):
+        calls = _Calls(_version())
+        reader = git_reader.GitReader(deadline=time.monotonic() + 5)
+        with patch.object(git_reader.subprocess, "run", side_effect=calls):
+            reader.ls_remote(_REF, _CRED, ["refs/heads/*"])
+        self.assertLessEqual(calls.calls[-1]["kwargs"]["timeout"], 5)
+
+    def test_a_spent_deadline_runs_no_git(self):
+        calls = _Calls(_version())
+        reader = git_reader.GitReader(deadline=time.monotonic() - 1)
+        with patch.object(git_reader.subprocess, "run", side_effect=calls), \
+                self.assertRaises(git_reader.GitReaderError) as caught:
+            reader.ls_remote(_REF, _CRED, ["refs/heads/*"])
+        self.assertEqual(caught.exception.code, "timeout")
+        self.assertEqual(calls.calls, [])
 
 
 class TestGitReaderTree(BaseCase):

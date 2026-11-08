@@ -98,8 +98,11 @@ export class GitProvidersTab extends Component {
      * @returns {string}
      */
     scopesLabel(cred) {
-        if (cred.kind === "deploy" || !cred.scopes) {
+        if (cred.kind === "deploy") {
             return _t("no API");
+        }
+        if (!cred.scopes) {
+            return _t("scopes not read");
         }
         return cred.scopes.split(" ").join(", ");
     }

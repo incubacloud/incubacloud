@@ -15,6 +15,7 @@ from odoo.http import request
 
 from ...models._repo_requirements import (
     CONFLICT_RE,
+    GitReadBudget,
     _parse_req_line,
     _repo_alias,
     apply_sync,
@@ -23,6 +24,8 @@ from ...models._repo_requirements import (
     detect_pip_conflicts,
     fetch_requirements_txt,
     merge_pip_requirements,
+    on_git_provider,
+    repo_key_for_source_label,
     resolved_pip_source,
 )
 from ...models._odoo_versions import (
@@ -1344,6 +1347,7 @@ class CrudMixin:
         if tag_ids is not None:
             safe['tag_ids'] = [fields.Command.set(tag_ids)]
         project = request.env['cloud.project'].create(safe)
+        git_budget = GitReadBudget(request.env)
         # ── Create repos ─────────────────────────────────────────────────────
         if repos:
             Repo = request.env['cloud.project.repo'].with_context(
@@ -1361,12 +1365,22 @@ class CrudMixin:
                         'commit_sha': repo.get('commit_sha', '').strip(),
                     })
             # ── Merge repo requirements into pip_dependencies ─────────────
+            # A GitLab line runs git on the panel: within the request's
+            # reads and the user's hourly cap, or not now (security review
+            # of G1, 8-nov-2026).
             merged = project.pip_dependencies or ''
             for repo in repos:
                 url = repo.get('url', '').strip()
                 branch = (repo.get('branch') or 'main').strip() or 'main'
                 if url:
-                    content = fetch_requirements_txt(request.env, url, branch)
+                    deadline = None
+                    if on_git_provider(request.env, url):
+                        if not git_budget.take():
+                            continue
+                        deadline = git_budget.deadline
+                    content = fetch_requirements_txt(
+                        request.env, url, branch, deadline=deadline,
+                    )
                     if content:
                         result = merge_pip_requirements(
                             merged, content, url, branch,
@@ -1380,7 +1394,11 @@ class CrudMixin:
             create_pip_conflict_alert(
                 request.env, conflicts, project_id=project.id,
             )
-        return {'id': project.id, 'name': project.name}
+        answer = {'id': project.id, 'name': project.name}
+        warning = git_budget.requirements_warning()
+        if warning:
+            answer['warning'] = warning
+        return answer
 
     @http.route(['/cloud/save_project'], type='json', auth='user')
     def cloud_save_project(self, project_id, vals):
@@ -1804,8 +1822,15 @@ class CrudMixin:
                         'excludes': repo.get('excludes') or '',
                         'commit_sha': repo.get('commit_sha') or '',
                     })
-        instance._check_addon_conflicts(seconds=ADDON_CHECK_SECONDS)
-        return {'id': instance.id, 'name': instance.name}
+        git_budget = GitReadBudget(request.env, seconds=ADDON_CHECK_SECONDS)
+        instance._check_addon_conflicts(
+            seconds=ADDON_CHECK_SECONDS, git_budget=git_budget,
+        )
+        answer = {'id': instance.id, 'name': instance.name}
+        warning = git_budget.addons_warning()
+        if warning:
+            answer['warning'] = warning
+        return answer
 
     # ── General settings ──────────────────────────────────────────────────
 
@@ -2442,6 +2467,7 @@ class CrudMixin:
         repos = vals.pop('repos', None)
         domains = vals.pop('domains', None)
         whitelist = vals.pop('whitelist', None)
+        git_budget = None
         # The form sends the environment back as it is; a change, which
         # an agent may ask for through ``update_instance``, is refused
         # with its reason rather than dropped without a word: it is
@@ -2538,7 +2564,12 @@ class CrudMixin:
             # repository listed with "all its modules", and an instance
             # saved for its domains or its notes must not wait on that.
             if _repo_lines(inst) != repos_before:
-                inst._check_addon_conflicts(seconds=ADDON_CHECK_SECONDS)
+                git_budget = GitReadBudget(
+                    request.env, seconds=ADDON_CHECK_SECONDS,
+                )
+                inst._check_addon_conflicts(
+                    seconds=ADDON_CHECK_SECONDS, git_budget=git_budget,
+                )
         # Egress whitelist — replaced wholesale, like the host's. The
         # list is short, ordered by the operator, and its order is part
         # of the copier answer, so rewriting it is both simpler and
@@ -2556,7 +2587,11 @@ class CrudMixin:
                     {'instance_id': inst.id, 'hostname': h, 'sequence': i * 10}
                     for i, h in enumerate(hostnames, 1)
                 ])
-        return {'ok': True}
+        answer = {'ok': True}
+        warning = git_budget and git_budget.addons_warning()
+        if warning:
+            answer['warning'] = warning
+        return answer
 
     @http.route(['/cloud/keep_instance'], type='json', auth='user')
     def cloud_keep_instance(self, instance_id):

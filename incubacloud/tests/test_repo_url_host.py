@@ -439,6 +439,26 @@ class TestRepoLineProvider(TransactionCase):
                 ), self.env.cr.savepoint():
                     self._new(model, field, owner, url)
 
+    def test_a_repository_named_as_what_doodba_keeps_in_src_is_refused(self):
+        # A repository is fetched into custom/src/<alias>, where doodba
+        # keeps its private addons and its repos and addons files
+        # (security review of G1, 8-nov-2026).
+        for model, field, owner in self.models:
+            for url, alias in (
+                ("https://gitlab.com/acme/repos.yaml", "repos.yaml"),
+                ("https://gitlab.com/acme/addons.yml.git", "addons.yml"),
+                ("https://github.com/acme/private", "private"),
+            ):
+                with self.subTest(model=model, url=url), self.assertRaisesRegex(
+                    ValidationError, f"{alias} is a name doodba keeps",
+                ), self.env.cr.savepoint():
+                    self._new(model, field, owner, url)
+            line = self._new(model, field, owner, "https://gitlab.com/acme/repos")
+            with self.assertRaisesRegex(
+                ValidationError, "repos.yaml is a name doodba keeps",
+            ), self.env.cr.savepoint():
+                line.write({"url": "https://gitlab.com/acme/repos.yaml"})
+
     def test_capabilities_say_what_each_provider_offers_in_this_version(self):
         line = self._new(
             "cloud.project.repo", "project_id", self.project,

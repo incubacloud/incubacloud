@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from psycopg2 import IntegrityError
 
+from odoo import Command
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import TransactionCase, new_test_user, tagged
 
@@ -214,6 +215,22 @@ class TestCredentialFor(_ProviderCase):
             "d", kind="deploy", username="gitlab+deploy-token-7",
         )._writes())
 
+    def test_a_token_whose_scopes_were_not_read_counts_as_one_that_writes(self):
+        # Empty scopes on a token that is not a deploy token say nothing
+        # of it: unread, a save past the cap, or a 401 (security review
+        # of G1, 8-nov-2026).
+        self.assertTrue(self._cred("a")._writes())
+        self.assertFalse(self._cred(
+            "d", kind="deploy", username="gitlab+deploy-token-7",
+        )._writes())
+
+    def test_git_does_not_prefer_a_token_whose_scopes_were_not_read(self):
+        self._cred("acme", token="glpat-unchecked12")
+        self._cred("", scopes="read_repository", token="glpat-readonly12")
+        self.assertEqual(
+            self.provider._git_credential("acme/x"), ("oauth2", "glpat-readonly12"),
+        )
+
     def test_default_usernames(self):
         self.assertEqual(self._cred("a").username, "oauth2")
         with self.assertRaises(ValidationError):
@@ -392,3 +409,40 @@ class TestCredentialIntrospection(_ProviderCase):
         with self.assertRaises(UserError) as caught:
             self._introspect(cred, client_mod.GitLabError("unreachable"))
         self.assertNotIn("glpat-abcdefgh12", str(caught.exception))
+
+
+class TestCredentialStaysWithItsTokenAndServer(_ProviderCase):
+    """What was read of a token is dropped with it, and a token never
+    moves to another server (security review of G1, 8-nov-2026)."""
+
+    def test_a_new_token_drops_what_was_read_of_the_old_one(self):
+        cred = self._cred("acme", scopes="read_repository", token_user="bot")
+        cred.write({"token": "glpat-newtoken1234"})
+        self.assertFalse(cred.scopes)
+        self.assertFalse(cred.token_user)
+        self.assertTrue(cred._writes())
+        # A write without a token keeps them.
+        cred.sudo().write({"scopes": "read_repository", "token_user": "bot"})
+        cred.write({"expires_on": date(2027, 1, 31)})
+        self.assertEqual(cred.scopes, "read_repository")
+        self.assertEqual(cred.token_user, "bot")
+
+    def test_a_credential_never_moves_to_another_provider(self):
+        other = self.Provider.create({
+            "name": "Other", "base_url": "https://git.other.tld",
+        })
+        cred = self._cred("acme")
+        with self.assertRaisesRegex(UserError, "another Git provider"), \
+                self.cr.savepoint():
+            cred.write({"provider_id": other.id})
+        with self.assertRaisesRegex(UserError, "another Git provider"), \
+                self.cr.savepoint():
+            other.write({"credential_ids": [Command.link(cred.id)]})
+        self.assertEqual(cred.provider_id, self.provider)
+        # Its own provider again changes nothing.
+        cred.write({"provider_id": self.provider.id})
+        self.assertEqual(cred.provider_id, self.provider)
+
+    def test_a_copy_takes_no_token(self):
+        cred = self._cred("acme")
+        self.assertFalse(cred.copy({"namespace": "acme-copy"}).sudo().token)
