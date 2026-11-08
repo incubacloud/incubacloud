@@ -7,6 +7,8 @@ on one copy and the other keeps accepting what the first now refuses.
 Everything except the owner FK lives here; each concrete model says
 who owns the line via :meth:`_repo_owner`.
 """
+from urllib.parse import urlsplit
+
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
@@ -17,18 +19,24 @@ from ._repo_requirements import (
     is_safe_git_ref,
     is_safe_git_sha,
     is_safe_repo_url,
+    provider_of,
+    resolve_repo_ref,
 )
 
 
-def _with_canonical_url(vals):
-    """Return *vals* with its ``url``, if any, in the canonical form.
+def _with_canonical_url(env, vals):
+    """Return *vals* with its ``url``, if any, canonical, and its provider.
 
     Every way a repository line is written (panel routes, MCP, the
     assistant, imports, the SaaS layer) ends in ``create`` or
     ``write``, so a github.com repository spelled otherwise is stored
     as ``https://github.com/<owner>/<repo>`` before the constraint
-    checks it (5-nov-2026).
+    checks it (5-nov-2026). A repository of a configured Git provider
+    is stored as its base URL and path spell it, with ``.git``, and
+    the line gets ``provider_id`` and ``repo_path``, which nobody else
+    writes (plan-gitlab.md §2.5, 8-nov-2026).
 
+    :param env: an Odoo environment
     :param dict vals: the values being written
     :return: *vals* itself, or a copy with ``url`` rewritten
     :rtype: dict
@@ -36,7 +44,36 @@ def _with_canonical_url(vals):
     url = vals.get('url')
     if not isinstance(url, str):
         return vals
-    return {**vals, 'url': canonical_repo_url(url)}
+    ref = resolve_repo_ref(env, url)
+    if not ref:
+        return {
+            **vals, 'url': canonical_repo_url(url),
+            'provider_id': False, 'repo_path': False,
+        }
+    return {
+        **vals, 'url': ref.canonical,
+        'provider_id': provider_of(env, ref).id or False,
+        'repo_path': ref.path,
+    }
+
+
+def _url_host(url):
+    """Return the host *url* names, or '' when it names none.
+
+    ``git@host:path`` included, for the message of a missing provider.
+
+    :param str url: a repository URL as stored
+    :rtype: str
+    """
+    text = (url or '').strip()
+    if text.startswith('git@') and ':' in text:
+        return text[4:].split(':', 1)[0].lower()
+    if '://' not in text:
+        text = f'https://{text}'
+    try:
+        return (urlsplit(text).hostname or '').lower()
+    except ValueError:
+        return ''
 
 
 class CloudRepoMixin(models.AbstractModel):
@@ -75,6 +112,55 @@ class CloudRepoMixin(models.AbstractModel):
             ' Rebuilds will use this commit instead of the branch tip.'
         ),
     )
+    provider_id = fields.Many2one(
+        'cloud.git.provider', string='Git provider', ondelete='restrict',
+        index=True, readonly=True,
+        help='Empty for GitHub. Written with the URL, never by hand.',
+    )
+    repo_path = fields.Char(
+        string='Repository path', index=True, readonly=True,
+        help='group/subgroup/project on GitLab, owner/repo on GitHub, in '
+        'lower case. Written with the URL, never by hand.',
+    )
+    repo_capabilities = fields.Json(
+        compute='_compute_repo_capabilities',
+        help='What the panel does with this repository, for the SPA and '
+        'the MCP.',
+    )
+
+    @api.depends('url', 'provider_id')
+    def _compute_repo_capabilities(self):
+        """Say what the panel does with each line's repository.
+
+        ``{provider, host, read, push_rebuild, previews, code_tools,
+        hook_id}`` (plan-gitlab.md §2.5). For GitHub, from the App and
+        the PAT the panel holds; for GitLab, ``unsupported`` for
+        push-to-rebuild and previews until their webhooks arrive, and
+        no code writes.
+        """
+        app = self.env['cloud.github.app'].sudo().search_count([], limit=1)
+        pat = bool(self.env['cloud.settings'].sudo()._get_system().github_pat)
+        for repo in self:
+            if repo.provider_id:
+                repo.repo_capabilities = {
+                    'provider': 'gitlab',
+                    'host': repo.provider_id.sudo().authority,
+                    'read': True,
+                    'push_rebuild': 'unsupported',
+                    'previews': 'unsupported',
+                    'code_tools': {'read': True, 'write': False},
+                    'hook_id': False,
+                }
+                continue
+            repo.repo_capabilities = {
+                'provider': 'github',
+                'host': 'github.com',
+                'read': True,
+                'push_rebuild': 'ok' if app else 'no_hook',
+                'previews': 'ok' if app else 'no_hook',
+                'code_tools': {'read': True, 'write': bool(app or pat)},
+                'hook_id': False,
+            }
 
     def _repo_owner(self):
         """Return the record whose pip/apt dependencies this line feeds.
@@ -89,7 +175,17 @@ class CloudRepoMixin(models.AbstractModel):
         """Refuse URLs/refs/SHAs that could smuggle shell or git tricks."""
         for repo in self:
             url = (repo.url or '').strip()
-            if url and not is_safe_repo_url(url):
+            if url and repo.provider_id and resolve_repo_ref(
+                repo.env, url,
+            ):
+                pass
+            elif url and not is_safe_repo_url(url):
+                host = _url_host(url)
+                if host and host not in ('github.com', 'www.github.com'):
+                    raise ValidationError(_(
+                        "There is no Git provider for %s: add it under "
+                        "Settings → Git providers.",
+                    ) % host)
                 raise ValidationError(_(
                     "Repository URL '%s' is not a recognised GitHub "
                     "URL. Use the canonical form "
@@ -184,12 +280,14 @@ class CloudRepoMixin(models.AbstractModel):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super().create([_with_canonical_url(v) for v in vals_list])
+        records = super().create(
+            [_with_canonical_url(self.env, v) for v in vals_list],
+        )
         records._apply_requirements()
         return records
 
     def write(self, vals):
-        vals = _with_canonical_url(vals)
+        vals = _with_canonical_url(self.env, vals)
         if 'url' in vals:
             result = super().write(vals)
         else:

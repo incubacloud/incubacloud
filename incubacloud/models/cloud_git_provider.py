@@ -23,6 +23,7 @@ from cryptography import x509
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from ..net.git_reader import GitReader, GitReaderError
 from ..net.outbound import OutboundError, _resolve_public
 from ._git_urls import (
     base_authority,
@@ -360,6 +361,38 @@ class CloudGitProvider(models.Model):
             fitting,
             key=lambda c: len(c.namespace.split("/")) if c.namespace else 0,
         )
+
+    def _git_credential(self, path):
+        """Return ``(username, token)`` to read *path* with git, or None.
+
+        None when no credential covers the path: the repository is read
+        as a public one.
+
+        :param str path: a project path, lower case
+        :rtype: tuple or None
+        """
+        self.ensure_one()
+        try:
+            return self._credential_for(path, "git_read")._git_pair()
+        except UserError:
+            return None
+
+    def _git_reader(self):
+        """Return the panel's git reader for this provider.
+
+        With its CA, and with the ``public`` policy the address checked
+        now, pinned for every read of this reader.
+
+        :rtype: net.git_reader.GitReader
+        :raises GitReaderError: ``private_address`` when the policy is
+            ``public`` and the name does not resolve to public addresses
+        """
+        self.ensure_one()
+        try:
+            pin = self._resolve_pin()
+        except UserError as exc:
+            raise GitReaderError("private_address") from exc
+        return GitReader(ca_pem=self.sudo().ca_bundle or None, pin_ip=pin)
 
     # ── Expiry check (daily cron) ──────────────────────────────────────
 
