@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 import yaml
 
 from odoo import fields
+from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models import abstract_executor
@@ -104,6 +105,18 @@ class _GitLabExecutorCase(TransactionCase):
 
 
 class TestReposYamlAndSpec(_GitLabExecutorCase):
+
+    def test_a_server_off_the_public_policy_refuses_the_job_with_its_cause(self):
+        # Rendered outside any ``try`` when the resync of requirements is
+        # off: a UserError there failed the job as an unexpected error
+        # (Fable, 8-nov-2026).
+        Provider = type(self.env["cloud.git.provider"])
+        message = "gitlab.com must resolve to public addresses only"
+        with patch.object(Provider, "_network_policy", return_value="public"), \
+                patch.object(Provider, "_resolve_pin", side_effect=UserError(message)), \
+                self.assertRaises(JobRefused) as caught:
+            self._ready(_make_deploy_executor())
+        self.assertIn(message, str(caught.exception))
 
     def test_each_server_gets_its_own_credential_with_git_suffix(self):
         text, _unused = self._ready(_make_deploy_executor())
@@ -209,20 +222,38 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertEqual(shlex.split(trust)[2], "git-trust")
         self.assertNotIn("Fetch the repositories", labels)
 
-    def test_the_fetch_budget_covers_each_download_its_retry_and_the_build(self):
-        self.assertGreaterEqual(deploy_mod._fetch_timeout(3), 3 * 600 + 3600)
+    def test_the_fetch_budget_covers_each_download_and_its_retry(self):
+        self.assertEqual(deploy_mod._fetch_timeout(3), 3 * (2 * 600 + 60))
         self.assertGreater(deploy_mod._fetch_timeout(4), deploy_mod._fetch_timeout(3))
 
-    def test_a_rebuild_of_8_0_fetches_inside_its_build_step(self):
+    def test_a_rebuild_of_8_0_fetches_in_its_own_step_before_the_build(self):
+        # One step for both had the transport's TERM kill the outer
+        # ``bash -c`` and leave deploy.sh running (Fable, 8-nov-2026).
         ex = _make_rebuild_executor(odoo_version="8.0")
         self._ready(ex, "8.0")
-        _label, command, opts = _find_cmd(ex.get_commands(), "Rebuild Odoo image")
-        self.assertLess(
-            command.index("fetch-repos"), command.index("docker compose build"),
-        )
-        self.assertNotIn("record-heads", command)
-        self.assertEqual(opts["timeout"], deploy_mod._fetch_timeout(3))
-        self.assertTrue(opts["stop_on_failure"])
+        cmds = ex.get_commands()
+        labels = [c[0] for c in cmds]
+        _label, fetch, fetch_opts = _find_cmd(cmds, "Fetch the repositories")
+        self.assertEqual(shlex.split(fetch)[2], "fetch-repos")
+        self.assertNotIn("docker compose build", fetch)
+        self.assertEqual(fetch_opts["timeout"], deploy_mod._fetch_timeout(3))
+        self.assertTrue(fetch_opts["stop_on_failure"])
+        build = _find_cmd(cmds, "Rebuild Odoo image")
+        self.assertEqual(labels.index("Fetch the repositories") + 1,
+                         labels.index("Rebuild Odoo image"))
+        self.assertTrue(build[1].startswith(f"cd {ex._inst_dir(ex._inst())} && "))
+        self.assertNotIn("fetch-repos", build[1])
+        self.assertNotIn("record-heads", build[1])
+        self.assertEqual(build[2], {"stop_on_failure": True})
+
+    def test_a_rebuild_of_19_0_records_the_heads_in_its_build_step(self):
+        ex = _make_rebuild_executor()
+        self._ready(ex)
+        cmds = ex.get_commands()
+        self.assertNotIn("Fetch the repositories", [c[0] for c in cmds])
+        build = _find_cmd(cmds, "Rebuild Odoo image")
+        self.assertIn("record-heads", build[1])
+        self.assertEqual(build[2], {"stop_on_failure": True})
 
 
 class TestStepTimeout(TransactionCase):

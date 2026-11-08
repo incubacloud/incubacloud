@@ -192,23 +192,19 @@ _FETCH_ONE_S = 600
 #: left the build (Fable's review of G1, 8-nov-2026).
 _FETCH_RETRY_WAIT_S = 60
 
-#: What the image's build may take after the downloads, in a rebuild's
-#: build step: the transport's own default per command.
-_BUILD_BUDGET_S = 3600
-
 
 def _fetch_timeout(aliases):
-    """Return the timeout of a step that runs ``fetch-repos`` (§4.4-8).
+    """Return the timeout of the step that runs ``fetch-repos`` (§4.4-8).
 
     Each download may take :data:`_FETCH_ONE_S` and is retried once after
-    :data:`_FETCH_RETRY_WAIT_S`; the build may follow in the same step.
-    Below that, the transport would kill the command halfway through a
-    download, leaving its container writing on the host.
+    :data:`_FETCH_RETRY_WAIT_S`. Below that, the transport would kill the
+    command halfway through a download. The build is a step of its own
+    with its own timeout, in a deploy and in a rebuild (Fable, 8-nov-2026).
 
     :param int aliases: the repositories of ``repos.yaml``, odoo included
     :rtype: int
     """
-    return aliases * (2 * _FETCH_ONE_S + _FETCH_RETRY_WAIT_S) + _BUILD_BUDGET_S
+    return aliases * (2 * _FETCH_ONE_S + _FETCH_RETRY_WAIT_S)
 
 
 def _strip_userinfo(url):
@@ -785,12 +781,17 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         :param provider: a ``cloud.git.provider``
         :rtype: str
-        :raises UserError: under the ``public`` policy, when the name does
-            not resolve to public addresses only
+        :raises JobRefused: under the ``public`` policy, when the name does
+            not resolve to public addresses only, with that message: it is
+            rendered outside any ``try`` when the resync of requirements is
+            off (Fable, 8-nov-2026)
         """
         cache = self.__dict__.setdefault("_git_pin_cache", {})
         if provider.id not in cache:
-            cache[provider.id] = provider.sudo()._resolve_pin() or ""
+            try:
+                cache[provider.id] = provider.sudo()._resolve_pin() or ""
+            except UserError as exc:
+                raise JobRefused(str(exc)) from exc
         return cache[provider.id]
 
     def _gitlab_clone_url(self, raw_url, provider):
