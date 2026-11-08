@@ -201,6 +201,29 @@ class TestACancelledRunIsClosed(_DeployJobCase):
         self.assertIn("rewrote the instance's files", self._log())
         self.assertNotIn("may have rebuilt its image", self._log())
 
+    def test_a_rebuild_ended_in_its_update_says_the_database_moved_on(self):
+        """A worker that died in «Update changed modules»: Odoo stores each
+        module as it goes, so the database may be ahead of the image that
+        runs, and the warning no longer says it was not applied."""
+        self.inst._transition("deployed")
+        self.inst.status = "ok"
+        self.env["cloud.job.log.chunk"].create([
+            {"job_id": self.job.id, "source": "system", "content": line}
+            for line in (
+                "Running: Update with copier", "Running: Rebuild Odoo image",
+                "Running: Update changed modules",
+            )
+        ])
+        self.env.flush_all()
+        executor = RebuildInstanceExecutor(self.job, self.host)
+        with patch.object(
+            RebuildInstanceExecutor, "_refresh_host_disk", autospec=True,
+        ), patch.object(RebuildInstanceExecutor, "_publish_bus", autospec=True):
+            asyncio.run(executor._dispatch_abort(JobWorkerLost("lost")))
+            executor._flush_logs()
+        self.assertIn("updated the modules of the instance's database", self._log())
+        self.assertNotIn("neither boot-tested nor applied", self._log())
+
     def test_a_rebuild_handed_no_results_reads_its_log(self):
         """A stop whose worker died: the steps an earlier attempt logged."""
         self._rebuild_closed_by("_dispatch_cancel", JobCancelled("stop"))

@@ -378,6 +378,13 @@ class QueueJob(models.Model):
                 cjob, new_state,
             )
             cjob.sudo().with_context(ic_skip_state_hook=True).write(mirror)
+            if new_state == "started":
+                # An earlier attempt's point of no return is not this
+                # one's: it starts from the first step again.
+                self.env.cr.execute(
+                    "DELETE FROM cloud_job_no_return WHERE job_id = %s",
+                    (cjob.id,),
+                )
             # To the row now: ``_check_cancel`` and the stop detection
             # above read it with SQL, from other transactions and from
             # this one.

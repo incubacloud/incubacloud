@@ -39,6 +39,7 @@ from .abstract_executor import (
     _is_refusal,
     is_transient_connection_error,
 )
+from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .registry import executor_registry
 from .res_users_ext import as_platform, telegram_markdown
 
@@ -2306,14 +2307,64 @@ class CloudJob(models.Model):
         queue.job without a state of its own takes the queue.job's
         (``_adopt_queue_job_state``). The queue's fields are refused to a
         caller without superuser rights (``_check_queue_control_vals``).
+
+        The stop flag written on a started job is refused once the job is
+        past its point of no return (``_refuse_stop_past_no_return``):
+        here, so ``cancel_job`` and every other way of writing it (a
+        tenant's provisioning started again) go through it. Not what the
+        mirror writes with ``ic_skip_state_hook``: that stores a stop
+        already taken.
         """
         self._check_queue_control_vals([vals])
+        if vals.get("state") == "cancelled" and not self.env.context.get(
+            "ic_skip_state_hook",
+        ):
+            self.filtered(
+                lambda job: job.state == "started",
+            )._refuse_stop_past_no_return()
         res = super().write(vals)
         if "queue_job_uuid" in vals and "state" not in vals:
             self._adopt_queue_job_state()
         if "state" in vals and not self.env.context.get("ic_skip_state_hook"):
             self._on_state_changed(vals["state"])
         return res
+
+    def _refuse_stop_past_no_return(self):
+        """Refuse to stop jobs of ``self`` that started a step past undoing.
+
+        Takes, for each job, the advisory lock its executor takes before
+        such a step (``AbstractExecutor._pass_no_return``), held until
+        this transaction ends: from then on the executor sees the flag
+        this transaction writes, or has already marked the job. The mark
+        is read on a cursor of its own: this transaction's snapshot may
+        predate its commit.
+
+        :raises UserError: when one of them is marked
+        """
+        if not self:
+            return
+        for job in self.sorted("id"):
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (NO_RETURN_LOCK_NAMESPACE, job.id),
+            )
+        with read_committed_cursor(self.env.registry) as fresh:
+            fresh.execute(
+                "SELECT job_id, step FROM cloud_job_no_return"
+                " WHERE job_id IN %s ORDER BY job_id LIMIT 1",
+                (tuple(self.ids),),
+            )
+            row = fresh.fetchone()
+        if row:
+            raise UserError(_(
+                "Job #%(job)s cannot be stopped any more: it is at"
+                " '%(step)s', which stores its changes in the instance's"
+                " database as it goes. Stopped now, the database would be"
+                " left half updated under the image that runs. Let it end;"
+                " it takes a few minutes.",
+                job=row[0],
+                step=row[1],
+            ))
 
     def _adopt_queue_job_state(self):
         """Give a job linked to a queue.job that queue.job's state.
@@ -3967,7 +4018,8 @@ class CloudJob(models.Model):
         when the runner picked it up. A started job cannot be
         force-cancelled by queue_job (its runner is mid-flight), so we
         set ``state`` cancelled as a cooperative stop flag the executor
-        polls on a separate cursor (``_check_cancel``).
+        polls on a separate cursor (``_check_cancel``), unless the job has
+        started a step it cannot be stopped in (``write``).
 
         Every way needs the caller's write access to the job. What is
         written on the job itself is written with ``sudo``: ``state`` is

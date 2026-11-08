@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.219] — 2026-11-08
+
+The update creates the `cloud_job_no_return` table; nothing else changes in the
+database.
+
+### Fixed
+
+- **Cancelling a running job stops what it runs on the server.** The stop
+  cancelled the job's task and closed the connection, which signals nothing: the
+  step in progress went on on the host until it next wrote to its output, or to
+  its end — a silent boot test copying and booting for as long as it took, the
+  update of the live database through. The transport now sends the command TERM
+  (`process.terminate()`), waits up to 60 s for its trap to put things back, with
+  what the trap writes still reaching the job's log, and stops the job. OpenSSH
+  delivers the signal to the session's whole process group, so a script and its
+  foreground children end together, with or without a trap; `docker compose run`
+  passes it on to its container. Measured on a pool-like host on 8-nov-2026.
+  Not covered: what a `docker exec` runs inside a container, which ends on its
+  own; root sessions on OpenSSH 8.9 and servers older than 7.9, which ignore the
+  signal; and a worker that dies.
+- **A rebuild cannot be cancelled once it updates the instance's database.**
+  «Update changed modules» stores each module as it goes, so a stop there left
+  the database half updated under the image that runs, and the rebuild keeps no
+  copy to go back to. The stop and that step are decided under one advisory lock
+  of the job: a stop asked for before it ends the job without starting it; once
+  it started, cancelling is refused with a message saying why. A deploy has no
+  such step: a new instance stopped halfway is removed. The warning a rebuild
+  that ended unapplied writes now says when its database was already updated.
+
 ## [1.0.217] — 2026-11-08
 
 The update creates the `cloud_job_outcome` table; nothing else changes in the

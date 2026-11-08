@@ -17673,3 +17673,39 @@ msgstr ""
 msgid "Waiting: the previous restore failed. Retry it or resolve its alert."
 msgstr ""
 "En espera: falló la restauración anterior. Reinténtela o resuelva su alerta."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_job_no_return_job_uniq
+msgid "A job is past its point of no return once."
+msgstr "Un trabajo solo pasa una vez por su punto sin retorno."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s cannot be stopped any more: it is at '%(step)s', which stores "
+"its changes in the instance's database as it goes. Stopped now, the database"
+" would be left half updated under the image that runs. Let it end; it takes "
+"a few minutes."
+msgstr ""
+"El trabajo n.º %(job)s ya no se puede detener: está en «%(step)s», que "
+"guarda sus cambios en la base de datos de la instancia a medida que avanza. "
+"Si se detuviera ahora, la base de datos quedaría actualizada a medias bajo "
+"la imagen que está en marcha. Deje que termine; tarda unos minutos."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_job_no_return
+msgid "Job Past Its Point of No Return"
+msgstr "Trabajo que pasó su punto sin retorno"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_no_return__step
+msgid "Step"
+msgstr "Paso"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_no_return__step
+msgid "The label of the step the job had started, for the refusal."
+msgstr ""
+"El nombre del paso que el trabajo había empezado, para el mensaje de "
+"rechazo."
