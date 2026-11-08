@@ -490,6 +490,8 @@ class TestGitHubImportInspector(BaseCase):
                 self.assertEqual(result["repos_data"][1]["branch"], "17.0")
 
     def test_simple_import_reads_16_from_its_manifests(self):
+        """A repository of modules versioned ``16.0.1.0.0`` is read as 16.0,
+        a series the panel does not offer, not as none."""
         client = self._client(
             "acme", "simple16", "main",
             {"my_module/__manifest__.py": "{'version': '16.0.1.0.0'}"},
@@ -498,6 +500,51 @@ class TestGitHubImportInspector(BaseCase):
             "https://github.com/acme/simple16", "main",
         )
         self.assertEqual(result["odoo_version"], "16.0")
+
+    def test_a_manifest_version_that_is_no_series_names_none(self):
+        """``"12.0"`` and ``"8.0.1"`` are an add-on's own versions: read as
+        the series 12.0 and 8.0, a repository of modules versioned so was
+        refused as one of series the panel does not offer."""
+        for version in ("12.0", "8.0.1"):
+            with self.subTest(version=version):
+                client = self._client(
+                    "acme", "addon-version", "main",
+                    {"my_module/__manifest__.py": f"{{'version': '{version}'}}"},
+                )
+                result = GitHubImportInspector([client]).inspect_import(
+                    "https://github.com/acme/addon-version", "main",
+                )
+                self.assertEqual(result["odoo_version"], "")
+
+    def test_a_branch_or_answers_of_a_series_the_panel_has_no_card_for(self):
+        """Any ``X.0`` is read as the series, so the import says the panel
+        does not offer it instead of that it could not tell: the branch of
+        an Odoo.sh or a Doodba repository, and the answers of a Doodba one."""
+        for series in ("7.0", "21.0"):
+            with self.subTest(series=series, kind="odoosh branch"):
+                client = self._client("acme", "odoosh", series, {".gitmodules": ""})
+                result = GitHubImportInspector([client]).inspect_import(
+                    "https://github.com/acme/odoosh", series,
+                )
+                self.assertEqual(result["odoo_version"], series)
+            with self.subTest(series=series, kind="doodba branch"):
+                client = self._client("acme", "doodba", series, {
+                    ".copier-answers.yml": "project_name: Demo\n",
+                    "odoo/custom/src/repos.yaml": "./odoo: {}\n",
+                })
+                result = GitHubImportInspector([client]).inspect_import(
+                    "https://github.com/acme/doodba", series,
+                )
+                self.assertEqual(result["odoo_version"], series)
+            with self.subTest(series=series, kind="doodba answers"):
+                client = self._client("acme", "doodba", "main", {
+                    ".copier-answers.yml": f"odoo_version: '{series}'\n",
+                    "odoo/custom/src/repos.yaml": "./odoo: {}\n",
+                })
+                result = GitHubImportInspector([client]).inspect_import(
+                    "https://github.com/acme/doodba", "main",
+                )
+                self.assertEqual(result["odoo_version"], series)
 
     def test_declared_repository_submodule_and_domain_caps(self):
         """Every collection sourced from YAML or gitmodules has a hard cap."""

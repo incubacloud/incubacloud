@@ -144,7 +144,18 @@ in the database.
   `import_host_instance`) stop before creating anything when the series is one
   the user may not choose, or when none is found, naming the series found and
   the ones the panel offers. An Odoo administrator may still import a series
-  not offered, as the project form lets him.
+  not offered, as the project form lets him. A branch or a
+  `.copier-answers.yml` of any `X.0` is read as that series, so one the panel
+  has no card for (7.0, 21.0) is said not to be offered, rather than not
+  found; a manifest names a series only by a version of at least four parts
+  (`19.0.1.0.0`), so an add-on's `"12.0"` is not read as the series 12.0; and
+  an `odoo_version` in `.copier-answers.yml` that reads as no series is told,
+  not dropped with the rest of the answers.
+- **Import Instance leaves no half-made project.** A domain another instance
+  holds, or a failure creating the instance, answered with an error after the
+  project and its repository lines were created, and the request kept them.
+  The domains are checked before anything is created, and the project, its
+  lines and the instance are made or none is.
 - Spanish: «salva» reads «copia de seguridad», as in the rest of the panel.
 
 ## [1.0.217] — 2026-11-08

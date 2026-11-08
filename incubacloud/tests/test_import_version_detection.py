@@ -45,14 +45,16 @@ class TestImportVersionHelpers(BaseCase):
 
 
 class TestOdooVersionSingleSource(TransactionCase):
-    """The version selectors and importer share one source of truth."""
+    """The version selectors and the importer read one table of series."""
 
     def test_models_share_constant(self):
         """Project and instance selections hold every series with a card.
 
         Offered or not: an instance keeps a valid value when its series
-        stops being offered. The pickers and the importer show the
-        offered ones (``ODOO_VERSIONS``).
+        stops being offered. The pickers show the offered ones
+        (``ODOO_VERSIONS``); the importer reads every series with a card
+        and refuses, for a user who may not choose it, one not offered
+        (``import_series_refusal``).
         """
         instance_versions = [
             code for code, _label

@@ -14,8 +14,10 @@ whole.
 Fields of a card:
 
 ``offered``
-    Whether the series appears in the pickers, the importer accepts it
-    and anyone may choose it (``may_choose``). A series being prepared
+    Whether the series appears in the pickers and anyone may choose it
+    (``may_choose``); an import of code for one that is not offered is
+    refused to anyone but an Odoo administrator
+    (``import_series_refusal``). A series being prepared
     lives here with ``offered=False`` until its QA passes, so the code
     that supports it can land without a customer deploying it. A panel
     offers it only if its pinned template can render it

@@ -202,8 +202,10 @@ def _version_from_manifest_text(text):
     """Return the Odoo series ('18.0') from an ``__manifest__.py`` source.
 
     The manifest ``version`` field (e.g. ``"18.0.1.0.0"``) starts with the
-    Odoo series. Parsed with the inspector's safe literal parser; returns '' when
-    the file is unparseable, lacks a version, or the series is unsupported.
+    Odoo series. Parsed with the inspector's safe literal parser; returns ''
+    when the file is unparseable, its version is not in a series' format (at
+    least four parts) or the series is one the panel has no card for. A
+    series the panel does not offer is returned: the import refuses it.
     """
     return _api_version_from_manifest_text(text)
 
@@ -835,8 +837,9 @@ class GitHubMixin:
         odoo_version = inspected.get('odoo_version', '')
         refusal = import_series_refusal(request.env, odoo_version, request.env._(
             'Could not tell which Odoo series this repository is for. Name '
-            'its branch after the series (such as 19.0), or give its modules '
-            'a version that starts with it (such as 19.0.1.0.0).'
+            'its branch after the series (such as 19.0), give its modules '
+            'a version that starts with it (such as 19.0.1.0.0) or, for a '
+            'Doodba project, set odoo_version in its .copier-answers.yml.'
         ))
         if refusal:
             return {'ok': False, 'error': refusal}
