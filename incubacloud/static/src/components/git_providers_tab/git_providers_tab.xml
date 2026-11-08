@@ -220,7 +220,7 @@
                 <div class="rl-frow">
                     <label>Access token</label>
                     <input type="password" autocomplete="new-password"
-                           t-att-placeholder="cred.has_token ? '•••••••• (stored, leave blank to keep)' : 'glpat-… or gldt-…'"
+                           t-att-placeholder="tokenPlaceholder(cred)"
                            t-att-value="cred.token"
                            t-on-input="(ev) => cred.token = ev.target.value"/>
                 </div>
