@@ -39,6 +39,13 @@ class _RoutesCase(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # The core's policy, whatever else is installed: the saas CI runs
+        # this suite in a tenant's panel too, whose 'public' policy has
+        # tests of its own (incubacloud_tenant).
+        cls.startClassPatcher(patch.object(
+            type(cls.env["cloud.git.provider"]), "_network_policy",
+            autospec=True, return_value="any",
+        ))
         cls.provider = cls.env["cloud.git.provider"].create({
             "name": "GitLab.com", "base_url": "https://gitlab.com",
         })
