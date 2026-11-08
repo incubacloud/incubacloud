@@ -113,12 +113,14 @@ jobs:
 
   relay-oauth:
     name: relay-oauth renewer (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
@@ -130,7 +132,7 @@ jobs:
       # without the image fails the build.
       - name: Run the image's tests
         run: |
-          pip install 'pytest==9.1.1'
+          pip install --require-hashes -r images/relay-oauth/tests/requirements.txt
           python -m pytest -p no:cacheprovider images/relay-oauth/tests
 
   test:

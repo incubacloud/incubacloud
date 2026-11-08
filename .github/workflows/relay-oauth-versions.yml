@@ -56,6 +56,14 @@ jobs:
           tags() { # tags URL PATTERN: tag names, newest last
             git ls-remote --tags --refs "$1" "$2" | sed 's#.*refs/tags/##' | sort -V
           }
+          # A failed listing, or an empty one, is a failed run: reading it as
+          # "nothing newer" would let the weekly check go blind without a trace.
+          need_tags() { # need_tags WHAT TAGS: fail unless TAGS holds something
+            if [[ -z "$2" ]]; then
+              echo "::error::No $1 tags: git ls-remote failed or listed none"
+              exit 1
+            fi
+          }
           open_issue() { # open_issue TITLE BODY: unless one with that title is open
             local title="$1" body="$2"
             if gh issue list --repo "$REPO" --state open --search "in:title \"$title\"" \
@@ -69,8 +77,10 @@ jobs:
           summary() { echo "$*" >>"$GITHUB_STEP_SUMMARY"; }
           summary "### relay-oauth versions (Dockerfile: docker-mailserver ${dms_version}, sasl-xoauth2 ${sx_tag})"
 
-          dms_tags=$(tags https://github.com/docker-mailserver/docker-mailserver 'v*' \
-            | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)
+          dms_tags=$(tags https://github.com/docker-mailserver/docker-mailserver 'v*') \
+            || { echo "::error::git ls-remote of docker-mailserver failed"; exit 1; }
+          dms_tags=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$dms_tags" | sed 's/^v//' | sort -V || true)
+          need_tags docker-mailserver "$dms_tags"
           in_series=$(grep -E "^${series//./\\.}\.[0-9]+$" <<<"$dms_tags" | tail -1 || true)
           newest=$(tail -1 <<<"$dms_tags")
           summary "- docker-mailserver: newest ${series}.x ${in_series:-none}, newest release ${newest}"
@@ -80,9 +90,12 @@ jobs:
               "The relay-oauth image and core's \`SMTP_RELAY_IMAGE\` use docker-mailserver ${dms_version}; ${in_series} is out in the same series. Read its release notes and follow ${runbook}: the two move together."
           fi
 
-          sx_newest=$(tags https://github.com/tarickb/sasl-xoauth2 'release-*' \
-            | grep -E '^release-[0-9]+(\.[0-9]+)*$' | sort -V | tail -1 || true)
-          summary "- sasl-xoauth2: newest tag ${sx_newest:-none}"
+          sx_tags=$(tags https://github.com/tarickb/sasl-xoauth2 'release-*') \
+            || { echo "::error::git ls-remote of sasl-xoauth2 failed"; exit 1; }
+          sx_tags=$(grep -E '^release-[0-9]+(\.[0-9]+)*$' <<<"$sx_tags" | sort -V || true)
+          need_tags sasl-xoauth2 "$sx_tags"
+          sx_newest=$(tail -1 <<<"$sx_tags")
+          summary "- sasl-xoauth2: newest tag ${sx_newest}"
           if [[ -n "$sx_newest" && "$sx_newest" != "$sx_tag" \
                 && "$(printf '%s\n%s\n' "$sx_tag" "$sx_newest" | sort -V | tail -1)" == "$sx_newest" ]]; then
             open_issue "relay-oauth: sasl-xoauth2 ${sx_newest} is out" \
