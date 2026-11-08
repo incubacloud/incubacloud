@@ -23,6 +23,7 @@ from cryptography import x509
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from ..gitlab.client import GitLabClient, GitLabError
 from ..net.git_reader import GitReader, GitReaderError
 from ..net.outbound import OutboundError, _resolve_public
 from ._git_urls import (
@@ -495,6 +496,46 @@ class CloudGitCredential(models.Model):
         self.ensure_one()
         cred = self.sudo()
         return cred.username or "oauth2", cred.token
+
+    def _introspect(self):
+        """Read from GitLab what the token is: scopes, expiry and user.
+
+        ``GET /personal_access_tokens/self`` serves personal, group and
+        project tokens of any scope; ``current_user`` is asked only with
+        ``api`` or ``read_api``. A 401 (a deploy token) leaves the
+        credential without API (``scopes=''``): not an error, it only
+        limits what the panel does with it (§4.3, §6).
+
+        :return: the scopes read, empty for a token without API
+        :rtype: str
+        :raises UserError: when GitLab cannot be asked, without the token
+        """
+        self.ensure_one()
+        cred = self.sudo()
+        provider = cred.provider_id
+        client = GitLabClient(
+            provider.api_url, cred.token,
+            ca_pem=provider.ca_bundle or None, pin_ip=provider._resolve_pin(),
+        )
+        try:
+            info = client.token_self()
+            scopes = sorted(info.get("scopes") or ())
+            user = False
+            if {"api", "read_api"} & set(scopes):
+                user = client.current_user().get("username") or False
+        except GitLabError as exc:
+            if exc.status == 401:
+                cred.write({"scopes": "", "token_user": False})
+                return ""
+            raise UserError(_(
+                "%(provider)s did not answer about the token (%(code)s).",
+                provider=provider.name, code=exc.code,
+            )) from exc
+        vals = {"scopes": " ".join(scopes), "token_user": user}
+        if info.get("expires_at"):
+            vals["expires_on"] = fields.Date.to_date(info["expires_at"])
+        cred.write(vals)
+        return vals["scopes"]
 
     @api.model
     def _normalize_vals(self, vals):
