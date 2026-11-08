@@ -34,6 +34,8 @@ from datetime import timedelta
 
 from odoo import api, fields, models, tools
 
+from ._concurrency import read_committed_cursor
+
 
 # Defaults used when cloud.settings returns 0 or the singleton isn't
 # ready yet (e.g. during an installation where the hook fires before
@@ -66,6 +68,39 @@ RATE_LIMIT_DEFAULTS = {
     # GitHub's API (plan-gitlab.md §9, 8-nov-2026).
     'rate_limit_git_reads_per_hour': 120,
 }
+
+
+def consume_quota(env, bucket, **hit_kwargs):
+    """Count one hit on *bucket* in a transaction of its own.
+
+    The one function every quota of a request counts with: the hourly
+    caps of GitHub previews and imports and of git reads
+    (``consume_hourly_quota``), the assistant's tool calls and its
+    failed authentications. Committed at once, so a hit refused later
+    still counts and parallel requests do not fight over the bucket's
+    row inside their own transactions. The cursor runs at READ
+    COMMITTED (:func:`read_committed_cursor`): at Odoo's REPEATABLE READ
+    a hit that met a row another hit had just created or committed was
+    aborted with "could not serialize access due to concurrent update",
+    logged at ERROR. Here the second hit waits for the row and adds to
+    it, and the atomic upsert of :meth:`CloudRateLimit.hit` hands each
+    hit its own count, so parallel hits never pass the cap.
+
+    :param env: an Odoo environment, of the user who asks (its user and
+        context are kept)
+    :param str bucket: the rate-limit bucket
+    :param hit_kwargs: ``cap_key`` or ``max_per_window``, and
+        ``window_seconds``, as :meth:`CloudRateLimit.hit` takes them
+    :return: whether the hit is within the cap
+    :rtype: bool
+    """
+    with read_committed_cursor(env.registry) as cr:
+        quota_env = api.Environment(cr, env.uid, dict(env.context))
+        allowed = quota_env['cloud.rate.limit'].sudo().hit(
+            bucket, **hit_kwargs,
+        )
+        cr.commit()
+        return allowed
 
 
 class CloudRateLimit(models.Model):

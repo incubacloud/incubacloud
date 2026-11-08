@@ -10,7 +10,7 @@ import json
 from odoo import api, models
 from odoo.exceptions import UserError
 
-from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
+from odoo.addons.incubacloud.models.cloud_rate_limit import consume_quota
 
 from ..protocol.schema import SchemaError
 
@@ -266,25 +266,19 @@ class McpTools(models.AbstractModel):
     def _consume_quota(self, bucket, cap_key=None, max_per_window=None):
         """Count one hit on *bucket* in a transaction of its own.
 
-        Like ``consume_hourly_quota``: an agent's parallel calls do not
-        fight over the bucket's row inside their transactions, and a
-        serialisation failure there cannot replay what came after. The
-        cursor runs at READ COMMITTED (:func:`read_committed_cursor`): at
-        Odoo's REPEATABLE READ a call that met a row another call had just
-        created or committed was aborted with "could not serialize access
-        due to concurrent update", so an agent's parallel calls failed.
-        Here the second call waits for the row and adds to it; the atomic
-        upsert of ``cloud.rate.limit.hit`` hands each call its own count,
-        so parallel calls never pass the cap.
+        With :func:`consume_quota`, as every quota of a request: an
+        agent's parallel calls do not fight over the bucket's row inside
+        their transactions, a serialisation failure there cannot replay
+        what came after, and at READ COMMITTED the second call waits for
+        the row and adds to it, never passing the cap.
 
+        :param str bucket: the rate-limit bucket
+        :param str cap_key: the ``cloud.settings`` field holding the cap
+        :param int max_per_window: a literal cap, without ``cap_key``
         :return: whether the hit is within the cap
         :rtype: bool
         """
-        with read_committed_cursor(self.env.registry) as cr:
-            env = api.Environment(cr, self.env.uid, dict(self.env.context))
-            kwargs = (
-                {"cap_key": cap_key} if cap_key else {"max_per_window": max_per_window}
-            )
-            allowed = env["cloud.rate.limit"].sudo().hit(bucket, **kwargs)
-            cr.commit()
-            return allowed
+        kwargs = (
+            {"cap_key": cap_key} if cap_key else {"max_per_window": max_per_window}
+        )
+        return consume_quota(self.env, bucket, **kwargs)

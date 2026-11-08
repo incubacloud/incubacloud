@@ -19,7 +19,9 @@ from unittest.mock import patch
 from odoo import api
 from odoo.tests.common import TransactionCase
 
-from odoo.addons.incubacloud.controllers._data_load import _routes_github
+from odoo.addons.incubacloud.models._repo_requirements import (
+    consume_hourly_quota,
+)
 from odoo.addons.incubacloud.models.cloud_rate_limit import CloudRateLimit
 from odoo.addons.incubacloud_mcp.models import mcp_auth
 
@@ -54,7 +56,7 @@ class TestQuotaConcurrency(TransactionCase):
             ),
             "github quota": (
                 "quota_concurrency_test:github",
-                lambda cap: _routes_github._consume_github_quota(
+                lambda cap: consume_hourly_quota(
                     self.route_env,
                     "quota_concurrency_test:github",
                     _GITHUB_CAP_KEY,
