@@ -3,8 +3,11 @@
 Some steps cannot be stopped halfway: «Update changed modules» of a
 rebuild commits each module it updates (Odoo's ``loading.py``), so a stop
 there leaves the database half updated under the image that runs, and
-the rebuild keeps no copy to go back to (measured on 8-nov-2026). Such a
-step is the executor's ``_no_return_from``.
+the rebuild keeps no copy to go back to (measured on 8-nov-2026).
+«Restore database» of a restore drops the database (``--force``) and
+loads the dump in its place: a stop there leaves it empty or half loaded,
+where a load left alone ran on to its end. Such a step is the executor's
+``_no_return_from``.
 
 The stop and the step are serialised by a transaction-level advisory
 lock of the job (``NO_RETURN_LOCK_NAMESPACE``, the job's id):

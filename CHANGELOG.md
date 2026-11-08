@@ -40,6 +40,15 @@ database.
   step: a new instance stopped halfway is removed. The warning a rebuild that
   ended unapplied writes now says when its database was already updated, by
   this attempt or an earlier one.
+- **A restore cannot be cancelled once it loads the database.** «Restore
+  database» drops the instance's database (`--force`) before it loads the dump:
+  with the TERM, a stop there left it empty or half loaded, where before the
+  load ran on to its end in its container. The step is the restore's point of
+  no return, under the same lock and mark as the rebuild's update: a stop asked
+  for before it ends the job without touching the database; from it on,
+  cancelling is refused with a message saying why. A move's restore has none:
+  it loads a copy on the new host that a rollback removes, the source
+  untouched.
 
 ## [1.0.217] — 2026-11-08
 

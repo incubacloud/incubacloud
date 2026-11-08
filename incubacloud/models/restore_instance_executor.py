@@ -90,6 +90,12 @@ def _curl_url_config(url):
 #: limit ends with (curl's write error, 23).
 _DOWNLOAD_TOO_LARGE = (63, 23)
 
+#: The step that drops the instance's database (``--force``) and loads
+#: the dump in its place: stopped there, the database is left empty or
+#: half loaded, where a load left alone ran on to its end. From it on a
+#: stop is refused (``_no_return_from``).
+_LABEL_RESTORE_DB = "Restore database"
+
 
 def rsync_path(instance_id):
     """Return where an ``rsync`` restore of an instance takes its archive.
@@ -226,6 +232,22 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: The largest archive a ``from_url`` restore may download, from what
     #: ``before_execute`` measured free on the host (``restore_space``).
     _download_limit = None
+
+    @property
+    def _no_return_from(self):
+        """The step a stop must not cut: the load of the database.
+
+        None for a move's restore (``_loads_as_move``): it loads a copy on
+        the new host that nothing uses yet, which a rollback removes, the
+        source untouched; refusing its stop would only keep the instance
+        down until a load nobody wants ends.
+
+        :rtype: str | None
+        """
+        inst = self._inst()
+        if self._loads_as_move(inst, self.job.payload or {}):
+            return None
+        return _LABEL_RESTORE_DB
 
     def _inst(self):
         return self.job.instance_id
@@ -1021,7 +1043,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 {"stop_on_failure": True},
             ),
             (
-                "Restore database",
+                _LABEL_RESTORE_DB,
                 self.run_script(
                     "restore.sh",
                     ["restore-db", d, dbname, remote, neutralize, load_as],

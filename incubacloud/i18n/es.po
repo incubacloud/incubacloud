@@ -17694,6 +17694,21 @@ msgstr ""
 "la imagen que está en marcha. Deje que termine; tarda unos minutos."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s cannot be stopped any more: it is at '%(step)s', which has "
+"already removed the instance's database to load the backup in its place. "
+"Stopped now, the database would be left empty or half loaded. Let it end; it"
+" takes as long as loading the backup does."
+msgstr ""
+"El trabajo n.º %(job)s ya no se puede detener: está en «%(step)s», que ya ha "
+"borrado la base de datos de la instancia para cargar la copia de seguridad "
+"en su lugar. Si se detuviera ahora, la base de datos quedaría vacía o "
+"cargada a medias. Deje que termine; tarda lo que tarde en cargarse la copia "
+"de seguridad."
+
+#. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_job_no_return
 msgid "Job Past Its Point of No Return"
 msgstr "Trabajo que pasó su punto sin retorno"

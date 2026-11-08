@@ -2346,6 +2346,10 @@ class CloudJob(models.Model):
         is read on a cursor of its own: this transaction's snapshot may
         predate its commit.
 
+        The refusal says why that step cannot be cut, by job type: a
+        rebuild's update leaves the database half updated, a restore's
+        load leaves it empty or half loaded.
+
         :raises UserError: when one of them is marked
         """
         if not self:
@@ -2362,6 +2366,16 @@ class CloudJob(models.Model):
                 (tuple(self.ids),),
             )
             row = fresh.fetchone()
+        if row and self.browse(row[0]).job_type_id.code == "restore_instance":
+            raise UserError(_(
+                "Job #%(job)s cannot be stopped any more: it is at"
+                " '%(step)s', which has already removed the instance's"
+                " database to load the backup in its place. Stopped now,"
+                " the database would be left empty or half loaded. Let it"
+                " end; it takes as long as loading the backup does.",
+                job=row[0],
+                step=row[1],
+            ))
         if row:
             raise UserError(_(
                 "Job #%(job)s cannot be stopped any more: it is at"
