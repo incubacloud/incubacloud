@@ -36,6 +36,8 @@ case "$*" in
     *"pg_isready"*) exit "${STUB_PG_READY:-0}" ;;
     *"SHOW archive_mode"*) echo "${STUB_ARCHIVE_MODE:-on}" ;;
     *"FROM pg_settings WHERE name = 'archive_mode'"*) echo "${STUB_ARCHIVE_SOURCE:-configuration file}" ;;
+    *"current_setting('archive_command')"*) printf '%s\n' "${STUB_ARCHIVE_COMMAND-}" ;;
+    *"RESET archive_timeout"*) exit "${STUB_RESET_STATUS:-0}" ;;
     # One more segment archived on every read: the end-to-end check passes.
     *"archived_count"*) n="$(cat "$CALLS.archived" 2>/dev/null || echo 0)"; echo $((n + 1)) > "$CALLS.archived"; echo "$n" ;;
     *"pg_control_checkpoint"*) echo "${STUB_TIMELINE:-00000002}" ;;
@@ -95,7 +97,7 @@ STUB
     [ -z "$(find "$HOME/.cache/incubacloud/walg" -name '.part.*')" ]
 }
 
-@test "install downloads wal-g retrying every kind of error, with time limits" {
+@test "install downloads wal-g retrying every kind of error with a growing wait, with time limits" {
     cat > "$TMP/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 echo "curl $*" >> "$CALLS"
@@ -105,8 +107,12 @@ STUB
     sha=0000000000000000000000000000000000000000000000000000000000000000
     run bash "$SCRIPT" install "$DIR" v3.0.9 "$sha" "$sha"
     line="$(grep '^curl ' "$CALLS")"
-    [[ "$line" == *"--retry 6"* ]]
-    [[ "$line" == *"--retry-delay 10"* ]]
+    # Up to 15 minutes of backoff (1 s doubling, curl's own): a GitHub
+    # outage outlasted a fixed 10 s wait six times over (QA, 8-nov-2026).
+    [[ "$line" == *"--retry 10 "* ]]
+    [[ "$line" == *"--retry-max-time 900"* ]]
+    [[ "$line" != *"--retry-delay"* ]]
+    [[ "$line" == *" -fsSL "* ]]
     [[ "$line" == *"--retry-all-errors"* ]]
     [[ "$line" == *"--connect-timeout 20"* ]]
     [[ "$line" == *"--max-time 300"* ]]
@@ -475,7 +481,7 @@ STUB
     run bash "$SCRIPT" disable "$DIR" odoo
     [ "$status" -eq 0 ]
     up="$(grep -n "compose up -d db" "$CALLS" | cut -d: -f1)"
-    reset="$(grep -n "RESET archive_command" "$CALLS" | cut -d: -f1)"
+    reset="$(grep -n "RESET archive_mode" "$CALLS" | cut -d: -f1)"
     stop="$(grep -n "compose stop db" "$CALLS" | cut -d: -f1)"
     [ "$up" -lt "$reset" ] && [ "$reset" -lt "$stop" ]
     # Not Odoo: it was not the one stopped.
@@ -502,6 +508,150 @@ STUB
     start="$(grep -n "compose start odoo" "$CALLS" | cut -d: -f1)"
     [ -n "$stop" ] && [ "$stop" -lt "$restart" ] && [ "$restart" -lt "$start" ]
     [[ "$output" == *"IC_PITR_ODOO_RESTARTED"* ]]
+}
+
+@test "switching off lets the segments go before anything else, wherever archive_mode comes from" {
+    # A command that needs no mount: a cut anywhere after it, or a rebuild
+    # without the mount, leaves no database keeping its segments.
+    for source in 'configuration file' 'command line'; do
+        : > "$CALLS"
+        export STUB_ARCHIVE_MODE=on STUB_ARCHIVE_SOURCE="$source"
+        run bash "$SCRIPT" disable "$DIR" odoo
+        [ "$status" -eq 0 ]
+        first="$(grep -n "ALTER SYSTEM" "$CALLS" | head -n 1)"
+        [[ "$first" == *"ALTER SYSTEM SET archive_command = '/bin/true'"* ]]
+        [[ "$first" == *"pg_reload_conf"* ]]
+        ! grep -q "RESET archive_command" "$CALLS"
+    done
+}
+
+@test "a switch off cut after its first write leaves the segments let go" {
+    export STUB_ARCHIVE_MODE=on STUB_RESET_STATUS=1
+    run bash "$SCRIPT" disable "$DIR" odoo
+    [ "$status" -ne 0 ]
+    command="$(grep -n "SET archive_command = '/bin/true'" "$CALLS" | cut -d: -f1)"
+    reset="$(grep -n "RESET archive_timeout" "$CALLS" | cut -d: -f1)"
+    [ -n "$command" ] && [ "$command" -lt "$reset" ]
+    grep "SET archive_command = '/bin/true'" "$CALLS" | grep -q "pg_reload_conf"
+}
+
+@test "settling a database left with archiving on and no command lets its segments go" {
+    export STUB_ARCHIVE_COMMAND='' STUB_ARCHIVE_SOURCE='command line'
+    run bash "$SCRIPT" settle "$DIR" odoo -
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    grep -q "ALTER SYSTEM SET archive_command = '/bin/true'" "$CALLS"
+    grep -q "ALTER SYSTEM RESET archive_timeout" "$CALLS"
+    grep -q "ALTER SYSTEM RESET archive_mode" "$CALLS"
+    grep -q "pg_reload_conf" "$CALLS"
+    # Never a restart: no database stops under the customer for this.
+    ! grep -q "compose restart db" "$CALLS"
+    ! grep -q "compose stop" "$CALLS"
+}
+
+@test "settling a known cluster with no command still parks it" {
+    # Switched off by a plan change: the panel still knows its base
+    # copies, but nothing archives it, and the segments would pile up.
+    export STUB_ARCHIVE_COMMAND=''
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    grep -q "ALTER SYSTEM SET archive_command = '/bin/true'" "$CALLS"
+}
+
+@test "settling a known cluster that archives with its command keeps it" {
+    export STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED kept" <<< "$output"
+    ! grep -q "ALTER SYSTEM" "$CALLS"
+    ! grep -q "pg_reload_conf" "$CALLS"
+}
+
+@test "settling another cluster that archives parks it" {
+    # A move or a new deploy: the panel's base copies are of another
+    # cluster, and this one's log restores nothing without a base.
+    export STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
+    run bash "$SCRIPT" settle "$DIR" odoo 1234
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    grep -q "ALTER SYSTEM SET archive_command = '/bin/true'" "$CALLS"
+    run bash "$SCRIPT" settle "$DIR" odoo -
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+}
+
+@test "settling any other command parks it" {
+    export STUB_ARCHIVE_COMMAND='cp %p /mnt/old/%f'
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    grep -q "ALTER SYSTEM SET archive_command = '/bin/true'" "$CALLS"
+}
+
+@test "settling a database already parked writes nothing" {
+    export STUB_ARCHIVE_COMMAND='/bin/true'
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    ! grep -q "ALTER SYSTEM" "$CALLS"
+    ! grep -q "pg_reload_conf" "$CALLS"
+}
+
+@test "settling leaves the agent as it was" {
+    # An orphaned switch on may be about to write the real command: an
+    # agent sent back to idle then would keep every segment.
+    echo agent > "$DIR/.walg/pitr_agent.sh"
+    for command in '' '/opt/walg/archive %f' '/bin/true'; do
+        export STUB_ARCHIVE_COMMAND="$command"
+        run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+        [ "$status" -eq 0 ]
+    done
+    [ -f "$DIR/.walg/pitr_agent.sh" ]
+    ! grep -qE "compose (up|rm|stop|restart|kill).* pitr" "$CALLS"
+    ! grep -q "force-recreate" "$CALLS"
+}
+
+@test "settling a stopped database starts it, writes, and stops it again" {
+    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_COMMAND=''
+    run bash "$SCRIPT" settle "$DIR" odoo -
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED parked" <<< "$output"
+    up="$(grep -n "compose up -d db" "$CALLS" | cut -d: -f1)"
+    command="$(grep -n "SET archive_command = '/bin/true'" "$CALLS" | cut -d: -f1)"
+    stop="$(grep -n "compose stop db" "$CALLS" | cut -d: -f1)"
+    [ -n "$up" ] && [ "$up" -lt "$command" ] && [ "$command" -lt "$stop" ]
+    ! grep -q "compose stop odoo" "$CALLS"
+}
+
+@test "settling a stopped database it keeps stops it again too" {
+    export STUB_RUNNING='odoo\n' STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    grep -qx "IC_PITR_SETTLED kept" <<< "$output"
+    grep -q "compose stop db" "$CALLS"
+}
+
+@test "settling during a restore touches nothing" {
+    mkdir -p "$DIR/.walg/restore"
+    echo 9 > "$DIR/.walg/restore/lock"
+    export STUB_ARCHIVE_COMMAND=''
+    run bash "$SCRIPT" settle "$DIR" odoo -
+    [ "$status" -eq 0 ]
+    grep -qx "IC_PITR_SETTLED restoring" <<< "$output"
+    [ ! -s "$CALLS" ]
+}
+
+@test "settling twice gives the same answer" {
+    export STUB_ARCHIVE_COMMAND='/opt/walg/archive %f'
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    first="$output"
+    run bash "$SCRIPT" settle "$DIR" odoo 7698138691441184802
+    grep -qx "IC_PITR_SETTLED kept" <<< "$first"
+    [ "$(grep IC_PITR_SETTLED <<< "$first")" = "$(grep IC_PITR_SETTLED <<< "$output")" ]
+}
+
+@test "settling refuses a cluster that is not one" {
+    run bash "$SCRIPT" settle "$DIR" odoo '1;reboot'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad cluster"* ]]
+    [ ! -s "$CALLS" ]
 }
 
 @test "switching off waits for a restore" {

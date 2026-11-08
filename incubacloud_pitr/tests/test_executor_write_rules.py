@@ -22,6 +22,8 @@ _HOOK_HELPERS = {
     "_record_pitr_bases": "records the recovery window a run read",
     "_record_cluster": "records the cluster archiving now",
     "_record_archiving": "records what switching on did",
+    "_record_seen": "records the cluster and the window a failed switch on read",
+    "_judge_settled": "records how the host settled a failed switch on, alerted",
     "_record": "records what a base copy and its housekeeping did",
     "_restored": "records a restore and queues its full base copy",
     "_follow_up_restore": "queues a restore's full base copy, tells the addons",
