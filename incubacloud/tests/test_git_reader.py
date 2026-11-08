@@ -6,6 +6,11 @@ the credential in an ``extraHeader`` of a temporary ``.gitconfig`` and
 never in argv. With the ``public`` policy the address checked by the
 panel is pinned with ``http.curloptResolve``, which a git older than
 2.37 accepts and ignores: such a git is refused before any network.
+
+The settings travel in ``GIT_CONFIG_COUNT``/``KEY``/``VALUE``, never in a
+file a SIGKILL would leave behind with the token; git's output goes to a
+file of the session and is read only within its cap (security review of
+G1, 8-nov-2026).
 """
 import os
 import subprocess
@@ -24,8 +29,49 @@ _CRED = ("oauth2", "glpat-secret-token-123")
 _SHA = "a" * 40
 
 
+def _env_config(env):
+    """Return the settings *env* hands git, one ``key = value`` per line.
+
+    :param dict env: a git call's environment
+    :rtype: str
+    """
+    lines = []
+    for i in range(int(env.get("GIT_CONFIG_COUNT") or 0)):
+        lines.append(f"{env[f'GIT_CONFIG_KEY_{i}']} = {env[f'GIT_CONFIG_VALUE_{i}']}")
+    return "\n".join(lines)
+
+
+def _feed(done, kwargs):
+    """Write *done*'s output where the call asked for it, as git would.
+
+    :param subprocess.CompletedProcess done: the answer
+    :param dict kwargs: the call's keyword arguments
+    :rtype: subprocess.CompletedProcess
+    """
+    to_files = False
+    for name in ("stdout", "stderr"):
+        target = kwargs.get(name)
+        if hasattr(target, "write"):
+            to_files = True
+            target.write((getattr(done, name) or "").encode())
+            target.flush()
+    if to_files:
+        return subprocess.CompletedProcess(done.args, done.returncode)
+    return done
+
+
+def _through_files(answer):
+    """Wrap *answer* (``(argv, **kwargs) -> CompletedProcess``) with :func:`_feed`.
+
+    :rtype: callable
+    """
+    def run(argv, **kwargs):
+        return _feed(answer(argv, **kwargs), kwargs)
+    return run
+
+
 class _Calls:
-    """Record each git call: argv, env and the ``.gitconfig`` it saw."""
+    """Record each git call: argv, env, the settings it saw and its HOME."""
 
     def __init__(self, answers):
         """:param answers: callable ``(argv) -> CompletedProcess``"""
@@ -38,13 +84,13 @@ class _Calls:
         :rtype: subprocess.CompletedProcess
         """
         env = kwargs.get("env") or {}
-        config = ""
         home = env.get("HOME")
-        if home and os.path.exists(os.path.join(home, ".gitconfig")):
-            with open(os.path.join(home, ".gitconfig"), encoding="utf-8") as fh:
-                config = fh.read()
-        self.calls.append({"argv": list(argv), "env": dict(env), "config": config})
-        return self.answers(argv)
+        self.calls.append({
+            "argv": list(argv), "env": dict(env), "config": _env_config(env),
+            "kwargs": dict(kwargs),
+            "files": sorted(os.listdir(home)) if home and os.path.isdir(home) else [],
+        })
+        return _feed(self.answers(argv), kwargs)
 
 
 def _ok(stdout="", stderr=""):
@@ -108,6 +154,14 @@ class TestGitReaderCommand(BaseCase):
         self.assertNotIn("sslCAInfo", net["config"])
         self.assertNotIn("curloptResolve", net["config"])
 
+    def test_no_setting_nor_token_is_written_to_disk(self):
+        calls = self._run(_version(), pin_ip="203.0.113.7")
+        for call in calls:
+            self.assertNotIn(".gitconfig", call["files"])
+        net = calls[-1]
+        self.assertIn("extraHeader = Authorization: Basic ", net["config"])
+        self.assertGreaterEqual(int(net["env"]["GIT_CONFIG_COUNT"]), 3)
+
     def test_the_home_is_private_and_removed(self):
         calls = self._run(_version())
         home = calls[-1]["env"]["HOME"]
@@ -115,8 +169,7 @@ class TestGitReaderCommand(BaseCase):
 
     def test_a_ca_goes_in_a_file_scoped_to_the_server(self):
         calls = self._run(_version(), ca_pem="-----BEGIN CERTIFICATE-----\nx\n")
-        self.assertIn('[http "https://gitlab.example/"]', calls[-1]["config"])
-        self.assertIn("sslCAInfo = ", calls[-1]["config"])
+        self.assertIn("http.https://gitlab.example/.sslCAInfo = ", calls[-1]["config"])
 
     def test_a_pinned_address_is_resolved_by_git_only_from_2_37(self):
         calls = self._run(_version(), pin_ip="203.0.113.7")
@@ -149,8 +202,9 @@ class TestGitReaderErrors(BaseCase):
 
         :rtype: str
         """
-        with patch.object(git_reader.subprocess, "run", side_effect=answer), \
-                self.assertRaises(git_reader.GitReaderError) as caught:
+        with patch.object(
+            git_reader.subprocess, "run", side_effect=_through_files(answer),
+        ), self.assertRaises(git_reader.GitReaderError) as caught:
             git_reader.GitReader().ls_remote(_REF, _CRED, [])
         self.assertNotIn("gitlab.example", str(caught.exception))
         self.assertNotIn(_CRED[1], str(caught.exception))
@@ -210,10 +264,40 @@ class TestGitReaderTree(BaseCase):
 
         def answer(argv, **kwargs):
             return _ok(listing) if "ls-tree" in argv else _ok()
-        with patch.object(git_reader.subprocess, "run", side_effect=answer), \
+        with patch.object(
+            git_reader.subprocess, "run", side_effect=_through_files(answer),
+        ), self.assertRaises(git_reader.GitReaderError) as caught:
+            git_reader.GitReader().tree(_REF, None, "main")
+        self.assertEqual(caught.exception.code, "too_large")
+
+    def test_a_listing_over_its_byte_cap_is_refused_unread(self):
+        listing = f"100644 blob {_SHA}\t{'x' * 400}\0" * (
+            git_reader.MAX_LISTING_BYTES // 400 + 1
+        )
+
+        def answer(argv, **kwargs):
+            return _ok(listing) if "ls-tree" in argv else _ok()
+        calls = _Calls(answer)
+        with patch.object(git_reader.subprocess, "run", side_effect=calls), \
                 self.assertRaises(git_reader.GitReaderError) as caught:
             git_reader.GitReader().tree(_REF, None, "main")
         self.assertEqual(caught.exception.code, "too_large")
+        for call in calls.calls:
+            self.assertNotIn("capture_output", call["kwargs"])
+            self.assertTrue(hasattr(call["kwargs"]["stdout"], "write"))
+
+    def test_a_file_over_its_cap_is_refused_unread(self):
+        def answer(argv, **kwargs):
+            if "cat-file" in argv:
+                return _ok("x" * (git_reader.MAX_FILE_BYTES + 1))
+            return _ok()
+        calls = _Calls(answer)
+        with patch.object(git_reader.subprocess, "run", side_effect=calls), \
+                self.assertRaises(git_reader.GitReaderError) as caught:
+            git_reader.GitReader().read_files(_REF, None, "main", ["big.txt"])
+        self.assertEqual(caught.exception.code, "too_large")
+        cat = next(c for c in calls.calls if "cat-file" in c["argv"])
+        self.assertTrue(hasattr(cat["kwargs"]["stdout"], "write"))
 
     def test_a_revision_that_looks_like_an_option_is_refused(self):
         with patch.object(git_reader.subprocess, "run") as run, \
@@ -228,7 +312,9 @@ class TestGitReaderTree(BaseCase):
                     return _ok("requests==2\n")
                 return _fail("fatal: path 'x' does not exist in 'FETCH_HEAD'")
             return _ok()
-        with patch.object(git_reader.subprocess, "run", side_effect=answer):
+        with patch.object(
+            git_reader.subprocess, "run", side_effect=_through_files(answer),
+        ):
             files = git_reader.GitReader().read_files(
                 _REF, None, "main", ["requirements.txt", "missing.txt"],
             )
