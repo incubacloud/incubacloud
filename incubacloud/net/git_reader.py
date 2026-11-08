@@ -10,10 +10,16 @@ token, which GitLab's API does not accept. Every call is closed off:
   and no redirects (``http.followRedirects=false``): without ``.git``
   GitLab answers 301, and a redirect is how a token would be carried
   elsewhere;
-- the credential as an ``Authorization: Basic`` ``extraHeader`` of the
-  temporary ``.gitconfig``, scoped to the server, never in argv;
+- the credential as an ``Authorization: Basic`` ``extraHeader`` scoped to
+  the server, handed in ``GIT_CONFIG_COUNT``/``KEY``/``VALUE`` (git 2.31),
+  never in argv nor in a file: a SIGKILL of the panel left a
+  ``.gitconfig`` with the token in ``/tmp`` (security review of G1,
+  8-nov-2026). An older git ignores those variables and reads without
+  credential, CA or pin: it fails, it does not leak;
 - a private CA as ``sslCAInfo`` scoped to the server, from a temporary
   file;
+- git's output in files of the session, read only within a cap: a blob or
+  a listing never reaches memory whole (security review, 8-nov-2026);
 - with the ``public`` network policy, the address the panel checked,
   pinned with ``http.curloptResolve``. A git older than 2.37 accepts that
   option and ignores it without a word (spike of 8-nov-2026, §5), so
@@ -45,6 +51,16 @@ MAX_TREE_ENTRIES = 20000
 
 #: A file read at most (a ``requirements.txt``, a manifest).
 MAX_FILE_BYTES = 1024 * 1024
+
+#: The listing of a tree read at most: :data:`MAX_TREE_ENTRIES` entries
+#: of about 200 bytes each, with room for long paths.
+MAX_LISTING_BYTES = 16 * 1024 * 1024
+
+#: Any other output of git read at most (``ls-remote`` of a few patterns).
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
+
+#: git's stderr read at most, to find its error code.
+_MAX_STDERR_BYTES = 64 * 1024
 
 #: The git that honours ``http.curloptResolve`` (2.37).
 _MIN_PIN_VERSION = (2, 37)
@@ -172,7 +188,7 @@ class GitReader:
             argv = ["-C", "repo", "ls-tree", "-r", "-z", "--full-tree", "FETCH_HEAD"]
             if path:
                 argv += ["--", path]
-            out = run(argv, FETCH_TIMEOUT)
+            out = run(argv, FETCH_TIMEOUT, MAX_LISTING_BYTES)
         entries = [e for e in out.split("\0") if e]
         if len(entries) > MAX_TREE_ENTRIES:
             raise GitReaderError("too_large")
@@ -200,15 +216,13 @@ class GitReader:
                 try:
                     out = run(
                         ["-C", "repo", "cat-file", "-p", f"FETCH_HEAD:{path}"],
-                        FETCH_TIMEOUT,
+                        FETCH_TIMEOUT, MAX_FILE_BYTES,
                     )
                 except GitReaderError as exc:
                     if exc.code == "not_found":
                         files[path] = None
                         continue
                     raise
-                if len(out.encode()) > MAX_FILE_BYTES:
-                    raise GitReaderError("too_large")
                 files[path] = out
         return files
 
@@ -274,17 +288,18 @@ class GitReader:
 
 
 class _Session:
-    """One call's private HOME, ``.gitconfig`` and runner."""
+    """One call's private HOME, git settings and runner."""
 
     def __init__(self, reader, ref, credential):
-        """Keep what the session writes its config from."""
+        """Keep what the session builds its settings from."""
         self.reader = reader
         self.ref = ref
         self.credential = credential
         self.home = None
+        self.config = []
 
     def __enter__(self):
-        """Write the HOME and its ``.gitconfig``; return the runner.
+        """Make the HOME and the settings; return the runner.
 
         :rtype: callable
         :raises GitReaderError: ``git_too_old`` when an address is to be
@@ -296,7 +311,7 @@ class _Session:
         if self.reader.pin_ip and not self.reader._version_ok(env):
             self.__exit__(None, None, None)
             raise GitReaderError("git_too_old")
-        self._write_config()
+        self.config = self._settings()
         return self._run
 
     def __exit__(self, *exc):
@@ -308,6 +323,9 @@ class _Session:
 
     def _env(self):
         """Return the environment of every git call: no system, no prompt.
+
+        With the session's settings in ``GIT_CONFIG_COUNT``, ``KEY_<n>``
+        and ``VALUE_<n>``, once :meth:`_settings` has made them.
 
         :rtype: dict
         """
@@ -321,35 +339,51 @@ class _Session:
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_TERMINAL_PROMPT": "0",
         })
+        if self.config:
+            env["GIT_CONFIG_COUNT"] = str(len(self.config))
+            for i, (key, value) in enumerate(self.config):
+                env[f"GIT_CONFIG_KEY_{i}"] = key
+                env[f"GIT_CONFIG_VALUE_{i}"] = value
         return env
 
-    def _write_config(self):
-        """Write the ``.gitconfig`` holding the credential, CA and pin (0600)."""
-        scope = f"https://{self.ref.authority}/"
-        lines = [f'[http "{scope}"]', "\tfollowRedirects = false"]
+    def _settings(self):
+        """Return the credential, CA and pin settings, as ``(key, value)`` pairs.
+
+        The CA goes in a file of the HOME (0600): it is not a secret.
+
+        :rtype: list
+        """
+        scope = f"http.https://{self.ref.authority}/"
+        pairs = [(f"{scope}.followRedirects", "false")]
         if self.credential:
             pair = f"{self.credential[0]}:{self.credential[1]}".encode()
-            lines.append(
-                "\textraHeader = Authorization: Basic "
-                + base64.b64encode(pair).decode(),
-            )
+            pairs.append((
+                f"{scope}.extraHeader",
+                "Authorization: Basic " + base64.b64encode(pair).decode(),
+            ))
         if self.reader.ca_pem:
             ca_path = os.path.join(self.home, "ca.pem")
             _write_private(ca_path, self.reader.ca_pem)
-            lines.append(f"\tsslCAInfo = {ca_path}")
+            pairs.append((f"{scope}.sslCAInfo", ca_path))
         if self.reader.pin_ip:
             host, port = _host_port(self.ref.authority)
-            pin = f"{host}:{port}:{self.reader.pin_ip}"
-            lines += ["[http]", f"\tcurloptResolve = {pin}"]
-        _write_private(os.path.join(self.home, ".gitconfig"), "\n".join(lines) + "\n")
+            pairs.append((
+                "http.curloptResolve", f"{host}:{port}:{self.reader.pin_ip}",
+            ))
+        return pairs
 
-    def _run(self, argv, timeout):
+    def _run(self, argv, timeout, limit=MAX_OUTPUT_BYTES):
         """Run git with *argv* in the session; return its stdout.
+
+        stdout and stderr go to files of the HOME, under ``ulimit -f``;
+        stdout is read only when it is within *limit* bytes.
 
         :param list argv: git's arguments
         :param int timeout: seconds
+        :param int limit: the most bytes of stdout read
         :rtype: str
-        :raises GitReaderError: on any failure, with its code
+        :raises GitReaderError: on any failure, with its code; ``too_large``
+            when the output passes *limit*
         """
         blocks = MAX_FETCH_BYTES // 512
         full = [
@@ -361,11 +395,14 @@ class _Session:
             "-c", "http.followRedirects=false",
             *argv,
         ]
+        out_path = os.path.join(self.home, ".ic-out")
+        err_path = os.path.join(self.home, ".ic-err")
         try:
-            done = subprocess.run(
-                full, capture_output=True, text=True, timeout=timeout,
-                env=self._env(), cwd=self.home, check=False,
-            )
+            with open(out_path, "wb") as out, open(err_path, "wb") as err:
+                done = subprocess.run(
+                    full, stdout=out, stderr=err, timeout=timeout,
+                    env=self._env(), cwd=self.home, check=False,
+                )
         except subprocess.TimeoutExpired as exc:
             raise GitReaderError("timeout") from exc
         except OSError as exc:
@@ -373,8 +410,10 @@ class _Session:
         if done.returncode in (-_SIGXFSZ, 128 + _SIGXFSZ):
             raise GitReaderError("too_large")
         if done.returncode != 0:
-            raise GitReaderError(_code_of(done.stderr))
-        return done.stdout or ""
+            raise GitReaderError(_code_of(_read_head(err_path, _MAX_STDERR_BYTES)))
+        if os.path.getsize(out_path) > limit:
+            raise GitReaderError("too_large")
+        return _read_head(out_path, limit)
 
 
 def _write_private(path, text):
@@ -386,6 +425,17 @@ def _write_private(path, text):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
+
+
+def _read_head(path, limit):
+    """Return at most *limit* bytes of *path*, decoded as UTF-8.
+
+    :param str path: a file of the session
+    :param int limit: the most bytes read
+    :rtype: str
+    """
+    with open(path, "rb") as fh:
+        return fh.read(limit).decode("utf-8", errors="replace")
 
 
 def _tree_bytes(root):
