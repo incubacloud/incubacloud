@@ -1,5 +1,6 @@
 """The image's fixed files: the plugin's configuration, supervisord's program and the Dockerfile."""
 
+import ast
 import json
 import re
 import urllib.parse
@@ -61,13 +62,60 @@ def test_dockerfile_only_xoauth2_towards_the_relay():
     assert "smtp_sasl_mechanism_filter = xoauth2" in text
 
 
+def _core_relay_image(source):
+    """Return the string ``SMTP_RELAY_IMAGE`` is assigned at the top level of ``source``.
+
+    :param source: Python source of ``deploy_instance_executor.py``.
+    :raises AssertionError: when the constant is not there or is not a string.
+    """
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "SMTP_RELAY_IMAGE" for t in targets):
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, str), "SMTP_RELAY_IMAGE is not a string"
+            return value
+    raise AssertionError("SMTP_RELAY_IMAGE is not defined in the source")
+
+
+def _base_image(args):
+    """Return the ``image:version`` the Dockerfile's ARGs name."""
+    return f"{args['DMS_IMAGE']}:{args['DMS_VERSION']}"
+
+
+@pytest.mark.parametrize("source", [
+    "SMTP_RELAY_IMAGE = 'a:1'",
+    "SMTP_RELAY_IMAGE: str = 'a:1'",
+    "X = 1\nSMTP_RELAY_IMAGE = (\n    'a:1'\n)\n",
+])
+def test_core_relay_image_is_read_from_the_syntax_tree(source):
+    """The constant is found however it is written, not by a line's exact text."""
+    assert _core_relay_image(source) == "a:1"
+
+
+@pytest.mark.parametrize("source", [
+    "",
+    "OTHER = 'a:1'",
+    "def f():\n    SMTP_RELAY_IMAGE = 'a:1'\n",
+    "SMTP_RELAY_IMAGE = make()",
+])
+def test_core_relay_image_missing_or_not_a_string_is_an_error(source):
+    """No constant at the top level, or one that is not a literal string, is a failure."""
+    with pytest.raises((AssertionError, ValueError)):
+        _core_relay_image(source)
+
+
 def test_base_is_the_relay_image_core_deploys():
-    """DMS_IMAGE:DMS_VERSION is core's SMTP_RELAY_IMAGE: the two never move apart."""
+    """DMS_IMAGE:DMS_VERSION is core's SMTP_RELAY_IMAGE: the two never move apart.
+
+    Skipped only outside a core checkout; inside one, a core without the
+    constant, or one that names another release, fails.
+    """
     if not DEPLOY_EXECUTOR.exists():
         pytest.skip("not in a core checkout")
-    found = re.search(r'^SMTP_RELAY_IMAGE = "([^"]+)"$', DEPLOY_EXECUTOR.read_text(),
-                      flags=re.MULTILINE)
-    if not found:
-        pytest.skip("this core has no SMTP_RELAY_IMAGE yet (the relay pin, core 1.0.218)")
-    args = _dockerfile_args()
-    assert f"{args['DMS_IMAGE']}:{args['DMS_VERSION']}" == found.group(1)
+    core = _core_relay_image(DEPLOY_EXECUTOR.read_text())
+    assert _base_image(_dockerfile_args()) == core
