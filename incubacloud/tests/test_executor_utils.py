@@ -52,6 +52,79 @@ class TestRedactTokens(BaseCase):
     def test_empty_string_unchanged(self):
         self.assertEqual(self.redact(""), "")
 
+    # The server is not always GitHub: a GitLab project's token reaches the
+    # log through git-aggregator's "Adding remote" line and git's "fatal".
+
+    def test_removes_gitlab_oauth2_token(self):
+        line = (
+            "Adding remote origin "
+            "https://oauth2:glpat-supersecret12@gitlab.com/group/proj.git"
+        )
+        result = self.redact(line)
+        self.assertNotIn("glpat-supersecret12", result)
+        self.assertNotIn("oauth2", result)
+        self.assertEqual(
+            result, "Adding remote origin https://gitlab.com/group/proj.git"
+        )
+
+    def test_removes_gitlab_deploy_token(self):
+        line = "https://gitlab+deploy-token-7:gldt-deploy1234@gitlab.example.org/g/p.git"
+        result = self.redact(line)
+        self.assertNotIn("gldt-deploy1234", result)
+        self.assertNotIn("deploy-token-7", result)
+        self.assertEqual(result, "https://gitlab.example.org/g/p.git")
+
+    def test_removes_credential_before_a_port(self):
+        line = "Adding remote origin https://u:t0ken-secret@git.example.com:8443/org/repo.git"
+        result = self.redact(line)
+        self.assertNotIn("t0ken-secret", result)
+        self.assertEqual(
+            result, "Adding remote origin https://git.example.com:8443/org/repo.git"
+        )
+
+    def test_removes_bare_token_and_http_scheme(self):
+        self.assertEqual(
+            self.redact("http://glpat-routes12@git.internal/a/b.git"),
+            "http://git.internal/a/b.git",
+        )
+
+    def test_scheme_case_is_kept(self):
+        self.assertEqual(
+            self.redact("HTTPS://u:secret@Host.example/x"), "HTTPS://Host.example/x"
+        )
+
+    def test_removes_credential_in_git_fatal_message(self):
+        line = (
+            "fatal: unable to access "
+            "'https://oauth2:glpat-supersecret12@gitlab.com/group/proj.git/': "
+            "The requested URL returned error: 403"
+        )
+        result = self.redact(line)
+        self.assertNotIn("glpat-supersecret12", result)
+        self.assertEqual(
+            result,
+            "fatal: unable to access 'https://gitlab.com/group/proj.git/': "
+            "The requested URL returned error: 403",
+        )
+
+    def test_token_with_an_at_sign_goes_whole(self):
+        result = self.redact("https://u:pa@ss-secret@git.example.com/o/r.git")
+        self.assertNotIn("ss-secret", result)
+        self.assertEqual(result, "https://git.example.com/o/r.git")
+
+    def test_urls_without_credential_unchanged(self):
+        for line in (
+            "https://gitlab.com/group/proj.git",
+            "http://git.example.com:8443/org/repo.git",
+            "fatal: unable to access 'https://gitlab.com/g/p.git/': Could not resolve host",
+            "Adding remote origin https://gitlab.com/group/proj.git",
+            # An @ after the host is part of the path or of another word.
+            "https://git.example.com/org/repo@v1.0 and me@example.com",
+            "git@github.com:owner/repo.git",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(self.redact(line), line)
+
 
 # ── _slugify ──────────────────────────────────────────────────────────────────
 
