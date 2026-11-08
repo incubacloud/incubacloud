@@ -128,9 +128,12 @@ async def _stop_cancelled(process, drive=None):
     """Send a cancelled command TERM and give it a while to end.
 
     OpenSSH (7.9 and later) delivers the request to the session's whole
-    process group: the script, its trap and its foreground children; what
-    a ``docker exec`` runs inside a container is not in it, and goes on
-    (measured on 8-nov-2026). OpenSSH 8.9 ignores it for a session of
+    process group: the script, its trap and its foreground children
+    (measured on 8-nov-2026). Not in it, and going on: what a ``docker
+    exec`` runs inside a container, a ``timeout`` inside a compound step
+    (it takes a group of its own), and the container of an attached
+    ``docker run`` whose PID 1 ignores TERM, unless the script's trap
+    removes it. OpenSSH 8.9 ignores it for a session of
     root, which has no unprivileged child to send it from. Closing the
     connection instead signals nothing. Raises nothing: a channel already
     closed, or a command that outlives the wait, is left to the
