@@ -183,7 +183,7 @@ class TestGitHookCron(_RoutesCase):
         self.assertFalse(self.hook.exists())
 
     def test_one_failing_webhook_does_not_stop_the_others(self):
-        other = self.hook.copy({"path": "acme/web2", "remote_hook_id": 10})
+        self.hook.copy({"path": "acme/web2", "remote_hook_id": 10})
         self.api.get_hook.side_effect = [GitLabError("unreachable"), {"alert_status": "disabled"}]
         self.env["cloud.git.provider"]._cron_check_git_providers()
         self.assertTrue(self.env["cloud.alert"].search([
