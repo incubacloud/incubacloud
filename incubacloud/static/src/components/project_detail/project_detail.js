@@ -337,6 +337,8 @@ export class ProjectDetail extends Component {
                     addons: r.addons || '',
                     excludes: r.excludes || '',
                     commit_sha: r.commit_sha || '',
+                    // What the panel does with it (GitLab's server, …).
+                    repo_capabilities: r.repo_capabilities || null,
                 }));
                 this.state.pipDeps = p.pip_dependencies || "";
                 this.state.aptDeps = p.apt_dependencies || "";

@@ -93,18 +93,20 @@
                         </t>
 
                         <t t-if="state.canManage">
-                            <div class="ic-gitp-test">
-                                <input type="text"
-                                       t-att-placeholder="provider.base_url + '/group/repository'"
-                                       aria-label="Repository URL to test"
-                                       t-att-value="state.testUrl[provider.id] || ''"
-                                       t-on-input="(ev) => state.testUrl[provider.id] = ev.target.value"/>
-                                <button class="rl-btn rl-btn-ghost"
-                                        t-att-disabled="state.testing === provider.id"
-                                        t-on-click="() => this.testProvider(provider)">
-                                    <i t-att-class="'fa ' + (state.testing === provider.id ? 'fa-spinner fa-spin' : 'fa-plug')"/>
-                                    Test connection
-                                </button>
+                            <div class="rl-frow ic-gitp-test">
+                                <label t-att-for="'ic-gitp-test-' + provider.id">Repository URL to test</label>
+                                <div class="rl-frow-inline">
+                                    <input type="text" t-att-id="'ic-gitp-test-' + provider.id"
+                                           t-att-placeholder="provider.base_url + '/group/repository'"
+                                           t-att-value="state.testUrl[provider.id] || ''"
+                                           t-on-input="(ev) => state.testUrl[provider.id] = ev.target.value"/>
+                                    <button class="rl-btn rl-btn-ghost"
+                                            t-att-disabled="state.testing === provider.id"
+                                            t-on-click="() => this.testProvider(provider)">
+                                        <i t-att-class="'fa ' + (state.testing === provider.id ? 'fa-spinner fa-spin' : 'fa-plug')"/>
+                                        Test connection
+                                    </button>
+                                </div>
                             </div>
                             <t t-set="result" t-value="state.testResult[provider.id]"/>
                             <t t-if="result">
@@ -216,7 +218,7 @@
                            t-on-input="(ev) => cred.username = ev.target.value"/>
                 </div>
                 <div class="rl-frow">
-                    <label>Token</label>
+                    <label>Access token</label>
                     <input type="password" autocomplete="new-password"
                            t-att-placeholder="cred.has_token ? '•••••••• (stored, leave blank to keep)' : 'glpat-… or gldt-…'"
                            t-att-value="cred.token"
