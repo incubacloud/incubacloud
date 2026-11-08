@@ -12,6 +12,7 @@ job renders it; the instance's fields keep what was sold.
 import asyncio
 from unittest.mock import MagicMock, patch
 
+import asyncssh
 import yaml
 
 from odoo.tests.common import TransactionCase
@@ -138,6 +139,20 @@ class TestTheCpusFitTheHost(TransactionCase):
         timeout = deploy_instance_executor.HOST_CPUS_TIMEOUT_S
         self.assertLessEqual(timeout, 20)
         self.assertGreaterEqual(timeout, 10)
+
+    def test_a_link_that_fails_falls_back_to_the_measured_cores(self):
+        """A dropped connection or a refused channel is no reason to fail the job."""
+        self.host.cpu_cores = 2
+        for error in (
+            asyncssh.ConnectionLost("gone"),
+            asyncssh.ChannelOpenError(1, "refused"),
+            ConnectionResetError(),
+            OSError("broken pipe"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                executor = self._executor()
+                services = self._services(executor, error)
+                self.assertEqual(services["odoo"]["cpus"], 2)
 
     def test_the_reading_is_asked_with_a_short_timeout(self):
         executor = self._executor()
