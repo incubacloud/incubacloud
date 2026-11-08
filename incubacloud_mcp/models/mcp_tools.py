@@ -10,6 +10,8 @@ import json
 from odoo import api, models
 from odoo.exceptions import UserError
 
+from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
+
 from ..protocol.schema import SchemaError
 
 #: The arguments that name a record, any tool's: the record's model, and
@@ -266,12 +268,19 @@ class McpTools(models.AbstractModel):
 
         Like ``_consume_github_quota``: an agent's parallel calls do not
         fight over the bucket's row inside their transactions, and a
-        serialisation failure there cannot replay what came after.
+        serialisation failure there cannot replay what came after. The
+        cursor runs at READ COMMITTED (:func:`read_committed_cursor`): at
+        Odoo's REPEATABLE READ a call that met a row another call had just
+        created or committed was aborted with "could not serialize access
+        due to concurrent update", so an agent's parallel calls failed.
+        Here the second call waits for the row and adds to it; the atomic
+        upsert of ``cloud.rate.limit.hit`` hands each call its own count,
+        so parallel calls never pass the cap.
 
         :return: whether the hit is within the cap
         :rtype: bool
         """
-        with self.env.registry.cursor() as cr:
+        with read_committed_cursor(self.env.registry) as cr:
             env = api.Environment(cr, self.env.uid, dict(self.env.context))
             kwargs = (
                 {"cap_key": cap_key} if cap_key else {"max_per_window": max_per_window}

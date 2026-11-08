@@ -29,7 +29,7 @@ from ...github.import_inspector import (
     validate_branch,
     version_from_manifest_text as _api_version_from_manifest_text,
 )
-from ...models._concurrency import try_advisory_xact_lock
+from ...models._concurrency import read_committed_cursor, try_advisory_xact_lock
 from ...models._repo_requirements import apply_requirements_content
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
@@ -167,13 +167,18 @@ def _github_import_clients(env):
 def _consume_github_quota(env, bucket, cap_key):
     """Persist one quota hit in a short independent transaction.
 
+    The cursor runs at READ COMMITTED (:func:`read_committed_cursor`): at
+    REPEATABLE READ a hit that met a row another hit had just created or
+    committed was aborted with a serialization failure. Here the second
+    hit waits for the row and adds to it.
+
     :param env: request environment used to preserve user and test context
     :param str bucket: per-user rate-limit bucket
     :param str cap_key: configurable ``cloud.settings`` cap field
     :return: whether the admitted attempt remains within its hourly cap
     :rtype: bool
     """
-    with env.registry.cursor() as cr:
+    with read_committed_cursor(env.registry) as cr:
         quota_env = api.Environment(cr, env.uid, dict(env.context))
         allowed = quota_env['cloud.rate.limit'].sudo().hit(
             bucket,
