@@ -133,6 +133,19 @@ in the database.
   of six times 10 s apart. Not covered: a rebuild of that chain that fails
   after starting the database, or a `pitr_enable` cancelled while it waits,
   runs no hook of the module (documented in `docs/architecture.md`).
+- **An import no longer puts code on a series it was not written for.** The
+  GitHub importer read a series the panel does not offer as no series, so a
+  project imported from an Odoo.sh or simple repository on 17.0 or older was
+  created on the default series, 20.0, without a word; so was one whose
+  repository names no series, and a server's instance whose
+  `.copier-answers.yml` names none outside a project. The importer now reads
+  every series the panel knows (8.0 to 20.0), and both imports (Import from
+  GitHub, Import Instance, and the MCP's `import_project` and
+  `import_host_instance`) stop before creating anything when the series is one
+  the user may not choose, or when none is found, naming the series found and
+  the ones the panel offers. An Odoo administrator may still import a series
+  not offered, as the project form lets him.
+- Spanish: «salva» reads «copia de seguridad», as in the rest of the panel.
 
 ## [1.0.217] — 2026-11-08
 

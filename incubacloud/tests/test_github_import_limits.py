@@ -441,6 +441,64 @@ class TestGitHubImportInspector(BaseCase):
             "cryptography==44.0.0\n",
         )
 
+    def test_odoosh_import_reads_a_series_the_panel_does_not_offer(self):
+        """An Odoo.sh repository on 17.0, by its branch or by its own
+        modules' manifests, is read as 17.0, not as no series: the route
+        refuses it (``import_series_refusal``) instead of creating its
+        project on the default."""
+        gitmodules = (
+            '[submodule "addons"]\n'
+            '  path = addons\n'
+            '  url = https://github.com/acme/addons.git\n'
+            '  branch = 17.0\n'
+        )
+        for branch, files in (
+            ("17.0", {".gitmodules": gitmodules}),
+            ("production", {
+                ".gitmodules": gitmodules,
+                "my_module/__manifest__.py": "{'version': '17.0.1.0.0'}",
+            }),
+        ):
+            with self.subTest(branch=branch):
+                client = self._client(
+                    "acme", "odoosh17", branch, files,
+                    extra_entries=[{
+                        "path": "addons", "type": "commit",
+                        "mode": "160000", "sha": "c" * 40,
+                    }],
+                    compares={"17.0": "ahead"},
+                )
+                root_get = client.get.side_effect
+
+                def _get(endpoint, *, budget=None, max_bytes=None,
+                         root_get=root_get):
+                    """Serve the submodule's metadata and requirements too."""
+                    if endpoint == "/repos/acme/addons":
+                        return {"default_branch": "17.0"}
+                    if endpoint.startswith("/repos/acme/addons/compare/"):
+                        return {"status": "ahead"}
+                    if endpoint.startswith("/repos/acme/addons/contents/"):
+                        return _blob("")
+                    return root_get(endpoint, budget=budget, max_bytes=max_bytes)
+
+                client.get.side_effect = _get
+                result = GitHubImportInspector([client]).inspect_import(
+                    "https://github.com/acme/odoosh17", branch,
+                )
+                self.assertEqual(result["repo_type"], "odoosh")
+                self.assertEqual(result["odoo_version"], "17.0")
+                self.assertEqual(result["repos_data"][1]["branch"], "17.0")
+
+    def test_simple_import_reads_16_from_its_manifests(self):
+        client = self._client(
+            "acme", "simple16", "main",
+            {"my_module/__manifest__.py": "{'version': '16.0.1.0.0'}"},
+        )
+        result = GitHubImportInspector([client]).inspect_import(
+            "https://github.com/acme/simple16", "main",
+        )
+        self.assertEqual(result["odoo_version"], "16.0")
+
     def test_declared_repository_submodule_and_domain_caps(self):
         """Every collection sourced from YAML or gitmodules has a hard cap."""
         repos_yaml = "\n".join(

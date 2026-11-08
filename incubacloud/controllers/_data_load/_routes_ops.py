@@ -26,6 +26,7 @@ from ._helpers import (
     _is_safe_remote_path,
     _job_response,
     _quote_remote_path,
+    import_series_refusal,
     is_safe_log_archive,
     log_archive_list_command,
     log_archive_search_command,
@@ -607,7 +608,10 @@ class OpsMixin:
     def cloud_import_host_instance(self, host_id, path):
         """Import a running doodba instance from a host directory.
 
-        Reads all config files via SSH, creates project + instance.
+        Reads all config files via SSH, creates project + instance. An
+        instance of a series the user may not choose, or whose series
+        neither its answers nor its project name, is refused before
+        anything is created (``import_series_refusal``).
         """
         # Manager-gated like browse_host_dir: importing reads the host's
         # ``.docker/*.env`` secrets over SSH and materialises them as
@@ -870,6 +874,18 @@ class OpsMixin:
             ],
             limit=1,
         )
+        # Into a project, an instance whose answers name no series takes
+        # the project's; a new project takes none but the answers'.
+        refusal = import_series_refusal(
+            request.env,
+            odoo_version or project.odoo_version,
+            request.env._(
+                "Could not tell which Odoo series this instance runs: its "
+                ".copier-answers.yml names none."
+            ),
+        )
+        if refusal:
+            return {"ok": False, "error": refusal}
         if not project:
             proj_vals = {"name": project_name}
             if odoo_version:

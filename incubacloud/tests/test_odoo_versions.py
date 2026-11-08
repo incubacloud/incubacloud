@@ -14,7 +14,13 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
 
-from odoo.addons.incubacloud.controllers._data_load import _routes_crud, _routes_ops
+from odoo import http as odoo_http
+from odoo.addons.incubacloud.controllers._data_load import (
+    _routes_crud,
+    _routes_github,
+    _routes_ops,
+)
+from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.github import import_inspector
 from odoo.addons.incubacloud.models import _odoo_versions as versions
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
@@ -497,19 +503,22 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
                 self.assertLess(check, source.index("_preflight_tls_check"))
                 self.assertLess(check, source.index("_upload_copier_files"))
 
-    def test_the_importer_takes_only_an_offered_series(self):
-        """A repository of a series not offered is imported with no
-        version inferred, so the operator picks one the panel offers."""
-        self.assertEqual(
-            import_inspector._SUPPORTED_VERSIONS, set(versions.offered_versions()),
-        )
+    def test_the_importer_reads_every_series_it_knows(self):
+        """A repository of a series not offered is read as that series,
+        not as none: read as none, its project took the default, 20.0,
+        and its code was deployed on a series it was not written for.
+        Whether the import may take it is the route's to say."""
+        self.assertEqual(import_inspector._KNOWN_SERIES, set(versions.VERSIONS))
         manifest = import_inspector.version_from_manifest_text
+        self.assertEqual(manifest("{'version': '16.0.1.0.0'}"), "16.0")
+        self.assertEqual(manifest("{'version': '17.0.1.0.0'}"), "17.0")
         self.assertEqual(manifest("{'version': '19.0.1.0.0'}"), "19.0")
         self.assertEqual(manifest("{'version': '20.0.1.0.0'}"), "20.0")
         self.assertEqual(manifest("{'version': '21.0.1.0.0'}"), "")
+        self.assertEqual(manifest("{'version': '1.0'}"), "")
         answers = import_inspector._parse_copier_answers
+        self.assertEqual(answers('odoo_version: "17.0"\n')["odoo_version"], "17.0")
         self.assertEqual(answers('odoo_version: "19.0"\n')["odoo_version"], "19.0")
-        self.assertEqual(answers('odoo_version: "20.0"\n')["odoo_version"], "20.0")
         self.assertEqual(answers('odoo_version: "21.0"\n')["odoo_version"], "")
 
 
@@ -787,3 +796,149 @@ class TestOnlyAnAdministratorChoosesASeriesItsPinCannotRender(CloudSecurityBase)
         instance = self._create_instance(project, odoo_version="20.0")
         with self.assertRaises(UserError):
             instance._check_template_ref("v9.7.0")
+
+
+class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
+    """An import gives its project the series its code is for, or stops.
+
+    Before core 1.0.218 the GitHub importer read a series it did not
+    offer as none, and a project imported from an Odoo.sh repository on
+    17.0 was created on 20.0 without a word; a host's instance whose
+    answers named no series was too. Now the import refuses, naming the
+    series it found and the ones the panel offers, before it creates
+    anything (``import_series_refusal``).
+    """
+
+    def setUp(self):
+        super().setUp()
+        pin_template(self.env, "v10.0.8")
+        self.offered = ", ".join(versions.offered_versions("v10.0.8"))
+        self.manager = self._create_user("import_manager", "group_cloud_manager")
+        self.assertFalse(self.manager.has_group("base.group_system"))
+
+    def _request(self, env):
+        """A request of *env*, bound where the import routes read it.
+
+        :param env: the environment the request runs as.
+        :return: the patchers' context managers, to enter together.
+        """
+        fake_request = MagicMock(spec=Request)
+        fake_request.env = env
+        return (
+            patch.object(_routes_github, "request", fake_request),
+            patch.object(_routes_ops, "request", fake_request),
+            patch.object(odoo_http, "request", fake_request),
+        )
+
+    def _import_from_github(self, env, series, name):
+        """Create what the GitHub importer would from a repository of *series*.
+
+        :param env: the environment the import runs as.
+        :param str series: what the inspector read; empty for none.
+        :param str name: the repository's name, the project's.
+        :return: what the route answers.
+        """
+        inspected = {
+            "ok": True, "repo_name": name, "repo_type": "odoosh",
+            "repos_data": [], "copier": {}, "pip_deps": "", "apt_deps": "",
+            "odoo_conf": "", "odoo_version": series, "submodules": [],
+        }
+        github, ops, http = self._request(env)
+        with github, ops, http:
+            return CloudDataLoadController()._create_bounded_github_import(
+                inspected,
+            )
+
+    def _import_from_host(self, env, copier_answers, path):
+        """Import a host's instance whose ``.copier-answers.yml`` is *copier_answers*.
+
+        :param env: the environment the import runs as.
+        :param str copier_answers: the file's text; empty for none.
+        :param str path: the instance's directory.
+        :return: what the route answers.
+        """
+        host = self.env["cloud.host"].create({
+            "name": f"host-{path.strip('/').replace('/', '-')}",
+            "ip_address": "192.0.2.81", "user": "ubuntu",
+            "wildcard_domain": "series-import.example.com",
+        })
+        controller = _routes_ops.OpsMixin()
+        controller._sec = lambda: env["cloud.security.mixin"]
+        # The host's answers to the route's 13 reads.
+        reads = [(copier_answers, "")] + [("", "")] * 12
+        github, ops, http = self._request(env)
+        with github, ops, http, patch.object(
+            _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
+            return_value=reads,
+        ):
+            return controller.cloud_import_host_instance(host.id, path)
+
+    def test_a_repository_on_17_is_refused_naming_both(self):
+        answer = self._import_from_github(self.env(user=self.manager), "17.0", "odoosh-17")
+        self.assertEqual(answer, {
+            "ok": False,
+            "error": "The code being imported is for Odoo 17.0, which this "
+                     f"panel does not offer. This panel offers: {self.offered}.",
+        })
+        self.assertFalse(self.env["cloud.project"].search(
+            [("name", "=", "odoosh-17")],
+        ))
+
+    def test_a_repository_that_names_no_series_is_refused(self):
+        """Not given the default: nothing says its code runs on it."""
+        answer = self._import_from_github(self.env(user=self.manager), "", "odoosh-none")
+        self.assertFalse(answer["ok"])
+        self.assertTrue(answer["error"].startswith(
+            "Could not tell which Odoo series this repository is for.",
+        ), answer)
+        self.assertTrue(answer["error"].endswith(
+            f"This panel offers: {self.offered}.",
+        ), answer)
+        self.assertFalse(self.env["cloud.project"].search(
+            [("name", "=", "odoosh-none")],
+        ))
+
+    def test_a_repository_of_an_offered_series_takes_it(self):
+        answer = self._import_from_github(self.env, "19.0", "odoosh-19")
+        self.assertTrue(answer["ok"], answer)
+        project = self.env["cloud.project"].browse(answer["project_id"])
+        instance = self.env["cloud.instance"].browse(answer["instance_id"])
+        self.assertEqual(project.odoo_version, "19.0")
+        self.assertEqual(instance.odoo_version, "19.0")
+
+    def test_an_administrator_imports_a_series_not_offered(self):
+        """As the project form lets him (``may_choose``)."""
+        answer = self._import_from_github(self.env, "17.0", "odoosh-17-admin")
+        self.assertTrue(answer["ok"], answer)
+        project = self.env["cloud.project"].browse(answer["project_id"])
+        self.assertEqual(project.odoo_version, "17.0")
+
+    def test_a_host_s_instance_on_16_is_refused_naming_both(self):
+        answer = self._import_from_host(
+            self.env(user=self.manager), "odoo_version: 16.0\nproject_name: Host on 16\n",
+            "/srv/on16",
+        )
+        self.assertEqual(answer, {
+            "ok": False,
+            "error": "The code being imported is for Odoo 16.0, which this "
+                     f"panel does not offer. This panel offers: {self.offered}.",
+        })
+        self.assertFalse(self.env["cloud.project"].search(
+            [("name", "=", "Host on 16")],
+        ))
+
+    def test_a_host_s_instance_that_names_no_series_is_refused(self):
+        """Outside a project: inside one it takes the project's
+        (``test_a_host_import_into_a_project_takes_its_series``)."""
+        answer = self._import_from_host(
+            self.env(user=self.manager), "project_name: Host on nothing\n", "/srv/onnone",
+        )
+        self.assertEqual(answer, {
+            "ok": False,
+            "error": "Could not tell which Odoo series this instance runs: its "
+                     ".copier-answers.yml names none. This panel offers: "
+                     f"{self.offered}.",
+        })
+        self.assertFalse(self.env["cloud.project"].search(
+            [("name", "=", "Host on nothing")],
+        ))

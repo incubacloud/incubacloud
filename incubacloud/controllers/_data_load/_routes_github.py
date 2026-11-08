@@ -33,6 +33,7 @@ from ...models._concurrency import read_committed_cursor, try_advisory_xact_lock
 from ...models._repo_requirements import apply_requirements_content
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
+    import_series_refusal,
 )
 from .._safe_error import safe_error_response
 
@@ -832,16 +833,22 @@ class GitHubMixin:
         repos_data = inspected.get('repos_data', [])
         repo_type = inspected['repo_type']
         odoo_version = inspected.get('odoo_version', '')
+        refusal = import_series_refusal(request.env, odoo_version, request.env._(
+            'Could not tell which Odoo series this repository is for. Name '
+            'its branch after the series (such as 19.0), or give its modules '
+            'a version that starts with it (such as 19.0.1.0.0).'
+        ))
+        if refusal:
+            return {'ok': False, 'error': refusal}
         project_name = (
             copier.get('project_name') or inspected['repo_name']
         )[:255]
         project_values = {
             'name': project_name,
+            'odoo_version': odoo_version,
             'pip_dependencies': inspected.get('pip_deps') or None,
             'apt_dependencies': inspected.get('apt_deps') or None,
         }
-        if odoo_version:
-            project_values['odoo_version'] = odoo_version
         if copier.get('project_author'):
             project_values['project_author'] = copier['project_author'][:255]
         if copier.get('project_license'):
@@ -877,9 +884,8 @@ class GitHubMixin:
             'name': 'production',
             'project_id': project.id,
             'environment': 'production',
+            'odoo_version': odoo_version,
         }
-        if odoo_version:
-            instance_values['odoo_version'] = odoo_version
         if inspected.get('odoo_conf'):
             instance_values['odoo_conf'] = inspected['odoo_conf']
         if repo_type == 'doodba' and copier:
@@ -972,7 +978,9 @@ class GitHubMixin:
 
         Detects repo type (doodba / odoo.sh / simple), parses config,
         creates project with repos, then creates a production instance
-        inheriting project defaults + type-specific config.
+        inheriting project defaults + type-specific config. A repository
+        that names no series, or one the user may not choose, is refused
+        before anything is created (``import_series_refusal``).
         """
 
         self._sec()._check_can_create_instance()
