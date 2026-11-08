@@ -31,9 +31,15 @@ database.
   the database half updated under the image that runs, and the rebuild keeps no
   copy to go back to. The stop and that step are decided under one advisory lock
   of the job: a stop asked for before it ends the job without starting it; once
-  it started, cancelling is refused with a message saying why. A deploy has no
-  such step: a new instance stopped halfway is removed. The warning a rebuild
-  that ended unapplied writes now says when its database was already updated.
+  it started, cancelling is refused with a message saying why, in that attempt,
+  in any later one and between two of them (the job back in the queue): the
+  database it updated stays ahead whichever attempt updated it. The mark goes
+  once the job ends done or cancelled. Code that is about to discard the
+  instance (a layer's cleanup) can force the stop with the
+  `ic_stop_past_no_return` context key; a person cannot. A deploy has no such
+  step: a new instance stopped halfway is removed. The warning a rebuild that
+  ended unapplied writes now says when its database was already updated, by
+  this attempt or an earlier one.
 
 ## [1.0.217] — 2026-11-08
 
