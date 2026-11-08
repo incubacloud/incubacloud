@@ -144,9 +144,12 @@ class GitHooksMixin:
         the end: ``INSERT … ON CONFLICT DO NOTHING``, then the row held
         ``FOR NO KEY UPDATE`` while GitLab is called. A second request at
         once waits for the first and reads its ``remote_hook_id``, so it
-        adopts the webhook instead of creating another; at the request's
-        REPEATABLE READ it met a row its snapshot could not see and
-        answered 500 (Fable's review of the result of G3).
+        adopts the webhook instead of creating another. Before, with the
+        row there and no ``remote_hook_id`` yet, two requests each found
+        no webhook of the panel in GitLab and created one: GitLab
+        delivered every push twice, and a serialization failure did not
+        stop it, since Odoo's HTTP layer retries those (Fable's
+        re-review of G3).
 
         :param str line_model: ``project`` or ``instance``
         :param int line_id: the repository line
@@ -238,16 +241,19 @@ class GitHooksMixin:
         hook = self._hook_or_error(hook_id)
         if not hook:
             return {'ok': False, 'error': _("Webhook not found.")}
+        secret = hook.secret
         if rotate:
             try:
-                hook._rotate_secret()
+                # Committed on a cursor of its own: this request's snapshot
+                # still reads the old secret.
+                secret = hook._rotate_secret()
             except UserError as exc:
                 return {'ok': False, 'error': str(exc.args[0])}
         request.env['cloud.audit.log'].sudo().create({
             'action': 'GitLab webhook secret rotated' if rotate else 'GitLab webhook secret shown',
             'details': f"{hook.provider_id.name}: {hook.path}"[:255],
         })
-        return {'ok': True, 'url': hook._url(), 'secret': hook.secret}
+        return {'ok': True, 'url': hook._url(), 'secret': secret}
 
     @http.route(['/cloud/verify_git_hook'], type='jsonrpc', auth='user')
     def cloud_verify_git_hook(self, hook_id):
@@ -266,8 +272,9 @@ class GitHooksMixin:
     def cloud_delete_git_hook(self, hook_id):
         """Delete a webhook in GitLab (when it is the panel's) and in the panel.
 
-        Without a credential that may delete it in GitLab, it is deleted
-        in the panel only, and ``warning`` says it is left in GitLab.
+        Without a credential that may delete it in GitLab, or with one
+        GitLab refuses (401, 403), it is deleted in the panel only, and
+        ``warning`` says it is left in GitLab.
 
         :return: ``{ok, warning}`` or ``{ok: False, error}``
         :rtype: dict
@@ -276,7 +283,7 @@ class GitHooksMixin:
         hook = self._hook_or_error(hook_id)
         if not hook:
             return {'ok': False, 'error': _("Webhook not found.")}
-        warning = ''
+        reason = ''
         if hook.remote_hook_id:
             try:
                 client = hook._client('api_write')
@@ -284,22 +291,29 @@ class GitHooksMixin:
                 # No credential may delete it (or the server is refused):
                 # the panel forgets it, and says that GitLab keeps it.
                 client = None
-                warning = _(
-                    "The panel cannot delete the webhook in GitLab (%(reason)s): "
-                    "it is deleted here only. Delete it in GitLab by hand "
-                    "(Settings → Webhooks).", reason=exc.args[0],
-                )
+                reason = exc.args[0]
             if client:
                 try:
                     client.delete_hook(
                         hook._kind(), hook.gitlab_id or hook.path, hook.remote_hook_id,
                     )
                 except GitLabError as exc:
-                    if exc.code != 'not_found':
+                    if exc.code in ('auth', 'forbidden'):
+                        # A credential GitLab refuses is as good as none.
+                        reason = _(
+                            "GitLab refused the credential: %(status)s",
+                            status=exc.status or exc.code,
+                        )
+                    elif exc.code != 'not_found':
                         return {'ok': False, 'error': _(
                             "GitLab did not delete the webhook: delete it there "
                             "by hand (Settings → Webhooks), then here."
                         )}
+        warning = _(
+            "The panel cannot delete the webhook in GitLab (%(reason)s): "
+            "it is deleted here only. Delete it in GitLab by hand "
+            "(Settings → Webhooks).", reason=reason,
+        ) if reason else ''
         hook.unlink()
         return {'ok': True, 'warning': warning}
 

@@ -9,6 +9,7 @@ from ``cloud.gitlab.event``, so deliveries never write the same row.
 import hmac
 import logging
 import secrets
+import time
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -32,6 +33,12 @@ VERIFY_INTERVAL_S = 15
 ORPHAN_GRACE_DAYS = 7
 
 GITLAB_HOOK_FAILING_CODE = "gitlab_hook_failing"
+
+#: Seconds GitLab's calls may take in all while the webhook's row is held
+#: (registering: up to 4 calls; rotating: up to 2). Each call also stops
+#: at the client's 20 s; the name's resolution is bounded by the system
+#: resolver, not by this (docs/architecture.md).
+GITLAB_BUDGET_S = 30
 
 
 def new_hook_key():
@@ -72,6 +79,21 @@ def _is_panel_hook(remote_url, own_url):
     """
     remote, own = urlsplit(remote_url or ""), urlsplit(own_url)
     return remote.hostname == own.hostname and remote.path.startswith(WEBHOOK_PATH)
+
+
+def _unclear(exc):
+    """Return whether a write GitLab failed may still have been applied.
+
+    A timeout, a dropped connection, a 5xx or a 2xx whose body could not
+    be read may hide a ``PUT`` GitLab took; a 3xx or a 4xx refuses it,
+    and TLS fails at the handshake, before anything is sent.
+
+    :param GitLabError exc: the failure
+    :rtype: bool
+    """
+    if exc.code == "tls":
+        return False
+    return not (exc.status and 300 <= exc.status < 500)
 
 
 class CloudGitLabHook(models.Model):
@@ -118,6 +140,17 @@ class CloudGitLabHook(models.Model):
         "One webhook per provider, scope and path.",
     )
     _key_uniq = models.Constraint("unique (hook_key)", "The routing key is unique.")
+
+    def unlink(self):
+        """Delete webhooks, and resolve the «disabled by GitLab» alert of each.
+
+        One deleted while ``failing``, by hand or by the orphan sweep
+        after its grace, leaves no alert about a webhook that is gone.
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        for hook in self:
+            Alert.resolve_alert(GITLAB_HOOK_FAILING_CODE, key=f"gitlab_hook:{hook.id}")
+        return super().unlink()
 
     # ── Matching ───────────────────────────────────────────────────────
 
@@ -226,9 +259,11 @@ class CloudGitLabHook(models.Model):
         """
         return "groups" if self.scope == "group" else "projects"
 
-    def _client(self, need="api_write"):
+    def _client(self, need="api_write", deadline=None):
         """Return an API client with the credential of the path for *need*.
 
+        :param float deadline: a ``time.monotonic()`` that all the
+            client's calls must end by, or None
         :rtype: gitlab.client.GitLabClient
         :raises UserError: when no credential qualifies
         """
@@ -237,7 +272,7 @@ class CloudGitLabHook(models.Model):
         cred = provider._credential_for(self.path, need)
         return GitLabClient(
             provider.api_url, cred.token, ca_pem=provider.ca_bundle or None,
-            pin_ip=provider._resolve_pin(),
+            pin_ip=provider._resolve_pin(), deadline=deadline,
         )
 
     def _register_remote(self):
@@ -245,7 +280,9 @@ class CloudGitLabHook(models.Model):
 
         Idempotent: an existing ``remote_hook_id`` is read first; a
         webhook in GitLab whose URL holds the receiver's path is adopted
-        and rewritten with the URL and the token together.
+        and rewritten with the URL and the token together. The row is
+        held meanwhile (``_ensure_hook``), so the calls share one budget
+        of :data:`GITLAB_BUDGET_S`.
 
         :return: ``None`` when registered, else the reason it must be
             set up by hand
@@ -254,7 +291,9 @@ class CloudGitLabHook(models.Model):
         self.ensure_one()
         hook = self.sudo()
         try:
-            client = hook._client("api_write")
+            client = hook._client(
+                "api_write", deadline=time.monotonic() + GITLAB_BUDGET_S,
+            )
         except UserError as exc:
             return str(exc.args[0])
         kind = hook._kind()
@@ -298,23 +337,69 @@ class CloudGitLabHook(models.Model):
         delivery would be a 401 (Fable's review of the result of G3). A
         webhook set up by hand gets it at once, to be pasted in GitLab.
 
-        :raises UserError: when GitLab refuses the new secret, or no
-            credential may change it
+        Under the lock registering takes: a READ COMMITTED cursor of its
+        own holds the row ``FOR NO KEY UPDATE`` while GitLab is called
+        and commits the secret, so a registration and a rotation never
+        write GitLab one over the other (Fable's re-review of G3).
+
+        :return: the new secret, as committed (the caller's snapshot may
+            still read the old one)
+        :rtype: str
+        :raises UserError: when GitLab refuses the new secret, no
+            credential may change it, or the webhook is gone
         """
         self.ensure_one()
-        hook = self.sudo()
         new_secret = secrets.token_urlsafe(32)
-        if hook.remote_hook_id:
+        with read_committed_cursor(self.env.registry) as cr:
+            cr.execute(
+                "SELECT id FROM cloud_gitlab_hook WHERE id = %s FOR NO KEY UPDATE",
+                (self.id,),
+            )
+            if not cr.fetchone():
+                raise UserError(_("Webhook not found."))
+            env = api.Environment(cr, self.env.uid, dict(self.env.context))
+            hook = env[self._name].sudo().browse(self.id)
+            if hook.remote_hook_id:
+                hook._put_secret(new_secret)
+            hook.secret = new_secret
+            cr.commit()
+        self.invalidate_recordset(["secret"])
+        return new_secret
+
+    def _put_secret(self, new_secret):
+        """Give GitLab *new_secret*, with the webhook's URL.
+
+        An unclear failure (:func:`_unclear`) may hide a ``PUT`` GitLab
+        took: the secret the panel keeps is then sent again, best effort,
+        so both sides hold the same one. When that fails too, GitLab may
+        hold a secret the panel does not: a new rotation, once GitLab
+        answers, rewrites both.
+
+        :param str new_secret: the secret to give
+        :raises UserError: when GitLab did not take it, or no credential
+            may change it
+        """
+        self.ensure_one()
+        client = self._client("api_write", deadline=time.monotonic() + GITLAB_BUDGET_S)
+        kind, target, url = self._kind(), self.gitlab_id or self.path, self._url()
+        try:
+            client.update_hook(kind, target, self.remote_hook_id, url, new_secret)
+            return
+        except GitLabError as exc:
+            failure = exc
+        if _unclear(failure):
             try:
-                hook._client("api_write").update_hook(
-                    hook._kind(), hook.gitlab_id or hook.path,
-                    hook.remote_hook_id, hook._url(), new_secret,
-                )
+                client.update_hook(kind, target, self.remote_hook_id, url, self.secret)
             except GitLabError as exc:
                 raise UserError(_(
-                    "GitLab did not take the new secret (%(code)s).", code=exc.code,
+                    "GitLab did not answer clearly (%(code)s), so it may hold a "
+                    "secret the panel does not and refuse the deliveries. Press "
+                    "Rotate secret again once GitLab answers.",
+                    code=failure.status or failure.code,
                 )) from exc
-        hook.secret = new_secret
+        raise UserError(_(
+            "GitLab did not take the new secret (%(code)s).", code=failure.code,
+        )) from failure
 
     def _stamp_verify_request(self, now):
         """Record that a test was asked at *now*, unless one was in the last 15 s.
