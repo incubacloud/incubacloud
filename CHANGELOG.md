@@ -8,14 +8,54 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.221] — 2026-11-09
 
-The update rewrites the record rules of `cloud.job.log.chunk` and adds two
-rules on `ir.attachment`. Nothing else changes in the database. A panel
-whose server has no `sshpass` now refuses to create a host that logs in
+GitLab: deploy from gitlab.com or a GitLab server of one's own, and a push
+rebuilds. The new tables need no data migration, the new columns accept
+nulls, and the new daily crons are given to the cron bot. Publish this core
+with `incubacloud_tenant` 1.0.57, which limits a tenant's panel to GitLab
+servers on a public address, in the same deployment.
+
+The update also rewrites the record rules of `cloud.job.log.chunk` and adds
+two rules on `ir.attachment`. A panel whose server has no `sshpass` now
+refuses to create a host that logs in
 with a password, or to switch one to it; hosts that already do are left as
 they are.
 
 ### Added
 
+- **Settings → Git providers.** A manager adds a GitLab server (gitlab.com or
+  one's own, https only, with its CA when a private one signs its certificate)
+  and its credentials: personal, group, project or deploy tokens, each scoped to
+  a namespace. A repository uses the token of the longest namespace that covers
+  it and meets what the operation needs; a deploy token never reaches the API.
+  The token is write-only and encrypted, audited without values, and travels
+  only to its own server: the clone URL is rebuilt from the provider's base URL,
+  always ending in `.git`. *Test connection* reads the repository with git and
+  the token's scopes, expiry and user from GitLab's API, and says what failed
+  in each. New routes: `/cloud/get_git_providers`, `/cloud/save_git_provider`,
+  `/cloud/delete_git_provider` and `/cloud/test_git_provider`;
+  `/cloud/get_config` answers `features.git_providers.network`.
+- **GitLab repository lines.** A project's or an instance's line of a
+  configured GitLab is stored canonical with its provider and path; a host with
+  no provider is refused, naming it. The editor lists its branches and modules,
+  reads its `requirements.txt` and pins its head with the panel's own git (no
+  token in argv, no redirects, private HOME), counted against a new cap,
+  *Git provider reads (per user, per hour)*, 120 by default. The line shows
+  **GitLab · host**, and that rebuild on push and merge request previews come
+  in a next version.
+- **Deploy and rebuild from GitLab.** `repos.yaml` carries each line's own
+  credential; the host asks each line's head with its own token, from a helper
+  container (`alpine/git`, pinned by digest and pulled when a host is set up)
+  when the address is pinned; the build trusts the server's CA and refuses
+  redirects (`build.d/060-incubacloud-git`). On 8.0 to 10.0, whose git sends a
+  token in clear after a redirect, every repository is fetched on the host
+  before the build, atomically and out of the instance's history, and the image
+  is built with `AGGREGATE=false`: no token reaches it. The ISRG roots of Let's
+  Encrypt are added to those images.
+- **A daily check of tokens about to expire** raises an alert two weeks before.
+- **The assistant reads GitLab repositories**: `repo_read`,
+  `project_connect_repo` and `github_repo_info` take a GitLab address;
+  `get_project` and `get_instance` give each line's `repo_capabilities`. The
+  tools that write answer that GitLab comes in a next version.
 - **The encryption key can come from a file or from Odoo's configuration
   file.** The panel reads the first of these that is set:
   `INCUBACLOUD_SECRET_KEY` in the environment, as before; the file
@@ -41,6 +81,13 @@ they are.
   option in its form, where a warning says the panel has no `sshpass`, and
   the Ansible jobs that reach it fail with a message saying so. Spanish
   translation included.
+- Importing an instance from a host drops the user and token of each remote,
+  and leaves out a remote of a host with no Git provider, naming it in the
+  answer, instead of failing the whole import.
+- A tenant's panel reaches only GitLab servers on a public address, pinned in
+  the panel, on the host and in the build.
+- A neutralized copy loses the Git tokens; the instance export drops any
+  user and token of a URL and the downloaded trees.
 
 ### Security
 

@@ -207,17 +207,33 @@ App management (all gated on **manage settings**):
 | `/cloud/reset_github_app` | Clear the stored App. |
 | `/cloud/detect_github_installation` | Detect/refresh the installation id. |
 
-Repository operations (all gated on **consultant**):
+Repository operations (all gated on **consultant**). A repository of a Git
+provider (GitLab) is read with the panel's git and the provider's credential,
+with the same answers, and counts against `rate_limit_git_reads_per_hour`;
+an error that a provider's setting fixes says `settings_hint: "git_providers"`,
+one of GitHub's `settings_hint: "github"`:
 
 | Path | Description |
 |---|---|
-| `/cloud/get_repo_branches` | Branch list (App token or PAT). |
+| `/cloud/get_repo_branches` | Branch list (App token or PAT; `ls-remote` on GitLab, which adds `provider` and `host`). |
 | `/cloud/get_branch_head` | Head commit of a branch. |
 | `/cloud/get_repo_modules` | Odoo addon names in a repository. |
 | `/cloud/get_repo_requirements` | `requirements.txt` content. |
 | `/cloud/fetch_odoojs_submodules` | `.gitmodules` for the Odoo.sh import wizard (SSRF host allowlist). |
 | `/cloud/freeze_repo` / `/cloud/unfreeze_repo` | Toggle auto-rebuild freeze on one repo. |
 | `/cloud/freeze_all_repos` / `/cloud/unfreeze_all_repos` | Bulk freeze/unfreeze (record-rule scoped). |
+
+## Git providers (GitLab)
+
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_git_providers` | consultant | `{network, can_manage, providers}`: each provider's name, base URL, authority, CA fingerprints and last test; for a manager also its CA bundle and credentials (namespace, kind, user, scopes, token user, expiry, `has_token`). The token is never returned. |
+| `/cloud/save_git_provider` | manage settings | Add or edit a provider and its credentials, all or nothing; a credential left out is removed, an empty token keeps the stored one. A new token (not a deploy token) is introspected; a failure there is answered in `warnings`. Audited without values. |
+| `/cloud/delete_git_provider` | manage settings | Refused, with how many, while repository lines use it. |
+| `/cloud/test_git_provider` | manage settings | With a repository URL of the provider: `git` (`ls-remote HEAD`) and `api` (token introspection), each a code (`ok`, `auth`, `tls`, `not_found`, `unreachable`, `private_address`, `timeout`, `redirect`, `no_api`, `no_credential`, …) and its message; kept on the provider. |
+
+`/cloud/get_config` answers `features.git_providers = {network}`: `any` in the
+core, `public` in a tenant's panel.
 
 ## Terminal
 
@@ -303,6 +319,7 @@ DB-backed tumbling counters (`cloud.rate.limit`), 60-second windows, atomic upse
 | `/cloud/terminal/open` | per instance | 30/min | yes |
 | `POST /mcp` (failed authentications) | per IP (IPv6 /64) | 60/min; refused only where trusted proxies are declared, else logged | no |
 | `POST /mcp` (tool calls of all of a user's agents) | per user | 120/min | yes |
+| Reads of a Git provider's repository (`get_repo_branches`, `get_branch_head`, `get_repo_modules`, `get_repo_requirements`, freeze) | per user | 120/hour | yes |
 
 Exceeding a limit returns HTTP 429 (HTTP endpoints, webhook adds `Retry-After: 60`) or `{ok: false, error}` (JSON-RPC). Over the agents' limit, a tool call answers an MCP error result (`isError`); over the failed authentications, `/mcp` answers 429 with `Retry-After: 60`. `run_command` also counts in the terminal's buckets, and `run_host_command` in the host console's.
 
