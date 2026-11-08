@@ -250,7 +250,7 @@ pre=()
 while [ "\$#" -gt 0 ] && [ "\$1" != ls-remote ]; do pre+=("\$1"); shift; done
 if [ "\${1:-}" = ls-remote ]; then
     echo "git \${pre[*]} \$*" >> "\$CALLS"
-    "$real" "\${pre[@]}" config --get-all http.extraHeader >> "\$CALLS.headers"
+    "$real" "\${pre[@]}" config --get-urlmatch http.extraHeader "\$3" >> "\$CALLS.headers"
     if [ -n "\${LS_REMOTE_FAIL:-}" ]; then
         echo "fatal: unable to access '\$*': Could not resolve host" >&2
         exit 128
@@ -277,6 +277,7 @@ _stub_timeout() {
 #!/usr/bin/env bash
 echo "timeout $*" >> "$CALLS"
 [ -z "${LS_REMOTE_HANG:-}" ] || exit "${LS_REMOTE_HANG_STATUS:-124}"
+[ -z "${LS_REMOTE_HANG_ON:-}" ] || [[ "$*" != *"$LS_REMOTE_HANG_ON"* ]] || exit 124
 while [ "$#" -gt 0 ] && [ "$1" != git ]; do shift; done
 exec "$@"
 STUB
@@ -544,6 +545,44 @@ HEADS_PLAIN_URL="https://github.com/acme/addons.git"
     [[ "$heads" == *"pinned $PIN_SHA $PIN_SHA" ]]
 }
 
+@test "record-heads still asks the other servers when one runs out of time" {
+    _stub_git
+    _stub_timeout
+    mkdir -p "$DIR/odoo/custom"
+    printf '%s\tref\tmain\t%s\t%s\t\t\n' \
+        gl1 "$GL_URL" "$GL_AUTH" gl2 "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    printf '%s\tref\tmain\t%s\n' odoo "$HEADS_URL" addons "$HEADS_URL" >> "$TMP/spec"
+    export LS_REMOTE_HANG_ON=git.acme.tld LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^timeout .*git.acme.tld' "$CALLS")" -eq 1 ]
+    [[ "$output" == *"the rest of its server are not asked"* ]]
+    heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
+    [[ "$heads" == *"gl1 main unknown-"* ]]
+    [[ "$heads" == *"gl2 main unknown-"* ]]
+    [[ "$heads" == *"odoo main $HEADS_SHA"* ]]
+    [[ "$heads" == *"addons main $HEADS_SHA"* ]]
+}
+
+@test "record-heads sweeps the temporary HOMEs a killed run on its directory left" {
+    _stub_git
+    mkdir -p "$DIR/odoo/custom" "$TMP/tmp"
+    export TMPDIR="$TMP/tmp"
+    token="$(printf '%s' "$DIR" | sha256sum | cut -c1-16)"
+    mkdir -p "$TMPDIR/ic-git-$token-dead" "$TMPDIR/ic-git-0123456789abcdef-live"
+    echo secret > "$TMPDIR/ic-git-$token-dead/.gitconfig"
+    printf 'addons\tref\tmain\t%s\n' "$HEADS_URL" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    run bash "$SCRIPT" record-heads "$DIR" "$TMP/spec"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TMPDIR/ic-git-$token-dead" ]
+    [ -d "$TMPDIR/ic-git-0123456789abcdef-live" ]
+    # Its own are gone too when it ends.
+    [ -z "$(find "$TMPDIR" -maxdepth 1 -name "ic-git-$token-*")" ]
+}
+
 @test "record-heads also stops asking when git had to be killed (status 137)" {
     _stub_git
     _stub_timeout
@@ -592,7 +631,7 @@ HELPER="alpine/git:2.54.0@sha256:0000"
 # The host's git, recording also the whole config each ls-remote ran with.
 _stub_git_config() {
     _stub_git
-    sed -i 's|^\(    "[^"]*" "\${pre\[@\]}"\) config --get-all http.extraHeader >> "\$CALLS.headers"$|&\n\1 config --list >> "$CALLS.config"|' \
+    sed -i 's|^\(    "[^"]*" "\${pre\[@\]}"\) config --get-urlmatch http.extraHeader "\$3" >> "\$CALLS.headers"$|&\n\1 config --list >> "$CALLS.config"|' \
         "$TMP/bin/git"
     grep -q 'CALLS.config' "$TMP/bin/git"
 }
@@ -624,6 +663,8 @@ _stub_docker_helper() {
 echo "docker $*" >> "$CALLS"
 case "$1" in
     ps) [ -z "${DOCKER_PS_IDS:-}" ] || printf '%s\n' $DOCKER_PS_IDS; exit 0 ;;
+    rm) [ -z "${LEFTOVER_PROBE:-}" ] || [ ! -e "$LEFTOVER_PROBE" ] \
+            || echo "leftover present at docker $*" >> "$CALLS"; exit 0 ;;
     run) ;;
     *) exit 0 ;;
 esac
@@ -656,6 +697,7 @@ if [ "$(wc -l < "$count")" -le "${FETCH_FAILS:-0}" ]; then
     exit "${FETCH_FAIL_STATUS:-2}"
 fi
 echo "tree of $target" > "$work/README"
+[ -z "${FETCH_PLANT_LINK:-}" ] || ln -s "$FETCH_PLANT_LINK" "$work/.incubacloud-head"
 echo "${expect:-${FETCH_SHA:-4444444444444444444444444444444444444444}}"
 STUB
     chmod +x "$TMP/bin/docker"
@@ -679,6 +721,8 @@ STUB
     ! grep -q "$GL_TOKEN" "$CALLS"
     basic="$(printf 'gitlab+deploy-token-7:%s' "$GL_TOKEN" | base64 -w0)"
     [ "$(cat "$CALLS.headers")" = "Authorization: Basic $basic" ]
+    grep -qxF "http.https://$GL_AUTH/.extraheader=Authorization: Basic $basic" "$CALLS.config"
+    ! grep -q '^http\.extraheader=' "$CALLS.config"
     heads="$(cat "$DIR/odoo/custom/incubacloud-heads.txt")"
     [[ "$heads" == *"good main $HEADS_SHA"* ]]
     [[ "$heads" == *"noport main unknown-"* ]]
@@ -852,8 +896,9 @@ $HEADS_SHA	refs/heads/8.0
         [ -f "$src/$alias/README" ]
         [ ! -e "$src/$alias/.git" ]
     done
-    [ "$(cat "$src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
-    [ "$(cat "$src/priv/.incubacloud-head")" = "$PIN_SHA" ]
+    [ "$(cat "$src/.ic-heads/addons")" = "$HEADS_SHA" ]
+    [ "$(cat "$src/.ic-heads/priv")" = "$PIN_SHA" ]
+    [ ! -e "$src/addons/.incubacloud-head" ]
     [ -z "$(find "$src" -maxdepth 1 -name '.ic-tmp-*')" ]
     # The pinned one is fetched by its commit, the others by their head.
     grep -qx "https://github.com/acme/addons.git $PIN_SHA" "$CALLS.fetches"
@@ -867,6 +912,8 @@ $HEADS_SHA	refs/heads/8.0
     gh_basic="$(printf 'x-access-token:%s' "$HEADS_TOKEN" | base64 -w0)"
     for cfg in "$CALLS".gitconfig.*; do
         grep -q 'followRedirects = false' "$cfg"
+        # The header only for the server it is for, never global.
+        [ -z "$(git config -f "$cfg" --get-all http.extraHeader)" ]
         ! { grep -q "$gl_basic" "$cfg" && grep -q "$gh_basic" "$cfg"; }
     done
     grep -lq "$gl_basic" "$CALLS".gitconfig.*
@@ -918,7 +965,8 @@ $HEADS_SHA	refs/heads/8.0
     printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
     mkdir -p "$DIR/odoo/custom/src/addons"
     echo old > "$DIR/odoo/custom/src/addons/README"
-    echo 1111 > "$DIR/odoo/custom/src/addons/.incubacloud-head"
+    mkdir -p "$DIR/odoo/custom/src/.ic-heads"
+    echo 1111 > "$DIR/odoo/custom/src/.ic-heads/addons"
     export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
 " FETCH_FAILS=2 FETCH_FAIL_STATUS=137
     run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
@@ -927,7 +975,7 @@ $HEADS_SHA	refs/heads/8.0
     [[ "$output" == *"addons: the download failed twice (status 137)"* ]]
     [[ "$output" != *"git.acme.tld"* ]]
     [ "$(cat "$DIR/odoo/custom/src/addons/README")" = old ]
-    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = 1111 ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = 1111 ]
     [ -z "$(find "$DIR/odoo/custom/src" -maxdepth 1 -name '.ic-tmp-*')" ]
     grep -q '^docker rm -f ic-git-' "$CALLS"
     # One failure, then a good download: it ends well.
@@ -936,7 +984,7 @@ $HEADS_SHA	refs/heads/8.0
     run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
     [ "$status" -eq 0 ]
     [[ "$output" == *"trying again in 0s"* ]]
-    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
     [ ! -e "$DIR/odoo/custom/src/addons/half-written" ]
 }
 
@@ -954,7 +1002,7 @@ $HEADS_SHA	refs/heads/8.0
     grep -q '^docker rm -f c0ffee$' "$CALLS"
     [ ! -e "$DIR/odoo/custom/src/.ic-tmp-addons" ]
     [ ! -e "$DIR/odoo/custom/src/addons/half-written" ]
-    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$HEADS_SHA" ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
 }
 
 @test "fetch-repos removes the container in flight when the job is cancelled" {
@@ -976,7 +1024,7 @@ $HEADS_SHA	refs/heads/8.0
         wait "$pid" || status=$?
         [ "$status" -ne 0 ]
         grep -q '^docker rm -f ic-git-' "$CALLS"
-        [ ! -e "$DIR/odoo/custom/src/addons/.incubacloud-head" ]
+        [ ! -e "$DIR/odoo/custom/src/.ic-heads/addons" ]
     done
 }
 
@@ -987,7 +1035,7 @@ $HEADS_SHA	refs/heads/8.0
     run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
     [ "$status" -eq 0 ]
     grep -qx "$GL_PLAIN main" "$CALLS.fetches"
-    [ "$(cat "$DIR/odoo/custom/src/addons/.incubacloud-head")" = "$FETCH_SHA" ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$FETCH_SHA" ]
     [ "$(cat "$DIR/odoo/custom/incubacloud-heads.txt")" = "addons main $FETCH_SHA" ]
 }
 
@@ -1013,14 +1061,18 @@ $HEADS_SHA	refs/heads/8.0
 @test "fetch-repos removes the trees of repositories the instance dropped" {
     _instance_80
     printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
-    mkdir -p "$DIR/odoo/custom/src/gone" "$DIR/odoo/custom/src/mine"
-    echo 1111 > "$DIR/odoo/custom/src/gone/.incubacloud-head"
+    mkdir -p "$DIR/odoo/custom/src/gone" "$DIR/odoo/custom/src/mine" \
+        "$DIR/odoo/custom/src/.ic-heads"
+    echo 1111 > "$DIR/odoo/custom/src/.ic-heads/gone"
+    # A marker of the repository's own does not make a tree the step's.
+    echo 1111 > "$DIR/odoo/custom/src/mine/.incubacloud-head"
     echo kept > "$DIR/odoo/custom/src/mine/x"
     export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
 "
     run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
     [ "$status" -eq 0 ]
     [ ! -e "$DIR/odoo/custom/src/gone" ]
+    [ ! -e "$DIR/odoo/custom/src/.ic-heads/gone" ]
     [ -f "$DIR/odoo/custom/src/mine/x" ]
     [ -d "$DIR/odoo/custom/src/private" ]
 }
@@ -1034,4 +1086,65 @@ $HEADS_SHA	refs/heads/8.0
     [ "$status" -eq 0 ]
     [ "$(grep '^docker run' "$CALLS" | grep -c -- '--add-host git.acme.tld:203.0.113.7')" -eq 2 ]
     [[ "$(cat "$CALLS")" == *"timeout -k 5 600 docker run"* ]]
+}
+
+@test "fetch-repos never writes through a link the repository plants" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    echo untouched > "$TMP/victim"
+    mkdir -p "$TMP/victim-dir"
+    # The instance's own tree may carry a link where the markers go, too.
+    ln -s "$TMP/victim-dir" "$DIR/odoo/custom/src/.ic-heads"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" FETCH_PLANT_LINK="$TMP/victim"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/victim")" = untouched ]
+    [ -z "$(ls -A "$TMP/victim-dir")" ]
+    [ -L "$DIR/odoo/custom/src/addons/.incubacloud-head" ]
+    [ ! -L "$DIR/odoo/custom/src/.ic-heads" ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
+    # A second run reads no marker through the planted link either.
+    : > "$CALLS.fetches"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ ! -s "$CALLS.fetches" ]
+    [ "$(cat "$TMP/victim")" = untouched ]
+}
+
+@test "fetch-repos keeps the markers out of the build and of the instance's history" {
+    _instance_80
+    _spec_80
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+$HEADS_SHA	refs/heads/8.0
+" FETCH_SHA="$HEADS_SHA"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    [ -d "$DIR/odoo/custom/src/.ic-heads" ]
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=all -- odoo/custom/src)" ]
+    grep -qxF 'custom/src/.ic-*' "$DIR/odoo/Dockerfile.dockerignore"
+}
+
+@test "fetch-repos stops at once, saying why, on a URL whose credentials are refused" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' \
+        "https://gitlab+deploy-token-7:${GL_TOKEN}@evil.example:8443/team/a.git" "$GL_AUTH" \
+        > "$TMP/spec"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"addons: its URL is refused"* ]]
+    [[ "$output" != *"failed twice"* && "$output" != *"trying again"* ]]
+    [[ "$output" != *"$GL_TOKEN"* ]]
+    [ ! -s "$CALLS.fetches" ]
+}
+
+@test "fetch-repos removes a killed run's containers before its temporary trees" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    mkdir -p "$DIR/odoo/custom/src/.ic-tmp-addons"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" DOCKER_PS_IDS="c0ffee" LEFTOVER_PROBE="$DIR/odoo/custom/src/.ic-tmp-addons"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 0
+    [ "$status" -eq 0 ]
+    grep -q '^leftover present at docker rm -f c0ffee$' "$CALLS"
 }

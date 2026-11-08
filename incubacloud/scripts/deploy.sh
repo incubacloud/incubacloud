@@ -90,6 +90,25 @@ ic_git_traps() {
     trap 'ic_git_cleanup; exit 143' TERM
 }
 
+# Make an owner-only directory for git's HOME and its token, named after
+# this directory's job so the next run can sweep what a SIGKILL left
+# (ic_git_sweep), and set IC_TMP to it (a variable: an array appended to
+# in a command substitution is lost). Removed on exit.
+ic_git_tmpdir() {
+    IC_TMP="$(mktemp -d "${TMPDIR:-/tmp}/ic-git-$IC_JOB_TOKEN-XXXXXXXX")"
+    IC_TMP_DIRS+=("$IC_TMP")
+}
+
+# Remove the temporary HOMEs, with their token, that a killed earlier run
+# on this directory left (a SIGKILL cannot be trapped).
+ic_git_sweep() {
+    local tmp
+    for tmp in "${TMPDIR:-/tmp}/ic-git-$IC_JOB_TOKEN-"*; do
+        [ -e "$tmp" ] || continue
+        rm -rf "${tmp:?}"
+    done
+}
+
 # Remove the helper containers an earlier run on this directory left.
 ic_git_reap() {
     local ids=()
@@ -185,7 +204,10 @@ ic_git_home() {
         umask 077
         {
             if [ -n "$auth" ]; then
-                printf '[http]\n\textraHeader = Authorization: Basic %s\n' "$auth"
+                # Scoped to the server it is for, never global: a
+                # redirect or a submodule elsewhere does not get it.
+                printf '[http "https://%s/"]\n\textraHeader = Authorization: Basic %s\n' \
+                    "$cred_authority" "$auth"
             fi
             if [ -n "$IC_GIT_ALL_IN_CONTAINER" ]; then
                 printf '[http]\n\tfollowRedirects = false\n'
@@ -293,8 +315,9 @@ remote_ref_head() {
 # asked to the remote. Neither URL nor git's own messages are printed:
 # they carry the token.
 ic_resolve_heads() {
-    local spec="$1" heads="$2" tmp_heads git_home timed_out="" sha rc
+    local spec="$1" heads="$2" tmp_heads git_home sha rc server
     local alias kind ref url cred_authority ca_file pin_ip line
+    local -A timed_out=()
     tmp_heads="$heads.ic-tmp"
     : > "$tmp_heads"
     # git asks from a HOME of its own, without the system's config,
@@ -302,8 +325,8 @@ ic_resolve_heads() {
     # libsecret, a credential manager) is ever handed the token
     # (5-nov-2026). Variables rather than GIT_CONFIG_GLOBAL, which
     # git before 2.32 ignores.
-    git_home="$(mktemp -d)"
-    IC_TMP_DIRS+=("$git_home")
+    ic_git_tmpdir
+    git_home="$IC_TMP"
     while IFS= read -r line; do
         ic_split_tabs "$line"
         alias="${IC_COLS[0]}" kind="${IC_COLS[1]}" ref="${IC_COLS[2]}"
@@ -311,11 +334,15 @@ ic_resolve_heads() {
         ca_file="${IC_COLS[5]}" pin_ip="${IC_COLS[6]}"
         [ -n "$alias" ] || continue
         sha=""
+        server="${url#*://}"
+        server="${server%%/*}"
+        server="s:${server##*@}"
         if [ "$kind" = pin ]; then
             sha="$ref"
-        elif [ -n "$timed_out" ]; then
-            # One remote that did not answer in time: the rest are
-            # not waited for, the build clones them all again anyway.
+        elif [ -n "${timed_out[$server]+x}" ]; then
+            # A server that did not answer in time is not waited for
+            # again; the other servers still are, so one slow GitLab
+            # does not send odoo's download again (8-nov-2026).
             :
         elif [ -n "$url" ]; then
             rc=0
@@ -325,8 +352,8 @@ ic_resolve_heads() {
             # 124: timeout's own; 137: git ignored TERM and -k's KILL
             # ended it.
             if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
-                timed_out=1
-                ic_warn "the head of $alias ($ref) did not arrive within ${HEADS_TIMEOUT}s: the rest are not asked"
+                timed_out[$server]=1
+                ic_warn "the head of $alias ($ref) did not arrive within ${HEADS_TIMEOUT}s: the rest of its server are not asked"
             fi
         fi
         if [ -z "$sha" ]; then
@@ -343,6 +370,47 @@ ic_resolve_heads() {
     mv "$tmp_heads" "$heads"
 }
 
+# The directory of the markers naming the commit each fetched tree is at,
+# one file per alias. Outside the trees: a repository is what the host
+# writes them from, and a ``.incubacloud-head`` symbolic link in one would
+# have had the host write through it (security review of G1, 8-nov-2026).
+# Its ``.ic-`` name keeps it out of the build context and of the
+# instance's history with the temporary trees.
+#
+# Usage: ic_heads_dir <src>
+ic_heads_dir() {
+    printf '%s/.ic-heads' "${1:?}"
+}
+
+# Print the commit <src>'s marker for <alias> names, or nothing when there
+# is none or it is not a plain file.
+#
+# Usage: ic_marker_read <src> <alias>
+ic_marker_read() {
+    local marker
+    marker="$(ic_heads_dir "$1")/${2:?}"
+    if [ -f "$marker" ] && [ ! -L "$marker" ]; then
+        head -c 64 "$marker"
+    fi
+}
+
+# Write <sha> as <src>'s marker for <alias>, replacing whatever entry is
+# there (a rename replaces a link, never writes through it); the
+# directory is made again when it is not a plain one.
+#
+# Usage: ic_marker_write <src> <alias> <sha>
+ic_marker_write() {
+    local dir tmp
+    dir="$(ic_heads_dir "$1")"
+    if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
+        rm -f "${dir:?}"
+    fi
+    mkdir -p "$dir"
+    tmp="$(mktemp "$dir/.tmp-XXXXXXXX")"
+    printf '%s\n' "$3" > "$tmp"
+    mv -fT "$tmp" "$dir/${2:?}"
+}
+
 # Download one repository at one commit into <src>/<alias>, through a
 # temporary tree in the same file system that is renamed into place as
 # the last step. Sets IC_FETCHED to the commit that arrived (a variable:
@@ -352,22 +420,23 @@ ic_resolve_heads() {
 #   <sha>  the head resolved for it; ``unknown-…`` fetches <ref> by name
 #
 # The tree that was there stays until the new one is complete; its
-# ``.incubacloud-head`` goes first, so a removal cut half-way leaves no
-# partial tree with a marker. Returns 0, or the download's status (3: the
-# commit that arrived is not <sha>; 4: the server redirects; 124 or 137:
-# out of time).
+# marker (ic_heads_dir) goes first and the new one is written last, so a
+# run cut anywhere leaves no tree with a marker it does not match.
+# Returns 0, or the download's status (3: the commit that arrived is not
+# <sha>; 4: the server redirects; 5: the URL is refused, see ic_git_home;
+# 124 or 137: out of time).
 ic_fetch_one() {
     local src="$1" alias="$2" ref="$3" url="$4" cred_authority="$5"
     local ca_file="$6" pin_ip="$7" sha="$8" tmp home add_host=- target expect
     local got rc=0 out_file
     IC_FETCHED=""
+    ic_git_tmpdir
+    home="$IC_TMP"
+    url="$(ic_git_home "$home" "$url" "${cred_authority:-github.com}" "$ca_file" 1)" \
+        || return 5
     tmp="${src:?}/.ic-tmp-${alias:?}"
     rm -rf "${tmp:?}"
     mkdir -p "$tmp"
-    home="$(mktemp -d)"
-    IC_TMP_DIRS+=("$home")
-    url="$(ic_git_home "$home" "$url" "${cred_authority:-github.com}" "$ca_file" 1)" \
-        || return 1
     [ -z "$pin_ip" ] || add_host="${cred_authority%:*}:$pin_ip"
     target="$sha"
     expect="$sha"
@@ -400,12 +469,12 @@ ic_fetch_one() {
         rm -rf "${tmp:?}"
         return "$rc"
     fi
-    printf '%s\n' "$got" > "$tmp/.incubacloud-head"
-    if [ -e "$src/$alias" ]; then
-        rm -f "${src:?}/${alias:?}/.incubacloud-head"
+    rm -f "$(ic_heads_dir "$src")/${alias:?}"
+    if [ -e "$src/$alias" ] || [ -L "$src/$alias" ]; then
         rm -rf "${src:?}/${alias:?}"
     fi
     mv "$tmp" "$src/$alias"
+    ic_marker_write "$src" "$alias" "$got"
     IC_FETCHED="$got"
 }
 
@@ -592,6 +661,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         # helper container (<helper_image>).
         heads="$dir/odoo/custom/incubacloud-heads.txt"
         ic_git_traps
+        ic_git_sweep
         [ -z "$GIT_HELPER_IMAGE" ] || ic_git_reap
         ic_resolve_heads "$spec" "$heads"
         # Rewritten by every build: kept out of the instance's history.
@@ -676,15 +746,18 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         [ -d "$src" ] || ic_die "build context not found: $src"
         IC_GIT_ALL_IN_CONTAINER=1
         ic_git_traps
+        ic_git_sweep
         # 1. Before fetching anything: what a run cut short left, and the
         #    exclusions from the instance's history, so that a job killed
         #    between moving a tree and excluding it never lets
-        #    ``rebuild.sh commit-dirty`` commit the trees.
+        #    ``rebuild.sh commit-dirty`` commit the trees. The containers
+        #    first: one still running would write into a temporary tree
+        #    removed under it.
+        ic_git_reap
         for leftover in "$src"/.ic-tmp-*; do
-            [ -e "$leftover" ] || continue
+            [ -e "$leftover" ] || [ -L "$leftover" ] || continue
             rm -rf "${leftover:?}"
         done
-        ic_git_reap
         declare -A seen=()
         rows=()
         while IFS= read -r line; do
@@ -721,9 +794,9 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             cred_authority="${IC_COLS[4]}" ca_file="${IC_COLS[5]}"
             pin_ip="${IC_COLS[6]}"
             sha="${head_of[$alias]}"
-            marker="$src/$alias/.incubacloud-head"
-            if [[ "$sha" != unknown-* ]] && [ -f "$marker" ] \
-                && [ "$(cat "$marker")" = "$sha" ]; then
+            if [[ "$sha" != unknown-* ]] && [ -d "$src/$alias" ] \
+                && [ ! -L "$src/$alias" ] \
+                && [ "$(ic_marker_read "$src" "$alias")" = "$sha" ]; then
                 ic_log "$alias is at $sha already"
                 continue
             fi
@@ -736,6 +809,9 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                 [ "$rc" -ne 0 ] || break
                 if [ "$rc" -eq 4 ]; then
                     ic_die "$alias: the server redirects; update the repository's URL"
+                fi
+                if [ "$rc" -eq 5 ]; then
+                    ic_die "$alias: its URL is refused: credentials go only to the server they are for, over https, and a URL off GitHub must name that server over https"
                 fi
                 if [ "$attempt" -ge 2 ]; then
                     ic_die "$alias: the download failed twice (status $rc)"
@@ -753,17 +829,20 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             fi
         done
         # Trees of repositories the instance no longer has (only those
-        # this step wrote, which carry its marker).
-        for tree in "$src"/*/; do
-            tree="${tree%/}"
-            name="${tree##*/}"
-            if [ "$name" = private ] || [ -n "${seen[$name]+x}" ] \
-                || [ ! -f "$tree/.incubacloud-head" ]; then
+        # this step wrote, which have a marker).
+        heads_dir="$(ic_heads_dir "$src")"
+        for marker in "$heads_dir"/*; do
+            [ -e "$marker" ] || [ -L "$marker" ] || continue
+            name="${marker##*/}"
+            if [ "$name" = private ] || [ -n "${seen[$name]+x}" ]; then
                 continue
             fi
-            rm -f "${tree:?}/.incubacloud-head"
-            rm -rf "${tree:?}"
-            ic_log "removed the tree of $name, no longer a repository of the instance"
+            rm -f "${marker:?}"
+            if [[ "$name" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] \
+                && [ -d "$src/$name" ] && [ ! -L "$src/$name" ]; then
+                rm -rf "${src:?}/${name:?}"
+                ic_log "removed the tree of $name, no longer a repository of the instance"
+            fi
         done
         # 4. The build context: the template's .dockerignore leaves
         #    custom/src/* out, so the fetched trees are let in by name.
