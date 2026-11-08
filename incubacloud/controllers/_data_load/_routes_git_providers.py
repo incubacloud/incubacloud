@@ -12,6 +12,8 @@ Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 import logging
 
+from psycopg2 import IntegrityError
+
 from odoo import _, fields, http
 from odoo.exceptions import UserError, ValidationError
 from odoo.http import request
@@ -96,6 +98,22 @@ def _cause_code(exc):
     if isinstance(cause, OutboundError):
         return 'private_address'
     return 'http'
+
+
+def _constraint_message(env, exc):
+    """Return the message of the provider's or credential's constraint *exc* broke.
+
+    :param env: an Odoo environment whose cursor is usable again (the
+        savepoint that failed was rolled back)
+    :param IntegrityError exc: what saving a provider and its
+        credentials raised
+    :return: the constraint's message, translated, or Odoo's generic one
+    :rtype: str
+    """
+    model = env['cloud.git.provider']
+    if exc.diag.table_name == env['cloud.git.credential']._table:
+        model = env['cloud.git.credential']
+    return model._sql_error_to_message(exc)
 
 
 def _serialize_provider(provider, with_credentials):
@@ -193,6 +211,10 @@ class GitProvidersMixin:
                 )
         except (UserError, ValidationError) as exc:
             return {'ok': False, 'error': str(exc)}
+        except IntegrityError as exc:
+            # A second provider of one server, or two credentials of one
+            # namespace: the constraint's own message, not a reference.
+            return {'ok': False, 'error': _constraint_message(env, exc)}
         except Exception as exc:
             return safe_error_response(exc, _("The Git provider could not be saved."))
         warnings = [

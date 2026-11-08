@@ -13,6 +13,7 @@ from odoo import http as odoo_http
 from odoo.exceptions import AccessError, UserError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase, new_test_user, tagged
+from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.controllers._data_load import (
     _routes_crud,
@@ -205,6 +206,37 @@ class TestProviderRoutes(_RoutesCase):
         self.assertFalse(self.env["cloud.git.provider"].search(
             [("authority", "=", "bad.example")],
         ))
+
+    def test_a_second_provider_of_one_server_says_why(self):
+        with mute_logger("odoo.sql_db"):
+            answer = self._serve("cloud_save_git_provider", user=self.manager, vals={
+                "name": "GitLab again", "base_url": "https://GitLab.com/",
+            })
+        self.assertEqual(answer, {
+            "ok": False, "error": "There is already a Git provider for this server.",
+        })
+        self.assertEqual(self.env["cloud.git.provider"].search_count(
+            [("authority", "=", "gitlab.com")],
+        ), 1)
+
+    def test_two_credentials_of_one_namespace_say_why(self):
+        with mute_logger("odoo.sql_db"), patch.object(
+            provider_mod.CloudGitCredential, "_introspect", autospec=True,
+        ) as introspect:
+            answer = self._serve("cloud_save_git_provider", user=self.manager, vals={
+                "id": self.provider.id, "name": "GitLab.com",
+                "base_url": "https://gitlab.com",
+                "credentials": [
+                    {"namespace": "acme", "kind": "project", "token": "glpat-routes12"},
+                    {"namespace": "Acme", "kind": "personal", "token": "glpat-warnsave1"},
+                ],
+            })
+        self.assertEqual(answer, {
+            "ok": False,
+            "error": "This provider already has a credential for that namespace.",
+        })
+        self.assertFalse(self.provider.credential_ids)
+        introspect.assert_not_called()
 
     def test_delete_refuses_while_lines_use_it_and_says_how_many(self):
         project = self.env["cloud.project"].create({"name": "Routes provider"})
