@@ -25,7 +25,11 @@ from .host_build_lock import HostBuildLockMixin
 
 from ._odoo_versions import headless_flag
 from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
-from .deploy_instance_executor import DeployInstanceExecutor, _build_retried_once
+from .deploy_instance_executor import (
+    DeployInstanceExecutor,
+    _build_retried_once,
+    _fetch_timeout,
+)
 from .docker_prune_executor import build_cache_prune_if_low
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
@@ -113,6 +117,12 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             self._sys(
                 "Fast rebuild: only code changes detected, using Docker cache."
             )
+
+        heads = self._record_heads_command(d)
+        build_opts = {"stop_on_failure": True}
+        if self._prefetches():
+            heads = self._fetch_repos_command(d)
+            build_opts["timeout"] = _fetch_timeout(self._alias_count())
 
         cmds = [
             # 1. Commit any dirty files so copier update finds a clean repo.
@@ -216,6 +226,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 f" && rm -rf {self._modules_stage_dir()}",
             ),
             *self._debian_archive_steps(d),
+            *self._git_trust_steps(d),
             # 7. Write Odoo conf, pip.txt, apt.txt.
             (
                 "Write Odoo conf",
@@ -250,14 +261,17 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     written first is in the build context (5-nov-2026). One
             #     step with the build, so a layer that drops the build
             #     drops the lookup with it.
+            #     8.0 to 10.0 fetch every repository first instead, in the
+            #     same step, whose timeout covers the downloads and the
+            #     build (plan-gitlab.md §4.4-8).
             (
                 _LABEL_BUILD,
-                f"{self._record_heads_command(d)} && cd {d} && "
+                f"{heads} && cd {d} && "
                 + _build_retried_once(
                     "docker compose build --pull --no-cache odoo"
                     if needs_full_rebuild else "docker compose build odoo"
                 ),
-                {"stop_on_failure": True},
+                build_opts,
             ),
         ]
         # 11 + 12: safe boot test and actual module update both rely

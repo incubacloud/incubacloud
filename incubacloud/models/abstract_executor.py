@@ -832,8 +832,9 @@ class AbstractExecutor(ABC):
     async def _run_steps(self, transport, commands):
         """Run the job's steps in order and report what ran and what did not.
 
-        A step is ``(label, command)`` or ``(label, command, opts)``. Two
-        options shape what a non-zero exit does:
+        A step is ``(label, command)`` or ``(label, command, opts)``. The
+        option ``timeout`` gives the step its own seconds instead of the
+        transport's default. Two options shape what a non-zero exit does:
 
         - ``stop_on_failure`` — the remaining steps are not run.
         - ``continue_on`` — exit codes the step uses to say something
@@ -859,8 +860,11 @@ class AbstractExecutor(ABC):
             if label == self._no_return_from:
                 self._pass_no_return(label)
             self._sys(f"Running: {label}")
+            # ``timeout``: a step that needs longer than the transport's
+            # default per command (``fetch-repos``, plan-gitlab.md §4.4-8).
+            extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
             result = await transport.execute(
-                command, self.on_stdout, self.on_stderr,
+                command, self.on_stdout, self.on_stderr, **extra,
             )
             status = result.exit_status
             results[label] = {'stdout': result.stdout, 'exit_status': status}

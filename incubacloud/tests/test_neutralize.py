@@ -208,6 +208,8 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
             "its credentials are cleared: nothing reaches it",
         "cloud_instance_repo.url": "a repository the copy reads, never writes",
         "cloud_project_repo.url": "a repository the copy reads, never writes",
+        "cloud_git_provider.base_url":
+            "its tokens are cleared: the copy reads public repositories only",
         "cloud_settings.copier_template_url": "a public template the copy reads",
         "cloud_settings.grafana_base_url": "read only while metrics are on",
         "cloud_settings.metrics_central_url": "read only while metrics are on",
