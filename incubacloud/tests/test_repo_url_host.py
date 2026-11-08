@@ -24,10 +24,16 @@ from odoo.addons.incubacloud.controllers._data_load import (
     _routes_ops,
 )
 from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
+from odoo.addons.incubacloud.models import _repo_requirements
 from odoo.addons.incubacloud.models._repo_requirements import (
+    canonical_any_repo_url,
     canonical_repo_url,
+    fetch_repo_addons,
+    fetch_requirements_txt,
     is_safe_repo_url,
+    resolve_repo_ref,
 )
+from odoo.addons.incubacloud.net import git_reader
 
 #: Accepted by the old check, which matched ``[^/]+`` after the owner.
 _ONCE_ACCEPTED = (
@@ -292,8 +298,8 @@ class TestRepoUrlHost(TransactionCase):
             for vals in ({"commit_sha": "c" * 40}, {"branch": "dev"}):
                 with self.subTest(model=model, vals=vals), self.assertRaisesRegex(
                     ValidationError,
-                    r"'https://evil\.example/github\.com/x\.git' is not a "
-                    r"recognised GitHub URL.*https://github\.com/<owner>/<repo>",
+                    r"There is no Git provider for evil\.example: add it "
+                    r"under Settings → Git providers",
                 ), self.env.cr.savepoint():
                     line.write(vals)
             self.assertEqual(line.url, "https://evil.example/github.com/x.git")
@@ -353,3 +359,167 @@ class TestRepoUrlHost(TransactionCase):
         self.assertFalse(
             self.env["cloud.project"].search([("name", "=", "SSH gitlab")]),
         )
+
+
+class TestRepoLineProvider(TransactionCase):
+    """A line of a configured GitLab is stored canonical, with its provider
+    and path (plan-gitlab.md §2.5, §4.1, 8-nov-2026)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.provider = cls.env["cloud.git.provider"].create({
+            "name": "GitLab.com", "base_url": "https://gitlab.com",
+        })
+        cls.project = cls.env["cloud.project"].create({"name": "Repo provider"})
+        cls.instance = cls.env["cloud.instance"].create({
+            "name": "repo-provider", "project_id": cls.project.id,
+            "environment": "staging", "state": "draft",
+        })
+        cls.models = (
+            ("cloud.project.repo", "project_id", cls.project),
+            ("cloud.instance.repo", "instance_id", cls.instance),
+        )
+
+    def setUp(self):
+        super().setUp()
+        patcher = patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts",
+            autospec=True,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _new(self, model, field, owner, url):
+        """Create a line of *model* for *owner* with *url*, nothing asked.
+
+        :rtype: the line
+        """
+        return self.env[model].with_context(skip_apply_requirements=True).create(
+            {field: owner.id, "url": url, "branch": "main"},
+        )
+
+    def test_a_gitlab_line_is_stored_canonical_with_its_provider_and_path(self):
+        for model, field, owner in self.models:
+            for url in (
+                "https://gitlab.com/QA-Group/Sub/Addons",
+                "gitlab.com/QA-Group/Sub/Addons.git",
+                "git@gitlab.com:QA-Group/Sub/Addons.git",
+            ):
+                with self.subTest(model=model, url=url):
+                    line = self._new(model, field, owner, url)
+                    self.assertEqual(
+                        line.url, "https://gitlab.com/QA-Group/Sub/Addons.git",
+                    )
+                    self.assertEqual(line.provider_id, self.provider)
+                    self.assertEqual(line.repo_path, "qa-group/sub/addons")
+
+    def test_a_github_line_has_no_provider_and_its_owner_and_repo(self):
+        for model, field, owner in self.models:
+            with self.subTest(model=model):
+                line = self._new(model, field, owner, "git@github.com:Acme/Addons.git")
+                self.assertFalse(line.provider_id)
+                self.assertEqual(line.repo_path, "acme/addons")
+                line.write({"url": "https://gitlab.com/acme/other"})
+                self.assertEqual(line.provider_id, self.provider)
+                self.assertEqual(line.repo_path, "acme/other")
+
+    def test_a_host_with_no_provider_is_refused_naming_it(self):
+        for model, field, owner in self.models:
+            for url, host in (
+                ("https://git.acme.tld/acme/addons", "git.acme.tld"),
+                ("https://gitlab.com.evil.example/x/y", "gitlab.com.evil.example"),
+            ):
+                with self.subTest(model=model, url=url), self.assertRaisesRegex(
+                    ValidationError,
+                    f"There is no Git provider for {host}: add it under "
+                    "Settings → Git providers",
+                ), self.env.cr.savepoint():
+                    self._new(model, field, owner, url)
+
+    def test_capabilities_say_what_each_provider_offers_in_this_version(self):
+        line = self._new(
+            "cloud.project.repo", "project_id", self.project,
+            "https://gitlab.com/acme/addons",
+        )
+        caps = line.repo_capabilities
+        self.assertEqual(caps["provider"], "gitlab")
+        self.assertEqual(caps["host"], "gitlab.com")
+        self.assertTrue(caps["read"])
+        self.assertEqual(caps["push_rebuild"], "unsupported")
+        self.assertEqual(caps["previews"], "unsupported")
+        self.assertEqual(caps["code_tools"], {"read": True, "write": False})
+        github = self._new(
+            "cloud.project.repo", "project_id", self.project,
+            "https://github.com/acme/addons",
+        )
+        self.assertEqual(github.repo_capabilities["provider"], "github")
+        self.assertEqual(github.repo_capabilities["host"], "github.com")
+        self.assertIn(
+            github.repo_capabilities["push_rebuild"], ("ok", "no_hook"),
+        )
+
+    def test_the_requirements_read_time_is_not_copied(self):
+        field = self.env["cloud.instance.repo"]._fields["requirements_read_at"]
+        self.assertEqual(field.type, "datetime")
+        self.assertFalse(field.copy)
+
+    def test_resolve_repo_ref_names_the_provider_or_nothing(self):
+        ref = resolve_repo_ref(self.env, "gitlab.com/Acme/Addons")
+        self.assertEqual(ref.kind, "gitlab")
+        self.assertEqual(ref.path, "acme/addons")
+        self.assertEqual(ref.canonical, "https://gitlab.com/Acme/Addons.git")
+        gh = resolve_repo_ref(self.env, "https://github.com/Acme/Addons")
+        self.assertEqual(gh.kind, "github")
+        self.assertEqual(gh.path, "acme/addons")
+        self.assertIsNone(resolve_repo_ref(self.env, "https://git.acme.tld/a/b"))
+        self.assertEqual(
+            canonical_any_repo_url(self.env, " gitlab.com/Acme/Addons "),
+            "https://gitlab.com/Acme/Addons.git",
+        )
+        self.assertEqual(
+            canonical_any_repo_url(self.env, "git@github.com:acme/addons"),
+            "https://github.com/acme/addons",
+        )
+        self.assertEqual(
+            canonical_any_repo_url(self.env, " https://git.acme.tld/a/b "),
+            "https://git.acme.tld/a/b",
+        )
+
+    def test_the_reads_of_a_gitlab_line_go_through_git_with_its_credential(self):
+        self.env["cloud.git.credential"].create({
+            "provider_id": self.provider.id, "namespace": "acme",
+            "kind": "deploy", "username": "gitlab+deploy-token-7",
+            "token": "gldt-abcdefgh12",
+        })
+        url = "https://gitlab.com/acme/addons.git"
+        with patch.object(
+            git_reader.GitReader, "read_files", autospec=True,
+            return_value={"requirements.txt": "requests\n"},
+        ) as read, patch.object(
+            git_reader.GitReader, "tree", autospec=True,
+            return_value=[
+                "mod_a/__manifest__.py", "README.md", "x/mod_b/__manifest__.py",
+            ],
+        ) as tree:
+            content = fetch_requirements_txt(self.env, url, "19.0")
+            addons = fetch_repo_addons(self.env, url, "19.0")
+        self.assertEqual(content, "requests\n")
+        self.assertEqual(addons, ["mod_a", "mod_b"])
+        ref, cred, rev = read.call_args.args[1:4]
+        self.assertEqual(ref.path, "acme/addons")
+        self.assertEqual(cred, ("gitlab+deploy-token-7", "gldt-abcdefgh12"))
+        self.assertEqual(rev, "19.0")
+        self.assertEqual(tree.call_args.args[2], cred)
+
+    def test_a_gitlab_read_that_fails_is_none_and_never_asks_github(self):
+        url = "https://gitlab.com/acme/public.git"
+        with patch.object(
+            git_reader.GitReader, "read_files", autospec=True,
+            side_effect=git_reader.GitReaderError("unreachable"),
+        ) as read, patch.object(
+            _repo_requirements, "safe_urlopen", autospec=True,
+        ) as github:
+            self.assertIsNone(fetch_requirements_txt(self.env, url, "main"))
+        self.assertIsNone(read.call_args.args[2])  # public: no credential
+        github.assert_not_called()

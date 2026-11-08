@@ -19,6 +19,13 @@ class CloudInstanceRepo(models.Model):
         required=True,
         ondelete='cascade',
     )
+    requirements_read_at = fields.Datetime(
+        copy=False, readonly=True,
+        help='Last time the panel read this line\'s requirements.txt, '
+        'whether it existed or not. A deploy that cannot reach the Git '
+        'server goes on with what it read then, and fails when it never '
+        'read them.',
+    )
 
     def _repo_owner(self):
         """The instance receives this line's pip/apt dependencies."""

@@ -65,6 +65,14 @@ Fields of a card:
     ``restore.sh ensure-connect`` by its callers, not read from
     ``odoo --help``: from 19.0 the help lists the commands, not the
     server's options (review of the series' fixes, 7-nov-2026).
+``prefetch_repos``
+    Whether every repository of ``repos.yaml`` is fetched on the host,
+    in a helper container with a current git, before the image is
+    built with ``AGGREGATE=false``, instead of being cloned by the
+    image's own git. 8.0 to 10.0: their git 2.1.4 (Debian 8) follows a
+    302 to plain http on the same host and sends the token in clear,
+    and knows no ``http.followRedirects`` (spike of 8-nov-2026, owner's
+    option C; plan-gitlab.md §4.4-8).
 """
 import re
 
@@ -98,6 +106,7 @@ _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 def _card(
     offered, postgres, db_tool, template_min, neutralize="odoo",
     debian_archive=False, headless="--no-http", postgres_beyond_template=False,
+    prefetch_repos=False,
 ):
     """Build one series' card, checking its values.
 
@@ -110,6 +119,7 @@ def _card(
     :param bool debian_archive: see the module docstring.
     :param str headless: one of ``HEADLESS_FLAGS``.
     :param bool postgres_beyond_template: see the module docstring.
+    :param bool prefetch_repos: see the module docstring.
     :rtype: dict
     """
     lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
@@ -132,6 +142,7 @@ def _card(
         "debian_archive": bool(debian_archive),
         "headless": headless,
         "postgres_beyond_template": bool(postgres_beyond_template),
+        "prefetch_repos": bool(prefetch_repos),
     }
 
 
@@ -164,17 +175,17 @@ VERSIONS = {
     "8.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True,
+        postgres_beyond_template=True, prefetch_repos=True,
     ),
     "9.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True,
+        postgres_beyond_template=True, prefetch_repos=True,
     ),
     "10.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True,
+        postgres_beyond_template=True, prefetch_repos=True,
     ),
     "11.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
     "12.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
@@ -343,6 +354,15 @@ def debian_archive(version):
     :rtype: bool
     """
     return card(version)["debian_archive"]
+
+
+def prefetch_repos(version):
+    """Whether *version* fetches its repositories on the host before the build.
+
+    :param str version: a series.
+    :rtype: bool
+    """
+    return card(version)["prefetch_repos"]
 
 
 def headless_flag(version):

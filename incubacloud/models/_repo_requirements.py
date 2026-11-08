@@ -26,6 +26,7 @@ import logging
 import re
 import urllib.error
 import urllib.request
+from collections import namedtuple
 from contextlib import suppress
 
 from packaging.requirements import InvalidRequirement, Requirement
@@ -36,6 +37,14 @@ from odoo.exceptions import UserError
 from ..github.http_utils import read_json_limited, safe_urlopen
 
 from ..github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
+from ..net.git_reader import GitReaderError
+from ._git_urls import RepoRef, parse_provider_repo_url
+
+#: What a read of a GitLab repository needs, resolved from the ORM on
+#: the calling thread so the read itself may run in a worker thread:
+#: the provider's reader (CA, pinned address), the repository and its
+#: ``(username, token)`` or None for a public one.
+GitSource = namedtuple('GitSource', 'reader ref credential')
 
 _logger = logging.getLogger(__name__)
 
@@ -150,15 +159,16 @@ def is_safe_git_sha(value):
 
 
 def is_safe_repo_url(value):
-    """Return True if ``value`` is a repository URL in the canonical form.
+    """Return True if ``value`` is a GitHub repository URL in the canonical form.
 
     Only ``https://github.com/<owner>/<repo>`` and its ``.git`` form,
     exactly (``_CANONICAL_REPO_URL_RE``): the build clones it with the
     panel's GitHub token, so a URL that could name another host, a
-    user, a port or plain http is refused (5-nov-2026). The project
-    does not support GitLab/BitBucket; the pip and apt requirement
-    fetchers also assume GitHub. Other spellings of a github.com
-    repository are rewritten by :func:`canonical_repo_url` first.
+    user, a port or plain http is refused (5-nov-2026). Other spellings
+    of a github.com repository are rewritten by
+    :func:`canonical_repo_url` first. A repository of a configured Git
+    provider (GitLab) is checked by :func:`resolve_repo_ref` instead,
+    against the providers' base URLs (plan-gitlab.md §4.1, 8-nov-2026).
     """
     return isinstance(value, str) and bool(
         _CANONICAL_REPO_URL_RE.fullmatch(value)
@@ -187,6 +197,177 @@ def canonical_repo_url(value):
         return text
     candidate = f'https://github.com/{match.group(1)}/{match.group(2)}'
     return candidate if is_safe_repo_url(candidate) else text
+
+
+def _provider_bases(env):
+    """Return the canonical base URLs of the active Git providers.
+
+    :param env: an Odoo environment
+    :rtype: list
+    """
+    return env['cloud.git.provider'].sudo().search([]).mapped('base_url')
+
+
+def resolve_repo_ref(env, url):
+    """Return the :data:`RepoRef` a repository URL names, or None.
+
+    A github.com repository in any spelling :func:`canonical_repo_url`
+    rewrites gives ``kind='github'``, its ``owner/repo`` in lower case
+    as path; a repository of a configured provider gives
+    ``kind='gitlab'`` (``_git_urls.parse_provider_repo_url``). Anything
+    else, None.
+
+    :param env: an Odoo environment
+    :param str url: the URL as typed or stored
+    :rtype: RepoRef or None
+    """
+    if not isinstance(url, str):
+        return None
+    github = canonical_repo_url(url)
+    if is_safe_repo_url(github):
+        owner, repo = _parse_github_repo_path(github)
+        return RepoRef(
+            'github', 'https://github.com', 'github.com',
+            f'{owner}/{repo}'.lower(), github,
+        )
+    return parse_provider_repo_url(url, _provider_bases(env))
+
+
+def provider_of(env, ref):
+    """Return the ``cloud.git.provider`` of *ref* (sudo), empty for GitHub.
+
+    :param env: an Odoo environment
+    :param RepoRef ref: a reference :func:`resolve_repo_ref` returned
+    :rtype: cloud.git.provider
+    """
+    Provider = env['cloud.git.provider'].sudo()
+    if not ref or ref.kind != 'gitlab':
+        return Provider.browse()
+    return Provider.search([('base_url', '=', ref.base)], limit=1)
+
+
+def canonical_any_repo_url(env, url):
+    """Return *url* canonical, of GitHub or of a configured provider.
+
+    :param env: an Odoo environment
+    :param str url: the URL as typed or stored
+    :return: the canonical URL, or *url* stripped when it names no
+        known repository
+    :rtype: str
+    """
+    if not isinstance(url, str):
+        return url
+    ref = resolve_repo_ref(env, url)
+    return ref.canonical if ref else url.strip()
+
+
+def resolve_git_source(env, url):
+    """Return the :data:`GitSource` of a GitLab repository *url*, or None.
+
+    None for a GitHub repository or an unknown host. Runs on the calling
+    thread: it reads the provider and its credential from the ORM.
+
+    :param env: an Odoo environment
+    :param str url: the repository URL
+    :rtype: GitSource or None
+    :raises GitReaderError: ``private_address`` when the provider no
+        longer resolves to public addresses under the ``public`` policy
+    """
+    ref = resolve_repo_ref(env, url)
+    provider = provider_of(env, ref)
+    if not provider:
+        return None
+    return GitSource(
+        provider._git_reader(), ref, provider._git_credential(ref.path),
+    )
+
+
+def _addons_in(paths):
+    """Return the addon names of a tree: folders holding ``__manifest__.py``.
+
+    :param paths: file paths of a repository
+    :rtype: list
+    """
+    return sorted({
+        path.rsplit('/', 2)[-2]
+        for path in paths
+        if path.endswith('/__manifest__.py')
+    })
+
+
+def git_source_addons(source, branch):
+    """Return the addons of a GitLab repository's *branch*.
+
+    :param GitSource source: what :func:`resolve_git_source` returned
+    :param str branch: the branch
+    :rtype: list
+    :raises GitReaderError: when the server cannot be read
+    :raises ValueError: on a branch that could be an option
+    """
+    return _addons_in(source.reader.tree(source.ref, source.credential, branch))
+
+
+def git_source_requirements(source, branch):
+    """Return the ``requirements.txt`` of a GitLab repository's *branch*.
+
+    :param GitSource source: what :func:`resolve_git_source` returned
+    :param str branch: the branch
+    :return: its text, or None when the branch has none
+    :rtype: str or None
+    :raises GitReaderError: when the server cannot be read
+    :raises ValueError: on a branch that could be an option
+    """
+    files = source.reader.read_files(
+        source.ref, source.credential, branch, ['requirements.txt'],
+    )
+    return files.get('requirements.txt')
+
+
+def _provider_read(env, url, read, branch):
+    """Read a repository of a Git provider with *read*, if *url* names one.
+
+    :param env: an Odoo environment
+    :param str url: the repository URL
+    :param read: :func:`git_source_addons` or :func:`git_source_requirements`
+    :param str branch: the branch
+    :return: ``(False, None)`` when *url* is not a provider's repository,
+        else ``(True, what *read* returned or None when it failed)``
+    :rtype: tuple
+    """
+    ref = resolve_repo_ref(env, url)
+    if not ref or ref.kind != 'gitlab':
+        return False, None
+    with suppress(GitReaderError, ValueError):
+        source = resolve_git_source(env, url)
+        if source:
+            return True, read(source, branch)
+    return True, None
+
+
+def _git_sources(env, repos):
+    """Return ``{url: GitSource}`` of the GitLab lines among *repos*.
+
+    :param env: an Odoo environment
+    :param repos: repository lines
+    :rtype: dict
+    """
+    sources = {}
+    for repo in repos:
+        with suppress(GitReaderError):
+            source = resolve_git_source(env, repo.url)
+            if source:
+                sources[repo.url] = source
+    return sources
+
+
+def _source_addons_or_none(source, branch):
+    """Return :func:`git_source_addons`, or None when the read fails.
+
+    :rtype: list or None
+    """
+    with suppress(GitReaderError, ValueError):
+        return git_source_addons(source, branch)
+    return None
 
 
 def _parse_github_repo_path(url):
@@ -906,9 +1087,14 @@ def fetch_repo_addons(env, url, branch):
     """Fetch Odoo addon module names found at the root of a GitHub repo branch.
 
     Uses the recursive tree API to find dirs with ``__manifest__.py``.
-    Tries: PAT → GitHub App → unauthenticated.
+    Tries: PAT → GitHub App → unauthenticated. A repository of a Git
+    provider (GitLab) is read with the panel's git instead
+    (:func:`git_source_addons`).
     Returns a sorted list of module names, or ``None`` on failure.
     """
+    on_provider, found = _provider_read(env, url, git_source_addons, branch)
+    if on_provider:
+        return found
     try:
         try:
             owner, repo_name = _parse_github_repo_path(url)
@@ -968,6 +1154,20 @@ def fetch_repo_addons(env, url, branch):
 
 
 def fetch_requirements_txt(env, url, branch):
+    """Fetch *requirements.txt* from the root of a repository branch.
+
+    A repository of a Git provider (GitLab) is read with the panel's
+    git (:func:`git_source_requirements`); a GitHub one through its API
+    (:func:`_fetch_github_requirements_txt`).
+    Returns the file content as str, or ``None`` on failure.
+    """
+    on_provider, found = _provider_read(env, url, git_source_requirements, branch)
+    if on_provider:
+        return found
+    return _fetch_github_requirements_txt(env, url, branch)
+
+
+def _fetch_github_requirements_txt(env, url, branch):
     """Fetch *requirements.txt* from the root of a GitHub repo branch.
 
     Tries: PAT → GitHub App → unauthenticated.
@@ -1074,12 +1274,17 @@ def fetch_requirements_txt_with_client(client, url, branch):
     client resolved by :func:`resolve_github_client` instead of an env,
     so it can run inside ``asyncio.to_thread``.
 
-    :param client: pre-resolved GitHub client, or None
+    :param client: pre-resolved GitHub client, or None; for a GitLab
+        repository, its :data:`GitSource`
     :param url: repository URL
     :param branch: branch to read the file from
     :returns: file content as str, or ``None`` when it cannot be read
         (missing file, private repo without credentials, network error)
     """
+    if isinstance(client, GitSource):
+        with suppress(GitReaderError, ValueError):
+            return git_source_requirements(client, branch)
+        return None
     try:
         owner, repo_name = _parse_github_repo_path(url)
     except ValueError:
@@ -1440,8 +1645,13 @@ async def detect_addon_conflicts(env, repos, unread=None, budget=None):
         with suppress(Exception):
             _client = GitHubAppClient(svc.get_credentials())
 
+    # GitLab repositories: their reader and credential, from the ORM too.
+    sources = _git_sources(env, repos)
+
     def _fetch_addons_with_client(url, branch):
         """Thread-safe: uses pre-resolved client, no env access."""
+        if url in sources:
+            return _source_addons_or_none(sources[url], branch)
         try:
             owner, repo_name = _parse_github_repo_path(url)
         except ValueError:

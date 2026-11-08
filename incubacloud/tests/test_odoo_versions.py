@@ -56,13 +56,14 @@ class TestTheSeriesCards(BaseCase):
         def card(
             postgres, neutralize="odoo", db_tool="click-odoo", template=None,
             offered=False, debian_archive=False, headless="--no-http",
-            beyond_template=False,
+            beyond_template=False, prefetch_repos=False,
         ):
             return {
                 "offered": offered, "postgres": postgres, "db_tool": db_tool,
                 "neutralize": neutralize, "template_min": template,
                 "debian_archive": debian_archive, "headless": headless,
                 "postgres_beyond_template": beyond_template,
+                "prefetch_repos": prefetch_repos,
             }
 
         expected = {
@@ -74,12 +75,15 @@ class TestTheSeriesCards(BaseCase):
             # 15.0 start at 12 instead of the template's 10 (owner,
             # 7-nov-2026). No neutralization of Odoo's own before 16.0.
             # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
-            # and have no ``--no-http`` (7-nov-2026).
+            # and have no ``--no-http`` (7-nov-2026). Their git 2.1.4
+            # follows a redirect to plain http with the token: every
+            # repository is fetched before the build (owner, 8-nov-2026).
             **dict.fromkeys(
                 ("8.0", "9.0", "10.0"),
                 card(
                     ("12", "12", "12"), "sql", debian_archive=True,
                     headless="--no-xmlrpc", beyond_template=True,
+                    prefetch_repos=True,
                 ),
             ),
             **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
@@ -105,7 +109,7 @@ class TestTheSeriesCards(BaseCase):
                     {
                         "offered", "postgres", "db_tool", "neutralize",
                         "template_min", "debian_archive", "headless",
-                        "postgres_beyond_template",
+                        "postgres_beyond_template", "prefetch_repos",
                     },
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
@@ -116,6 +120,12 @@ class TestTheSeriesCards(BaseCase):
                 )
                 self.assertLessEqual(lowest, default)
                 self.assertLessEqual(default, highest)
+
+    def test_only_the_series_on_git_2_1_fetch_their_repositories_first(self):
+        self.assertEqual(
+            [v for v in versions.VERSIONS if versions.prefetch_repos(v)],
+            ["8.0", "9.0", "10.0"],
+        )
 
     def test_a_card_refuses_what_the_scripts_do_not_implement(self):
         with self.assertRaises(ValueError):
