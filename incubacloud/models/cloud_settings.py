@@ -167,6 +167,14 @@ class CloudSettings(models.Model):
              'Unprocessed/error rows are never auto-deleted. Set to 0 to '
              'disable deletion entirely.',
     )
+    gitlab_event_retention_days = fields.Integer(
+        string='GitLab event retention (days)',
+        default=30,
+        help='Number of days to keep processed cloud.gitlab.event rows; the '
+             'body is never stored, so nothing is truncated first. '
+             'Unprocessed/error rows are never auto-deleted. Set to 0 to '
+             'disable deletion entirely.',
+    )
     github_webhook_silence_hours = fields.Integer(
         string='GitHub webhook silence alert (hours)',
         default=48,

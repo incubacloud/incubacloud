@@ -37,6 +37,7 @@ class CloudGitHubEvent(models.Model):
     """
 
     _name = "cloud.github.event"
+    _inherit = "cloud.repo.event.mixin"
     _description = "GitHub Webhook Event"
     _order = "create_date desc"
 
@@ -304,36 +305,6 @@ class CloudGitHubEvent(models.Model):
         }
         return json.dumps(stub, separators=(',', ':'))
 
-    def _rebuild_job_type(self, inst):
-        """Job code used by webhook-driven auto-rebuild.
-
-        Default: the core ``rebuild_instance``. Modules layered on top
-        (e.g. the SaaS manager) override this to route tenant-bearing
-        instances to the tenant-aware executor, which carries plan and
-        tenant-module sync that the core executor lacks.
-
-        A subclass may return a falsy value to decline the auto-rebuild
-        entirely; the webhook handler then skips the instance without
-        enqueuing anything.
-        """
-        return 'rebuild_instance'
-
-    def _pr_preview_allowed(self, inst):
-        """Whether a pull request may spawn a preview of this instance.
-
-        Default: yes — the project's own switch has already been checked
-        by the time this is asked. Modules layered on top override this
-        to keep instances they manage themselves out of the flow,
-        whatever their repositories look like: a preview is a copy of
-        the instance's production data, and not every production
-        instance is somebody's to copy.
-
-        :param inst: the production ``cloud.instance`` a preview would
-            be cloned from
-        :return: ``True`` to go ahead, falsy to skip it silently
-        """
-        return True
-
     def _dispatch(self, payload):
         """Route a freshly-persisted webhook event to its handler.
 
@@ -466,9 +437,6 @@ class CloudGitHubEvent(models.Model):
             lambda r: _normalize_url(r.url) == repo_norm
         )
 
-        now = fields.Datetime.now()
-        triggered = []
-
         push_info = {
             'push_repo': repo_short,
             'push_branch': branch,
@@ -478,41 +446,7 @@ class CloudGitHubEvent(models.Model):
             'push_provider': 'github',
         }
 
-        for repo in matched:
-            inst = repo.instance_id
-            # Never auto-rebuild an archived instance or one whose host is
-            # deactivated/deleted: the repo match can surface archived
-            # instances (e.g. recycled warms) and ``host_id`` may point at
-            # an archived host, both of which would just fail SSH.
-            if not (inst.active and inst.auto_rebuild and inst.deployed
-                    and inst.host_id and inst.host_id.active):
-                continue
-            # A subclass may decline to auto-rebuild a given instance by
-            # returning a falsy job type (e.g. the SaaS manager skips a
-            # warm-pool instance already condemned to recycling).
-            job_type = self._rebuild_job_type(inst)
-            if not job_type:
-                continue
-            # A push always queues its rebuild. One that arrives while a
-            # rebuild runs waits in the instance's queue; one that
-            # arrives while a push's rebuild waits merges into it
-            # (``RebuildInstanceExecutor._merge_queued_payload``), so
-            # no commit is built twice and none is dropped.
-            try:
-                self.env['cloud.job'].enqueue(
-                    inst.host_id.id, inst.id, job_type,
-                    payload={
-                        'trigger': 'webhook',
-                        **push_info,
-                    },
-                )
-                inst.write({'last_auto_rebuild': now})
-                triggered.append(inst.name)
-            except Exception:
-                _logger.exception(
-                    "Failed to enqueue auto-rebuild for %s", inst.name,
-                )
-
+        triggered = self._rebuild_for_push(matched, push_info)
         self.write({'processed': True})
         if triggered:
             _logger.info(

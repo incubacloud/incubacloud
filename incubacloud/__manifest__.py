@@ -45,6 +45,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/rotate_secrets_cron.xml",
         "data/github_event_purge_cron.xml",
         "data/cron_check_git_providers.xml",
+        "data/gitlab_event_purge_cron.xml",
         "data/github_webhook_silence_cron.xml",
         "data/host_posture_cron.xml",
         "data/rate_limit_gc_cron.xml",

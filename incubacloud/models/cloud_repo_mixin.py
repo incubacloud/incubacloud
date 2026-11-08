@@ -82,6 +82,15 @@ def _url_host(url):
         return ''
 
 
+
+#: What a GitLab line's push-to-rebuild says for each state of its webhook.
+_HOOK_CAPABILITY = {
+    'pending': 'hook_pending',
+    'active': 'ok',
+    'failing': 'hook_failing',
+    'orphan': 'hook_pending',
+}
+
 class CloudRepoMixin(models.AbstractModel):
     _name = 'cloud.repo.mixin'
     _description = 'Repository line (shared base)'
@@ -140,22 +149,25 @@ class CloudRepoMixin(models.AbstractModel):
 
         ``{provider, host, read, push_rebuild, previews, code_tools,
         hook_id}`` (plan-gitlab.md §2.5). For GitHub, from the App and
-        the PAT the panel holds; for GitLab, ``unsupported`` for
-        push-to-rebuild and previews until their webhooks arrive, and
-        no code writes.
+        the PAT the panel holds; for GitLab, push-to-rebuild from the
+        state of the webhook that delivers the path (its project's, or
+        an active group's), ``unsupported`` previews until G4 and no
+        code writes.
         """
         app = self.env['cloud.github.app'].sudo().search_count([], limit=1)
         pat = bool(self.env['cloud.settings'].sudo()._get_system().github_pat)
+        Hook = self.env['cloud.gitlab.hook'].sudo()
         for repo in self:
             if repo.provider_id:
+                hook = Hook._find_for(repo.provider_id, repo.repo_path or '')
                 repo.repo_capabilities = {
                     'provider': 'gitlab',
                     'host': repo.provider_id.sudo().authority,
                     'read': True,
-                    'push_rebuild': 'unsupported',
+                    'push_rebuild': _HOOK_CAPABILITY.get(hook.state, 'no_hook'),
                     'previews': 'unsupported',
                     'code_tools': {'read': True, 'write': False},
-                    'hook_id': False,
+                    'hook_id': hook.id or False,
                 }
                 continue
             repo.repo_capabilities = {
