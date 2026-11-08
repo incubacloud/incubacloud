@@ -49,14 +49,7 @@
     .ic-gitp-scopes { font-family: var(--rl-fm); color: var(--rl-muted); }
     .ic-gitp-meta { color: var(--rl-faint); }
 
-    .ic-gitp-test {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-top: 4px;
-
-        input { flex: 1 1 240px; min-width: 0; }
-    }
+    .ic-gitp-test { margin: 4px 0 0; }
 
     .ic-gitp-actions { margin-top: 12px; }
     .ic-gitp-add { margin-top: 16px; }
@@ -78,9 +71,20 @@
     }
 
     .ic-gitp-credrm { align-self: center; }
+
+    // A field's help, as Settings' toggles show theirs.
+    .rl-th {
+        display: block;
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        color: var(--rl-muted);
+        margin-top: 4px;
+    }
 }
 
 @media (max-width: 480px) {
-    .ic-app .ic-gitp .ic-gitp-credrow { grid-template-columns: 1fr auto; }
+    .ic-app .ic-gitp .ic-gitp-credrow { grid-template-columns: minmax(0, 1fr); }
+    .ic-app .ic-gitp .ic-gitp-credrm { justify-self: end; }
     .ic-app .ic-gitp .rl-set-status { grid-template-columns: 1fr; }
+    .ic-app .ic-gitp .ic-gitp-test .rl-frow-inline { flex-wrap: wrap; }
 }
