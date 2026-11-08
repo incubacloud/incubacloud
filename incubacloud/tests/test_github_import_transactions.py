@@ -21,6 +21,9 @@ from odoo.addons.incubacloud.github.import_inspector import (
 from odoo.addons.incubacloud.models._concurrency import (
     try_advisory_xact_lock,
 )
+from odoo.addons.incubacloud.models._repo_requirements import (
+    consume_hourly_quota,
+)
 
 
 class TestGitHubImportTransactions(TransactionCase):
@@ -195,17 +198,17 @@ class TestGitHubImportTransactions(TransactionCase):
     def test_quota_buckets_are_independent_per_user_key(self):
         """Exhausting one user-shaped bucket does not consume another."""
         for _index in range(10):
-            self.assertTrue(routes._consume_github_quota(
+            self.assertTrue(consume_hourly_quota(
                 self.route_env,
                 self.buckets[3],
                 "rate_limit_github_previews_per_hour",
             ))
-        self.assertFalse(routes._consume_github_quota(
+        self.assertFalse(consume_hourly_quota(
             self.route_env,
             self.buckets[3],
             "rate_limit_github_previews_per_hour",
         ))
-        self.assertTrue(routes._consume_github_quota(
+        self.assertTrue(consume_hourly_quota(
             self.route_env,
             self.buckets[4],
             "rate_limit_github_previews_per_hour",

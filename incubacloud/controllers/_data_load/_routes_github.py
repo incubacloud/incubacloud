@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 
-from odoo import _, api, http
+from odoo import _, http
 from odoo.exceptions import UserError
 from odoo.http import request
 
@@ -29,10 +29,12 @@ from ...github.import_inspector import (
     validate_branch,
     version_from_manifest_text as _api_version_from_manifest_text,
 )
-from ...models._concurrency import read_committed_cursor, try_advisory_xact_lock
+from ...models._concurrency import try_advisory_xact_lock
 from ...models._repo_requirements import (
     GitReadBudget,
     apply_requirements_content,
+    consume_git_read,
+    consume_hourly_quota,
     git_source_addons,
     git_source_requirements,
     is_safe_git_ref,
@@ -174,31 +176,6 @@ def _github_import_clients(env):
             clients.append(GitHubPATClient(pat))
     clients.append(GitHubAnonymousClient())
     return clients
-
-
-def _consume_github_quota(env, bucket, cap_key):
-    """Persist one quota hit in a short independent transaction.
-
-    The cursor runs at READ COMMITTED (:func:`read_committed_cursor`): at
-    REPEATABLE READ a hit that met a row another hit had just created or
-    committed was aborted with a serialization failure. Here the second
-    hit waits for the row and adds to it.
-
-    :param env: request environment used to preserve user and test context
-    :param str bucket: per-user rate-limit bucket
-    :param str cap_key: configurable ``cloud.settings`` cap field
-    :return: whether the admitted attempt remains within its hourly cap
-    :rtype: bool
-    """
-    with read_committed_cursor(env.registry) as cr:
-        quota_env = api.Environment(cr, env.uid, dict(env.context))
-        allowed = quota_env['cloud.rate.limit'].sudo().hit(
-            bucket,
-            cap_key=cap_key,
-            window_seconds=3600,
-        )
-        cr.commit()
-        return allowed
 
 
 def _to_https(url):
@@ -575,10 +552,7 @@ class GitHubMixin:
         :rtype: tuple
         """
         env = request.env
-        if not _consume_github_quota(
-            env, f'git_reads_user:{env.user.id}',
-            'rate_limit_git_reads_per_hour',
-        ):
+        if not consume_git_read(env):
             return None, {'ok': False, 'error': _(
                 "Git read limit reached. Try again later."
             )}
@@ -921,7 +895,7 @@ class GitHubMixin:
                     'Try again when it finishes.'
                 ),
             }
-        if not _consume_github_quota(
+        if not consume_hourly_quota(
             request.env,
             f'github_preview_user:{request.env.user.id}',
             'rate_limit_github_previews_per_hour',
@@ -1150,7 +1124,7 @@ class GitHubMixin:
                     'Try again when it finishes.'
                 ),
             }
-        if not _consume_github_quota(
+        if not consume_hourly_quota(
             request.env,
             f'github_import_user:{request.env.user.id}',
             'rate_limit_github_imports_per_hour',
