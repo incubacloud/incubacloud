@@ -32,7 +32,6 @@ import socket
 import ssl
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
@@ -54,6 +53,11 @@ MS_SCOPE = "https://outlook.office365.com/.default"
 #: 20 min leave the whole backoff ladder below, twice, before the token ends
 #: and the plugin's own 10 s refresh window (pointed at a closed port) is hit.
 RENEW_MARGIN = 20 * 60
+#: Largest ``expires_in`` taken (2026-11-09): a day. Entra ID's last 60-90 min,
+#: and the value becomes the ``expiry`` the plugin trusts and the sleep until
+#: the next renewal, so an absurd one would keep a dead token or silence the
+#: renewer; it is a bad answer instead.
+MAX_EXPIRES_IN = 24 * 60 * 60
 #: Never renew more often than this, whatever ``expires_in`` says.
 MIN_SLEEP = 60
 #: Waits after the 1st, 2nd, 3rd and every further failed token request
@@ -68,8 +72,6 @@ CONFIG_RECHECK = 60
 #: Largest token answer read; Entra ID's are a few KiB.
 MAX_RESPONSE = 64 * 1024
 REQUIRED_KEYS = ("tenant_id", "client_id", "client_secret", "mailbox")
-
-_wake = threading.Event()
 
 
 class ConfigError(Exception):
@@ -273,7 +275,9 @@ def _error_from_body(status, raw):
     if isinstance(err, dict):
         msg = str(err.get("error_description") or err.get("error") or "")
         codes = err.get("error_codes")
-        if isinstance(codes, list) and codes:
+        # Only an integer is an AADSTS code: the value goes to status.json.
+        if (isinstance(codes, list) and codes and isinstance(codes[0], int)
+                and not isinstance(codes[0], bool)):
             code = f"AADSTS{codes[0]}"
         else:
             found = re.match(r"\s*(AADSTS\d+)", msg)
@@ -319,12 +323,14 @@ def fetch_token(cfg):
         payload = json.loads(raw.decode())
         token = payload["access_token"]
         expires_in = int(payload["expires_in"])
-    except (ValueError, UnicodeError, KeyError, TypeError):
+    except (ValueError, UnicodeError, KeyError, TypeError, OverflowError):
         raise TokenError(
             "bad_response", "token answer without access_token and expires_in"
         ) from None
     if not isinstance(token, str) or not token or expires_in <= 0:
         raise TokenError("bad_response", "empty token or expires_in not positive")
+    if expires_in > MAX_EXPIRES_IN:
+        raise TokenError("bad_response", f"expires_in beyond {MAX_EXPIRES_IN} s")
     return token, expires_in
 
 
@@ -420,15 +426,27 @@ class Renewer:
         return max(MIN_SLEEP, expires_in - RENEW_MARGIN)
 
 
+def _prepare_wake_signal():
+    """Block SIGUSR1 in the calling thread, so that only :func:`_sleep` takes it.
+
+    A blocked signal stays pending until it is taken, so a renewal asked for
+    while a step runs is not lost. No Python handler runs: a handler that took
+    a lock (``threading.Event.set``) could interrupt code holding it.
+    """
+    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGUSR1})
+
+
 def _sleep(seconds):
-    """Sleep ``seconds``, or less if SIGUSR1 asks for a renewal now."""
-    _wake.wait(seconds)
-    _wake.clear()
+    """Sleep ``seconds``, or less if SIGUSR1 asks for a renewal now.
+
+    Needs :func:`_prepare_wake_signal` first; takes one pending SIGUSR1.
+    """
+    signal.sigtimedwait({signal.SIGUSR1}, seconds)
 
 
 def run():
     """Renew forever; SIGUSR1 renews at once, SIGTERM ends cleanly."""
-    signal.signal(signal.SIGUSR1, lambda *_: _wake.set())
+    _prepare_wake_signal()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     os.makedirs(STATE_DIR, exist_ok=True)
     write_status(state="starting")
