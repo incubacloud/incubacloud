@@ -11,6 +11,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The update creates the `cloud_job_no_return` table; nothing else changes in the
 database.
 
+### Added
+
+- **The panel says at startup when Odoo's limits cut its jobs short.** A
+  server that runs `queue_job`'s runner logs a warning per setting and raises
+  the provider alert `job_server_limits_too_low` when `limit_time_real` is
+  below 3600 seconds, the longest a job's command may run, and, with
+  `workers = 0`, when `limit_memory_soft` or `limit_memory_hard` is at Odoo's
+  per-worker default or lower: in a threaded server they measure the whole
+  process, and past `limit_time_real` or `limit_memory_soft` Odoo reloads it
+  with every running job (measured on Odoo 19). The alert closes at the next
+  start with values that fit. Only a server started by `odoo server` is
+  judged, and among those not a web-only one (`--load=web`): `odoo shell`,
+  `click-odoo-update` and scripts read the configuration file, whose
+  `limit_time_real` is the web's beside a dedicated runner. Reported by a
+  self-hosted panel whose deploys ended `JobFoundDead` under Odoo's defaults
+  (issue #4).
+
 ### Fixed
 
 - **Cancelling a running job stops what it runs on the server.** The stop
