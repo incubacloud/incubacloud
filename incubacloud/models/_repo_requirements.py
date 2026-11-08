@@ -273,26 +273,46 @@ def canonical_any_repo_url(env, url):
     return ref.canonical if ref else url.strip()
 
 
-def consume_git_read(env):
-    """Count one read of a Git provider against the user's hourly cap.
+def consume_hourly_quota(env, bucket, cap_key):
+    """Count one hit on *bucket* against an hourly cap, in its own transaction.
 
-    ``rate_limit_git_reads_per_hour``, in the bucket the editor's reads
-    use, in a transaction of its own so a read refused later still
-    counts: each one runs git or asks GitLab (plan-gitlab.md §9).
+    Committed at once, so a hit refused later still counts and parallel
+    requests do not fight over the bucket's row inside their own
+    transactions.
 
-    :param env: an Odoo environment, of the user who reads
-    :return: whether the read is within the cap
+    :param env: an Odoo environment, of the user who asks (its user and
+        context are kept)
+    :param str bucket: the per-user rate-limit bucket
+    :param str cap_key: the ``cloud.settings`` field holding the cap
+    :return: whether the hit is within the cap
     :rtype: bool
     """
     with env.registry.cursor() as cr:
         quota_env = api.Environment(cr, env.uid, dict(env.context))
         allowed = quota_env['cloud.rate.limit'].sudo().hit(
-            f'git_reads_user:{env.uid}',
-            cap_key='rate_limit_git_reads_per_hour',
+            bucket,
+            cap_key=cap_key,
             window_seconds=3600,
         )
         cr.commit()
         return allowed
+
+
+def consume_git_read(env):
+    """Count one git read against the user's hourly cap.
+
+    ``rate_limit_git_reads_per_hour``, in the one bucket every read of a
+    repository with git uses, the editor's, the panel's and the
+    assistant's (:func:`consume_hourly_quota`): each one runs git or asks
+    GitLab (plan-gitlab.md §9).
+
+    :param env: an Odoo environment, of the user who reads
+    :return: whether the read is within the cap
+    :rtype: bool
+    """
+    return consume_hourly_quota(
+        env, f'git_reads_user:{env.uid}', 'rate_limit_git_reads_per_hour',
+    )
 
 
 #: The GitLab repositories one panel request reads with git at most,

@@ -52,9 +52,10 @@ class _RoutesCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        # The hourly cap of git reads is kept in a transaction of its own.
+        # The hourly cap of git reads is kept in a transaction of its own
+        # (``consume_git_read``, the editor's reads among them).
         patcher = patch.object(
-            _routes_github, "_consume_github_quota", autospec=True,
+            _routes_github, "consume_git_read", autospec=True,
             return_value=True,
         )
         self.quota = patcher.start()
@@ -332,9 +333,7 @@ class TestReadsDispatchOnTheProvider(_RoutesCase):
         self.assertEqual(cred, ("gitlab+deploy-token-7", "glpat-routes12"))
         self.assertEqual(patterns, ["refs/heads/*"])
         self.github.assert_not_called()
-        self.assertEqual(
-            self.quota.call_args.args[2], "rate_limit_git_reads_per_hour",
-        )
+        self.quota.assert_called_once()
 
     def test_the_head_of_a_branch_and_a_missing_one(self):
         with patch.object(

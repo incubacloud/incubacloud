@@ -266,7 +266,7 @@ class McpTools(models.AbstractModel):
     def _consume_quota(self, bucket, cap_key=None, max_per_window=None):
         """Count one hit on *bucket* in a transaction of its own.
 
-        Like ``_consume_github_quota``: an agent's parallel calls do not
+        Like ``consume_hourly_quota``: an agent's parallel calls do not
         fight over the bucket's row inside their transactions, and a
         serialisation failure there cannot replay what came after. The
         cursor runs at READ COMMITTED (:func:`read_committed_cursor`): at
