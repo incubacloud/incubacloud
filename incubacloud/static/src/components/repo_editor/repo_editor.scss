@@ -89,6 +89,26 @@
     color: var(--rl-faint);
 }
 
+// The webhook of a GitLab line: what a push does, and its action.
+.ic-repo-hook { color: var(--rl-fg2); }
+.ic-repo-hook--ok .fa { color: var(--rl-green); }
+.ic-repo-hook--warn { color: var(--rl-amber-text); }
+.ic-repo-hook--error { color: var(--rl-red-text); }
+
+.ic-repo-hook-action {
+    font: inherit;
+    font-size: 11px;
+    color: var(--rl-fg);
+    background: transparent;
+    border: 1px solid var(--rl-line2);
+    border-radius: var(--rl-rsm);
+    padding: 1px 8px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { background: var(--rl-surf3); }
+    &:disabled { opacity: .6; cursor: default; }
+}
+
 // ─── Shared module chip + dropdown (used by module_selector.xml) ──────────────
 
 .ic-module-selector {

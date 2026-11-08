@@ -74,6 +74,49 @@
 
     .ic-gitp-credrm { flex: none; margin-bottom: 6px; }
 
+    // ── Webhooks ──
+    .ic-gitp-hookhead { margin-top: 28px; }
+
+    .ic-gitp-hook {
+        padding: 12px 14px;
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-rsm);
+        margin-bottom: 10px;
+
+        .rl-set-inline-msg, .rl-set-hint { margin: 8px 0 0; }
+    }
+
+    .ic-gitp-hookrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        align-items: center;
+        font-size: 12px;
+    }
+
+    .ic-gitp-secret { margin-top: 10px; .rl-set-status-v { word-break: break-all; } }
+
+    .ic-gitp-event {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        align-items: center;
+        font-size: 12px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--rl-line);
+    }
+
+    .ic-gitp-error {
+        flex: 1 1 200px;
+        min-width: 0;
+        font-family: var(--rl-fm);
+        color: var(--rl-red-text);
+        word-break: break-word;
+    }
+
+    .ic-gitp-hookactions { margin-top: 10px; flex-wrap: wrap; }
+
     // A field's help, as Settings' toggles show theirs.
     .rl-th {
         display: block;
