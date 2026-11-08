@@ -3459,6 +3459,28 @@ msgid "Could not read the proxy log."
 msgstr "No se pudo leer el registro del proxy."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid ""
+"Could not tell which Odoo series this instance runs: its .copier-answers.yml"
+" names none."
+msgstr ""
+"No se pudo saber qué serie de Odoo ejecuta esta instancia: su .copier-"
+"answers.yml no indica ninguna."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"Could not tell which Odoo series this repository is for. Name its branch "
+"after the series (such as 19.0), or give its modules a version that starts "
+"with it (such as 19.0.1.0.0)."
+msgstr ""
+"No se pudo saber para qué serie de Odoo es este repositorio. Dé a su rama el"
+" nombre de la serie (por ejemplo, 19.0) o a sus módulos una versión que "
+"empiece por ella (por ejemplo, 19.0.1.0.0)."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__count
 msgid "Count"
 msgstr "Cantidad"
@@ -8170,7 +8192,7 @@ msgstr "Tema claro"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Link to the backup"
-msgstr "Enlace a la salva"
+msgstr "Enlace a la copia de seguridad"
 
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.backup_list
@@ -10565,7 +10587,7 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid "Paste the link to your backup first."
-msgstr "Pegue primero el enlace a su salva."
+msgstr "Pegue primero el enlace a su copia de seguridad."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12343,7 +12365,7 @@ msgid ""
 " the backup, and removes the key afterwards. Valid until"
 msgstr ""
 "Ejecute esto en su ordenador. Escribe la clave con permisos privados, envía "
-"la salva y borra la clave al terminar. Válida hasta"
+"la copia de seguridad y borra la clave al terminar. Válida hasta"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13795,6 +13817,15 @@ msgid "The certificate of the direct path %(name)s expires on %(date)s."
 msgstr "El certificado del camino directo %(name)s caduca el %(date)s."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_helpers.py:0
+msgid ""
+"The code being imported is for Odoo %(series)s, which this panel does not "
+"offer."
+msgstr ""
+"El código que se importa es de Odoo %(series)s, que este panel no ofrece."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -14607,6 +14638,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_helpers.py:0
 #: code:addons/incubacloud/models/cloud_instance.py:0
 #: code:addons/incubacloud/models/cloud_project.py:0
 msgid "This panel offers: %s."
@@ -15673,8 +15705,9 @@ msgid ""
 "one directory, and expires by itself. You do not need an account on the "
 "machine."
 msgstr ""
-"Instalamos en el host una clave temporal que solo puede escribir su salva en"
-" un directorio y que caduca sola. No necesita cuenta en la máquina."
+"Instalamos en el host una clave temporal que solo puede escribir su copia de"
+" seguridad en un directorio y que caduca sola. No necesita cuenta en la "
+"máquina."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16489,7 +16522,7 @@ msgid ""
 "                    any host and restored from that copy."
 msgstr ""
 "la archiva en su lugar: se toma ahora una\n"
-"                    salva completa nueva y se poda todo lo anterior, de modo que\n"
+"                    copia de seguridad completa nueva y se poda todo lo anterior, de modo que\n"
 "                    sobrevive exactamente una copia restaurable. La instancia pasa a\n"
 "                    la pestaña Archivadas del proyecto, desde donde se puede recuperar en\n"
 "                    cualquier host y restaurar a partir de esa copia."
