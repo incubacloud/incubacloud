@@ -13,6 +13,7 @@ from pathlib import Path
 
 import asyncssh
 from psycopg2 import OperationalError
+from psycopg2.errors import LockNotAvailable
 
 from odoo.exceptions import AccessError, MissingError, UserError
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
@@ -23,6 +24,7 @@ from odoo.addons.queue_job.exception import RetryableJobError
 
 from ._concurrency import read_committed_cursor
 from ._repo_requirements import has_pip_conflicts
+from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .registry import executor_registry
 
 # Delay before queue_job re-runs a job that failed to connect to its host.
@@ -541,6 +543,14 @@ class AbstractExecutor(ABC):
     # then do nothing a second time (6-nov-2026).
     _postpones_between_ticks = False
 
+    # The label of the first step a stop must not cut, or None: from it on
+    # the job cannot be put back as it was (a rebuild's database update,
+    # which commits module by module). Before the step starts, the stop
+    # and the step are decided under one lock (``_pass_no_return``): a stop
+    # already asked for ends the job there; otherwise the job is marked,
+    # and a stop asked for later is refused (``cloud.job.no.return``).
+    _no_return_from = None
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if cls._job_type:
@@ -845,6 +855,8 @@ class AbstractExecutor(ABC):
             label, command = item[0], item[1]
             opts = item[2] if len(item) == 3 else {}
             logger.debug("[_run_steps] Executing: %s", command)
+            if label == self._no_return_from:
+                self._pass_no_return(label)
             self._sys(f"Running: {label}")
             result = await transport.execute(
                 command, self.on_stdout, self.on_stderr,
@@ -1506,6 +1518,54 @@ class AbstractExecutor(ABC):
             self._flushed_system = False
             logger.debug(
                 "[_publish_bus] broadcast done for job_id=%s", self.job.id,
+            )
+
+    def _pass_no_return(self, label):
+        """Decide, against a stop, whether the step *label* starts.
+
+        On a durable cursor of its own, committed before the step runs:
+        the job's advisory lock (``NO_RETURN_LOCK_NAMESPACE``), which
+        whoever writes the stop flag on a started job takes too
+        (``cloud.job._refuse_stop_past_no_return``); then the flag, read
+        at READ COMMITTED. A stop already committed ends the job here,
+        the step never started. Otherwise the job's mark is inserted:
+        from its commit on, a stop is refused. Nothing is written on
+        ``cloud_job``, whose row the job's transaction stores at the end.
+
+        A lock held past ``DURABLE_LOCK_TIMEOUT`` (a request holding it
+        that long) does not stop the job: the step goes on unmarked, as
+        before this lock existed, and the log says so.
+
+        :param str label: the step about to run
+        :raises JobCancelled: when the job was stopped before the step
+        """
+        try:
+            with self._durable_env() as env:
+                cr = env.cr
+                cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (NO_RETURN_LOCK_NAMESPACE, self.job.id),
+                )
+                cr.execute(
+                    "SELECT state FROM cloud_job WHERE id = %s", (self.job.id,),
+                )
+                row = cr.fetchone()
+                if row is None:
+                    # Not committed: a job of a test's own transaction.
+                    # Nobody can have stopped it, nor see a mark.
+                    return
+                if row[0] == "cancelled":
+                    raise JobCancelled(CANCELLED_WHILE_RUNNING)
+                cr.execute(
+                    "INSERT INTO cloud_job_no_return (job_id, step)"
+                    " VALUES (%s, %s)"
+                    " ON CONFLICT (job_id) DO UPDATE SET step = EXCLUDED.step",
+                    (self.job.id, label),
+                )
+        except LockNotAvailable:
+            self._sys(
+                f"⚠ Could not take the job's stop lock before '{label}': it"
+                f" runs unmarked, and a stop asked for now would still cut it."
             )
 
     def _check_cancel(self):

@@ -46,6 +46,10 @@ _BUILD_RETRY_WAIT_S = 60
 #: puts what they describe in service (``on_cancelled_running``).
 _LABEL_COPIER = "Update with copier"
 _LABEL_BUILD = "Rebuild Odoo image"
+#: The step that updates the live database to the new image's modules:
+#: Odoo commits module by module, so it is the rebuild's point of no
+#: return (``_no_return_from``).
+_LABEL_UPDATE = "Update changed modules"
 _LABEL_RESTART = "Restart instance"
 
 
@@ -80,6 +84,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     """
 
     _job_type = "rebuild_instance"
+    # Stopped halfway, the update leaves the database half updated under
+    # the previous image, and there is no copy to go back to: from it on
+    # a stop is refused. A deploy has none: a new instance stopped
+    # halfway is removed.
+    _no_return_from = _LABEL_UPDATE
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -307,7 +316,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     tick was in flight. The guard pauses the crons, waits
             #     for the in-flight ones, and always restores them.
             (
-                "Update changed modules",
+                _LABEL_UPDATE,
                 self.run_script(
                     "cron_guard.sh",
                     [
@@ -617,13 +626,26 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         fails at the same point (the build, the boot test) leaves the
         same, and a block that covers both belongs on the host, where
         ``compose_op.sh up`` would honour it whatever closed the job.
+        Ended once «Update changed modules» had started (a worker that
+        died there, a stop that came without the job's lock), the database
+        may be ahead of the image that runs: Odoo stores each module it
+        updates as it goes.
 
         :param results: what the steps answered, or None
         :return: whether there was something to say
         :rtype: bool
         """
         left = self._left_unapplied(results)
-        if left == _LABEL_BUILD:
+        if left == _LABEL_UPDATE:
+            self._sys(
+                "⚠ This rebuild updated the modules of the instance's"
+                " database, or began to (Odoo stores them one by one), to"
+                " the image it built, and ended before restarting the"
+                " instance: its running containers still have the previous"
+                " image over that database. Rebuild it to put the new image"
+                " in service."
+            )
+        elif left == _LABEL_BUILD:
             self._sys(
                 "⚠ This rebuild rewrote the instance's files on its server"
                 " (copier) and may have rebuilt its image, which was neither"
@@ -645,19 +667,20 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     def _left_unapplied(self, results):
         """Return how far a rebuild got past copier without a restart after.
 
-        The last of «Update with copier», «Rebuild Odoo image» and
-        «Restart instance» that any attempt of the job started, read from
+        The last of «Update with copier», «Rebuild Odoo image», «Update
+        changed modules» and «Restart instance» that any attempt of the
+        job started, read from
         the job log's "Running:" lines (each attempt's, a step cut off
         included), unless *results* holds the restart.
 
         :param results: what the steps answered, or None
-        :return: ``_LABEL_BUILD`` or ``_LABEL_COPIER``, or None when
-            nothing is left unapplied
+        :return: ``_LABEL_UPDATE``, ``_LABEL_BUILD`` or ``_LABEL_COPIER``,
+            or None when nothing is left unapplied
         """
         if results and _LABEL_RESTART in results:
             return None
         lines = {f"Running: {label}": label for label in (
-            _LABEL_COPIER, _LABEL_BUILD, _LABEL_RESTART,
+            _LABEL_COPIER, _LABEL_BUILD, _LABEL_UPDATE, _LABEL_RESTART,
         )}
         last = self.env["cloud.job.log.chunk"].sudo().search(
             [("job_id", "=", self.job.id), ("content", "in", list(lines))],
@@ -668,7 +691,10 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             return None
         if label is None and results and _LABEL_COPIER in results:
             # The log was capped before the line.
-            return _LABEL_BUILD if _LABEL_BUILD in results else _LABEL_COPIER
+            for later in (_LABEL_UPDATE, _LABEL_BUILD):
+                if later in results:
+                    return later
+            return _LABEL_COPIER
         return label
 
     async def on_failure(self, results, errors):
