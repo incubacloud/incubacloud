@@ -1032,7 +1032,7 @@ class CloudSettings(models.Model):
         """
         return parse_ranges(self._get_system().trusted_proxy_ranges)
 
-    # ── Startup check: INCUBACLOUD_SECRET_KEY ──────────────────────────────
+    # ── Startup check: the encryption key ─────────────────────────────────
 
     def _register_hook(self):
         """Warn loudly at registry load about a misconfigured server.
@@ -1059,11 +1059,14 @@ class CloudSettings(models.Model):
             return
         if not key_is_configured():
             _logger.critical(
-                "INCUBACLOUD_SECRET_KEY is missing or invalid. Any write to "
+                "The panel's encryption key is missing or invalid (the "
+                "error above says where it was looked for). Any write to "
                 "cloud.host.password, cloud.instance.*_password, "
                 "cloud.backup.backend.passphrase, cloud.settings.github_pat "
-                "and similar fields will raise. Configure the variable in "
-                "the Odoo container environment before going to production."
+                "and similar fields will raise. Set INCUBACLOUD_SECRET_KEY, "
+                "INCUBACLOUD_SECRET_KEY_FILE, or secret_key_file or "
+                "secret_key in odoo.conf's [incubacloud] section before "
+                "going to production."
             )
             return
         # The right key usually arrives with a restart: look again now

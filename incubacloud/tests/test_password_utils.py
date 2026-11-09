@@ -9,7 +9,9 @@ populates ``test_tags = {'standard', 'at_install'}`` and
 ``unittest.TestCase`` is silently skipped under
 ``--test-tags /incubacloud``.
 """
+import logging
 import os
+import tempfile
 from unittest.mock import patch
 
 from odoo.tests.common import BaseCase
@@ -271,3 +273,230 @@ class TestMultiFernetRotation(BaseCase):
         self.assertEqual(pw_mod._parse_keys("a,b,c"), [b"a", b"b", b"c"])
         self.assertEqual(pw_mod._parse_keys(" a , , b "), [b"a", b"b"])
         self.assertEqual(pw_mod._parse_keys(""), [])
+
+
+class TestSecretKeySources(BaseCase):
+    """Where the key chain is read from, in order, the first that exists.
+
+    1. ``INCUBACLOUD_SECRET_KEY`` in the environment;
+    2. ``INCUBACLOUD_SECRET_KEY_FILE``, a file holding the chain;
+    3. ``secret_key_file`` in the ``[incubacloud]`` section of odoo.conf;
+    4. ``secret_key`` in that same section.
+
+    A source that exists but holds nothing usable fails loudly rather
+    than falling through to the next one, and no log line ever carries
+    a key. Each test writes its own odoo.conf and key files in a
+    temporary directory and points the module at that odoo.conf, so the
+    configuration of the server running the tests is never read.
+    """
+
+    _LOGGER = "odoo.addons.incubacloud.models.password_utils"
+
+    def setUp(self):
+        pw_mod._fernet = None
+        self.addCleanup(setattr, pw_mod, "_fernet", None)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = tmp.name
+        self.conf = os.path.join(self.tmp, "odoo.conf")
+        self._write(self.conf, "[options]\nworkers = 0\n")
+        conf_patch = patch.object(
+            pw_mod, "_odoo_conf_path", autospec=True, return_value=self.conf,
+        )
+        conf_patch.start()
+        self.addCleanup(conf_patch.stop)
+
+    def _fresh_key(self):
+        from cryptography.fernet import Fernet
+        return Fernet.generate_key().decode()
+
+    def _write(self, path, content):
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        return path
+
+    def _conf(self, **options):
+        """Write odoo.conf with an ``[incubacloud]`` section holding *options*."""
+        lines = ["[options]", "workers = 0", "", "[incubacloud]"]
+        lines += [f"{name} = {value}" for name, value in options.items()]
+        self._write(self.conf, "\n".join(lines) + "\n")
+
+    def _key_file(self, content, name="key"):
+        return self._write(os.path.join(self.tmp, name), content)
+
+    def _encrypt_with(self, key):
+        """Return ``"secret"`` encrypted with *key* alone."""
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": key}, clear=True):
+            pw_mod._fernet = None
+            value = pw_mod.encrypt_value("secret")
+        pw_mod._fernet = None
+        return value
+
+    def _assert_reads_with(self, key):
+        """The chain now loaded decrypts what *key* alone encrypted."""
+        encrypted = self._encrypt_with(key)
+        self.assertEqual(pw_mod.decrypt_value(encrypted), "secret")
+
+    # ── each source, and the order ──────────────────────────────────────────
+
+    def test_environment_comes_first(self):
+        env_key, file_key, conf_key = (self._fresh_key() for _ in range(3))
+        self._conf(secret_key=conf_key)
+        env = {
+            "INCUBACLOUD_SECRET_KEY": env_key,
+            "INCUBACLOUD_SECRET_KEY_FILE": self._key_file(file_key),
+        }
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(pw_mod._read_secret_key()[1], env_key)
+            self._assert_reads_with(env_key)
+
+    def test_key_file_from_the_environment_comes_second(self):
+        file_key, conf_file_key, conf_key = (self._fresh_key() for _ in range(3))
+        self._conf(
+            secret_key_file=self._key_file(conf_file_key, "conf-key"),
+            secret_key=conf_key,
+        )
+        env = {"INCUBACLOUD_SECRET_KEY_FILE": self._key_file(file_key + "\n")}
+        with patch.dict(os.environ, env, clear=True):
+            source, raw = pw_mod._read_secret_key()
+            self.assertIn("INCUBACLOUD_SECRET_KEY_FILE", source)
+            self.assertEqual(raw, file_key)
+            self._assert_reads_with(file_key)
+
+    def test_odoo_conf_key_file_comes_third(self):
+        conf_file_key, conf_key = self._fresh_key(), self._fresh_key()
+        self._conf(
+            secret_key_file=self._key_file(conf_file_key),
+            secret_key=conf_key,
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            source, raw = pw_mod._read_secret_key()
+            self.assertIn("secret_key_file", source)
+            self.assertEqual(raw, conf_file_key)
+            self._assert_reads_with(conf_file_key)
+
+    def test_odoo_conf_key_comes_last(self):
+        conf_key = self._fresh_key()
+        self._conf(secret_key=conf_key)
+        with patch.dict(os.environ, {}, clear=True):
+            source, raw = pw_mod._read_secret_key()
+            self.assertIn("[incubacloud] secret_key", source)
+            self.assertIn(self.conf, source)
+            self.assertEqual(raw, conf_key)
+            self._assert_reads_with(conf_key)
+
+    def test_no_source_at_all(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pw_mod._read_secret_key(), (None, ""))
+            with self.assertLogs(self._LOGGER, "ERROR"):
+                self.assertFalse(pw_mod.key_is_configured())
+
+    def test_odoo_conf_without_the_section_is_no_source(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pw_mod._read_secret_key(), (None, ""))
+
+    def test_the_error_names_every_source(self):
+        message = pw_mod._key_error_message()
+        for name in (
+            "INCUBACLOUD_SECRET_KEY", "INCUBACLOUD_SECRET_KEY_FILE",
+            "secret_key_file", "secret_key", "[incubacloud]",
+        ):
+            self.assertIn(name, message)
+
+    # ── rotation ────────────────────────────────────────────────────────────
+
+    def _assert_rotation(self):
+        """The loaded chain is ``new,old``: both read, only new encrypts."""
+        encrypted = pw_mod.encrypt_value("fresh")
+        self.assertEqual(pw_mod.decrypt_value(self._old_value), "secret")
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": self._new}, clear=True):
+            pw_mod._fernet = None
+            self.assertEqual(pw_mod.decrypt_value(encrypted), "fresh")
+
+    def _rotation_keys(self):
+        self._new, old = self._fresh_key(), self._fresh_key()
+        self._old_value = self._encrypt_with(old)
+        return f"{self._new}, {old}"
+
+    def test_rotation_from_a_key_file(self):
+        env = {"INCUBACLOUD_SECRET_KEY_FILE": self._key_file(self._rotation_keys())}
+        with patch.dict(os.environ, env, clear=True):
+            self._assert_rotation()
+
+    def test_rotation_from_odoo_conf(self):
+        self._conf(secret_key=self._rotation_keys())
+        with patch.dict(os.environ, {}, clear=True):
+            self._assert_rotation()
+
+    def test_rotation_from_odoo_conf_key_file(self):
+        self._conf(secret_key_file=self._key_file(self._rotation_keys()))
+        with patch.dict(os.environ, {}, clear=True):
+            self._assert_rotation()
+
+    # ── a source that exists but is wrong fails, it does not fall through ──
+
+    def _assert_fails_naming(self, *names):
+        with self.assertLogs(self._LOGGER, "ERROR") as logs:
+            self.assertIsNone(pw_mod._get_fernet())
+        output = "\n".join(logs.output)
+        for name in names:
+            self.assertIn(name, output)
+        with self.assertRaises(pw_mod.IncubacloudCryptoError):
+            pw_mod.encrypt_value("secret")
+        return output
+
+    def test_unreadable_key_file_fails(self):
+        self._conf(secret_key=self._fresh_key())
+        missing = os.path.join(self.tmp, "nowhere")
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY_FILE": missing}, clear=True):
+            self._assert_fails_naming("INCUBACLOUD_SECRET_KEY_FILE", missing)
+
+    def test_a_directory_as_key_file_fails(self):
+        self._conf(secret_key_file=self.tmp, secret_key=self._fresh_key())
+        with patch.dict(os.environ, {}, clear=True):
+            self._assert_fails_naming("secret_key_file", self.tmp)
+
+    def test_empty_key_file_fails(self):
+        env = {"INCUBACLOUD_SECRET_KEY_FILE": self._key_file("  \n")}
+        self._conf(secret_key=self._fresh_key())
+        with patch.dict(os.environ, env, clear=True):
+            self._assert_fails_naming("INCUBACLOUD_SECRET_KEY_FILE", "empty")
+
+    def test_empty_environment_variable_fails(self):
+        self._conf(secret_key=self._fresh_key())
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": ""}, clear=True):
+            self._assert_fails_naming("INCUBACLOUD_SECRET_KEY", "empty")
+
+    def test_empty_odoo_conf_key_fails(self):
+        self._conf(secret_key="")
+        with patch.dict(os.environ, {}, clear=True):
+            self._assert_fails_naming("[incubacloud] secret_key", "empty")
+
+    def test_malformed_odoo_conf_key_fails_without_logging_it(self):
+        bad = "not-a-fernet-key-but-a-secret-all-the-same"
+        self._conf(secret_key=bad)
+        with patch.dict(os.environ, {}, clear=True):
+            output = self._assert_fails_naming("[incubacloud] secret_key")
+        self.assertNotIn(bad, output)
+
+    def test_unparseable_odoo_conf_fails(self):
+        self._write(self.conf, "[incubacloud]\nsecret_key = a\nsecret_key = b\n")
+        with patch.dict(os.environ, {}, clear=True):
+            self._assert_fails_naming(self.conf)
+
+    # ── the log says where, never what ──────────────────────────────────────
+
+    def test_the_log_names_the_source_never_the_key(self):
+        new, old = self._fresh_key(), self._fresh_key()
+        self._conf(secret_key=f"{new},{old}")
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            # The level as a number: Odoo names its level 25 "INFO" too,
+            # and assertLogs would read the name as that one.
+            self.assertLogs(self._LOGGER, logging.INFO) as logs,
+        ):
+            self.assertTrue(pw_mod.key_is_configured())
+        output = "\n".join(logs.output)
+        self.assertIn("[incubacloud] secret_key", output)
+        self.assertNotIn(new, output)
+        self.assertNotIn(old, output)

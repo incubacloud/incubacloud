@@ -2,19 +2,32 @@
 Fernet-based symmetric encryption for sensitive fields (passwords, passphrases).
 
 Key resolution:
-  The environment variable INCUBACLOUD_SECRET_KEY MUST be set in all
-  environments (production, staging, local dev, test). There is no
-  fallback key. A fallback dev key is useless when restoring a
-  production database locally — the data was encrypted with the
-  production key, not the dev key — and actively dangerous because it
-  masks a misconfiguration.
+  The key chain MUST be set in all environments (production, staging,
+  local dev, test), and is read from the first of these that is set:
+
+    1. the environment variable INCUBACLOUD_SECRET_KEY;
+    2. the file the environment variable INCUBACLOUD_SECRET_KEY_FILE
+       names (a Docker secret, a systemd credential);
+    3. the file ``secret_key_file`` names in the ``[incubacloud]``
+       section of odoo.conf;
+    4. ``secret_key`` in that same section (Odoo.sh, where the
+       environment of the Odoo process cannot be set).
+
+  A source that is set but empty, unreadable or malformed fails: the
+  next one is never tried, so a misplaced key is noticed instead of a
+  different one being used. The log names the source, never the key.
+
+  There is no fallback key. A fallback dev key is useless when
+  restoring a production database locally — the data was encrypted
+  with the production key, not the dev key — and actively dangerous
+  because it masks a misconfiguration.
 
   Generate a key with:
     python -c "from cryptography.fernet import Fernet; \\
                print(Fernet.generate_key().decode())"
 
 Key rotation (MultiFernet):
-  The env var accepts a *comma-separated* list of Fernet keys. The
+  Every source accepts a *comma-separated* list of Fernet keys. The
   first key is the primary (used to encrypt new values); every key in
   the list can decrypt. That lets operators rotate keys without a
   flag-day: generate a new key, prepend it to the list, redeploy; old
@@ -34,14 +47,22 @@ Failure mode (fail-loud):
   ``encrypt_value`` and ``decrypt_value`` raise when the key is
   missing or invalid, instead of silently writing plain text.
 """
+import configparser
 import logging
 import os
 import secrets
+
+from odoo.tools import config
 
 _logger = logging.getLogger(__name__)
 
 _ENCRYPTED_PREFIX = "enc:"
 _KEY_ENV_VAR = "INCUBACLOUD_SECRET_KEY"
+_KEY_FILE_ENV_VAR = "INCUBACLOUD_SECRET_KEY_FILE"
+#: The odoo.conf section the key can be given in, and its two options.
+_CONF_SECTION = "incubacloud"
+_CONF_KEY_FILE = "secret_key_file"
+_CONF_KEY = "secret_key"
 
 # Lazy-loaded MultiFernet instance (single Fernet wrapped if only one key)
 _fernet = None
@@ -52,25 +73,132 @@ class IncubacloudCryptoError(RuntimeError):
 
 
 def _key_error_message():
+    """Return the error raised when no usable key is configured.
+
+    :return: what is wrong and where the key can be given
+    :rtype: str
+    """
     return (
-        f"{_KEY_ENV_VAR} environment variable is not set or invalid. "
-        "Generate a key with: "
+        "The panel's encryption key is not set or invalid. It is read "
+        f"from the first of: the {_KEY_ENV_VAR} environment variable; "
+        f"the file the {_KEY_FILE_ENV_VAR} environment variable names; "
+        f"the file {_CONF_KEY_FILE} names, or else {_CONF_KEY}, in the "
+        f"[{_CONF_SECTION}] section of odoo.conf. Odoo's log says which "
+        "one was read and what is wrong with it. Generate a key with: "
         'python -c "from cryptography.fernet import Fernet; '
-        'print(Fernet.generate_key().decode())" '
-        f"and expose it to the Odoo container as {_KEY_ENV_VAR}. "
+        'print(Fernet.generate_key().decode())". '
         "To rotate, set a comma-separated list with the new primary "
         "key first and the old key second."
     )
 
 
+def _odoo_conf_path():
+    """Return the path of the configuration file Odoo was started with.
+
+    :return: the path, or ``None`` when Odoo names none
+    :rtype: str | None
+    """
+    return config.get("config") or None
+
+
+def _read_conf_section(path):
+    """Return the ``[incubacloud]`` section of the odoo.conf at *path*.
+
+    :param path: the odoo.conf to read, or ``None``
+    :return: the section's options; empty when the file, or the section,
+        does not exist
+    :rtype: dict
+    :raise IncubacloudCryptoError: when the file cannot be parsed. Only
+        the kind of error is said: the parser's own message may quote a
+        line of the file, and that line may hold the key.
+    """
+    if not path:
+        return {}
+    parser = configparser.RawConfigParser()
+    try:
+        parser.read(path, encoding="utf-8")
+    except (configparser.Error, UnicodeDecodeError) as e:
+        raise IncubacloudCryptoError(
+            f"Cannot parse {path} ({type(e).__name__}), so the encryption "
+            f"key in its [{_CONF_SECTION}] section cannot be read."
+        ) from None
+    if not parser.has_section(_CONF_SECTION):
+        return {}
+    return dict(parser.items(_CONF_SECTION))
+
+
+def _read_key_file(path, source):
+    """Return the content of the key file at *path*.
+
+    :param path: the file, as configured (``~`` is expanded)
+    :param source: how the file was named, for the error
+    :return: the file's text
+    :rtype: str
+    :raise IncubacloudCryptoError: when it cannot be read
+    """
+    try:
+        with open(os.path.expanduser(path), encoding="utf-8") as handle:
+            return handle.read()
+    except OSError as e:
+        reason = e.strerror or type(e).__name__
+    except UnicodeDecodeError:
+        reason = "not UTF-8 text"
+    raise IncubacloudCryptoError(f"Cannot read {source}: {reason}.")
+
+
+def _read_secret_key():
+    """Return the key chain from the first source that is set.
+
+    The sources, in order: ``INCUBACLOUD_SECRET_KEY``; the file
+    ``INCUBACLOUD_SECRET_KEY_FILE`` names; the file ``secret_key_file``
+    names in odoo.conf's ``[incubacloud]`` section; ``secret_key`` in
+    that section. A source counts as set even when empty, so a misplaced
+    key fails rather than falls through to another one.
+
+    :return: ``(source, chain)``: a description of the source, for the
+        log and the errors, and its text, stripped; ``(None, "")`` when
+        no source is set
+    :rtype: tuple
+    :raise IncubacloudCryptoError: when the source cannot be read
+    """
+    if _KEY_ENV_VAR in os.environ:
+        return (
+            f"the {_KEY_ENV_VAR} environment variable",
+            os.environ[_KEY_ENV_VAR].strip(),
+        )
+    path = os.environ.get(_KEY_FILE_ENV_VAR)
+    if path is not None:
+        source = f"the file {path} named by {_KEY_FILE_ENV_VAR}"
+        return source, _read_key_file(path, source).strip()
+    conf = _odoo_conf_path()
+    section = _read_conf_section(conf)
+    if _CONF_KEY_FILE in section:
+        path = section[_CONF_KEY_FILE]
+        source = (
+            f"the file {path} named by [{_CONF_SECTION}] {_CONF_KEY_FILE} "
+            f"in {conf}"
+        )
+        return source, _read_key_file(path, source).strip()
+    if _CONF_KEY in section:
+        return (
+            f"[{_CONF_SECTION}] {_CONF_KEY} in {conf}",
+            section[_CONF_KEY].strip(),
+        )
+    return None, ""
+
+
 def _parse_keys(raw):
-    """Split the env var on ',' and strip blanks. Returns a list of
+    """Split the key chain on ',' and strip blanks. Returns a list of
     non-empty byte strings (Fernet accepts bytes)."""
     return [k.strip().encode() for k in raw.split(',') if k.strip()]
 
 
 def _get_fernet(env=None):
-    """Return a MultiFernet initialised from the env var, or None.
+    """Return a MultiFernet initialised from the key chain, or None.
+
+    The chain comes from the first source set (``_read_secret_key``);
+    which one, and how many keys it holds, is logged once, the key
+    never.
 
     Single-key config returns a MultiFernet with one Fernet — encrypt
     and decrypt behave identically to a bare Fernet, so the rest of
@@ -89,36 +217,43 @@ def _get_fernet(env=None):
         )
         return None
 
-    raw_key = os.environ.get(_KEY_ENV_VAR, "").strip()
+    try:
+        source, raw_key = _read_secret_key()
+    except IncubacloudCryptoError as e:
+        _logger.error("%s", e)
+        return None
+    if source is None:
+        _logger.error("%s", _key_error_message())
+        return None
     if not raw_key:
-        _logger.error(
-            "%s environment variable is not set.", _KEY_ENV_VAR,
-        )
+        _logger.error("The encryption key in %s is empty.", source)
         return None
 
     keys = _parse_keys(raw_key)
     if not keys:
         _logger.error(
-            "%s is set but contains no usable keys.", _KEY_ENV_VAR,
+            "The encryption key in %s contains no usable keys.", source,
         )
         return None
 
     try:
         fernets = [Fernet(k) for k in keys]
-    except Exception as e:
-        _logger.error("Invalid %s: %s", _KEY_ENV_VAR, e)
+    except Exception as e:  # noqa: BLE001 — Fernet's message holds no key
+        _logger.error("Invalid encryption key in %s: %s", source, e)
         _fernet = None
         return None
 
     # MultiFernet.encrypt always uses fernets[0], so the operator
-    # controls which key is primary via the order in the env var.
+    # controls which key is primary via the order in the chain.
     _fernet = MultiFernet(fernets)
     if len(fernets) > 1:
         _logger.info(
-            "%s has %d keys loaded (rotation in progress); new values "
-            "will be encrypted with the first key.",
-            _KEY_ENV_VAR, len(fernets),
+            "Encryption key read from %s: %d keys (rotation in "
+            "progress); new values will be encrypted with the first key.",
+            source, len(fernets),
         )
+    else:
+        _logger.info("Encryption key read from %s.", source)
     return _fernet
 
 

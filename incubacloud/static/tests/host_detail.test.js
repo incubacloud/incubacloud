@@ -960,3 +960,65 @@ describe("HostDetail — save sends the key the person chose", () => {
         expect(h.state.keyShared).toBe(false);
     });
 });
+
+describe("HostDetail — login types without sshpass", () => {
+    const options = Object.getOwnPropertyDescriptor(
+        HostDetail.prototype, "loginTypeOptions",
+    ).get;
+
+    beforeEach(() => {
+        allowTranslations();
+    });
+
+    /**
+     * A stand-in with what the login type selector reads.
+     *
+     * @param {boolean} available Whether the panel's server has sshpass.
+     * @param {string} [saved] The login type of the saved host, if any.
+     * @returns {object}
+     */
+    function stand(available, saved) {
+        return {
+            isNew: !saved,
+            state: {
+                passwordLoginAvailable: available,
+                host: saved ? { login_type: saved } : { name: "New Host" },
+            },
+        };
+    }
+
+    const values = (ctx) => options.call(ctx).map((option) => option.value);
+
+    test("with sshpass, both login types are offered", () => {
+        expect(values(stand(true))).toEqual(["ssh_key", "password"]);
+    });
+
+    test("without sshpass, a new host is offered the key only", () => {
+        expect(values(stand(false))).toEqual(["ssh_key"]);
+    });
+
+    test("without sshpass, a saved key host is offered the key only", () => {
+        expect(values(stand(false, "ssh_key"))).toEqual(["ssh_key"]);
+    });
+
+    test("a host that already logs in with a password keeps its option", () => {
+        expect(values(stand(false, "password"))).toEqual(["ssh_key", "password"]);
+    });
+
+    test("the new-host form learns it from the defaults", async () => {
+        patchWithCleanup(rpc, {
+            _rpc: (url) => Promise.resolve(
+                url === "/cloud/host_defaults"
+                    ? { password_login_available: false }
+                    : { tags: [] },
+            ),
+        });
+        const ctx = {
+            state: { form: {}, passwordLoginAvailable: true, allTags: [] },
+            _snapshotForm: () => {},
+            generateKey: () => {},
+        };
+        await HostDetail.prototype._loadDefaults.call(ctx);
+        expect(ctx.state.passwordLoginAvailable).toBe(false);
+    });
+});

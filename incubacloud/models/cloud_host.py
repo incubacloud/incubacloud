@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import functools
 import hashlib
 import ipaddress
 import json
@@ -7,6 +8,7 @@ import logging
 import re
 import secrets
 import shlex
+import shutil
 from contextlib import asynccontextmanager
 
 import asyncssh
@@ -212,6 +214,19 @@ def _ssh_address(raw):
     if getattr(address, "scope_id", None):
         return None
     return address
+
+
+@functools.cache
+def _sshpass_available():
+    """Return whether ``sshpass`` is on this server's ``PATH``.
+
+    Ansible needs it to log in to a host with a password; the panel's
+    own SSH (asyncssh) does not. Looked up once per process: installing
+    it takes a restart to be seen.
+
+    :rtype: bool
+    """
+    return shutil.which("sshpass") is not None
 
 
 class CloudHost(models.Model):
@@ -2225,10 +2240,45 @@ class CloudHost(models.Model):
         "traefik_yml": "traefik.yml",
     }
 
+    @api.model
+    def _password_login_available(self):
+        """Return whether hosts may log in with a password on this panel.
+
+        Only with ``sshpass`` on the panel's server (Ansible logs in to a
+        password host through it); without it, Odoo.sh among others,
+        hosts are added with an SSH key.
+
+        :rtype: bool
+        """
+        return _sshpass_available()
+
+    def _check_password_login(self, vals):
+        """Refuse to give a host a password login the panel cannot use.
+
+        Run by ``create`` (on an empty recordset) and ``write``. A host
+        that already logs in with a password keeps it: the form sends
+        the login type back on every save.
+
+        :param dict vals: the values being written
+        :raise ValidationError: when *vals* switch a host to a password
+            and the panel's server has no ``sshpass``
+        """
+        if vals.get("login_type") != "password":
+            return
+        if self and all(host.login_type == "password" for host in self):
+            return
+        if not self._password_login_available():
+            raise ValidationError(_(
+                "This panel's server has no sshpass, which Ansible needs to "
+                "log in to a host with a password. Add the host with an SSH "
+                "key."
+            ))
+
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_manage_hosts()
         for vals in vals_list:
+            self.browse()._check_password_login(vals)
             for field in self._PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
@@ -2348,6 +2398,7 @@ class CloudHost(models.Model):
 
     def write(self, vals):
         self._check_can_manage_hosts()
+        self._check_password_login(vals)
         retiring = []
         if vals.get("active") is False:
             self._check_no_instances()

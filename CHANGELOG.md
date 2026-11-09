@@ -9,7 +9,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.221] — 2026-11-09
 
 The update rewrites the record rules of `cloud.job.log.chunk` and adds two
-rules on `ir.attachment`. Nothing else changes in the database.
+rules on `ir.attachment`. Nothing else changes in the database. A panel
+whose server has no `sshpass` now refuses to create a host that logs in
+with a password, or to switch one to it; hosts that already do are left as
+they are.
+
+### Added
+
+- **The encryption key can come from a file or from Odoo's configuration
+  file.** The panel reads the first of these that is set:
+  `INCUBACLOUD_SECRET_KEY` in the environment, as before; the file
+  `INCUBACLOUD_SECRET_KEY_FILE` names (a Docker secret, a systemd
+  credential); the file `secret_key_file` names, or else `secret_key`, in an
+  `[incubacloud]` section of odoo.conf, where Odoo.sh lets a key be set. Each
+  takes the comma-separated list a key rotation uses. A place that is set but
+  empty, unreadable or holding something other than a key fails, and the
+  next one is not tried. At start the log says which place the key was read
+  from, never the key. INSTALL.md lists the places and how safe a key in
+  odoo.conf is.
+
+### Changed
+
+- **Without `sshpass`, hosts log in with a key.** Ansible needs `sshpass` to
+  log in to a host with a password. On a panel whose server has none, the
+  host form offers "SSH Key" only and says why, and the panel refuses a
+  password host from the form, the API or the MCP tools with a message that
+  names `sshpass`. A host that already logs in with a password keeps the
+  option in its form. Spanish translation included.
 
 ### Security
 
