@@ -84,6 +84,18 @@ _ORDER_RACE_HEADER = (
     'b"UPDATE sale_order SET state = \'sale\' WHERE id IN (7)"'
 )
 
+#: A browser with developer tools open asking for a sourcemap Odoo never
+#: generated, as it was logged in production (9-nov-2026).
+_SOURCEMAP_HEADER = (
+    "2026-11-09 06:12:41,120 37 ERROR prod "
+    "odoo.addons.web.controllers.binary: .map should have been generated "
+    "through debug assets, (version 22e58d5 most likely outdated)"
+)
+_BINARY_OTHER_HEADER = (
+    "2026-11-09 06:13:00,000 37 ERROR prod "
+    "odoo.addons.web.controllers.binary: Cannot read attachment 42"
+)
+
 _TEMPLATE = (
     pathlib.Path(__file__).resolve().parent.parent
     / "static" / "src" / "components" / "alert_history" / "alert_history.xml"
@@ -283,6 +295,20 @@ class TestErrorLogContext(TransactionCase):
             "ERROR: value too long for type character varying(32)",
         ]))
         self.assertEqual(len(groups), 1)
+
+    def test_a_sourcemap_request_is_not_an_incident(self):
+        """A browser with developer tools open (or a crawler) asks for the
+        ``.map`` of an asset Odoo only generates in debug mode: logged as
+        ERROR, but nothing the instance or its owner did wrong."""
+        self.assertFalse(self._alert_after_cycle(_SOURCEMAP_HEADER))
+
+    def test_another_error_of_the_binary_controller_still_alerts(self):
+        """Only the sourcemap message is known noise, not its logger."""
+        alert = self._alert_after_cycle(
+            "\n".join([_SOURCEMAP_HEADER, _BINARY_OTHER_HEADER]),
+        )
+        self.assertEqual(len(alert), 1)
+        self.assertIn("Cannot read attachment", alert.payload[0]["samples"][0])
 
     def _alert_after_cycle(self, raw):
         """Run one health cycle whose log grep returns *raw*.
