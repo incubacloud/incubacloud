@@ -843,6 +843,9 @@ class CrudMixin:
             'port': host.port,
             'user': host.user,
             'login_type': host.login_type,
+            # Without sshpass on the panel's server the form offers the key
+            # only (``cloud.host._password_login_available``).
+            'password_login_available': host._password_login_available(),
             # Existence only, read elevated: the credentials are for system
             # administrators.
             'has_password': _has_encrypted(host.sudo(), 'password'),
@@ -964,6 +967,7 @@ class CrudMixin:
             'traefik_config_yml': defaults.get('traefik_config_yml', ''),
             'traefik_inverseproxy_yaml': defaults.get('traefik_inverseproxy_yaml', ''),
             'traefik_yml': defaults.get('traefik_yml', ''),
+            'password_login_available': Host._password_login_available(),
         }
 
     @http.route(['/cloud/generate_host_key'], type='jsonrpc', auth='user')

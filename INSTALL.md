@@ -30,9 +30,9 @@ only your office network reaches has a page of its own there:
 | OCA [`queue_job`](https://github.com/OCA/queue), release 19.0.2.1.6 (commit `da2664795eb525698f93dfdd63f6ba5c4c9fccba` of branch 19.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
 | The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents). |
 | The Python packages of OCA/queue's `requirements.txt` | `openupgradelib` and `requests`, which `queue_job` declares in its manifest: without them it does not install. |
-| OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key. |
+| OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key: without it, the panel takes hosts with an SSH key only. |
 | A UTF-8 locale for the Odoo process | Ansible refuses to start without one (`Ansible could not initialize the preferred locale`). |
-| `INCUBACLOUD_SECRET_KEY` in Odoo's environment | The key every stored secret is encrypted with: see [The encryption key](#the-encryption-key). |
+| The encryption key, in Odoo's environment or its configuration file | The key every stored secret is encrypted with: see [The encryption key](#the-encryption-key). |
 
 ### The modules
 
@@ -98,7 +98,7 @@ few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
    of these packages from Ubuntu, which `pip` cannot uninstall, and the pinned
    `cryptography` and `pyOpenSSL` must take precedence over Ubuntu's.
 
-3. **Set the encryption key** in Odoo's environment ([below](#the-encryption-key)).
+3. **Set the encryption key** ([below](#the-encryption-key)).
 
 4. **Apply [the Odoo settings](#the-odoo-settings-that-matter)** and restart Odoo.
 
@@ -114,16 +114,53 @@ few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
 
 ### The encryption key
 
-`INCUBACLOUD_SECRET_KEY` holds a Fernet key. Generate one with the
-`cryptography` you just installed:
+The panel encrypts the secrets it stores with a Fernet key. Generate one with
+the `cryptography` you just installed:
 
 ```bash
 python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
-Give it to every Odoo process that loads the panel, the job runner included.
+Give it to every Odoo process that loads the panel, the job runner included,
+in one of these places. The panel reads the first one that is set and ignores
+the others:
 
-> **Keep a copy of `INCUBACLOUD_SECRET_KEY` somewhere else.** Every secret the
+1. The environment variable `INCUBACLOUD_SECRET_KEY`.
+2. A file holding the key, named by the environment variable
+   `INCUBACLOUD_SECRET_KEY_FILE`: a Docker secret or a systemd credential, for
+   example.
+3. A file holding the key, named in Odoo's configuration file, in a section of
+   its own after `[options]`:
+
+   ```ini
+   [incubacloud]
+   secret_key_file = /etc/odoo/incubacloud.key
+   ```
+
+4. The key itself, in that same section:
+
+   ```ini
+   [incubacloud]
+   secret_key = <the key>
+   ```
+
+Each place takes a comma-separated list of keys when you change the key: the
+new one first, then the old one
+([RB-01](docs/runbooks/RB-01-rotate-secret-key.md)). A place that is set but
+empty, that cannot be read or that holds something other than a key is not
+skipped: the panel stops there and its log says which place failed. At start,
+the log names the place the key was read from, never the key.
+
+A key in Odoo's configuration file is only as safe as that file: whoever can
+read it, or can get into the server, has the key, and with the database every
+secret it opens. Keep the file readable by Odoo's user only. On Odoo.sh the
+configuration file is copied to the staging branches with the database. The
+copy is neutralized, and the panel's neutralization deletes every stored
+secret (the hosts' SSH keys and passwords, tokens, the backup destinations'
+keys), archives the hosts and cancels the pending jobs: the key in a staging
+branch has nothing to open and no host to reach.
+
+> **Keep a copy of the encryption key somewhere else.** Every secret the
 > panel stores is encrypted with it: the hosts' SSH keys and passwords, GitHub
 > tokens, the backup destinations' keys and passphrases. A copy of the panel's
 > database without this key opens none of them. To change it later, follow
@@ -131,9 +168,9 @@ Give it to every Odoo process that loads the panel, the job runner included.
 
 ### Verify it worked
 
-- Odoo's log shows `queue job runner ready for db <panel database>`, and no line
-  saying `INCUBACLOUD_SECRET_KEY is missing or invalid` or naming a `limit_`
-  setting.
+- Odoo's log shows `queue job runner ready for db <panel database>` and
+  `Encryption key read from` the place you chose, and no line saying
+  `encryption key is missing or invalid` or naming a `limit_` setting.
 - `/cloud` opens on the empty projects list.
 
 Next: [connect a host](https://docs.incubacloud.io/hosts/connect/).
@@ -230,7 +267,7 @@ visitor's address corrected:
 
 A single Odoo, configured as above, runs the panel. With more jobs or more
 people, we recommend a second Odoo server for the jobs: the same code, the same
-database, the same data directory and the same `INCUBACLOUD_SECRET_KEY`, with
+database, the same data directory and the same encryption key, with
 different command-line options.
 
 - **The web server**, for people: `--load=web --max-cron-threads=0`, so it runs
@@ -263,8 +300,8 @@ would take every web worker.
 ### Back up the panel
 
 The instances' backups go to the destinations you register in the panel. The
-panel's own database and data directory need theirs too, with
-`INCUBACLOUD_SECRET_KEY` kept apart from those copies: without it the restored
+panel's own database and data directory need theirs too, with the encryption
+key kept apart from those copies: without it the restored
 panel opens none of its secrets. Restoring the panel:
 [RB-02](docs/runbooks/RB-02-restore-master-db.md).
 

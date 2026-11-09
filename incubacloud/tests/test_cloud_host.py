@@ -1965,3 +1965,91 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         details = self._audit_details(host, "SSH host key refused")
         self.assertEqual(len(details), 1)
         self.assertIn("SHA256:not-the-presented-one", details[0])
+
+
+class TestPasswordLoginNeedsSshpass(TestSaveHostCertificateRoute):
+    """Without ``sshpass`` on the panel's server, hosts log in with a key.
+
+    Ansible (setup, hardening, probes) authenticates to a password host
+    through ``sshpass``; a panel without it, Odoo.sh among them, cannot
+    work such a host. The model refuses to create one or to switch a host
+    to a password, whatever the caller (form, API, MCP), and the host
+    form is told so it offers the key only. A host that already logs in
+    with a password is left as it is. The detector is mocked: the
+    outcome must not depend on the machine running the tests.
+    """
+
+    def _sshpass(self, available):
+        """Make the panel's server have ``sshpass`` or not, for this test.
+
+        :param bool available: what the detector answers
+        :return: the mocked detector, whose answer a test may change
+        """
+        from odoo.addons.incubacloud.models import cloud_host
+
+        detector = patch.object(
+            cloud_host, "_sshpass_available", autospec=True,
+            return_value=available,
+        )
+        mocked = detector.start()
+        self.addCleanup(detector.stop)
+        return mocked
+
+    def _create(self, **vals):
+        return self.env["cloud.host"].create({
+            "name": "Password host",
+            "ip_address": "10.0.0.98",
+            "user": "root",
+            "wildcard_domain": "pw.example.com",
+        } | vals)
+
+    def test_create_with_a_password_is_refused_without_sshpass(self):
+        self._sshpass(False)
+        with self.assertRaisesRegex(ValidationError, "sshpass"):
+            self._create(login_type="password", password="secret-pw")
+
+    def test_create_with_a_key_works_without_sshpass(self):
+        self._sshpass(False)
+        self.assertEqual(self._create(login_type="ssh_key").login_type, "ssh_key")
+
+    def test_create_with_a_password_works_with_sshpass(self):
+        self._sshpass(True)
+        host = self._create(login_type="password", password="secret-pw")
+        self.assertEqual(host.login_type, "password")
+
+    def test_switching_to_a_password_is_refused_without_sshpass(self):
+        self._sshpass(False)
+        with self.assertRaisesRegex(ValidationError, "sshpass"):
+            self.host.write({"login_type": "password", "password": "pw"})
+        self.assertEqual(self.host.login_type, "ssh_key")
+
+    def test_an_existing_password_host_keeps_working(self):
+        """Saved again from the form (which sends its login type) or edited."""
+        self.host.login_type = "password"
+        self._sshpass(False)
+        self.host.write({"login_type": "password", "port": 2222})
+        self.assertEqual(self.host.port, 2222)
+
+    def test_the_create_route_refuses_it_too(self):
+        self._sshpass(False)
+        with self.assertRaisesRegex(ValidationError, "sshpass"):
+            self._call("cloud_create_host", vals={
+                "name": "Route host", "ip_address": "10.0.0.97",
+                "user": "root", "login_type": "password",
+                "password": "secret-pw",
+            })
+
+    def test_the_form_is_told_whether_passwords_are_available(self):
+        detector = self._sshpass(False)
+        for available in (False, True):
+            detector.return_value = available
+            self.assertIs(
+                self._call("cloud_host_defaults")["password_login_available"],
+                available,
+            )
+            self.assertIs(
+                self._call("cloud_get_host", host_id=self.host.id)[
+                    "password_login_available"
+                ],
+                available,
+            )

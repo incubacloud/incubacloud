@@ -126,6 +126,9 @@ export class HostDetail extends Component {
             // then on leaving without creating the host would lose a key
             // that may already be on a server.
             keyShared:                 false,
+            // Whether the panel's server has sshpass: without it hosts log
+            // in with a key only (the server says so with the host's data).
+            passwordLoginAvailable:    true,
             trusting_host_key:         false,
             // Code of the pluggable action being enqueued, "" when idle.
             actionBusy: "",
@@ -279,6 +282,7 @@ export class HostDetail extends Component {
                 traefik_inverseproxy_yaml: defaults.traefik_inverseproxy_yaml || "",
                 traefik_yml: defaults.traefik_yml || "",
             });
+            this.state.passwordLoginAvailable = defaults.password_login_available !== false;
         } catch (_e) { console.debug("Host defaults fetch skipped:", _e); }
         try {
             const tagsRes = await rpc("/cloud/get_tags", { scope: "host" });
@@ -313,6 +317,7 @@ export class HostDetail extends Component {
         try {
             const host = await rpc("/cloud/get_host", { host_id: this.props.host_id });
             this.state.host = host;
+            this.state.passwordLoginAvailable     = host.password_login_available !== false;
             this.state.has_password               = host.has_password || false;
             this.state.has_key_file               = host.has_key_file || false;
             this.state.has_known_hosts_key        = host.has_known_hosts_key || false;
@@ -481,6 +486,23 @@ export class HostDetail extends Component {
     onPasswordChange(field, value) {
         this.state.form[field] = value;
 
+    }
+
+    /**
+     * The login types the form offers.
+     *
+     * Without sshpass on the panel's server, the key only: Ansible needs
+     * sshpass to log in with a password. A saved host that already logs
+     * in with one keeps that option, so its form still shows it.
+     *
+     * @returns {{value: string, label: string}[]}
+     */
+    get loginTypeOptions() {
+        const options = [{ value: "ssh_key", label: _t("SSH Key") }];
+        if (this.state.passwordLoginAvailable || this.state.host?.login_type === "password") {
+            options.push({ value: "password", label: _t("Password") });
+        }
+        return options;
     }
 
     /**

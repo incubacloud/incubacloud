@@ -182,11 +182,13 @@ jobs:
 
       # OpenSSH's own tools: the host-key tests check the panel's
       # fingerprint and known_hosts entry against what ssh-keygen says,
-      # and fail without it rather than skip (the image has none).
-      - name: Install OpenSSH's client (ssh-keygen)
+      # and fail without it rather than skip (the image has none). And
+      # sshpass, as the panel's image has it: without it the panel
+      # refuses hosts that log in with a password, which many tests make.
+      - name: Install OpenSSH's client (ssh-keygen) and sshpass
         run: |
           apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssh-client
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssh-client sshpass
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.

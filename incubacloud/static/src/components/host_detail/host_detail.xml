@@ -593,9 +593,12 @@
                                 <div class="rl-frow">
                                     <label>Login Type <span class="rl-req">*</span></label>
                                     <RlSelect value="state.form.login_type"
-                                              options="[{value:'ssh_key',label:'SSH Key'},{value:'password',label:'Password'}]"
+                                              options="loginTypeOptions"
                                               onChange="(value) => this.onSelect('login_type', { target: { value: value } })"
                                               ariaLabel="'Login type'"/>
+                                    <span class="ic-form-note" t-if="!state.passwordLoginAvailable">
+                                        This panel's server has no sshpass, so hosts are added with an SSH key.
+                                    </span>
                                 </div>
                                 <t t-if="state.form.login_type === 'password'">
                                     <div class="rl-frow rl-full">

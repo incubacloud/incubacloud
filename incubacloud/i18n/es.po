@@ -14685,6 +14685,25 @@ msgstr ""
 "%(fam_host)s, así que permitir esa dirección no le daría acceso."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"This panel's server has no sshpass, so hosts are added with an SSH key."
+msgstr ""
+"El servidor del panel no tiene sshpass, así que los servidores se dan de "
+"alta con una clave SSH."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"This panel's server has no sshpass, which Ansible needs to log in to a host "
+"with a password. Add the host with an SSH key."
+msgstr ""
+"El servidor del panel no tiene sshpass, que Ansible necesita para acceder "
+"con contraseña a un servidor. Dé de alta el servidor con una clave SSH."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid ""
