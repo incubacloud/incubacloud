@@ -418,17 +418,16 @@ def _clean_line_outcome(existing, incoming, entry, repo_key):
         provenance mode
     :return: ``'update'`` when the incoming line replaces the stored one
         (the repo owns the line, or its line is the stricter of two that
-        agree and the stored line is a bare name or a repo's), ``'kept'``
+        agree and the stored line is a bare name), ``'kept'``
         when a person already turned the incoming line down,
         ``'satisfied'`` when the stored line already meets it, or
         ``None`` for a conflict
     :rtype: str or None
 
-    A version or a range the operator wrote (no entry, or one with an
-    empty ``repo``) is not replaced by a stricter pin: the pin would
-    make the line the repo's, and its next bump past the operator's
-    range (``foo<3`` replaced by ``foo==2.9``, then ``foo==3.0``) would
-    go in without asking.
+    A version or a range someone else wrote (the operator, or another
+    repo) is not replaced by a stricter pin: the pin would make the line
+    the repo's, and its next bump past that range (``foo<3`` replaced by
+    ``foo==2.9``, then ``foo==3.0``) would go in without asking.
     """
     entry = entry or {}
     if repo_key and entry.get('repo') == repo_key:
@@ -438,8 +437,7 @@ def _clean_line_outcome(existing, incoming, entry, repo_key):
     relation = pip_spec_relation(existing, incoming)
     if relation == 'existing':
         return 'satisfied'
-    if relation == 'incoming' and (
-            entry.get('repo') or _names_no_version(existing)):
+    if relation == 'incoming' and _names_no_version(existing):
         return 'update'
     return None
 
@@ -482,8 +480,8 @@ def merge_pip_requirements(
     cannot both hold (:func:`pip_spec_relation`): a line the stored one
     already meets is skipped (``satisfied``), and a stricter one that
     meets the stored line replaces it (``updated``), as pip would have
-    to satisfy both anyway, when the stored line is a bare name or a
-    repo's; a version or range the operator wrote is asked about. A
+    to satisfy both anyway, when the stored line is a bare name; a
+    version or range the operator or another repo wrote is asked about. A
     stored line the text no longer holds as one line is asked about
     too, rather than reported updated. A line a person already turned
     down when resolving a conflict on that package (the entry's
@@ -608,9 +606,16 @@ def merge_pip_requirements(
                 f'{raw}\n'
                 f'>>>>>>> {source_label}'
             )
-            new_text, _found = _replace_req_line(
+            new_text, found = _replace_req_line(
                 new_text, name, existing_spec, new_block,
             )
+            if not found:
+                # Still a conflict the job stops on, but with no markers
+                # for the dialog to resolve: worth a trace.
+                _logger.warning(
+                    "pip merge: no line reads as %r for %s's conflict "
+                    "markers", existing_spec, name,
+                )
             pkg_map[name] = {
                 'type': 'conflict',
                 'spec': existing_spec,
@@ -668,9 +673,15 @@ def prune_pip_sources(text, sources):
     becomes theirs again, and the next re-sync must treat an upstream
     change to it as a conflict rather than overwrite the edit.
 
+    A package still in its conflict markers, with its recorded spec as
+    the stored side, keeps its entry: an edit of another line answered
+    nothing about it, and dropping the entry lost its owner and the
+    lines turned down before (9-nov-2026).
+
     :param text: the current ``pip_dependencies`` content
     :param sources: the provenance map to filter
-    :returns: a new map holding only entries still backed by a clean line
+    :returns: a new map holding only entries still backed by a clean
+        line, or by the stored side of the package's conflict block
     """
     if not sources:
         return {}
@@ -678,8 +689,8 @@ def prune_pip_sources(text, sources):
     return {
         name: entry
         for name, entry in sources.items()
-        if (pkg_map.get(name, {}).get('type') == 'clean'
-            and pkg_map[name]['spec'] == (entry or {}).get('spec'))
+        if name in pkg_map
+        and pkg_map[name]['spec'] == (entry or {}).get('spec')
     }
 
 
@@ -810,7 +821,9 @@ def hand_resolved_pip_sources(old_text, new_text, repos, sources):
     *new_text*, leaving one of its two lines, is answered as the dialog
     would answer it (:func:`resolved_pip_source`): the other line is
     turned down and not asked again at the next re-sync. A third line
-    typed instead is no answer to remember.
+    typed instead is no answer to remember, nor is an edit that leaves
+    both lines (only the markers deleted) or any piece of a marker:
+    the person has not chosen yet.
 
     :param str old_text: ``pip_dependencies`` before the edit
     :param str new_text: ``pip_dependencies`` after it
@@ -822,6 +835,15 @@ def hand_resolved_pip_sources(old_text, new_text, repos, sources):
     answered = dict(sources or {})
     if not has_pip_conflicts(old_text):
         return answered
+    outside_blocks = CONFLICT_RE.sub('', new_text or '').split('\n')
+    if any(line.startswith(('<<<<<<<', '=======', '>>>>>>>'))
+           for line in outside_blocks):
+        return answered
+    lines_of = {}
+    for line in outside_blocks:
+        parsed = _parse_req_line(line)
+        if parsed:
+            lines_of[parsed[0]] = lines_of.get(parsed[0], 0) + 1
     pkg_map = _build_pkg_map(new_text)
     for match in CONFLICT_RE.finditer(old_text):
         parsed = _parse_req_line(match.group('existing_line'))
@@ -829,7 +851,7 @@ def hand_resolved_pip_sources(old_text, new_text, repos, sources):
             continue
         name = parsed[0]
         line = pkg_map.get(name) or {}
-        if line.get('type') != 'clean':
+        if line.get('type') != 'clean' or lines_of.get(name) != 1:
             continue
         sides = (
             match.group('existing_line').strip(),
