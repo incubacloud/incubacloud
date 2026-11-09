@@ -6,6 +6,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.222] — 2026-11-09
+
+Hardening. The update changes nothing in the database: the new checks apply
+to values written from this version on. Publish with `incubacloud_pitr`
+1.0.12, whose restore script the hosts receive with the next restore.
+
+### Security
+
+- **An instance's mail relay fields hold what they are for.** The relay
+  host is a hostname or an IPv4 address, the port a TCP port, and the relay
+  user and the admin email one line of text without double quotes,
+  backslashes or control characters; anything else is refused when it is
+  saved. The copier answers escape the values the template writes into the
+  compose files, so a value saved before this version renders as itself.
+  Spanish translation included.
+- **A project's name is plain text, and reaches the observability agents as
+  data.** A name with a template opener (`{{`, `{%`, `{#`), a line break or
+  another control character is refused. The labels people name
+  (project and tenant) reach the `install_observability` playbook marked as
+  not templates, and it writes them into the host's scrape configuration
+  through `to_json`. Spanish translation included.
+- **Rows stay within their writer's projects.** An instance moved to another
+  project, and a repository, domain or egress whitelist row moved to another
+  instance (or a project's repository row to another project), is checked
+  against the record rules where it lands; an instance created is checked
+  against them too, although it is created with elevated rights. A Project
+  Manager or above, whom the rules give every project, is not limited.
+- **A restore to a moment runs only the panel's commands.** The recovery's
+  database server takes every setting that runs a program or loads a
+  library from its command line, over the restored copy's
+  `postgresql.auto.conf`: the restore and archive commands are the panel's,
+  the other commands, the preload libraries, JIT and (from PostgreSQL 17)
+  event triggers none. The restore's connections to it set the same at
+  login, over a role's or a database's own settings. `incubacloud_pitr`
+  1.0.12.
+
 ## [1.0.221] — 2026-11-09
 
 GitLab: deploy from gitlab.com or a GitLab server of one's own, and a push
