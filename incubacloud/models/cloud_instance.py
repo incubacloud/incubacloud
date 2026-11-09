@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import re
+import unicodedata
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -94,6 +95,46 @@ _REMOTE_DIR_RE = re.compile(r"^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$")
 # must keep them free of any character bash or psql could misinterpret.
 # 1-63 chars, lowercase letter or underscore start, then alnum + '_'.
 _PG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+# The mail relay's host: an RFC 1123 hostname or an IPv4 address, either
+# case. The copier template renders it inside double-quoted YAML scalars
+# of the compose files, so it carries no quote, space, colon or brace.
+_SMTP_HOST_RE = re.compile(
+    r"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+)
+
+
+def _yaml_text_unsafe(value):
+    """Whether *value* holds a character a one-line YAML scalar cannot.
+
+    A double quote, a backslash, or any Unicode control, format or
+    separator character other than the plain space: YAML reads U+0085,
+    U+2028 and U+2029 as line breaks too.
+
+    :param str value: the text to check.
+    :returns: True when one such character is in it.
+    :rtype: bool
+    """
+    return any(
+        ch in '"\\'
+        or (ch != " " and unicodedata.category(ch)[0] in "CZ")
+        for ch in value
+    )
+
+
+def _yaml_dq_escape(value):
+    """Escape *value* for the inside of a double-quoted YAML scalar.
+
+    JSON's string escapes are YAML's: the result, put between the
+    template's double quotes, reads back as *value* itself. Text with
+    nothing to escape comes back unchanged.
+
+    :param str value: the text the template renders.
+    :returns: the escaped text, without the surrounding quotes.
+    :rtype: str
+    """
+    return json.dumps(value or "", ensure_ascii=False)[1:-1]
 
 #: What only the platform writes on an instance (``_check_guarded_vals``).
 #: A move's markers say which jobs a rollback and the watchdog cancel and
@@ -841,18 +882,25 @@ class CloudInstance(models.Model):
             "postgres_password": inst.postgres_password or "",
             "domains_prod": domains_prod,
             "domains_test": domains_test,
-            "smtp_relay_host": inst.smtp_relay_host or "",
+            # The template renders the host, the user, the default sender
+            # and the canonical domain inside double-quoted YAML scalars:
+            # escaped for them, so a row stored before the model checked
+            # these fields still renders as its own text. A valid value
+            # has nothing to escape and goes out as it is.
+            "smtp_relay_host": _yaml_dq_escape(inst.smtp_relay_host),
             "smtp_relay_port": inst.smtp_relay_port or 587,
             "smtp_relay_version": "latest",
-            "smtp_relay_user": inst.smtp_relay_user or "",
+            "smtp_relay_user": _yaml_dq_escape(inst.smtp_relay_user),
             "smtp_relay_password": inst.smtp_relay_password or "",
-            "smtp_default_from": (
-                inst.smtp_relay_user or inst.odoo_admin_email or ""
+            "smtp_default_from": _yaml_dq_escape(
+                inst.smtp_relay_user or inst.odoo_admin_email
             ),
             # canonical_default = sending domain (from relay user email
             # if set, else strip first subdomain off relay host, e.g.
             # mail.x.com → x.com)
-            "smtp_canonical_default": _smtp_canonical_domain(inst),
+            "smtp_canonical_default": _yaml_dq_escape(
+                _smtp_canonical_domain(inst)
+            ),
             "smtp_canonical_domains": [],
             # Backup defaults (always empty/disabled; overridden below
             # when a backup backend is configured and enabled).
@@ -4557,6 +4605,48 @@ class CloudInstance(models.Model):
                             value=v,
                         )
                     )
+
+    @api.constrains(
+        "smtp_relay_host", "smtp_relay_port", "smtp_relay_user",
+        "odoo_admin_email",
+    )
+    def _check_smtp_relay_fields(self):
+        """Keep the mail relay fields to the grammar of what they hold.
+
+        The template renders the relay host, the relay user and the
+        default sender (the relay user, or else the admin email) inside
+        double-quoted scalars of the compose files: the host is a
+        hostname or an IPv4 address, the port a TCP port (0 is "the
+        default"), and the user and the admin email one line of text
+        without a double quote or a backslash.
+
+        :raises ValidationError: when one of them is outside it.
+        """
+        for inst in self:
+            host = inst.smtp_relay_host
+            if host and (len(host) > 253 or not _SMTP_HOST_RE.fullmatch(host)):
+                raise ValidationError(_(
+                    "SMTP host '%(host)s' is invalid. Use a hostname such as "
+                    "smtp.example.com or an IPv4 address, without a port.",
+                    host=host,
+                ))
+            if not 0 <= (inst.smtp_relay_port or 0) <= 65535:
+                raise ValidationError(_(
+                    "SMTP port %(port)s is invalid. Use a port from 1 to 65535.",
+                    port=inst.smtp_relay_port,
+                ))
+            for fname, label in (
+                ("smtp_relay_user", _("SMTP user")),
+                ("odoo_admin_email", _("Admin email")),
+            ):
+                value = inst[fname]
+                if value and (len(value) > 254 or _yaml_text_unsafe(value)):
+                    raise ValidationError(_(
+                        "%(label)s is invalid. Use one line of at most 254 "
+                        "characters, without double quotes, backslashes, "
+                        "tabs or other control characters.",
+                        label=label,
+                    ))
 
     @api.constrains("odoo_version")
     def _check_series_may_be_chosen(self):
