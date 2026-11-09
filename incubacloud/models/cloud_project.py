@@ -1,5 +1,6 @@
 import itertools
 import re
+import unicodedata
 
 from psycopg2 import IntegrityError
 
@@ -23,6 +24,9 @@ def _slugify(name):
 # sobrescribe el valor computed.
 _REMOTE_FOLDER_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 _REMOTE_FOLDER_MAX = 63
+#: What opens a Jinja expression, statement or comment: a project's name
+#: holds none of them (``_check_name_is_plain_text``).
+_TEMPLATE_OPENERS = ('{{', '{%', '{#')
 #: Name of the unique index behind ``_remote_folder_uniq``.
 _REMOTE_FOLDER_INDEX = 'cloud_project_remote_folder_uniq'
 
@@ -223,6 +227,29 @@ class CloudProject(models.Model):
                     "Odoo %(version)s is not offered yet.",
                     version=project.odoo_version,
                 ) + " " + offered)
+
+    @api.constrains('name')
+    def _check_name_is_plain_text(self):
+        """Keep a project's name to one line of plain text.
+
+        The name labels its instances' metrics in the host's scrape
+        configuration, which a playbook writes: no template opener
+        (``{{``, ``{%``, ``{#``), and no control, format or line-separator
+        character besides the space. Quotes and backslashes are text: the
+        playbook writes the label through ``to_json``.
+
+        :raises ValidationError: when the name holds one of them.
+        """
+        for project in self:
+            name = project.name or ''
+            if any(opener in name for opener in _TEMPLATE_OPENERS) or any(
+                ch != ' ' and unicodedata.category(ch)[0] in 'CZ'
+                for ch in name
+            ):
+                raise ValidationError(_(
+                    "A project name cannot contain '{{', '{%', '{#', line "
+                    "breaks or other control characters."
+                ))
 
     @api.constrains('remote_folder')
     def _check_remote_folder_shell_safe(self):

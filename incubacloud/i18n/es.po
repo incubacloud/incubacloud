@@ -19492,3 +19492,13 @@ msgstr ""
 "%(label)s no es válido. Use una sola línea de 254 caracteres como máximo, "
 "sin comillas dobles, barras invertidas, tabuladores ni otros caracteres de "
 "control."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_project.py:0
+msgid ""
+"A project name cannot contain '{{', '{%', '{#', line breaks or other control"
+" characters."
+msgstr ""
+"El nombre de un proyecto no puede contener '{{', '{%', '{#', saltos de línea"
+" ni otros caracteres de control."
