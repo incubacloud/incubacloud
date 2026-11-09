@@ -9,18 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.221] — 2026-11-09
 
 GitLab: deploy from gitlab.com or a GitLab server of one's own, and a push
-rebuilds. The new tables need no data migration, the new columns accept
-nulls, and the new daily crons are given to the cron bot. Publish this core
-with `incubacloud_tenant` 1.0.57, which limits a tenant's panel to GitLab
-servers on a public address, and `incubacloud_saas_manager` 1.196, which
-moves its routing of webhook rebuilds onto the new event mixin, in the same
-deployment.
+rebuilds. The update needs no data migration for it: the tables are new, the
+new columns accept nulls, and the two new daily crons are given to the cron
+bot. Publish this core with `incubacloud_tenant` 1.0.57, which limits a
+tenant's panel to GitLab servers on a public address, and
+`incubacloud_saas_manager` 1.196, which moves its routing of webhook rebuilds
+onto the new event mixin, in the same deployment.
 
 The update also rewrites the record rules of `cloud.job.log.chunk` and adds
 two rules on `ir.attachment`. A panel whose server has no `sshpass` now
-refuses to create a host that logs in
-with a password, or to switch one to it; hosts that already do are left as
-they are.
+refuses to create a host that logs in with a password, or to switch one to
+it; hosts that already do are left as they are.
 
 ### Added
 
@@ -42,8 +41,7 @@ they are.
   reads its `requirements.txt` and pins its head with the panel's own git (no
   token in argv, no redirects, private HOME), counted against a new cap,
   *Git provider reads (per user, per hour)*, 120 by default. The line shows
-  **GitLab · host**, and that rebuild on push and merge request previews come
-  in a next version.
+  **GitLab · host**, and that merge request previews come in a next version.
 - **Deploy and rebuild from GitLab.** `repos.yaml` carries each line's own
   credential; the host asks each line's head with its own token, from a helper
   container (`alpine/git`, pinned by digest and pulled when a host is set up)
@@ -78,6 +76,15 @@ they are.
   rewrites GitLab's webhook with URL and token together) and
   `/cloud/delete_git_hook`. `repo_capabilities.push_rebuild` of a GitLab line
   follows its webhook's state.
+- **The panel shows the webhooks.** Settings → Git providers lists them with
+  their state, last delivery and failed deliveries: «Verify» asks GitLab for
+  its test and reads `/cloud/get_git_hooks` every 1.5 s for up to 15 s until
+  the delivery shows; managers show, rotate and delete them and reprocess a
+  failed delivery. A saved GitLab line in the repository editor says what a
+  push does and offers «Register webhook» (or why to set it up by hand), and
+  the instance's «Auto-rebuild on push» counts its GitLab lines without a
+  webhook that works. `get_git_hooks` gives managers the last five failed
+  deliveries of each webhook.
 - **Daily checks.** `cron_check_git_providers` also reads each panel's webhook
   in GitLab and raises `gitlab_hook_failing` when GitLab disabled it (it never
   sends a test nor re-enables it), and deletes the panel's webhooks no line has
