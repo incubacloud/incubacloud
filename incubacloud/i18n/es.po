@@ -14420,6 +14420,9 @@ msgid ""
 "offer."
 msgstr ""
 "El código que se importa es de Odoo %(series)s, que este panel no ofrece."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
 msgid ""
 "The credential does not have the Maintainer role in the project (Owner for a"
