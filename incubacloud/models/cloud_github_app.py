@@ -144,8 +144,14 @@ class CloudGitHubApp(models.Model):
     # ── Odoo backend action ─────────────────────────────────────────────────
 
     def action_test_connection(self):
-        """Test the GitHub App connection from the Odoo backend form view."""
+        """Test the GitHub App connection from the Odoo backend form view.
+
+        An Administrator's, as ``/cloud/test_github_connection`` is.
+
+        :raises AccessError: below Administrator
+        """
         self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_settings()
         service = self.env["cloud.github.credential.service"]
         result = service.test_connection()
         if result.get("ok"):
