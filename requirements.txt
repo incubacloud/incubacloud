@@ -17,6 +17,16 @@ cryptography==50.0.1
 # — removed in cryptography 49 — and crashes the ``base``/ir_mail_server
 # import. The panel image runs this same pair.
 pyOpenSSL==26.4.0
+# On Python 3.10, which Doodba's 18.0 image runs, Odoo 18 pins urllib3
+# 1.26.5, whose pyopenssl contrib imports
+# ``cryptography.hazmat.backends.openssl.x509`` — gone from the
+# cryptography above. Odoo's ir_mail_server imports that contrib at load,
+# so no database initialises: "Initialize database" fails on every instance
+# built from this file. urllib3 2.x no longer imports it, and Odoo 18 runs
+# 2.x on Python 3.12. requests moves with it: the image's 2.25.1 wants
+# urllib3 1.x. Both are the first releases pip-audit finds nothing in.
+urllib3==2.8.0
+requests==2.34.2
 # CN-023: Explicit bcrypt pin — >=4.0.1 required for correct >72-byte error handling.
 # Called directly (not via passlib) because passlib 1.7.4 can't talk to bcrypt >= 5.
 # passlib itself still comes in transitively through Odoo core.
