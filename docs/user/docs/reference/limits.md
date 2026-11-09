@@ -1,9 +1,9 @@
 # Service limits
 
 !!! info "IncubaCloud SaaS"
-    This page describes the hosted service at incubacloud.io. A self-hosted
-    deployment of the open core module sits behind whatever you put in front
-    of it, so none of these numbers apply to it.
+    This page describes the hosted service at incubacloud.io. A panel you
+    install yourself sits behind whatever you put in front of it, so none of
+    these numbers apply to it.
 
 Instances on the hosted service are served through a CDN. That buys you TLS,
 caching and protection against floods, and it comes with two limits that you

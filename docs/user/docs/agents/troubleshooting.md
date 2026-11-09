@@ -16,4 +16,4 @@
 | *This confirmation has expired* | More than ten minutes passed, or the approval was for another action: ask for the action again. |
 | *This action needs your approval: open … and ask for it again* | Your client cannot show the question itself: open the link, approve, and ask the agent to try again. |
 | Claude cannot reach the panel | Claude connects from Anthropic's servers: the panel must be reachable from the internet. |
-| `404` on `/mcp` (self-hosted) | No database was selected: configure a `dbfilter` by host name. |
+| `404` on `/mcp` (self-hosted) | Odoo did not select the panel's database. Select it by name, with `db_name` or `dbfilter = ^<name>$`, not by host name: a filter on `%h` or `%d` also stops the panel's jobs ([INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md#the-odoo-settings-that-matter)). |

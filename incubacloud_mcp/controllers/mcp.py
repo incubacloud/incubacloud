@@ -9,8 +9,9 @@ session cookie, and ``auth='bearer'`` falls back to it when the header is
 missing: with ``SameSite=Lax`` and panels sharing a registrable domain, a
 cookie-authenticated endpoint is CSRF from any sibling subdomain. The
 cookie is ignored; only ``Authorization: Bearer`` counts. A self-hosted
-server with several databases needs a ``dbfilter`` that picks one by
-host name: without a database the endpoint answers 404.
+server with several databases needs ``db_name`` or a ``dbfilter`` that
+picks the panel's database by name (a filter by host name also stops the
+jobs): without a database the endpoint answers 404.
 
 Failed authentications are counted per address, and an address over the
 limit is refused before its credential is read — but only where the

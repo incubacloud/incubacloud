@@ -30,7 +30,8 @@ as the user who connected them.
 
 Configuration: Settings → Agents (the agents' issuer and the MCP address) and
 Settings → Rates (calls per user and minute). A self-hosted server with
-several databases needs a `dbfilter` by host name. Needs `joserfc`.
+several databases selects the panel's by name (`db_name`, or
+`dbfilter = ^<name>$`): a filter by host name stops the jobs. Needs `joserfc`.
 
 Reference: [`docs/mcp.md`](../docs/mcp.md). User guide:
 <https://docs.incubacloud.io/agents/>

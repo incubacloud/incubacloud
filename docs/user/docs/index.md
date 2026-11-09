@@ -10,11 +10,14 @@ on [the marketing site's `/docs` section](https://www.incubacloud.io/docs);
 the rest — every screen, every option, every troubleshooting note — lives here.
 
 !!! info "One product, two ways to run it"
-    IncubaCloud comes as a **hosted SaaS** (incubacloud.io — signup, plans,
-    on-demand VPS, managed backup storage) and as a **self-hosted open core
-    module** you install on your own Odoo. The control plane you use day-to-day
-    is the same in both. Pages and sections that only exist on the hosted
-    service are marked with an *IncubaCloud SaaS* admonition like this one.
+    IncubaCloud is a set of **Odoo modules you install on your own Odoo
+    19.0**: the code is on GitHub, free to install and use, and
+    [INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md) says what it needs. The
+    same panel also runs as a **hosted SaaS** (incubacloud.io: signup, plans,
+    on-demand VPS, managed backup storage). The control plane you use
+    day-to-day is the same in both. Pages and sections that only exist on the
+    hosted service are marked with an *IncubaCloud SaaS* admonition like this
+    one.
 
 ## Where to start
 
@@ -56,8 +59,9 @@ the rest — every screen, every option, every troubleshooting note — lives he
 
 ## Source code
 
-Everything you read here is open and auditable.
-The platform's core module is at [github.com/incubacloud/incubacloud](https://github.com/incubacloud/incubacloud).
+The code is on GitHub, free to install and use:
+[github.com/incubacloud/incubacloud](https://github.com/incubacloud/incubacloud).
+Installing the panel on your own Odoo: [INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md).
 This site itself is built from [`docs/user/`](https://github.com/incubacloud/incubacloud/tree/19.0/docs/user)
 in the same repo.
 

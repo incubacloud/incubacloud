@@ -1,8 +1,8 @@
 # Billing
 
 !!! info "IncubaCloud SaaS"
-    Billing applies to the hosted service. Self-hosted deployments of the open
-    core module have no plans or invoices.
+    Billing applies to the hosted service. A panel you install yourself has no
+    plans or invoices.
 
 ## Plans
 
