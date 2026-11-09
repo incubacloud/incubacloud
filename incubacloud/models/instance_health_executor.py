@@ -200,6 +200,16 @@ _LOG_LINE_RE = re.compile(
 # stays an incident.
 _VISITOR_RACE_HEADER = ('odoo.sql_db: bad query:', 'INSERT INTO website_visitor')
 _SERIALIZATION_FAILURE = 'could not serialize access due to concurrent update'
+# Odoo's web controller logs as ERROR a request for the ``.map`` of an
+# asset that was not generated in debug mode. It comes from a browser
+# with developer tools open (or a crawler) asking for a sourcemap, so it
+# is neither a failure of the instance nor of its owner (alert seen in
+# production, 9-nov-2026). Logger and message must both match: any other
+# ERROR of that logger stays an incident.
+_SOURCEMAP_NOISE_HEADER = (
+    'odoo.addons.web.controllers.binary:',
+    '.map should have been generated through debug assets',
+)
 
 #: A route in ``/proc/net/route``: its interface, then its destination
 #: in hexadecimal. The header line starts with ``Iface``, which says the
@@ -1102,13 +1112,16 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         because a group mixes records — every job queue_job fails logs
         the same header. Core knows only of Odoo's own races, which
         nobody running the instance can act on: the website visitor's
-        insert (``_VISITOR_RACE_HEADER``). A layer that knows the
+        insert (``_VISITOR_RACE_HEADER``) and a browser's request for a
+        sourcemap Odoo did not generate (``_SOURCEMAP_NOISE_HEADER``). A layer that knows the
         instance better extends it, asking super first.
 
         :param str header: the ERROR line
         :param list context: the lines logged under it, uncompacted
         :rtype: bool
         """
+        if all(marker in header for marker in _SOURCEMAP_NOISE_HEADER):
+            return True
         return all(marker in header for marker in _VISITOR_RACE_HEADER) and any(
             _SERIALIZATION_FAILURE in line for line in context
         )

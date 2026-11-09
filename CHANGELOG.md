@@ -20,6 +20,14 @@ No change in the database.
   The stop now leaves the host's agent state and count as they were and the log
   says so. No other executor counts attempts in `on_failure`.
 
+- **A request for a sourcemap no longer raises `instance_error_logs`.** Odoo
+  logs as ERROR `.map should have been generated through debug assets` when a
+  browser with developer tools open, or a crawler, asks for the sourcemap of an
+  asset that was not built in debug mode: a failure of neither the instance nor
+  its owner, and the alert had to be dismissed by hand each time. That record
+  joins the known ones left out before the errors are grouped; any other ERROR
+  of the same logger still counts.
+
 ## [1.0.219] — 2026-11-08
 
 The update creates the `cloud_job_no_return` table and, with `incubacloud_pitr`
