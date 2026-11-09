@@ -681,6 +681,57 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Repositories
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repositories">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#private-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Private repositories
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-modules-a-repository-brings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which modules a repository brings
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freezing-a-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      Freezing a repository
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-and-system-packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python and system packages
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       Common tasks
@@ -717,6 +768,8 @@
       
         
           
+        
+      
         
       
         
@@ -785,6 +838,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -803,6 +877,8 @@
       
         
           
+        
+      
         
       
         
@@ -864,6 +940,27 @@
   
   <span class="md-ellipsis">
     Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
   </span>
   
 
@@ -1447,6 +1544,8 @@
       
         
       
+        
+      
     
     
       
@@ -1574,6 +1673,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1613,6 +1733,57 @@
       Concepts
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Repositories
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repositories">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#private-repositories" class="md-nav__link">
+    <span class="md-ellipsis">
+      Private repositories
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-modules-a-repository-brings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Which modules a repository brings
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freezing-a-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      Freezing a repository
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-and-system-packages" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python and system packages
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1670,6 +1841,75 @@ its instances, its repositories, its environments.</p>
 <li><strong>Backup backend</strong> — the S3 destination for backups. Inherited from project
   unless overridden per instance.</li>
 </ul>
+<div class="admonition note">
+<p class="admonition-title">Odoo Enterprise</p>
+<p>A project can deploy Odoo Community or Odoo Enterprise. The panel itself
+runs on Community only, and IncubaCloud does not provide Enterprise: for
+an Enterprise instance, you bring its code in your repositories and need
+your own Odoo Enterprise subscription ("On-premise") from Odoo S.A. See
+<a href="../reference/third-party/#odoo-enterprise">Third-party software</a>.</p>
+</div>
+<h2 id="repositories">Repositories<a class="headerlink" href="#repositories" title="Permanent link">&para;</a></h2>
+<p>A project's repositories are <strong>GitHub</strong> repositories, written
+<code>https://github.com/&lt;owner&gt;/&lt;repo&gt;</code>; other spellings of a GitHub address are
+rewritten to that form, and any other host is refused. The project's list is
+copied to each instance created in it; an instance's own list is the one its
+deploys use.</p>
+<h3 id="private-repositories">Private repositories<a class="headerlink" href="#private-repositories" title="Permanent link">&para;</a></h3>
+<p>The panel reads a private repository with credentials from <strong>Settings →
+GitHub</strong>: the <strong>GitHub App</strong>, or a <strong>Personal Access Token</strong>, which also reaches
+repositories the App cannot (<code>odoo/enterprise</code>, for instance). A token written
+inside the repository's URL is refused.</p>
+<p>Only the App receives GitHub's push and pull request notifications, which
+<strong>Auto-rebuild</strong> and <a href="../instances/#pull-request-previews">pull request previews</a>
+need, and only on a panel GitHub can reach from the internet. A token gives
+access, with manual deploys and rebuilds.</p>
+<h3 id="which-modules-a-repository-brings">Which modules a repository brings<a class="headerlink" href="#which-modules-a-repository-brings" title="Permanent link">&para;</a></h3>
+<p>Each repository row has <strong>Modules</strong> and <strong>Exclude</strong>:</p>
+<ul>
+<li><strong>Modules</strong> empty — shown as <code>ALL</code> — makes every module of the repository
+  available to the instance.</li>
+<li><strong>Modules</strong> with names makes <strong>only those</strong> available: the list replaces
+  <code>ALL</code>, it does not add to it.</li>
+<li><strong>Exclude</strong> takes modules out of <code>ALL</code>. It only has a meaning while
+  <strong>Modules</strong> is empty.</li>
+</ul>
+<p><em>Available</em> is not <em>installed</em>. The first deploy installs <code>base</code> and the
+panel's sign-in module only; you install the rest from Odoo's <strong>Apps</strong>, or
+they come installed with a database you restore.</p>
+<div class="admonition note">
+<p class="admonition-title"><code>auto_install</code> modules and <code>ALL</code></p>
+<p>Odoo installs a module marked <code>auto_install</code> by itself once every module
+it depends on is installed — at the first deploy, or later when you
+install something from <strong>Apps</strong>. With <code>ALL</code>, every such module of the
+repository is available, so it is installed as soon as its dependencies
+are, whether you wanted it or not. To keep one out, list the modules you
+want instead, or put it under <strong>Exclude</strong>.</p>
+</div>
+<p>Two repositories that bring a module of the same name stop the deploy with a
+conflict alert; <strong>Exclude</strong> in one of them is the usual way out.</p>
+<h3 id="freezing-a-repository">Freezing a repository<a class="headerlink" href="#freezing-a-repository" title="Permanent link">&para;</a></h3>
+<p><strong>Freeze</strong> (the lock on a repository row, or <strong>Freeze all</strong>) pins the
+repository to the commit its branch points to at that moment:</p>
+<ul>
+<li>every deploy and rebuild builds that commit, not the branch's newest one;</li>
+<li>a push to the branch does not rebuild the instance;</li>
+<li>the repository's <code>requirements.txt</code> is not read again.</li>
+</ul>
+<p>Unfreeze to follow the branch again.</p>
+<h3 id="python-and-system-packages">Python and system packages<a class="headerlink" href="#python-and-system-packages" title="Permanent link">&para;</a></h3>
+<ul>
+<li>A repository's own <strong><code>requirements.txt</code></strong> is read on every deploy and rebuild
+  (frozen repositories excepted), and what it lists is installed.</li>
+<li>The <strong>Dependencies</strong> tab — of the project, as the default for new instances,
+  or of an instance — has <strong>pip.txt — Python</strong> and <strong>apt.txt — System</strong>: one
+  package per line, installed in the instance's image at the next deploy or
+  rebuild. <strong>Sync with project</strong>, on an instance, brings the project's lists
+  over.</li>
+</ul>
+<p>A package listed in a <code>requirements.txt</code> and in the Dependencies tab with
+different versions stops the build with a dependency conflict alert: open it
+and pick which one wins.</p>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../getting-started/first-project/">Create your first project</a></li>
@@ -1791,6 +2031,14 @@ covers the most common flow.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>

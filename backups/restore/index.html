@@ -654,6 +654,8 @@
       
         
       
+        
+      
     
     
       
@@ -718,6 +720,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -736,6 +759,8 @@
       
         
           
+        
+      
         
       
         
@@ -797,6 +822,27 @@
   
   <span class="md-ellipsis">
     Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
   </span>
   
 
@@ -1010,6 +1056,15 @@
   <a href="#from-a-link" class="md-nav__link">
     <span class="md-ellipsis">
       From a link
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bring-an-odoo-you-run-elsewhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bring an Odoo you run elsewhere
     </span>
   </a>
   
@@ -1521,6 +1576,8 @@
       
         
       
+        
+      
     
     
       
@@ -1648,6 +1705,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1745,6 +1823,15 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#bring-an-odoo-you-run-elsewhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bring an Odoo you run elsewhere
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1822,7 +1909,7 @@ If you need a forensic copy with original credentials and crons, <strong>downloa
 <li>Choose <strong>Exact</strong> or <strong>Neutralized</strong>.</li>
 <li>The job starts and shows a progress bar.</li>
 <li>When ready, click the download link. You get a standard ZIP
-   (<code>dump.sql + filestore/</code>), the same on every Odoo version from 7.0 to 20.0 —
+   (<code>dump.sql + filestore/</code>), the same on every Odoo version from 8.0 to 20.0 —
    restorable on any Odoo of the same version.</li>
 </ol>
 <h2 id="restore-in-place">Restore in place<a class="headerlink" href="#restore-in-place" title="Permanent link">&para;</a></h2>
@@ -1882,10 +1969,80 @@ nothing passes through your connection or through the panel, and there is no
 size limit. <code>https://</code>, <code>sftp://</code> and <code>ftp://</code> are accepted, and a link carrying
 a user and password works too; the password is stored encrypted and never shown
 again.</p>
+<h3 id="bring-an-odoo-you-run-elsewhere">Bring an Odoo you run elsewhere<a class="headerlink" href="#bring-an-odoo-you-run-elsewhere" title="Permanent link">&para;</a></h3>
+<p>To move the data of an Odoo installed somewhere else — a package install, a
+container, another provider — into a <strong>new production instance</strong>:</p>
+<ol>
+<li><strong>Check the three things a restore needs.</strong><ul>
+<li><strong>The same Odoo series</strong> as the database: a database of another version
+  has to be upgraded first.</li>
+<li><strong>Every module the database has installed</strong>, available to the instance:
+  put the repositories that carry them in the project
+  (<a href="../../projects/#which-modules-a-repository-brings">which modules a repository brings</a>).</li>
+<li><strong>PostgreSQL</strong> of the source's major version or a newer one, chosen on the
+  instance form's <strong>Database</strong> tab.</li>
+</ul>
+</li>
+<li>
+<p><strong>Make the ZIP</strong> on the source.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">With Odoo's database manager</label><label for="__tabbed_1_2">By hand, on the source server</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<p>Open <code>/web/database/manager</code>, <strong>Backup</strong> the database with the format
+<strong>zip</strong> (the other one leaves the filestore out). For small databases:
+the download goes through Odoo's web server.</p>
+</div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>mkdir<span class="w"> </span>odoo-export<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>odoo-export
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pg_dump<span class="w"> </span>--no-owner<span class="w"> </span>--format<span class="o">=</span>plain<span class="w"> </span>--dbname<span class="o">=</span>&lt;database&gt;<span class="w"> </span>&gt;<span class="w"> </span>dump.sql
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>cp<span class="w"> </span>-r<span class="w"> </span>&lt;data_dir&gt;/filestore/&lt;database&gt;<span class="w"> </span>filestore
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>zip<span class="w"> </span>-r<span class="w"> </span>../odoo-export.zip<span class="w"> </span>dump.sql<span class="w"> </span>filestore
+</span></code></pre></div>
+<p><code>&lt;data_dir&gt;</code> is the <code>data_dir</code> of the source's Odoo configuration
+(<code>~/.local/share/Odoo</code> of the user Odoo runs as, when unset). Run
+<code>pg_dump</code> with the client of the source server's PostgreSQL.</p>
+</div>
+</div>
+</div>
+<p>Either way, <code>unzip -l</code> shows <code>dump.sql</code> and <code>filestore/…</code> at the top of
+the archive, not inside another folder.</p>
+</li>
+<li>
+<p><strong>Create the instance</strong>: a production instance in a project with those
+   repositories and a <a href="../#backup-destinations">backup destination</a>.
+   <strong>Deploy</strong> it: it comes up with an empty database, which the restore
+   replaces.</p>
+</li>
+<li><strong>Restore Database</strong>, by one of the three routes above. On a panel or a host
+   only your network reaches, use the browser or SSH: a link is fetched from
+   the internet only.</li>
+</ol>
+<p>The job stops Odoo, replaces the database and the filestore, installs the
+panel's sign-in module if it is missing, and starts Odoo again. The archive is
+loaded as a <strong>copy</strong>: the database gets a new unique id and a new secret, so it
+does not pass for the source database.</p>
+<div class="admonition warning">
+<p class="admonition-title">Nothing is switched off</p>
+<p>The data comes back as it was: scheduled actions, outgoing mail servers,
+users. If the source installation still runs, both now send mail and run
+the same scheduled actions. Stop the source first, or switch them off on
+one side.</p>
+</div>
+<p>The restore does not update modules. If the code in your repositories is newer
+than the one the database last ran, <strong>Rebuild</strong> the instance: a production
+rebuild tries the new code on a copy of the database first, then updates the
+modules whose code changed. Sign in with the users and passwords of the source
+database.</p>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <p>For downloads:</p>
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The ZIP opens and contains <code>dump.sql</code> + <code>filestore/</code>.</li>
+</ul>
+<p>For an Odoo brought from elsewhere:</p>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The instance opens on your data, attachments and images included.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> <strong>Settings → Technical → Automation → Scheduled Actions</strong> shows the ones
+  you expect active, and only those.</li>
 </ul>
 <p>For in-place restore:</p>
 <ul class="task-list">
@@ -1899,6 +2056,17 @@ again.</p>
 <p>The backup was encrypted with a different passphrase than the one currently
 configured on the backend. Check <code>Backend detail → Passphrase</code>. If you've
 rotated passphrases, you need the original to read older backups.</p>
+</details>
+<details class="note">
+<summary>The restore of an archive from elsewhere fails while loading it</summary>
+<p>Check the archive's layout first: <code>dump.sql</code>, in plain SQL, at the top of
+the ZIP, with <code>filestore/</code> beside it (<code>unzip -l</code>).</p>
+</details>
+<details class="note">
+<summary>The instance starts but Odoo fails on a module</summary>
+<p>A module installed in the database is not available to the instance: its
+repository is missing, or left out by the repository's <strong>Modules</strong> list.
+Add it and rebuild.</p>
 </details>
 <details class="note">
 <summary>Restore failed: schema version mismatch</summary>
@@ -2033,6 +2201,14 @@ you want and Restore.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>

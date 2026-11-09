@@ -654,6 +654,8 @@
       
         
       
+        
+      
     
     
       
@@ -718,6 +720,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -736,6 +759,8 @@
       
         
           
+        
+      
         
       
         
@@ -797,6 +822,27 @@
   
   <span class="md-ellipsis">
     Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
   </span>
   
 
@@ -1385,6 +1431,8 @@
       
         
       
+        
+      
     
     
       
@@ -1512,6 +1560,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1551,6 +1620,57 @@
       How it works
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backup-destinations" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backup destinations
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backup destinations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#only-s3-compatible-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Only S3-compatible storage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      Create one
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      Examples
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Use it
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1644,10 +1764,118 @@ S3-compatible service. You hold the keys. We run the schedule and the encryption
 </ol>
 <p>The backup format is the standard Odoo dump (<code>dump.sql + filestore/</code>) wrapped
 in an encrypted archive.</p>
+<h2 id="backup-destinations">Backup destinations<a class="headerlink" href="#backup-destinations" title="Permanent link">&para;</a></h2>
+<p>A destination (a <em>backup backend</em>) is a bucket and a key to it. A production
+instance cannot be deployed without one.</p>
+<h3 id="only-s3-compatible-storage">Only S3-compatible storage<a class="headerlink" href="#only-s3-compatible-storage" title="Permanent link">&para;</a></h3>
+<p>The only type is <strong>S3 compatible</strong>: AWS S3 or any service that speaks its API.
+<strong>Azure Blob Storage, a local disk, SFTP and FTP are not destinations.</strong> (An
+SFTP or FTP link is accepted in one place only: as the source of an archive to
+<a href="restore/#from-a-link">restore from a link</a>.)</p>
+<p>Each instance's backups are made on its host, by a backup container that runs
+<a href="https://duplicity.us/">duplicity</a>. The panel also reads the bucket, to list
+the backups and measure their size, so the endpoint must be reachable <strong>from
+the hosts and from the panel</strong>.</p>
+<h3 id="create-one">Create one<a class="headerlink" href="#create-one" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create the bucket at your provider: the panel does not create it.</li>
+<li>Create a key that can <strong>list the bucket, and read, write and delete
+   objects</strong> in it: backups write, the panel lists, the retention and the end
+   of an instance delete.</li>
+<li>
+<p>In the panel, <strong>Backup Destinations → New Backend</strong>: a <strong>Name</strong> on the
+   <strong>General</strong> tab, then the <strong>Storage</strong> tab:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What to put</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bucket</strong></td>
+<td>The bucket's name, nothing else.</td>
+</tr>
+<tr>
+<td><strong>Path</strong></td>
+<td>A prefix inside it, <code>backups</code> by default. Each instance writes under <code>&lt;path&gt;/&lt;project folder&gt;/&lt;instance&gt;/</code>.</td>
+</tr>
+<tr>
+<td><strong>Endpoint URL</strong></td>
+<td>Empty for AWS S3; the provider's S3 endpoint otherwise (below).</td>
+</tr>
+<tr>
+<td><strong>Access Key ID</strong>, <strong>Secret Access Key</strong></td>
+<td>The key of step 2.</td>
+</tr>
+<tr>
+<td><strong>Passphrase</strong></td>
+<td>Read <a href="#encryption">the passphrase</a> first.</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p><strong>Test Connection</strong>. It names what is wrong: the key (<em>403</em>), a bucket that
+   is not there (<em>404</em>), or an endpoint other than the bucket's (<em>301</em>).</p>
+</li>
+</ol>
+<p>There is no region field: the panel and the backup container use the endpoint
+you give.</p>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Endpoint URL</th>
+<th>The key</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cloudflare R2</strong></td>
+<td><code>https://&lt;account id&gt;.r2.cloudflarestorage.com</code></td>
+<td>An R2 API token with <strong>Object Read &amp; Write</strong>, limited to the bucket. Its <em>Access Key ID</em> and <em>Secret Access Key</em> go in the two fields.</td>
+</tr>
+<tr>
+<td><strong>Backblaze B2</strong></td>
+<td><code>https://s3.&lt;region&gt;.backblazeb2.com</code>, as the bucket's page shows it (for instance <code>https://s3.us-west-004.backblazeb2.com</code>)</td>
+<td>An application key with <strong>Read and Write</strong> access, limited to the bucket: <em>keyID</em> is the Access Key ID, <em>applicationKey</em> the secret.</td>
+</tr>
+<tr>
+<td><strong>MinIO</strong></td>
+<td>The address of its S3 API, for instance <code>https://minio.example.com:9000</code> — not its web console's</td>
+<td>A user or access key with the policy below.</td>
+</tr>
+</tbody>
+</table>
+<p>A MinIO policy that gives a key exactly what backups need, on the bucket
+<code>odoo-backups</code>:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">"Version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2012-10-17"</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">"Statement"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:ListBucket"</span><span class="p">],</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"arn:aws:s3:::odoo-backups"</span><span class="p">]</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetObject"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:PutObject"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:DeleteObject"</span><span class="p">],</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"arn:aws:s3:::odoo-backups/*"</span><span class="p">]</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="p">}</span>
+</span></code></pre></div>
+<h3 id="use-it">Use it<a class="headerlink" href="#use-it" title="Permanent link">&para;</a></h3>
+<p>Choose the destination on an instance, on its project, or for every production
+instance in <strong>Settings → General → Default Backup Destination</strong>. An instance
+uses its own if it has one, else its project's, else the default.</p>
 <h2 id="how-long-backups-are-kept">How long backups are kept<a class="headerlink" href="#how-long-backups-are-kept" title="Permanent link">&para;</a></h2>
-<p>Every backup backend has a <strong>retention period</strong> — 3 months unless you change it
-(<code>30D</code>, <code>3M</code>, <code>1Y</code>…) — and a <strong>retention owner</strong>, who deletes the backups older
-than that:</p>
+<p>Every backup backend has a <strong>retention period</strong> (its <strong>Advanced</strong> tab) — 3
+months unless you change it (<code>30D</code>, <code>3M</code>, <code>1Y</code>…) — and a <strong>retention owner</strong>,
+who deletes the backups older than that:</p>
 <ul>
 <li><strong>Duplicity cron</strong> (the default) — the instance's backup service deletes them.</li>
 <li><strong>Bucket lifecycle</strong> — a lifecycle rule you set up on the bucket, outside
@@ -1753,15 +1981,29 @@ you stay on your current tier and we tell you.</p>
 <p>Every backup is encrypted with the <strong>passphrase</strong> you set on the backend before
 it leaves the host. We don't store the passphrase in clear and we can't recover it.
 Treat it like a master key — store a copy in your password manager.</p>
+<ul>
+<li><strong>Type your own</strong> when you create the destination, and copy it to your
+  password manager before saving. Left empty, the panel generates one and, like
+  every secret it stores, never shows it again: the field only says that a
+  value is set.</li>
+<li><strong>Why a copy outside the panel.</strong> Without the passphrase nobody can read the
+  backups: not you, not the panel, not your storage provider. The day you need
+  them most — the panel or the host is gone — the copies the panel and the
+  host keep are gone with them.</li>
+<li><strong>Changing it later</strong> re-encrypts nothing: backups made before still need the
+  passphrase they were made with (see
+  <a href="restore/#troubleshooting">Restore failed: passphrase mismatch</a>).</li>
+</ul>
 <h2 id="what-lives-where">What lives where<a class="headerlink" href="#what-lives-where" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Bucket</strong> — your S3, encrypted bundles. We never see the raw data.</li>
-<li><strong>IncubaCloud database</strong> — backend metadata (endpoint, region, bucket name).
-  Credentials are encrypted at rest with our own platform key.</li>
+<li><strong>IncubaCloud database</strong> — backend metadata (endpoint, bucket, path).
+  Credentials are encrypted at rest with the panel's key
+  (<code>INCUBACLOUD_SECRET_KEY</code> on a self-hosted panel).</li>
 </ul>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Set up your first backup backend (use the <a href="https://www.incubacloud.io/docs/backups">marketing site quickstart</a>)</li>
+<li><a href="#backup-destinations">Set up a backup destination</a></li>
 <li><a href="restore/">Restore a backup</a></li>
 <li><a href="any-minute/">Restore to any minute</a> with continuous recovery</li>
 <li>Receive an email when a backup completes (Backend detail → Notifications)</li>
@@ -1875,6 +2117,14 @@ Treat it like a master key — store a copy in your password manager.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>

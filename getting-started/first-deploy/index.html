@@ -789,6 +789,8 @@
       
         
       
+        
+      
     
     
       
@@ -853,6 +855,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -871,6 +894,8 @@
       
         
           
+        
+      
         
       
         
@@ -932,6 +957,27 @@
   
   <span class="md-ellipsis">
     Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
   </span>
   
 
@@ -1515,6 +1561,8 @@
       
         
       
+        
+      
     
     
       
@@ -1633,6 +1681,27 @@
   
   <span class="md-ellipsis">
     Service limits
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
   </span>
   
 
@@ -1798,6 +1867,21 @@ log in real time.</p>
 <li>A project (<a href="../first-project/">create one</a>).</li>
 <li>A host: either <a href="../../hosts/connect/">your own VPS</a> or
   <a href="../../hosts/hire/">one ordered through the platform</a>.</li>
+<li>For production, a <a href="../../backups/#backup-destinations">backup destination</a>.</li>
+</ul>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Before you create the first instance</p>
+<ul>
+<li><strong>Production comes first.</strong> A staging is a copy of production: until the
+  project has a production instance, the staging section's <strong>+</strong> stays
+  disabled. Deploy production, then use <strong>Clone to Staging</strong>, next to it
+  in the project's side menu, for a staging with production's data.</li>
+<li><strong>Production needs a backup destination.</strong> Deploying one without any is
+  refused (<em>No backup backend configured for this instance</em>). Register a
+  destination first (<a href="../../backups/#backup-destinations">Backups</a>)
+  and choose it on the instance, on its project, or for every production
+  instance in <strong>Settings → General → Default Backup Destination</strong>.</li>
 </ul>
 </div>
 <h2 id="1-open-the-project-and-click-deploy-instance">1. Open the project and click <code>Deploy instance</code><a class="headerlink" href="#1-open-the-project-and-click-deploy-instance" title="Permanent link">&para;</a></h2>
@@ -1807,7 +1891,8 @@ re-deploys, so it's worth getting comfortable with each field.</p>
 <ul>
 <li><strong>Production</strong> — the customer-facing instance. Re-deploys go through the safe-rebuild
   flow: if the new image fails its boot test, the previous version keeps serving.</li>
-<li><strong>Staging</strong> — test copy. You can have many. Re-deploys are direct.</li>
+<li><strong>Staging</strong> — a test copy of production: the project needs its production
+  instance first. You can have many. Re-deploys are direct.</li>
 </ul>
 <h2 id="3-pick-the-host">3. Pick the host<a class="headerlink" href="#3-pick-the-host" title="Permanent link">&para;</a></h2>
 <p>Select one of your registered hosts. The platform checks capacity automatically
@@ -1816,12 +1901,13 @@ or <a href="../../hosts/connect/">connect another</a>.</p>
 <h2 id="4-odoo-and-postgres-versions">4. Odoo and Postgres versions<a class="headerlink" href="#4-odoo-and-postgres-versions" title="Permanent link">&para;</a></h2>
 <p>The instance runs its project's Odoo version, which you pick in the project's form
 (<strong>Odoo Version</strong>, when you create the project or later under its <strong>General</strong> tab):
-versions 7.0 to 20.0 are supported, and a new project starts on the newest one your
-panel offers (20.0) unless you pick another. The deployment form does not ask for it:
-a new instance takes its project's, and keeps it if the project changes later. The
-version influences which modules are available and which Postgres major versions you
-can pick under the form's <strong>Database</strong> tab: 14 to 18 for Odoo 7.0 to 19.0, 16 to 18
-for Odoo 20.0, with 17 by default.</p>
+the panel offers 18.0, 19.0 and 20.0, and a new project starts on the newest one
+(20.0) unless you pick another. Older series open as they pass their tests. The
+deployment form does not ask for it: a new instance takes its project's, and keeps
+it if the project changes later. The version influences which modules are
+available and which Postgres major versions you can pick under the form's
+<strong>Database</strong> tab: 14 to 18 for Odoo 18.0 and 19.0, 16 to 18 for Odoo 20.0, with 17
+by default.</p>
 <p>If your project has a connected repo with <code>.copier-answers.yml</code>, we pre-fill the
 project's version from there; you can still pick another in the project's form.</p>
 <h2 id="5-pick-modules">5. Pick modules<a class="headerlink" href="#5-pick-modules" title="Permanent link">&para;</a></h2>
@@ -1881,7 +1967,7 @@ the queue waits until you retry that action or dismiss its alert. See
 </ul>
 <h2 id="what-happens-next">What happens next<a class="headerlink" href="#what-happens-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Set up a <a href="../../backups/">backup backend</a> so your data is safe.</li>
+<li>Check that your production instance's <a href="../../backups/">backups</a> run.</li>
 <li>Add the rest of your team via <code>Settings → Users</code>.</li>
 <li>Read about <a href="../first-project/#environments">environments</a> if you'll use stagings.</li>
 </ul>
@@ -2018,6 +2104,14 @@ Postgres extensions or wrong Odoo version vs database version.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>

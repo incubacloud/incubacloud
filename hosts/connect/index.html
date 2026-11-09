@@ -18,7 +18,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../hire/">
+        <link rel="next" href="../internal-network/">
       
       
       <link rel="icon" href="../../assets/favicon.svg">
@@ -654,6 +654,8 @@
       
         
       
+        
+      
     
     
       
@@ -718,6 +720,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -738,6 +761,8 @@
       
         
           
+        
+      
         
       
         
@@ -852,6 +877,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-user-the-panel-connects-as" class="md-nav__link">
+    <span class="md-ellipsis">
+      The user the panel connects as
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#walkthrough" class="md-nav__link">
     <span class="md-ellipsis">
       Walkthrough
@@ -912,6 +946,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-full-setup-changes-on-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      What Full Setup changes on the host
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#hardening-optional" class="md-nav__link">
     <span class="md-ellipsis">
       Hardening (optional)
@@ -951,6 +994,27 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1530,6 +1594,8 @@
       
         
       
+        
+      
     
     
       
@@ -1657,6 +1723,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1694,6 +1781,15 @@
   <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       Prerequisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-user-the-panel-connects-as" class="md-nav__link">
+    <span class="md-ellipsis">
+      The user the panel connects as
     </span>
   </a>
   
@@ -1756,6 +1852,15 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-full-setup-changes-on-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      What Full Setup changes on the host
+    </span>
+  </a>
   
 </li>
       
@@ -1824,26 +1929,83 @@ and request HTTPS automatically.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
 <li>A VPS with <strong>Ubuntu 22.04</strong> or newer (Debian 12 also works).</li>
-<li>SSH access for a sudo-capable user. The user can be <code>root</code>.</li>
-<li>Outbound HTTPS allowed from the VPS (we pull container images from Docker Hub
-  and the OCA mirror).</li>
+<li>SSH access for a user with passwordless <code>sudo</code> that can use Docker: <code>root</code>,
+  or a user prepared as in <a href="#the-user-the-panel-connects-as">The user the panel connects as</a>.</li>
+<li>Ports <strong>80 and 443 free</strong>: Full Setup puts the proxy there
+  (<a href="#what-full-setup-changes-on-the-host">what it changes</a>).</li>
+<li>Outbound HTTPS from the VPS to Docker Hub, <code>ghcr.io</code>, GitHub and PyPI, and
+  during Full Setup to Docker's and the distribution's package servers:
+  <a href="../internal-network/#what-needs-the-internet">the full list</a>.</li>
 </ul>
+<div class="admonition info">
+<p class="admonition-title">A server only your network reaches</p>
+<p>For a host and a panel without public access — an office VM — see also
+<a href="../internal-network/">Panel on an internal network</a>: names, certificates,
+and what needs the internet.</p>
+</div>
+<h2 id="the-user-the-panel-connects-as">The user the panel connects as<a class="headerlink" href="#the-user-the-panel-connects-as" title="Permanent link">&para;</a></h2>
+<p>The panel needs a user that can:</p>
+<ul>
+<li><strong>run <code>sudo</code> without a password</strong> — Full Setup installs packages and writes
+  under <code>/etc</code>, and hardening checks <code>sudo -n</code> before it starts;</li>
+<li><strong>use Docker without <code>sudo</code></strong> — deploys run <code>docker compose</code> directly, so the
+  user must be in the <code>docker</code> group.</li>
+</ul>
+<p><code>root</code> meets both. For a dedicated user, run this on the VPS, with the public
+key the panel shows (step 3 below) in place of <code>ssh-ed25519 AAAA...</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>sudo<span class="w"> </span>useradd<span class="w"> </span>--create-home<span class="w"> </span>--shell<span class="w"> </span>/bin/bash<span class="w"> </span>incubacloud
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'incubacloud ALL=(ALL) NOPASSWD:ALL'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>/etc/sudoers.d/incubacloud<span class="w"> </span>&gt;/dev/null
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>sudo<span class="w"> </span>chmod<span class="w"> </span><span class="m">440</span><span class="w"> </span>/etc/sudoers.d/incubacloud
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>sudo<span class="w"> </span>visudo<span class="w"> </span>-cf<span class="w"> </span>/etc/sudoers.d/incubacloud
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Created before Docker is: a Docker that Full Setup installs later</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># already counts this user in.</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>sudo<span class="w"> </span>groupadd<span class="w"> </span>-f<span class="w"> </span>docker
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>sudo<span class="w"> </span>usermod<span class="w"> </span>-aG<span class="w"> </span>docker<span class="w"> </span>incubacloud
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>sudo<span class="w"> </span>install<span class="w"> </span>-d<span class="w"> </span>-m<span class="w"> </span><span class="m">700</span><span class="w"> </span>-o<span class="w"> </span>incubacloud<span class="w"> </span>-g<span class="w"> </span>incubacloud<span class="w"> </span>/home/incubacloud/.ssh
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'ssh-ed25519 AAAA... incubacloud'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>/home/incubacloud/.ssh/authorized_keys<span class="w"> </span>&gt;/dev/null
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>sudo<span class="w"> </span>chown<span class="w"> </span>incubacloud:incubacloud<span class="w"> </span>/home/incubacloud/.ssh/authorized_keys
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>sudo<span class="w"> </span>chmod<span class="w"> </span><span class="m">600</span><span class="w"> </span>/home/incubacloud/.ssh/authorized_keys
+</span></code></pre></div>
+<p>Full Setup also adds the user to the <code>docker</code> group, but a group counts from
+the user's next login: add it beforehand, as above.</p>
 <h2 id="walkthrough">Walkthrough<a class="headerlink" href="#walkthrough" title="Permanent link">&para;</a></h2>
 <h3 id="1-open-the-hosts-page">1. Open the hosts page<a class="headerlink" href="#1-open-the-hosts-page" title="Permanent link">&para;</a></h3>
-<p>Go to <code>/cloud/hosts</code>. Click <strong>New Host</strong>.</p>
+<p>Go to <code>/cloud/hosts</code>. Click <strong>Add Host</strong>.</p>
 <h3 id="2-fill-in-connection-details">2. Fill in connection details<a class="headerlink" href="#2-fill-in-connection-details" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Name</strong> — whatever helps you remember it (e.g. <code>customer-foo-prod</code>).</li>
-<li><strong>IP address or hostname</strong> — the public IP works fine.</li>
-<li><strong>SSH port</strong> — usually <code>22</code>.</li>
-<li><strong>Username</strong> — <code>root</code> is fine; a sudo-capable user is also fine.</li>
-<li><strong>Auth method</strong> — <strong>SSH key</strong> (recommended) or password.</li>
+<li><strong>IP Address</strong> — the public IP works fine.</li>
+<li><strong>Port</strong> — the SSH port, usually <code>22</code>.</li>
+<li><strong>User</strong> — <code>root</code> is fine; a user with passwordless <code>sudo</code> is also fine.</li>
+<li><strong>Login Type</strong> — <strong>SSH Key</strong> (recommended) or <strong>Password</strong>. Hardening
+  needs a key: it copies the user's authorized keys to the account it creates.</li>
+<li><strong>Wildcard Domain</strong> — the domain your instances get their names under
+  (<code>example.com</code> or <code>*.example.com</code>): each instance answers at a name such as
+  <code>myproject-prod.example.com</code>. Point a wildcard DNS record (<code>*.example.com</code>)
+  at the host's IP before you deploy.</li>
 </ul>
 <h3 id="3-ssh-key-recommended-path">3. SSH key (recommended path)<a class="headerlink" href="#3-ssh-key-recommended-path" title="Permanent link">&para;</a></h3>
-<p>We generate an Ed25519 keypair for you. Copy the displayed public key.</p>
-<p>On the VPS, append it to the chosen user's <code>~/.ssh/authorized_keys</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">"ssh-ed25519 AAAAC3..."</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.ssh/authorized_keys
+<p>On the <strong>Connection</strong> tab, <strong>Generate a key for me</strong> is selected: the panel
+creates a key pair for this host and shows its <strong>public key</strong>, with a button to
+copy it. The private half stays in the panel, stored encrypted.</p>
+<p>Put the public key on the VPS, as the user you entered:</p>
+<ul>
+<li>if you have not created the server yet, paste it in your provider's SSH key
+  field when you create it, then come back and fill in its IP address;</li>
+<li>if the server already exists, run the command the panel shows under the key,
+  which appends it to that user's <code>~/.ssh/authorized_keys</code>:</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>~/.ssh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span><span class="m">700</span><span class="w"> </span>~/.ssh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s1">'ssh-ed25519 AAAA... incubacloud'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.ssh/authorized_keys
 </span></code></pre></div>
+<p>Keep this page open until you create the host: the key is saved with it. Once
+you have copied the key, the panel asks before you leave the page.</p>
+<p>To use a key of your own instead, choose <strong>Upload my own private key</strong> and
+upload the private half in <strong>SSH Private Key</strong>. It must have no passphrase (the
+panel has no field for one).</p>
+<p>The host's <strong>Connection</strong> tab keeps showing the public key, so you can copy it
+again later.</p>
 <p>Create the host, then click <strong>Trust SSH Key</strong> in its action bar. Green = we
 got in, and the panel keeps the host's key to check it on every connection.</p>
 <h3 id="4-run-check">4. Run <code>Check</code><a class="headerlink" href="#4-run-check" title="Permanent link">&para;</a></h3>
@@ -1854,6 +2016,60 @@ or let us run <strong>Full Setup</strong>.</p>
 <p>We install Docker (if missing), drop in Traefik, wire up cert auto-renewal,
 and run a final probe. Watch the log to follow each step.</p>
 <p>When it ends in green, the host is ready to receive instances.</p>
+<h2 id="what-full-setup-changes-on-the-host">What Full Setup changes on the host<a class="headerlink" href="#what-full-setup-changes-on-the-host" title="Permanent link">&para;</a></h2>
+<p>Every step checks before it changes anything, so running Full Setup again is a
+repair, not a reinstall.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Packages</td>
+<td>Installs git, Docker CE (through <code>get.docker.com</code>), the Compose plugin, <code>python3-pip</code>, <code>python3-venv</code>, pipx, zip and logrotate, when missing.</td>
+</tr>
+<tr>
+<td>The user</td>
+<td>pipx installs copier (pinned), invoke and pre-commit in <code>~/.local/bin</code>, added to <code>PATH</code> in <code>~/.bashrc</code>; <code>git config --global init.defaultBranch master</code> if unset; the user joins the <code>docker</code> group.</td>
+</tr>
+<tr>
+<td><code>/etc/docker/daemon.json</code></td>
+<td>Only while no container exists: Docker's bridge at 172.17.0.1/16 and an address pool of 10.200.0.0/14 in /24 networks, so the host can hold many instances (each takes a network). Docker restarts. With containers running, it is left alone.</td>
+</tr>
+<tr>
+<td><code>~/traefik/</code></td>
+<td>The proxy: Traefik and a read-only proxy of the Docker socket, Compose project <code>inverseproxy</code>, publishing <strong>ports 80 and 443</strong> (and 8082 on the loopback, for metrics). Its settings are the host's <strong>Traefik</strong> tab.</td>
+</tr>
+<tr>
+<td><code>/var/log/traefik/</code></td>
+<td>The proxy's access log, rotated daily and kept 30 days.</td>
+</tr>
+<tr>
+<td><code>~/globalwhitelist/</code></td>
+<td>The proxies of the host's <strong>Whitelist</strong> tab (Compose project <code>globalwhitelist</code>): the names stagings may reach.</td>
+</tr>
+</tbody>
+</table>
+<p>Each instance you deploy later lives in <code>~/&lt;project folder&gt;/&lt;instance name&gt;/</code>
+of the same user.</p>
+<div class="admonition warning">
+<p class="admonition-title">A web server already on 80 or 443</p>
+<p>The proxy must own ports 80 and 443, and the panel has no setting to move
+it. With nginx, Apache or anything else bound there, <em>Start Traefik</em> fails.
+See what holds them with
+<code>sudo ss -tlpn | grep -E ':(80|443)\s'</code>, and move that service to other
+ports or to another machine first.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Addresses your network already uses</p>
+<p>Docker's networks on the host come from 172.17.0.0/16 and 10.200.0.0/14,
+and the host routes those ranges to its containers. If machines of your
+network have addresses there, the host cannot reach them. Check before you
+run Full Setup: the panel has no setting for these ranges.</p>
+</div>
 <h2 id="hardening-optional">Hardening (optional)<a class="headerlink" href="#hardening-optional" title="Permanent link">&para;</a></h2>
 <p>The first time you trust a new host's SSH key, the panel offers to harden it.
 You can also do it at any time with <strong>Apply Hardening</strong> in the host's action
@@ -1897,7 +2113,8 @@ Re-running it is safe: every step checks the host before it changes anything.</p
 <h2 id="dns-for-https">DNS for HTTPS<a class="headerlink" href="#dns-for-https" title="Permanent link">&para;</a></h2>
 <p>For Let's Encrypt to issue a cert when you deploy a domain on this host,
 the domain must already point (A or AAAA) to the VPS IP <strong>at the moment of
-deployment</strong>. Set DNS first, then deploy.</p>
+deployment</strong>. Set DNS first, then deploy. A host the internet cannot reach never
+gets one this way: see <a href="../internal-network/#certificates">Panel on an internal network</a>.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <details class="note">
 <summary>Connection refused</summary>
@@ -1918,6 +2135,16 @@ to 22.04+ or Debian to 12+. We don't support older kernels.</p>
 <p>Check that ports 80 and 443 are free on the host (no nginx, apache, or
 other webserver running): <code>sudo ss -tulpn | grep -E ':80|:443'</code>.
 If something is bound, stop it first.</p>
+</details>
+<details class="note">
+<summary>Full Setup fails on Docker with <em>permission denied</em> on its socket</summary>
+<p>The user is not in the <code>docker</code> group for this connection yet: add it as
+in <a href="#the-user-the-panel-connects-as">The user the panel connects as</a>, and
+run Full Setup again.</p>
+</details>
+<details class="note">
+<summary>Hardening refuses to start: sudo asks for a password</summary>
+<p>The user needs <code>NOPASSWD</code> in its sudoers line.</p>
 </details>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1976,13 +2203,13 @@ If something is bound, stop it first.</p>
         
         
           
-          <a href="../hire/" class="md-footer__link md-footer__link--next" aria-label="Next: Order a VPS">
+          <a href="../internal-network/" class="md-footer__link md-footer__link--next" aria-label="Next: Panel on an internal network">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Order a VPS
+                Panel on an internal network
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -2027,6 +2254,14 @@ If something is bound, stop it first.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>

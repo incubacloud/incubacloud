@@ -656,6 +656,8 @@
       
         
       
+        
+      
     
     
       
@@ -723,6 +725,27 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -741,6 +764,8 @@
       
         
           
+        
+      
         
       
         
@@ -802,6 +827,27 @@
   
   <span class="md-ellipsis">
     Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
   </span>
   
 
@@ -1385,6 +1431,8 @@
       
         
       
+        
+      
     
     
       
@@ -1503,6 +1551,27 @@
   
   <span class="md-ellipsis">
     Service limits
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
   </span>
   
 
@@ -1678,6 +1747,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#odoos-website-info-page-is-blocked" class="md-nav__link">
+    <span class="md-ellipsis">
+      Odoo's website info page is blocked
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See also
@@ -1712,6 +1790,22 @@
 <h1 id="instances">Instances<a class="headerlink" href="#instances" title="Permanent link">&para;</a></h1>
 <p>An <strong>instance</strong> is a running Odoo deployment — one container, one database,
 one filestore. It belongs to a project and runs on a host.</p>
+<div class="admonition warning">
+<p class="admonition-title">Before you create the first instance</p>
+<ul>
+<li><strong>Production comes first.</strong> A staging is a copy of production: until the
+  project has a production instance, the staging section's <strong>+</strong> stays
+  disabled. Deploy production, then use <strong>Clone to Staging</strong>, next to it
+  in the project's side menu, for a staging with production's data.</li>
+<li><strong>Production needs a backup destination.</strong> Deploying one without any is
+  refused (<em>No backup backend configured for this instance</em>). Register a
+  destination first (<a href="../backups/#backup-destinations">Backups</a>)
+  and choose it on the instance, on its project, or for every production
+  instance in <strong>Settings → General → Default Backup Destination</strong>.</li>
+</ul>
+<p>An instance's environment is chosen when it is created and cannot be
+changed later.</p>
+</div>
 <h2 id="concepts">Concepts<a class="headerlink" href="#concepts" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Production instance</strong> — customer-facing. Re-deploys go through the safe-rebuild
@@ -1719,9 +1813,10 @@ one filestore. It belongs to a project and runs on a host.</p>
 <li><strong>Staging instance</strong> — test copy. Re-deploys are direct. As many as you like:
   stagings run on servers you already pay for, so they never count against the
   instance allowance of a SaaS plan.</li>
-<li><strong>Odoo version</strong> — any from 7.0 to 20.0, taken from the project when the instance
-  is created and fixed once it is deployed. Odoo 20.0 runs on PostgreSQL 16 to 18;
-  the others, on 14 to 18.</li>
+<li><strong>Odoo version</strong> — one the panel offers, 18.0 to 20.0, taken from the project
+  when the instance is created and fixed once it is deployed. Odoo 20.0 runs on
+  PostgreSQL 16 to 18; 18.0 and 19.0, on 14 to 18. Older series open as they pass
+  their tests.</li>
 <li><strong>Sleeping</strong> (SaaS Free plan) — on Free it is your control plane, not your
   instances, that is suspended after ~30 minutes without traffic to save
   resources. It wakes up on the next request (the first request after a nap takes
@@ -1760,7 +1855,10 @@ itself when the one ahead of it ends, in the order they were asked for.</p>
 does not start: a restart after a broken deploy would only fail again. The
 waiting actions show <strong>Action required</strong>, which leads to the failure's
 alert. <strong>Retry</strong> the failed action — once it succeeds the queue moves on —
-or <strong>dismiss</strong> the alert in <strong>Alerts</strong> to let the queue go on as it is.</p>
+or <strong>dismiss</strong> the alert in <strong>Alerts</strong> to let the queue go on as it is.
+With <strong>Auto-rebuild</strong>, a rebuild that failed does not stop the next
+push: pushing the fix rebuilds the instance, and once that rebuild
+succeeds the alert closes by itself.</p>
 </div>
 <p>Deleting an instance does not wait for the actions queued on it: they are
 cancelled, and the deletion starts as soon as the action running now ends.</p>
@@ -1803,6 +1901,7 @@ writing.</p>
 <li>Rebuild after pushing changes to your repo (Instance detail → Rebuild)</li>
 <li><a href="logs/">View logs</a> (Instance detail → Logs). Odoo's log is kept one file per day and survives rebuilds: pick a day, search every day at once, or download one</li>
 <li>Open a shell on the container (Instance detail → Shell)</li>
+<li><a href="resources/">Size its memory and CPU</a> (Instance detail → Resources), and what the panel derives from them</li>
 <li><a href="../backups/restore/">Restore from a backup</a></li>
 <li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
 <li><a href="#pull-request-previews">Get a preview instance for every pull request</a></li>
@@ -1887,6 +1986,16 @@ today has no backup to copy until its first nightly run.</p>
   only the modules whose checksum changed. On by default.</li>
 </ul>
 <p>Both live under <code>Instance detail → Networking</code>.</p>
+<p><strong>Auto-rebuild</strong> acts on GitHub's push notifications, which reach the panel
+through the <a href="../projects/#private-repositories">GitHub App</a>, so the
+panel must be reachable from the internet.</p>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS</p>
+<p>On the Free plan the control plane sleeps after 30 minutes without use, and
+a push notification that arrives while it sleeps only wakes it: the push is
+not acted on. Rebuilding on push needs a paid plan, whose control plane
+never sleeps; on Free, rebuild by hand.</p>
+</div>
 <h2 id="pull-request-previews">Pull request previews<a class="headerlink" href="#pull-request-previews" title="Permanent link">&para;</a></h2>
 <p>A project can create a throwaway staging for every pull request, so a change can
 be looked at running — on real data — before it is merged. It is <strong>off by
@@ -2029,6 +2138,16 @@ applies on the next <strong>Rebuild</strong>.</p>
 list of its host, which is what every staging used before this existed.</p>
 <p>Production has no such list. A production instance is yours, its traffic is not
 filtered by the platform, and the tab is absent rather than empty.</p>
+<h2 id="odoos-website-info-page-is-blocked">Odoo's website info page is blocked<a class="headerlink" href="#odoos-website-info-page-is-blocked" title="Permanent link">&para;</a></h2>
+<p>Odoo shows anyone the list of installed apps and its exact version at
+<code>/website/info</code> (also <code>/es/website/info</code> and the other languages). That tells a
+stranger which known flaws to try, so the proxy of every host refuses it on
+every instance with a <code>403 Forbidden</code>, before the request reaches Odoo. Your
+own signed-in users lose the page too: the proxy does not know who is signed in.</p>
+<p>To let anyone open it on one instance, turn on <strong>Allow Odoo's public website
+info page</strong> under <code>Instance detail → Networking</code> and rebuild the instance. It is
+off for every instance, and a staging cloned from production starts with it off.
+While the instance is stopped or asleep, the page stays blocked.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../hosts/">Hosts</a> — where instances run.</li>
@@ -2141,6 +2260,14 @@ filtered by the platform, and the tab is absent rather than empty.</p>
     
     <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
     </a>
   
 </div>
