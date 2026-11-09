@@ -1782,6 +1782,19 @@
                         </t>
 
                         <t t-else="">
+                            <t t-if="syncShowSelectAll">
+                                <div class="ic-sync-all">
+                                    <label class="ic-sync-selectall">
+                                        <input
+                      type="checkbox"
+                      t-att-checked="syncAllState.checked"
+                      t-att-indeterminate="syncAllState.indeterminate"
+                      t-on-change="toggleSyncAll"
+                    />
+                                        <span>Select all changes</span>
+                                    </label>
+                                </div>
+                            </t>
                             <div class="ic-sync-sections">
                                 <!-- PIP section -->
                                 <t t-set="pipDiff" t-value="state.syncModal.diff.pip" />
@@ -1789,9 +1802,15 @@
               t-if="pipDiff.only_instance.length or pipDiff.only_project.length or pipDiff.conflicts.length"
             >
                                     <div class="ic-sync-section">
-                                        <div
-                  class="ic-sync-section-title"
-                >Python Dependencies (pip)</div>
+                                        <div class="ic-sync-section-head">
+                                            <div
+                                              class="ic-sync-section-title"
+                                              id="ic-sync-title-pip"
+                                            >Python Dependencies (pip)</div>
+                                            <t t-call="incubacloud.InstanceDetail.syncSelectAll">
+                                                <t t-set="sec" t-value="'pip'" />
+                                            </t>
+                                        </div>
                                         <t
                   t-foreach="pipDiff.only_instance"
                   t-as="line"
@@ -1890,9 +1909,15 @@
               t-if="aptDiff.only_instance.length or aptDiff.only_project.length or aptDiff.conflicts.length"
             >
                                     <div class="ic-sync-section">
-                                        <div
-                  class="ic-sync-section-title"
-                >System Dependencies (apt)</div>
+                                        <div class="ic-sync-section-head">
+                                            <div
+                                              class="ic-sync-section-title"
+                                              id="ic-sync-title-apt"
+                                            >System Dependencies (apt)</div>
+                                            <t t-call="incubacloud.InstanceDetail.syncSelectAll">
+                                                <t t-set="sec" t-value="'apt'" />
+                                            </t>
+                                        </div>
                                         <t
                   t-foreach="aptDiff.only_instance"
                   t-as="line"
@@ -1994,9 +2019,15 @@
               t-if="reposDiff.only_instance.length or reposDiff.only_project.length or reposDiff.conflicts.length"
             >
                                     <div class="ic-sync-section">
-                                        <div
-                  class="ic-sync-section-title"
-                >Repositories</div>
+                                        <div class="ic-sync-section-head">
+                                            <div
+                                              class="ic-sync-section-title"
+                                              id="ic-sync-title-repos"
+                                            >Repositories</div>
+                                            <t t-call="incubacloud.InstanceDetail.syncSelectAll">
+                                                <t t-set="sec" t-value="'repos'" />
+                                            </t>
+                                        </div>
                                         <t
                   t-foreach="reposDiff.only_instance"
                   t-as="r"
@@ -2163,6 +2194,25 @@
             </IcModal>
 
         </div>
+    </t>
+
+    <!-- "Select all" box in the head of a section of the Sync with project
+         modal. Takes ``sec`` (pip, apt or repos); a section with only
+         conflicts has no rows to tick and shows none. Its name is its
+         own label plus the section's title, so a screen reader tells
+         the boxes apart. -->
+    <t t-name="incubacloud.InstanceDetail.syncSelectAll">
+        <t t-set="selectState" t-value="syncSectionState(sec)" />
+        <label t-if="selectState.total" class="ic-sync-selectall">
+            <input
+                type="checkbox"
+                t-att-aria-labelledby="'ic-sync-all-' + sec + ' ic-sync-title-' + sec"
+                t-att-checked="selectState.checked"
+                t-att-indeterminate="selectState.indeterminate"
+                t-on-change="() => this.toggleSyncSection(sec)"
+            />
+            <span t-att-id="'ic-sync-all-' + sec">Select all</span>
+        </label>
     </t>
 
     <!-- ════════════════════════════════════════════════════════════════════════

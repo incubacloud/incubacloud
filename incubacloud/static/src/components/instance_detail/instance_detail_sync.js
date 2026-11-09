@@ -92,6 +92,111 @@ export const SyncMixin = (Base) =>
       this.state.syncModal.actions[section].conflicts[name] = winner;
     }
 
+    /**
+     * The transfer rows of one section, as ``[direction, key]`` pairs:
+     * everything the section offers to push to the project or pull to
+     * the instance. Conflicts are not among them: each is a choice of
+     * a winner, not a row to tick.
+     *
+     * @param {"pip"|"apt"|"repos"} section
+     * @returns {Array<["push"|"pull", string]>}
+     */
+    _syncSectionRows(section) {
+      const a = this.state.syncModal?.actions?.[section];
+      if (!a) return [];
+      return [
+        ...Object.keys(a.push || {}).map((k) => ["push", k]),
+        ...Object.keys(a.pull || {}).map((k) => ["pull", k]),
+      ];
+    }
+
+    /**
+     * The state of a "Select all" box over *sections*.
+     *
+     * @param {string[]} sections
+     * @returns {{total: number, selected: number, checked: boolean,
+     *            indeterminate: boolean}} ``checked`` when every row is
+     *     ticked, ``indeterminate`` when only some are; a box over no
+     *     rows is neither.
+     */
+    _syncSelectState(sections) {
+      let total = 0;
+      let selected = 0;
+      for (const sec of sections) {
+        const a = this.state.syncModal?.actions?.[sec];
+        for (const [direction, key] of this._syncSectionRows(sec)) {
+          total += 1;
+          if (a[direction][key]) selected += 1;
+        }
+      }
+      return {
+        total,
+        selected,
+        checked: total > 0 && selected === total,
+        indeterminate: selected > 0 && selected < total,
+      };
+    }
+
+    /**
+     * Ticks every row of *sections*, or clears them when all are
+     * already ticked (a partly ticked box ticks the rest, as a native
+     * checkbox does).
+     *
+     * @param {string[]} sections
+     */
+    _toggleSyncRows(sections) {
+      const value = !this._syncSelectState(sections).checked;
+      for (const sec of sections) {
+        const a = this.state.syncModal.actions[sec];
+        for (const [direction, key] of this._syncSectionRows(sec)) {
+          a[direction][key] = value;
+        }
+      }
+    }
+
+    /**
+     * State of the "Select all" box of one section.
+     *
+     * @param {"pip"|"apt"|"repos"} section
+     * @returns {{total: number, selected: number, checked: boolean,
+     *            indeterminate: boolean}}
+     */
+    syncSectionState(section) {
+      return this._syncSelectState([section]);
+    }
+
+    /**
+     * Ticks or clears every transfer row of one section.
+     *
+     * @param {"pip"|"apt"|"repos"} section
+     */
+    toggleSyncSection(section) {
+      this._toggleSyncRows([section]);
+    }
+
+    /**
+     * State of the "Select all changes" box over every section.
+     *
+     * @returns {{total: number, selected: number, checked: boolean,
+     *            indeterminate: boolean}}
+     */
+    get syncAllState() {
+      return this._syncSelectState(["pip", "apt", "repos"]);
+    }
+
+    /** Whether more than one section has rows, so a box over all is worth showing. */
+    get syncShowSelectAll() {
+      return (
+        ["pip", "apt", "repos"].filter((s) => this.syncSectionState(s).total > 0)
+          .length > 1
+      );
+    }
+
+    /** Ticks or clears every transfer row of every section. */
+    toggleSyncAll() {
+      this._toggleSyncRows(["pip", "apt", "repos"]);
+    }
+
     get syncHasSelections() {
       const a = this.state.syncModal?.actions;
       if (!a) return false;

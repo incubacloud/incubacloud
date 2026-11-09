@@ -12839,6 +12839,18 @@ msgstr "Seleccione un host"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Select all"
+msgstr "Seleccionar todo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Select all changes"
+msgstr "Seleccionar todos los cambios"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 msgid "Select an instance"
 msgstr "Seleccione una instancia"
