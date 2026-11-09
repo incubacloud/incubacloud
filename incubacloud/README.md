@@ -98,7 +98,7 @@ Requirements
 - `queue_job` (OCA)
 - Python: the repository's `requirements.txt` (`asyncssh`, `cryptography`,
   `ansible-core`, `ansible-runner`, `boto3`, `PyYAML`, `bcrypt`, `joserfc`…)
-  and OCA/queue's (`openupgradelib`, `requests`)
+  and OCA/queue's (`requests`)
 - Docker image: `ghcr.io/tecnativa/doodba` (includes `click-odoo-contrib`;
   on Odoo 20 its database commands refuse to run, so the panel dumps and
   loads with `odoo db` there)
