@@ -19453,3 +19453,42 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_git_hooks.py:0
 msgid "GitLab refused the credential: %(status)s"
 msgstr "GitLab rechazó la credencial: %(status)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"SMTP host '%(host)s' is invalid. Use a hostname such as smtp.example.com or "
+"an IPv4 address, without a port."
+msgstr ""
+"El servidor SMTP '%(host)s' no es válido. Use un nombre de host como "
+"smtp.example.com o una dirección IPv4, sin puerto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "SMTP port %(port)s is invalid. Use a port from 1 to 65535."
+msgstr "El puerto SMTP %(port)s no es válido. Use un puerto del 1 al 65535."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "SMTP user"
+msgstr "El usuario SMTP"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Admin email"
+msgstr "El correo del administrador"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"%(label)s is invalid. Use one line of at most 254 characters, without double"
+" quotes, backslashes, tabs or other control characters."
+msgstr ""
+"%(label)s no es válido. Use una sola línea de 254 caracteres como máximo, "
+"sin comillas dobles, barras invertidas, tabuladores ni otros caracteres de "
+"control."
