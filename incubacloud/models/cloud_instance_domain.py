@@ -62,6 +62,18 @@ class CloudInstanceDomain(models.Model):
     )
     sequence = fields.Integer(default=10)
 
+    def write(self, vals):
+        """Write, then check a moved row against the rules where it landed.
+
+        Odoo checks the record rules on the row as it was: one moved to
+        another instance is checked again as it is now, so it goes only
+        under an instance its writer may write.
+        """
+        result = super().write(vals)
+        if 'instance_id' in vals:
+            self.check_access('write')
+        return result
+
     # Value emitted to copier for each explicit Selection option. Kept
     # next to the field so the mapping and the domain can never drift
     # apart. ``auto`` is absent on purpose: it resolves per host, and a

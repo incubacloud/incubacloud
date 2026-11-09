@@ -95,6 +95,10 @@ class CloudRepoMixin(models.AbstractModel):
     _name = 'cloud.repo.mixin'
     _description = 'Repository line (shared base)'
 
+    #: The line's parent field, named by each concrete model: a write
+    #: that moves the line is checked against the rules as it is now.
+    _owner_field = None
+
     sequence = fields.Integer(default=10)
     url = fields.Char(
         string='Repository URL',
@@ -325,6 +329,11 @@ class CloudRepoMixin(models.AbstractModel):
             result = super().write(vals)
         else:
             result = self._write_with_legacy_urls_canonical(vals)
+        # Odoo checks the record rules on the line as it was: one moved
+        # to another parent is checked again where it landed, so it goes
+        # only under a parent its writer may write.
+        if self._owner_field in vals:
+            self.check_access('write')
         if 'url' in vals or 'branch' in vals:
             self._apply_requirements()
         return result
