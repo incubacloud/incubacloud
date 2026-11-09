@@ -62,8 +62,7 @@ def _repo_alias(url):
 #: What doodba keeps in ``custom/src`` for itself, which a repository
 #: fetched into ``custom/src/<alias>`` would replace: its private addons
 #: and its repos and addons files, read as .yaml or .yml (doodbalib).
-#: ``deploy.sh``'s ``ic_reserved_alias`` refuses the same (security
-#: review of G1, 8-nov-2026).
+#: ``deploy.sh``'s ``ic_reserved_alias`` refuses the same.
 RESERVED_REPO_ALIASES = frozenset({
     'private', 'repos.yaml', 'repos.yml', 'addons.yaml', 'addons.yml',
 })
@@ -180,7 +179,7 @@ def is_safe_repo_url(value):
     of a github.com repository are rewritten by
     :func:`canonical_repo_url` first. A repository of a configured Git
     provider (GitLab) is checked by :func:`resolve_repo_ref` instead,
-    against the providers' base URLs (plan-gitlab.md §4.1, 8-nov-2026).
+    against the providers' base URLs.
     """
     return isinstance(value, str) and bool(
         _CANONICAL_REPO_URL_RE.fullmatch(value)
@@ -296,7 +295,7 @@ def consume_git_read(env):
     ``rate_limit_git_reads_per_hour``, in the one bucket every read of a
     repository with git uses, the editor's, the panel's and the
     assistant's (:func:`consume_hourly_quota`): each one runs git or asks
-    GitLab (plan-gitlab.md §9).
+    GitLab.
 
     :param env: an Odoo environment, of the user who reads
     :return: whether the read is within the cap
@@ -309,8 +308,7 @@ def consume_git_read(env):
 
 #: The GitLab repositories one panel request reads with git at most,
 #: besides the user's hourly cap: each read is a git process and a
-#: temporary fetch of up to 64 MB, and a request lists them all at once
-#: (security review of G1, 8-nov-2026).
+#: temporary fetch of up to 64 MB, and a request lists them all at once.
 REQUEST_GIT_READS = 10
 
 #: Seconds all of one panel request's GitLab reads take at most: what
@@ -326,7 +324,7 @@ class GitReadBudget:
     the user's hourly cap (:func:`consume_git_read`). Taken on the
     calling thread, which holds the ORM. A read past it is not made, and
     the request says so without failing: the deploy reads what it needs
-    without any (security review of G1, 8-nov-2026).
+    without any.
 
     :param env: an Odoo environment, of the user who reads
     :param int max_reads: reads at most; None: :data:`REQUEST_GIT_READS`
@@ -410,7 +408,7 @@ def user_may_use_credential(env, provider, path):
     on. It is used for a repository of a line the user sees under their
     record rules (a project's or an instance's), or, to add a new one,
     for a developer of a project they can edit; any other read goes as
-    a public one (security review of G1, 8-nov-2026).
+    a public one.
 
     :param env: an Odoo environment, of the user who reads
     :param provider: the ``cloud.git.provider``

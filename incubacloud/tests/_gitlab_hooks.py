@@ -1,4 +1,4 @@
-"""Fixtures shared by the GitLab webhook tests (G3)."""
+"""Fixtures shared by the GitLab webhook tests."""
 import json
 
 from odoo.tests.common import TransactionCase

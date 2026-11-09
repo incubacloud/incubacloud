@@ -2,8 +2,7 @@
 
 A line of a Git provider is read with the panel's git and the provider's
 credential; it is the user's when a line of theirs has the same provider
-and path. Writing to one answers that it comes in a next version
-(plan-gitlab.md §4.10, 8-nov-2026).
+and path. Writing to one answers that it comes in a next version.
 """
 
 from unittest.mock import patch

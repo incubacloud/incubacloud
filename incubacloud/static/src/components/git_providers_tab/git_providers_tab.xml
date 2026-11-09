@@ -164,7 +164,7 @@
                 </button>
             </div>
 
-            <!-- ── Webhooks (G3) ─────────────────────────────────────── -->
+            <!-- ── Webhooks ─────────────────────────────────────── -->
             <t t-if="state.providers.length">
                 <div class="rl-saas-fsec ic-gitp-hookhead">Webhooks</div>
                 <p class="rl-tabnote">

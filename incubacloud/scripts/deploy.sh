@@ -55,8 +55,7 @@ FETCH_TIMEOUT="${IC_FETCH_TIMEOUT:-600}"
 GIT_HELPER_IMAGE=""
 
 # Set by fetch-repos: every git call goes through the helper container,
-# with redirects refused for GitHub too (8.0 to 10.0, plan-gitlab.md
-# §4.4-8).
+# with redirects refused for GitHub too (8.0 to 10.0).
 IC_GIT_ALL_IN_CONTAINER=""
 
 # The helper container running now, removed on exit, hang-up or
@@ -373,7 +372,7 @@ ic_resolve_heads() {
 # The directory of the markers naming the commit each fetched tree is at,
 # one file per alias. Outside the trees: a repository is what the host
 # writes them from, and a ``.incubacloud-head`` symbolic link in one would
-# have had the host write through it (security review of G1, 8-nov-2026).
+# have had the host write through it.
 # Its ``.ic-`` name keeps it out of the build context and of the
 # instance's history with the temporary trees.
 #
@@ -558,7 +557,7 @@ case "$op" in
         install -m 0755 "$(dirname "$0")/doodba/debian_archive.sh" \
             "$build_d/05-incubacloud-debian-archive"
         # And Let's Encrypt's new roots, which jessie's ca-certificates
-        # does not have (plan-gitlab.md §4.4-10).
+        # does not have.
         install -m 0755 "$(dirname "$0")/doodba/isrg_roots.sh" \
             "$build_d/06-incubacloud-isrg-roots"
         ic_log "the image's apt will read Freexian's Extended LTS"
@@ -758,7 +757,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         spec="$1"
         GIT_HELPER_IMAGE="$2"
         retry_wait="${3:-60}"
-        # 8.0 to 10.0 (plan-gitlab.md §4.4-8): the image's git (2.1.4)
+        # 8.0 to 10.0: the image's git (2.1.4)
         # sends a token in the clear after a 302 to http on the same
         # host and knows no http.followRedirects (spike of 8-nov-2026),
         # so it touches no repository. Every repository of the spec is

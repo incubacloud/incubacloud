@@ -132,7 +132,7 @@ class CrudMixin:
                 # See cloud.settings._observability_capabilities.
                 'observability': Settings._observability_capabilities(),
                 # Where this panel may reach a Git provider: 'any' in the
-                # core, 'public' in a tenant's panel (plan-gitlab.md §3).
+                # core, 'public' in a tenant's panel.
                 'git_providers': {
                     'network': request.env[
                         'cloud.git.provider'
@@ -1366,8 +1366,7 @@ class CrudMixin:
                     })
             # ── Merge repo requirements into pip_dependencies ─────────────
             # A GitLab line runs git on the panel: within the request's
-            # reads and the user's hourly cap, or not now (security review
-            # of G1, 8-nov-2026).
+            # reads and the user's hourly cap, or not now.
             merged = project.pip_dependencies or ''
             for repo in repos:
                 url = repo.get('url', '').strip()

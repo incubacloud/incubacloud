@@ -1,4 +1,4 @@
-"""Deploy and rebuild with GitLab repositories (plan-gitlab.md §4.4, J4, J5).
+"""Deploy and rebuild with GitLab repositories.
 
 - ``repos.yaml`` carries each server's own credential and never another's;
 - the heads spec has seven columns for a GitLab line (``cred_authority``
@@ -108,8 +108,7 @@ class TestReposYamlAndSpec(_GitLabExecutorCase):
 
     def test_a_server_off_the_public_policy_refuses_the_job_with_its_cause(self):
         # Rendered outside any ``try`` when the resync of requirements is
-        # off: a UserError there failed the job as an unexpected error
-        # (Fable, 8-nov-2026).
+        # off: a UserError there failed the job as an unexpected error.
         Provider = type(self.env["cloud.git.provider"])
         message = "gitlab.com must resolve to public addresses only"
         with patch.object(Provider, "_network_policy", return_value="public"), \
@@ -228,7 +227,7 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
 
     def test_a_rebuild_of_8_0_fetches_in_its_own_step_before_the_build(self):
         # One step for both had the transport's TERM kill the outer
-        # ``bash -c`` and leave deploy.sh running (Fable, 8-nov-2026).
+        # ``bash -c`` and leave deploy.sh running.
         ex = _make_rebuild_executor(odoo_version="8.0")
         self._ready(ex, "8.0")
         cmds = ex.get_commands()
@@ -330,7 +329,7 @@ class TestThePinNeverChangesTheInstance(_GitLabExecutorCase):
 
 
 class TestRequirementsOfAnUnreachableGitLab(_GitLabExecutorCase):
-    """J5 (§4.4-7, Fable's point 7)."""
+    """A GitLab that cannot be reached while reading requirements."""
 
     def setUp(self):
         super().setUp()

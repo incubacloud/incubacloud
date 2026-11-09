@@ -12,7 +12,7 @@ import {
 import { OWN_SETTINGS_TABS, Settings } from "@incubacloud/components/settings/settings";
 
 /**
- * Settings → Git providers (plan-gitlab.md §4.11-1): the tab saves each
+ * Settings → Git providers: the tab saves each
  * provider on its own, so it is not one of Settings' own tabs, and a new
  * credential starts as a project token with no token stored.
  */
@@ -128,7 +128,7 @@ function hook(vals = {}) {
     };
 }
 
-describe("GitProvidersTab — webhooks (G3)", () => {
+describe("GitProvidersTab — webhooks", () => {
     beforeEach(() => allowTranslations());
 
     test("a delivery counts when it is not older than the request", () => {
@@ -269,7 +269,7 @@ describe("GitProvidersTab — webhooks (G3)", () => {
  *
  * Read from the template rather than mounted (see ic_confirm_dialog.test.js).
  */
-describe("GitProvidersTab — webhooks list (G3)", () => {
+describe("GitProvidersTab — webhooks list", () => {
     /**
      * The message of the list whose condition is *condition*.
      *

@@ -1,4 +1,4 @@
-"""The GitLab webhook receiver (plan-gitlab.md §4.7.1, Fable's review of G3).
+"""The GitLab webhook receiver.
 
 The endpoint is called with a stubbed request, as GitHub's receiver is
 in ``test_github_webhook_cost``: the checks before the body must refuse

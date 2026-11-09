@@ -4,14 +4,13 @@ A provider is one GitLab server: gitlab.com or a self-hosted one, maybe
 behind a private CA. Its credentials are tokens scoped to a namespace;
 the one a repository uses is the credential of the longest namespace
 that covers its path and has the scopes the operation needs, never a
-second one "just in case" after a refusal (``plan-gitlab.md`` §2.1-2.2,
-8-nov-2026).
+second one "just in case" after a refusal.
 
 Where the panel may connect is one decision, :meth:`_network_policy`:
 ``'any'`` here, in the core, where a self-hosted panel reaches any
 GitLab its owner adds, private or public; ``'public'`` in a tenant's
 panel (``incubacloud_tenant`` overrides it), whose GitLab must have only
-public addresses, pinned at the moment they are checked (§3).
+public addresses, pinned at the moment they are checked.
 """
 import hashlib
 import logging
@@ -36,20 +35,20 @@ from .encrypted_char import EncryptedChar
 
 _logger = logging.getLogger(__name__)
 
-#: A CA bundle holds a few dozen certificates at most (§9).
+#: A CA bundle holds a few dozen certificates at most.
 _MAX_CA_BUNDLE_BYTES = 64 * 1024
 
 #: The PEM blocks a CA bundle may hold: certificates and nothing else,
 #: so a private key pasted by mistake is refused rather than stored.
 _PEM_BLOCK_RE = re.compile(r"-----BEGIN ([A-Z0-9 ]+)-----")
 
-#: Days before a token's expiry that the daily check warns (§9: a
+#: Days before a token's expiry that the daily check warns (a
 #: working week of margin).
 EXPIRY_WARNING_DAYS = 14
 
 #: Which scopes each need is met by. ``git_read`` is met by any token,
 #: a deploy token included; the API is never reached with a deploy
-#: token, which GitLab answers 401 (spike of 8-nov-2026, §2).
+#: token, which GitLab answers 401.
 _NEED_SCOPES = {
     "git_read": None,
     "api_read": frozenset({"read_api", "api"}),
@@ -322,7 +321,7 @@ class CloudGitProvider(models.Model):
             self._check_public_address()
         # A token is for the server it was given for: with a new server or
         # prefix, none is sent there before someone enters it again
-        # («Test connection» would have; security review of G1, 8-nov-2026).
+        # («Test connection» would have).
         moved.sudo().credential_ids.write(
             {"token": False, "scopes": False, "token_user": False},
         )
@@ -414,7 +413,7 @@ class CloudGitProvider(models.Model):
         Of the credentials with a token that cover the path, one that
         cannot write first (a deploy token, or a token without ``api`` nor
         ``write_repository``): the build of 11.0 to 19.0 carries it inside
-        the image (security review of G1, 8-nov-2026); then the longest
+        the image; then the longest
         namespace. Empty when none covers the path: the repository is
         read as a public one. «Test connection» tests this same
         credential on both channels.
@@ -506,8 +505,7 @@ class CloudGitProvider(models.Model):
         """Read the state of the panel's webhooks in GitLab and sweep the orphans.
 
         Each webhook in its own savepoint, so one GitLab that fails does
-        not stop the others. Never sends a test nor re-enables a webhook
-        (§4.7.5).
+        not stop the others. Never sends a test nor re-enables a webhook.
         """
         self.ensure_one()
         for hook in self.env["cloud.gitlab.hook"].sudo().search(
@@ -593,8 +591,7 @@ class CloudGitCredential(models.Model):
         """Return whether this credential's token can write to repositories.
 
         ``api`` or ``write_repository`` among its scopes, or scopes not
-        read (:meth:`_scopes_unread`), which could be any (security review
-        of G1, 8-nov-2026); a deploy token never, as the panel keeps none
+        read (:meth:`_scopes_unread`), which could be any; a deploy token never, as the panel keeps none
         that writes.
 
         :rtype: bool
@@ -625,7 +622,7 @@ class CloudGitCredential(models.Model):
         project tokens of any scope; ``current_user`` is asked only with
         ``api`` or ``read_api``. A 401 (a deploy token) leaves the
         credential without API (``scopes=''``): not an error, it only
-        limits what the panel does with it (§4.3, §6).
+        limits what the panel does with it.
 
         :return: the scopes read, empty for a token without API
         :rtype: str
@@ -712,7 +709,7 @@ class CloudGitCredential(models.Model):
 
         A credential never moves to another provider: its token was given
         for that server, and a move would send it elsewhere without the
-        base URL changing (security review of G1, 8-nov-2026). A new
+        base URL changing. A new
         token empties the scopes and user read for the old one, unless
         the same write sets them.
 

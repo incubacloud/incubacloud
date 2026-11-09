@@ -132,7 +132,7 @@ it; hosts that already do are left as they are.
   mixin both event models inherit, and each instance's enqueue runs in a
   savepoint of its own, so a database error on one no longer aborts the
   others, GitHub's included.
-- **A push already in a waiting rebuild is not added twice** (J2):
+- **A push already in a waiting rebuild is not added twice**:
   `coalesced_pushes` compares `(push_repo, push_branch, push_sha,
   push_provider)`; GitHub's pushes carry `push_provider: 'github'`, and a job
   queued before this version, without the key, counts as GitHub's.

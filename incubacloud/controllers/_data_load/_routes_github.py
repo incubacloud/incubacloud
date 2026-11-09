@@ -209,7 +209,7 @@ def _not_a_repo_url(url):
     configured", and its parse error, logged as an ERROR, raised a log
     alert on the customer's panel (12-oct-2026). A repository of a
     configured Git provider (GitLab) is one; another host is named, as
-    the form names it (plan-gitlab.md §4.5, 8-nov-2026).
+    the form names it.
 
     :param str url: what the person typed.
     :returns: None, or the form's own message, translated.
@@ -543,7 +543,7 @@ class GitHubMixin:
         """Read a Git provider's repository with the panel's git.
 
         Counted against ``rate_limit_git_reads_per_hour`` per user: a git
-        process weighs more than a call to GitHub's API (§9).
+        process weighs more than a call to GitHub's API.
 
         :param str url: the repository URL
         :param read: called with its ``GitSource``; returns the value

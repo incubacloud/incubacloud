@@ -174,7 +174,7 @@ def _ic_connect_for_instances():
 # keeping dependencies in step with the code a rebuild ships is the
 # desired steady state, and an operator who wants the old frozen
 # behaviour sets the parameter to '0' explicitly.
-#: The git helper container (plan-gitlab.md §4.4-9): ``alpine/git``
+#: The git helper container: ``alpine/git``
 #: pinned by digest, like ``GATEKEEPER_IMAGE``, taken from Docker Hub on
 #: 8-nov-2026 (paso 0-7). ``deploy.sh`` runs it for ``record-heads`` of a
 #: server whose address is pinned and for ``fetch-repos`` (8.0 to 10.0);
@@ -184,22 +184,22 @@ GIT_HELPER_IMAGE = (
     "ac6c828f15d82775d204d3d75112e1d34af8945da80ccf922713c9891ba68e7a"
 )
 
-#: Seconds one repository's download may take in ``fetch-repos`` (§9).
+#: Seconds one repository's download may take in ``fetch-repos``.
 _FETCH_ONE_S = 600
 
 #: Seconds ``fetch-repos`` waits before its one retry of an alias: the
 #: rebuild's ``_BUILD_RETRY_WAIT_S``, which no longer covers a clone that
-#: left the build (Fable's review of G1, 8-nov-2026).
+#: left the build.
 _FETCH_RETRY_WAIT_S = 60
 
 
 def _fetch_timeout(aliases):
-    """Return the timeout of the step that runs ``fetch-repos`` (§4.4-8).
+    """Return the timeout of the step that runs ``fetch-repos``.
 
     Each download may take :data:`_FETCH_ONE_S` and is retried once after
     :data:`_FETCH_RETRY_WAIT_S`. Below that, the transport would kill the
     command halfway through a download. The build is a step of its own
-    with its own timeout, in a deploy and in a rebuild (Fable, 8-nov-2026).
+    with its own timeout, in a deploy and in a rebuild.
 
     :param int aliases: the repositories of ``repos.yaml``, odoo included
     :rtype: int
@@ -765,7 +765,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             allow_unicode=True,
         )
 
-    # ── Git providers other than GitHub (plan-gitlab.md §4.4) ──────────────
+    # ── Git providers other than GitHub ──────────────
 
     #: ``{authority: {"provider_id", "ca_pem", "pin_ip"}}`` of the GitLab
     #: servers ``_repos_yaml_content`` rendered, for the spec, the CA
@@ -777,14 +777,14 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         Resolved once per job and kept: the spec, the override and the
         panel's reads all use the same one. A retry is a new job run and
-        resolves and checks it again (J4).
+        resolves and checks it again.
 
         :param provider: a ``cloud.git.provider``
         :rtype: str
         :raises JobRefused: under the ``public`` policy, when the name does
             not resolve to public addresses only, with that message: it is
             rendered outside any ``try`` when the resync of requirements is
-            off (Fable, 8-nov-2026)
+            off.
         """
         cache = self.__dict__.setdefault("_git_pin_cache", {})
         if provider.id not in cache:
@@ -956,7 +956,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         ``public`` policy, pin each GitLab server with ``extra_hosts``.
         Neither enters ``rebuild_fingerprint`` nor the configuration
         snapshot: an address that rotates must not mark the instance as
-        changed (J4).
+        changed.
 
         :rtype: dict
         """
@@ -1905,7 +1905,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             self._sys("✓ Dependencies already in sync with the repos.")
 
     async def _gitlab_requirements(self, repo):
-        """Read a GitLab line's ``requirements.txt`` for the re-sync (J5).
+        """Read a GitLab line's ``requirements.txt`` for the re-sync.
 
         - A correct read, with the file or without it, stamps the line's
           ``requirements_read_at`` and closes the provider's
@@ -2069,7 +2069,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         private = {
             self._tmp("answers.yml"): answers_yml,
             # 8.0 to 10.0 fetch on the host: the file the image gets has
-            # no credential (plan-gitlab.md §4.4-8).
+            # no credential.
             self._tmp("repos.yaml"): (
                 self._strip_repo_credentials(repos_yaml)
                 if self._prefetches() else repos_yaml

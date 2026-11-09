@@ -873,7 +873,7 @@ class AbstractExecutor(ABC):
                 self._pass_no_return(label)
             self._sys(f"Running: {label}")
             # ``timeout``: a step that needs longer than the transport's
-            # default per command (``fetch-repos``, plan-gitlab.md §4.4-8).
+            # default per command (``fetch-repos``).
             extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
             result = await transport.execute(
                 command, self.on_stdout, self.on_stderr, **extra,

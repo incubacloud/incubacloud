@@ -1,4 +1,4 @@
-"""The panel's git reader (plan-gitlab.md §4.2, 8-nov-2026).
+"""The panel's git reader.
 
 The panel reads a GitLab repository with git itself, as a subprocess: a
 HOME of its own, no system config, no prompt, https only, no redirects,
@@ -9,8 +9,7 @@ panel is pinned with ``http.curloptResolve``, which a git older than
 
 The settings travel in ``GIT_CONFIG_COUNT``/``KEY``/``VALUE``, never in a
 file a SIGKILL would leave behind with the token; git's output goes to a
-file of the session and is read only within its cap (security review of
-G1, 8-nov-2026).
+file of the session and is read only within its cap.
 """
 import os
 import subprocess
@@ -245,8 +244,7 @@ class TestGitReaderErrors(BaseCase):
 
 
 class TestGitReaderDeadline(BaseCase):
-    """A panel request's reads share one deadline (security review of G1,
-    8-nov-2026)."""
+    """A panel request's reads share one deadline."""
 
     def test_no_call_waits_past_the_deadline(self):
         calls = _Calls(_version())

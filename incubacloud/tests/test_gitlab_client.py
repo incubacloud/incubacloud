@@ -1,4 +1,4 @@
-"""The GitLab API client (plan-gitlab.md §4.3, 8-nov-2026).
+"""The GitLab API client.
 
 Only the provider's API URL, a path built from encoded segments, no
 redirects, the token in ``PRIVATE-TOKEN`` and nowhere else, a private CA
@@ -292,7 +292,7 @@ class TestGitLabClientRequest(_ClientCase):
 
 
 class TestGitLabClientHooks(BaseCase):
-    """The webhook calls of G3 (plan-gitlab.md §4.7.2, §4.7.4)."""
+    """The webhook calls."""
 
     def _send(self, call, response=None):
         """Run *call* on a client and return ``(result, method, path, body)``.

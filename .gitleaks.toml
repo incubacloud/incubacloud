@@ -66,8 +66,7 @@ paths = [
 # Tests of the GitLab providers: made-up deploy and access tokens prove a
 # credential is chosen, sent only to its server and kept out of the
 # audit, the build and the logs. Allowed by their own text, not by file,
-# so a real token pasted in those tests is still caught (security review
-# of GitLab G1, 8-nov-2026). Each is ``gldt-`` or ``glpat-`` and a word
+# so a real token pasted in those tests is still caught. Each is ``gldt-`` or ``glpat-`` and a word
 # no generated token has; a new made-up token in a test is added here.
 regexes = [
     '''^gldt-(?:AbC_123\.x|abcdefgh12|deploy1234|deploysave1|mcpread01|supersecret12|tokenOfTheDeploy)$''',

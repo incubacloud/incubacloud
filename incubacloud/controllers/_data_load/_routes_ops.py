@@ -798,8 +798,8 @@ class OpsMixin:
         # provider, without the user and token a host's file may carry
         # (git@gitlab.com:x/y.git once became https://github.com/x/y.git).
         # A remote of a host with no provider is left out and named in
-        # the answer, rather than failing the whole import
-        # (plan-gitlab.md §4.4-6, 8-nov-2026); a malformed github.com one
+        # the answer, rather than failing the whole import;
+        # a malformed github.com one
         # is left for the line's check to refuse.
         odoo_version = copier.get("odoo_version", "")
         repos_data = []

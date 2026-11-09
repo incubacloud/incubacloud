@@ -1,4 +1,4 @@
-"""A client of GitLab's REST API (plan-gitlab.md §4.3, 8-nov-2026).
+"""A client of GitLab's REST API.
 
 - Only the provider's ``api_url``; a path is built from segments, each
   percent-encoded, never from text a user typed.
@@ -10,14 +10,13 @@
   verification never switched off.
 - The token goes in ``PRIVATE-TOKEN`` and nowhere else: not the URL, a
   log or an error.
-- Answers are bounded (§9): 4 MB, an error's body 64 KB, of which 200
+- Answers are bounded: 4 MB, an error's body 64 KB, of which 200
   characters of GitLab's message are kept.
 - With a ``deadline``, the socket's timeout is reset to what the budget
   has left before the answer and before each block of its body.
 
-G1 needs only the token's introspection (``token_self``) and its user
-(``current_user``); the calls of webhooks, merge request notes and
-writes arrive with G3 to G5.
+It reads the token's introspection (``token_self``), its user
+(``current_user``) and the webhooks of a project or group.
 """
 import http.client
 import json
@@ -27,14 +26,14 @@ from urllib.parse import quote, urlsplit
 
 from ..net.outbound import _PinnedHTTPSConnection
 
-#: Seconds a request to the API may take (§9): shorter than
+#: Seconds a request to the API may take: shorter than
 #: ``GitHubWriter``'s 30 s, as it also runs inside panel routes.
 REQUEST_TIMEOUT = 20
 
-#: Bytes of an answer read at most (§9).
+#: Bytes of an answer read at most.
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
-#: Bytes of an error's body read at most (§9).
+#: Bytes of an error's body read at most.
 MAX_ERROR_BYTES = 64 * 1024
 
 #: Characters of GitLab's message an error keeps.
@@ -128,7 +127,7 @@ class GitLabClient:
         ``GET /personal_access_tokens/self`` answers for personal, group
         and project tokens of any scope, ``read_repository`` alone
         included, with ``scopes``, ``expires_at``, ``active`` and
-        ``user_id``; a deploy token gets a 401 (spike, §2).
+        ``user_id``; a deploy token gets a 401.
 
         :rtype: dict
         :raises GitLabError: when the call fails
@@ -186,7 +185,7 @@ class GitLabClient:
         """Rewrite a webhook, always with its URL and its token together.
 
         A ``PUT`` that changes the URL without the token wipes the secret
-        in GitLab, and every delivery after it is refused (spike §1).
+        in GitLab, and every delivery after it is refused.
 
         :rtype: dict
         :raises GitLabError: when the call fails
@@ -208,7 +207,7 @@ class GitLabClient:
 
         A tag push rebuilds nothing; ``push_events`` would repeat the last
         real push and ``merge_requests_events`` the last merge request. A
-        test answered 2xx also re-enables a disabled webhook (§4.7.4).
+        test answered 2xx also re-enables a disabled webhook.
 
         :raises GitLabError: ``rate_limited`` past GitLab's 5 tests a minute
         """

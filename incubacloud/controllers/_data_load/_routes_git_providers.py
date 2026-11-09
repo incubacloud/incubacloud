@@ -5,8 +5,7 @@ bundle) and its credentials, each a token scoped to a namespace. The
 token is write-only: no route returns it, and an empty one on save keeps
 the stored token. Saving a new token, and «Test connection», read from
 GitLab what the token is (scopes, expiry, user); the test also asks the
-repository's heads with git, so each channel answers with its own code
-(plan-gitlab.md §4.5, §4.11, 8-nov-2026).
+repository's heads with git, so each channel answers with its own code.
 
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
@@ -226,7 +225,7 @@ class GitProvidersMixin:
             for cred in provider.credential_ids if not cred.sudo().token
         ]
         # Each introspection asks GitLab: one read of the hourly cap for
-        # the save (security review of G1, 8-nov-2026).
+        # the save.
         if to_introspect and not consume_git_read(env):
             warnings.append(_(
                 "Git read limit reached: the new tokens were saved without "
@@ -342,7 +341,7 @@ class GitProvidersMixin:
 
         Git: the repository's ``HEAD`` with ``ls-remote`` and the
         credential git reads it with (none: as a public one). API: the
-        introspection of that same credential (§4.3), so both channels
+        introspection of that same credential, so both channels
         speak of one token. Each answers with a code and its text; the
         codes are kept on the provider.
 

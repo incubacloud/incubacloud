@@ -1,6 +1,4 @@
-"""cloud.gitlab.event: a delivery recorded, dispatched and purged (G3).
-
-plan-gitlab.md §2.4, §4.7.3, §4.7.6, §4.8 and Fable's review of G3.
+"""cloud.gitlab.event: a delivery recorded, dispatched and purged.
 """
 import json
 from datetime import timedelta
@@ -238,7 +236,7 @@ class TestGitLabPurge(GitLabHookCase):
 class TestMixinOverride(GitLabHookCase):
 
     def test_neither_event_model_redefines_the_mixin_hooks(self):
-        """An override layered on the mixin must reach both providers (§2.7)."""
+        """An override layered on the mixin must reach both providers."""
         for model in ("cloud.github.event", "cloud.gitlab.event"):
             cls = type(self.env[model])
             for name in ("_rebuild_job_type", "_pr_preview_allowed"):

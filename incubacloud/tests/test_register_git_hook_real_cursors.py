@@ -1,4 +1,4 @@
-"""Registrations and rotations of one GitLab webhook on real transactions (G3, §4.7.2).
+"""Registrations and rotations of one GitLab webhook on real transactions.
 
 Two users press «Register webhook» for the same path at once, or a retry
 comes in while the first is still running. The race that mattered: with

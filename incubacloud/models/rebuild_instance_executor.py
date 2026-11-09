@@ -121,7 +121,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         # 8.0 to 10.0 fetch every repository in a step of their own,
         # with the downloads' timeout, and the build keeps its own. One
         # step for both had the transport's TERM kill the outer ``bash
-        # -c`` and leave deploy.sh running (Fable, 8-nov-2026). The
+        # -c`` and leave deploy.sh running. The
         # others record the heads in the build's step (below).
         prefetch = self._prefetches()
         build = _build_retried_once(
@@ -280,7 +280,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     step with the build, so a layer that drops the build
             #     drops the lookup with it.
             #     8.0 to 10.0 fetch every repository first instead, in a
-            #     step of their own (plan-gitlab.md §4.4-8).
+            #     step of their own.
             *fetch_steps,
             (_LABEL_BUILD, build, {"stop_on_failure": True}),
         ]
@@ -490,7 +490,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
 
         ``(push_repo, push_branch, push_sha, push_provider)``; a push
         queued before ``push_provider`` existed carries none and is
-        GitHub's (J2, Fable's review of G3).
+        GitHub's.
 
         :param dict push: a push's payload keys
         :rtype: tuple
@@ -515,7 +515,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         rebuild someone asked for by hand, or one already dispatched, is
         not merged into. A push already in the list (the same delivery
         sent again: a GitLab «Resend», a GitHub redelivery) is absorbed
-        without being added twice (J2).
+        without being added twice.
 
         :param waiting_job: a ``queued`` rebuild of the instance
         :param dict payload: the new request's payload

@@ -257,7 +257,7 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
 
     def test_it_builds_after_the_context_and_before_anything_starts(self):
         # 8.0 to 10.0 fetch every repository instead of recording the
-        # heads (plan-gitlab.md §4.4-8): the build takes the fetched trees.
+        # heads: the build takes the fetched trees.
         for name, inst, heads in (
             ("production", {}, "Record repository heads"),
             ("staging", {"environment": "staging"}, "Record repository heads"),

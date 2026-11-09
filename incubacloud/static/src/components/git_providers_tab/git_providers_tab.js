@@ -31,7 +31,7 @@ export const VERIFY_POLL_MS = 1500;
 
 /**
  * How long «Verify» waits for GitLab's test delivery, in ms: GitLab
- * sends it at once, and the route does not wait (plan-gitlab.md §9).
+ * sends it at once, and the route does not wait.
  */
 export const VERIFY_WAIT_MS = 15000;
 
@@ -52,7 +52,7 @@ export function deliveryArrived(hook, requestedAt) {
 
 /**
  * Settings → Git providers: the GitLab servers the panel reads, deploys
- * and rebuilds from, and their credentials (plan-gitlab.md §4.11-1).
+ * and rebuilds from, and their credentials.
  *
  * Each provider is saved on its own, with its credentials, by its own
  * Save: the tab joins neither Settings' footer nor its unsaved-changes
@@ -84,7 +84,7 @@ export class GitProvidersTab extends Component {
             // Why the last delete of a provider failed, per id.
             deleteError: {},
             confirmDialog: null,
-            // GitLab webhooks of the panel (G3), and what was last done
+            // GitLab webhooks of the panel, and what was last done
             // to each, per id.
             hooks: [],
             hooksError: null,

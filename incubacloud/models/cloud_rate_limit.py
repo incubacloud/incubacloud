@@ -65,7 +65,7 @@ RATE_LIMIT_DEFAULTS = {
     'rate_limit_github_imports_per_hour': 5,
     # Reads of a Git provider's repository (GitLab) from the editor:
     # each one is a git process on the panel, heavier than a call to
-    # GitHub's API (plan-gitlab.md §9, 8-nov-2026).
+    # GitHub's API.
     'rate_limit_git_reads_per_hour': 120,
 }
 

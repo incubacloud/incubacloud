@@ -7,8 +7,8 @@
 #
 # Those series build on Debian 8, whose ca-certificates trusts Let's
 # Encrypt only through ISRG Root X1's cross-signature; the new roots are
-# not in it, and updating it from jessie does not bring them (spike of
-# 8-nov-2026, §3). Both PEMs are written here, each checked against the
+# not in it, and updating it from jessie does not bring them (checked on
+# 8-nov-2026). Both PEMs are written here, each checked against the
 # SHA-256 of its certificate before it is installed, and nothing is
 # downloaded: once Let's Encrypt drops the cross-signature, a download over
 # TLS from this image would fail. The repositories no longer clone inside
