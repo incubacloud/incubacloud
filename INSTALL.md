@@ -48,12 +48,14 @@ only your office network reaches has a page of its own there:
 
 ### Network
 
-- **Out:** SSH to your hosts, and HTTPS to GitHub, to your backup storage and,
-  with the assistant, to your AI provider.
+- **Out:** SSH to your hosts, and HTTPS to GitHub, to your GitLab servers, to
+  your backup storage and, with the assistant, to your AI provider.
 - **In:** people reach the panel through your proxy. GitHub's push
-  notifications (`/cloud/github/webhook`) and AI agents that call from their
-  provider's servers (`/mcp`) need it reachable from the internet over HTTPS;
-  everything else works on an internal network.
+  notifications (`/cloud/github/webhook`), GitLab's webhooks
+  (`/cloud/gitlab/webhook/`, out of any basic authentication: each delivery
+  carries its own token) and AI agents that call from their provider's servers
+  (`/mcp`) need it reachable over HTTPS, from the internet or, for a GitLab of
+  your own, from its network; everything else works on an internal network.
 
 ### Resources
 
