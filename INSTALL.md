@@ -302,6 +302,14 @@ Odoo then runs as one process with threads, and the limits change meaning:
 Set `limit_time_real = 3600` and both memory limits to `0` (or to what the whole
 server may use), or run with workers.
 
+The panel checks this when it starts. A server started with `odoo server` that
+runs the job runner (`queue_job` among its `server_wide_modules`) logs a warning
+per setting and raises the alert `job_server_limits_too_low` when
+`limit_time_real` is below 3600 seconds or, with `workers = 0`, when a memory
+limit is at Odoo's per-worker default or lower. The alert closes at the next
+start with values that fit. A web-only server (`--load=web`) beside a dedicated
+runner is not judged.
+
 ## Recommended configuration
 
 What we run in production, and why. A small panel works with the reference
