@@ -136,20 +136,14 @@ it; hosts that already do are left as they are.
 
 ### Security
 
-- **Permissions tightened on the GitHub credentials.** The methods of
-  `cloud.github.credential.service` (`get_pat`, `get_credentials`,
-  `resolve_webhook_secret`, `test_connection`) are private to the server
-  (`@api.private`): the panel's routes, executors and GitHub webhook call
-  them as before, and Odoo's generic RPC no longer does. The connection test
-  of the GitHub App's backend form is an Administrator's, as the panel's own
-  test in Settings already was.
-- **The crons are the server's.** The crons of `cloud.host`
-  (`cron_collect_metrics`, `cron_docker_prune`) and `cloud.instance`
-  (`cron_clean_frozen_move_sources`, `cron_refresh_backup_list`,
-  `cron_check_production_backup`, `cron_instance_health`,
-  `cron_read_staging_logins`, `cron_capture_secret_keys`,
-  `cron_recover_stuck_moves`) are private too: their scheduled actions run
-  them as before, and so does "Run manually" in Settings → Technical.
+Upgrading is recommended.
+
+- **Server-only methods.** The methods that handle the GitHub credentials,
+  and those of the scheduled actions of hosts and instances, run only inside
+  the server: the panel and its scheduled actions call them as before, and so
+  does "Run manually" in Settings → Technical. The connection test of the
+  GitHub App's backend form is an Administrator's, as the panel's own test in
+  Settings already was.
 - **A job's raw output and files follow the role design.** The log of a job
   keeps the panel's own messages for every role that sees the job; its raw
   output (`stdout`/`stderr`) is for Developers and Administrators, who read
