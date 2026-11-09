@@ -391,8 +391,8 @@ class TestResolveConflictOwnership(TransactionCase):
         self.assertEqual(sources['libx']['rejected'], ['libx==1.0'])
         self.assertEqual(self.alert.state, 'dismissed')
 
-    def test_keeping_the_stored_spec_makes_the_line_the_operators(self):
-        # Seed an upstream owner so the change of hands is observable.
+    def test_keeping_the_stored_spec_keeps_its_owner(self):
+        """The repo that wrote the line kept still maintains it."""
         self.project.with_context(pip_provenance_managed=True).write({
             'pip_dependency_sources': {
                 'libx': {'repo': _KEY_A, 'spec': 'libx==1.0', 'label': 'a'},
@@ -401,8 +401,19 @@ class TestResolveConflictOwnership(TransactionCase):
         result = self._resolve('libx==1.0')
         self.assertTrue(result['ok'])
         self.assertEqual(self.project.pip_dependencies, 'libx==1.0\n')
-        # The operator's, with the line turned down remembered, so the
-        # next re-sync neither hands it back to a repo nor asks again.
+        # Still the repo's, with the line turned down remembered, so the
+        # next re-sync does not ask again.
+        self.assertEqual(self.project.pip_dependency_sources, {
+            'libx': {
+                'repo': _KEY_A, 'spec': 'libx==1.0', 'label': 'a',
+                'rejected': ['libx==2.0'],
+            },
+        })
+
+    def test_keeping_an_unowned_stored_spec_makes_it_the_operators(self):
+        result = self._resolve('libx==1.0')
+        self.assertTrue(result['ok'])
+        # The operator's: no repo adopts it at the next re-sync.
         self.assertEqual(self.project.pip_dependency_sources, {
             'libx': {
                 'repo': '', 'spec': 'libx==1.0', 'label': 'operator',

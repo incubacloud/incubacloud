@@ -193,7 +193,7 @@ jobs:
         # ``oca_init_test_database`` fails to install queue_job. Not
         # pinned/audited — pip-audit excludes it (git URL in pip.txt)
         # and it never executes in our tests.
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3==2.8.0' 'requests==2.34.2' 'openupgradelib' 'joserfc==1.7.7'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3==2.8.0' 'requests==2.34.2' 'openupgradelib' 'joserfc==1.7.7' 'packaging==26.3'
 
       - name: Fetch OCA dependencies
         run: |
@@ -282,7 +282,7 @@ jobs:
 
       - name: Install extra dependencies
         # Same pins as the test job (see rationale there).
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3==2.8.0' 'requests==2.34.2' 'openupgradelib' 'joserfc==1.7.7'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3==2.8.0' 'requests==2.34.2' 'openupgradelib' 'joserfc==1.7.7' 'packaging==26.3'
 
       - name: Fetch OCA dependencies
         run: |

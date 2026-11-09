@@ -499,17 +499,20 @@ On rebuild, `click-odoo-update` (from `click-odoo-contrib`, included in the dood
 
 An unpinned repo line is aggregated at its branch tip, so a rebuild ships whatever upstream published since the last one. Deploy and rebuild therefore re-read the `requirements.txt` of every repo **without** a `commit_sha` just before writing `pip.txt` (`DeployInstanceExecutor._resync_repo_requirements`, inherited by every rebuild variant including the SaaS ones). Pinned repos are skipped: frozen code, frozen dependencies. A fetch that fails is logged and ignored — the stored list is used rather than stopping the fleet on a GitHub blip.
 
-Merging upstream on every rebuild only works because each package remembers who wrote it. `pip_dependency_sources` (a JSON map on `cloud.project` and `cloud.instance`, provided by the `cloud.pip.provenance.mixin`) maps `package → {repo, spec, label}` and holds **only repo-owned packages** — no entry means the operator owns the line. The merge then decides per package:
+Merging upstream on every rebuild only works because each package remembers who wrote it. `pip_dependency_sources` (a JSON map on `cloud.project` and `cloud.instance`, provided by the `cloud.pip.provenance.mixin`) maps `package → {repo, spec, label, rejected?}` and holds repo-owned packages and the answers to resolved conflicts — no entry, or an empty `repo`, means the operator owns the line. The merge then decides per package:
 
 | Situation | Outcome |
 |---|---|
 | Package absent | Added, owned by the repo |
 | Same spec, unowned | Ownership claimed (lazy backfill — no migration) |
 | Different spec, owned by this repo | Applied in place, logged in the job |
-| Different spec, owned by operator or another repo | Conflict marker + `pip_conflict` alert, job fails |
+| Different spec the stored line already meets (`pip_spec_relation`) | Skipped, logged («already met») |
+| Stricter spec that meets a bare name or another repo's line | Replaces it, owned by this repo |
+| Spec turned down when a conflict on the package was resolved (`rejected`) | Skipped, logged («turned down») |
+| Any other different spec (including a stricter pin against an operator's version or range) | Conflict marker + `pip_conflict` alert, job fails |
 | Package dropped upstream | Never removed — noted in the job log |
 
-Ownership is keyed by repo URL, not branch, so switching branches does not hand a package back to the operator. Writing `pip_dependencies` outside the managed paths prunes the entries whose spec no longer appears verbatim (the edit makes those lines the operator's); the managed paths — the requirements merge and `/cloud/resolve_pip_conflict` — pass `pip_provenance_managed` in the context and set the map themselves. Resolving a conflict in favour of the repo's spec hands the line back to it; any other answer makes it operator-owned. Set `incubacloud.requirements_resync_enabled=0` to restore the old frozen behaviour.
+Ownership is keyed by repo URL, not branch, so switching branches does not hand a package back to the operator. Writing `pip_dependencies` outside the managed paths prunes the entries whose spec no longer appears verbatim (the edit makes those lines the operator's); the managed paths — the requirements merge and `/cloud/resolve_pip_conflict` — pass `pip_provenance_managed` in the context and set the map themselves. Resolving a conflict in favour of the repo's spec hands the line back to it; keeping the stored spec keeps its owner (operator-owned when it had none); a third spec makes it operator-owned (an entry with an empty `repo`). The side not chosen goes to the entry's `rejected`, which the re-sync skips; removing the markers by hand and leaving one side records the same answer (`hand_resolved_pip_sources`). A `rejected` line is cleared by editing the package's line by hand (the prune drops the entry) or when the owner moves the line to it. Set `incubacloud.requirements_resync_enabled=0` to restore the old frozen behaviour.
 
 ## Known advisory: ansible-core (PYSEC-2026-3458)
 

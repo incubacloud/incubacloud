@@ -16,11 +16,17 @@ from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
+from odoo.addons.incubacloud.controllers.data_load import (
+    CloudDataLoadController,
+)
 from odoo.addons.incubacloud.models._repo_requirements import (
     _normalize_url,
     create_pip_conflict_alert,
     merge_pip_requirements,
     pip_spec_relation,
+)
+from odoo.addons.incubacloud.models.cloud_security_mixin import (
+    CloudSecurityMixin,
 )
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
@@ -44,8 +50,6 @@ class TestSpecRelation(BaseCase):
             ('requests>=2.30,<3', 'requests>=2.30', 'existing'),
             ('requests[socks]==2.34.2', 'requests', 'existing'),
             ('requests == 2.34.2', 'requests==2.34.2', 'existing'),
-            ('pkg @ git+https://github.com/o/pkg.git', 'pkg', 'existing'),
-            ('pkg', 'pkg @ git+https://github.com/o/pkg.git', 'incoming'),
         ]
         for existing, incoming, expected in cases:
             with self.subTest(existing=existing, incoming=incoming):
@@ -59,7 +63,13 @@ class TestSpecRelation(BaseCase):
             ('requests>=2.30', 'requests==2.0'),
             ('requests>=2.30', 'requests<3'),
             ("requests==2.34.2; python_version>'3'", 'requests'),
+            ('requests', "requests==2.34.2; python_version>'3'"),
+            ("requests; python_version>'3'", 'requests'),
             ('requests==2.0', 'requests @ git+https://github.com/o/requests.git'),
+            # A URL is not a version: neither side can tell it meets a
+            # bare name, so a person decides, as the editors do.
+            ('pkg @ git+https://github.com/o/pkg.git', 'pkg'),
+            ('pkg', 'pkg @ git+https://github.com/o/pkg.git'),
             ('--hash=sha256:00', 'requests'),
         ]
         for existing, incoming in cases:
@@ -124,6 +134,83 @@ class TestMergeKeepsWhatAgrees(BaseCase):
             sources=sources,
         )
         self.assertEqual(len(result['conflicts']), 1)
+
+    def test_an_operator_range_is_not_replaced_by_a_pin(self):
+        """``foo<3`` typed by a person stays theirs against a repo's pin.
+
+        Replaced, the line became the repo's, and its next bump to
+        ``foo==3.0`` went in without asking: the range was lost.
+        """
+        answered = {'foo': {
+            'repo': '', 'spec': 'foo<3', 'label': 'operator',
+        }}
+        for sources in ({}, answered, None):
+            with self.subTest(sources=sources):
+                result = merge_pip_requirements(
+                    'foo<3\n', 'foo==2.9\n', _CORE, '18.0', sources=sources,
+                )
+                self.assertEqual(len(result['conflicts']), 1)
+                self.assertIn('<<<<<<< existing\nfoo<3\n', result['content'])
+                self.assertFalse(result['updated'])
+
+    def test_a_repo_range_gives_way_to_a_stricter_pin(self):
+        """A range a repo wrote, or adopted verbatim, is met by the pin."""
+        adopted = merge_pip_requirements(
+            'foo<3\n', 'foo<3\n', _QUEUE, '18.0', sources={},
+        )
+        self.assertEqual(adopted['adopted'], ['foo'])
+        result = merge_pip_requirements(
+            adopted['content'], 'foo==2.9\n', _CORE, '18.0',
+            sources=adopted['sources'],
+        )
+        self.assertFalse(result['conflicts'])
+        self.assertEqual(result['content'], 'foo==2.9\n')
+        self.assertEqual(
+            result['sources']['foo']['repo'], _normalize_url(_CORE),
+        )
+
+    def test_a_commented_bare_name_gives_way_to_the_pin(self):
+        """The line is replaced, comment kept, not only logged as updated."""
+        result = merge_pip_requirements(
+            'requests  # needed by X\nlibx==1.0\n', 'requests==2.34.2\n',
+            _CORE, '18.0', sources={},
+        )
+        self.assertEqual(
+            result['content'], 'requests==2.34.2  # needed by X\nlibx==1.0\n',
+        )
+        self.assertEqual(result['updated'], [{
+            'name': 'requests', 'old': 'requests', 'new': 'requests==2.34.2',
+        }])
+        self.assertEqual(result['sources']['requests']['spec'], 'requests==2.34.2')
+
+    def test_a_commented_or_indented_line_gets_its_conflict_markers(self):
+        for stored in ('requests==2.0  # pinned for X', '  requests==2.0'):
+            with self.subTest(stored=stored):
+                result = merge_pip_requirements(
+                    f'{stored}\nlibx==1.0\n', 'requests==2.30\n', _QUEUE,
+                    '18.0', sources={},
+                )
+                self.assertEqual(len(result['conflicts']), 1)
+                self.assertTrue(result['content'].startswith(
+                    '<<<<<<< existing\nrequests==2.0\n=======\n'
+                    'requests==2.30\n>>>>>>> oca/queue (18.0)\nlibx==1.0\n',
+                ), result['content'])
+
+    def test_a_line_that_becomes_the_spec_is_no_longer_turned_down(self):
+        """The owner bumping to a line once turned down takes it off the list."""
+        sources = {'requests': {
+            'repo': _normalize_url(_CORE), 'spec': 'requests==2.34.2',
+            'label': 'incubacloud/incubacloud (18.0)',
+            'rejected': ['requests==2.30', 'requests==2.0'],
+        }}
+        result = merge_pip_requirements(
+            'requests==2.34.2\n', 'requests==2.30\n', _CORE, '18.0',
+            sources=sources,
+        )
+        self.assertEqual(result['content'], 'requests==2.30\n')
+        entry = result['sources']['requests']
+        self.assertEqual(entry['spec'], 'requests==2.30')
+        self.assertEqual(entry['rejected'], ['requests==2.0'])
 
 
 class _TwoRepoResync(JobEndAssertions, TransactionCase):
@@ -275,8 +362,9 @@ class TestResolutionHolds(_TwoRepoResync):
             'was resolved — keeping requests==2.34.2.',
             log,
         )
+        # Core wrote the pin kept: its next bump still needs no person.
         entry = self.instance.pip_dependency_sources['requests']
-        self.assertEqual(entry['repo'], '')
+        self.assertEqual(entry['repo'], _normalize_url(_CORE))
         self.assertEqual(entry['rejected'], ['requests==2.30'])
 
     def test_siding_with_the_repo_holds_at_the_next_deploy(self):
@@ -289,6 +377,47 @@ class TestResolutionHolds(_TwoRepoResync):
         entry = self.instance.pip_dependency_sources['requests']
         self.assertEqual(entry['repo'], _normalize_url(_QUEUE))
         self.assertEqual(entry['rejected'], ['requests==2.34.2'])
+
+    def test_a_hand_resolution_holds_at_the_next_deploy(self):
+        """Edit Manually: leaving one side of the markers is an answer too."""
+        self._conflict()
+        self.instance.write({
+            'pip_dependencies': 'urllib3==2.8.0\nrequests==2.34.2  # core',
+        })
+        entry = self.instance.pip_dependency_sources['requests']
+        self.assertEqual(entry['repo'], _normalize_url(_CORE))
+        self.assertEqual(entry['rejected'], ['requests==2.30'])
+        # The re-sync raises on a conflict: going through is the answer
+        # holding. (The alert itself is closed by the deploy, not here.)
+        log = self._resync()
+        self.assertNotIn('<<<<<<<', self.instance.pip_dependencies)
+        self.assertIn(
+            '· queue@18.0: requests==2.30 was turned down when a conflict '
+            'was resolved — keeping requests==2.34.2.',
+            log,
+        )
+
+    def test_a_hand_resolution_for_the_repo_hands_it_the_line(self):
+        self._conflict()
+        self.instance.write({
+            'pip_dependencies': 'urllib3==2.8.0\nrequests==2.30',
+        })
+        entry = self.instance.pip_dependency_sources['requests']
+        self.assertEqual(entry['repo'], _normalize_url(_QUEUE))
+        self.assertEqual(entry['rejected'], ['requests==2.34.2'])
+        self._resync()
+        self.assertNotIn('<<<<<<<', self.instance.pip_dependencies)
+        self.assertNotIn('requests==2.34.2', self.instance.pip_dependencies)
+
+    def test_a_third_line_typed_by_hand_is_no_answer(self):
+        """Neither side left: nothing is remembered, the line is the operator's."""
+        self._conflict()
+        self.instance.write({
+            'pip_dependencies': 'urllib3==2.8.0\nrequests==2.33.0',
+        })
+        self.assertNotIn(
+            'requests', self.instance.pip_dependency_sources or {},
+        )
 
     def test_a_hand_edit_of_the_line_forgets_the_answer(self):
         """Editing the line is a new decision: the old one goes with it."""
@@ -335,14 +464,19 @@ class TestResolvingClosesTheFailure(_QueueCase):
         self.assertTrue(self.failure, 'a warning conflict leaves a job_failed')
 
     def test_the_dialog_closes_both(self):
-        controller = _routes_crud.CrudMixin()
-        controller._sec = lambda: self.env['cloud.security.mixin']
+        controller = CloudDataLoadController()
         fake_req = MagicMock(spec=Request)
         fake_req.env = self.env
-        with patch.object(_routes_crud, 'request', fake_req):
+        with patch.object(_routes_crud, 'request', fake_req), patch.object(
+            CloudDataLoadController, '_sec', autospec=True,
+            return_value=MagicMock(spec=CloudSecurityMixin),
+        ) as sec:
             answer = controller.cloud_resolve_pip_conflict(
                 self.conflict.id, {'requests': 'requests==2.34.2'},
             )
+        sec.return_value._check_cloud_group.assert_called_once_with(
+            'group_cloud_consultant',
+        )
         self.assertTrue(answer['ok'])
         self.assertEqual(self.conflict.state, 'dismissed')
         self.assertEqual(self.failure.state, 'dismissed')

@@ -12,8 +12,10 @@ This mixin stores that authority next to the field it describes. The map
 holds packages owned by a repo — no entry means the operator owns the
 line — so an empty map (every record before this feature) behaves
 exactly as before and needs no migration. A resolved conflict also
-leaves an entry, with an empty ``repo`` when the operator kept the line,
-that remembers the lines turned down (``rejected``).
+leaves an entry, with an empty ``repo`` when the line is the operator's,
+that remembers the lines turned down (``rejected``). A turned-down line
+is forgotten when someone edits the package's line by hand: the edit
+drops the entry, as it drops any entry whose line it changed.
 
 Shared by ``cloud.project`` and ``cloud.instance``: the same field with
 the same write-time invariant, kept in one place per the P13 decision
@@ -22,7 +24,7 @@ other).
 """
 from odoo import fields, models
 
-from ._repo_requirements import prune_pip_sources
+from ._repo_requirements import hand_resolved_pip_sources, prune_pip_sources
 
 
 class CloudPipProvenanceMixin(models.AbstractModel):
@@ -45,15 +47,23 @@ class CloudPipProvenanceMixin(models.AbstractModel):
         paths (the requirements merge and the conflict-resolution
         endpoint, which set ``pip_provenance_managed`` in the context) is
         a human editing the list, so entries whose recorded spec no
-        longer appears verbatim stop being upstream's.
+        longer appears verbatim stop being upstream's. A conflict block
+        the edit removed, leaving one of its two lines, is remembered as
+        the dialog's answer would be (``hand_resolved_pip_sources``):
+        «Edit Manually» resolves a conflict too.
         """
-        result = super().write(vals)
         if ('pip_dependencies' not in vals
                 or self.env.context.get('pip_provenance_managed')):
-            return result
+            return super().write(vals)
+        before = {record.id: record.pip_dependencies or '' for record in self}
+        result = super().write(vals)
         for record in self:
             current = record.pip_dependency_sources or {}
-            pruned = prune_pip_sources(record.pip_dependencies or '', current)
+            text = record.pip_dependencies or ''
+            answered = hand_resolved_pip_sources(
+                before[record.id], text, record.repo_ids, current,
+            )
+            pruned = prune_pip_sources(text, answered)
             if pruned != current:
                 # Managed flag on the recursive write: it carries no
                 # ``pip_dependencies`` key, so the guard above already

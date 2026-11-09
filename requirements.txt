@@ -32,6 +32,9 @@ requests==2.34.2
 # passlib itself still comes in transitively through Odoo core.
 bcrypt==5.0.0
 PyYAML==6.0.3
+# The re-sync of a repository's requirements.txt compares two lines of one
+# package with it (pip_spec_relation). ansible-core needs it too.
+packaging==26.3
 # Agents' OAuth tokens (incubacloud_mcp) and the tenant panels' SSO: JWS and
 # JWT validation. Self-hosted installs rebuild their image to get it.
 joserfc==1.7.7
