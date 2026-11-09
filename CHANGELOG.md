@@ -75,11 +75,23 @@ No change in the database.
   could not measure: the host unreachable, the playbook stopped, a disk
   reading that is not a number. A Check or a Full Setup that finds the host
   well resolves both alerts.
+- **Full Setup on a disk under 10 GB leaves the host `Degraded`.** It still
+  fails with `setup_failed`, but raises `host_low_disk` as the Check does
+  and no longer marks the host `Unsupported`, which is kept for a host that
+  does not run Linux or could not be read.
 - **The disk readings no longer undo the Check's `Degraded`.** Every five
   minutes, and right after the Check, a disk under 95% used put a degraded
-  host back to `Compatible`, missing tools included. They now do so only when
-  neither `host_low_disk` nor `missing_deps` is active, and resolve
-  `host_low_disk` themselves once 10 GB are free again.
+  host back to `Compatible`, missing tools included. They now do so only
+  with 10 GB free, no `host_low_disk` active and no `missing_deps` open:
+  active, or dismissed by hand until a Check or a Full Setup finds the
+  tools. Dismissing an alert frees no disk and installs nothing. They
+  resolve `host_low_disk` themselves from 11 GB free, one more than the
+  Check asks for: a reading is rounded and may be older than the Check,
+  and the margin keeps a disk hovering at 10 GB from closing and reopening
+  the alert. They do so too on a disk over 95% used that still has the
+  room.
+- **A deploy or a rebuild empties Docker's build cache under 10 GB free,
+  not 8.** The figure under which the Check marks the host `Degraded`.
 
 ## [1.0.219] — 2026-11-08
 

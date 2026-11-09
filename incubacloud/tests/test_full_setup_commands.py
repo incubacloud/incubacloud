@@ -262,6 +262,102 @@ class TestFullSetupWritesTheEdgeGuard(TransactionCase):
         self.assertFalse(self.host.edge_guard_shipped_hash)
 
 
+class TestFullSetupGivesTheChecksVerdict(TransactionCase):
+    """Full Setup's first phase measures what the Check does, and says it
+    the same way: a host short of disk is ``degraded`` with
+    ``host_low_disk``, not ``unsupported`` (its instances run on); only a
+    host that is not Linux, or could not be read, is ``unsupported``. The
+    run still fails, with its own ``setup_failed``."""
+
+    def setUp(self):
+        """A host and the Full Setup executor of a job on it."""
+        self.registry_enter_test_mode()
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'fs-verdict-host',
+            'ip_address': '10.0.0.41',
+            'user': 'ubuntu',
+            'wildcard_domain': 'fs-verdict.example.com',
+        })
+        job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'job_type_id': self.env['cloud.job.type'].search(
+                [('code', '=', 'full_setup')], limit=1,
+            ).id,
+            'name': 'Full Setup',
+        })
+        self.executor = FullSetupExecutor(job, self.host)
+
+    def _good_results(self):
+        """Return what a run that went well printed, step by step."""
+        return TestFullSetupWritesTheEdgeGuard._good_results(self)
+
+    def _active(self, code):
+        """Return the host's active alerts *code*."""
+        return self.env['cloud.alert'].search([
+            ('host_id', '=', self.host.id),
+            ('code', '=', code),
+            ('state', '=', 'active'),
+        ])
+
+    def _fail_with(self, **stdout):
+        """Run parse_results and on_failure with these phase-1 outputs."""
+        results = self._good_results()
+        for label, out in stdout.items():
+            results[label.replace('_', ':')]['stdout'] = out
+        errors = self.executor.parse_results(results)
+        self.assertTrue(errors)
+        asyncio.run(self.executor.on_failure(results, errors))
+        self.env.invalidate_all()
+        return errors
+
+    def test_little_disk_leaves_the_host_degraded(self):
+        """7 GB free on Linux: degraded, its alert, and the setup failed."""
+        self.host.write({'status': 'compatible'})
+        self._fail_with(check_disk=str(7 * 1024 ** 3))
+        self.assertEqual(self.host.status, 'degraded')
+        alert = self._active('host_low_disk')
+        self.assertEqual(alert.level, 'warning')
+        self.assertIn('7.0 GB free', alert.message)
+        self.assertTrue(self._active('setup_failed'))
+
+    def test_not_linux_is_still_unsupported(self):
+        """Not Linux is unsupported, whatever the disk."""
+        self._fail_with(check_os='Darwin', check_disk=str(7 * 1024 ** 3))
+        self.assertEqual(self.host.status, 'unsupported')
+        self.assertFalse(self._active('host_low_disk'))
+        self.assertTrue(self._active('setup_failed'))
+
+    def test_a_disk_it_could_not_read_is_unsupported(self):
+        """A reading that is not a number measured nothing."""
+        self._fail_with(check_disk='not-a-number')
+        self.assertEqual(self.host.status, 'unsupported')
+        self.assertFalse(self._active('host_low_disk'))
+
+    def test_success_resolves_the_checks_verdict(self):
+        """It found Linux, the disk and every tool: the Check's alerts
+        close, a missing-tools one dismissed by hand included."""
+        for code in ('host_low_disk', 'host_unsupported'):
+            self.env['cloud.alert'].raise_alert(code, 'found', host=self.host)
+        self.env['cloud.alert'].raise_alert(
+            'missing_deps', 'found', host=self.host,
+        ).write({'state': 'dismissed', 'resolution': 'manual'})
+        with patch.object(
+            type(self.host), '_enqueue_observability',
+            autospec=True, return_value=False,
+        ):
+            asyncio.run(self.executor.on_success({}))
+        self.env.invalidate_all()
+        self.assertFalse(self._active('host_low_disk'))
+        self.assertFalse(self._active('host_unsupported'))
+        self.assertEqual(self.host.status, 'compatible')
+        self.assertFalse(self.env['cloud.alert'].search_count([
+            ('host_id', '=', self.host.id),
+            ('code', '=', 'missing_deps'),
+            ('resolution', '=', 'manual'),
+        ]))
+
+
 class TestRebuildDefersOnBusyCrons(TransactionCase):
     """A rebuild blocked by a running cron must be rescheduled, not failed.
 

@@ -5,6 +5,7 @@ import shlex
 from .abstract_executor import HANDOFF_SWEEP, JOB_DIR_PREFIX, handoff_sweep
 from .ansible_executor import AnsibleExecutor
 from .cloud_restore_upload_grant import UPLOAD_ROOT, USED_GRANT_DAYS
+from .host_probe_executor import MIN_DISK_GB
 
 # Docker label that opts a resource out of the prune. Stamped by
 # ``DeployInstanceExecutor._resource_override_content`` on every
@@ -23,8 +24,12 @@ PROTECT_LABEL = "incubacloud.protect=1"
 #: on, under which a deploy or a rebuild first empties the build cache
 #: and the unused images (``build_cache_prune_if_low``): a build that runs
 #: out of disk fails half-way, and the daily prune may be most of a day
-#: away. The single place to change it.
-BUILD_CACHE_MIN_FREE_GB = 8
+#: away. The single place to change it. The Check's own figure
+#: (``MIN_DISK_GB``, 10 GB), not lower: under it the Check marks the host
+#: degraded with ``host_low_disk``, and a build that left the cache full
+#: between 8 and 10 GB kept the host there until the daily prune
+#: (8 GB until 9-nov-2026).
+BUILD_CACHE_MIN_FREE_GB = MIN_DISK_GB
 
 #: How recent what a job's cleanup keeps is: the build cache used and the
 #: images made within it. A delete or a rebuild holds the host's build lock

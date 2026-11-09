@@ -114,8 +114,10 @@ The Check ends with a verdict on the host's status:
 | `Degraded` | Under 10 GB free, or a tool missing. An alert says which. | The instances already there keep running. With little disk, no new one is placed on it and a build may run out of space: free space. For a missing tool, run **Full Setup**. |
 | `Unsupported` | Not Linux, or the Check could not reach or read the host. | Nothing is deployed there. |
 
-The job fails only when the Check could not measure the host. Once 10 GB are
-free again, the low-disk alert closes by itself within minutes.
+The job fails only when the Check could not measure the host. Once 11 GB are
+free, the low-disk alert closes by itself within minutes; a Check closes it
+from 10 GB. **Full Setup** on a disk under 10 GB fails and leaves the host
+`Degraded` with the same alert.
 
 ### 5. Run `Full Setup`
 

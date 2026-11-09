@@ -12,12 +12,16 @@ Single-pass setup for a new host (or re-run to repair):
 Status transitions:
   Job started   → checking      (once connected, in before_execute)
   All phases OK → compatible    (traefik_deployed=True)
-  Any failure   → unsupported (one before 'checking' was set — a refused
+  Linux, under 10 GB free
+                → degraded      (with ``host_low_disk``, as the Check
+                  says it; the job still fails with ``setup_failed``)
+  Any other failure
+                → unsupported (one before 'checking' was set — a refused
                   check, no connection — leaves the status as it was)
 
-"degraded" is never set here: the Check (``host_probe``) sets it for a
-disk under 10 GB free or missing tools, the disk readings for a disk
-over ``DISK_CRITICAL_THRESHOLD``.
+Besides the low disk of its first phase, "degraded" is not set here: the
+Check (``host_probe``) sets it for a disk under 10 GB free or missing
+tools, the disk readings for a disk over ``DISK_CRITICAL_THRESHOLD``.
 
 This executor is the single entry point for host setup. The older
 per-phase executors (``setup_host``, ``setup_traefik``) have been
@@ -43,7 +47,12 @@ from .cloud_host_direct import (
     publishes_direct_port,
 )
 from .cloud_host_edge_guard import EDGE_GUARD_STAGED, edge_guard_digest
-from .host_probe_executor import LOW_DISK_ALERT, UNSUPPORTED_ALERT
+from .host_probe_executor import (
+    LOW_DISK_ALERT,
+    MIN_DISK_GB,
+    UNSUPPORTED_ALERT,
+    low_disk_message,
+)
 from .push_edge_guard_executor import EDGE_GUARD_ALERT
 from .setup_whitelist_executor import (
     _WL_DIR,
@@ -54,7 +63,6 @@ from .setup_whitelist_executor import (
 
 _logger = logging.getLogger(__name__)
 
-MIN_DISK_GB = 10
 _BIN = 'PATH="$HOME/.local/bin:$PATH"'
 
 #: Names, in the job's own directory (``_job_path``), of the direct list and
@@ -256,6 +264,10 @@ class FullSetupExecutor(
     ProxyStagingMixin, acme_store.AcmeStorePruneMixin, AbstractSSHExecutor,
 ):
     _job_type = "full_setup"
+    # The free disk in GB its first phase found under ``MIN_DISK_GB`` on
+    # a Linux host (``parse_results``): ``on_failure`` leaves the host
+    # degraded rather than unsupported.
+    _low_disk_gb = None
 
     def _host(self):
         return self.job.host_id
@@ -548,6 +560,7 @@ class FullSetupExecutor(
 
     def parse_results(self, results):
         errors = []
+        self._low_disk_gb = None
 
         check = results.get("Check the direct port")
         if check is not None and check.get("exit_status", 1) != 0:
@@ -567,7 +580,8 @@ class FullSetupExecutor(
         os_out = (
             results.get("check:os", {}).get('stdout', '').strip()
         )
-        if os_out.lower() == 'linux':
+        is_linux = os_out.lower() == 'linux'
+        if is_linux:
             self._sys(f"✓ OS: {os_out}")
         else:
             errors.append(
@@ -588,6 +602,8 @@ class FullSetupExecutor(
                     f"Insufficient disk: {free_gb:.1f} GB free"
                     f" ({MIN_DISK_GB} GB required)"
                 )
+                if is_linux:
+                    self._low_disk_gb = free_gb
         except (ValueError, TypeError):
             errors.append(
                 f"Could not parse disk output: '{disk_out}'"
@@ -688,8 +704,11 @@ class FullSetupExecutor(
             EDGE_GUARD_ALERT,
         ):
             self._resolve_alert(code)
-        self._sys("✓ Host is fully configured and ready for deployments.")
         host = self._host()
+        # It installed every tool: a missing-tools alert dismissed by hand
+        # is resolved too.
+        host._close_missing_tools_dismissed_by_hand()
+        self._sys("✓ Host is fully configured and ready for deployments.")
         host.write({
             'status': 'compatible',
             'traefik_deployed': True,
@@ -770,6 +789,15 @@ class FullSetupExecutor(
             self._sys(f"✗ {error}")
 
     async def on_failure(self, results, errors):
+        """Fail the setup and give the host the status of what it found.
+
+        A Linux host short of disk is ``degraded`` with the Check's
+        ``host_low_disk``, as the Check leaves it: its instances run on.
+        Anything else is ``unsupported``. Either way ``setup_failed``.
+
+        :param dict results: what ran.
+        :param list errors: why the setup failed.
+        """
         self._sys(f"Setup failed with {len(errors)} error(s):")
         for err in errors:
             self._sys(f"  ✗ {err}")
@@ -779,4 +807,11 @@ class FullSetupExecutor(
             " Re-run Setup to retry.",
             level='critical',
         )
-        self._host().write({'status': 'unsupported'})
+        if self._low_disk_gb is not None:
+            self._alert(
+                LOW_DISK_ALERT, low_disk_message(self._low_disk_gb),
+                level='warning',
+            )
+            self._host().write({'status': 'degraded'})
+        else:
+            self._host().write({'status': 'unsupported'})
