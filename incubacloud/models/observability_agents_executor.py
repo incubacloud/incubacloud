@@ -16,6 +16,7 @@ from odoo import _
 from odoo.exceptions import UserError
 
 from . import _direct_probe
+from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
@@ -232,6 +233,21 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 self.env["cloud.host"]._direct_path_changed(
                     f"direct URLs reached from {host.name} changed",
                 )
+
+    async def on_cancelled_running(self, results, exc):
+        """A stop is not a failed install: the host's agent state stays as it was.
+
+        ``on_failure`` counts an attempt, moves the host to "failed" and
+        says the cron will retry, and the count is what raises the
+        alert after three. A person who cancelled the install caused
+        none of that: the host keeps its state and its attempt count,
+        and the cron decides on them as before.
+        """
+        self._sys(
+            f"✗ {CANCELLED_WHILE_RUNNING} The host's agent state is unchanged; "
+            "if its agents are not installed yet, the reconciliation cron "
+            "queues the install again when the host is due."
+        )
 
     async def on_failure(self, results, errors):
         """Record the failure so the cron retries, and alert if it persists.

@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.220] — 2026-11-09
+
+No change in the database.
+
+### Fixed
+
+- **Cancelling the agents' install no longer counts as a failed attempt.** A
+  person who stopped an `install_observability` job while it ran read
+  "Cancelled while it ran." followed by "Attempt 1 failed; the reconciliation
+  cron will retry automatically.", and the host's count of failed installs, which
+  raises the `observability_agents_failed` alert at the third, went up by one.
+  The stop now leaves the host's agent state and count as they were and the log
+  says so. No other executor counts attempts in `on_failure`.
+
 ## [1.0.219] — 2026-11-08
 
 The update creates the `cloud_job_no_return` table and, with `incubacloud_pitr`
