@@ -1262,6 +1262,11 @@ class CloudInstance(models.Model):
         vals = _odoo_versions.without_unchanged_series(self, vals)
         changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
+        # Odoo checks the record rules on the instance as it was: one moved
+        # to another project is checked again as it is now, so it goes
+        # only to a project its writer is a member of.
+        if "project_id" in vals:
+            self.check_access("write")
         # Auto-generate domain when a host is assigned to an instance
         # that doesn't have any domains yet (e.g. imported without host).
         if "host_id" in vals and vals["host_id"]:
@@ -5008,6 +5013,10 @@ class CloudInstance(models.Model):
         # above; writing them requires sudo. We drop back to the caller's
         # env so the returned recordset respects their normal permissions.
         records = super(CloudInstance, self.sudo()).create(vals_list).with_env(self.env)
+        # The create above skips the rules Odoo applies to what a create
+        # made: applied here, in the caller's environment, so an instance
+        # is born only in a project its creator is a member of.
+        records.check_access("create")
         Whitelist = self.env["cloud.instance.whitelist"]
         for inst in records:
             # A staging is born with the egress list its host already

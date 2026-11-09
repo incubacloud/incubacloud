@@ -12,6 +12,7 @@ class CloudInstanceRepo(models.Model):
     _inherit = 'cloud.repo.mixin'
     _description = 'Cloud Instance Repository'
     _order = 'sequence, id'
+    _owner_field = 'instance_id'
 
     instance_id = fields.Many2one(
         comodel_name='cloud.instance',
