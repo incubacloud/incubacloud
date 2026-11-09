@@ -17,6 +17,8 @@ import {useVisibilityRefresh} from "../../utils/use_visibility_refresh";
 import {useDebouncedBus, refreshesOn} from "../../utils/use_debounced_bus";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {announceJob} from "../../utils/job_queue";
+import {pipFocusHint, usePipFocus} from "../../utils/pip_focus";
+import {bareNameRelation} from "../../utils/pip_specs";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, instanceName, portRange, when} from "../../utils/validators";
 import {PasswordInput} from "../password_input/password_input";
@@ -136,6 +138,16 @@ function mergeRequirements(existingText, incomingText, repoUrl, repoBranch) {
         incoming: raw,
         incomingSource: sourceLabel,
       });
+    } else if (bareNameRelation(pkgMap[key].spec, raw) === "existing") {
+      // The stored line already meets a bare name — nothing to ask.
+    } else if (bareNameRelation(pkgMap[key].spec, raw) === "incoming") {
+      // A bare name gives way to the line that says more.
+      const existingSpec = pkgMap[key].spec;
+      newText = newText.replace(
+        new RegExp("^" + _escapeRegex(existingSpec) + "$", "m"),
+        () => raw
+      );
+      pkgMap[key] = {type: "clean", spec: raw, name, block: null};
     } else {
       const existingSpec = pkgMap[key].spec;
       const newBlock = `<<<<<<< existing\n${existingSpec}\n=======\n${raw}\n>>>>>>> ${sourceLabel}`;
@@ -203,6 +215,9 @@ export class InstanceDetail extends JobsMixin(
     project_id: {type: Number},
     environment: {type: String, optional: true},
     embedded: {type: Boolean, optional: true},
+    // ``{name}``: open the Dependencies tab with that package selected
+    // (the pip conflict dialog's "Edit Manually").
+    pipFocus: {type: Object, optional: true},
   };
   static template = "incubacloud.InstanceDetail";
   static components = {
@@ -315,6 +330,9 @@ export class InstanceDetail extends JobsMixin(
       pipDeps: "",
       aptDeps: "",
       pipConflictModal: null, // { conflicts, choices }
+      // The package "Edit Manually" opened the Dependencies tab on.
+      pipFocusName: null,
+      pipFocusSeq: 0,
       // Metrics tab. The config is fetched once per visit; the access
       // log is read on demand, because it is live data from the host and
       // a stale copy would be worse than none during an incident.
@@ -425,6 +443,7 @@ export class InstanceDetail extends JobsMixin(
       triggerRefresh(payload.id);
     };
 
+    usePipFocus(this);
     onWillStart(() => this.load());
     onMounted(() => {
       if (!this.isCreate) {
@@ -673,6 +692,7 @@ export class InstanceDetail extends JobsMixin(
 
   setTab(tab) {
     this.state.tab = tab;
+    if (tab !== "deps") this.state.pipFocusName = null;
     if (tab === "backups" && !this.state.backupsData && !this.state.backupsLoading) {
       this._loadBackups();
     }
@@ -952,6 +972,15 @@ export class InstanceDetail extends JobsMixin(
 
   onPasswordChange(field, value) {
     this.state.form[field] = value;
+  }
+
+  /**
+   * The Dependencies tab's line about the package "Edit Manually" selected.
+   *
+   * @returns {string}
+   */
+  get pipFocusHint() {
+    return pipFocusHint(this.state.pipFocusName);
   }
 
   // ── Pip conflict modal ───────────────────────────────────────────────────

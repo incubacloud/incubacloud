@@ -262,13 +262,16 @@
                             <t t-if="state.tab === 'deps'">
                                 <div class="ic-deps-panel">
                                     <div class="ic-deps-section-label">pip.txt — Python</div>
+                                    <p t-if="state.pipFocusName" class="ic-deps-focus-hint" role="status"
+                                       t-esc="pipFocusHint"/>
                                     <div class="ic-code-editor-wrap">
                                         <div class="ic-code-gutter">
                                             <t t-foreach="getLineNumbers('pipDeps')" t-as="n" t-key="n">
                                                 <div class="ic-line-num" t-esc="n"/>
                                             </t>
                                         </div>
-                                        <textarea class="ic-code-area"
+                                        <textarea t-ref="pipArea"
+                                                  class="ic-code-area"
                                                   spellcheck="false"
                                                   autocomplete="off"
                                                   autocorrect="off"

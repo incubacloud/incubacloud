@@ -654,11 +654,43 @@ class CloudAlert(models.Model):
             # A failure that held its target's job queue is closed: what
             # waited behind it may start now.
             self.env["cloud.job"]._on_holding_alert_closed(closing)
+            closing._close_conflict_failures(vals.get("resolution"))
         # Only broadcast on state transitions — field-level edits
         # (message tweaks, metadata) do not change the overview badge.
         if "state" in vals:
             self._broadcast_overview()
         return res
+
+    def _close_conflict_failures(self, resolution=None):
+        """Close the ``job_failed`` of the jobs whose failure was these conflicts.
+
+        A deploy whose re-sync finds a pip conflict files the
+        ``pip_conflict`` alert with its job and then fails on it; a
+        warning conflict does not keep that failure from raising its
+        own ``job_failed`` too (``cloud.job._create_job_failed_alert``).
+        Closing the conflict answered that failure: left open, its
+        ``job_failed`` kept holding the instance's queue and the alerts
+        panel said the job had failed after the conflict was resolved
+        (an Odoo 18 instance on a tenant's panel, 9-nov-2026).
+
+        :param str resolution: how the conflicts were closed, passed on
+            to the failures; ``auto`` when not given
+        """
+        actionable = self.env["cloud.job"]._get_actionable_alert_codes()
+        jobs = self.filtered(
+            lambda alert: alert.code in actionable and alert.job_id,
+        ).mapped("job_id")
+        if not jobs:
+            return
+        failures = self.sudo().search([
+            ("job_id", "in", jobs.ids),
+            ("code", "=", "job_failed"),
+            ("state", "=", "active"),
+        ])
+        if failures:
+            failures.write({
+                "state": "dismissed", "resolution": resolution or "auto",
+            })
 
     def unlink(self):
         # Capture the env before the rows go away so the broadcast

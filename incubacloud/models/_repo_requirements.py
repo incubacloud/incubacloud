@@ -28,6 +28,9 @@ import urllib.error
 import urllib.request
 from contextlib import suppress
 
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.version import InvalidVersion
+
 from odoo.exceptions import UserError
 
 from ..github.http_utils import read_json_limited, safe_urlopen
@@ -205,6 +208,82 @@ def _parse_req_line(line):
     return (m.group(1).lower(), stripped) if m else None
 
 
+# ── Compatible specs ───────────────────────────────────────────────────────
+
+def _pinned_version(specifier):
+    """Return the version an ``==`` or ``===`` clause of *specifier* pins.
+
+    :param specifier: a ``packaging`` ``SpecifierSet``
+    :return: the pinned version string, or None when no clause pins one
+        (a wildcard ``==2.*`` is a range, not a pin)
+    """
+    for clause in specifier:
+        if clause.operator in ('==', '===') and not clause.version.endswith('.*'):
+            return clause.version
+    return None
+
+
+def _line_satisfies(chosen, other):
+    """Whether installing *chosen* also meets what *other* asks for.
+
+    Decided only where it is certain: *other* names no version (and no
+    URL), or *chosen* pins one that *other*'s range admits, or every
+    clause of *other* is already in *chosen*. Anything else (two ranges
+    that overlap only in part, a URL against a version, different
+    environment markers or extras) is left for a person, as before.
+
+    :param chosen: parsed ``Requirement`` of the line that would stay
+    :param other: parsed ``Requirement`` of the line it would replace
+    :rtype: bool
+    """
+    if other.url:
+        return False
+    if str(chosen.marker) != str(other.marker):
+        return False
+    if not other.extras <= chosen.extras:
+        return False
+    if not other.specifier:
+        return True
+    if chosen.url:
+        return False
+    pin = _pinned_version(chosen.specifier)
+    if pin is not None:
+        try:
+            return other.specifier.contains(pin, prereleases=True)
+        except InvalidVersion:
+            return False
+    return set(other.specifier) <= set(chosen.specifier)
+
+
+def pip_spec_relation(existing, incoming):
+    """Tell whether two requirement lines of one package can both hold.
+
+    ``requests`` and ``requests==2.34.2`` do not disagree: the pin
+    meets the bare name, so a repo asking for any ``requests`` is
+    served by the line another repo pinned (core 18.0 and OCA/queue,
+    9-nov-2026). Two different pins, or a pin outside the other's
+    range, do disagree and stay a conflict a person resolves.
+
+    :param str existing: the line already in ``pip_dependencies``
+    :param str incoming: the line a repo's ``requirements.txt`` brings
+    :return: ``'existing'`` when the stored line already meets the
+        incoming one, ``'incoming'`` when the incoming line is the
+        stricter one and meets the stored one, ``None`` on a conflict
+    :rtype: str or None
+    """
+    if existing.strip() == incoming.strip():
+        return 'existing'
+    try:
+        old, new = Requirement(existing), Requirement(incoming)
+    except InvalidRequirement:
+        return None
+    if _line_satisfies(old, new):
+        return 'existing'
+    if _line_satisfies(new, old):
+        return 'incoming'
+    return None
+
+
 # ── Source label ───────────────────────────────────────────────────────────
 
 def _format_source(repo_url, repo_branch):
@@ -283,6 +362,31 @@ def _build_pkg_map(text):
 
 # ── Merge logic ────────────────────────────────────────────────────────────
 
+def _clean_line_outcome(existing, incoming, entry, repo_key):
+    """Decide what a repo's different line does to a clean stored line.
+
+    :param str existing: the stored line
+    :param str incoming: the line the repo brings
+    :param dict entry: the package's provenance entry, or None
+    :param str repo_key: the repo's provenance key, ``''`` outside
+        provenance mode
+    :return: ``'update'`` when the incoming line replaces the stored one
+        (the repo owns the line, or its line is the stricter of two that
+        agree), ``'kept'`` when a person already turned the incoming line
+        down, ``'satisfied'`` when the stored line already meets it, or
+        ``None`` for a conflict
+    :rtype: str or None
+    """
+    entry = entry or {}
+    if repo_key and entry.get('repo') == repo_key:
+        return 'update'
+    if incoming in (entry.get('rejected') or ()):
+        return 'kept'
+    return {'existing': 'satisfied', 'incoming': 'update'}.get(
+        pip_spec_relation(existing, incoming),
+    )
+
+
 def merge_pip_requirements(
     existing_text, incoming_text, repo_url=None, repo_branch=None,
     sources=None,
@@ -314,15 +418,26 @@ def merge_pip_requirements(
     Absence of an entry means "the operator owns this line", so an empty
     map degrades to the historical behaviour and no migration is needed:
     ownership is claimed lazily the first time a repo declares a spec
-    that already matches verbatim.
+    that already matches verbatim. An entry whose ``repo`` is empty is
+    the operator's too, written when a person resolved a conflict.
+
+    Two different lines of one package are a conflict only when they
+    cannot both hold (:func:`pip_spec_relation`): a line the stored one
+    already meets is skipped (``satisfied``), and a stricter one that
+    meets the stored line replaces it (``updated``), as pip would have
+    to satisfy both anyway. A line a person already turned down when
+    resolving a conflict on that package (the entry's ``rejected``) is
+    skipped too (``kept``): the same disagreement is not asked twice.
 
     The map is keyed by lowercase package name; each entry is
-    ``{'repo': <normalized url>, 'spec': <raw line>, 'label': <source>}``.
+    ``{'repo': <normalized url>, 'spec': <raw line>, 'label': <source>}``
+    plus, after a resolution, ``'rejected': [<raw line>, ...]``.
     In provenance mode the result also carries ``sources`` (the updated
     map) plus ``added`` / ``updated`` / ``adopted`` / ``removed`` for the
     caller's log — ``removed`` lists this repo's own packages that no
     longer appear in its manifest; they are never deleted from the text,
-    only reported so the job log leaves a trace.
+    only reported so the job log leaves a trace. ``satisfied`` and
+    ``kept`` list ``{name, existing, incoming}`` in every mode.
     """
     track_sources = sources is not None
     src_map = dict(sources or {})
@@ -333,14 +448,21 @@ def merge_pip_requirements(
     added = []
     updated = []
     adopted = []
+    satisfied = []
+    kept = []
     conflicts = []
     incoming_names = set()
 
     def _claim(name, spec):
-        """Record *this* repo as the author of *name*'s current spec."""
-        src_map[name] = {
-            'repo': repo_key, 'spec': spec, 'label': source_label,
-        }
+        """Record *this* repo as the author of *name*'s current spec.
+
+        The lines a person turned down on this package stay turned down.
+        """
+        entry = {'repo': repo_key, 'spec': spec, 'label': source_label}
+        rejected = (src_map.get(name) or {}).get('rejected')
+        if rejected:
+            entry['rejected'] = rejected
+        src_map[name] = entry
 
     for line in (incoming_text or '').split('\n'):
         parsed = _parse_req_line(line)
@@ -388,15 +510,26 @@ def merge_pip_requirements(
                 'incoming_source': source_label,
             })
 
-        elif (track_sources and repo_key
-                and (src_map.get(name) or {}).get('repo') == repo_key):
-            # This repo wrote the line and is now changing it: upstream
-            # maintaining its own dependency, not a disagreement.
+        elif (outcome := _clean_line_outcome(
+                pkg_map[name]['spec'], raw, src_map.get(name),
+                repo_key if track_sources else '')) == 'update':
+            # This repo wrote the line and is now changing it (upstream
+            # maintaining its own dependency), or it asks for a stricter
+            # line that meets the stored one: pip has to meet both, so
+            # the line that does is the one to install.
             old_spec = pkg_map[name]['spec']
             new_text = _replace_whole_line(new_text, old_spec, raw)
             pkg_map[name] = {'type': 'clean', 'spec': raw, 'block': None}
-            _claim(name, raw)
+            if track_sources and repo_key:
+                _claim(name, raw)
             updated.append({'name': name, 'old': old_spec, 'new': raw})
+
+        elif outcome:
+            # Turned down before, or already met: nothing to ask.
+            (kept if outcome == 'kept' else satisfied).append({
+                'name': name, 'existing': pkg_map[name]['spec'],
+                'incoming': raw,
+            })
 
         else:
             # Clean line → introduce a new conflict marker
@@ -448,6 +581,8 @@ def merge_pip_requirements(
         'updated': updated,
         'adopted': adopted,
         'removed': removed,
+        'satisfied': satisfied,
+        'kept': kept,
     }
     # ``sources`` only in provenance mode: a caller that did not pass a
     # map must not be able to persist an empty one and silently wipe the
@@ -544,6 +679,51 @@ def repo_key_for_source_label(repos, label):
         if _format_source(repo.url, repo.branch) == wanted:
             return _normalize_url(repo.url)
     return ''
+
+
+def resolved_pip_source(repos, match, chosen, previous):
+    """Return the provenance entry a person's answer to one conflict leaves.
+
+    The answer is remembered: the side not chosen goes to the entry's
+    ``rejected`` lines, which the next re-sync skips instead of asking
+    again (:func:`merge_pip_requirements`). Before, siding with the
+    stored line dropped the entry, the repo that wrote that line adopted
+    it again, and the other repo's line raised the same conflict at
+    every deploy (OCA/queue against core 18.0's ``requests`` pin,
+    9-nov-2026).
+
+    Siding with the repo's line hands it to that repo, so its next bump
+    applies on its own. Any other answer (the stored line, or a third
+    one typed by hand) makes the line the operator's (``repo`` empty):
+    no repo adopts it again, and an upstream change to it is asked
+    about.
+
+    :param repos: the parent's repo lines, to map labels to repos
+    :param match: the ``CONFLICT_RE`` match of the resolved block
+    :param str chosen: the line the person kept, stripped
+    :param dict previous: the package's entry before the answer, or None
+    :return: the new entry for the package
+    :rtype: dict
+    """
+    existing = match.group('existing_line').strip()
+    incoming = match.group('incoming_line').strip()
+    previous = previous or {}
+    rejected = list(previous.get('rejected') or [])
+    for line in (existing, incoming):
+        if line != chosen and line not in rejected:
+            rejected.append(line)
+    rejected = [line for line in rejected if line != chosen]
+    repo_key = ''
+    if chosen == incoming:
+        repo_key = repo_key_for_source_label(repos, match.group('incoming_src'))
+    entry = {
+        'repo': repo_key,
+        'spec': chosen,
+        'label': match.group('incoming_src').strip() if repo_key else 'operator',
+    }
+    if rejected:
+        entry['rejected'] = rejected
+    return entry
 
 
 # ── Alert helper ───────────────────────────────────────────────────────────

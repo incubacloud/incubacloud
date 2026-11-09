@@ -1595,6 +1595,16 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     f"· {label}: {name} is gone from upstream requirements "
                     f"— kept, dependencies are never auto-removed."
                 )
+            for item in result["satisfied"]:
+                self._sys(
+                    f"· {label}: {item['incoming']} is already met by "
+                    f"{item['existing']}."
+                )
+            for item in result["kept"]:
+                self._sys(
+                    f"· {label}: {item['incoming']} was turned down when a "
+                    f"conflict was resolved — keeping {item['existing']}."
+                )
 
         self._persist_resynced_requirements(inst, text, sources)
         for spec in added:

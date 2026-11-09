@@ -9,9 +9,11 @@ dependency is maintenance to apply, while the same change on a line the
 operator pinned by hand is a disagreement that needs a human.
 
 This mixin stores that authority next to the field it describes. The map
-holds only packages owned by a repo — no entry means the operator owns
-the line — so an empty map (every record before this feature) behaves
-exactly as before and needs no migration.
+holds packages owned by a repo — no entry means the operator owns the
+line — so an empty map (every record before this feature) behaves
+exactly as before and needs no migration. A resolved conflict also
+leaves an entry, with an empty ``repo`` when the operator kept the line,
+that remembers the lines turned down (``rejected``).
 
 Shared by ``cloud.project`` and ``cloud.instance``: the same field with
 the same write-time invariant, kept in one place per the P13 decision
