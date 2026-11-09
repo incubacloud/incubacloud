@@ -12,7 +12,7 @@ import { required } from "../../utils/validators";
 import { fetchOdooVersions } from "../../utils/odoo_versions";
 import { confirmVia } from "../../utils/use_confirm";
 import { pipFocusHint, usePipFocus } from "../../utils/pip_focus";
-import { bareNameRelation } from "../../utils/pip_specs";
+import { bareNameRelation, replaceReqLine } from "../../utils/pip_specs";
 import { parseUTC } from "../../utils/dates";
 import {
     copyStateBadgeClass,
@@ -44,10 +44,6 @@ function _formatSource(url, branch) {
     const m = (url || '').match(/github\.com[:/](.+)/);
     const name = m ? m[1].replace(/\.git$/, '') : (url || '').replace(/\/$/, '');
     return branch ? `${name} (${branch})` : name;
-}
-
-function _escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function _buildPkgMap(text) {
@@ -106,23 +102,25 @@ function mergeRequirements(existingText, incomingText, repoUrl, repoBranch) {
             conflicts.push({ name, existing: existingSpec, existingSource: existingSrc, incoming: raw, incomingSource: sourceLabel });
         } else if (bareNameRelation(pkgMap[key].spec, raw) === 'existing') {
             // The stored line already meets a bare name — nothing to ask.
-        } else if (bareNameRelation(pkgMap[key].spec, raw) === 'incoming') {
-            // A bare name gives way to the line that says more.
-            const existingSpec = pkgMap[key].spec;
-            newText = newText.replace(
-                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'),
-                () => raw,
-            );
-            pkgMap[key] = { type: 'clean', spec: raw, name, block: null };
         } else {
             const existingSpec = pkgMap[key].spec;
+            // The stored line as the parser reads it: blanks and a
+            // trailing comment do not hide it.
+            const isStored = (text) => {
+                const stored = _parseReqLine(text);
+                return Boolean(stored) && stored.key === key && stored.raw === existingSpec;
+            };
+            let replaced = false;
+            if (bareNameRelation(existingSpec, raw) === 'incoming') {
+                // A bare name gives way to the line that says more.
+                ({ text: newText, replaced } = replaceReqLine(newText, isStored, raw, true));
+            }
+            if (replaced) {
+                pkgMap[key] = { type: 'clean', spec: raw, name, block: null };
+                continue;
+            }
             const newBlock = `<<<<<<< existing\n${existingSpec}\n=======\n${raw}\n>>>>>>> ${sourceLabel}`;
-            // Function form to avoid ``$`` substitution patterns —
-            // see instance_detail.js for the same pattern.
-            newText = newText.replace(
-                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'),
-                () => newBlock,
-            );
+            ({ text: newText } = replaceReqLine(newText, isStored, newBlock));
             pkgMap[key] = { type: 'conflict', spec: existingSpec, name, existingSrc: 'existing', block: newBlock };
             conflicts.push({ name, existing: existingSpec, existingSource: 'existing', incoming: raw, incomingSource: sourceLabel });
         }

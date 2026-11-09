@@ -10,7 +10,7 @@ import {
 import { rpc } from "@web/core/network/rpc";
 import { AlertHistory } from "@incubacloud/components/alert_history/alert_history";
 import { focusPipLines, pipFocusRange } from "@incubacloud/utils/pip_focus";
-import { bareNameRelation } from "@incubacloud/utils/pip_specs";
+import { bareNameRelation, replaceReqLine } from "@incubacloud/utils/pip_specs";
 
 /**
  * The pip conflict dialog of the alerts panel (9-nov-2026).
@@ -70,7 +70,7 @@ function pipAlert(target) {
  * @returns {Promise<{navigated: Array, closed: Array}>}
  */
 async function mountPanel(alert) {
-    const seen = { navigated: [], closed: [] };
+    const seen = { navigated: [], closed: [], order: [] };
     patchWithCleanup(rpc, {
         _rpc: (url) =>
             Promise.resolve(
@@ -85,8 +85,16 @@ async function mountPanel(alert) {
         static props = {};
         setup() {
             useSubEnv({
-                navigate: (route, params) => seen.navigated.push([route, params]),
-                closeSlideOver: () => seen.closed.push(true),
+                // Async, as the panel's: it may wait on a guard.
+                navigate: async (route, params) => {
+                    await Promise.resolve();
+                    seen.navigated.push([route, params]);
+                    seen.order.push("navigate");
+                },
+                closeSlideOver: () => {
+                    seen.closed.push(true);
+                    seen.order.push("close");
+                },
                 refreshAlertCount: () => {},
                 icon: () => "",
             });
@@ -119,6 +127,13 @@ describe("Pip conflict dialog — Edit Manually", () => {
         ]);
         expect(seen.closed).toEqual([true]);
         expect(EDIT).toHaveCount(0);
+    });
+
+    test("closes the panel once the page has moved, not before", async () => {
+        const seen = await mountPanel(pipAlert({ instance_id: 6, project_id: 5 }));
+        await click(EDIT);
+        await animationFrame();
+        expect(seen.order).toEqual(["navigate", "close"]);
     });
 
     test("a project's conflict opens the project's dependencies", async () => {
@@ -194,5 +209,38 @@ describe("Editors' merge — a bare name is no conflict", () => {
     test("two versions are left to the person", () => {
         expect(bareNameRelation("requests==2.34.2", "requests==2.30")).toBe(null);
         expect(bareNameRelation("requests>=2", "requests[socks]")).toBe(null);
+    });
+
+    test("a marker or a URL against a bare name is left to the person", () => {
+        expect(bareNameRelation("requests==2.34.2; python_version>'3'", "requests")).toBe(null);
+        expect(bareNameRelation("requests", "requests==2.34.2; python_version>'3'")).toBe(null);
+        expect(bareNameRelation("pkg @ git+https://github.com/o/pkg.git", "pkg")).toBe(null);
+        expect(bareNameRelation("pkg", "pkg @ git+https://github.com/o/pkg.git")).toBe(null);
+    });
+});
+
+describe("Editors' merge — the stored line is found as it is written", () => {
+    const isRequests = (line) => line.split("#")[0].trim() === "requests";
+
+    test("a line with a comment is replaced, its comment kept", () => {
+        expect(replaceReqLine(
+            "requests  # needed by X\nlibx==1.0", isRequests, "requests==2.34.2", true
+        )).toEqual({ text: "requests==2.34.2  # needed by X\nlibx==1.0", replaced: true });
+    });
+
+    test("an indented line is replaced whole", () => {
+        expect(replaceReqLine("  requests\nlibx==1.0", isRequests, "BLOCK")).toEqual({
+            text: "BLOCK\nlibx==1.0", replaced: true,
+        });
+    });
+
+    test("a replacement with $ is written as it is", () => {
+        expect(replaceReqLine("requests", isRequests, "a$&b").text).toBe("a$&b");
+    });
+
+    test("no line found says so", () => {
+        expect(replaceReqLine("libx==1.0", isRequests, "x")).toEqual({
+            text: "libx==1.0", replaced: false,
+        });
     });
 });
