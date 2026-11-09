@@ -15665,6 +15665,13 @@ msgstr "Esperando"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Waiting for a server with newer code to pick this job up."
+msgstr ""
+"Esperando a un servidor con código más reciente que retome este trabajo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Waiting for the alert to be resolved: %s"
 msgstr "Esperando a que se resuelva la alerta: %s"
 
