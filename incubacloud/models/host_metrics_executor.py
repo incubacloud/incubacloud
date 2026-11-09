@@ -123,8 +123,10 @@ class HostMetricsExecutor(AbstractSSHExecutor):
             )
         else:
             self._resolve_alert('disk_critical')
-            # Restore to compatible only if we were the ones who degraded it
-            if host.status == 'degraded':
+            host._settle_check_disk_verdict()
+            # Restore to compatible only if we were the ones who degraded
+            # it: not while the Check's own reason for it is open.
+            if host.status == 'degraded' and not host._check_keeps_degraded():
                 host.write({'status': 'compatible'})
             self._sys(
                 f"✓ {self._cpu_cores} cores · "

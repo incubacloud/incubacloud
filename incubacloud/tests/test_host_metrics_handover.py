@@ -31,6 +31,10 @@ from odoo.addons.incubacloud.models import cloud_host_metrics
 from odoo.addons.incubacloud.models.host_metrics_executor import (
     DISK_CRITICAL_THRESHOLD,
 )
+from odoo.addons.incubacloud.models.host_probe_executor import (
+    LOW_DISK_ALERT,
+    MISSING_TOOLS_ALERT,
+)
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
 
@@ -157,6 +161,45 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         self.host.write({"status": "compatible"})
         self._refresh_with_disk_usage(DISK_CRITICAL_THRESHOLD + 2)
         self.assertEqual(self.host.status, "degraded")
+
+    def _check_found(self, code):
+        """Leave the host as a Check that raised *code* left it."""
+        self.env["cloud.alert"].sudo().raise_alert(
+            code, "found by the Check", host=self.host,
+        )
+        self.host.write({"status": "degraded"})
+
+    def _active(self, code):
+        """Return the host's active alerts *code*."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", code),
+            ("host_id", "=", self.host.id),
+            ("state", "=", "active"),
+        ])
+
+    def test_the_checks_low_disk_keeps_the_host_degraded(self):
+        """92 % of 100 GB used leaves 8 GB: under the Check's 10 GB,
+        though under the readings' own threshold too. Until 9-nov-2026
+        the reading right after the Check put the host back to
+        compatible."""
+        self._check_found(LOW_DISK_ALERT)
+        self._refresh_with_disk_usage(92)
+        self.assertEqual(self.host.status, "degraded")
+        self.assertTrue(self._active(LOW_DISK_ALERT))
+
+    def test_freed_disk_settles_the_checks_verdict(self):
+        """The space was freed: no need to wait for another Check."""
+        self._check_found(LOW_DISK_ALERT)
+        self._refresh_with_disk_usage(30)
+        self.assertFalse(self._active(LOW_DISK_ALERT))
+        self.assertEqual(self.host.status, "compatible")
+
+    def test_missing_tools_keep_the_host_degraded(self):
+        """A good disk does not install the tools the Check missed."""
+        self._check_found(MISSING_TOOLS_ALERT)
+        self._refresh_with_disk_usage(30)
+        self.assertEqual(self.host.status, "degraded")
+        self.assertTrue(self._active(MISSING_TOOLS_ALERT))
 
     def test_an_unprobed_host_is_not_degraded(self):
         """Parity with the SSH probe: only 'compatible' escalates.

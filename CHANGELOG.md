@@ -64,6 +64,22 @@ No change in the database.
 - **The hosts 1.0.214 left without the edge guard get it.** The update queues
   `push_edge_guard` again on every host that should carry it and never had it
   written. Its success resolves the `job_failed` alert the first one left.
+- **A Check that measured the host ends well and gives its verdict.** Under
+  10 GB free the Check failed its job, raised `job_failed` and marked the host
+  `Unsupported`, though its instances ran on; and since the job failed, it did
+  not queue the edge guard it found missing. Now a host short of disk is
+  `Degraded` with the warning `host_low_disk` (the free space, and that no new
+  instance is placed there and a build may run short), one that does not run
+  Linux is `Unsupported` with the critical alert `host_unsupported`, and the
+  edge guard is queued whatever the verdict. The job fails only when the Check
+  could not measure: the host unreachable, the playbook stopped, a disk
+  reading that is not a number. A Check or a Full Setup that finds the host
+  well resolves both alerts.
+- **The disk readings no longer undo the Check's `Degraded`.** Every five
+  minutes, and right after the Check, a disk under 95% used put a degraded
+  host back to `Compatible`, missing tools included. They now do so only when
+  neither `host_low_disk` nor `missing_deps` is active, and resolve
+  `host_low_disk` themselves once 10 GB are free again.
 
 ## [1.0.219] — 2026-11-08
 

@@ -15,8 +15,9 @@ Status transitions:
   Any failure   → unsupported (one before 'checking' was set — a refused
                   check, no connection — leaves the status as it was)
 
-"degraded" is reserved exclusively for the host_metrics executor
-(disk/CPU/RAM resource monitoring).
+"degraded" is never set here: the Check (``host_probe``) sets it for a
+disk under 10 GB free or missing tools, the disk readings for a disk
+over ``DISK_CRITICAL_THRESHOLD``.
 
 This executor is the single entry point for host setup. The older
 per-phase executors (``setup_host``, ``setup_traefik``) have been
@@ -42,6 +43,7 @@ from .cloud_host_direct import (
     publishes_direct_port,
 )
 from .cloud_host_edge_guard import EDGE_GUARD_STAGED, edge_guard_digest
+from .host_probe_executor import LOW_DISK_ALERT, UNSUPPORTED_ALERT
 from .push_edge_guard_executor import EDGE_GUARD_ALERT
 from .setup_whitelist_executor import (
     _WL_DIR,
@@ -680,6 +682,8 @@ class FullSetupExecutor(
         for code in (
             'missing_deps', 'setup_failed',
             'traefik_setup_failed', 'whitelist_setup_failed',
+            # Its first phase found Linux and the disk the Check asks for.
+            LOW_DISK_ALERT, UNSUPPORTED_ALERT,
             # The proxy this run started mounts the dynamic directory.
             EDGE_GUARD_ALERT,
         ):

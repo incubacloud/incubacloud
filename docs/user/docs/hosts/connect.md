@@ -106,6 +106,17 @@ This probes the host: kernel, distro, free disk, RAM, Docker presence.
 Anything missing shows up so you can decide whether to install it manually
 or let us run **Full Setup**.
 
+The Check ends with a verdict on the host's status:
+
+| Status | When | What it means |
+|---|---|---|
+| `Compatible` | Linux, 10 GB free or more, every tool in place. | Ready for instances. |
+| `Degraded` | Under 10 GB free, or a tool missing. An alert says which. | The instances already there keep running. With little disk, no new one is placed on it and a build may run out of space: free space. For a missing tool, run **Full Setup**. |
+| `Unsupported` | Not Linux, or the Check could not reach or read the host. | Nothing is deployed there. |
+
+The job fails only when the Check could not measure the host. Once 10 GB are
+free again, the low-disk alert closes by itself within minutes.
+
 ### 5. Run `Full Setup`
 
 We install Docker (if missing), drop in Traefik, wire up cert auto-renewal,

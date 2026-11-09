@@ -22,6 +22,9 @@ from odoo.tests.common import TransactionCase
 from odoo.addons.incubacloud.models.cloud_host_edge_guard import edge_guard_digest
 from odoo.addons.incubacloud.models.host_probe_executor import (
     GIT_MIN,
+    LOW_DISK_ALERT,
+    MISSING_TOOLS_ALERT,
+    UNSUPPORTED_ALERT,
     HostProbeExecutor,
 )
 from odoo.addons.incubacloud.models.docker_prune_executor import (
@@ -108,19 +111,82 @@ class TestHostProbeJudgement(HostStateCase):
         _run(ex.on_success({}))
         self.assertEqual(ex.job.host_id.status, "compatible")
 
-    def test_non_linux_is_a_critical_error(self):
-        errors = self._probe(os="Darwin").parse_results({})
-        self.assertTrue(any("Unsupported OS" in e for e in errors))
+    def _alerting(self, ex):
+        """Let *ex* file its alerts in this test's transaction.
 
-    def test_a_critical_error_marks_the_host_unsupported(self):
-        ex = self._probe(os="Darwin")
+        Its durable cursor rides on the test's (registry test mode), and
+        the alerts name no job: the mocked one has no row.
+        """
+        if not getattr(self, "_in_test_mode", False):
+            self.registry_enter_test_mode()
+            self._in_test_mode = True
+        ex.job.env = self.env
+        ex.job.id = False
+        return ex
+
+    def _active(self, code, host):
+        """Return the active alerts *code* of *host*."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", code),
+            ("host_id", "=", host.id),
+            ("state", "=", "active"),
+        ])
+
+    def test_non_linux_is_a_verdict_not_an_error(self):
+        """The Check measured the host: it ends well and says so."""
+        ex = self._alerting(self._probe(os="Darwin"))
+        self.assertEqual(ex.parse_results({}), [])
+        _run(ex.on_success({}))
+        host = ex.job.host_id
+        self.assertEqual(host.status, "unsupported")
+        alert = self._active(UNSUPPORTED_ALERT, host)
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("Darwin", alert.message)
+
+    def test_a_check_that_could_not_measure_marks_the_host_unsupported(self):
+        ex = self._executor(HostProbeExecutor, facts={})
         errors = ex.parse_results({})
         _run(ex.on_failure({}, errors))
         self.assertEqual(ex.job.host_id.status, "unsupported")
 
-    def test_too_little_disk_is_a_critical_error(self):
-        errors = self._probe(disk=str(3 * 1024 ** 3)).parse_results({})
-        self.assertTrue(any("Insufficient disk" in e for e in errors))
+    def test_too_little_disk_is_a_verdict_not_an_error(self):
+        """9-nov-2026: 7.3 GB free failed the Check and marked the host
+        unsupported, though its three instances ran on."""
+        ex = self._alerting(self._probe(disk=str(int(7.3 * 1024 ** 3))))
+        self.assertEqual(ex.parse_results({}), [])
+        _run(ex.on_success({}))
+        host = ex.job.host_id
+        self.assertEqual(host.status, "degraded")
+        alert = self._active(LOW_DISK_ALERT, host)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("7.3 GB free", alert.message)
+        self.assertFalse(self._active(MISSING_TOOLS_ALERT, host))
+
+    def test_enough_disk_resolves_the_low_disk_alert(self):
+        ex = self._alerting(self._probe(disk=str(3 * 1024 ** 3)))
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        host = ex.job.host_id
+        ex = self._alerting(
+            self._executor(HostProbeExecutor, host=host, facts=_probe_facts()),
+        )
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        self.assertEqual(host.status, "compatible")
+        self.assertFalse(self._active(LOW_DISK_ALERT, host))
+
+    def test_linux_again_resolves_the_unsupported_alert(self):
+        ex = self._alerting(self._probe(os="Darwin"))
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        host = ex.job.host_id
+        ex = self._alerting(
+            self._executor(HostProbeExecutor, host=host, facts=_probe_facts()),
+        )
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        self.assertEqual(host.status, "compatible")
+        self.assertFalse(self._active(UNSUPPORTED_ALERT, host))
 
     def test_unparseable_disk_is_a_critical_error(self):
         errors = self._probe(disk="not-a-number").parse_results({})
@@ -172,9 +238,9 @@ class TestTheCheckReadsTheEdgeGuard(HostStateCase):
     queues ``push_edge_guard`` only when the file is missing or differs,
     and only on a host that should carry it. It stays read-only."""
 
-    def _check(self, digest, **host_vals):
+    def _check(self, digest, disk=ENOUGH_DISK, **host_vals):
         host = self._host(**({"traefik_deployed": True} | host_vals))
-        facts = _probe_facts()
+        facts = _probe_facts(disk=disk)
         if digest is not None:
             facts["ic_edge_guard_sha256"] = digest
         ex = self._executor(HostProbeExecutor, host=host, facts=facts)
@@ -194,6 +260,12 @@ class TestTheCheckReadsTheEdgeGuard(HostStateCase):
     def test_a_missing_guard_is_queued_behind_the_check(self):
         host, enqueue = self._check("")
         enqueue.assert_called_once_with(host, "host check", chained=True)
+
+    def test_a_host_short_of_disk_still_gets_its_guard(self):
+        """The verdict of little disk is no reason to leave it unguarded."""
+        host, enqueue = self._check("", disk=str(7 * 1024 ** 3))
+        enqueue.assert_called_once_with(host, "host check", chained=True)
+        self.assertEqual(host.status, "degraded")
 
     def test_a_different_guard_is_queued(self):
         host, enqueue = self._check("0" * 64)

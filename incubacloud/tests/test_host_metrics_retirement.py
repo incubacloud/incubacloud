@@ -19,6 +19,7 @@ from odoo.tests.common import TransactionCase
 from odoo.addons.incubacloud.models.host_metrics_executor import (
     HostMetricsExecutor,
 )
+from odoo.addons.incubacloud.models.host_probe_executor import LOW_DISK_ALERT
 
 
 class HostMetricsRetirementCase(TransactionCase):
@@ -133,3 +134,43 @@ class TestSkippedRunWritesNothing(HostMetricsRetirementCase):
             "a skipped probe overwrote a real disk reading with 0, which "
             "would also have resolved the disk-critical alert",
         )
+
+
+class TestTheSshReadingKeepsTheChecksVerdict(HostMetricsRetirementCase):
+    """The SSH readings restore to ``compatible`` only what they degraded:
+    the Check's low disk stays until the disk has room again."""
+
+    def _read(self, usage, free_gb):
+        """Run ``on_success`` as after reading *usage* % and *free_gb*."""
+        import asyncio
+
+        ex = self._executor()
+        ex._skipped = False
+        ex._cpu_cores, ex._ram_total_gb = 2, 4.0
+        ex._disk_usage, ex._disk_free_gb = usage, free_gb
+        asyncio.run(ex.on_success({}))
+
+    def _low_disk(self):
+        """Return the host's active low-disk alert of the Check."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", LOW_DISK_ALERT),
+            ("host_id", "=", self.host.id),
+            ("state", "=", "active"),
+        ])
+
+    def setUp(self):
+        super().setUp()
+        self.env["cloud.alert"].sudo().raise_alert(
+            LOW_DISK_ALERT, "found by the Check", host=self.host,
+        )
+        self.host.write({"status": "degraded"})
+
+    def test_still_short_of_disk_stays_degraded(self):
+        self._read(82.0, 7.3)
+        self.assertEqual(self.host.status, "degraded")
+        self.assertTrue(self._low_disk())
+
+    def test_room_again_settles_it(self):
+        self._read(60.0, 15.0)
+        self.assertFalse(self._low_disk())
+        self.assertEqual(self.host.status, "compatible")
