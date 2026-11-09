@@ -976,7 +976,8 @@ class TestASwitchOnThatFails(_PitrCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.inst.write({"pitr_enabled": True, "pitr_state": "enabling"})
         for name in ("_refresh_host_disk", "_publish_bus"):
             patcher = patch.object(ex.PitrEnableExecutor, name, autospec=True)

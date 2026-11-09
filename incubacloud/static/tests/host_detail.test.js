@@ -898,7 +898,7 @@ describe("HostDetail — a generated key not lost", () => {
 
 describe("HostDetail — save sends the key the person chose", () => {
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
     });
 
     /**

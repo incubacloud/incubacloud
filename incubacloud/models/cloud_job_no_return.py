@@ -62,7 +62,10 @@ class CloudJobNoReturn(models.Model):
         help="The label of the step the job had started, for the refusal.",
     )
 
-    _job_uniq = models.Constraint(
-        "unique(job_id)",
-        "A job is past its point of no return once.",
-    )
+    _sql_constraints = [
+        (
+            "job_uniq",
+            "unique(job_id)",
+            "A job is past its point of no return once.",
+        ),
+    ]

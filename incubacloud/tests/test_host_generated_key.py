@@ -17,8 +17,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from odoo import http
+from odoo.api import call_kw
 from odoo.exceptions import AccessError, UserError
-from odoo.service.model import call_kw
 from odoo.tests.common import TransactionCase, new_test_user
 
 from odoo.addons.incubacloud.models import cloud_host as cloud_host_module
@@ -388,7 +388,7 @@ class TestHostCredentialsStayInThePanel(TestSaveHostCertificateRoute):
         hosts = (self.key_host | self.password_host).ids
         # Allowed to export, as an administrator may make them.
         (self.manager | self.developer).write({
-            "group_ids": [(4, self.env.ref("base.group_allow_export").id)],
+            "groups_id": [(4, self.env.ref("base.group_allow_export").id)],
         })
         for user in (self.manager, self.developer):
             Host = self.env["cloud.host"].with_user(user)

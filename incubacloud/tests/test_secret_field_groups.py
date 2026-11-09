@@ -12,8 +12,8 @@ so what uses them keeps working for the roles it is meant for.
 from unittest.mock import MagicMock, patch
 
 from odoo import http
+from odoo.api import call_kw
 from odoo.exceptions import AccessError
-from odoo.service.model import call_kw
 from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 #: The four roles of the panel, by the group each one is given.

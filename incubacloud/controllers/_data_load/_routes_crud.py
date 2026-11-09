@@ -980,7 +980,7 @@ class CrudMixin:
             'traefik_yml': defaults.get('traefik_yml', ''),
         }
 
-    @http.route(['/cloud/generate_host_key'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/generate_host_key'], type='json', auth='user')
     def cloud_generate_host_key(self):
         """Generate the SSH key of a host the new-host form is filling in.
 

@@ -208,7 +208,8 @@ class IdempotencyCase(TransactionCase):
     def setUp(self):
         """Registry test mode, as the durable cursors need it here."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
 
     # ── The check ─────────────────────────────────────────────────────
 

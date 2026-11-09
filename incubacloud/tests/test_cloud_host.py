@@ -1306,10 +1306,10 @@ class TestDefaultCertificateKeyStaysInThePanel(TestSaveHostCertificateRoute):
 
     def test_no_role_reads_the_key(self):
         """Not by ``read``, ``search_read``, ``call_kw``, export or search."""
-        from odoo.service.model import call_kw
+        from odoo.api import call_kw
 
         (self.stakeholder | self.developer | self.manager).write({
-            "group_ids": [(4, self.env.ref("base.group_allow_export").id)],
+            "groups_id": [(4, self.env.ref("base.group_allow_export").id)],
         })
         ids = self.host.ids
         for user in (self.stakeholder, self.developer, self.manager):
