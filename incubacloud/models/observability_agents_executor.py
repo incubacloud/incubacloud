@@ -65,6 +65,27 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "traefik_extra": [],
         }
 
+    #: The labels people name freely: a project's name, and the tenant an
+    #: upper layer fills in. Ansible templates the extra vars it is handed
+    #: (``-e @file``); these reach it marked as not templates.
+    _FREE_TEXT_LABELS = ("project", "tenant")
+
+    def _labels_as_data(self, labels):
+        """Mark the free-text values of *labels* as data for Ansible.
+
+        Ansible reads the extra-vars file as JSON first, and a value
+        written as ``{"__ansible_unsafe": text}`` reaches the playbook as
+        *text* that is never rendered as a template.
+
+        :param dict labels: one instance's map (``_instance_labels``).
+        :return: a copy with each of ``_FREE_TEXT_LABELS`` so marked.
+        :rtype: dict
+        """
+        return labels | {
+            key: {"__ansible_unsafe": labels.get(key) or ""}
+            for key in self._FREE_TEXT_LABELS
+        }
+
     def _traefik_prefix(self, instance):
         """Return the prefix Traefik names this instance's services with.
 
@@ -184,7 +205,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "ic_remote_write_user": account,
             "ic_remote_write_token": token,
             "ic_instances": [
-                self._instance_labels(inst) for inst in instances
+                self._labels_as_data(self._instance_labels(inst))
+                for inst in instances
             ],
         }
 

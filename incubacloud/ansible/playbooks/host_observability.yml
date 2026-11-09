@@ -163,6 +163,10 @@
       # against a running proxy. A deployment layer above core may put an
       # extra router in front of an instance; when it does, mapping that
       # name is the job of the layer that created it, not of this playbook.
+      #
+      # The project and tenant labels are text people write: they are
+      # written through ``to_json``, a JSON string being a YAML scalar, so
+      # whatever they hold stays one value of the file.
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/scrape.yml"
         mode: "0644"
@@ -219,7 +223,7 @@
                 - source_labels: [service]
                   regex: "{{ inst.traefik_prefix }}.*"
                   target_label: project
-                  replacement: "{{ inst.project }}"
+                  replacement: {{ inst.project | to_json(ensure_ascii=False) }}
                 - source_labels: [router]
                   regex: "(https-)?{{ inst.traefik_prefix }}.*"
                   target_label: instance_id
@@ -260,12 +264,12 @@
                 - source_labels: [container_label_com_docker_compose_project]
                   regex: "{{ inst.compose_project }}"
                   target_label: project
-                  replacement: "{{ inst.project }}"
+                  replacement: {{ inst.project | to_json(ensure_ascii=False) }}
           {% if inst.tenant %}
                 - source_labels: [container_label_com_docker_compose_project]
                   regex: "{{ inst.compose_project }}"
                   target_label: tenant
-                  replacement: "{{ inst.tenant }}"
+                  replacement: {{ inst.tenant | to_json(ensure_ascii=False) }}
           {% endif %}
           {% if inst.tenant_id %}
                 # The id, not just the slug: it survives a tenant rename,

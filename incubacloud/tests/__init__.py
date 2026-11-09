@@ -273,3 +273,4 @@ from . import test_gitlab_receiver_real_cursors
 from . import test_register_git_hook
 from . import test_register_git_hook_real_cursors
 from . import test_smtp_relay_fields_safe
+from . import test_observability_project_label_safe
