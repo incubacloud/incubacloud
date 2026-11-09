@@ -141,9 +141,9 @@ own address (`web.base.url`) followed by `/mcp`, and Odoo rewrites that address
 each time a user with access to Odoo's Settings signs in: it becomes the one in
 that user's browser, `http://localhost:8069` after a sign-in through an SSH
 tunnel, for instance. Set the address your computers use, for example
-`http://192.0.2.10:8090/mcp`; or set `web.base.url` to the panel's address and
+`http://192.0.2.10/mcp`; or set `web.base.url` to the panel's address and
 add the system parameter `web.base.url.freeze` with the value `True`, which
-stops the rewrite. Plain `http` is accepted.
+stops the rewrite. Plain `http` is accepted for the MCP. Connecting the GitHub App needs the panel served over HTTPS, with any certificate your browsers trust; over plain HTTP the panel refuses it.
 
 **2. An API key**, created in your Odoo preferences:
 [Self-hosted panel without OAuth](../agents/connect.md#self-hosted-panel-without-oauth).
@@ -162,7 +162,7 @@ computer. In Claude Desktop, **Settings → Developer → Edit Config** opens
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://192.0.2.10:8090/mcp",
+        "http://192.0.2.10/mcp",
         "--allow-http",
         "--header",
         "Authorization:${AUTH}"
@@ -208,7 +208,7 @@ openssl s_client -connect app.odoo.example.com:443 -servername app.odoo.example.
 | What you see | Why, and what to do |
 |---|---|
 | The agent gets `401` | The key is wrong, revoked or expired, or `Bearer ` is missing in `AUTH`. |
-| `404` on `/mcp` | Odoo cannot tell which database the request is for: set `dbfilter`. |
+| `404` on `/mcp` | Odoo cannot tell which database the request is for: select the panel's database by name, with `db_name` or `dbfilter = ^<name>$` ([INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md#the-odoo-settings-that-matter)). |
 | `mcp-remote` refuses the `http://` address | Add `--allow-http`. |
 | The commands on *Connect an agent* name `localhost:8069` | Set the MCP address (step 1). |
 | A push does not rebuild the instance | Expected without public access: rebuild by hand. |

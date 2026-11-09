@@ -23,7 +23,7 @@ request — and JSON answers only, never SSE.
 | Request | Answer |
 |---|---|
 | `GET`, `DELETE` | 405, `Allow: POST` |
-| No database (a server with several databases and no `dbfilter` by host name) | 404 |
+| No database (a server with several databases and neither `db_name` nor a `dbfilter` that selects the panel's by name) | 404 |
 | An `Origin` that is not the panel's (from the MCP address) | 403 |
 | A `Content-Type` other than `application/json` | 415 |
 | No `Content-Length` (a chunked body) | 411 |

@@ -10,7 +10,7 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 
 | | |
 |---|---|
-| **Install and update the panel** | [INSTALL.md](INSTALL.md) — reference Docker Compose setup, Odoo settings, recommended configuration, safe updates |
+| **Install and update the panel** | [INSTALL.md](INSTALL.md) — what the panel adds to your Odoo 19.0: dependencies, settings, proxy, a dedicated job runner, safe updates |
 | **Use it** | [docs.incubacloud.io](https://docs.incubacloud.io/) — hosts, projects, instances, backups, agents |
 | **How it is built** | [architecture](docs/architecture.md), [API endpoints](docs/api-endpoints.md), [MCP server](docs/mcp.md), [assistant](docs/assistant.md), [observability](docs/observability-operations.md), [runbooks](docs/runbooks/README.md), [roadmap](docs/roadmap.md) |
 | **Contribute** | [CONTRIBUTING.md](CONTRIBUTING.md), [CLA.md](CLA.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
@@ -158,9 +158,9 @@ See [docs/architecture.md](docs/architecture.md) for the full module structure a
 
 ## Installation
 
-Standard Odoo 19.0 modules. Add this repository and OCA's `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0) to your `addons_path`, install the Python packages of this repository's [`requirements.txt`](requirements.txt) and of OCA/queue's (`openupgradelib`, `requests`), and give Odoo the settings the panel's jobs need: `queue_job` in `server_wide_modules`, `limit_time_real = 3600`, and enough workers for the running jobs and the people using the panel at once.
+Standard Odoo 19.0 modules, for an Odoo 19.0 you already run or a new one; Community is enough. Add this repository and OCA's `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0, at the commit [INSTALL.md](INSTALL.md#what-the-panel-needs) names) to your `addons_path`. Install the Python packages of this repository's [`requirements.txt`](requirements.txt) and of OCA/queue's (`openupgradelib`, `requests`), the Ansible collections the host playbooks use, and `ssh` and `sshpass`. Run Odoo with a UTF-8 locale and `INCUBACLOUD_SECRET_KEY` in its environment, and give it the settings the panel's jobs need: `queue_job` in `server_wide_modules`, `limit_time_real = 3600`, more workers than jobs running at once, and the panel's database selected by name.
 
-[INSTALL.md](INSTALL.md) does it step by step with Docker Compose, explains each setting, gives the configuration we run in production, and shows how to update the panel without losing running jobs.
+[INSTALL.md](INSTALL.md) lists what the panel needs, explains each setting and what the proxy must pass, recommends a dedicated job runner, and shows how to update the panel without losing running jobs.
 
 Running the tests: [CONTRIBUTING.md](CONTRIBUTING.md#running-tests).
 
@@ -242,7 +242,7 @@ Odoo is a trademark of Odoo S.A. IncubaCloud is not affiliated with Odoo S.A.
 
 Project maintained by **IncubaCloud**
 
-Enterprise features, support and partnerships:
+Support and partnerships:
 contact@incubacloud.io
 
-**Don't want to install it?** Try the hosted platform, free: https://www.incubacloud.io/?utm_source=github&utm_medium=readme
+**Rather not run it yourself?** The [hosted platform](https://www.incubacloud.io/?utm_source=github&utm_medium=readme) runs the same panel for you.

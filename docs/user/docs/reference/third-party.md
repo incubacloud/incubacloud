@@ -9,9 +9,10 @@ in the core repository.
 
 - **Odoo Community** (LGPL-3.0, Odoo S.A.) is the framework the panel runs on.
   The panel uses no Odoo Enterprise module.
-- **Doodba** (Apache-2.0, Tecnativa) is the base image of the panel and of every
-  instance it deploys, and **doodba-copier-template** (BSL-1.0, Tecnativa) is the
-  template each instance's project is generated from.
+- **Doodba** (Apache-2.0, Tecnativa) is the base image of every instance the
+  panel deploys and of the hosted service's panels, and
+  **doodba-copier-template** (BSL-1.0, Tecnativa) is the template each
+  instance's project is generated from.
 - **queue_job** (LGPL-3.0, Odoo Community Association) runs the panel's
   background jobs.
 - On your hosts, the panel installs **Traefik**, **PostgreSQL**, **WAL-G**,

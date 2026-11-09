@@ -1,8 +1,9 @@
 # Create your account
 
 !!! info "IncubaCloud SaaS"
-    This page applies to the hosted service at incubacloud.io. If you self-host
-    the open core module, there is no signup — install the module and open `/cloud`.
+    This page applies to the hosted service at incubacloud.io. On a panel you
+    install yourself there is no signup: follow
+    [INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md) and open `/cloud`.
 
 This guide walks you through registering, choosing a plan, paying (if applicable),
 and reaching your own IncubaCloud control plane.

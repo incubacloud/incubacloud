@@ -130,8 +130,10 @@ exact command shown: see [Approvals](confirmations.md).
     The panels of IncubaCloud SaaS accept OAuth only: an API key is
     refused, whoever created it.
 
-A server with several databases needs a `dbfilter` that selects the
-database by host name; without it, `/mcp` answers 404.
+A server with several databases must select the panel's database by name,
+with `db_name` or `dbfilter = ^<name>$`; without it, `/mcp` answers 404. A
+filter by host name (`%h`, `%d`) also stops the panel's jobs:
+[INSTALL.md](https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md#the-odoo-settings-that-matter).
 
 The address the page puts in every command is **Settings → Agents (MCP) → MCP
 address**; left empty, it is the panel's own address (`web.base.url`) followed
