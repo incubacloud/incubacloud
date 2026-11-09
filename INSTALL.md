@@ -30,7 +30,6 @@ only your office network reaches has a page of its own there:
 | OCA [`queue_job`](https://github.com/OCA/queue), release 19.0.2.1.6 (commit `da2664795eb525698f93dfdd63f6ba5c4c9fccba` of branch 19.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
 | The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents). |
 | The Python packages of OCA/queue's `requirements.txt` | `openupgradelib` and `requests`, which `queue_job` declares in its manifest: without them it does not install. |
-| The Ansible collections of [`incubacloud/ansible/requirements.yml`](incubacloud/ansible/requirements.yml) | `ansible.posix` and `community.general`, used by the host playbooks. |
 | OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key. |
 | A UTF-8 locale for the Odoo process | Ansible refuses to start without one (`Ansible could not initialize the preferred locale`). |
 | `INCUBACLOUD_SECRET_KEY` in Odoo's environment | The key every stored secret is encrypted with: see [The encryption key](#the-encryption-key). |
@@ -91,15 +90,10 @@ few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
 
    ```bash
    pip install -r incubacloud/requirements.txt -r queue/requirements.txt
-   ansible-galaxy collection install \
-       -r incubacloud/incubacloud/ansible/requirements.yml \
-       -p /usr/share/ansible/collections
    apt-get install --no-install-recommends openssh-client sshpass
    ```
 
-   Install the collections where the Ansible of the user running Odoo looks for
-   them: `/usr/share/ansible/collections` or that user's
-   `~/.ansible/collections`. On the official `odoo:19.0` image, add
+   On the official `odoo:19.0` image, add
    `--break-system-packages --ignore-installed` to `pip`: the image ships some
    of these packages from Ubuntu, which `pip` cannot uninstall, and the pinned
    `cryptography` and `pyOpenSSL` must take precedence over Ubuntu's.

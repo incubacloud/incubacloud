@@ -27,17 +27,15 @@ registry or repository, and none of its code is changed.
 | Hanken Grotesk | The Hanken Grotesk Project Authors | [OFL-1.1](https://openfontlicense.org/open-font-license-official-text/) | Text typeface. Font files in `incubacloud/static/fonts/`, with `OFL-hanken-grotesk.txt`. | [marcologous/hanken-grotesk](https://github.com/marcologous/hanken-grotesk) |
 | JetBrains Mono | The JetBrains Mono Project Authors | [OFL-1.1](https://openfontlicense.org/open-font-license-official-text/) | Monospaced typeface. Font files in `incubacloud/static/fonts/`, with `OFL-jetbrains-mono.txt`. | [JetBrains/JetBrainsMono](https://github.com/JetBrains/JetBrainsMono) |
 
-## Python packages and Ansible collections
+## Python packages
 
-Installed by pip or `ansible-galaxy` from their public indexes, at the versions
-pinned in `requirements.txt` and `incubacloud/ansible/requirements.yml`. None
-is included in this repository.
+Installed by pip from their public index, at the versions pinned in
+`requirements.txt`. None is included in this repository.
 
 | Component | Author | Licence | How IncubaCloud uses it | Project |
 |---|---|---|---|---|
 | ansible-core | Red Hat, Inc. and the Ansible contributors | [GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html) | Runs the playbooks in `incubacloud/ansible/` that set up and maintain hosts, as a separate program. | [ansible/ansible](https://github.com/ansible/ansible) |
 | ansible-runner | Red Hat, Inc. | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Starts those playbooks and streams their output into the job log. | [ansible/ansible-runner](https://github.com/ansible/ansible-runner) |
-| ansible.posix, community.general | The Ansible community | [GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html) | Ansible modules the playbooks call. | [ansible.posix](https://github.com/ansible-collections/ansible.posix), [community.general](https://github.com/ansible-collections/community.general) |
 | AsyncSSH | Ron Frederick | [EPL-2.0](https://www.eclipse.org/legal/epl-2.0/) | SSH connections to the hosts. | [ronf/asyncssh](https://github.com/ronf/asyncssh) |
 | boto3 | Amazon Web Services | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | S3-compatible storage for backups. | [boto/boto3](https://github.com/boto/boto3) |
 | cryptography | The Python Cryptographic Authority | [Apache-2.0 OR BSD-3-Clause](https://github.com/pyca/cryptography/blob/main/LICENSE) | Encryption of stored secrets, and keys and signatures (GitHub App, SSH). | [pyca/cryptography](https://github.com/pyca/cryptography) |
