@@ -16,6 +16,11 @@ cryptography==50.0.1
 # — removed in cryptography 49 — and crashes the ``base``/ir_mail_server
 # import. The panel image runs this same pair.
 pyOpenSSL==26.4.0
+# Odoo 19 pins urllib3 2.0.7 and requests 2.31.0 on Python 3.12, which
+# Doodba's 19.0 image runs, and pip-audit reports both. It finds nothing in
+# these, the same pair the 18.0 branch pins; requests moves with urllib3.
+urllib3==2.8.0
+requests==2.34.2
 # CN-023: Explicit bcrypt pin — >=4.0.1 required for correct >72-byte error handling.
 # Called directly (not via passlib) because passlib 1.7.4 can't talk to bcrypt >= 5.
 # passlib itself still comes in transitively through Odoo core.

@@ -19,6 +19,10 @@ ansible-core==2.21.2
 ansible-runner==2.4.3
 joserfc==1.7.7
 packaging==26.3
+# requirements.txt's: they replace Odoo 19's urllib3 2.0.7 and requests
+# 2.31.0 in every instance built with this repository.
+urllib3==2.8.0
+requests==2.34.2
 # Baked into the same image even though no core addon imports them: the
 # SaaS addons that run on this image do. Listed here so pip-audit covers
 # every runtime pin, not only the ones this repo's own code reaches.
