@@ -40,6 +40,11 @@ keep working as they were. Nothing else changes in the database.
   directions and the "(instance)" and "(project)" marks, is at full strength:
   at 70% opacity it was 2.9:1 in the light theme and 3.6:1 in the dark.
 
+- **The primary button is the theme's dark green in the light theme.** Its
+  white label now reads at 5.3:1 (it was 3.3:1, under the 4.5:1 that
+  WCAG AA asks of text), and hovering darkens it further. The dark theme
+  already passed and keeps its colours.
+
 ### Fixed
 
 - **Cancelling the agents' install no longer counts as a failed attempt.** A
