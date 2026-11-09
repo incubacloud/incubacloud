@@ -2787,6 +2787,9 @@ class CloudInstance(models.Model):
         job_id = self._enqueue_frozen_cleanup("a clean-up asked for by hand")
         return {"ok": True, "job_id": job_id or None}
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_clean_frozen_move_sources(self):
         """Remove the frozen copies whose time is up.
@@ -3748,6 +3751,9 @@ class CloudInstance(models.Model):
         """
         return []
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_refresh_backup_list(self):
         """Queue a backup_list job for every production instance.
@@ -3793,6 +3799,9 @@ class CloudInstance(models.Model):
 
     _NO_BACKUP_ALERT_CODE = "production_no_backup"
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_check_production_backup(self):
         """Daily cron: warn on deployed production instances with no
@@ -3824,6 +3833,9 @@ class CloudInstance(models.Model):
             )
         return {"flagged": flagged}
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_instance_health(self):
         """Queue an instance_health job for every deployed instance."""
@@ -4084,6 +4096,9 @@ class CloudInstance(models.Model):
             return False
         return True
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_read_staging_logins(self):
         """Queue a login reading for every staging the autopurge watches.
@@ -4133,6 +4148,9 @@ class CloudInstance(models.Model):
                 )
         return queued
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_capture_secret_keys(self, limit=200):
         """Queue a key capture for every deployed instance the panel lacks it for.
@@ -4196,6 +4214,9 @@ class CloudInstance(models.Model):
                 return dict(payload.get("move_outcome") or {"kind": "stuck"})
         return {"kind": "stuck"}
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_recover_stuck_moves(self):
         """Watchdog: recover instances stranded by a failed host move.

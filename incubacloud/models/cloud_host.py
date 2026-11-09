@@ -2520,6 +2520,9 @@ class CloudHost(models.Model):
         """
         return self.browse(self.sudo().search(self._ssh_ready_domain()).ids)
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_collect_metrics(self):
         """Called by ir.cron — queue a host_metrics job for each reachable host."""
@@ -2534,6 +2537,9 @@ class CloudHost(models.Model):
                     e,
                 )
 
+    # Private: ``ir.cron`` runs it as the platform; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def cron_docker_prune(self):
         """Called by ir.cron — queue a docker_prune job for each configured host."""
