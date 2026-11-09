@@ -20,6 +20,13 @@ rules on `ir.attachment`. Nothing else changes in the database.
   them as before, and Odoo's generic RPC no longer does. The connection test
   of the GitHub App's backend form is an Administrator's, as the panel's own
   test in Settings already was.
+- **The crons are the server's.** The crons of `cloud.host`
+  (`cron_collect_metrics`, `cron_docker_prune`) and `cloud.instance`
+  (`cron_clean_frozen_move_sources`, `cron_refresh_backup_list`,
+  `cron_check_production_backup`, `cron_instance_health`,
+  `cron_read_staging_logins`, `cron_capture_secret_keys`,
+  `cron_recover_stuck_moves`) are private too: their scheduled actions run
+  them as before, and so does "Run manually" in Settings → Technical.
 - **A job's raw output and files follow the role design.** The log of a job
   keeps the panel's own messages for every role that sees the job; its raw
   output (`stdout`/`stderr`) is for Developers and Administrators, who read

@@ -1,9 +1,10 @@
-"""The GitHub credentials are handed to the panel's code, not to RPC.
+"""Methods only the panel's own code calls are not reachable through RPC.
 
 Odoo's ``/web/dataset/call_kw`` runs any public method of a model for an
 internal user. The GitHub credential service hands out the personal
-access token, the GitHub App's credentials and the webhook secret: the
-panel's routes, executors and webhook call it, ``call_kw`` refuses it.
+access token, the GitHub App's credentials and the webhook secret, and
+the crons work across every host and instance as the platform: the
+panel's code and ``ir.cron`` call them, ``call_kw`` refuses them.
 """
 
 import hashlib
@@ -24,6 +25,20 @@ SERVICE_METHODS = (
     ("resolve_webhook_secret", [b"{}", "sha256=0"]),
     ("test_connection", []),
 )
+
+#: The crons, by model: ``ir.cron`` runs them as the platform.
+CRONS = {
+    "cloud.host": ("cron_collect_metrics", "cron_docker_prune"),
+    "cloud.instance": (
+        "cron_clean_frozen_move_sources",
+        "cron_refresh_backup_list",
+        "cron_check_production_backup",
+        "cron_instance_health",
+        "cron_read_staging_logins",
+        "cron_capture_secret_keys",
+        "cron_recover_stuck_moves",
+    ),
+}
 
 #: Every role of the panel, by the group each one is given.
 ROLES = {
@@ -81,6 +96,34 @@ class TestServerOnlyMethods(CloudSecurityBase):
             service.resolve_webhook_secret(payload, signature), WEBHOOK_SECRET,
         )
         self.assertEqual(service.resolve_webhook_secret(payload, "sha256=0"), "")
+
+    def test_no_role_runs_a_cron(self):
+        """The crons are refused through ``call_kw`` for every role."""
+        for role, user in self.users.items():
+            for model, methods in CRONS.items():
+                for method in methods:
+                    with self.subTest(role=role, method=f"{model}.{method}"):
+                        with self.assertRaises(AccessError):
+                            get_public_method(
+                                self.env[model].with_user(user), method,
+                            )
+
+    def test_ir_cron_still_runs_them(self):
+        """Positive control: each scheduled action's code calls its method."""
+        for model, methods in CRONS.items():
+            Model = type(self.env[model])
+            for method in methods:
+                # Switched off or not, as a database may keep it.
+                cron = (
+                    self.env["ir.cron"]
+                    .with_context(active_test=False)
+                    .search([("code", "=", f"model.{method}()")])
+                )
+                with self.subTest(method=f"{model}.{method}"):
+                    self.assertEqual(len(cron), 1)
+                    with patch.object(Model, method, autospec=True) as run:
+                        cron.ir_actions_server_id.run()
+                    run.assert_called_once()
 
     def test_the_backend_connection_test_is_an_administrator_s(self):
         """As the panel's settings route: below Administrator, refused."""
