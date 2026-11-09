@@ -1,9 +1,9 @@
 # Installing and updating the panel
 
-The IncubaCloud panel is a set of Odoo 19.0 modules. It runs inside an Odoo
-19.0 server you operate, new or one you already run; Community is enough. This
+The IncubaCloud panel is a set of Odoo 18.0 modules. It runs inside an Odoo
+18.0 server you operate, new or one you already run; Community is enough. This
 guide assumes you administer Odoo. If you need to install Odoo first, follow
-Odoo's own [installation guide](https://www.odoo.com/documentation/19.0/administration/on_premise.html)
+Odoo's own [installation guide](https://www.odoo.com/documentation/18.0/administration/on_premise.html)
 and come back here.
 
 What follows is only what the panel adds to a working Odoo: its dependencies,
@@ -26,10 +26,10 @@ only your office network reaches has a page of its own there:
 
 | Piece | Why |
 |---|---|
-| Odoo 19.0 | The panel is Odoo modules. |
-| OCA [`queue_job`](https://github.com/OCA/queue), release 19.0.2.1.6 (commit `da2664795eb525698f93dfdd63f6ba5c4c9fccba` of branch 19.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
-| The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents). |
-| The Python packages of OCA/queue's `requirements.txt` | `openupgradelib` and `requests`, which `queue_job` declares in its manifest: without them it does not install. |
+| Odoo 18.0 | The panel is Odoo modules. |
+| OCA [`queue_job`](https://github.com/OCA/queue), release 18.0.4.1.2 (commit `4ccc50b153fdfd4ea48292978070043cda2e9aee` of branch 18.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
+| The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents), `urllib3` and `requests` (current releases: the ones Odoo 18 pins on Python 3.10 break with this `cryptography`). |
+| The Python packages of OCA/queue's `requirements.txt` | `requests`, which `queue_job` declares in its manifest: without it `queue_job` does not install. |
 | The Ansible collections of [`incubacloud/ansible/requirements.yml`](incubacloud/ansible/requirements.yml) | `ansible.posix` and `community.general`, used by the host playbooks. |
 | OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key. |
 | A UTF-8 locale for the Odoo process | Ansible refuses to start without one (`Ansible could not initialize the preferred locale`). |
@@ -82,9 +82,9 @@ few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
 1. **Get the code** and add both directories to `addons_path`:
 
    ```bash
-   git clone --branch 19.0 https://github.com/incubacloud/incubacloud.git
-   git clone --branch 19.0 https://github.com/OCA/queue.git
-   git -C queue checkout da2664795eb525698f93dfdd63f6ba5c4c9fccba
+   git clone --branch 18.0 https://github.com/incubacloud/incubacloud.git
+   git clone --branch 18.0 https://github.com/OCA/queue.git
+   git -C queue checkout 4ccc50b153fdfd4ea48292978070043cda2e9aee
    ```
 
 2. **Install the dependencies** in the environment Odoo runs in:
@@ -99,7 +99,7 @@ few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
 
    Install the collections where the Ansible of the user running Odoo looks for
    them: `/usr/share/ansible/collections` or that user's
-   `~/.ansible/collections`. On the official `odoo:19.0` image, add
+   `~/.ansible/collections`. On the official `odoo:18.0` image, add
    `--break-system-packages --ignore-installed` to `pip`: the image ships some
    of these packages from Ubuntu, which `pip` cannot uninstall, and the pinned
    `cryptography` and `pyOpenSSL` must take precedence over Ubuntu's.
@@ -156,7 +156,7 @@ A setup that works, for an Odoo running people's requests and jobs together:
 
 ```ini
 [options]
-server_wide_modules = base,rpc,web,queue_job
+server_wide_modules = base,web,queue_job
 workers = 5
 max_cron_threads = 1
 limit_time_real = 3600
@@ -170,7 +170,7 @@ channels = root:3,root.user:2,root.bg:1
 
 | Setting | Value | Why |
 |---|---|---|
-| `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,rpc,web`) instead of adding to it. |
+| `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,web`) instead of adding to it. |
 | `workers` | More than the `root` channel's capacity | Each running job holds a worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
 | `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once; without the setting `queue_job` runs one at a time. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, clean-up) to `root.bg`, so background jobs never hold up a deploy. With `incubacloud_assistant`, add `root.assistant:1` or more. |
 | `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). The limit counts the whole job: 3600 lets its longest command finish. |
@@ -179,7 +179,7 @@ channels = root:3,root.user:2,root.bg:1
 | `limit_time_real_cron` | Default, or `0` | The panel's scheduled checks visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). Its default follows `limit_time_real`, which is enough at 3600; `0` removes the limit. |
 | `max_cron_threads` | At least `1` | The panel's scheduled actions start its background work (health checks, metrics), start any job queue left waiting (every 2 minutes) and close the jobs a lost worker left (every 5). |
 | `proxy_mode` | `True` | Behind a proxy, Odoo then believes its `X-Forwarded-*` headers for the scheme, the host name and the visitor's address. |
-| `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`0.0.0.0:8069` by default) with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
+| `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`localhost:8069` by default) with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
 
 ### With `workers = 0`
 
@@ -212,7 +212,7 @@ server (`--load=web`) beside a dedicated runner is not judged.
 ## The proxy
 
 The panel needs nothing from the proxy beyond what Odoo itself needs, as
-Odoo's [deployment guide](https://www.odoo.com/documentation/19.0/administration/on_premise/deploy.html)
+Odoo's [deployment guide](https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html)
 describes it:
 
 - **HTTPS**, with `X-Forwarded-Proto`, `X-Forwarded-Host` (or the original
