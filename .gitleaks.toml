@@ -63,5 +63,5 @@ commits = [
     # key (``development-key-do-not-use``). It was removed before
     # production; the commit stays in history, flagged by gitleaks as
     # ``generic-api-key`` on the string literal.
-    "4ba501eb2979745559c511142f1a307594a4f9f6",
+    "5b13bd664b8dc55a0bae36bf8b2f8dcb801ebd65",
 ]
