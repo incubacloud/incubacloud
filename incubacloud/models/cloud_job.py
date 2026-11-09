@@ -64,6 +64,16 @@ _HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
 #: neither count nor are refused.
 QUEUE_MAX_WAITING = 5
 
+#: How long a job whose type has no executor in the process that picked it
+#: up is put back in the queue, counted from its dispatch, and how often it
+#: is tried again meanwhile (``cloud.job._executor_or_postpone``). A
+#: rebuild of a panel restarts its server a few seconds after the update
+#: that queued the job (6 s on 7-nov-2026); ten minutes covers a slow
+#: restart and still ends, with an alert, a job no server of this database
+#: will ever run.
+NO_EXECUTOR_WAIT_SECONDS = 600
+NO_EXECUTOR_RETRY_SECONDS = 30
+
 #: What the dispatcher and the executor read to decide what a job runs,
 #: where, when, with what and with which rights, and when it ended (the
 #: health probe opens its error window after ``date_done``). Only code
@@ -692,7 +702,7 @@ class CloudJob(models.Model):
         # stale — causing flush_all/set_done to fail, which makes queue_job
         # treat the job as "dead" and re-enqueue it.  To prevent duplicate
         # runs, we verify the cursor is still usable before returning.
-        executor = self._get_executor()
+        executor = self._executor_or_postpone()
         ssh_executor = executor(
             job_record=self,
             host_record=self.host_id,
@@ -1030,6 +1040,58 @@ class CloudJob(models.Model):
             raise ValueError(f"No executor registered for '{self.job_type_id.code}'")
 
         return executor_cls
+
+    def _executor_or_postpone(self):
+        """Return this job's executor class, or put the job back for newer code.
+
+        A database can be ahead of the server that runs its jobs: a
+        rebuild updates it with ``click-odoo-update`` in a container of the
+        new image while the old server keeps serving, and restarts that
+        server only afterwards. A job of a type that server's code does not
+        know, queued by the update (a migration's ``push_edge_guard``), was
+        taken by its runner within the second and failed for good with
+        ``No executor registered`` (a tenant's panel, 7-nov-2026): nothing
+        queued it again, and the host never got its edge guard.
+
+        Such a job is put back in the queue, without spending its
+        retries, every ``NO_EXECUTOR_RETRY_SECONDS`` until a server whose
+        code knows the type takes it, for ``NO_EXECUTOR_WAIT_SECONDS``
+        from its dispatch (``queue.job.date_created``). Past that, or for a
+        job that never went through queue_job, it fails saying what to do,
+        and the failure raises the ``job_failed`` alert as any other. Nothing
+        has run on the host either way: the executor is the first thing
+        ``execute`` needs.
+
+        :return: the executor class registered for the job's type
+        :raises RetryableJobError: while the job may still be taken by a
+            server with newer code
+        :raises JobError: once the wait is over
+        """
+        try:
+            return self._get_executor()
+        except ValueError as exc:
+            code = self.job_type_id.code
+            dispatched = self.sudo().queue_job_id.date_created
+            waited = (
+                (fields.Datetime.now() - dispatched).total_seconds()
+                if dispatched else NO_EXECUTOR_WAIT_SECONDS
+            )
+            if waited < NO_EXECUTOR_WAIT_SECONDS:
+                _logger.warning(
+                    "cloud.job %s: no executor for '%s' in this server; put"
+                    " back for one with newer code (%ds waited)",
+                    self.id, code, waited,
+                )
+                raise RetryableJobError(
+                    f"{exc}: put back for a server with newer code",
+                    seconds=NO_EXECUTOR_RETRY_SECONDS,
+                    ignore_retry=True,
+                ) from exc
+            raise JobError(
+                f"{exc} in the server that runs the jobs after"
+                f" {NO_EXECUTOR_WAIT_SECONDS // 60} minutes: its code is"
+                " older than its database. Restart it and run the job again."
+            ) from exc
 
     @api.model
     def load_jobs(self, job_id=False):

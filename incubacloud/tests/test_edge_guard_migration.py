@@ -16,12 +16,18 @@ _VERSION = "1.0.214"
 _SCRIPT = "end-migrate.py"
 
 
-def _load_migration():
-    """Import this version's end-migrate script as a module."""
+def _load_migration(version=_VERSION):
+    """Import a version's end-migrate script as a module.
+
+    :param str version: the migration's folder, 1.0.214 by default.
+    :return: the imported module.
+    """
     path = os.path.join(
-        get_module_path("incubacloud"), "migrations", _VERSION, _SCRIPT,
+        get_module_path("incubacloud"), "migrations", version, _SCRIPT,
     )
-    spec = importlib.util.spec_from_file_location("ic_end_edge_guard", path)
+    spec = importlib.util.spec_from_file_location(
+        f"ic_end_edge_guard_{version.replace('.', '_')}", path,
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -61,3 +67,42 @@ class TestTheUpdateQueuesTheGuard(TransactionCase):
         _load_migration().migrate(self.env.cr, None)
         self.env.invalidate_all()
         self.assertFalse(self._guards(self.ready))
+
+
+class TestTheUpdateHealsHostsLeftWithoutIt(TransactionCase):
+    """1.0.220 queues the guard again where 1.0.214's push never landed.
+
+    Its job failed on a tenant's panel, taken by a server whose code had no
+    executor for it (7-nov-2026), and nothing queued it again.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.missing = make_host(
+            self.env, "egh-missing", "46.4.0.80", traefik_deployed=True,
+        )
+        self.guarded = make_host(
+            self.env, "egh-guarded", "46.4.0.81", traefik_deployed=True,
+            edge_guard_shipped_hash="a" * 64,
+        )
+        self.bare = make_host(self.env, "egh-bare", "46.4.0.82")
+
+    def _guards(self, host):
+        return self.env["cloud.job"].search([
+            ("host_id", "=", host.id),
+            ("job_type_id.code", "=", "push_edge_guard"),
+        ])
+
+    def test_only_the_hosts_never_guarded_get_it_again(self):
+        self.env.flush_all()
+        _load_migration("1.0.220").migrate(self.env.cr, "1.0.219")
+        self.env.invalidate_all()
+        self.assertEqual(len(self._guards(self.missing)), 1)
+        self.assertFalse(self._guards(self.guarded))
+        self.assertFalse(self._guards(self.bare))
+
+    def test_a_fresh_install_queues_nothing(self):
+        self.env.flush_all()
+        _load_migration("1.0.220").migrate(self.env.cr, None)
+        self.env.invalidate_all()
+        self.assertFalse(self._guards(self.missing))

@@ -477,6 +477,57 @@ class TestCloudJobGetExecutor(TransactionCase):
             executor_registry._executors.pop('no_executor_type', None)
 
 
+class TestCloudJobWaitsForNewerCode(TransactionCase):
+    """A job the server's code has no executor for waits for newer code.
+
+    A rebuild updates a panel's database in a container of the new image
+    while the old server keeps serving: its runner took a job the update
+    queued, of a type its code did not know, and the job failed for good
+    (``push_edge_guard`` on a tenant's panel, 7-nov-2026).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'newer-code-host',
+            'ip_address': '10.0.0.12',
+            'user': 'root',
+            'wildcard_domain': 'newer-code.test.local',
+        })
+        _ensure_job_type(self.env, 'no_executor_yet', apply_to='host')
+        jid = self.env['cloud.job'].enqueue(self.host.id, False, 'no_executor_yet')
+        self.job = self.env['cloud.job'].browse(jid)
+
+    def test_it_is_put_back_without_spending_its_retries(self):
+        from odoo.addons.queue_job.exception import RetryableJobError
+        self.assertTrue(self.job.queue_job_id)
+        with self.assertRaises(RetryableJobError) as caught:
+            self.job.execute()
+        from odoo.addons.incubacloud.models.cloud_job import (
+            NO_EXECUTOR_RETRY_SECONDS,
+        )
+        self.assertTrue(caught.exception.ignore_retry)
+        self.assertEqual(caught.exception.seconds, NO_EXECUTOR_RETRY_SECONDS)
+        self.assertIn("no_executor_yet", str(caught.exception))
+
+    def test_it_fails_once_the_wait_is_over(self):
+        from odoo.addons.queue_job.exception import JobError, RetryableJobError
+        from odoo.addons.incubacloud.models.cloud_job import (
+            NO_EXECUTOR_WAIT_SECONDS,
+        )
+        self.env.cr.execute(
+            "UPDATE queue_job SET date_created = now() at time zone 'utc'"
+            " - %s * interval '1 second' WHERE id = %s",
+            (NO_EXECUTOR_WAIT_SECONDS + 5, self.job.queue_job_id.id),
+        )
+        self.job.queue_job_id.invalidate_recordset(['date_created'])
+        with self.assertRaises(JobError) as caught:
+            self.job.execute()
+        self.assertNotIsInstance(caught.exception, RetryableJobError)
+        self.assertIn("No executor registered for 'no_executor_yet'", str(caught.exception))
+        self.assertIn("Restart it", str(caught.exception))
+
+
 class TestCloudJobFormat(TransactionCase):
 
     def setUp(self):
