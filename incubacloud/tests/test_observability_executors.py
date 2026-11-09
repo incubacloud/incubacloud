@@ -17,6 +17,10 @@ import yaml
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    JobCancelled,
+)
 from odoo.addons.incubacloud.models.metrics_acl_sync_executor import (
     MetricsAclSyncExecutor,
 )
@@ -188,6 +192,54 @@ class TestAgentsExecutor(ObservabilityExecutorCase):
             executor.parse_results({executor._playbook: {"exit_status": 0}}),
             [],
         )
+
+
+class TestCancellingTheAgentsInstall(ObservabilityExecutorCase):
+    """A person's stop is not a failed install attempt."""
+
+    def _cancel(self, results):
+        """Run the cancel hook of an agents executor and return its log.
+
+        :param results: what the steps answered, or None before them.
+        :return: ``(executor, lines)``: the executor, and what it logged.
+        """
+        executor = self._make(ObservabilityAgentsExecutor)
+        lines = []
+        executor._sys = lines.append
+        executor._alert = MagicMock(spec=ObservabilityAgentsExecutor._alert)
+        asyncio.run(executor.on_cancelled_running(results, JobCancelled("stop")))
+        return executor, lines
+
+    def test_a_stop_does_not_count_as_an_attempt(self):
+        """Two failures already counted: a third would raise the alert."""
+        for state, attempts in (("failed", 2), ("never", 0)):
+            self.host.write({
+                "metrics_agents_state": state,
+                "metrics_agents_attempts": attempts,
+            })
+            for results in ({"playbook": {"exit_status": -1}}, None):
+                executor, _lines = self._cancel(results)
+                self.assertEqual(self.host.metrics_agents_attempts, attempts)
+                self.assertEqual(self.host.metrics_agents_state, state)
+                executor._alert.assert_not_called()
+
+    def test_a_stop_does_not_promise_a_retry(self):
+        """The log says it was cancelled, not that an attempt failed."""
+        _executor, lines = self._cancel({"playbook": {"exit_status": -1}})
+        log = "\n".join(lines)
+        self.assertIn(CANCELLED_WHILE_RUNNING, log)
+        self.assertNotIn("Attempt", log)
+        self.assertNotIn("will retry", log)
+        # What it does say: the cron may queue the install again.
+        self.assertIn("reconciliation cron", log)
+
+    def test_a_failure_still_counts(self):
+        """Only the stop is exempt: a failed playbook is still an attempt."""
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor._alert = MagicMock(spec=ObservabilityAgentsExecutor._alert)
+        asyncio.run(executor.on_failure({}, ["boom"]))
+        self.assertEqual(self.host.metrics_agents_attempts, 1)
+        self.assertEqual(self.host.metrics_agents_state, "failed")
 
 
 class TestCentralExecutor(ObservabilityExecutorCase):
