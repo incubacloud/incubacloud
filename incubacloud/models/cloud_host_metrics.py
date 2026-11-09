@@ -238,25 +238,39 @@ class CloudHost(models.Model):
         every five minutes, are what notice the space was freed, so the
         verdict does not wait for the next Check. They close it only from
         ``LOW_DISK_CLEAR_GB`` (see there why one GB more), and never raise
-        it: that stays the Check's word. Reads ``disk_free_gb`` as just
-        written by the caller.
+        it: that stays the Check's word. One a user dismissed by hand is
+        closed as resolved too, as ``_close_missing_tools_dismissed_by_hand``
+        does for the tools. Reads ``disk_free_gb`` as just written by the
+        caller.
         """
         self.ensure_one()
-        if self.disk_free_gb >= LOW_DISK_CLEAR_GB:
-            self.env["cloud.alert"].sudo().resolve_alert(
-                LOW_DISK_ALERT, host=self,
-            )
+        if self.disk_free_gb < LOW_DISK_CLEAR_GB:
+            return
+        alerts = self.env["cloud.alert"].sudo()
+        alerts.resolve_alert(LOW_DISK_ALERT, host=self)
+        dismissed = alerts.search([
+            ("code", "=", LOW_DISK_ALERT),
+            ("host_id", "=", self.id),
+            ("instance_id", "=", False),
+            ("state", "=", "dismissed"),
+            ("resolution", "=", "manual"),
+        ])
+        if dismissed:
+            dismissed.write({"resolution": "auto"})
 
     def _check_keeps_degraded(self):
         """Whether the Check left this host degraded for a reason still open.
 
         A disk under ``DISK_CRITICAL_THRESHOLD`` is no reason to put back
         to ``compatible`` a host the Check found short of disk or of
-        tools: the disk readings restore only what they degraded. Short
-        of disk is read from the host itself (``disk_free_gb``, just
-        written by the caller, under ``MIN_DISK_GB``) or from the Check's
-        low-disk alert while active, which closes only from
-        ``LOW_DISK_CLEAR_GB``. Short of tools is read from the newest
+        tools: the disk readings restore only what they degraded, and a
+        small disk with no word of the Check is theirs (a disk over 95 %
+        used they degraded, back at 8 GB free; a ``df`` that printed
+        nothing, read as 0). Short of disk is the Check's low-disk alert:
+        active, which closes only from ``LOW_DISK_CLEAR_GB``; or the
+        newest one dismissed by hand while ``disk_free_gb``, just written
+        by the caller, is still under ``MIN_DISK_GB`` -- dismissing it
+        frees nothing. Short of tools is the newest
         ``MISSING_TOOLS_ALERT`` of the host: active, or dismissed by hand
         -- dismissing it installs nothing -- until a Check or a Full
         Setup that finds the tools closes it as resolved
@@ -265,13 +279,16 @@ class CloudHost(models.Model):
         :rtype: bool
         """
         self.ensure_one()
-        if self.disk_free_gb < MIN_DISK_GB:
-            return True
         alerts = self.env["cloud.alert"].sudo()
         target = [("host_id", "=", self.id), ("instance_id", "=", False)]
-        if alerts.search_count([
-            ("code", "=", LOW_DISK_ALERT), ("state", "=", "active"), *target,
-        ], limit=1):
+        low_disk = alerts.search(
+            [("code", "=", LOW_DISK_ALERT), *target],
+            order="id desc", limit=1,
+        )
+        if low_disk.state == "active" or (
+            low_disk.resolution == "manual"
+            and self.disk_free_gb < MIN_DISK_GB
+        ):
             return True
         newest = alerts.search(
             [("code", "=", MISSING_TOOLS_ALERT), *target],

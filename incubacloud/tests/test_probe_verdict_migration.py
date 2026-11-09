@@ -1,11 +1,13 @@
-"""The update to 1.0.220 checks again the hosts a Check left Unsupported.
+"""The update to 1.0.220 checks again the hosts the old Check may have left stuck.
 
 Until 1.0.220 a Check (``host_probe``) that found under 10 GB free failed
 its job, raised ``job_failed`` and marked the host ``unsupported``. From
 1.0.220 that is a verdict (``degraded`` with ``host_low_disk``), but a
 host left so before the update stays there until someone runs a Check:
-the update queues one on each active ``unsupported`` host with that
-failure still open, and on nothing else.
+the update queues one on every active ``unsupported`` host, its failure
+open or dismissed. And from 1.0.220 a missing-tools alert dismissed by
+hand keeps a host ``degraded`` until a Check finds the tools: one is
+queued too on each active host whose newest such alert was dismissed so.
 """
 import importlib.util
 import os
@@ -55,6 +57,15 @@ class TestTheUpdateChecksStuckHostsAgain(TransactionCase):
         self.env["cloud.alert"].search([
             ("host_id", "=", self.dismissed.id),
         ]).write({"state": "dismissed", "resolution": "manual"})
+        self.tools_dismissed = make_host(
+            self.env, "pvm-tools", "46.4.0.85", status="compatible",
+        )
+        self._tools_alert(self.tools_dismissed, "manual")
+        self.tools_resolved = make_host(
+            self.env, "pvm-tools-ok", "46.4.0.86", status="compatible",
+        )
+        self._tools_alert(self.tools_resolved, "manual")
+        self._tools_alert(self.tools_resolved, "auto")
 
     def _failed_check(self, host, job_type="host_probe"):
         """Leave on *host* the open ``job_failed`` of a failed *job_type*.
@@ -67,6 +78,12 @@ class TestTheUpdateChecksStuckHostsAgain(TransactionCase):
         )
         return host
 
+    def _tools_alert(self, host, resolution):
+        """File a missing-tools alert on *host*, closed with *resolution*."""
+        self.env["cloud.alert"].raise_alert(
+            "missing_deps", "Missing deployment tools: copier.", host=host,
+        ).write({"state": "dismissed", "resolution": resolution})
+
     def _checks(self, hosts):
         """Return the Checks queued on *hosts*."""
         return self.env["cloud.job"].search([
@@ -74,15 +91,21 @@ class TestTheUpdateChecksStuckHostsAgain(TransactionCase):
             ("job_type_id.code", "=", "host_probe"),
         ])
 
-    def test_one_check_per_stuck_host(self):
-        """Only the active, unsupported host with the failed Check open."""
+    def test_one_check_per_host_that_may_be_stuck(self):
+        """Every active unsupported host, its failure open or dismissed,
+        and the one whose newest missing-tools alert a user dismissed."""
         self.env.flush_all()
         _load_migration().migrate(self.env.cr, "1.0.219")
         self.env.invalidate_all()
-        self.assertEqual(self._checks(self.stuck).host_id, self.stuck)
-        self.assertEqual(len(self._checks(self.stuck)), 1)
+        expected = (
+            self.stuck | self.other_failure | self.dismissed
+            | self.tools_dismissed
+        )
+        for host in expected:
+            with self.subTest(host=host.name):
+                self.assertEqual(len(self._checks(host)), 1)
         self.assertFalse(self._checks(
-            self.archived | self.healthy | self.other_failure | self.dismissed,
+            self.archived | self.healthy | self.tools_resolved,
         ))
 
     def test_a_fresh_install_queues_nothing(self):
