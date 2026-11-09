@@ -45,6 +45,11 @@ keep working as they were. Nothing else changes in the database.
   asks of text), and hovering darkens it further. The dark theme already
   passed and keeps its colours.
 
+- **The panel no longer asks for Ansible collections.** The host playbooks
+  use only `ansible.builtin`, which comes with `ansible-core`:
+  `incubacloud/ansible/requirements.yml` is gone, and INSTALL.md no longer
+  runs `ansible-galaxy`.
+
 ### Fixed
 
 - **Cancelling the agents' install no longer counts as a failed attempt.** A
