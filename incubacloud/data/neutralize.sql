@@ -96,3 +96,11 @@ DO $$ BEGIN
     UPDATE cloud_git_credential SET token = NULL;
 EXCEPTION WHEN undefined_table THEN NULL;
 END $$;
+
+-- 8. GitLab webhooks (1.0.221): their secrets and routing keys. A copy takes
+-- no push of production's repositories, and without the tokens of section 7
+-- it could not register them again; their deliveries go with them.
+DO $$ BEGIN
+    DELETE FROM cloud_gitlab_hook;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
