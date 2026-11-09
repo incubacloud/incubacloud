@@ -19,6 +19,11 @@ from odoo import api, fields, models
 from ._concurrency import read_committed_cursor
 from .cloud_metric_rule import promql_query
 from .host_metrics_executor import DISK_CRITICAL_THRESHOLD
+from .host_probe_executor import (
+    CHECK_DEGRADED_ALERTS,
+    LOW_DISK_ALERT,
+    MIN_DISK_GB,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -216,5 +221,38 @@ class CloudHost(models.Model):
         self.env["cloud.alert"].sudo().resolve_alert(
             "disk_critical", host=host,
         )
-        if host.status == "degraded":
+        host._settle_check_disk_verdict()
+        if host.status == "degraded" and not host._check_keeps_degraded():
             host.write({"status": "compatible"})
+
+    def _settle_check_disk_verdict(self):
+        """Resolve the Check's low-disk alert once the disk has room again.
+
+        The Check (``host_probe``) raises ``LOW_DISK_ALERT`` and leaves the
+        host ``degraded`` under ``MIN_DISK_GB`` free; the disk readings,
+        every five minutes, are what notice the space was freed, so the
+        verdict does not wait for the next Check. They never raise it:
+        that stays the Check's word. Reads ``disk_free_gb`` as just
+        written by the caller.
+        """
+        self.ensure_one()
+        if self.disk_free_gb >= MIN_DISK_GB:
+            self.env["cloud.alert"].sudo().resolve_alert(
+                LOW_DISK_ALERT, host=self,
+            )
+
+    def _check_keeps_degraded(self):
+        """Whether the Check left this host degraded for a reason still open.
+
+        A disk under ``DISK_CRITICAL_THRESHOLD`` is no reason to put back
+        to ``compatible`` a host the Check found short of disk or of
+        tools: the disk readings restore only what they degraded.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return bool(self.env["cloud.alert"].sudo().search_count([
+            ("code", "in", list(CHECK_DEGRADED_ALERTS)),
+            ("host_id", "=", self.id),
+            ("state", "=", "active"),
+        ], limit=1))
