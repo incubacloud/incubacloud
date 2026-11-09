@@ -49,6 +49,21 @@ No change in the database.
   its owner, and the alert had to be dismissed by hand each time. That record
   joins the known ones left out before the errors are grouped; any other ERROR
   of the same logger still counts.
+- **A job the server's code does not know yet waits for newer code instead of
+  failing.** A rebuild updates a panel's database with `click-odoo-update` in a
+  container of the new image while the old server keeps serving, and restarts
+  it only afterwards. The update to 1.0.214 queued `push_edge_guard`, and on a
+  tenant's panel the old server's runner took it within the second and failed
+  it for good with `No executor registered for 'push_edge_guard'`: nothing
+  queued it again, the host stayed without the edge guard and the `job_failed`
+  alert stayed open. `cloud.job.execute` now puts such a job back in the queue
+  every 30 s without spending its retries, for 10 minutes from its dispatch,
+  and only then fails, saying the server's code is older than its database.
+  Nothing runs on the host meanwhile. Takes effect from the server that runs
+  1.0.220 on: a server with older code still fails such a job at once.
+- **The hosts 1.0.214 left without the edge guard get it.** The update queues
+  `push_edge_guard` again on every host that should carry it and never had it
+  written. Its success resolves the `job_failed` alert the first one left.
 
 ## [1.0.219] — 2026-11-08
 
