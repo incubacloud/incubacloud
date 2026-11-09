@@ -1022,3 +1022,37 @@ describe("HostDetail — login types without sshpass", () => {
         expect(ctx.state.passwordLoginAvailable).toBe(false);
     });
 });
+
+describe("HostDetail — a password host on a panel without sshpass", () => {
+    const warns = Object.getOwnPropertyDescriptor(
+        HostDetail.prototype, "passwordHostWithoutSshpass",
+    ).get;
+
+    /**
+     * A stand-in with what the warning reads.
+     *
+     * @param {boolean} available Whether the panel's server has sshpass.
+     * @param {string} loginType The login type the form shows.
+     * @returns {object}
+     */
+    function stand(available, loginType) {
+        return {
+            state: {
+                passwordLoginAvailable: available,
+                form: { login_type: loginType },
+            },
+        };
+    }
+
+    test("it warns when the host logs in with a password and there is no sshpass", () => {
+        expect(warns.call(stand(false, "password"))).toBe(true);
+    });
+
+    test("it does not warn when sshpass is there", () => {
+        expect(warns.call(stand(true, "password"))).toBe(false);
+    });
+
+    test("it does not warn for a host that logs in with a key", () => {
+        expect(warns.call(stand(false, "ssh_key"))).toBe(false);
+    });
+});

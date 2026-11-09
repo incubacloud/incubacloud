@@ -19,7 +19,7 @@ The raw database column always stores the ``enc:<token>`` form.
 Python code (executors, controllers) always sees plain text.
 
 Unreadable ciphertext is reported as it is read: a value the current
-``INCUBACLOUD_SECRET_KEY`` chain cannot open raises (as it always did)
+encryption key chain cannot open raises (as it always did)
 *and* opens a ``cloud.alert``. Before that, the only symptom was an
 operation dying halfway with a generic error and no trace of which
 secret was at fault — see ``_alert_unreadable`` for why the alert is
@@ -79,7 +79,7 @@ def unreadable_alert_vals(record, field_name):
         'message': (
             f"Cannot decrypt {record._name}.{field_name} (id={record.id}). "
             f"The ciphertext was written with a key that is no longer in "
-            f"INCUBACLOUD_SECRET_KEY, or it is corrupted. Any operation "
+            f"the panel's encryption key chain, or it is corrupted. Any operation "
             f"reading this secret will keep failing until the value is "
             f"set again."
         ),

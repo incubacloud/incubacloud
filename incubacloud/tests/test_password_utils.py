@@ -12,9 +12,11 @@ populates ``test_tags = {'standard', 'at_install'}`` and
 import logging
 import os
 import tempfile
+import threading
 from unittest.mock import patch
 
 from odoo.tests.common import BaseCase
+from odoo.tools import config
 
 import odoo.addons.incubacloud.models.password_utils as pw_mod
 
@@ -294,7 +296,9 @@ class TestSecretKeySources(BaseCase):
 
     def setUp(self):
         pw_mod._fernet = None
+        pw_mod._key_failure = None
         self.addCleanup(setattr, pw_mod, "_fernet", None)
+        self.addCleanup(setattr, pw_mod, "_key_failure", None)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.tmp = tmp.name
@@ -321,8 +325,11 @@ class TestSecretKeySources(BaseCase):
         lines += [f"{name} = {value}" for name, value in options.items()]
         self._write(self.conf, "\n".join(lines) + "\n")
 
-    def _key_file(self, content, name="key"):
-        return self._write(os.path.join(self.tmp, name), content)
+    def _key_file(self, content, name="key", mode=0o600):
+        """Write a key file owner-only (or with *mode*) and return its path."""
+        path = self._write(os.path.join(self.tmp, name), content)
+        os.chmod(path, mode)
+        return path
 
     def _encrypt_with(self, key):
         """Return ``"secret"`` encrypted with *key* alone."""
@@ -500,3 +507,197 @@ class TestSecretKeySources(BaseCase):
         self.assertIn("[incubacloud] secret_key", output)
         self.assertNotIn(new, output)
         self.assertNotIn(old, output)
+
+    # ── the key file is checked before it is read ───────────────────────────
+
+    def _read_with_deadline(self, path, seconds=5):
+        """Run ``_read_key_file`` on a thread; fail when it does not return.
+
+        A FIFO opened for reading blocks until someone writes to it: the
+        read must refuse it instead, and a test that hangs would take the
+        whole run with it.
+
+        :return: the exception it raised, or ``None``
+        """
+        outcome = []
+
+        def run():
+            try:
+                pw_mod._read_key_file(path, "the test file")
+            except pw_mod.IncubacloudCryptoError as e:
+                outcome.append(e)
+            else:
+                outcome.append(None)
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(seconds)
+        self.assertFalse(worker.is_alive(), "reading the file blocked")
+        return outcome[0]
+
+    def test_a_fifo_as_key_file_is_refused_without_blocking(self):
+        fifo = os.path.join(self.tmp, "fifo")
+        os.mkfifo(fifo)
+        error = self._read_with_deadline(fifo)
+        self.assertIn("regular file", str(error))
+
+    def test_a_device_as_key_file_is_refused(self):
+        error = self._read_with_deadline("/dev/null")
+        self.assertIn("regular file", str(error))
+
+    def test_a_key_file_over_64_kib_is_refused(self):
+        big = self._key_file("k" * (64 * 1024 + 1), "big")
+        error = self._read_with_deadline(big)
+        self.assertIn("64 KiB", str(error))
+
+    def test_a_key_file_of_exactly_64_kib_is_read(self):
+        path = self._key_file("k" * (64 * 1024), "limit")
+        self.assertEqual(
+            len(pw_mod._read_key_file(path, "the test file")), 64 * 1024,
+        )
+
+    def test_a_relative_key_file_path_asks_for_an_absolute_one(self):
+        env = {"INCUBACLOUD_SECRET_KEY_FILE": "key"}
+        with patch.dict(os.environ, env, clear=True):
+            output = self._assert_fails_naming("INCUBACLOUD_SECRET_KEY_FILE")
+        self.assertIn("absolute path", output)
+
+    def test_a_key_file_readable_by_everyone_warns(self):
+        key = self._fresh_key()
+        path = self._key_file(key, "open", mode=0o644)
+        with (
+            patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY_FILE": path}, clear=True),
+            self.assertLogs(self._LOGGER, logging.WARNING) as logs,
+        ):
+            self.assertTrue(pw_mod.key_is_configured())
+        output = "\n".join(logs.output)
+        self.assertIn("readable by every user", output)
+        self.assertIn(path, output)
+        self.assertNotIn(key, output)
+
+    def test_a_private_key_file_does_not_warn(self):
+        path = self._key_file(self._fresh_key(), "private", mode=0o600)
+        with (
+            patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY_FILE": path}, clear=True),
+            self.assertNoLogs(self._LOGGER, logging.WARNING),
+        ):
+            self.assertTrue(pw_mod.key_is_configured())
+
+    # ── a missing key is looked for again after a while, not on every call ──
+
+    def _fail_to_read(self, clock):
+        """Make the key missing everywhere and count the reads of the sources.
+
+        :param clock: the mocked ``time`` module of ``password_utils``
+        :return: the mock standing for ``_read_secret_key``
+        """
+        clock.monotonic.return_value = 1000.0
+        reader = patch.object(
+            pw_mod, "_read_secret_key", autospec=True,
+            side_effect=pw_mod.IncubacloudCryptoError("Cannot read the key."),
+        )
+        mocked = reader.start()
+        self.addCleanup(reader.stop)
+        return mocked
+
+    def test_a_missing_key_is_logged_and_read_once_per_interval(self):
+        with (
+            patch.object(pw_mod, "time", autospec=True) as clock,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            reader = self._fail_to_read(clock)
+            with self.assertLogs(self._LOGGER, "ERROR") as logs:
+                for _ in range(5):
+                    self.assertIsNone(pw_mod._get_fernet())
+            self.assertEqual(len(logs.output), 1)
+            self.assertEqual(reader.call_count, 1)
+
+    def test_a_missing_key_is_looked_for_again_after_the_interval(self):
+        with (
+            patch.object(pw_mod, "time", autospec=True) as clock,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            reader = self._fail_to_read(clock)
+            with self.assertLogs(self._LOGGER, "ERROR") as logs:
+                pw_mod._get_fernet()
+                clock.monotonic.return_value += pw_mod._KEY_RETRY_SECONDS - 1
+                pw_mod._get_fernet()
+                self.assertEqual(reader.call_count, 1)
+                clock.monotonic.return_value += 2
+                pw_mod._get_fernet()
+            self.assertEqual(reader.call_count, 2)
+            self.assertEqual(len(logs.output), 2)
+
+    def test_a_key_that_appears_after_the_wait_is_used(self):
+        key = self._fresh_key()
+        with (
+            patch.object(pw_mod, "time", autospec=True) as clock,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            clock.monotonic.return_value = 1000.0
+            with self.assertLogs(self._LOGGER, "ERROR"):
+                self.assertIsNone(pw_mod._get_fernet())
+            self._conf(secret_key=key)
+            clock.monotonic.return_value += pw_mod._KEY_RETRY_SECONDS + 1
+            self.assertIsNotNone(pw_mod._get_fernet())
+
+    def test_another_environment_is_not_held_back_by_an_old_failure(self):
+        """The wait is for the same configuration only.
+
+        A process whose environment changes (the tests') must not find a
+        valid key refused for a failure recorded with a different one.
+        """
+        with (
+            patch.object(pw_mod, "time", autospec=True) as clock,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            clock.monotonic.return_value = 1000.0
+            with self.assertLogs(self._LOGGER, "ERROR"):
+                self.assertIsNone(pw_mod._get_fernet())
+        env = {"INCUBACLOUD_SECRET_KEY": self._fresh_key()}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertIsNotNone(pw_mod._get_fernet())
+
+    def test_the_encrypt_error_is_still_raised_while_waiting(self):
+        with (
+            patch.object(pw_mod, "time", autospec=True) as clock,
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            self._fail_to_read(clock)
+            for _ in range(2):
+                with self.assertRaises(pw_mod.IncubacloudCryptoError):
+                    pw_mod.encrypt_value("secret")
+
+    # ── odoo.conf ───────────────────────────────────────────────────────────
+
+    def test_a_parse_error_does_not_log_the_line_that_holds_the_key(self):
+        """The parser quotes the offending line: here, one before any section."""
+        key = self._fresh_key()
+        self._write(self.conf, f"secret_key = {key}\n")
+        with patch.dict(os.environ, {}, clear=True):
+            output = self._assert_fails_naming(self.conf)
+            with self.assertRaises(pw_mod.IncubacloudCryptoError) as caught:
+                pw_mod._read_conf_section(self.conf)
+        self.assertNotIn(key, output)
+        self.assertNotIn(key, str(caught.exception))
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertTrue(caught.exception.__suppress_context__)
+
+
+class TestOdooConfPath(BaseCase):
+    """The path of odoo.conf comes from Odoo's own option, read for real.
+
+    Odoo 19 keeps it in ``config["config"]``; the older ``rcfile``
+    attribute is deprecated. The function is not mocked here: a mock
+    would hide a rename of the option.
+    """
+
+    def test_it_is_the_option_odoo_was_started_with(self):
+        self.assertEqual(pw_mod._odoo_conf_path(), config.get("config"))
+        self.assertIsInstance(pw_mod._odoo_conf_path(), str)
+
+    def test_it_follows_a_change_of_the_option(self):
+        previous = config["config"]
+        self.addCleanup(config.__setitem__, "config", previous)
+        config["config"] = "/etc/odoo/elsewhere.conf"
+        self.assertEqual(pw_mod._odoo_conf_path(), "/etc/odoo/elsewhere.conf")

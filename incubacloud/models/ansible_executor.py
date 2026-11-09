@@ -274,6 +274,18 @@ class AnsibleExecutor(AbstractExecutor):
             msg = f"{type(self).__name__} does not define a playbook."
             self._sys(f"✗ {msg}")
             raise RuntimeError(msg)
+        # Without sshpass Ansible cannot log in with a password, and the
+        # run would end in an opaque authentication error.
+        host = self._host_record.sudo()
+        if host.login_type == "password" and not host._password_login_available():
+            msg = (
+                f"Host '{host.name}' logs in with a password, and this "
+                "panel's server has no sshpass, which Ansible needs for "
+                "that. Install sshpass on the panel's server and restart "
+                "it, or switch the host to an SSH key."
+            )
+            self._sys(f"✗ {msg}")
+            raise RuntimeError(msg)
 
         mode = " (check mode)" if self._check_mode else ""
         self._sys(f"Running playbook {self._playbook}{mode} on {self.host}...")

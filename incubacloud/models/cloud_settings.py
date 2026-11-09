@@ -1133,16 +1133,19 @@ class CloudSettings(models.Model):
 
     # ── Secret rotation ────────────────────────────────────────────────────
     # Rotation workflow (operator-driven, not time-based):
-    #   1. Generate a new key, set INCUBACLOUD_SECRET_KEY="<new>,<old>".
-    #   2. Restart Odoo. New writes already use the new key; old rows
-    #      still decrypt via the trailing old key in the MultiFernet.
+    #   1. Generate a new key and put "<new>,<old>" where the encryption
+    #      key is configured (the environment variable, a key file or
+    #      odoo.conf: see ``password_utils``).
+    #   2. Restart every Odoo process. New writes already use the new
+    #      key; old rows still decrypt via the trailing old key in the
+    #      MultiFernet.
     #   3. Activate ``cron_rotate_encrypted_secrets`` (or call
     #      ``_rotate_all_secrets`` manually) to re-encrypt existing rows.
     #   4. When every field reports zero rotated rows, remove the old
-    #      key from the env var and restart.
+    #      key from the chain and restart.
     # The cron ships with active=False — turning it on is a deliberate
     # operator action, so it can't run mid-rotation on a half-configured
-    # env var and corrupt ciphertext.
+    # key chain and corrupt ciphertext.
 
     @api.model
     def _rotate_all_secrets(self, batch_size=500):
@@ -1203,8 +1206,9 @@ class CloudSettings(models.Model):
         pending = self.rotation_pending_count()
         _logger.info(
             "Rotation status: %d value(s) still not on the primary key. "
-            "The old key may only be removed from %s once this is 0.",
-            pending['total'], 'INCUBACLOUD_SECRET_KEY',
+            "The old key may only be removed from the encryption key chain "
+            "once this is 0.",
+            pending['total'],
         )
         return stats
 
@@ -1477,7 +1481,7 @@ class CloudSettings(models.Model):
                 code,
                 f"Could not rotate {model_name}.{field_name} "
                 f"(id={rid}) — ciphertext was encrypted with a key "
-                f"no longer in INCUBACLOUD_SECRET_KEY. Regenerate "
+                f"no longer in the encryption key chain. Regenerate "
                 f"the value manually to resolve.",
                 **Alert._link_target(link_field, link_id),
             )
