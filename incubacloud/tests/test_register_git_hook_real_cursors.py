@@ -139,9 +139,9 @@ class TestRegisterGitHookRealCursors(TransactionCase):
         """
         with self.env.registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
-            hook = env["cloud.gitlab.hook"].create({
-                "provider_id": self.provider_id, "path": _PATH, **vals,
-            })
+            hook = env["cloud.gitlab.hook"].create(
+                {"provider_id": self.provider_id, "path": _PATH} | vals,
+            )
             cr.commit()
             return hook.id
 
