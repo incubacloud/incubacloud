@@ -34,50 +34,51 @@ keep working as they were. Nothing else changes in the database.
   versions and URLs set their own colour and monospace face, the panel's
   primary text on a faint tint with no ligatures, where they took the colour
   of the Bootstrap theme underneath (pink by default, dark green in the
-  website theme, 1.9:1 on the dark panel) and drew `==` as one bar and `>=`
-  as `≥`. The "instance only" label is 4.5:1 or more in both themes (it was
-  2.6:1 in the light one), and the secondary text, the push and pull
-  directions and the "(instance)" and "(project)" marks, is at full strength:
-  at 70% opacity it was 2.9:1 in the light theme and 3.6:1 in the dark.
+  website theme, 1.9:1 on the dark panel) and drew `==` as one bar and `>=` as
+  `≥`. The "instance only" label is 4.5:1 or more in both themes (it was 2.6:1
+  in the light one), and the secondary text, the push and pull directions and
+  the "(instance)" and "(project)" marks, is at full strength: at 70% opacity
+  it was 2.9:1 in the light theme and 3.6:1 in the dark.
 
 - **The primary button is the theme's dark green in the light theme.** Its
-  white label now reads at 5.3:1 (it was 3.3:1, under the 4.5:1 that
-  WCAG AA asks of text), and hovering darkens it further. The dark theme
-  already passed and keeps its colours.
+  white label now reads at 5.3:1 (it was 3.3:1, under the 4.5:1 that WCAG AA
+  asks of text), and hovering darkens it further. The dark theme already
+  passed and keeps its colours.
 
 ### Fixed
 
 - **Cancelling the agents' install no longer counts as a failed attempt.** A
   person who stopped an `install_observability` job while it ran read
   "Cancelled while it ran." followed by "Attempt 1 failed; the reconciliation
-  cron will retry automatically.", and the host's count of failed installs, which
-  raises the `observability_agents_failed` alert at the third, went up by one.
-  The stop now leaves the host's agent state and count as they were and the log
-  says so. No other executor counts attempts in `on_failure`.
+  cron will retry automatically.", and the host's count of failed installs,
+  which raises the `observability_agents_failed` alert at the third, went up
+  by one. The stop now leaves the host's agent state and count as they were
+  and the log says so. No other executor counts attempts in `on_failure`.
 - **A request for a sourcemap no longer raises `instance_error_logs`.** Odoo
   logs as ERROR `.map should have been generated through debug assets` when a
-  browser with developer tools open, or a crawler, asks for the sourcemap of an
-  asset that was not built in debug mode: a failure of neither the instance nor
-  its owner, and the alert had to be dismissed by hand each time. That record
-  joins the known ones left out before the errors are grouped; any other ERROR
-  of the same logger still counts.
+  browser with developer tools open, or a crawler, asks for the sourcemap of
+  an asset that was not built in debug mode: a failure of neither the instance
+  nor its owner, and the alert had to be dismissed by hand each time. That
+  record joins the known ones left out before the errors are grouped; any
+  other ERROR of the same logger still counts.
 - **A job the server's code does not know yet waits for newer code instead of
-  failing.** A rebuild updates a panel's database with `click-odoo-update` in a
-  container of the new image while the old server keeps serving, and restarts
-  it only afterwards. The update to 1.0.214 queued `push_edge_guard`, and on a
-  tenant's panel the old server's runner took it within the second and failed
-  it for good with `No executor registered for 'push_edge_guard'`: nothing
-  queued it again, the host stayed without the edge guard and the `job_failed`
-  alert stayed open. `cloud.job.execute` now puts such a job back in the queue
-  every 30 s without spending its retries, for 10 minutes from its dispatch,
-  and only then fails, saying the server's code is older than its database.
-  Nothing runs on the host meanwhile. Takes effect from the server that runs
-  1.0.220 on: a server with older code still fails such a job at once.
+  failing.** A rebuild updates a panel's database with `click-odoo-update` in
+  a container of the new image while the old server keeps serving, and
+  restarts it only afterwards. The update to 1.0.214 queued `push_edge_guard`,
+  and on a tenant's panel the old server's runner took it within the second
+  and failed it for good with `No executor registered for 'push_edge_guard'`:
+  nothing queued it again, the host stayed without the edge guard and the
+  `job_failed` alert stayed open. `cloud.job.execute` now puts such a job back
+  in the queue every 30 s without spending its retries, for 10 minutes from
+  its dispatch, and only then fails, saying the server's code is older than
+  its database. Nothing runs on the host meanwhile. Takes effect from the
+  server that runs 1.0.220 on: a server with older code still fails such a job
+  at once.
 - **The hosts 1.0.214 left without the edge guard get it.** The update queues
   `push_edge_guard` again on every host that should carry it and never had it
   written. Its success resolves the `job_failed` alert the first one left.
-- **A Check that measured the host ends well and gives its verdict.** Under
-  10 GB free the Check failed its job, raised `job_failed` and marked the host
+- **A Check that measured the host ends well and gives its verdict.** Under 10
+  GB free the Check failed its job, raised `job_failed` and marked the host
   `Unsupported`, though its instances ran on; and since the job failed, it did
   not queue the edge guard it found missing. Now a host short of disk is
   `Degraded` with the warning `host_low_disk` (the free space, and that no new
@@ -88,61 +89,63 @@ keep working as they were. Nothing else changes in the database.
   reading that is not a number. A Check or a Full Setup that finds the host
   well resolves both alerts.
 - **Full Setup on a disk under 10 GB leaves the host `Degraded`.** It still
-  fails with `setup_failed`, but raises `host_low_disk` as the Check does
-  and no longer marks the host `Unsupported`, which is kept for a host that
-  does not run Linux or could not be read.
+  fails with `setup_failed`, but raises `host_low_disk` as the Check does and
+  no longer marks the host `Unsupported`, which is kept for a host that does
+  not run Linux or could not be read.
 - **The disk readings no longer undo the Check's `Degraded`.** Every five
   minutes, and right after the Check, a disk under 95% used put a degraded
   host back to `Compatible`, missing tools included. They now restore only
-  what they degraded: not while `host_low_disk` is active, or was dismissed
-  by hand and the disk is still under 10 GB free, nor while `missing_deps`
-  is active, or was dismissed by hand until a Check or a Full Setup finds
-  the tools. Dismissing an alert frees no disk and installs nothing. They
-  resolve `host_low_disk` themselves from 11 GB free, one more than the
-  Check asks for, a dismissed one included: a reading is rounded and may
-  be older than the Check, and the margin keeps a disk hovering at 10 GB
-  from closing and reopening the alert. They do so too on a disk over 95%
-  used that still has the room.
-- **A deploy or a rebuild empties Docker's build cache under 10 GB free,
-  not 8.** The figure under which the Check marks the host `Degraded`.
+  what they degraded: not while `host_low_disk` is active, or was dismissed by
+  hand and the disk is still under 10 GB free, nor while `missing_deps` is
+  active, or was dismissed by hand until a Check or a Full Setup finds the
+  tools. Dismissing an alert frees no disk and installs nothing. They resolve
+  `host_low_disk` themselves from 11 GB free, one more than the Check asks
+  for, a dismissed one included: a reading is rounded and may be older than
+  the Check, and the margin keeps a disk hovering at 10 GB from closing and
+  reopening the alert. They do so too on a disk over 95% used that still has
+  the room.
+- **A deploy or a rebuild empties Docker's build cache under 10 GB free, not
+  8.** The figure under which the Check marks the host `Degraded`.
 - **Two pip lines that can both hold are no conflict.** The re-sync before a
   deploy or rebuild marked any two different lines of one package as a
   conflict: an Odoo 18 instance of the panel, with core 18.0 pinning
   `requests==2.34.2` and OCA/queue 18.0 asking for `requests`, failed every
-  rebuild on it (9-nov-2026). Lines are compared with `packaging`
-  (`pip_spec_relation`): a line the stored one already meets is skipped and
-  logged («… is already met by …»), a stricter line that meets the stored one
-  replaces it when the stored line is a bare name, and only two different
-  pins, a pin outside the other's range, ranges neither of which contains the
-  other, a URL on either side, different markers or extras, or a stricter line
-  against a version or range the operator or another repository wrote still
-  ask a person: a pin taking `foo<3` would hand the line to its repository,
-  whose next bump to `foo==3.0` would go in unasked. A stored line with blanks or a trailing
+  rebuild on it. Lines are compared with `packaging` (`pip_spec_relation`): a
+  line the stored one already meets is skipped and logged («… is already met
+  by …»), a stricter line that meets the stored one replaces it when the
+  stored line is a bare name, and only two different pins, a pin outside the
+  other's range, ranges neither of which contains the other, a URL on either
+  side, different markers or extras, or a stricter line against a version or
+  range the operator or another repository wrote still ask a person: a pin
+  taking `foo<3` would hand the line to its repository, whose next bump to
+  `foo==3.0` would go in unasked. A stored line with blanks or a trailing
   comment is found and replaced (its comment kept) or marked; before, the text
   kept it while the job log said it was updated. The project and instance
   editors, which merge a repository's `requirements.txt` in the browser, spare
   the bare name the same way, only against a name with version clauses (not a
-  marker, a URL, an option or a continuation), and find a commented line too. `packaging` is in `requirements.txt`.
+  marker, a URL, an option or a continuation), and find a commented line too.
+  `packaging` is in `requirements.txt`.
 - **A resolved pip conflict stays resolved.** The answer is remembered on the
-  package's provenance entry (`rejected`): the side not chosen is skipped at the
-  next re-sync («… was turned down when a conflict was resolved»), whichever
-  repository proposes it again, until someone edits the line by hand. Before,
-  keeping the stored line dropped its entry, the repository that wrote it
-  adopted it again, the other repository raised the same conflict and the job
-  failed again; siding with the repository's line ended the same way the other
-  way round. Keeping the stored line keeps its owner: a repository's line stays
-  that repository's, an unowned one becomes the operator's, as does a third
-  line typed in the dialog, so no repository adopts it and an upstream change to
-  it is asked. Removing the markers by hand («Edit Manually») and leaving one of
-  the two lines, once and with no piece of a marker left, is the same answer;
-  a package still in its markers keeps its entry when another line is edited. A line becomes acceptable again when the
-  package's line is edited by hand, or when its owner moves to it.
+  package's provenance entry (`rejected`): the side not chosen is skipped at
+  the next re-sync («… was turned down when a conflict was resolved»),
+  whichever repository proposes it again, until someone edits the line by
+  hand. Before, keeping the stored line dropped its entry, the repository that
+  wrote it adopted it again, the other repository raised the same conflict and
+  the job failed again; siding with the repository's line ended the same way
+  the other way round. Keeping the stored line keeps its owner: a repository's
+  line stays that repository's, an unowned one becomes the operator's, as does
+  a third line typed in the dialog, so no repository adopts it and an upstream
+  change to it is asked. Removing the markers by hand («Edit Manually») and
+  leaving one of the two lines, once and with no piece of a marker left, is
+  the same answer; a package still in its markers keeps its entry when another
+  line is edited. A line becomes acceptable again when the package's line is
+  edited by hand, or when its owner moves to it.
 - **Resolving a pip conflict closes the failure it caused.** A warning
-  `pip_conflict` lets its failed job raise `job_failed` too, which kept holding
-  the instance's queue, and stayed in the alerts panel, once the conflict was
-  answered. Closing a conflict alert that names a job now closes that job's
-  `job_failed`, with the same resolution: from the dialog, or when the next
-  deploy finds the list clean.
+  `pip_conflict` lets its failed job raise `job_failed` too, which kept
+  holding the instance's queue, and stayed in the alerts panel, once the
+  conflict was answered. Closing a conflict alert that names a job now closes
+  that job's `job_failed`, with the same resolution: from the dialog, or when
+  the next deploy finds the list clean.
 - **«Edit Manually» in the pip conflict dialog takes you to the list.** It
   carried a class no stylesheet defines and drew as the browser's own button;
   it is the panel's secondary button now. Clicked, it navigated to the
