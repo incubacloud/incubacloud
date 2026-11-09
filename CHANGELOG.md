@@ -100,17 +100,17 @@ No change in the database.
   rebuild on it (9-nov-2026). Lines are compared with `packaging`
   (`pip_spec_relation`): a line the stored one already meets is skipped and
   logged («… is already met by …»), a stricter line that meets the stored one
-  replaces it when the stored line is a bare name or a repository's, and only
-  two different pins, a pin outside the other's range, ranges neither of which
-  contains the other, a URL on either side, different markers or extras, or a
-  version or range the operator typed still ask a person: a pin taking the
-  operator's `foo<3` would hand the line to its repository, whose next bump to
-  `foo==3.0` would go in unasked. A stored line with blanks or a trailing
+  replaces it when the stored line is a bare name, and only two different
+  pins, a pin outside the other's range, ranges neither of which contains the
+  other, a URL on either side, different markers or extras, or a stricter line
+  against a version or range the operator or another repository wrote still
+  ask a person: a pin taking `foo<3` would hand the line to its repository,
+  whose next bump to `foo==3.0` would go in unasked. A stored line with blanks or a trailing
   comment is found and replaced (its comment kept) or marked; before, the text
   kept it while the job log said it was updated. The project and instance
   editors, which merge a repository's `requirements.txt` in the browser, spare
-  the bare name the same way, unless the other line carries a marker or a URL,
-  and find a commented line too. `packaging` is in `requirements.txt`.
+  the bare name the same way, only against a name with version clauses (not a
+  marker, a URL, an option or a continuation), and find a commented line too. `packaging` is in `requirements.txt`.
 - **A resolved pip conflict stays resolved.** The answer is remembered on the
   package's provenance entry (`rejected`): the side not chosen is skipped at the
   next re-sync («… was turned down when a conflict was resolved»), whichever
@@ -122,7 +122,8 @@ No change in the database.
   that repository's, an unowned one becomes the operator's, as does a third
   line typed in the dialog, so no repository adopts it and an upstream change to
   it is asked. Removing the markers by hand («Edit Manually») and leaving one of
-  the two lines is the same answer. A line becomes acceptable again when the
+  the two lines, once and with no piece of a marker left, is the same answer;
+  a package still in its markers keeps its entry when another line is edited. A line becomes acceptable again when the
   package's line is edited by hand, or when its owner moves to it.
 - **Resolving a pip conflict closes the failure it caused.** A warning
   `pip_conflict` lets its failed job raise `job_failed` too, which kept holding

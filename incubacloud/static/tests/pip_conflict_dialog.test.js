@@ -217,6 +217,16 @@ describe("Editors' merge — a bare name is no conflict", () => {
         expect(bareNameRelation("pkg @ git+https://github.com/o/pkg.git", "pkg")).toBe(null);
         expect(bareNameRelation("pkg", "pkg @ git+https://github.com/o/pkg.git")).toBe(null);
     });
+
+    test("only a name and its version clauses are settled", () => {
+        expect(bareNameRelation("requests[socks]>=2.30, <3", "requests")).toBe("existing");
+        expect(bareNameRelation("requests", "requests~=2.30")).toBe("incoming");
+        expect(bareNameRelation("requests", "--hash=sha256:00")).toBe(null);
+        expect(bareNameRelation("--hash=sha256:00", "requests")).toBe(null);
+        expect(bareNameRelation("requests==2.34.2 \\", "requests")).toBe(null);
+        expect(bareNameRelation("foo-", "foo-==1.0")).toBe(null);
+        expect(bareNameRelation("foo-==1.0", "foo-")).toBe(null);
+    });
 });
 
 describe("Editors' merge — the stored line is found as it is written", () => {

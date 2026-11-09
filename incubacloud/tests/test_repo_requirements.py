@@ -250,10 +250,23 @@ class TestPrunePipSources(BaseCase):
         kept = prune_pip_sources("liby==2.0\n", self.sources)
         self.assertEqual(set(kept), {'liby'})
 
-    def test_line_turned_into_a_conflict_loses_its_owner(self):
+    def test_line_still_in_its_conflict_keeps_its_owner(self):
+        """Editing another line must not drop an unanswered conflict's owner."""
         text = (
             "<<<<<<< existing\n"
             "libx==1.0\n"
+            "=======\n"
+            "libx==3.0\n"
+            ">>>>>>> acme/repo-b (19.0)\n"
+            "liby==2.0\n"
+        )
+        kept = prune_pip_sources(text, self.sources)
+        self.assertEqual(set(kept), {'libx', 'liby'})
+
+    def test_conflict_over_another_line_drops_the_owner(self):
+        text = (
+            "<<<<<<< existing\n"
+            "libx==1.5\n"
             "=======\n"
             "libx==3.0\n"
             ">>>>>>> acme/repo-b (19.0)\n"

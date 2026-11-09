@@ -22,6 +22,7 @@ from odoo.addons.incubacloud.controllers.data_load import (
 from odoo.addons.incubacloud.models._repo_requirements import (
     _normalize_url,
     create_pip_conflict_alert,
+    hand_resolved_pip_sources,
     merge_pip_requirements,
     pip_spec_relation,
 )
@@ -153,8 +154,12 @@ class TestMergeKeepsWhatAgrees(BaseCase):
                 self.assertIn('<<<<<<< existing\nfoo<3\n', result['content'])
                 self.assertFalse(result['updated'])
 
-    def test_a_repo_range_gives_way_to_a_stricter_pin(self):
-        """A range a repo wrote, or adopted verbatim, is met by the pin."""
+    def test_another_repo_range_is_not_replaced_by_a_pin(self):
+        """A range another repo wrote, or adopted verbatim, is asked about.
+
+        Taken by the pin, the line became that repo's, and its next bump
+        past the range (``foo==3.0``) went in against the other repo.
+        """
         adopted = merge_pip_requirements(
             'foo<3\n', 'foo<3\n', _QUEUE, '18.0', sources={},
         )
@@ -163,10 +168,10 @@ class TestMergeKeepsWhatAgrees(BaseCase):
             adopted['content'], 'foo==2.9\n', _CORE, '18.0',
             sources=adopted['sources'],
         )
-        self.assertFalse(result['conflicts'])
-        self.assertEqual(result['content'], 'foo==2.9\n')
+        self.assertEqual(len(result['conflicts']), 1)
+        self.assertIn('<<<<<<< existing\nfoo<3\n', result['content'])
         self.assertEqual(
-            result['sources']['foo']['repo'], _normalize_url(_CORE),
+            result['sources']['foo']['repo'], _normalize_url(_QUEUE),
         )
 
     def test_a_commented_bare_name_gives_way_to_the_pin(self):
@@ -211,6 +216,37 @@ class TestMergeKeepsWhatAgrees(BaseCase):
         entry = result['sources']['requests']
         self.assertEqual(entry['spec'], 'requests==2.30')
         self.assertEqual(entry['rejected'], ['requests==2.0'])
+
+
+class TestHandEditAnswers(BaseCase):
+    """Only a hand edit that leaves one of the two lines is an answer."""
+
+    BLOCK = (
+        '<<<<<<< existing\nfoo==1\n=======\nfoo==2\n'
+        '>>>>>>> oca/queue (18.0)'
+    )
+
+    def _answer(self, new_text):
+        """The map a hand edit of ``BLOCK`` into *new_text* leaves."""
+        return hand_resolved_pip_sources(
+            f'{self.BLOCK}\nlibx==1.0', new_text, [], {},
+        )
+
+    def test_leaving_one_line_is_an_answer(self):
+        self.assertEqual(self._answer('foo==1\nlibx==1.0'), {'foo': {
+            'repo': '', 'spec': 'foo==1', 'label': 'operator',
+            'rejected': ['foo==2'],
+        }})
+
+    def test_markers_removed_without_choosing_are_no_answer(self):
+        for new_text in (
+            'foo==1\nfoo==2\nlibx==1.0',
+            '<<<<<<< existing\nfoo==1\nlibx==1.0',
+            'foo==1\n=======\nlibx==1.0',
+            'foo==1\n>>>>>>> oca/queue (18.0)\nlibx==1.0',
+        ):
+            with self.subTest(new_text=new_text):
+                self.assertEqual(self._answer(new_text), {})
 
 
 class _TwoRepoResync(JobEndAssertions, TransactionCase):
@@ -408,6 +444,30 @@ class TestResolutionHolds(_TwoRepoResync):
         self._resync()
         self.assertNotIn('<<<<<<<', self.instance.pip_dependencies)
         self.assertNotIn('requests==2.34.2', self.instance.pip_dependencies)
+
+    def test_answering_one_conflict_by_hand_keeps_the_other_s_owner(self):
+        """A package still in its markers keeps its owner and its answers."""
+        bar = {
+            'repo': _normalize_url(_QUEUE), 'spec': 'bar==1.0',
+            'label': 'oca/queue (18.0)', 'rejected': ['bar==0.5'],
+        }
+        self.instance.with_context(pip_provenance_managed=True).write({
+            'pip_dependencies': (
+                '<<<<<<< existing\nfoo==1\n=======\nfoo==2\n'
+                '>>>>>>> oca/queue (18.0)\n'
+                '<<<<<<< existing\nbar==1.0\n=======\nbar==2.0\n'
+                '>>>>>>> incubacloud/incubacloud (18.0)'
+            ),
+            'pip_dependency_sources': {'bar': bar},
+        })
+        self.instance.write({'pip_dependencies': (
+            'foo==1\n'
+            '<<<<<<< existing\nbar==1.0\n=======\nbar==2.0\n'
+            '>>>>>>> incubacloud/incubacloud (18.0)'
+        )})
+        sources = self.instance.pip_dependency_sources
+        self.assertEqual(sources['bar'], bar)
+        self.assertEqual(sources['foo']['rejected'], ['foo==2'])
 
     def test_a_third_line_typed_by_hand_is_no_answer(self):
         """Neither side left: nothing is remembered, the line is the operator's."""

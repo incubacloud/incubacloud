@@ -9,15 +9,21 @@
  * merge a repository's ``requirements.txt`` in the browser when it is
  * added; here they only spare the case that is certain without a
  * version parser: a line that names the package and nothing else
- * (``requests``) is met by any other line of it (``requests==2.34.2``),
- * unless that line carries an environment marker (``;``) or a URL
- * (``@``), as the server decides. Every other difference still opens
- * the conflict dialog.
+ * (``requests``) is met by a line that only adds version clauses to
+ * it (``requests==2.34.2``, ``requests[socks]>=2.30, <3``). Anything
+ * else on the other line (a marker, a URL, an option such as
+ * ``--hash``, a continuation ``\``) opens the conflict dialog, as the
+ * server would.
  */
 
-const BARE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
-// A marker or a URL: a bare name neither meets it nor is met by it.
-const MARKER_OR_URL_RE = /[;@]/;
+// A name as PyPI allows it: starts and ends with a letter or a digit.
+const NAME = "[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?";
+const CLAUSE = "\\s*(?:===|==|~=|!=|<=|>=|<|>)\\s*[A-Za-z0-9.*+!_-]+";
+const BARE_NAME_RE = new RegExp(`^${NAME}$`);
+// A name, optional extras, and one or more version clauses.
+const VERSIONED_RE = new RegExp(
+    `^${NAME}(?:\\[[A-Za-z0-9._,\\s-]*\\])?${CLAUSE}(?:\\s*,${CLAUSE})*$`
+);
 
 /**
  * Which of two lines of one package meets both, when one is a bare name.
@@ -25,17 +31,17 @@ const MARKER_OR_URL_RE = /[;@]/;
  * @param {string} existing the line already in the list
  * @param {string} incoming the line a repository brings
  * @returns {"existing"|"incoming"|null} the line to keep, or null when
- *   neither is a bare name, or the other one has a marker or a URL, and
- *   the person decides
+ *   neither is a bare name, or the other one is more than a name with
+ *   version clauses, and the person decides
  */
 export function bareNameRelation(existing, incoming) {
     const stored = existing.trim();
     const brought = incoming.trim();
     if (BARE_NAME_RE.test(brought)) {
-        return MARKER_OR_URL_RE.test(stored) ? null : "existing";
+        return VERSIONED_RE.test(stored) ? "existing" : null;
     }
     if (BARE_NAME_RE.test(stored)) {
-        return MARKER_OR_URL_RE.test(brought) ? null : "incoming";
+        return VERSIONED_RE.test(brought) ? "incoming" : null;
     }
     return null;
 }
