@@ -1,4 +1,4 @@
-"""End-migrate for 1.0.220 — the edge guard and a Check where older code left hosts short.
+"""End-migrate for 1.0.220 — the edge guard and a Check on hosts older code left short.
 
 Two independent repairs, each in its own function:
 
