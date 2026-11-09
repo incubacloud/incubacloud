@@ -16,18 +16,26 @@ every host that should carry it and has never had it written
 the type. Its success resolves the ``job_failed`` alert the first one left
 (``cloud.job._dismiss_job_failed_alerts``).
 
-**A Check again on the hosts the old one left Unsupported**
+**A Check again on the hosts the old one may have left stuck**
 (``_queue_checks``). Until this version a Check (``host_probe``) that
 found under 10 GB free failed its job, raised ``job_failed`` and marked
 the host ``unsupported``, though its instances ran on. From 1.0.220 the
 Check gives that as a verdict (``degraded`` with ``host_low_disk``), but a
 host it left so before the update stays there until someone runs a Check:
-one is queued here on each active host that is ``unsupported`` with the
-failure of a Check still open. Its success closes that ``job_failed``
-(``cloud.job._dismiss_job_failed_alerts``) and gives the host its status,
-whatever its disk now holds. A Check that cannot be queued is logged and
-leaves the update going: the host stays as it was, and a Check by hand
-settles it.
+one is queued here on every active ``unsupported`` host, whether the
+failure of its Check is still open or was dismissed by hand (checking one
+more host than needed costs a Check). Its success closes a ``job_failed``
+still open (``cloud.job._dismiss_job_failed_alerts``) and gives the host
+its status, whatever its disk now holds.
+
+From 1.0.220 too, a ``missing_deps`` dismissed by hand keeps the host
+``degraded`` until a Check or a Full Setup finds the tools
+(``cloud.host._check_keeps_degraded``). One dismissed so before the update
+may be the newest of a host whose tools were installed since: a Check is
+queued on each active host whose newest host-level ``missing_deps`` was
+dismissed by hand. Not closed blindly as resolved: the Check says whether
+the tools are there. A Check that cannot be queued is logged and leaves
+the update going: the host stays as it was, and a Check by hand settles it.
 
 ``end`` and not ``post``, as 1.0.214's: ``enqueue`` runs with every module
 loaded, so a layer that has its say on the queue (or that leaves a host
@@ -72,18 +80,19 @@ def _queue_edge_guard(env):
 
 
 def _queue_checks(env):
-    """Queue a Check on every active host a failed Check left unsupported.
+    """Queue a Check on every active host the old Check may have left stuck.
 
     :param env: superuser environment
     """
-    hosts = env["cloud.alert"].search([
-        ("code", "=", "job_failed"),
-        ("state", "=", "active"),
-        ("dedup_key", "=", "job_type:host_probe"),
-        ("instance_id", "=", False),
-        ("host_id.active", "=", True),
-        ("host_id.status", "=", "unsupported"),
-    ]).host_id
+    hosts = env["cloud.host"].search([("status", "=", "unsupported")])
+    for host in env["cloud.host"].search([("id", "not in", hosts.ids)]):
+        newest = env["cloud.alert"].search([
+            ("code", "=", "missing_deps"),
+            ("host_id", "=", host.id),
+            ("instance_id", "=", False),
+        ], order="id desc", limit=1)
+        if newest.state == "dismissed" and newest.resolution == "manual":
+            hosts |= host
     queued = []
     for host in hosts:
         try:
@@ -96,6 +105,6 @@ def _queue_checks(env):
                 host.id, exc,
             )
     _logger.info(
-        "[upgrade 1.0.220] Check queued on %d host(s) left unsupported: %s",
+        "[upgrade 1.0.220] Check queued on %d host(s) maybe left stuck: %s",
         len(queued), queued,
     )

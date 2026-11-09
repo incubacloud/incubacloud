@@ -192,3 +192,39 @@ class TestTheSshReadingKeepsTheChecksVerdict(HostMetricsRetirementCase):
         self._low_disk().write({"state": "dismissed", "resolution": "manual"})
         self._read(82.0, 7.3)
         self.assertEqual(self.host.status, "degraded")
+
+    def test_room_again_closes_one_dismissed_by_hand_as_resolved(self):
+        """Once the disk has room, a low-disk alert a user dismissed is
+        resolved, and no longer reads as a reason to stay degraded."""
+        alert = self._low_disk()
+        alert.write({"state": "dismissed", "resolution": "manual"})
+        self._read(60.0, 15.0)
+        self.assertEqual(alert.resolution, "auto")
+        self.assertEqual(self.host.status, "compatible")
+
+
+class TestTheSshReadingRestoresWhatItDegraded(HostMetricsRetirementCase):
+    """Without the Check's word, the SSH readings put back to
+    ``compatible`` the host a full disk degraded, small disk or not."""
+
+    def _read(self, usage, free_gb):
+        """Run ``on_success`` as after reading *usage* % and *free_gb*."""
+        TestTheSshReadingKeepsTheChecksVerdict._read(self, usage, free_gb)
+
+    def setUp(self):
+        """A host the readings degraded for a disk over 95 % used."""
+        super().setUp()
+        self.host.write({"status": "compatible"})
+        self._read(96.0, 4.0)
+        self.assertEqual(self.host.status, "degraded")
+
+    def test_under_the_threshold_again_restores_it(self):
+        """92 % of 100 GB leaves 8 GB: under the Check's 10 GB, but no
+        Check said so; the host is the readings' to restore."""
+        self._read(92.0, 8.0)
+        self.assertEqual(self.host.status, "compatible")
+
+    def test_an_unreadable_disk_does_not_keep_it_degraded(self):
+        """A ``df`` that printed nothing reads as 0 GB free."""
+        self._read(0.0, 0.0)
+        self.assertEqual(self.host.status, "compatible")

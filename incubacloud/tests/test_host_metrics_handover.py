@@ -256,6 +256,15 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         self.assertFalse(self._active(LOW_DISK_ALERT))
         self.assertEqual(self.host.status, "degraded")
 
+    def test_a_disk_the_readings_degraded_is_restored_under_ten_gb(self):
+        """95 % of 100 GB degrades the host; at 92 % (8 GB free), with no
+        Check behind it, the readings restore what they degraded."""
+        self.host.write({"status": "compatible"})
+        self._refresh_with_disk_usage(DISK_CRITICAL_THRESHOLD)
+        self.assertEqual(self.host.status, "degraded")
+        self._refresh_with_disk_usage(92)
+        self.assertEqual(self.host.status, "compatible")
+
     def test_an_unprobed_host_is_not_degraded(self):
         """Parity with the SSH probe: only 'compatible' escalates.
 

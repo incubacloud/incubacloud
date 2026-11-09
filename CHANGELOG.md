@@ -81,15 +81,16 @@ No change in the database.
   does not run Linux or could not be read.
 - **The disk readings no longer undo the Check's `Degraded`.** Every five
   minutes, and right after the Check, a disk under 95% used put a degraded
-  host back to `Compatible`, missing tools included. They now do so only
-  with 10 GB free, no `host_low_disk` active and no `missing_deps` open:
-  active, or dismissed by hand until a Check or a Full Setup finds the
-  tools. Dismissing an alert frees no disk and installs nothing. They
+  host back to `Compatible`, missing tools included. They now restore only
+  what they degraded: not while `host_low_disk` is active, or was dismissed
+  by hand and the disk is still under 10 GB free, nor while `missing_deps`
+  is active, or was dismissed by hand until a Check or a Full Setup finds
+  the tools. Dismissing an alert frees no disk and installs nothing. They
   resolve `host_low_disk` themselves from 11 GB free, one more than the
-  Check asks for: a reading is rounded and may be older than the Check,
-  and the margin keeps a disk hovering at 10 GB from closing and reopening
-  the alert. They do so too on a disk over 95% used that still has the
-  room.
+  Check asks for, a dismissed one included: a reading is rounded and may
+  be older than the Check, and the margin keeps a disk hovering at 10 GB
+  from closing and reopening the alert. They do so too on a disk over 95%
+  used that still has the room.
 - **A deploy or a rebuild empties Docker's build cache under 10 GB free,
   not 8.** The figure under which the Check marks the host `Degraded`.
 
