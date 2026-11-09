@@ -54,6 +54,7 @@ NOT_READ = frozenset(
         "AGENTS.md",
         "CLA.md",
         "CODE_OF_CONDUCT.md",
+        "images",
         "requirements-ci.txt",
     }
 )
