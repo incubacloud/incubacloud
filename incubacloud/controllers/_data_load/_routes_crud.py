@@ -23,7 +23,7 @@ from ...models._repo_requirements import (
     detect_pip_conflicts,
     fetch_requirements_txt,
     merge_pip_requirements,
-    repo_key_for_source_label,
+    resolved_pip_source,
 )
 from ...models._odoo_versions import (
     offered_versions,
@@ -732,24 +732,10 @@ class CrudMixin:
                 chosen = resolutions.get(parsed[0])
                 if chosen is not None:
                     new_text = new_text.replace(m.group(0), chosen, 1)
-                    # Siding with the repo hands the line back to it, so
-                    # its next bump applies on its own; any other answer
-                    # (the stored spec, or a third one typed here) makes
-                    # the line the operator's and freezes it against
-                    # upstream until they say otherwise.
-                    repo_key = ''
-                    if chosen.strip() == m.group('incoming_line').strip():
-                        repo_key = repo_key_for_source_label(
-                            parent.repo_ids, m.group('incoming_src'),
-                        )
-                    if repo_key:
-                        sources[parsed[0]] = {
-                            'repo': repo_key,
-                            'spec': chosen.strip(),
-                            'label': m.group('incoming_src').strip(),
-                        }
-                    else:
-                        sources.pop(parsed[0], None)
+                    sources[parsed[0]] = resolved_pip_source(
+                        parent.repo_ids, m, chosen.strip(),
+                        sources.get(parsed[0]),
+                    )
 
         parent.with_context(pip_provenance_managed=True).write({
             'pip_dependencies': new_text,

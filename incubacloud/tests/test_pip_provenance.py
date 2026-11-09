@@ -387,10 +387,11 @@ class TestResolveConflictOwnership(TransactionCase):
         sources = self.project.pip_dependency_sources
         self.assertEqual(sources['libx']['repo'], _KEY_A)
         self.assertEqual(sources['libx']['spec'], 'libx==2.0')
+        self.assertEqual(sources['libx']['rejected'], ['libx==1.0'])
         self.assertEqual(self.alert.state, 'dismissed')
 
     def test_keeping_the_stored_spec_makes_the_line_the_operators(self):
-        # Seed an upstream owner so the pop is observable.
+        # Seed an upstream owner so the change of hands is observable.
         self.project.with_context(pip_provenance_managed=True).write({
             'pip_dependency_sources': {
                 'libx': {'repo': _KEY_A, 'spec': 'libx==1.0', 'label': 'a'},
@@ -399,7 +400,14 @@ class TestResolveConflictOwnership(TransactionCase):
         result = self._resolve('libx==1.0')
         self.assertTrue(result['ok'])
         self.assertEqual(self.project.pip_dependencies, 'libx==1.0\n')
-        self.assertFalse(self.project.pip_dependency_sources)
+        # The operator's, with the line turned down remembered, so the
+        # next re-sync neither hands it back to a repo nor asks again.
+        self.assertEqual(self.project.pip_dependency_sources, {
+            'libx': {
+                'repo': '', 'spec': 'libx==1.0', 'label': 'operator',
+                'rejected': ['libx==2.0'],
+            },
+        })
 
 
 def _payload(text):

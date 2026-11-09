@@ -226,6 +226,16 @@ msgstr "%s falló"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/pip_focus.js:0
+msgid ""
+"%s is selected below: leave a single line for it, without the <<<<<<<, "
+"======= and >>>>>>> lines, and save."
+msgstr ""
+"%s está seleccionado abajo: deje una sola línea para este paquete, sin las "
+"líneas <<<<<<<, ======= y >>>>>>>, y guarde."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.js:0
 msgid "%s on %s failed"
 msgstr "%s en %s falló"
@@ -4449,15 +4459,6 @@ msgstr "Uso de disco"
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Dismiss"
 msgstr "Descartar"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
-msgid ""
-"Dismiss alert and go to the instance editor to fix pip dependencies manually"
-msgstr ""
-"Descartar la alerta e ir al editor de la instancia para arreglar las "
-"dependencias de pip a mano"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10282,6 +10283,15 @@ msgstr "Abrir una shell interactiva directamente en este host"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Open host shell"
 msgstr "Abrir shell del host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid ""
+"Open the pip dependency list with this conflict selected, to fix it by hand"
+msgstr ""
+"Abrir la lista de dependencias de pip con este conflicto seleccionado, para "
+"arreglarlo a mano"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__opened_at

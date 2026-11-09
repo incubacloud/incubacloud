@@ -93,6 +93,42 @@ No change in the database.
   used that still has the room.
 - **A deploy or a rebuild empties Docker's build cache under 10 GB free,
   not 8.** The figure under which the Check marks the host `Degraded`.
+- **Two pip lines that can both hold are no conflict.** The re-sync before a
+  deploy or rebuild marked any two different lines of one package as a
+  conflict: an Odoo 18 instance of the panel, with core 18.0 pinning
+  `requests==2.34.2` and OCA/queue 18.0 asking for `requests`, failed every
+  rebuild on it (9-nov-2026). Lines are compared with `packaging`
+  (`pip_spec_relation`): a line the stored one already meets is skipped and
+  logged («… is already met by …»), a stricter line that meets the stored one
+  replaces it, and only two different pins, a pin outside the other's range,
+  ranges neither of which contains the other, a URL against a version, or
+  different markers or extras still ask a person. The project and instance
+  editors, which merge a repository's `requirements.txt` in the browser, spare
+  the bare name the same way.
+- **A resolved pip conflict stays resolved.** The answer is remembered on the
+  package's provenance entry (`rejected`): the side not chosen is skipped at the
+  next re-sync («… was turned down when a conflict was resolved»), whichever
+  repository proposes it again, until someone edits the line by hand. Before,
+  keeping the stored line dropped its entry, the repository that wrote it
+  adopted it again, the other repository raised the same conflict and the job
+  failed again; siding with the repository's line ended the same way the other
+  way round. Keeping the stored line (or typing a third) makes it the
+  operator's: no repository adopts it, and an upstream change to it is asked.
+- **Resolving a pip conflict closes the failure it caused.** A warning
+  `pip_conflict` lets its failed job raise `job_failed` too, which kept holding
+  the instance's queue, and stayed in the alerts panel, once the conflict was
+  answered. Closing a conflict alert that names a job now closes that job's
+  `job_failed`, with the same resolution: from the dialog, or when the next
+  deploy finds the list clean.
+- **«Edit Manually» in the pip conflict dialog takes you to the list.** It
+  carried a class no stylesheet defines and drew as the browser's own button;
+  it is the panel's secondary button now. Clicked, it navigated to the
+  instance's Overview under the alerts panel, which stayed open over it, so it
+  seemed to do nothing, and a project's conflict had no button. It now closes
+  the dialog and the panel and opens the Dependencies tab of the instance, or
+  of the project, with the package's lines selected and a line above the list
+  saying what to leave. Opening one project from another's page now reloads
+  the page.
 
 ## [1.0.219] — 2026-11-08
 

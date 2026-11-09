@@ -246,9 +246,9 @@
         </div>
         <div class="ic-confirm-actions ah-resolve-actions">
             <button class="ic-confirm-btn-cancel" t-on-click="closeResolveModal">Cancel</button>
-            <t t-if="state.resolveModal.alert.instance_id">
-                <button class="ic-btn-secondary" t-on-click="resolveManually"
-                        title="Dismiss alert and go to the instance editor to fix pip dependencies manually">
+            <t t-if="state.resolveModal.alert.project_id">
+                <button class="ic-confirm-btn-cancel ah-btn-edit-manually" t-on-click="resolveManually"
+                        title="Open the pip dependency list with this conflict selected, to fix it by hand">
                     Edit Manually
                 </button>
             </t>

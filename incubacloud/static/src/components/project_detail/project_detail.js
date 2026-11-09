@@ -11,6 +11,8 @@ import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
 import { fetchOdooVersions } from "../../utils/odoo_versions";
 import { confirmVia } from "../../utils/use_confirm";
+import { pipFocusHint, usePipFocus } from "../../utils/pip_focus";
+import { bareNameRelation } from "../../utils/pip_specs";
 import { parseUTC } from "../../utils/dates";
 import {
     copyStateBadgeClass,
@@ -102,6 +104,16 @@ function mergeRequirements(existingText, incomingText, repoUrl, repoBranch) {
             newText = newText.replace(oldBlock, newBlock);
             pkgMap[key].block = newBlock;
             conflicts.push({ name, existing: existingSpec, existingSource: existingSrc, incoming: raw, incomingSource: sourceLabel });
+        } else if (bareNameRelation(pkgMap[key].spec, raw) === 'existing') {
+            // The stored line already meets a bare name — nothing to ask.
+        } else if (bareNameRelation(pkgMap[key].spec, raw) === 'incoming') {
+            // A bare name gives way to the line that says more.
+            const existingSpec = pkgMap[key].spec;
+            newText = newText.replace(
+                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'),
+                () => raw,
+            );
+            pkgMap[key] = { type: 'clean', spec: raw, name, block: null };
         } else {
             const existingSpec = pkgMap[key].spec;
             const newBlock = `<<<<<<< existing\n${existingSpec}\n=======\n${raw}\n>>>>>>> ${sourceLabel}`;
@@ -142,6 +154,9 @@ export class ProjectDetail extends Component {
     static props = {
         project_id: { type: Number, optional: true },
         embedded:   { type: Boolean, optional: true },
+        // ``{name}``: open the Dependencies tab with that package
+        // selected (the pip conflict dialog's "Edit Manually").
+        pipFocus:   { type: Object, optional: true },
     };
     static template = "incubacloud.ProjectDetail";
     static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect };
@@ -226,6 +241,9 @@ export class ProjectDetail extends Component {
             pipDeps: "",
             aptDeps: "",
             pipConflictModal: null,  // { conflicts, choices }
+            // The package "Edit Manually" opened the Dependencies tab on.
+            pipFocusName: null,
+            pipFocusSeq: 0,
             members: [],
             memberSearch: '',
             memberResults: [],
@@ -255,6 +273,7 @@ export class ProjectDetail extends Component {
             odoo_version: [required(_t("Odoo version is required"))],
         }));
 
+        usePipFocus(this);
         onWillStart(() => this.loadProject());
         useNavGuard(
             () => this.hasUnsavedChanges,
@@ -334,7 +353,19 @@ export class ProjectDetail extends Component {
         }
     }
 
-    setTab(tab) { this.state.tab = tab; }
+    setTab(tab) {
+        this.state.tab = tab;
+        if (tab !== "deps") this.state.pipFocusName = null;
+    }
+
+    /**
+     * The Dependencies tab's line about the package "Edit Manually" selected.
+     *
+     * @returns {string}
+     */
+    get pipFocusHint() {
+        return pipFocusHint(this.state.pipFocusName);
+    }
 
     onInput(field, ev) {
         this.state.form[field] = ev.target.value;

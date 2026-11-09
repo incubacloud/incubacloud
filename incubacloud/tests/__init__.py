@@ -41,6 +41,7 @@ from . import (
     test_repo_requirements,
     test_pip_conflict,
     test_pip_provenance,
+    test_pip_spec_compat,
     test_promql_credentials_invariant,
     test_backup_list_parser,
     test_backup_download_neutralized,

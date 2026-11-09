@@ -179,17 +179,31 @@ export class AlertHistory extends Component {
         }
     }
 
+    /**
+     * Take the person to the pip list the conflict is in, to fix it by hand.
+     *
+     * The instance's or, for a project's alert, the project's
+     * Dependencies tab, with the first conflicting package selected
+     * (``pip_focus``). The dialog and the alerts panel close: the
+     * panel covered the page it navigated to, so the button looked
+     * dead (9-nov-2026). The alert stays active: the next deploy
+     * closes it when the list has no conflict left.
+     */
     resolveManually() {
         const { alert } = this.state.resolveModal;
         this.state.resolveModal = null;
-        // Do NOT dismiss — the alert stays active until the field is clean.
-        // enqueue() will auto-dismiss it when no conflicts remain.
-        if (alert.instance_id) {
-            this.env.navigate("instance_detail", {
+        const target = alert.instance_id
+            ? ["instance_detail", {
                 instance_id: alert.instance_id,
                 project_id: alert.project_id,
-            });
-        }
+            }]
+            : ["project_detail", { project_id: alert.project_id }];
+        if (!target[1].project_id) return;
+        this.env.closeSlideOver?.();
+        this.env.navigate(target[0], {
+            ...target[1],
+            pip_focus: { name: alert.conflict_data?.[0]?.name || "" },
+        });
     }
 
     async confirmResolve() {

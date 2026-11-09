@@ -109,7 +109,9 @@
                         <ProjectDetail/>
                     </t>
                     <t t-if="state.route === 'project_detail'">
-                        <ProjectDetail project_id="state.params.project_id" embedded="true"/>
+                        <ProjectDetail t-key="state.params.project_id"
+                                       project_id="state.params.project_id" embedded="true"
+                                       pipFocus="state.params.pip_focus"/>
                     </t>
                     <t t-if="state.route === 'project_settings'">
                         <ProjectDetail project_id="state.params.project_id" embedded="true"/>
@@ -134,6 +136,7 @@
                             t-key="state.params.instance_id"
                             instance_id="state.params.instance_id"
                             project_id="state.params.project_id"
+                            pipFocus="state.params.pip_focus"
                             embedded="true"/>
                     </t>
 <t t-if="state.route === 'monitoring' and env.permissions?.can_view_metrics">
