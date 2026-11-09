@@ -33,6 +33,7 @@ PUBLIC_ENTRIES = frozenset(
         "incubacloud_pitr",
         "docs",
         "README.md",
+        "INSTALL.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
         "SECURITY.md",
