@@ -20,9 +20,10 @@ from ._concurrency import read_committed_cursor
 from .cloud_metric_rule import promql_query
 from .host_metrics_executor import DISK_CRITICAL_THRESHOLD
 from .host_probe_executor import (
-    CHECK_DEGRADED_ALERTS,
     LOW_DISK_ALERT,
+    LOW_DISK_CLEAR_GB,
     MIN_DISK_GB,
+    MISSING_TOOLS_ALERT,
 )
 
 _logger = logging.getLogger(__name__)
@@ -217,6 +218,10 @@ class CloudHost(models.Model):
         if disk_usage >= DISK_CRITICAL_THRESHOLD:
             if host.status == "compatible":
                 host.write({"status": "degraded"})
+            # A large disk may be this full and still have the room the
+            # Check asks for: its low-disk alert must not wait for the
+            # usage to drop.
+            host._settle_check_disk_verdict()
             return
         self.env["cloud.alert"].sudo().resolve_alert(
             "disk_critical", host=host,
@@ -231,12 +236,13 @@ class CloudHost(models.Model):
         The Check (``host_probe``) raises ``LOW_DISK_ALERT`` and leaves the
         host ``degraded`` under ``MIN_DISK_GB`` free; the disk readings,
         every five minutes, are what notice the space was freed, so the
-        verdict does not wait for the next Check. They never raise it:
-        that stays the Check's word. Reads ``disk_free_gb`` as just
+        verdict does not wait for the next Check. They close it only from
+        ``LOW_DISK_CLEAR_GB`` (see there why one GB more), and never raise
+        it: that stays the Check's word. Reads ``disk_free_gb`` as just
         written by the caller.
         """
         self.ensure_one()
-        if self.disk_free_gb >= MIN_DISK_GB:
+        if self.disk_free_gb >= LOW_DISK_CLEAR_GB:
             self.env["cloud.alert"].sudo().resolve_alert(
                 LOW_DISK_ALERT, host=self,
             )
@@ -246,13 +252,53 @@ class CloudHost(models.Model):
 
         A disk under ``DISK_CRITICAL_THRESHOLD`` is no reason to put back
         to ``compatible`` a host the Check found short of disk or of
-        tools: the disk readings restore only what they degraded.
+        tools: the disk readings restore only what they degraded. Short
+        of disk is read from the host itself (``disk_free_gb``, just
+        written by the caller, under ``MIN_DISK_GB``) or from the Check's
+        low-disk alert while active, which closes only from
+        ``LOW_DISK_CLEAR_GB``. Short of tools is read from the newest
+        ``MISSING_TOOLS_ALERT`` of the host: active, or dismissed by hand
+        -- dismissing it installs nothing -- until a Check or a Full
+        Setup that finds the tools closes it as resolved
+        (``_close_missing_tools_dismissed_by_hand``).
 
         :rtype: bool
         """
         self.ensure_one()
-        return bool(self.env["cloud.alert"].sudo().search_count([
-            ("code", "in", list(CHECK_DEGRADED_ALERTS)),
+        if self.disk_free_gb < MIN_DISK_GB:
+            return True
+        alerts = self.env["cloud.alert"].sudo()
+        target = [("host_id", "=", self.id), ("instance_id", "=", False)]
+        if alerts.search_count([
+            ("code", "=", LOW_DISK_ALERT), ("state", "=", "active"), *target,
+        ], limit=1):
+            return True
+        newest = alerts.search(
+            [("code", "=", MISSING_TOOLS_ALERT), *target],
+            order="id desc", limit=1,
+        )
+        return bool(newest) and (
+            newest.state == "active" or newest.resolution == "manual"
+        )
+
+    def _close_missing_tools_dismissed_by_hand(self):
+        """Close as resolved the missing-tools alerts a user dismissed.
+
+        For a Check or a Full Setup that found every tool in place: what
+        a user had dismissed by hand is now resolved, and no longer keeps
+        the host ``degraded`` (``_check_keeps_degraded``). The alert
+        history then shows it as resolved, which it is.
+
+        :return: the alerts closed.
+        """
+        self.ensure_one()
+        dismissed = self.env["cloud.alert"].sudo().search([
+            ("code", "=", MISSING_TOOLS_ALERT),
             ("host_id", "=", self.id),
-            ("state", "=", "active"),
-        ], limit=1))
+            ("instance_id", "=", False),
+            ("state", "=", "dismissed"),
+            ("resolution", "=", "manual"),
+        ])
+        if dismissed:
+            dismissed.write({"resolution": "auto"})
+        return dismissed

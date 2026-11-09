@@ -174,3 +174,21 @@ class TestTheSshReadingKeepsTheChecksVerdict(HostMetricsRetirementCase):
         self._read(60.0, 15.0)
         self.assertFalse(self._low_disk())
         self.assertEqual(self.host.status, "compatible")
+
+    def test_a_rounded_reading_just_over_the_threshold_does_not_settle_it(self):
+        """10.5 GB, read to 0.1 GB: under the 11 GB that closes it."""
+        self._read(80.0, 10.5)
+        self.assertTrue(self._low_disk())
+        self.assertEqual(self.host.status, "degraded")
+
+    def test_a_full_but_large_disk_settles_it(self):
+        """96 % used of a large disk still leaves 20 GB free."""
+        self._read(96.0, 20.0)
+        self.assertFalse(self._low_disk())
+        self.assertEqual(self.host.status, "degraded")
+
+    def test_a_low_disk_dismissed_by_hand_keeps_the_host_degraded(self):
+        """Dismissing the alert frees no disk: 7.3 GB is still short."""
+        self._low_disk().write({"state": "dismissed", "resolution": "manual"})
+        self._read(82.0, 7.3)
+        self.assertEqual(self.host.status, "degraded")

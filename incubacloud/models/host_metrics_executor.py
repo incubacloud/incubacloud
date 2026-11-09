@@ -121,6 +121,10 @@ class HostMetricsExecutor(AbstractSSHExecutor):
                 f"⚠ Disk critical: {int(self._disk_usage)}% used, "
                 f"{self._disk_free_gb:.1f} GB free"
             )
+            # A large disk this full may still have the room the Check
+            # asks for: its low-disk alert must not wait for the usage
+            # to drop.
+            host._settle_check_disk_verdict()
         else:
             self._resolve_alert('disk_critical')
             host._settle_check_disk_verdict()

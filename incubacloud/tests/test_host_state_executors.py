@@ -207,6 +207,28 @@ class TestHostProbeJudgement(HostStateCase):
         _run(ex.on_success({}))
         self.assertEqual(ex.job.host_id.status, "degraded")
 
+    def test_tools_found_close_the_ones_dismissed_by_hand(self):
+        """A missing-tools alert dismissed by hand keeps the host out of
+        the readings' reach until a Check finds the tools: that Check
+        closes it as resolved, and the readings may restore the host."""
+        ex = self._alerting(self._probe(tools=ALL_TOOLS_OK | {"invoke": "MISSING"}))
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        host = ex.job.host_id
+        alert = self._active(MISSING_TOOLS_ALERT, host)
+        alert.write({"state": "dismissed", "resolution": "manual"})
+        self.assertTrue(host._check_keeps_degraded())
+        ex = self._alerting(
+            self._executor(HostProbeExecutor, host=host, facts=_probe_facts()),
+        )
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        self.env.invalidate_all()
+        self.assertEqual(alert.resolution, "auto")
+        self.assertEqual(host.status, "compatible")
+        host.write({"status": "degraded", "disk_free_gb": 40.0})
+        self.assertFalse(host._check_keeps_degraded())
+
     def test_an_old_git_is_flagged(self):
         old = f"git version {GIT_MIN[0]}.{GIT_MIN[1] - 1}.0"
         ex = self._probe(tools=ALL_TOOLS_OK | {"git": old})

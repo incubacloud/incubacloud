@@ -8,6 +8,14 @@ from .cloud_host_edge_guard import edge_guard_digest
 #: The same figure as ``cloud.host._MIN_DISK_FREE_GB``, under which no new
 #: instance is placed on the host, and Full Setup's own minimum.
 MIN_DISK_GB = 10
+#: Free disk, in GB, from which the disk readings (metrics every five
+#: minutes, or the SSH fallback) close the Check's low-disk alert: one
+#: GB above ``MIN_DISK_GB`` (9-nov-2026). A reading is rounded to 0.1 GB
+#: and may be older than the Check that raised the alert, so one just
+#: over the threshold proves no room; without the margin a disk hovering
+#: at 10 GB would close and reopen the alert, a notice each time. The
+#: Check itself measures the bytes and closes it from ``MIN_DISK_GB``.
+LOW_DISK_CLEAR_GB = MIN_DISK_GB + 1
 GIT_MIN = (2, 24)
 
 #: Alerts the Check raises for what it found, and resolves when it no
@@ -15,9 +23,23 @@ GIT_MIN = (2, 24)
 MISSING_TOOLS_ALERT = "missing_deps"
 LOW_DISK_ALERT = "host_low_disk"
 UNSUPPORTED_ALERT = "host_unsupported"
-#: The ones that leave the host ``degraded``: the disk readings of the
-#: metrics do not put it back to ``compatible`` while one is active.
-CHECK_DEGRADED_ALERTS = (MISSING_TOOLS_ALERT, LOW_DISK_ALERT)
+
+
+def low_disk_message(free_gb):
+    """Return the text of the low-disk alert for *free_gb* free.
+
+    Shared by the Check and Full Setup, which raise the same alert.
+
+    :param float free_gb: the free disk measured, in GB.
+    :rtype: str
+    """
+    return (
+        f"Low disk: {free_gb:.1f} GB free, under the {MIN_DISK_GB} GB a "
+        "new instance or a build needs. The instances on this host keep "
+        "running, but no new one is placed here and a rebuild may run out "
+        "of space. Free space (Docker's build cache, unused images) or "
+        "grow the disk, then run Check again."
+    )
 
 
 class HostProbeExecutor(AnsibleExecutor):
@@ -177,13 +199,7 @@ class HostProbeExecutor(AnsibleExecutor):
             self._resolve_alert(UNSUPPORTED_ALERT)
         if self._low_disk_gb is not None:
             self._alert(
-                LOW_DISK_ALERT,
-                f"Low disk: {self._low_disk_gb:.1f} GB free, under the "
-                f"{MIN_DISK_GB} GB a new instance or a build needs. The "
-                "instances on this host keep running, but no new one is "
-                "placed here and a rebuild may run out of space. Free "
-                "space (Docker's build cache, unused images) or grow the "
-                "disk, then run Check again.",
+                LOW_DISK_ALERT, low_disk_message(self._low_disk_gb),
                 level="warning",
             )
         else:
@@ -199,6 +215,7 @@ class HostProbeExecutor(AnsibleExecutor):
             )
         else:
             self._resolve_alert(MISSING_TOOLS_ALERT)
+            host._close_missing_tools_dismissed_by_hand()
 
         if self._unsupported_os:
             host.write({"status": "unsupported"})

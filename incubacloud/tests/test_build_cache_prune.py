@@ -26,6 +26,7 @@ from ..models.docker_prune_executor import (
     build_cache_prune,
     build_cache_prune_if_low,
 )
+from ..models.host_probe_executor import MIN_DISK_GB
 from .test_backup_purge_step import _PurgeBase
 from .test_executor_features import (
     _make_deploy_executor,
@@ -101,9 +102,13 @@ class TestTheCleanupCommands(BaseCase):
         beside a build, whose cache and fresh image are that recent."""
         self.assertEqual(BUILD_CACHE_KEEP, "1h")
 
-    def test_the_threshold_is_eight_gigabytes(self):
-        self.assertEqual(BUILD_CACHE_MIN_FREE_GB, 8)
-        self.assertIn(str(8 * 1024 * 1024), build_cache_prune_if_low())
+    def test_the_threshold_is_the_checks(self):
+        """Under the Check's figure the host is degraded: a deploy or a
+        rebuild empties the cache from there, not 2 GB later."""
+        self.assertGreaterEqual(BUILD_CACHE_MIN_FREE_GB, MIN_DISK_GB)
+        self.assertIn(
+            str(BUILD_CACHE_MIN_FREE_GB * 1024 * 1024), build_cache_prune_if_low(),
+        )
 
     def test_a_disk_under_the_threshold_is_cleaned(self):
         # No disk has a petabyte free: always under.

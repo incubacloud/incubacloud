@@ -62,12 +62,13 @@ class HostMetricsHandoverCase(TransactionCase):
             "wildcard_domain": "hm.example.com",
         })
 
-    def _refresh_with_disk_usage(self, percent):
+    def _refresh_with_disk_usage(self, percent, size_gb=100):
         """Run the specs cron against a backend reporting *percent* used.
 
         :param percent: root-filesystem usage to simulate.
+        :param size_gb: size of the simulated disk, in GiB.
         """
-        size = 100 * _GIB
+        size = size_gb * _GIB
         free = size * (100 - percent) / 100
         by_expression = {
             "cpu_cores": 4.0,
@@ -201,6 +202,59 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         self._refresh_with_disk_usage(30)
         self.assertEqual(self.host.status, "degraded")
         self.assertTrue(self._active(MISSING_TOOLS_ALERT))
+
+    def _dismiss_by_hand(self, code):
+        """Close the host's active alert *code* as a user would."""
+        self._active(code).write({"state": "dismissed", "resolution": "manual"})
+
+    def test_a_low_disk_dismissed_by_hand_keeps_the_host_degraded(self):
+        """92 % of 100 GB leaves 8 GB: dismissing the alert frees none."""
+        self._check_found(LOW_DISK_ALERT)
+        self._dismiss_by_hand(LOW_DISK_ALERT)
+        self._refresh_with_disk_usage(92)
+        self.assertEqual(self.host.status, "degraded")
+
+    def test_missing_tools_dismissed_by_hand_keep_the_host_degraded(self):
+        """Dismissing the alert installs nothing: a Check or a Full
+        Setup that finds the tools is what closes it."""
+        self._check_found(MISSING_TOOLS_ALERT)
+        self._dismiss_by_hand(MISSING_TOOLS_ALERT)
+        self._refresh_with_disk_usage(30)
+        self.assertEqual(self.host.status, "degraded")
+
+    def test_missing_tools_resolved_by_a_check_free_the_host(self):
+        """The newest missing-tools alert decides: one closed by a later
+        Check, after an older one dismissed by hand, leaves the host
+        free to the readings."""
+        self._check_found(MISSING_TOOLS_ALERT)
+        self._dismiss_by_hand(MISSING_TOOLS_ALERT)
+        self._check_found(MISSING_TOOLS_ALERT)
+        self.env["cloud.alert"].sudo().resolve_alert(
+            MISSING_TOOLS_ALERT, host=self.host,
+        )
+        self._refresh_with_disk_usage(30)
+        self.assertEqual(self.host.status, "compatible")
+
+    def test_the_low_disk_alert_closes_one_gigabyte_above_the_threshold(self):
+        """89.5 % of 100 GB leaves 10.5 GB: over the Check's 10 GB, but a
+        reading rounded to 0.1 GB, and maybe older than the Check, is no
+        proof the disk has room. It closes from 11 GB."""
+        self._check_found(LOW_DISK_ALERT)
+        self._refresh_with_disk_usage(89.5)
+        self.assertTrue(self._active(LOW_DISK_ALERT))
+        self.assertEqual(self.host.status, "degraded")
+        self._refresh_with_disk_usage(88)
+        self.assertFalse(self._active(LOW_DISK_ALERT))
+        self.assertEqual(self.host.status, "compatible")
+
+    def test_a_full_but_large_disk_settles_the_low_disk_alert(self):
+        """96 % of 500 GB leaves 20 GB: the disk is critical, yet not
+        short of what the Check asks for, and its low-disk alert must not
+        stay lit for as long as the disk stays over 95 %."""
+        self._check_found(LOW_DISK_ALERT)
+        self._refresh_with_disk_usage(DISK_CRITICAL_THRESHOLD + 1, size_gb=500)
+        self.assertFalse(self._active(LOW_DISK_ALERT))
+        self.assertEqual(self.host.status, "degraded")
 
     def test_an_unprobed_host_is_not_degraded(self):
         """Parity with the SSH probe: only 'compatible' escalates.
