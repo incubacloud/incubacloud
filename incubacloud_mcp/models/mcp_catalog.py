@@ -31,6 +31,10 @@ _GIT_PROVIDERS = (
     "Git providers and their tokens are managed in the panel (decision 6); a "
     "GitLab repository is read through its lines (repo_read, github_repo_info)."
 )
+_GIT_HOOKS = (
+    "GitLab webhooks and their secrets are managed in the panel (decision 6), "
+    "as their Git providers are."
+)
 
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
@@ -42,6 +46,12 @@ CORE_EXCLUDED = {
     "/cloud/save_git_provider": _GIT_PROVIDERS,
     "/cloud/delete_git_provider": _GIT_PROVIDERS,
     "/cloud/test_git_provider": _GIT_PROVIDERS,
+    "/cloud/get_git_hooks": _GIT_HOOKS,
+    "/cloud/register_git_hook": _GIT_HOOKS,
+    "/cloud/verify_git_hook": _GIT_HOOKS,
+    "/cloud/reveal_git_hook_secret": _GIT_HOOKS,
+    "/cloud/delete_git_hook": _GIT_HOOKS,
+    "/cloud/reprocess_git_event": _GIT_HOOKS,
     "/cloud/generate_host_key": (
         "The new server form's SSH key; credentials are only written in the "
         "panel (decision 6)."
@@ -85,6 +95,7 @@ CORE_EXCLUDED = {
     "/cloud/github/setup": _GITHUB_APP,
     "/cloud/github/callback": _GITHUB_APP,
     "/cloud/github/webhook": _PUBLIC,
+    "/cloud/gitlab/webhook/<string:hook_key>": _PUBLIC,
     "/cloud/health": _PUBLIC,
     "/cloud/mcp/approve/<string:token>": (
         "A page for a person: where agents' actions are approved."
