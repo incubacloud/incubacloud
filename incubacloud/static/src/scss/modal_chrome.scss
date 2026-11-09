@@ -178,10 +178,10 @@
     &:disabled { opacity: 0.5; cursor: not-allowed; }
 
     &--primary {
-        background: var(--rl-green);
+        background: var(--rl-green-btn);
         color: var(--rl-green-fg);
 
-        &:hover:not(:disabled) { background: var(--rl-green-dim); }
+        &:hover:not(:disabled), &:active:not(:disabled) { background: var(--rl-green-btn-hover); }
     }
 
     &--ghost {

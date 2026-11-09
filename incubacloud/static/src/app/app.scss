@@ -561,10 +561,15 @@ body,
     border-radius: $radius-md;
     cursor: pointer;
     transition: opacity $duration-fast ease, background $duration-fast ease;
-    background: $primary-blue;
+    background: var(--rl-green-btn);
     color: var(--rl-green-fg);
 
     &:hover:not(:disabled) { opacity: 0.88; }
+    // The confirm fill darkens on hover (an opacity drop would lighten it and cost contrast).
+    &:not(.danger):hover:not(:disabled), &:not(.danger):active:not(:disabled) {
+        opacity: 1;
+        background: var(--rl-green-btn-hover);
+    }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
 
     &.danger {
@@ -1006,9 +1011,14 @@ body,
         font-weight: 600;
     }
     .btn-primary, .btn-secondary {
-        background: $primary-blue !important;
-        border-color: $primary-blue !important;
+        background: var(--rl-green-btn) !important;
+        border-color: var(--rl-green-btn) !important;
         color: var(--rl-green-fg) !important;
+
+        &:hover:not(:disabled), &:active:not(:disabled) {
+            background: var(--rl-green-btn-hover) !important;
+            border-color: var(--rl-green-btn-hover) !important;
+        }
     }
 }
 
