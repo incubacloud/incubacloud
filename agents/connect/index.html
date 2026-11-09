@@ -1935,8 +1935,10 @@ exact command shown: see <a href="../confirmations/">Approvals</a>.</p>
 <p>The panels of IncubaCloud SaaS accept OAuth only: an API key is
 refused, whoever created it.</p>
 </div>
-<p>A server with several databases needs a <code>dbfilter</code> that selects the
-database by host name; without it, <code>/mcp</code> answers 404.</p>
+<p>A server with several databases must select the panel's database by name,
+with <code>db_name</code> or <code>dbfilter = ^&lt;name&gt;$</code>; without it, <code>/mcp</code> answers 404. A
+filter by host name (<code>%h</code>, <code>%d</code>) also stops the panel's jobs:
+<a href="https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md#the-odoo-settings-that-matter">INSTALL.md</a>.</p>
 <p>The address the page puts in every command is <strong>Settings → Agents (MCP) → MCP
 address</strong>; left empty, it is the panel's own address (<code>web.base.url</code>) followed
 by <code>/mcp</code>. Odoo rewrites <code>web.base.url</code> to the address in the browser each time

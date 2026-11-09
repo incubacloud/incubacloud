@@ -2002,9 +2002,9 @@ own address (<code>web.base.url</code>) followed by <code>/mcp</code>, and Odoo 
 each time a user with access to Odoo's Settings signs in: it becomes the one in
 that user's browser, <code>http://localhost:8069</code> after a sign-in through an SSH
 tunnel, for instance. Set the address your computers use, for example
-<code>http://192.0.2.10:8090/mcp</code>; or set <code>web.base.url</code> to the panel's address and
+<code>http://192.0.2.10/mcp</code>; or set <code>web.base.url</code> to the panel's address and
 add the system parameter <code>web.base.url.freeze</code> with the value <code>True</code>, which
-stops the rewrite. Plain <code>http</code> is accepted.</p>
+stops the rewrite. Plain <code>http</code> is accepted for the MCP. Connecting the GitHub App needs the panel served over HTTPS, with any certificate your browsers trust; over plain HTTP the panel refuses it.</p>
 <p><strong>2. An API key</strong>, created in your Odoo preferences:
 <a href="../../agents/connect/#self-hosted-panel-without-oauth">Self-hosted panel without OAuth</a>.</p>
 <p><strong>3. Claude Desktop through <code>mcp-remote</code>.</strong> Claude Desktop starts local MCP
@@ -2019,7 +2019,7 @@ computer. In Claude Desktop, <strong>Settings → Developer → Edit Config</str
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">      </span><span class="nt">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"npx"</span><span class="p">,</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">        </span><span class="s2">"mcp-remote"</span><span class="p">,</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="s2">"http://192.0.2.10:8090/mcp"</span><span class="p">,</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">        </span><span class="s2">"http://192.0.2.10/mcp"</span><span class="p">,</span>
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">        </span><span class="s2">"--allow-http"</span><span class="p">,</span>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">        </span><span class="s2">"--header"</span><span class="p">,</span>
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="s2">"Authorization:${AUTH}"</span>
@@ -2071,7 +2071,7 @@ in a browser signed in to the panel. See <a href="../../agents/confirmations/">A
 </tr>
 <tr>
 <td><code>404</code> on <code>/mcp</code></td>
-<td>Odoo cannot tell which database the request is for: set <code>dbfilter</code>.</td>
+<td>Odoo cannot tell which database the request is for: select the panel's database by name, with <code>db_name</code> or <code>dbfilter = ^&lt;name&gt;$</code> (<a href="https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md#the-odoo-settings-that-matter">INSTALL.md</a>).</td>
 </tr>
 <tr>
 <td><code>mcp-remote</code> refuses the <code>http://</code> address</td>
