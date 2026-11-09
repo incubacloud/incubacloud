@@ -1082,16 +1082,44 @@ class CloudJob(models.Model):
                     " back for one with newer code (%ds waited)",
                     self.id, code, waited,
                 )
+                self._note_waiting_for_newer_code()
                 raise RetryableJobError(
                     f"{exc}: put back for a server with newer code",
                     seconds=NO_EXECUTOR_RETRY_SECONDS,
                     ignore_retry=True,
                 ) from exc
+            # A job that never went through queue_job has nobody to wait
+            # for: it fails at once, and the message must not claim a wait.
+            after = (
+                f" after {NO_EXECUTOR_WAIT_SECONDS // 60} minutes"
+                if dispatched else ""
+            )
             raise JobError(
-                f"{exc} in the server that runs the jobs after"
-                f" {NO_EXECUTOR_WAIT_SECONDS // 60} minutes: its code is"
+                f"{exc} in the server that runs the jobs{after}: its code is"
                 " older than its database. Restart it and run the job again."
             ) from exc
+
+    def _note_waiting_for_newer_code(self):
+        """Tell the job's log, once, that it waits for a server with newer code.
+
+        Written on a cursor of its own: the job's transaction is rolled
+        back by the retry, and the line is what a person opening the job
+        sees while it waits. A job put back every
+        ``NO_EXECUTOR_RETRY_SECONDS`` gets it on the first postponement
+        only: the later ones find it in the log.
+        """
+        self.ensure_one()
+        note = _("Waiting for a server with newer code to pick this job up.")
+        with read_committed_cursor(self.env.registry) as cr:
+            chunks = self.env(cr=cr)["cloud.job.log.chunk"].sudo()
+            if not chunks.search_count([
+                ("job_id", "=", self.id),
+                ("source", "=", "system"),
+                ("content", "=", note),
+            ], limit=1):
+                chunks.create({
+                    "job_id": self.id, "content": note, "source": "system",
+                })
 
     @api.model
     def load_jobs(self, job_id=False):

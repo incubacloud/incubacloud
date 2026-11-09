@@ -488,6 +488,9 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The log line goes on a cursor of its own, which in a test is
+        # the test's transaction.
+        self.registry_enter_test_mode()
         self.host = self.env['cloud.host'].create({
             'name': 'newer-code-host',
             'ip_address': '10.0.0.12',
@@ -526,6 +529,52 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
         self.assertNotIsInstance(caught.exception, RetryableJobError)
         self.assertIn("No executor registered for 'no_executor_yet'", str(caught.exception))
         self.assertIn("Restart it", str(caught.exception))
+        self.assertIn("after 10 minutes", str(caught.exception))
+
+    def test_a_job_without_a_queue_job_fails_at_once_without_a_wait(self):
+        """Nobody can pick it up later, and the message does not claim a wait."""
+        from odoo.addons.queue_job.exception import JobError
+        self.job.queue_job_uuid = False
+        self.assertFalse(self.job.queue_job_id)
+        with self.assertRaises(JobError) as caught:
+            self.job.execute()
+        message = str(caught.exception)
+        self.assertIn("No executor registered for 'no_executor_yet'", message)
+        self.assertIn("Restart it", message)
+        self.assertNotIn("minutes", message)
+
+    def _waiting_notes(self):
+        """The system lines of the job's log that say it waits for newer code."""
+        return self.env['cloud.job.log.chunk'].sudo().search([
+            ('job_id', '=', self.job.id),
+            ('source', '=', 'system'),
+            ('content', '=', self.env._(
+                "Waiting for a server with newer code to pick this job up.",
+            )),
+        ])
+
+    def test_the_log_says_once_that_it_waits_for_newer_code(self):
+        """Every postponement puts it back; only the first writes the line."""
+        from odoo.addons.queue_job.exception import RetryableJobError
+        self.assertFalse(self._waiting_notes())
+        for _attempt in range(3):
+            # Not ``assertRaises``: it runs the block in a savepoint it
+            # rolls back, which would undo the line a test cursor wrote
+            # in the same transaction.
+            try:
+                self.job.execute()
+            except RetryableJobError:
+                continue
+            self.fail("the job was not put back")
+        notes = self._waiting_notes()
+        self.assertEqual(len(notes), 1)
+
+    def test_no_line_is_written_when_the_job_fails_instead_of_waiting(self):
+        from odoo.addons.queue_job.exception import JobError
+        self.job.queue_job_uuid = False
+        with self.assertRaises(JobError):
+            self.job.execute()
+        self.assertFalse(self._waiting_notes())
 
 
 class TestCloudJobFormat(TransactionCase):
