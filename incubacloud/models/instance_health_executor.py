@@ -1113,8 +1113,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         the same header. Core knows only of Odoo's own races, which
         nobody running the instance can act on: the website visitor's
         insert (``_VISITOR_RACE_HEADER``) and a browser's request for a
-        sourcemap Odoo did not generate (``_SOURCEMAP_NOISE_HEADER``). A layer that knows the
-        instance better extends it, asking super first.
+        sourcemap Odoo did not generate (``_SOURCEMAP_NOISE_HEADER``). A
+        layer that knows the instance better extends it, asking super first.
 
         :param str header: the ERROR line
         :param list context: the lines logged under it, uncompacted

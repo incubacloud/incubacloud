@@ -514,10 +514,10 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
         self.assertIn("no_executor_yet", str(caught.exception))
 
     def test_it_fails_once_the_wait_is_over(self):
-        from odoo.addons.queue_job.exception import JobError, RetryableJobError
         from odoo.addons.incubacloud.models.cloud_job import (
             NO_EXECUTOR_WAIT_SECONDS,
         )
+        from odoo.addons.queue_job.exception import JobError, RetryableJobError
         self.env.cr.execute(
             "UPDATE queue_job SET date_created = now() at time zone 'utc'"
             " - %s * interval '1 second' WHERE id = %s",
@@ -527,7 +527,9 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
         with self.assertRaises(JobError) as caught:
             self.job.execute()
         self.assertNotIsInstance(caught.exception, RetryableJobError)
-        self.assertIn("No executor registered for 'no_executor_yet'", str(caught.exception))
+        self.assertIn(
+            "No executor registered for 'no_executor_yet'", str(caught.exception),
+        )
         self.assertIn("Restart it", str(caught.exception))
         self.assertIn("after 10 minutes", str(caught.exception))
 
