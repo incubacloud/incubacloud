@@ -329,9 +329,11 @@
                 infra operations gated to manager+ at the controller
                 layer.
 
-                Developers+ go through ``rule_job_log_chunk_all``
-                (via group_cloud_project_manager implied), which has
-                no source filter.
+                Project Managers go through ``rule_job_log_chunk_pm``
+                (every project, still ``system`` only); Developers+
+                through ``rule_job_log_chunk_all``, which has no source
+                filter: reading logs is a Developer's
+                (``_check_can_view_logs``).
             -->
             <field name="domain_force">[
                 ('source', '=', 'system'),
@@ -343,13 +345,51 @@
             ]"/>
         </record>
 
-        <record id="rule_job_log_chunk_all" model="ir.rule">
-            <field name="name">Job log chunk: all (PM+)</field>
+        <record id="rule_job_log_chunk_pm" model="ir.rule">
+            <field name="name">Job log chunk: system source of every job (PM)</field>
             <field name="model_id" ref="model_cloud_job_log_chunk"/>
-            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="domain_force">[('source', '=', 'system')]</field>
             <field name="groups" eval="[
                 (4, ref('group_cloud_project_manager')),
             ]"/>
+        </record>
+
+        <record id="rule_job_log_chunk_all" model="ir.rule">
+            <field name="name">Job log chunk: all (Developer+)</field>
+            <field name="model_id" ref="model_cloud_job_log_chunk"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(6, 0, [ref('group_cloud_developer')])]"/>
+        </record>
+
+        <!-- ── ir.attachment of cloud.job ─────────────────────────── -->
+
+        <record id="rule_attachment_job_files_hidden" model="ir.rule">
+            <field name="name">Attachment: no job files below Developer</field>
+            <field name="model_id" ref="base.model_ir_attachment"/>
+            <!--
+                The files a job makes (backups, neutralized copies,
+                exports) are attachments of the job, and Odoo lets
+                whoever reads a record read its attachments. Backups and
+                exports are a Developer's (``_check_can_manage_backups``,
+                ``_check_can_export``): below that, a role reads every
+                attachment but a job's. Developers+ go through
+                ``rule_attachment_job_files``, and then read a job's
+                files when they read the job.
+
+                Group rules are OR-ed: every role of the panel has
+                ``group_cloud_user``, so this one applies to all of
+                them, and the Developer's rule below widens it back.
+                Users with no role of the panel have no rule here.
+            -->
+            <field name="domain_force">[('res_model', '!=', 'cloud.job')]</field>
+            <field name="groups" eval="[(4, ref('group_cloud_user'))]"/>
+        </record>
+
+        <record id="rule_attachment_job_files" model="ir.rule">
+            <field name="name">Attachment: job files too (Developer+)</field>
+            <field name="model_id" ref="base.model_ir_attachment"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[(4, ref('group_cloud_developer'))]"/>
         </record>
 
         <!-- ── cloud.terminal.route ───────────────────────────────── -->

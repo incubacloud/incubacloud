@@ -442,6 +442,36 @@ class TestEngineTools(EngineMixin, TransactionCase):
         ended = conversation.message_ids.filtered(lambda m: m.role == "job")
         self.assertIn("not readable", ended.content)
 
+    def test_a_job_s_raw_output_reaches_the_model_for_a_technical_role(self):
+        """A project manager's task is told the panel's lines of the log, not
+        the raw output; a developer's is told both."""
+        job = (
+            self.env["cloud.job"]
+            .sudo()
+            .create(
+                {
+                    "name": "deploy",
+                    "instance_id": self.staging.id,
+                    "host_id": self.staging.host_id.id,
+                    "job_type_id": self.job_type.id,
+                    "state": "done",
+                }
+            )
+        )
+        self.env["cloud.job.log.chunk"].sudo().create(
+            [
+                {"job_id": job.id, "source": "system", "content": "Running: deploy"},
+                {"job_id": job.id, "source": "stdout", "content": "raw deploy output"},
+            ]
+        )
+        pm = self._cloud_user("asis-et-pm", group="group_cloud_project_manager")
+        Engine = self.env["incubacloud.assistant.engine"]
+        for user, raw in ((pm, False), (self.dev, True)):
+            with self.subTest(user=user.login):
+                text = Engine._job_outcome(job.with_user(user), "done")
+                self.assertIn("Running: deploy", text)
+                self.assertEqual("raw deploy output" in text, raw)
+
     def test_tool_answers_keep_no_secret(self):
         """What the panel's routes answer reaches the conversation masked."""
         self._provider(

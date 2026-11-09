@@ -7,7 +7,7 @@ It reads credentials from the ``cloud.github.app`` singleton.
 
 import logging
 
-from odoo import _, models
+from odoo import _, api, models
 from odoo.exceptions import UserError
 
 from ..github.client import GitHubAppClient
@@ -20,8 +20,12 @@ class GitHubCredentialService(models.AbstractModel):
     _name = "cloud.github.credential.service"
     _description = "GitHub Credential Service"
 
-    # ── Public interface ────────────────────────────────────────────────────
+    # ── Server interface ────────────────────────────────────────────────────
+    #
+    # Private: the panel's code (routes, executors, the webhook) calls
+    # these as the platform; none of them is for ``call_kw``.
 
+    @api.private
     def get_pat(self):
         """Return the configured Personal Access Token, or None.
 
@@ -32,6 +36,7 @@ class GitHubCredentialService(models.AbstractModel):
         pat = (settings.github_pat or "").strip()
         return pat or None
 
+    @api.private
     def get_credentials(self):
         """Return ``GitHubAppCredentials`` for the current system.
 
@@ -44,6 +49,7 @@ class GitHubCredentialService(models.AbstractModel):
             )
         return app._get_credentials()
 
+    @api.private
     def resolve_webhook_secret(self, payload_bytes: bytes, signature: str):
         """Validate an incoming webhook signature against the configured secret.
 
@@ -60,6 +66,7 @@ class GitHubCredentialService(models.AbstractModel):
             return app.webhook_secret
         return ""
 
+    @api.private
     def test_connection(self) -> dict:
         """Test current credentials by calling the GitHub API.
 

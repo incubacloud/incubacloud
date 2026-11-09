@@ -271,6 +271,26 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(payload["log"]["next_offset"], 2)
         self.assertIn("[secreto]", payload["log"]["items"][0])
 
+    def test_a_job_s_raw_output_is_for_the_technical_roles(self):
+        """A project manager reads the panel's own lines of a job's log, and
+        not its raw output; a developer reads both."""
+        self.env["cloud.job.log.chunk"].sudo().create(
+            {"job_id": self.job.id, "source": "system", "content": "Running: j"}
+        )
+        for group, sources in (
+            ("group_cloud_project_manager", {"[system]"}),
+            ("group_cloud_developer", {"[system]", "[stdout]"}),
+        ):
+            with self.subTest(group=group):
+                key = self._api_key(self._cloud_user(f"mcp-read-{group}", group=group))
+                payload = self._payload(
+                    self._call_tool(key, "get_job", {"job_id": self.job.id})
+                )
+                self.assertEqual(
+                    {item.split(" ", 1)[0] for item in payload["log"]["items"]},
+                    sources,
+                )
+
     def test_a_job_s_log_says_its_lines_and_pages_and_gives_the_last(self):
         """Every page says how many lines and pages the log has; the last
         page is asked for by its number."""

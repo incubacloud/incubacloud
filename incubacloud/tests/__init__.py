@@ -257,3 +257,5 @@ from . import test_job_idempotency
 from . import test_job_outcome
 from . import test_job_outcome_real_cursors
 from . import test_job_server_limits
+from . import test_job_output_by_role
+from . import test_server_only_methods

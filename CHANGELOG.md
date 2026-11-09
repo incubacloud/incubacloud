@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.221] — 2026-11-09
+
+The update rewrites the record rules of `cloud.job.log.chunk` and adds two
+rules on `ir.attachment`. Nothing else changes in the database.
+
+### Security
+
+- **Permissions tightened on the GitHub credentials.** The methods of
+  `cloud.github.credential.service` (`get_pat`, `get_credentials`,
+  `resolve_webhook_secret`, `test_connection`) are private to the server
+  (`@api.private`): the panel's routes, executors and GitHub webhook call
+  them as before, and Odoo's generic RPC no longer does. The connection test
+  of the GitHub App's backend form is an Administrator's, as the panel's own
+  test in Settings already was.
+- **A job's raw output and files follow the role design.** The log of a job
+  keeps the panel's own messages for every role that sees the job; its raw
+  output (`stdout`/`stderr`) is for Developers and Administrators, who read
+  logs. A Project Manager now reads the panel's messages of every job, and no
+  longer the raw output. The files a job makes (backups, neutralized copies,
+  exports) are readable only by Developers and Administrators, who make and
+  download them; below that, the job list offers no download. Other
+  attachments are unchanged.
+
 ## [1.0.220] — 2026-11-09
 
 The update queues `push_edge_guard` on every active host with the panel's
