@@ -29,8 +29,8 @@ things and says what failed in each:
 - **git**: the panel can read the repository with its credential;
 - **API**: the token answers on GitLab's API, with its scopes and expiry.
 
-On IncubaCloud's hosted panels, a GitLab server must have a public address. A
-self-hosted panel reaches any GitLab its network reaches.
+The panel has to reach the GitLab server over the network. A panel limited to
+public addresses refuses a server with a private one.
 
 ## Which token
 
@@ -48,9 +48,8 @@ self-hosted panel reaches any GitLab its network reaches.
 - On gitlab.com Free there are no project or group tokens: use a deploy token,
   or a personal token of a bot user.
 
-Rebuild on push and previews of merge requests are coming in a next version;
-they will need a token with `api` and the Maintainer role. Until then a GitLab
-repository line says so under its address, and you rebuild by hand.
+Previews of merge requests come in a next version; until then a GitLab
+repository line says so under its address.
 
 ## Repository URLs
 
@@ -105,9 +104,8 @@ administrator turned on `auto_disabling_web_hooks`.
 The same delivery sent twice (GitLab's **Resend**) or the same push twice does
 not rebuild twice: press **Rebuild** if you want another build.
 
-On the **Free plan** the panel sleeps when nobody uses it, and webhooks that
-arrive meanwhile (GitLab's and GitHub's) are lost: rebuild by hand after a
-push. Paid plans do not sleep.
+Webhooks that arrive while the panel is stopped (GitLab's and GitHub's) are
+lost: rebuild by hand after a push.
 
 ## What the panel does not do with GitLab
 

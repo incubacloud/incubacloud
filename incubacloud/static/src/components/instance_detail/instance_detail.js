@@ -234,7 +234,7 @@ export class InstanceDetail extends JobsMixin(
   /**
    * What «Auto-rebuild on push» cannot do: how many of the instance's
    * GitLab lines have no working webhook, said as the toggle shows it,
-   * or "" when every line has one (plan-gitlab.md §4.11-3).
+   * or "" when every line has one.
    *
    * @returns {string}
    */

@@ -1,4 +1,4 @@
-"""Two deliveries of the same push on real transactions (G3, §4.7.3).
+"""Two deliveries of the same push on real transactions.
 
 The receiver relies on the partial unique indexes of
 ``cloud.gitlab.event``, not on row locks. A delivery whose snapshot was

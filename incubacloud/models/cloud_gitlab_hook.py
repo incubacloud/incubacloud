@@ -1,4 +1,4 @@
-"""A GitLab webhook of the panel (plan-gitlab.md §2.3, §4.7.2, §4.7.5).
+"""A GitLab webhook of the panel.
 
 One row per ``(provider, scope, path)``: a project's webhook, or a
 group's that covers every project below it by segments. GitLab delivers
@@ -47,7 +47,7 @@ def new_hook_key():
 
     Hexadecimal on purpose: a ``token_urlsafe`` key could start with
     ``wp`` or ``vendor`` and fall into the ``-block`` router of a
-    tenant's panel (§2.3).
+    tenant's panel.
 
     :rtype: str
     """
@@ -58,7 +58,7 @@ def _like_prefix(path):
     """Return *path* escaped for a ``=like`` pattern, followed by ``/%``.
 
     ``_`` and ``%`` in a GitLab path are literal: ``acm_`` must not
-    cover ``acme/web`` (Fable's review of the result of G3).
+    cover ``acme/web``.
 
     :param str path: a group path
     :rtype: str
@@ -72,7 +72,7 @@ def _is_panel_hook(remote_url, own_url):
 
     The receiver's path prefix on this panel's host: a ``hook_key``
     that changed is still adopted, and another panel's webhook on the
-    same project is left alone (Fable's review of G3).
+    same project is left alone.
 
     :param str remote_url: the URL of a webhook in GitLab
     :param str own_url: this webhook's URL
@@ -220,12 +220,12 @@ class CloudGitLabHook(models.Model):
         """Turn a ``pending`` or ``failing`` webhook ``active`` after a valid delivery.
 
         Written only when it changes, so deliveries do not rewrite the
-        same row (Fable's review of G3). An ``orphan`` stays one: no line
+        same row. An ``orphan`` stays one: no line
         uses it, and a delivery must not restart its grace, or a webhook
         that keeps receiving pushes would never be deleted; the daily
         check turns it back when a line uses it again. A ``failing`` one
         has its ``gitlab_hook_failing`` alert resolved, since GitLab
-        delivers to it again (Fable's review of the result of G3).
+        delivers to it again.
         """
         Alert = self.env["cloud.alert"].sudo()
         for hook in self.sudo():
@@ -339,13 +339,13 @@ class CloudGitLabHook(models.Model):
 
         The panel keeps the new secret only once GitLab took it: one that
         GitLab refused would leave GitLab on the old one, and every
-        delivery would be a 401 (Fable's review of the result of G3). A
+        delivery would be a 401. A
         webhook set up by hand gets it at once, to be pasted in GitLab.
 
         Under the lock registering takes: a READ COMMITTED cursor of its
         own holds the row ``FOR NO KEY UPDATE`` while GitLab is called
         and commits the secret, so a registration and a rotation never
-        write GitLab one over the other (Fable's re-review of G3). The
+        write GitLab one over the other. The
         secret is written and flushed on that cursor before GitLab is
         called: a failure of GitLab rolls it back, and once GitLab took
         it only the commit is left to fail.
@@ -418,8 +418,7 @@ class CloudGitLabHook(models.Model):
 
         On a READ COMMITTED cursor of its own, committed before GitLab is
         called: the test delivery arrives in another request, and two
-        «Verify» at once meet the same row instead of both passing
-        (§4.7.4, Fable's review of the result of G3).
+        «Verify» at once meet the same row instead of both passing.
 
         :param datetime now: the moment of the request
         :return: whether the stamp was written
@@ -476,8 +475,7 @@ class CloudGitLabHook(models.Model):
     def _check_remote_state(self):
         """Read the webhook's state in GitLab and raise or resolve its alert.
 
-        Never sends a test nor re-enables it: «Verify» does, by hand
-        (§4.7.5).
+        Never sends a test nor re-enables it: «Verify» does, by hand.
         """
         self.ensure_one()
         hook = self.sudo()

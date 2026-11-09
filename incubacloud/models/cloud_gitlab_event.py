@@ -1,4 +1,4 @@
-"""Deliveries of GitLab webhooks (plan-gitlab.md §2.4, §4.7, §4.8).
+"""Deliveries of GitLab webhooks.
 
 The receiver records each delivery with two partial unique indexes: one
 on the delivery (``Idempotency-Key``, which «Resend» keeps) and one on a
@@ -32,9 +32,9 @@ GITLAB_REPO_MOVED_CODE = "gitlab_repo_moved"
 def summarize(body):
     """Return what the panel keeps of a delivery's body.
 
-    The project, the refs and SHAs, the merge request's numbers (G4),
+    The project, the refs and SHAs, the merge request's numbers,
     ``user_username`` and the id and title of the pushed head commit:
-    no e-mail, no name, no message body (Fable's review of G3).
+    no e-mail, no name, no message body.
 
     :param dict body: the decoded delivery
     :rtype: dict
@@ -151,7 +151,7 @@ class CloudGitLabEvent(models.Model):
         towards disabling the webhook: a dispatch that raises leaves the
         event with its ``error`` and ``processed=False`` for the daily
         cron or the manager to reprocess, and the receiver still answers
-        200 (Fable's review of G3).
+        200.
 
         :return: whether the dispatch went through
         :rtype: bool
@@ -162,7 +162,7 @@ class CloudGitLabEvent(models.Model):
         # Outside the dispatch's savepoint: a valid delivery makes the
         # webhook active even when its dispatch fails. In one of its own:
         # a state that cannot be written must not cost the delivery nor
-        # answer 500 (Fable's review of the result of G3).
+        # answer 500.
         try:
             with self.env.cr.savepoint():
                 event.hook_id._mark_delivered()
@@ -188,7 +188,7 @@ class CloudGitLabEvent(models.Model):
             self._process_push()
         else:
             # Tag pushes (the «Verify» test included) count as deliveries
-            # only; merge requests arrive with G4.
+            # only; merge requests arrive in a next version.
             self.write({"processed": True})
 
     def _moved(self, summary):
@@ -196,7 +196,7 @@ class CloudGitLabEvent(models.Model):
 
         GitLab keeps a project's id when it is renamed or moved; the
         lines are not changed by the panel, because the URL decides what
-        is cloned with which token (§4.7.6).
+        is cloned with which token.
 
         :param dict summary: the event's summary
         :return: whether the project moved
@@ -218,7 +218,7 @@ class CloudGitLabEvent(models.Model):
         return True
 
     def _process_push(self):
-        """Queue the rebuilds a push asks for (§4.8)."""
+        """Queue the rebuilds a push asks for."""
         self.ensure_one()
         summary = self._summary()
         ref = summary.get("ref", "")

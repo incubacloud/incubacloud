@@ -3,8 +3,7 @@
 Settings → Git providers adds, edits, tests and deletes a GitLab server
 and its credentials; the editor's reads (branches, head, modules,
 requirements, freeze) go to that server with git when the line is
-GitLab's, and to GitHub as before otherwise (plan-gitlab.md §4.5,
-§4.11, 8-nov-2026).
+GitLab's, and to GitHub as before otherwise.
 """
 import asyncio
 from unittest.mock import MagicMock, patch
@@ -102,7 +101,7 @@ class _RoutesCase(TransactionCase):
 
 @tagged("post_install", "-at_install")
 class TestProviderRoutes(_RoutesCase):
-    """get, save, delete and test a provider (§4.5)."""
+    """get, save, delete and test a provider."""
 
     def test_a_consultant_sees_the_providers_but_no_credential(self):
         self._cred("acme", scopes="api")
@@ -345,7 +344,7 @@ class TestProviderRoutes(_RoutesCase):
 
 @tagged("post_install", "-at_install")
 class TestReadsDispatchOnTheProvider(_RoutesCase):
-    """The editor's reads of a GitLab line go through git (§4.5)."""
+    """The editor's reads of a GitLab line go through git."""
 
     def setUp(self):
         super().setUp()
@@ -454,8 +453,7 @@ class TestReadsDispatchOnTheProvider(_RoutesCase):
 class TestReadsUseTheCredentialOnlyForTheUsersRepositories(_RoutesCase):
     """The panel's credential covers a whole namespace: a user reads with it
     only a repository of a line they see, or, to add one, as a developer of
-    a project they can edit; any other is read as a public one (security
-    review of G1, 8-nov-2026)."""
+    a project they can edit; any other is read as a public one."""
 
     def setUp(self):
         super().setUp()
@@ -649,7 +647,7 @@ class TestBaseUrlChangeAsksForTheTokensAgain(_RoutesCase):
 @tagged("post_install", "-at_install")
 class TestImportFromHostWithProviders(_RoutesCase):
     """A host's repos.yaml: userinfo dropped, a host without provider
-    skipped and named (§4.4-6)."""
+    skipped and named."""
 
     def _import(self, remotes, name):
         """Import a host instance whose repos.yaml has *remotes*.
@@ -704,7 +702,7 @@ class TestARequestsGitReadsHaveABudget(_RoutesCase):
     instance checks its modules: each GitLab read counts against the hourly
     cap, and a request makes a few of them, within one deadline. Past
     either the read is not made and the answer says so; the deploy reads
-    without them (security review of G1, 8-nov-2026)."""
+    without them."""
 
     def setUp(self):
         super().setUp()

@@ -6,11 +6,11 @@ copies from GitLab: https, http, no scheme, ``git@host:`` or
 finds the provider whose ``base_url`` has exactly the same authority and
 path prefix, checks the rest is a project path as GitLab names them, and
 rebuilds the URL from the provider's base. That rebuilt URL is the only
-one a token ever travels with (8-nov-2026, ``plan-gitlab.md`` §4.1).
+one a token ever travels with (8-nov-2026).
 
 The URL always ends in ``.git``: without it gitlab.com answers a clone
 with a 301 to the ``.git`` form, and the panel follows no redirect, so
-the clone would fail (spike of 8-nov-2026, §4).
+the clone would fail.
 """
 import re
 from collections import namedtuple

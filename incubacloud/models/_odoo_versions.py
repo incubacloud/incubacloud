@@ -71,8 +71,7 @@ Fields of a card:
     built with ``AGGREGATE=false``, instead of being cloned by the
     image's own git. 8.0 to 10.0: their git 2.1.4 (Debian 8) follows a
     302 to plain http on the same host and sends the token in clear,
-    and knows no ``http.followRedirects`` (spike of 8-nov-2026, owner's
-    option C; plan-gitlab.md §4.4-8).
+    and knows no ``http.followRedirects`` (checked on 8-nov-2026).
 """
 import re
 

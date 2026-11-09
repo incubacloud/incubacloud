@@ -1,4 +1,4 @@
-"""Git providers (GitLab) and their credentials (plan-gitlab.md §2.1-2.2, §3).
+"""Git providers (GitLab) and their credentials.
 
 A provider is one server, its base URL stored canonical; a credential is
 a token scoped to a namespace, chosen by the longest namespace that
@@ -104,8 +104,7 @@ class TestProviderBaseUrl(_ProviderCase):
 
 
 class TestBaseUrlChangeDropsTheTokens(_ProviderCase):
-    """A token is for one server: a new base URL asks for it again (security
-    review of G1, 8-nov-2026)."""
+    """A token is for one server: a new base URL asks for it again."""
 
     def test_a_new_server_or_prefix_empties_every_token(self):
         for base in ("https://git.acme.tld", "https://gitlab.com/prefix"):
@@ -224,8 +223,7 @@ class TestCredentialFor(_ProviderCase):
 
     def test_a_token_whose_scopes_were_not_read_counts_as_one_that_writes(self):
         # Empty scopes on a token that is not a deploy token say nothing
-        # of it: unread, a save past the cap, or a 401 (security review
-        # of G1, 8-nov-2026).
+        # of it: unread, a save past the cap, or a 401.
         self.assertTrue(self._cred("a")._writes())
         self.assertFalse(self._cred(
             "d", kind="deploy", username="gitlab+deploy-token-7",
@@ -359,7 +357,7 @@ class TestExpiryCron(_ProviderCase):
 
 
 class TestCredentialIntrospection(_ProviderCase):
-    """What GitLab says of a token is read, not typed (§4.3, spike §2)."""
+    """What GitLab says of a token is read, not typed."""
 
     def _introspect(self, cred, token_self, user=None):
         """Introspect *cred* with the API answering *token_self* and *user*.
@@ -417,7 +415,7 @@ class TestCredentialIntrospection(_ProviderCase):
 
 class TestCredentialStaysWithItsTokenAndServer(_ProviderCase):
     """What was read of a token is dropped with it, and a token never
-    moves to another server (security review of G1, 8-nov-2026)."""
+    moves to another server."""
 
     def test_a_new_token_drops_what_was_read_of_the_old_one(self):
         cred = self._cred("acme", scopes="read_repository", token_user="bot")

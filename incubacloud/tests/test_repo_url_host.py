@@ -354,7 +354,7 @@ class TestRepoUrlHost(TransactionCase):
         ``https://github.com/x/y.git``: a GitLab remote became a GitHub
         repository of the same path, cloned with the panel's token. A
         remote of a host with no Git provider is now left out and named,
-        rather than failing the whole import (plan-gitlab.md §4.4-6)."""
+        rather than failing the whole import."""
         answer = self._import_from_host("git@github.com:acme/addons.git", "SSH github")
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
@@ -368,7 +368,7 @@ class TestRepoUrlHost(TransactionCase):
 
 class TestRepoLineProvider(TransactionCase):
     """A line of a configured GitLab is stored canonical, with its provider
-    and path (plan-gitlab.md §2.5, §4.1, 8-nov-2026)."""
+    and path."""
 
     @classmethod
     def setUpClass(cls):
@@ -444,8 +444,7 @@ class TestRepoLineProvider(TransactionCase):
 
     def test_a_repository_named_as_what_doodba_keeps_in_src_is_refused(self):
         # A repository is fetched into custom/src/<alias>, where doodba
-        # keeps its private addons and its repos and addons files
-        # (security review of G1, 8-nov-2026).
+        # keeps its private addons and its repos and addons files.
         for model, field, owner in self.models:
             for url, alias in (
                 ("https://gitlab.com/acme/repos.yaml", "repos.yaml"),

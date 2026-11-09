@@ -5,7 +5,7 @@ GitHub redelivery) merges into the same job without adding a second
 entry for the same commit. Duplicates compare by
 ``(push_repo, push_branch, push_sha, push_provider)``; a job queued
 before ``push_provider`` existed carries no such key and counts as
-GitHub's (plan-gitlab.md, Fable's review of G3).
+GitHub's.
 """
 from odoo.tests.common import TransactionCase
 

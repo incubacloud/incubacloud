@@ -1,4 +1,4 @@
-"""GitLab webhook receiver (plan-gitlab.md §4.7.1).
+"""GitLab webhook receiver.
 
 Endpoint: POST /cloud/gitlab/webhook/<hook_key>
 Auth:     public; the webhook's secret arrives in ``X-Gitlab-Token``
@@ -19,7 +19,7 @@ In this order, without reading the body until the token matched:
 7. ``_dispatch_safely`` in the request: database work and enqueues only;
    a dispatch that fails keeps its error on the event and still answers
    200, since an error answer counts towards GitLab disabling the
-   webhook (Fable's review of G3).
+   webhook.
 """
 import json
 import logging

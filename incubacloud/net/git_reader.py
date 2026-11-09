@@ -1,4 +1,4 @@
-"""The panel's reader of Git repositories outside GitHub (plan-gitlab.md §4.2).
+"""The panel's reader of Git repositories outside GitHub.
 
 The panel reads a GitLab repository's branches, tree and a few files
 with git itself, run as a subprocess, so the same reads serve a deploy
@@ -13,8 +13,7 @@ token, which GitLab's API does not accept. Every call is closed off:
 - the credential as an ``Authorization: Basic`` ``extraHeader`` scoped to
   the server, handed in ``GIT_CONFIG_COUNT``/``KEY``/``VALUE`` (git 2.31),
   never in argv nor in a file: a SIGKILL of the panel left a
-  ``.gitconfig`` with the token in ``/tmp`` (security review of G1,
-  8-nov-2026). An older git ignores those variables and reads without
+  ``.gitconfig`` with the token in ``/tmp``. An older git ignores those variables and reads without
   credential, CA or pin: it fails, it does not leak;
 - a private CA as ``sslCAInfo`` scoped to the server, from a temporary
   file;
@@ -22,7 +21,7 @@ token, which GitLab's API does not accept. Every call is closed off:
   a listing never reaches memory whole (security review, 8-nov-2026);
 - with the ``public`` network policy, the address the panel checked,
   pinned with ``http.curloptResolve``. A git older than 2.37 accepts that
-  option and ignores it without a word (spike of 8-nov-2026, §5), so
+  option and ignores it without a word, so
   such a git is refused (``git_too_old``) before any network.
 
 A failure is a :class:`GitReaderError` with a code, never git's text,
@@ -37,14 +36,14 @@ import subprocess
 import tempfile
 import time
 
-#: ``ls-remote`` from a panel route: what the editor waits for (§9).
+#: ``ls-remote`` from a panel route: what the editor waits for.
 LS_REMOTE_TIMEOUT = 15
 
-#: Each fetch of a tree or of files (§9): the import has 120 s in all.
+#: Each fetch of a tree or of files: the import has 120 s in all.
 FETCH_TIMEOUT = 30
 
-#: Disk a fetch may write, enforced with ``ulimit -f`` and checked after
-#: (§9): a tree without blobs of a large OCA repository takes a few MB.
+#: Disk a fetch may write, enforced with ``ulimit -f`` and checked after:
+#: a tree without blobs of a large OCA repository takes a few MB.
 MAX_FETCH_BYTES = 64 * 1024 * 1024
 
 #: Entries of a tree listed at most, as ``import_inspector.MAX_TREE_ENTRIES``.

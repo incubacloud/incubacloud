@@ -1,4 +1,4 @@
-"""What the webhook events of GitHub and GitLab share (plan-gitlab.md §2.7).
+"""What the webhook events of GitHub and GitLab share.
 
 ``cloud.github.event`` and ``cloud.gitlab.event`` inherit from this
 mixin, and modules layered on top (the saas manager) override it here,
@@ -57,7 +57,7 @@ class CloudRepoEventMixin(models.AbstractModel):
         Each enqueue runs in a savepoint of its own: one that fails
         (a database error included) is logged and skipped without
         aborting the transaction the others and the event are written
-        in (Fable's review of G3).
+        in.
 
         :param lines: the ``cloud.instance.repo`` lines the push matched
         :param dict push_info: the ``push_*`` keys of the job's payload

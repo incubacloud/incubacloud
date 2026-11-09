@@ -1,4 +1,4 @@
-"""Registering, verifying and rotating GitLab webhooks (G3, §4.7.2, §4.7.4)."""
+"""Registering, verifying and rotating GitLab webhooks."""
 import http.client
 import json
 import socket

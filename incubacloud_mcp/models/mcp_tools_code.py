@@ -3,8 +3,7 @@
 They work on a repository of the user's projects or instances only, with
 the panel's GitHub access. A repository of a Git provider (GitLab) is
 read with the panel's git and its provider's credential; the tools that
-write to one answer that it comes in a next version (plan-gitlab.md
-§4.10, 8-nov-2026). Reading goes as every repository read of the
+write to one answer that it comes in a next version. Reading goes as every repository read of the
 panel goes: the App, then the personal access token, then anonymously.
 Writing goes with the App and, when GitHub refuses it (the App the panel
 creates may only read contents), with the personal access token. A
@@ -584,8 +583,7 @@ class McpToolsCode(models.AbstractModel):
         :raises UserError: when git cannot read it, saying why, or past the
             user's hourly cap of git reads
         """
-        # Each read runs git on the panel: the editor's hourly cap
-        # (security review of G1, 8-nov-2026).
+        # Each read runs git on the panel: the editor's hourly cap.
         if not consume_git_read(self.env):
             raise UserError(
                 self.env._("Git read limit reached. Try again later.")

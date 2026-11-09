@@ -275,7 +275,7 @@ function gitlabEditor(caps = {}, repo = {}) {
     return comp;
 }
 
-describe("RepoEditor — the webhook of a GitLab line (G3)", () => {
+describe("RepoEditor — the webhook of a GitLab line", () => {
     beforeEach(() => allowTranslations());
 
     test("the saved capabilities say what a push does", () => {

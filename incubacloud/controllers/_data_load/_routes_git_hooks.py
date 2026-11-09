@@ -1,10 +1,10 @@
-"""GitLab webhooks of the panel (plan-gitlab.md §4.5, §4.7.2, §4.7.4).
+"""GitLab webhooks of the panel.
 
 Registering is asked by the SPA after GitLab lines are saved, or by a
 button: never inside the ORM's ``write``, so a save makes no network
 call. «Verify» asks GitLab for a test delivery and returns at once with
 ``verify_requested_at``; the SPA polls ``get_git_hooks`` until the last
-delivery is newer (Fable's review of G3): no worker waits, and nothing
+delivery is newer: no worker waits, and nothing
 reads another request's insert through a REPEATABLE READ snapshot.
 
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
@@ -148,8 +148,7 @@ class GitHooksMixin:
         row there and no ``remote_hook_id`` yet, two requests each found
         no webhook of the panel in GitLab and created one: GitLab
         delivered every push twice, and a serialization failure did not
-        stop it, since Odoo's HTTP layer retries those (Fable's
-        re-review of G3).
+        stop it, since Odoo's HTTP layer retries those.
 
         :param str line_model: ``project`` or ``instance``
         :param int line_id: the repository line

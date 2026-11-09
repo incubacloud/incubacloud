@@ -40,7 +40,7 @@ def _with_canonical_url(env, vals):
     checks it (5-nov-2026). A repository of a configured Git provider
     is stored as its base URL and path spell it, with ``.git``, and
     the line gets ``provider_id`` and ``repo_path``, which nobody else
-    writes (plan-gitlab.md §2.5, 8-nov-2026).
+    writes.
 
     :param env: an Odoo environment
     :param dict vals: the values being written
@@ -148,10 +148,10 @@ class CloudRepoMixin(models.AbstractModel):
         """Say what the panel does with each line's repository.
 
         ``{provider, host, read, push_rebuild, previews, code_tools,
-        hook_id}`` (plan-gitlab.md §2.5). For GitHub, from the App and
+        hook_id}``. For GitHub, from the App and
         the PAT the panel holds; for GitLab, push-to-rebuild from the
         state of the webhook that delivers the path (its project's, or
-        an active group's), ``unsupported`` previews until G4 and no
+        an active group's), ``unsupported`` previews for now and no
         code writes.
         """
         app = self.env['cloud.github.app'].sudo().search_count([], limit=1)
@@ -294,8 +294,7 @@ class CloudRepoMixin(models.AbstractModel):
             if not repo.url or not repo.branch:
                 continue
             # A Git provider's line runs git on the panel: one read of the
-            # user's hourly cap, or none at all past it (security review
-            # of G1, 8-nov-2026).
+            # user's hourly cap, or none at all past it.
             if repo.provider_id and not consume_git_read(self.env):
                 _logger.info(
                     "requirements of %s not read: git read limit reached",
