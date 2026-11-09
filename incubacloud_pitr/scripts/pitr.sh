@@ -718,6 +718,14 @@ EOF
         # A database of its own for the recovery, with the credentials
         # wal-fetch needs; the db service never holds them. Odoo is
         # stopped, so nothing of the instance's runs SQL meanwhile.
+        #
+        # The restored copy's settings are the instance's: its database
+        # superuser writes postgresql.auto.conf (ALTER SYSTEM) and its
+        # roles' settings. Whatever makes the server run a program or load
+        # a library is therefore set on the server's command line, which
+        # that file cannot override: the panel's own commands, and nothing
+        # else. archive_library is a setting from PostgreSQL 15 on,
+        # event_triggers from 17 on.
         docker rm -f "$recovery" >/dev/null 2>&1 || true
         # shellcheck disable=SC2016  # expanded in the container
         ic_compose_run -d --no-deps --name "$recovery" \
@@ -727,11 +735,27 @@ EOF
                 case "$k" in [A-Z]*) export "$k=$v" ;; esac
             done < /run/pitr.env
             export WALG_S3_PREFIX="$IC_PITR_PREFIX/$IC_CLUSTER"
-            exec /autoconf-entrypoint postgres' >/dev/null
+            set -- -c "restore_command=/opt/walg/run wal-fetch %f %p" \
+                -c "archive_command=/opt/walg/archive %f" \
+                -c "recovery_end_command=" -c "archive_cleanup_command=" \
+                -c "ssl_passphrase_command=" -c "shared_preload_libraries=" \
+                -c "session_preload_libraries=" -c "local_preload_libraries=" \
+                -c "jit=off"
+            major="$(cat "$PGDATA/PG_VERSION")"
+            if [ "$major" -ge 15 ]; then set -- "$@" -c "archive_library="; fi
+            if [ "$major" -ge 17 ]; then set -- "$@" -c "event_triggers=off"; fi
+            exec /autoconf-entrypoint postgres "$@"' >/dev/null
+        # Its connections set at login, over a role's or a database's own
+        # settings, what those could otherwise load or run then, and read
+        # the server's functions from pg_catalog alone.
+        major="$(docker exec "$recovery" sh -c 'cat "$PGDATA/PG_VERSION"' 2>/dev/null || true)"
+        [[ "$major" =~ ^[0-9]+$ ]] || { say "the restored copy's version could not be read"; exit 1; }
+        pgoptions="-c search_path=pg_catalog -c session_preload_libraries= -c local_preload_libraries= -c jit=off"
+        if [ "$major" -ge 17 ]; then pgoptions+=" -c event_triggers=off"; fi
         recovery_failed="startup process \(PID [0-9]+\) (exited with exit code [1-9]|was terminated by signal)|terminated by signal|recovery ended before configured recovery target|PANIC:"
         # A long replay is given up to six hours.
         for _ in $(seq 1 10800); do
-            st="$(docker exec "$recovery" psql -U "$user" -d postgres -Atqc \
+            st="$(docker exec -e "PGOPTIONS=$pgoptions" "$recovery" psql -U "$user" -d postgres -Atqc \
                 "SELECT pg_is_in_recovery()" 2>/dev/null || true)"
             if [ "$st" = "f" ]; then
                 # From here a cancel undoes nothing: the restore goes on to
@@ -755,11 +779,11 @@ EOF
         done
         [ "$promoted" -eq 1 ] || { say "the restored copy did not come up"; exit 1; }
         promoted_at="$(date +%s)"
-        new_timeline="$(docker exec "$recovery" psql -U "$user" -d postgres -Atqc \
+        new_timeline="$(docker exec -e "PGOPTIONS=$pgoptions" "$recovery" psql -U "$user" -d postgres -Atqc \
             "SELECT substr(pg_walfile_name(pg_current_wal_lsn()), 1, 8)" || true)"
         say "promoted on timeline $new_timeline"
         state=promoting
-        docker exec "$recovery" psql -U "$user" -d postgres -v ON_ERROR_STOP=1 -Atq \
+        docker exec -e "PGOPTIONS=$pgoptions" "$recovery" psql -U "$user" -d postgres -v ON_ERROR_STOP=1 -Atq \
             -c "ALTER SYSTEM RESET restore_command" \
             -c "ALTER SYSTEM RESET recovery_target_time" \
             -c "ALTER SYSTEM RESET recovery_target_action" \
