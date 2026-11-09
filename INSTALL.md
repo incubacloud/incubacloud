@@ -1,18 +1,24 @@
 # Installing and updating the panel
 
-The IncubaCloud panel is a set of Odoo 19.0 modules with OCA's `queue_job`.
-This guide installs it on a server of your own with Docker Compose, explains
-the Odoo settings it depends on, gives the configuration we run in production
-and why, and shows how to update it without losing the work in progress.
+The IncubaCloud panel is a set of Odoo 19.0 modules. It runs inside an Odoo
+19.0 server you operate, new or one you already run; Community is enough. This
+guide assumes you administer Odoo. If you need to install Odoo first, follow
+Odoo's own [installation guide](https://www.odoo.com/documentation/19.0/administration/on_premise.html)
+and come back here.
 
-Using the panel once it runs — hosts, projects, instances, backups, agents — is
+What follows is only what the panel adds to a working Odoo: its dependencies,
+the server settings its jobs need, what the proxy in front must pass, and how to
+update it without losing the work in progress.
+
+Using the panel once it runs (hosts, projects, instances, backups, agents) is
 covered in the [user documentation](https://docs.incubacloud.io/). A panel that
 only your office network reaches has a page of its own there:
 [Panel on an internal network](https://docs.incubacloud.io/hosts/internal-network/).
 
 - [What the panel needs](#what-the-panel-needs)
-- [Install with Docker Compose](#install-with-docker-compose)
+- [Install the modules](#install-the-modules)
 - [The Odoo settings that matter](#the-odoo-settings-that-matter)
+- [The proxy](#the-proxy)
 - [Recommended configuration](#recommended-configuration)
 - [Update the panel](#update-the-panel)
 
@@ -20,16 +26,16 @@ only your office network reaches has a page of its own there:
 
 | Piece | Why |
 |---|---|
-| Odoo 19.0 (Community is enough) | The panel is Odoo modules. |
-| OCA [`queue_job`](https://github.com/OCA/queue), branch 19.0 ([`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. |
-| The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets), `bcrypt`, `PyYAML`, `joserfc` (agents). |
+| Odoo 19.0 | The panel is Odoo modules. |
+| OCA [`queue_job`](https://github.com/OCA/queue), release 19.0.2.1.6 (commit `da2664795eb525698f93dfdd63f6ba5c4c9fccba` of branch 19.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
+| The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents). |
 | The Python packages of OCA/queue's `requirements.txt` | `openupgradelib` and `requests`, which `queue_job` declares in its manifest: without them it does not install. |
 | The Ansible collections of [`incubacloud/ansible/requirements.yml`](incubacloud/ansible/requirements.yml) | `ansible.posix` and `community.general`, used by the host playbooks. |
-| OpenSSH's client, and `sshpass` | Ansible connects with `ssh`; `sshpass` only matters for a host registered with a password instead of a key. |
-| A UTF-8 locale | Ansible refuses to start without one: `ERROR: Ansible could not initialize the preferred locale: unsupported locale setting`. |
-| `INCUBACLOUD_SECRET_KEY` in the environment | The key every stored secret is encrypted with: SSH keys, passwords, tokens, backup passphrases. |
+| OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key. |
+| A UTF-8 locale for the Odoo process | Ansible refuses to start without one (`Ansible could not initialize the preferred locale`). |
+| `INCUBACLOUD_SECRET_KEY` in Odoo's environment | The key every stored secret is encrypted with: see [The encryption key](#the-encryption-key). |
 
-The modules of this repository:
+### The modules
 
 | Module | Install it on the panel? | Adds |
 |---|---|---|
@@ -41,199 +47,87 @@ The modules of this repository:
 | `auth_oauth_github` | Optional | Sign-in with GitHub. |
 | `incubacloud_connect` | No | The panel installs it on the instances it deploys (sign-in from the panel). |
 
-## Install with Docker Compose
+### Network
 
-A reference setup: the panel, PostgreSQL, and a small nginx in front. Every
-file below is meant to be copied as it is.
+- **Out:** SSH to your hosts, and HTTPS to GitHub, to your backup storage and,
+  with the assistant, to your AI provider.
+- **In:** people reach the panel through your proxy. GitHub's push
+  notifications (`/cloud/github/webhook`) and AI agents that call from their
+  provider's servers (`/mcp`) need it reachable from the internet over HTTPS;
+  everything else works on an internal network.
 
-**Prerequisites:** a Linux server with Docker and the Compose plugin, `git`, and
-network access from that server to your hosts over SSH and to GitHub over HTTPS.
+### Resources
 
-### 1. Get the code
+For a panel and its PostgreSQL on one server: **2 vCPU and 4 GB of RAM**, and a
+few GB of free disk in Odoo's data directory beyond what your Odoo already uses.
 
-```bash
-mkdir incubacloud-panel && cd incubacloud-panel
-git clone --branch 19.0 https://github.com/incubacloud/incubacloud.git addons/incubacloud
-git clone --branch 19.0 https://github.com/OCA/queue.git addons/queue
-# The queue_job release the panel's CI and production run (19.0.2.1.6):
-git -C addons/queue checkout da2664795eb525698f93dfdd63f6ba5c4c9fccba
-```
+- **Memory.** Each Odoo process with the panel loaded uses about 150 to 250 MB
+  (measured on a running panel), in line with Odoo's own estimate for a light
+  worker. The configuration below runs about nine of them (five workers, the
+  cron worker, the job runner, the live-channel process and the main process),
+  close to 2 GB. A job on a host also starts an Ansible process beside its
+  worker, which we have not measured, and PostgreSQL for the panel's database
+  ran in under 1 GB on the same panel. 4 GB leaves room for both; in 2 GB,
+  Odoo and PostgreSQL alone fill the server.
+- **CPU.** Jobs mostly wait on SSH: a panel running about 2,400 jobs in eight
+  hours used under 2% of one core on average. The 2 vCPU are for module
+  updates and bursts, and they fit Odoo's own rule of thumb of
+  `2 × CPU + 1` workers for the five workers below.
+- **Disk.** A backup restored through the browser is staged in Odoo's data
+  directory until the job sends it to the host: up to 2 GiB per upload by
+  default.
 
-### 2. The image
+## Install the modules
 
-Save as `Dockerfile`. It starts from the official Odoo 19.0 image and adds what
-the table above lists.
+1. **Get the code** and add both directories to `addons_path`:
 
-```dockerfile
-FROM odoo:19.0
+   ```bash
+   git clone --branch 19.0 https://github.com/incubacloud/incubacloud.git
+   git clone --branch 19.0 https://github.com/OCA/queue.git
+   git -C queue checkout da2664795eb525698f93dfdd63f6ba5c4c9fccba
+   ```
 
-USER root
+2. **Install the dependencies** in the environment Odoo runs in:
 
-# Ansible refuses to start without a UTF-8 locale. The base image sets
-# LANG=en_US.UTF-8 without generating it; C.UTF-8 is always there.
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+   ```bash
+   pip install -r incubacloud/requirements.txt -r queue/requirements.txt
+   ansible-galaxy collection install \
+       -r incubacloud/incubacloud/ansible/requirements.yml \
+       -p /usr/share/ansible/collections
+   apt-get install --no-install-recommends openssh-client sshpass
+   ```
 
-# OpenSSH's client: Ansible reaches your hosts with it.
-# sshpass: only for hosts registered with a password instead of a key.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client sshpass \
-    && rm -rf /var/lib/apt/lists/*
+   Install the collections where the Ansible of the user running Odoo looks for
+   them: `/usr/share/ansible/collections` or that user's
+   `~/.ansible/collections`. On the official `odoo:19.0` image, add
+   `--break-system-packages --ignore-installed` to `pip`: the image ships some
+   of these packages from Ubuntu, which `pip` cannot uninstall, and the pinned
+   `cryptography` and `pyOpenSSL` must take precedence over Ubuntu's.
 
-# The panel's Python packages, and OCA/queue's (openupgradelib, requests).
-COPY addons/incubacloud/requirements.txt /tmp/requirements-incubacloud.txt
-COPY addons/queue/requirements.txt /tmp/requirements-queue.txt
-RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
-        -r /tmp/requirements-incubacloud.txt -r /tmp/requirements-queue.txt
+3. **Set the encryption key** in Odoo's environment ([below](#the-encryption-key)).
 
-# The Ansible collections the host playbooks use, pinned by the module.
-COPY addons/incubacloud/incubacloud/ansible/requirements.yml /tmp/ansible-collections.yml
-RUN ansible-galaxy collection install \
-        --requirements-file /tmp/ansible-collections.yml \
-        --collections-path /usr/share/ansible/collections
+4. **Apply [the Odoo settings](#the-odoo-settings-that-matter)** and restart Odoo.
 
-USER odoo
-```
+5. **Install the modules:**
 
-`--ignore-installed` is there because the base image ships some of these
-packages from Ubuntu, which `pip` cannot uninstall (*Cannot uninstall PyYAML …,
-RECORD file not found*). With it, the versions the panel pins — `cryptography`
-and `pyOpenSSL`, which must move together, among them — are installed beside
-Ubuntu's and take precedence.
+   ```bash
+   odoo -c <your odoo.conf> -d <panel database> -i incubacloud,incubacloud_mcp --stop-after-init
+   ```
 
-### 3. Odoo's configuration
+   Then start Odoo as usual and open `/cloud`. The `admin` user is an
+   IncubaCloud Administrator from the start. Add the optional modules the same
+   way.
 
-Save as `odoo.conf`. [The Odoo settings that matter](#the-odoo-settings-that-matter)
-explains each value.
+### The encryption key
 
-```ini
-[options]
-addons_path = /mnt/extra-addons/incubacloud,/mnt/extra-addons/queue
-data_dir = /var/lib/odoo
-db_host = db
-db_port = 5432
-db_user = odoo
-db_name = incubacloud
-dbfilter = ^incubacloud$
-list_db = False
-proxy_mode = True
-
-server_wide_modules = base,rpc,web,queue_job
-workers = 5
-max_cron_threads = 1
-gevent_port = 8072
-
-limit_time_real = 3600
-limit_time_cpu = 600
-limit_time_real_cron = 0
-limit_memory_soft = 1610612736
-limit_memory_hard = 2147483648
-
-[queue_job]
-channels = root:3,root.user:2,root.bg:1
-```
-
-With `incubacloud_assistant`, add `root.assistant:1` (or more) to `channels`.
-
-### 4. The proxy
-
-With workers, Odoo serves its live channel (`/websocket`) on a second port,
-8072, and the panel's live updates need it. Save as `nginx.conf`:
-
-```nginx
-server {
-    listen 80;
-    client_max_body_size 64m;
-    proxy_read_timeout 720s;
-
-    proxy_set_header Host $http_host;
-    proxy_set_header X-Forwarded-Host $http_host;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
-
-    location /websocket {
-        proxy_pass http://odoo:8072;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-
-    location / {
-        proxy_pass http://odoo:8069;
-    }
-}
-```
-
-`client_max_body_size` leaves room for the 32 MB pieces a backup is uploaded in
-when it is restored through the browser.
-
-### 5. The compose file
-
-Save as `compose.yaml`. Only the proxy publishes a port: 8090 on every address
-of the server.
-
-```yaml
-services:
-  db:
-    image: postgres:18
-    shm_size: 1gb
-    environment:
-      POSTGRES_USER: odoo
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
-      POSTGRES_DB: postgres
-    volumes:
-      - db-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  odoo:
-    build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PASSWORD: ${DB_PASSWORD}
-      INCUBACLOUD_SECRET_KEY: ${INCUBACLOUD_SECRET_KEY:?set INCUBACLOUD_SECRET_KEY in .env}
-    volumes:
-      - ./odoo.conf:/etc/odoo/odoo.conf:ro
-      - ./addons:/mnt/extra-addons:ro
-      - odoo-data:/var/lib/odoo
-    restart: unless-stopped
-
-  proxy:
-    image: nginx:1.27-alpine
-    depends_on:
-      - odoo
-    ports:
-      - "8090:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    restart: unless-stopped
-
-volumes:
-  db-data:
-  odoo-data:
-```
-
-`shm_size`: Docker gives a container 64 MB of shared memory, and PostgreSQL's
-parallel queries fail past it (*could not resize shared memory segment*).
-
-### 6. The secrets
-
-Create `.env` next to `compose.yaml`, with a database password and the
-encryption key:
+`INCUBACLOUD_SECRET_KEY` holds a Fernet key. Generate one with the
+`cryptography` you just installed:
 
 ```bash
-{
-  echo "DB_PASSWORD=$(docker run --rm --entrypoint openssl odoo:19.0 rand -hex 24)"
-  echo "INCUBACLOUD_SECRET_KEY=$(docker run --rm --entrypoint python3 odoo:19.0 \
-      -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
-} > .env
-chmod 600 .env
+python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
+
+Give it to every Odoo process that loads the panel, the job runner included.
 
 > **Keep a copy of `INCUBACLOUD_SECRET_KEY` somewhere else.** Every secret the
 > panel stores is encrypted with it: the hosts' SSH keys and passwords, GitHub
@@ -241,163 +135,144 @@ chmod 600 .env
 > database without this key opens none of them. To change it later, follow
 > [RB-01](docs/runbooks/RB-01-rotate-secret-key.md).
 
-### 7. Build, create the database, start
-
-```bash
-docker compose build
-docker compose up -d db
-docker compose run --rm odoo odoo -d incubacloud -i incubacloud,incubacloud_mcp --stop-after-init
-docker compose up -d
-```
-
-Open `http://<server address>:8090/web/login` and sign in as `admin` with the
-password `admin`, which a database created this way starts with. Change it at
-once (Preferences → Security), then open `/cloud`. The `admin` user is an
-IncubaCloud Administrator from the start.
-
-Install the optional modules the same way, with `-i <module>` and
-`--stop-after-init`, then `docker compose up -d`.
-
 ### Verify it worked
 
-- `docker compose logs odoo` shows `queue job runner ready for db incubacloud`,
-  and no line saying `INCUBACLOUD_SECRET_KEY is missing or invalid` or naming a
-  `limit_` setting.
+- Odoo's log shows `queue job runner ready for db <panel database>`, and no line
+  saying `INCUBACLOUD_SECRET_KEY is missing or invalid` or naming a `limit_`
+  setting.
 - `/cloud` opens on the empty projects list.
 
 Next: [connect a host](https://docs.incubacloud.io/hosts/connect/).
 
 ## The Odoo settings that matter
 
-Every job — a deploy, a backup, a restore, a host's setup — runs inside an Odoo
-request on the server that runs `queue_job`'s job runner, for as long as its SSH
-commands run. One command may last up to an hour. That is what most of these
-settings are about.
+A job (a deploy, a backup, a restore, a host's setup) runs inside an Odoo
+request for as long as its SSH commands run, and one command may last up to an
+hour. `queue_job`'s runner does not run jobs itself: it calls
+`/queue_job/runjob` on its own Odoo server, so each running job holds one of
+that server's workers. Most of these settings follow from that.
+
+A setup that works, for an Odoo running people's requests and jobs together:
+
+```ini
+[options]
+server_wide_modules = base,rpc,web,queue_job
+workers = 5
+max_cron_threads = 1
+limit_time_real = 3600
+limit_time_cpu = 600
+proxy_mode = True
+db_name = <panel database>
+
+[queue_job]
+channels = root:3,root.user:2,root.bg:1
+```
 
 | Setting | Value | Why |
 |---|---|---|
-| `server_wide_modules` | `base,rpc,web,queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list instead of adding to it: Odoo 19's default is `base,rpc,web`, kept. |
-| `workers` | More than the `root` channel's capacity | A running job holds one worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
-| `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). The limit counts the whole job: 3600 lets its longest command finish, and a job whose commands add up to more is cut all the same. Production's runner runs with 3600. |
-| `limit_memory_soft`, `limit_memory_hard` | 1.5 GiB and 2 GiB per worker | Odoo recycles a worker past the soft limit once its request ends, and refuses its allocations past the hard one. The hard limit caps the address space of the worker and of what it starts, wkhtmltopdf among them: below 1.5 GiB a PDF report fails, so the hard limit never goes lower. |
-| `limit_time_real_cron` | `0` | No time limit for the panel's scheduled checks, which visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). |
-| `proxy_mode` | `True` | The panel sits behind a proxy: Odoo then believes its `X-Forwarded-*` headers for the scheme, the host name and the visitor's address. |
-| `dbfilter`, `db_name` | One database | The agents' endpoint (`/mcp`) answers 404 when Odoo cannot tell which database a request is for. |
-| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, Docker clean-up) to `root.bg`, so background jobs never hold up a deploy. |
+| `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,rpc,web`) instead of adding to it. |
+| `workers` | More than the `root` channel's capacity | Each running job holds a worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
+| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once; without the setting `queue_job` runs one at a time. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, clean-up) to `root.bg`, so background jobs never hold up a deploy. With `incubacloud_assistant`, add `root.assistant:1` or more. |
+| `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). The limit counts the whole job: 3600 lets its longest command finish. |
+| `limit_time_cpu` | `600` | Odoo's default is 60 seconds of CPU per request, enforced on each worker. Jobs mostly wait on SSH; 600 is a margin for the long ones, not a measured need. |
+| `limit_memory_soft`, `limit_memory_hard` | Odoo's defaults, with workers | They are per worker, and a panel worker stays far below them. With `workers = 0` they mean something else: [below](#with-workers--0). |
+| `limit_time_real_cron` | Default, or `0` | The panel's scheduled checks visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). Its default follows `limit_time_real`, which is enough at 3600; `0` removes the limit. |
+| `max_cron_threads` | At least `1` | The panel's scheduled actions start its background work (health checks, metrics), start any job queue left waiting (every 2 minutes) and close the jobs a lost worker left (every 5). |
+| `proxy_mode` | `True` | Behind a proxy, Odoo then believes its `X-Forwarded-*` headers for the scheme, the host name and the visitor's address. |
+| `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`0.0.0.0:8069` by default) with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
 
 ### With `workers = 0`
 
-Odoo then runs as one process with threads, and the limits change meaning:
+The panel also runs on Odoo's threaded server: the runner starts as a thread
+and jobs run as request threads of the same process. `queue_job` supports it
+but calls it unfit for production, and the limits change meaning:
 
 - **`limit_time_real`** still applies to each request, but past it Odoo reloads
   the **whole server**, and every job running in it dies with it. With the
   default 120 seconds, every deploy longer than two minutes takes the panel
   down and is retried until it fails `JobFoundDead`.
 - **`limit_memory_soft`** and **`limit_memory_hard`** apply to the whole process
-  instead of a worker. Measured as virtual size, a threaded server running jobs
-  can pass Odoo's per-worker defaults with the load: past the soft one it
-  reloads itself, with every job running in it, and past the hard one its
-  allocations fail.
+  instead of a worker: past the soft one it reloads itself with every job
+  running in it, and past the hard one its allocations fail.
+- **`limit_time_real_cron = 0`** falls back to `limit_time_real`.
 
 Set `limit_time_real = 3600` and both memory limits to `0` (or to what the whole
-server may use), or run with workers.
+server may use). It suits trying the panel; for daily use, run with workers.
 
-The panel checks this when it starts. A server started with `odoo server` that
-runs the job runner (`queue_job` among its `server_wide_modules`) logs a warning
-per setting and raises the alert `job_server_limits_too_low` when
-`limit_time_real` is below 3600 seconds or, with `workers = 0`, when a memory
-limit is at Odoo's per-worker default or lower. The alert closes at the next
-start with values that fit. A web-only server (`--load=web`) beside a dedicated
-runner is not judged.
+### The check at startup
+
+The panel checks these limits when Odoo starts. A server started with
+`odoo server` that runs the job runner (`queue_job` among its
+`server_wide_modules`) logs a warning per setting and raises the alert
+`job_server_limits_too_low` when `limit_time_real` is below 3600 seconds or,
+with `workers = 0`, when a memory limit is at Odoo's per-worker default or
+lower. The alert closes at the next start with values that fit. A web-only
+server (`--load=web`) beside a dedicated runner is not judged.
+
+## The proxy
+
+The panel needs nothing from the proxy beyond what Odoo itself needs, as
+Odoo's [deployment guide](https://www.odoo.com/documentation/19.0/administration/on_premise/deploy.html)
+describes it:
+
+- **HTTPS**, with `X-Forwarded-Proto`, `X-Forwarded-Host` (or the original
+  `Host`) and `X-Forwarded-For` for `proxy_mode`. Connecting the GitHub App
+  refuses a panel served over plain HTTP, and the session cookie is marked
+  `Secure` only when the request arrived over HTTPS.
+- **`/websocket`**, which carries the panel's live updates (job logs, states).
+  With workers, Odoo serves it on `gevent_port` (8072 by default): send that
+  path there, with the `Upgrade` and `Connection` headers. With `workers = 0`
+  it is served on the main port.
+- **Request bodies up to 40 MiB.** A backup restored through the browser is
+  sent in pieces of 32 MiB; a proxy with a smaller limit answers 413.
+
+Every other path goes to Odoo as it is. A panel behind a CDN also needs the
+visitor's address corrected:
+[RB-25](docs/runbooks/RB-25-visitor-address-behind-a-cdn.md).
 
 ## Recommended configuration
 
-What we run in production, and why. A small panel works with the reference
-setup above; these are the choices that held up as the panel grew.
+### A dedicated job runner
 
-**A dedicated job runner.** Two Odoo services from the same image and the same
-`odoo.conf`, which then holds the web service's values:
+A single Odoo, configured as above, runs the panel. With more jobs or more
+people, we recommend a second Odoo server for the jobs: the same code, the same
+database, the same data directory and the same `INCUBACLOUD_SECRET_KEY`, with
+different command-line options.
 
-```ini
-workers = 6
-limit_time_real = 1200
+- **The web server**, for people: `--load=web --max-cron-threads=0`, so it runs
+  neither the job runner nor the scheduled actions. It keeps a shorter
+  `limit_time_real` (we use 1200).
+- **The runner**, for jobs and scheduled actions: it loads `queue_job` from
+  `server_wide_modules` and starts with `--limit-time-real=3600` and enough
+  workers for its channels (`root` at most `workers − 1`). The proxy does not
+  route to it.
 
-[queue_job]
-channels = root:8,root.user:5,root.bg:2
-```
+What the split gives:
 
-- **The web service**, for people: started with `--load=web
-  --max-cron-threads=0`, so it runs neither the job runner nor the scheduled
-  actions. `workers = 6`: a PDF rendered during a request holds a worker, and
-  wkhtmltopdf then fetches the report's stylesheets and fonts from the same
-  server in parallel; with 4, a single invoice left no worker free. It keeps
-  the `limit_time_real = 1200` of `odoo.conf`.
-- **The runner**, for jobs and scheduled actions: `--workers=9
-  --max-cron-threads=1 --limit-time-real=3600`. Its command line raises
-  `limit_time_real` to 3600 for the jobs, and its `--workers` overrides the
-  file's. It loads `queue_job` from the file's `server_wide_modules`, and
-  publishes no port. Its channels follow the rule `root ≤ workers − 1`, as
-  each running job holds one of its workers.
+- A burst of jobs never takes a worker from the people using the panel, and
+  the web workers do not need the one-hour limit the jobs do.
+- Restarting the web server leaves running jobs alone, and restarting the
+  runner leaves the pages up. Live job logs still reach the browser: they
+  travel through PostgreSQL, whichever server writes them.
+- The runner can grow, or move to another machine, without touching the web
+  side.
 
-With the split, a burst of jobs never slows the panel down for people, and a
-restart of the runner leaves the panel's pages up. A compose service for the
-runner, beside the `odoo` service above (whose command then becomes
-`odoo --load=web --max-cron-threads=0`):
+Run only one job runner per database: `queue_job` elects one through a
+PostgreSQL lock and the others wait. The web side, on the other hand, stays on
+one machine: each in-browser terminal is a process listening on the loopback of
+the server that opened it
+([RB-06](docs/runbooks/RB-06-multi-worker-checklist.md)).
 
-```yaml
-  odoo_runner:
-    build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PASSWORD: ${DB_PASSWORD}
-      INCUBACLOUD_SECRET_KEY: ${INCUBACLOUD_SECRET_KEY}
-    volumes:
-      - ./odoo.conf:/etc/odoo/odoo.conf:ro
-      - ./addons:/mnt/extra-addons:ro
-      - odoo-data:/var/lib/odoo
-    command: ["odoo", "--workers=9", "--max-cron-threads=1", "--limit-time-real=3600"]
-    restart: unless-stopped
-```
+Never give channels sized for a dedicated runner to a panel without one: jobs
+would take every web worker.
 
-With the assistant, add `root.assistant:3` to the channels. Never give a panel
-without a runner these channels: jobs would take every web worker.
+### Back up the panel
 
-| Setting | Our value | Why |
-|---|---|---|
-| `limit_memory_soft` / `limit_memory_hard` | 1.5 GiB / 2 GiB per worker | As above; the container's memory limit is the real ceiling. |
-| `limit_time_cpu` | 600 | Odoo's default is 60 seconds of CPU per request. |
-| `limit_time_real_cron` | 0 | The scheduled checks visit every host in one run. |
-| `proxy_mode` | `True` | Behind Traefik. A panel behind a CDN also needs the visitor's address corrected: [RB-25](docs/runbooks/RB-25-visitor-address-behind-a-cdn.md). |
-| PostgreSQL | 18, `shm_size` 4 GB | The newest major the panel offers for Odoo 19.0, and the one its CI tests on. |
-
-**PostgreSQL for the instances.** The panel offers, per Odoo series, the
-PostgreSQL range Odoo and doodba's template recommend for it, and picks a
-default inside it: 14 to 18 for 16.0 to 19.0 (default 17), 16 to 18 for 20.0.
-The table is in
-[`incubacloud/models/_odoo_versions.py`](incubacloud/models/_odoo_versions.py),
-with the reason for any departure written beside its series.
-
-**Backups of the panel itself.** The instances' backups go to the destinations
-you register in the panel. The panel's own database and data directory need
-theirs too:
-
-- a nightly encrypted copy of the database and the data directory to
-  S3-compatible storage, a full copy every week, and one month kept. We use
-  [docker-duplicity-postgres-s3](https://github.com/Tecnativa/docker-duplicity)
-  with the same retention syntax the panel uses for instances (`remove-older-than 1M`);
-- `incubacloud_pitr` for any minute of the recent past, which is why one month
-  of nightly copies is enough;
-- an outside check that alarms when a backup does not run, and mail only when
-  one fails;
-- `INCUBACLOUD_SECRET_KEY` kept apart from those copies: without it the
-  restored panel opens none of its secrets. Restoring the panel:
-  [RB-02](docs/runbooks/RB-02-restore-master-db.md).
-
-**`queue_job` pinned.** The panel runs the `queue_job` release its CI tests
-(the commit in [Get the code](#1-get-the-code)); moving it is a release of its
-own, tested like one.
+The instances' backups go to the destinations you register in the panel. The
+panel's own database and data directory need theirs too, with
+`INCUBACLOUD_SECRET_KEY` kept apart from those copies: without it the restored
+panel opens none of its secrets. Restoring the panel:
+[RB-02](docs/runbooks/RB-02-restore-master-db.md).
 
 ## Update the panel
 
@@ -407,35 +282,30 @@ module update that runs the migrations. Do it when no job is running.
 **1. See that nothing is running.** **Job History** (in the panel's header)
 shows what runs; or ask the database:
 
-```bash
-docker compose exec db psql -U odoo -d incubacloud -c \
-  "SELECT state, count(*) FROM queue_job WHERE state IN ('enqueued', 'started') GROUP BY state;"
+```sql
+SELECT state, count(*) FROM queue_job WHERE state IN ('enqueued', 'started') GROUP BY state;
 ```
 
 No rows means nothing is running. Jobs that are only queued are safe: they are
 rows in the database and start after the restart.
 
-**2. Back up the panel:** its database, its data directory, and `.env`.
+**2. Back up the panel:** its database, its data directory, and the key.
+
+**3. Fetch the code, install new packages, stop Odoo, run the migrations,
+start it again:**
 
 ```bash
-docker compose exec -T db pg_dump -U odoo --format=custom incubacloud > panel-$(date +%F).dump
-docker compose run --rm --no-deps -T --entrypoint tar odoo czf - -C /var/lib/odoo . > panel-data-$(date +%F).tgz
+git -C incubacloud pull
+pip install -r incubacloud/requirements.txt
+# stop every Odoo server of the panel (the runner too)
+odoo -c <your odoo.conf> -d <panel database> -u incubacloud,incubacloud_mcp --stop-after-init
+# start them again
 ```
 
-**3. Fetch the code, rebuild, stop the panel, run the migrations, restart:**
-
-```bash
-git -C addons/incubacloud pull
-docker compose build
-docker compose stop odoo        # and odoo_runner, with a dedicated runner
-docker compose run --rm odoo odoo -d incubacloud -u incubacloud,incubacloud_mcp --stop-after-init
-docker compose up -d
-```
-
-The panel is stopped while the migrations run, as production does it: a server
-still running the old code would go on serving pages and running jobs against
-a database that changes under it. List in `-u` every IncubaCloud module you
-installed. [CHANGELOG.md](CHANGELOG.md) says what each release changes.
+The panel is stopped while the migrations run: a server still running the old
+code would go on serving pages and running jobs against a database that changes
+under it. List in `-u` every IncubaCloud module you installed.
+[CHANGELOG.md](CHANGELOG.md) says what each release changes.
 
 ### What happens to a job running during the restart
 
@@ -444,13 +314,18 @@ The restart ends the worker that runs it, and with it the job's SSH session.
 1. `queue_job` sees the job's worker gone and puts the job back in the queue:
    once the panel is back, **the job runs again from the start**. A job whose
    worker dies a third time fails for good (`JobFoundDead`).
-2. Every 5 minutes the panel closes the jobs a lost worker left behind — still
-   shown running while `queue_job` has failed or removed them — and undoes what
+2. Every 5 minutes the panel closes the jobs a lost worker left behind (still
+   shown running while `queue_job` has failed or removed them) and undoes what
    they leave: a deploy that never finished puts its instance back to draft
    with an error, for instance, and the job's log says what happened.
 3. Jobs waiting in an instance's or a host's queue keep their place; a sweep
    every 2 minutes starts any queue left waiting with nothing running.
 
-Running a step twice is not always harmless — a restore half way through starts
-over — which is why step 1 comes first. How jobs are queued, run and recovered:
+Running a step twice is not always harmless (a restore half way through starts
+over), which is why step 1 comes first. How jobs are queued, run and recovered:
 [architecture](docs/architecture.md#the-job-queue).
+
+---
+
+**Rather not run it yourself?** The [hosted platform](https://www.incubacloud.io/?utm_source=github&utm_medium=install)
+runs the same panel for you.
