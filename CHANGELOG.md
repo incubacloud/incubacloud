@@ -121,8 +121,8 @@ it; hosts that already do are left as they are.
   answer, instead of failing the whole import.
 - A tenant's panel reaches only GitLab servers on a public address, pinned in
   the panel, on the host and in the build.
-- A neutralized copy loses the Git tokens; the instance export drops any
-  user and token of a URL and the downloaded trees.
+- A neutralized copy loses the Git tokens and the GitLab webhooks; the
+  instance export drops any user and token of a URL and the downloaded trees.
 - Every quota of a request counts with one function, `consume_quota`, in a
   transaction of its own at READ COMMITTED: the hourly caps of GitHub previews
   and imports and of git reads (`consume_hourly_quota`), and the assistant's
