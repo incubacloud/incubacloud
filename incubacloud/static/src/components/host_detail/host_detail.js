@@ -506,6 +506,19 @@ export class HostDetail extends Component {
     }
 
     /**
+     * Whether the form shows a host that logs in with a password on a
+     * panel whose server has no sshpass.
+     *
+     * Ansible cannot work such a host (setup, hardening and probes fail),
+     * so the form says so instead of leaving a bare authentication error.
+     *
+     * @returns {boolean}
+     */
+    get passwordHostWithoutSshpass() {
+        return !this.state.passwordLoginAvailable && this.state.form.login_type === "password";
+    }
+
+    /**
      * The public key the Connection tab shows, or "".
      *
      * For a new host, the generated one; for a saved host, the half of

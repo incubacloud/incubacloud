@@ -241,3 +241,45 @@ class TestEarlyGuardsLogBeforeRaising(AnsibleExecutorCase):
         self.assertIn("does not define a playbook", str(caught.exception))
         self.assertTrue(executor._log_buffer)
         self.assertIn("does not define a playbook", executor._log_buffer[0][0])
+
+    def test_a_password_host_without_sshpass_says_so_before_running(self):
+        """The panel has no sshpass: the log says that, not a bare auth failure."""
+        self.host.login_type = "password"
+        self.host._password_login_available.return_value = False
+        with patch.object(ansible_executor_module, "ansible_runner", object()):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(self.executor._async_entry())
+        self.assertIn("sshpass", str(caught.exception))
+        self.assertIn("host-a", str(caught.exception))
+        self.assertTrue(self.executor._log_buffer)
+        line, source = self.executor._log_buffer[0]
+        self.assertIn("sshpass", line)
+        self.assertEqual(source, "system")
+
+    def test_a_password_host_with_sshpass_runs_on(self):
+        self.host.login_type = "password"
+        self.host._password_login_available.return_value = True
+        with (
+            patch.object(ansible_executor_module, "ansible_runner", object()),
+            patch.object(
+                _PingExecutor, "_build_private_data_dir", autospec=True,
+                side_effect=RuntimeError("past the guards"),
+            ),
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(self.executor._async_entry())
+        self.assertEqual(str(caught.exception), "past the guards")
+
+    def test_a_key_host_without_sshpass_runs_on(self):
+        self.host.login_type = "ssh_key"
+        self.host._password_login_available.return_value = False
+        with (
+            patch.object(ansible_executor_module, "ansible_runner", object()),
+            patch.object(
+                _PingExecutor, "_build_private_data_dir", autospec=True,
+                side_effect=RuntimeError("past the guards"),
+            ),
+        ):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(self.executor._async_entry())
+        self.assertEqual(str(caught.exception), "past the guards")

@@ -30,7 +30,7 @@ only your office network reaches has a page of its own there:
 | OCA [`queue_job`](https://github.com/OCA/queue), release 18.0.4.1.2 (commit `4ccc50b153fdfd4ea48292978070043cda2e9aee` of branch 18.0, [`oca_dependencies.txt`](oca_dependencies.txt)) | Runs every job: deploys, backups, restores, host setup. The panel is tested against this commit; moving it is a release of its own. |
 | The Python packages of [`requirements.txt`](requirements.txt) | `asyncssh` (SSH to the hosts), `ansible-core` and `ansible-runner` (host playbooks), `boto3` (backups), `cryptography` and `pyOpenSSL` (stored secrets; they must move together), `bcrypt`, `PyYAML`, `joserfc` (agents), `urllib3` and `requests` (current releases: the ones Odoo 18 pins on Python 3.10 break with this `cryptography`). |
 | The Python packages of OCA/queue's `requirements.txt` | `requests`, which `queue_job` declares in its manifest: without it `queue_job` does not install. |
-| OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key: without it, the panel takes hosts with an SSH key only. |
+| OpenSSH's client (`ssh`), and `sshpass` | Ansible connects with `ssh`. `sshpass` only matters for a host registered with a password instead of a key: without it, the panel takes hosts with an SSH key only. If you install it later, restart Odoo: the panel looks for it once, when it starts. A host that already logs in with a password keeps it, and its page warns that the panel has no `sshpass`; the jobs that use Ansible on it fail with a message saying so. |
 | A UTF-8 locale for the Odoo process | Ansible refuses to start without one (`Ansible could not initialize the preferred locale`). |
 | The encryption key, in Odoo's environment or its configuration file | The key every stored secret is encrypted with: see [The encryption key](#the-encryption-key). |
 
@@ -151,14 +151,29 @@ empty, that cannot be read or that holds something other than a key is not
 skipped: the panel stops there and its log says which place failed. At start,
 the log names the place the key was read from, never the key.
 
+A key file must be named with an absolute path (a relative one is an error),
+be a regular file (not a pipe or a device) of at most 64 KiB, and hold the key
+as UTF-8 text. Make it readable by Odoo's user only: a file that every user of
+the server can read is still read, and the log warns about it.
+
 A key in Odoo's configuration file is only as safe as that file: whoever can
 read it, or can get into the server, has the key, and with the database every
-secret it opens. Keep the file readable by Odoo's user only. On Odoo.sh the
-configuration file is copied to the staging branches with the database. The
-copy is neutralized, and the panel's neutralization deletes every stored
-secret (the hosts' SSH keys and passwords, tokens, the backup destinations'
-keys), archives the hosts and cancels the pending jobs: the key in a staging
-branch has nothing to open and no host to reach.
+secret it opens. Keep the file readable by Odoo's user only, and write the key
+(or the list of keys) on one line, `secret_key = <the key>`: if Odoo cannot
+parse its configuration file, its own error message quotes the line it failed
+on, and with it the key. Do not start Odoo with `--save`: it rewrites the file
+with Odoo's own options and drops the `[incubacloud]` section, and with it the
+key.
+
+On Odoo.sh the configuration file is kept from one production build to the
+next, and copied to the staging and development branches. Whoever has a shell
+on one of those branches can read the production key, and with a copy of the
+production database opens every secret the panel stores: the hosts' SSH keys
+and passwords, tokens, the backup destinations' keys. Limit who has access to
+the Odoo.sh project. The panel's neutralization deletes the secrets from the
+database of the copy, archives the hosts and cancels the pending jobs, but it
+does not protect the key: the key is as protected as the access to the
+project.
 
 > **Keep a copy of the encryption key somewhere else.** Every secret the
 > panel stores is encrypted with it: the hosts' SSH keys and passwords, GitHub

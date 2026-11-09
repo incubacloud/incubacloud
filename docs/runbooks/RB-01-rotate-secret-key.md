@@ -6,11 +6,18 @@
 
 Encrypted secrets (`s3_secret_access_key`, `passphrase`, SSH
 credentials, SMTP passwords, …) are encrypted with Fernet. The
-`INCUBACLOUD_SECRET_KEY` env var is a comma-separated list of Fernet
-keys; the first entry is the **primary** (used for encryption), the
-rest are legacy keys still accepted for decryption. Rotation moves
-every ciphertext from the old primary to a new primary and then
-drops the old key from the env var.
+panel's encryption key is a comma-separated list of Fernet keys; the
+first entry is the **primary** (used for encryption), the rest are
+legacy keys still accepted for decryption. Rotation moves every
+ciphertext from the old primary to a new primary and then drops the
+old key from the list.
+
+The list is read from the first of four places that is set: the
+`INCUBACLOUD_SECRET_KEY` environment variable; the file
+`INCUBACLOUD_SECRET_KEY_FILE` names; the file `secret_key_file` names,
+or else `secret_key`, in the `[incubacloud]` section of `odoo.conf`
+([INSTALL](../../INSTALL.md#the-encryption-key)). The steps below say
+what to change in each.
 
 ## Symptoms / triggers
 
@@ -32,8 +39,10 @@ db$ SELECT
     GROUP BY 1;
 ```
 
-`odoo log` will show `INCUBACLOUD_SECRET_KEY has N keys loaded (rotation
-in progress)` at boot when more than one key is configured.
+`odoo log` will show `Encryption key read from <source>: N keys (rotation
+in progress); new values will be encrypted with the first key.` at boot
+when more than one key is configured, where `<source>` names the place
+the list was read from.
 
 ## Pre-flight — do this before anything else
 
@@ -70,20 +79,42 @@ not decrypt* below for how.
    $ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
    ```
 
-2. **Prepend the new key** to `INCUBACLOUD_SECRET_KEY` in the
-   production env file. Keep the current primary as the second
-   entry so existing ciphertext keeps decrypting:
+2. **Prepend the new key** to the list, in the place the panel reads
+   it from. Keep the current primary as the second entry so existing
+   ciphertext keeps decrypting:
 
-   ```bash
-   # BEFORE:  INCUBACLOUD_SECRET_KEY=OLD
-   # AFTER:   INCUBACLOUD_SECRET_KEY=NEW,OLD
-   ```
+   - **The environment variable**, in the production env file:
 
-3. **Restart the stack** so the new env is read:
+     ```bash
+     # BEFORE:  INCUBACLOUD_SECRET_KEY=OLD
+     # AFTER:   INCUBACLOUD_SECRET_KEY=NEW,OLD
+     ```
+
+   - **A key file** (`INCUBACLOUD_SECRET_KEY_FILE`, or `secret_key_file`
+     in `odoo.conf`): edit the file the setting names, so that it holds
+     `NEW,OLD` on one line. Keep it readable by Odoo's user only.
+   - **`secret_key` in `odoo.conf`**: edit that line, on one line:
+
+     ```ini
+     # BEFORE:  secret_key = OLD
+     # AFTER:   secret_key = NEW,OLD
+     ```
+
+3. **Restart every Odoo process that loads the panel**, so the new list
+   is read: the web server, the gevent (long-polling) one and the one
+   that runs the jobs. All of them, before the next step:
 
    ```bash
    $ invoke restart
    ```
+
+   (On a setup with the processes apart, restart each one.) A process
+   reads the list once and keeps it until it restarts, whichever place
+   it came from. One left running holds only `OLD`: once the cron has
+   re-encrypted values with `NEW`, that process cannot read them (its
+   reads fail and open `encrypted_value_unreadable` alerts), and what it
+   writes is encrypted with `OLD` and is pending again. Do not enable
+   the cron until every process has restarted.
 
 4. **Enable the rotation cron** (disabled by default). In Odoo UI:
    Settings → Technical → Scheduled Actions → "Rotate Encrypted
@@ -137,23 +168,24 @@ not decrypt* below for how.
    If it will not reach zero, you skipped the pre-flight: something was
    already stranded before you started.
 
-7. **Remove the old key** from `INCUBACLOUD_SECRET_KEY`:
+7. **Remove the old key** from the list, in the same place as in step 2:
 
    ```bash
    # INCUBACLOUD_SECRET_KEY=NEW
    ```
 
-   Restart once more. From this moment the old key cannot decrypt
+   (or the key file's content, or `secret_key = NEW` in `odoo.conf`).
+   Restart every Odoo process once more, as in step 3. From this moment the old key cannot decrypt
    anything anymore — the window is closed.
 
 ## Rollback
 
-If step 3 fails (service won't start), restore the previous
-`INCUBACLOUD_SECRET_KEY` value and restart. No ciphertext has been
+If step 3 fails (service won't start), restore the previous list
+(in the place you changed in step 2) and restart. No ciphertext has been
 touched yet.
 
 If step 5 is in-flight and a row fails to re-encrypt, keep both
-keys in the env var. The row stays decryptable under OLD and will
+keys in the list. The row stays decryptable under OLD and will
 be retried next tick. Do **not** remove OLD until the rotation cron
 has completed a full pass with zero errors.
 
@@ -197,7 +229,7 @@ critical `cloud.alert` with code
 `encrypted_value_unreadable:<model>.<field>`, pointing at the record.
 
 The value cannot be recovered without the original key. Resolution:
-put the old key back in `INCUBACLOUD_SECRET_KEY` (as a trailing entry)
+put the old key back in the encryption key's list (as a trailing entry)
 if you still have it, or set the secret again from source — regenerate
 the host password, re-enter the backup passphrase, re-issue the token.
 The alert closes by itself once the value reads again: an hourly pass,

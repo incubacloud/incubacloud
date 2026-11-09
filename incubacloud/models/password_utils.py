@@ -33,9 +33,9 @@ Key rotation (MultiFernet):
   flag-day: generate a new key, prepend it to the list, redeploy; old
   ciphertext keeps working because the old key is still in the list.
   Once every row has been re-encrypted (via rotate_value below) the
-  retired key can be dropped from the env var.
+  retired key can be dropped from the chain.
 
-  Examples:
+  Examples (the same text in any of the four sources):
     INCUBACLOUD_SECRET_KEY="<primary>"                  # single key
     INCUBACLOUD_SECRET_KEY="<new_primary>,<old_key>"    # rotation
 
@@ -51,6 +51,8 @@ import configparser
 import logging
 import os
 import secrets
+import stat
+import time
 
 from odoo.tools import config
 
@@ -63,9 +65,24 @@ _KEY_FILE_ENV_VAR = "INCUBACLOUD_SECRET_KEY_FILE"
 _CONF_SECTION = "incubacloud"
 _CONF_KEY_FILE = "secret_key_file"
 _CONF_KEY = "secret_key"
+#: The largest key file read. A chain of keys is a few hundred bytes; a
+#: bigger file is not one, and is refused instead of read into memory.
+_KEY_FILE_MAX_BYTES = 64 * 1024
+#: How long, in seconds, a process waits before it looks for a missing or
+#: invalid key again. Every encrypted field read or written asks for the
+#: key: without a wait, a server with none would log an ERROR and read
+#: the files from disk on each of them, thousands of times a minute. Long
+#: enough to stop that, short enough that a key put in place while the
+#: server runs (a file written afterwards) is found within the minute.
+_KEY_RETRY_SECONDS = 30
 
 # Lazy-loaded MultiFernet instance (single Fernet wrapped if only one key)
 _fernet = None
+# The last failure to load it: ``(fingerprint, retry_at)``, or None. The
+# fingerprint is a hash of what decides where the key comes from (the two
+# environment variables and the odoo.conf path), so a change there is
+# tried at once; ``retry_at`` is a ``time.monotonic()`` reading.
+_key_failure = None
 
 
 class IncubacloudCryptoError(RuntimeError):
@@ -130,20 +147,66 @@ def _read_conf_section(path):
 def _read_key_file(path, source):
     """Return the content of the key file at *path*.
 
-    :param path: the file, as configured (``~`` is expanded)
-    :param source: how the file was named, for the error
+    The file must be a regular file (opening a FIFO would block the
+    process, a device could be endless) of at most ``_KEY_FILE_MAX_BYTES``.
+    One that every user of the server can read is read anyway, with a
+    warning: it still holds the key.
+
+    :param path: the file, as configured (``~`` is expanded); absolute
+    :param source: how the file was named, for the errors
     :return: the file's text
     :rtype: str
-    :raise IncubacloudCryptoError: when it cannot be read
+    :raise IncubacloudCryptoError: when it cannot be read, is not a
+        regular file, is too large or is not UTF-8 text
     """
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path):
+        raise IncubacloudCryptoError(
+            f"Cannot read {source}: the path is not absolute. Give an "
+            "absolute path: the working directory of an Odoo process "
+            "is not one to rely on."
+        )
     try:
-        with open(os.path.expanduser(path), encoding="utf-8") as handle:
-            return handle.read()
+        # Non-blocking, so a FIFO is opened to be refused, not waited on.
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
     except OSError as e:
-        reason = e.strerror or type(e).__name__
+        raise IncubacloudCryptoError(
+            f"Cannot read {source}: {e.strerror or type(e).__name__}."
+        ) from None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise IncubacloudCryptoError(
+                f"Cannot read {source}: it is not a regular file."
+            )
+        if info.st_mode & stat.S_IROTH:
+            _logger.warning(
+                "The key file %s is readable by every user of the "
+                "server (mode %04o). Restrict it to Odoo's user.",
+                path, stat.S_IMODE(info.st_mode),
+            )
+        # Closes the descriptor, which is owned by the file object from here.
+        with os.fdopen(fd, "rb") as handle:
+            fd = None
+            data = handle.read(_KEY_FILE_MAX_BYTES + 1)
+    except OSError as e:
+        raise IncubacloudCryptoError(
+            f"Cannot read {source}: {e.strerror or type(e).__name__}."
+        ) from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+    if len(data) > _KEY_FILE_MAX_BYTES:
+        raise IncubacloudCryptoError(
+            f"Cannot read {source}: it is larger than "
+            f"{_KEY_FILE_MAX_BYTES // 1024} KiB, too big to hold a key."
+        )
+    try:
+        return data.decode("utf-8")
     except UnicodeDecodeError:
-        reason = "not UTF-8 text"
-    raise IncubacloudCryptoError(f"Cannot read {source}: {reason}.")
+        raise IncubacloudCryptoError(
+            f"Cannot read {source}: not UTF-8 text."
+        ) from None
 
 
 def _read_secret_key():
@@ -193,6 +256,22 @@ def _parse_keys(raw):
     return [k.strip().encode() for k in raw.split(',') if k.strip()]
 
 
+def _key_inputs():
+    """Return a hash of what decides where the key is read from.
+
+    Not the sources' content: the two environment variables and the
+    odoo.conf path. In memory only, to tell a failure recorded for one
+    configuration from the same call under another.
+
+    :rtype: int
+    """
+    return hash((
+        os.environ.get(_KEY_ENV_VAR),
+        os.environ.get(_KEY_FILE_ENV_VAR),
+        _odoo_conf_path(),
+    ))
+
+
 def _get_fernet(env=None):
     """Return a MultiFernet initialised from the key chain, or None.
 
@@ -203,11 +282,35 @@ def _get_fernet(env=None):
     Single-key config returns a MultiFernet with one Fernet — encrypt
     and decrypt behave identically to a bare Fernet, so the rest of
     the module doesn't need to know whether rotation is in progress.
+
+    When there is no usable key, the failure is logged and the sources
+    are not read again for ``_KEY_RETRY_SECONDS``, unless what decides
+    where the key comes from has changed: every encrypted field asks
+    for it, and a server without one would otherwise log an ERROR and
+    read the disk each time.
     """
-    global _fernet
+    global _fernet, _key_failure
     if _fernet is not None:
         return _fernet
+    fingerprint = _key_inputs()
+    if _key_failure is not None:
+        failed_for, retry_at = _key_failure
+        if failed_for == fingerprint and time.monotonic() < retry_at:
+            return None
+    fernet = _load_fernet()
+    if fernet is None:
+        _key_failure = (fingerprint, time.monotonic() + _KEY_RETRY_SECONDS)
+        return None
+    _key_failure = None
+    _fernet = fernet
+    return fernet
 
+
+def _load_fernet():
+    """Build the MultiFernet from the key chain's source, logging why not.
+
+    :return: the MultiFernet, or ``None`` when the key is missing or invalid
+    """
     try:
         from cryptography.fernet import Fernet, MultiFernet
     except ImportError:
@@ -240,12 +343,11 @@ def _get_fernet(env=None):
         fernets = [Fernet(k) for k in keys]
     except Exception as e:  # noqa: BLE001 — Fernet's message holds no key
         _logger.error("Invalid encryption key in %s: %s", source, e)
-        _fernet = None
         return None
 
     # MultiFernet.encrypt always uses fernets[0], so the operator
     # controls which key is primary via the order in the chain.
-    _fernet = MultiFernet(fernets)
+    fernet = MultiFernet(fernets)
     if len(fernets) > 1:
         _logger.info(
             "Encryption key read from %s: %d keys (rotation in "
@@ -254,7 +356,7 @@ def _get_fernet(env=None):
         )
     else:
         _logger.info("Encryption key read from %s.", source)
-    return _fernet
+    return fernet
 
 
 def key_is_configured():

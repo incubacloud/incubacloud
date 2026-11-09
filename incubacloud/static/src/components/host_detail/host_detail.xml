@@ -596,8 +596,11 @@
                                               options="loginTypeOptions"
                                               onChange="(value) => this.onSelect('login_type', { target: { value: value } })"
                                               ariaLabel="'Login type'"/>
-                                    <span class="ic-form-note" t-if="!state.passwordLoginAvailable">
+                                    <span class="ic-form-note" t-if="!state.passwordLoginAvailable and !passwordHostWithoutSshpass">
                                         This panel's server has no sshpass, so hosts are added with an SSH key.
+                                    </span>
+                                    <span class="ic-form-note ic-field-error" t-if="passwordHostWithoutSshpass" role="alert">
+                                        This host logs in with a password, but this panel's server has no sshpass, so Ansible cannot reach it. Install sshpass on the panel's server and restart it, or switch the host to an SSH key.
                                     </span>
                                 </div>
                                 <t t-if="state.form.login_type === 'password'">

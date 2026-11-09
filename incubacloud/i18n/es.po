@@ -14694,6 +14694,18 @@ msgstr ""
 "alta con una clave SSH."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"This host logs in with a password, but this panel's server has no sshpass, "
+"so Ansible cannot reach it. Install sshpass on the panel's server and "
+"restart it, or switch the host to an SSH key."
+msgstr ""
+"Este servidor accede con contraseña, pero el servidor del panel no tiene "
+"sshpass, así que Ansible no puede llegar a él. Instale sshpass en el "
+"servidor del panel y reinícielo, o cambie el servidor a una clave SSH."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid ""

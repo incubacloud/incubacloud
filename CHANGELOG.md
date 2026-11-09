@@ -26,7 +26,10 @@ they are.
   empty, unreadable or holding something other than a key fails, and the
   next one is not tried. At start the log says which place the key was read
   from, never the key. INSTALL.md lists the places and how safe a key in
-  odoo.conf is.
+  odoo.conf is. A key file must be an absolute path to a regular file of at
+  most 64 KiB, and one every user of the server can read is read with a
+  warning. While no key is usable, a process logs the error and reads the
+  places again at most every 30 seconds, not on every encrypted field.
 
 ### Changed
 
@@ -35,7 +38,9 @@ they are.
   host form offers "SSH Key" only and says why, and the panel refuses a
   password host from the form, the API or the MCP tools with a message that
   names `sshpass`. A host that already logs in with a password keeps the
-  option in its form. Spanish translation included.
+  option in its form, where a warning says the panel has no `sshpass`, and
+  the Ansible jobs that reach it fail with a message saying so. Spanish
+  translation included.
 
 ### Security
 
