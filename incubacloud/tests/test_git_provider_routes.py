@@ -667,7 +667,7 @@ class TestImportFromHostWithProviders(_RoutesCase):
             f"{alias}:\n  remotes:\n    {alias}: '{url}'\n  target: {alias} main\n"
             for alias, url in remotes.items()
         )
-        reads = [(f"project_name: {name}\n", ""), (repos_yaml, "")]
+        reads = [(f"odoo_version: 19.0\nproject_name: {name}\n", ""), (repos_yaml, "")]
         reads += [("", "")] * 11
         with patch.object(
             _routes_ops.OpsMixin, "_ssh_run_multi", autospec=True,
