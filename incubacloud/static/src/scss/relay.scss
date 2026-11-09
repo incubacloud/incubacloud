@@ -22,6 +22,9 @@
   --rl-line:#262b2f; --rl-line2:#333a3f;
   --rl-fg:#eef1f3; --rl-fg2:#c3cad0; --rl-muted:#8a949c; --rl-faint:#737d85;
   --rl-green:#2fc78c; --rl-green-soft:rgba(47,199,140,.15); --rl-green-fg:#06140d; --rl-green-dim:#1e9e70;
+  // Fill of the primary button and its hover, under --rl-green-fg text. Dark theme: the
+  // accent itself (8.7:1) and its dim (5.6:1).
+  --rl-green-btn:var(--rl-green); --rl-green-btn-hover:var(--rl-green-dim);
   --rl-amber:#efa53e; --rl-amber-soft:rgba(239,165,62,.14); --rl-amber-fg:#1c1408;
   --rl-red:#ff6063; --rl-red-soft:rgba(255,96,99,.15); --rl-red-fg:#2a0808;
   // Info accent (cyan, NOT a SaaS blue — and dusty enough to never read as the
@@ -60,6 +63,9 @@
   --rl-line:#dde6df; --rl-line2:#cdd8d0;
   --rl-fg:#0e1512; --rl-fg2:#33403a; --rl-muted:#5d6b63; --rl-faint:#7d8a82;
   --rl-green:#14a06e; --rl-green-soft:rgba(20,160,110,.12); --rl-green-fg:#ffffff; --rl-green-dim:#0c7a55;
+  // Primary button fill: white text on --rl-green (#14a06e) is 3.3:1, under AA 4.5:1.
+  // The dim green gives 5.3:1 and the darker hover 7.7:1 (9-nov-2026).
+  --rl-green-btn:var(--rl-green-dim); --rl-green-btn-hover:#095f42;
   // Amber is a mark here — dots, bars, borders, icons — which needs 3:1
   // (WCAG non-text contrast); #b7791f measured 2.9–3.0:1 on the gauge
   // track and on its own soft tint. Same hue, darkened just enough.
@@ -175,8 +181,8 @@
     .rl-svg, svg { width:15px; height:15px; }
     &:disabled { opacity:.5; cursor:not-allowed; }
   }
-  .rl-btn-primary { background:var(--rl-green); color:var(--rl-green-fg); border-color:transparent;
-    &:hover:not(:disabled) { background:var(--rl-green-dim); } }
+  .rl-btn-primary { background:var(--rl-green-btn); color:var(--rl-green-fg); border-color:transparent;
+    &:hover:not(:disabled), &:active:not(:disabled) { background:var(--rl-green-btn-hover); } }
   .rl-btn-ghost { background:transparent; color:var(--rl-fg); border-color:var(--rl-line2);
     &:hover:not(:disabled) { background:var(--rl-surf2); } }
   .rl-btn-icon { background:transparent; color:var(--rl-muted); border-color:var(--rl-line2); padding-block:8px; padding-inline:10px;

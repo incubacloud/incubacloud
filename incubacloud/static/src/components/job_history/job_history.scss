@@ -213,7 +213,7 @@
 
     &:hover { color: $text-primary; }
     &.active {
-        background: $primary-blue;
+        background: var(--rl-green-btn);
         border-color: transparent;
         color: var(--rl-green-fg);
     }

@@ -1360,13 +1360,13 @@
         padding: 0 14px;
         font-size: 0.8125rem;
         border-radius: 6px;
-        background: $primary-blue;
+        background: var(--rl-green-btn);
         color: var(--rl-green-fg);
         border: none;
         cursor: pointer;
         white-space: nowrap;
 
-        &:hover { background: var(--rl-green-dim); }
+        &:hover, &:active { background: var(--rl-green-btn-hover); }
     }
 
     .ic-audit-reset-btn {
