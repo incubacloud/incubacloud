@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from odoo import http
 from odoo.api import call_kw
 from odoo.exceptions import AccessError, UserError
+from odoo.service.model import get_public_method
 from odoo.tests.common import TransactionCase, new_test_user
 
 from odoo.addons.incubacloud.models import cloud_host as cloud_host_module
@@ -412,10 +413,14 @@ class TestHostCredentialsStayInThePanel(TestSaveHostCertificateRoute):
                     self.assertNotIn(field, Host.fields_get())
 
     def test_the_connection_kwargs_are_not_callable_over_rpc(self):
-        """They carry the credentials, read elevated for the panel's code."""
+        """They carry the credentials, read elevated for the panel's code.
+
+        Odoo 18's ``call_kw`` leaves the check to its callers: execute_kw
+        and /web/dataset/call_kw both ask ``get_public_method`` first.
+        """
         Host = self.env["cloud.host"].with_user(self.manager)
         with self.assertRaises(AccessError):
-            call_kw(Host, "ssh_connect_kwargs", [self.key_host.ids], {})
+            get_public_method(Host, "ssh_connect_kwargs")
 
     def test_the_roles_still_connect(self):
         """The panel's code reads the credentials for the user it runs as."""
