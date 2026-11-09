@@ -8,7 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.220] — 2026-11-09
 
-No change in the database.
+The update queues `push_edge_guard` on every active host with the panel's
+proxy whose `edge_guard_shipped_hash` is empty, and a Check (`host_probe`) on
+every active `Unsupported` host, which the old Check marked so for little
+disk, and on every active host whose newest `missing_deps` was dismissed by
+hand, which from this version keeps a host `Degraded` until a Check finds the
+tools. A provenance entry of `pip_dependency_sources` can now carry
+`rejected` and an empty `repo` (the operator's line); entries written before
+keep working as they were. Nothing else changes in the database.
 
 ### Added
 
