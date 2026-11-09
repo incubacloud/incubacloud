@@ -10,6 +10,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 No change in the database.
 
+### Added
+
+- **"Sync with project" has a "Select all" box.** Each section of the modal
+  (Python dependencies, system dependencies, repositories) has one in its
+  head, and a "Select all changes" box above them all when more than one
+  section has rows. A box shows a dash when only some of its rows are ticked,
+  ticks the rest on a click, and clears them when all are ticked. They leave
+  the "differs" rows alone: each is a choice of a winner, and ticking all of
+  them would decide every one. Each box is named with its section's title for
+  a screen reader, and works from the keyboard. Spanish translation included.
+
+### Changed
+
+- **"Sync with project" follows the panel's colours.** The package names,
+  versions and URLs set their own colour and monospace face, the panel's
+  primary text on a faint tint with no ligatures, where they took the colour
+  of the Bootstrap theme underneath (pink by default, dark green in the
+  website theme, 1.9:1 on the dark panel) and drew `==` as one bar and `>=`
+  as `≥`. The "instance only" label is 4.5:1 or more in both themes (it was
+  2.6:1 in the light one), and the secondary text, the push and pull
+  directions and the "(instance)" and "(project)" marks, is at full strength:
+  at 70% opacity it was 2.9:1 in the light theme and 3.6:1 in the dark.
+
 ### Fixed
 
 - **Cancelling the agents' install no longer counts as a failed attempt.** A
@@ -19,7 +42,6 @@ No change in the database.
   raises the `observability_agents_failed` alert at the third, went up by one.
   The stop now leaves the host's agent state and count as they were and the log
   says so. No other executor counts attempts in `on_failure`.
-
 - **A request for a sourcemap no longer raises `instance_error_logs`.** Odoo
   logs as ERROR `.map should have been generated through debug assets` when a
   browser with developer tools open, or a crawler, asks for the sourcemap of an
