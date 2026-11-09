@@ -11,10 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 GitLab: deploy from gitlab.com or a GitLab server of one's own, and a push
 rebuilds. The update needs no data migration for it: the tables are new, the
 new columns accept nulls, and the two new daily crons are given to the cron
-bot. Publish this core with `incubacloud_tenant` 1.0.57, which limits a
-tenant's panel to GitLab servers on a public address, and
-`incubacloud_saas_manager` 1.196, which moves its routing of webhook rebuilds
-onto the new event mixin, in the same deployment.
+bot.
 
 The update also rewrites the record rules of `cloud.job.log.chunk` and adds
 two rules on `ir.attachment`. A panel whose server has no `sshpass` now
@@ -119,8 +116,8 @@ it; hosts that already do are left as they are.
 - Importing an instance from a host drops the user and token of each remote,
   and leaves out a remote of a host with no Git provider, naming it in the
   answer, instead of failing the whole import.
-- A tenant's panel reaches only GitLab servers on a public address, pinned in
-  the panel, on the host and in the build.
+- A panel under the `public` network policy reaches only GitLab servers on a
+  public address, pinned in the panel, on the host and in the build.
 - A neutralized copy loses the Git tokens and the GitLab webhooks; the
   instance export drops any user and token of a URL and the downloaded trees.
 - Every quota of a request counts with one function, `consume_quota`, in a
