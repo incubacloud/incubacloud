@@ -463,6 +463,42 @@ STUB
     [ "$(grep -cE "exec-(start|killed|end)" <<<"$after")" -eq 0 ]
 }
 
+@test "the recovery's server runs only the panel's commands and libraries, whatever the restored copy's settings say" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"grep -c"*) echo 0 ;;
+    *"pg_is_in_recovery"*) echo f ;;
+    *"pg_walfile_name"*) echo 00000002 ;;
+    *"PG_VERSION"*) echo 17 ;;
+esac
+exit 0
+STUB
+    mkdir -p "$DIR/.walg/restore"
+    run bash "$SCRIPT" restore-run "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 3>&-
+    echo "$output"
+    # The server's own command line, which the restored
+    # postgresql.auto.conf cannot override.
+    start="$(awk '/--name pitr-recovery-9 /,/exec \/autoconf-entrypoint/' "$CALLS")"
+    [ -n "$start" ]
+    for setting in "restore_command=/opt/walg/run wal-fetch %f %p" \
+            "archive_command=/opt/walg/archive %f" recovery_end_command= \
+            archive_cleanup_command= ssl_passphrase_command= \
+            shared_preload_libraries= session_preload_libraries= \
+            local_preload_libraries= jit=off; do
+        grep -qF -- "-c \"$setting\"" <<<"$start" || { echo "missing: $setting"; false; }
+    done
+    grep -qF 'archive_library=' <<<"$start"
+    grep -qF 'event_triggers=off' <<<"$start"
+    # Each connection to it sets what a role or database setting could
+    # otherwise load or run at login.
+    execs="$(grep "^docker exec .*pitr-recovery-9 psql" "$CALLS")"
+    [ -n "$execs" ]
+    if grep -v -- "-e PGOPTIONS=-c search_path=pg_catalog .*-c event_triggers=off" <<<"$execs"; then false; fi
+}
+
 @test "installing again forgets the marks of a cluster that may be gone" {
     mkdir -p "$DIR/.walg/spool/done"
     touch "$DIR/.walg/spool/done/000000010000000000000001"

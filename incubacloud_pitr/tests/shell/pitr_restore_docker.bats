@@ -249,6 +249,31 @@ assert_as_before() {
     [[ "$(services)" == *"db "*"odoo "* ]]
 }
 
+@test "commands the restored copy's own settings name do not run in the recovery" {
+    # Settings written into the base copy's postgresql.auto.conf: each
+    # would leave a mark if the recovery's server ran it.
+    sql_admin "ALTER SYSTEM SET recovery_end_command = 'touch /marks/ran-recovery-end'"
+    sql_admin "ALTER SYSTEM SET archive_cleanup_command = 'touch /marks/ran-archive-cleanup'"
+    sql_admin "SELECT pg_reload_conf()" >/dev/null
+    docker compose exec -T db pg_basebackup -U odoo -D - -Ft -X fetch > "$DIR/bases/$BASE.tar"
+    sql "INSERT INTO t VALUES ('4-planted-base')"
+    sleep 2
+    TARGET="$(date -u '+%Y-%m-%d %H:%M:%S')+00"
+    sleep 2
+    sql "INSERT INTO t VALUES ('5-after-target')"
+    sql_admin "SELECT pg_switch_wal()" >/dev/null
+    run start_restore
+    [ "$status" -eq 0 ]
+    run bash "$SCRIPT" restore-wait "$DIR" "$JOB" 240
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"state=done"* ]]
+    wait_db
+    [ "$(rows)" = "1-base,2-before-target,3-after-target,4-planted-base" ]
+    [ ! -e "$DIR/marks/ran-recovery-end" ]
+    [ ! -e "$DIR/marks/ran-archive-cleanup" ]
+}
+
 @test "cancelled while Odoo stops, before anything moved: nothing changed, it runs again" {
     run start_restore
     [ "$status" -eq 0 ]
