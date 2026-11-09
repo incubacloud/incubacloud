@@ -235,7 +235,6 @@ and the deploy reads without them:
 | `/cloud/save_git_provider` | manage settings | Add or edit a provider and its credentials, all or nothing; a credential left out is removed, an empty token keeps the stored one. A new token (not a deploy token) is introspected; a failure there is answered in `warnings`. Audited without values. |
 | `/cloud/delete_git_provider` | manage settings | Refused, with how many, while repository lines use it. |
 | `/cloud/test_git_provider` | manage settings | With a repository URL of the provider: `git` (`ls-remote HEAD`) and `api` (token introspection), each a code (`ok`, `auth`, `tls`, `not_found`, `unreachable`, `private_address`, `timeout`, `redirect`, `no_api`, `no_credential`, …) and its message; kept on the provider. |
-
 | `/cloud/get_git_hooks` | consultant | The panel's GitLab webhooks: provider, scope, path, state (`pending`, `active`, `failing`, `orphan`), whether the panel created it, the last delivery and the last «Verify»; the URL for a manager. A consultant gets only the webhooks of repository lines they can read. |
 | `/cloud/register_git_hook` | write on the line | `{line_model, line_id, scope}`: creates or reuses the webhook of a GitLab line's path (`ON CONFLICT`) and registers it in GitLab, adopting the panel's own, on a READ COMMITTED cursor with the row held `FOR NO KEY UPDATE` meanwhile, so two at once leave one webhook; `{manual: true, reason}` when it must be set up by hand. `scope='group'` is for managers. |
 | `/cloud/reveal_git_hook_secret` | manager | URL and secret to paste in GitLab; `rotate=true` makes a new secret and rewrites GitLab's webhook with URL and token together, with the row held as when registering; the panel keeps the new secret only once GitLab took it, and after an unclear answer gives GitLab the kept one back (best effort). Audited. |
@@ -243,8 +242,9 @@ and the deploy reads without them:
 | `/cloud/delete_git_hook` | manager | Deletes the webhook in GitLab (when it is the panel's; a 404 is done) and in the panel. With no credential that may delete it in GitLab, or one GitLab refuses (401, 403), it is deleted in the panel only and `warning` says so. Its `gitlab_hook_failing` alert is resolved. |
 | `/cloud/reprocess_git_event` | manager | Dispatches again a GitLab delivery whose dispatch failed. |
 
-`/cloud/get_config` answers `features.git_providers = {network}`: `any` in the
-core, `public` in a tenant's panel.
+`/cloud/get_config` answers `features.git_providers = {network}`: `any` by
+default, or `public` when a module that extends the panel limits it to Git
+servers on a public address.
 
 ## Terminal
 
