@@ -51,6 +51,11 @@ paths = [
     # Test of the agents' issuer key cache: a made-up, unsigned JWT
     # whose header names a key id. No real token.
     '''incubacloud_mcp/tests/test_jwks_cache\.py''',
+    # Tests of the Git providers (GitLab): made-up access tokens of the
+    # shapes GitLab issues, so the credential forms, their introspection
+    # and the masking of saved tokens are exercised. No real token.
+    '''incubacloud/tests/test_git_provider\.py''',
+    '''incubacloud/tests/test_git_provider_routes\.py''',
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',
