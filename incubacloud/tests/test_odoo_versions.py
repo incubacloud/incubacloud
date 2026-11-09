@@ -10,11 +10,11 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
+from odoo import http as odoo_http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user
 
-from odoo import http as odoo_http
 from odoo.addons.incubacloud.controllers._data_load import (
     _routes_crud,
     _routes_github,
@@ -972,13 +972,17 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
     def test_a_repository_on_17_is_refused_naming_both(self):
         """A manager importing an Odoo.sh repository of 17.0, which the
         panel does not offer, is told so and gets no project."""
-        answer = self._import_from_github(self.env(user=self.manager), "17.0", "odoosh-17")
+        answer = self._import_from_github(
+            self.env(user=self.manager), "17.0", "odoosh-17"
+        )
         self.assertEqual(answer, self._refusal("17.0"))
         self._assert_nothing_created("odoosh-17")
 
     def test_a_repository_that_names_no_series_is_refused(self):
         """Not given the default: nothing says its code runs on it."""
-        answer = self._import_from_github(self.env(user=self.manager), "", "odoosh-none")
+        answer = self._import_from_github(
+            self.env(user=self.manager), "", "odoosh-none"
+        )
         self.assertFalse(answer["ok"])
         self.assertTrue(answer["error"].startswith(
             "Could not tell which Odoo series this repository is for.",
@@ -992,7 +996,9 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
     def test_a_repository_of_an_offered_series_takes_it(self):
         """A manager, not an administrator, imports a repository of 19.0:
         project and production instance are made on it."""
-        answer = self._import_from_github(self.env(user=self.manager), "19.0", "odoosh-19")
+        answer = self._import_from_github(
+            self.env(user=self.manager), "19.0", "odoosh-19"
+        )
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
         instance = self.env["cloud.instance"].browse(answer["instance_id"])
@@ -1073,7 +1079,8 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
     def test_a_host_s_instance_on_16_is_refused_naming_both(self):
         """A manager importing a host's instance whose answers say 16.0."""
         answer = self._import_from_host(
-            self.env(user=self.manager), "odoo_version: 16.0\nproject_name: Host on 16\n",
+            self.env(user=self.manager),
+            "odoo_version: 16.0\nproject_name: Host on 16\n",
             "/srv/on16", self._REPOS_YAML,
         )
         self.assertEqual(answer, self._refusal("16.0"))
