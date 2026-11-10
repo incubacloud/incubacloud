@@ -108,8 +108,7 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   arguments up to 1,500 characters; past that it says where it cuts and how many
   characters follow, and the chat shows them all, masked, under **All arguments**
   (`message.card_arguments`, from `assistant.tools._full_arguments`): the approval
-  covers every argument, and a long `odoo_conf` used to hide a pip requirement after
-  it.
+  covers every argument.
 - **`tainted`.** After a tool marked `untrusted` (logs, repository files, mail, command
   output), `compare_config` or the end of a job, `conversation.tainted` is set; every
   change then asks until the person writes a message while nothing runs — also the
