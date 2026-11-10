@@ -773,6 +773,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_security_mixin.py:0
+msgid ""
+"A new record can only create its %(field)s: those that already exist cannot "
+"be added to it, changed or removed."
+msgstr ""
+"Un registro nuevo solo puede crear sus propios %(field)s: los que ya existen "
+"no se pueden añadir a él, cambiar ni quitar."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_alert.py:0
 msgid "A policy must confirm after at least one sighting."
 msgstr "Una política debe confirmar tras al menos una observación."

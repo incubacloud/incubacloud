@@ -2279,6 +2279,9 @@ class CloudHost(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_manage_hosts()
+        # Created as the system below: what the x2many fields send can
+        # only be the new host's own rows.
+        self._check_new_record_x2many(vals_list)
         for vals in vals_list:
             self.browse()._check_password_login(vals)
             for field in self._PASSWORD_FIELDS:
