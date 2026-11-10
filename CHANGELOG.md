@@ -149,6 +149,13 @@ server keeps one tree of each commit of Odoo its instances are on, about
 - **Order a VPS** says how the panel's catalog recommends a size for a number
   of people, and offers the managed backup storage when no backup destination
   exists yet.
+- *From zero to Odoo* says the figures are a ceiling that the vCPUs lower,
+  that above about 15 users an instance's **Resources** and `workers` are to be
+  raised, and to type a passphrase of one's own on the managed backup storage
+  before the first deploy, since the generated one is never shown. *Migrate
+  from another host* says to switch off the scheduled actions and the outgoing
+  and incoming mail servers right after the test restore, before two Odoos send
+  the same mail.
 
 ### Changed
 

@@ -54,8 +54,8 @@ If the panel has no backup destination yet, **Set up managed backups next** is
 ticked under the size: a production instance cannot be deployed without one.
 Once the server is ordered, the next window offers the
 [managed backup storage](../backups/index.md#managed-backup-storage) with each
-tier's price. Ordering one makes it the panel's default destination; nothing is
-charged unless you confirm it there, and you can close it to skip it.
+tier's price, and none chosen. Choose one and confirm it to order it, and it
+becomes the panel's default destination; **Skip** orders nothing.
 
 Provisioning takes a couple of minutes end to end:
 
