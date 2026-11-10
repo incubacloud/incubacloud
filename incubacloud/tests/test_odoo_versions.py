@@ -981,14 +981,14 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
             [("project_id.name", "=", name)],
         ))
 
-    def test_a_repository_on_17_is_refused_naming_both(self):
-        """A manager importing an Odoo.sh repository of 17.0, which the
+    def test_a_repository_on_15_is_refused_naming_both(self):
+        """A manager importing an Odoo.sh repository of 15.0, which the
         panel does not offer, is told so and gets no project."""
         answer = self._import_from_github(
-            self.env(user=self.manager), "17.0", "odoosh-17"
+            self.env(user=self.manager), "15.0", "odoosh-15"
         )
-        self.assertEqual(answer, self._refusal("17.0"))
-        self._assert_nothing_created("odoosh-17")
+        self.assertEqual(answer, self._refusal("15.0"))
+        self._assert_nothing_created("odoosh-15")
 
     def test_a_repository_that_names_no_series_is_refused(self):
         """Not given the default: nothing says its code runs on it."""
@@ -1026,11 +1026,11 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
                    "incubacloud.group_cloud_manager",
         )
         answer = self._import_from_github(
-            self.env(user=admin), "17.0", "odoosh-17-admin",
+            self.env(user=admin), "15.0", "odoosh-15-admin",
         )
         self.assertTrue(answer["ok"], answer)
         project = self.env["cloud.project"].browse(answer["project_id"])
-        self.assertEqual(project.odoo_version, "17.0")
+        self.assertEqual(project.odoo_version, "15.0")
 
     def test_a_series_without_a_card_is_refused_even_to_an_administrator(self):
         """7.0 has no card, so no panel deploys it: the administrator's
@@ -1050,15 +1050,15 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         self._assert_nothing_created("Host on 7")
 
     def test_a_doodba_repository_is_inspected_and_refused_end_to_end(self):
-        """From the served tree to the route: the answers' 17.0 is read
+        """From the served tree to the route: the answers' 15.0 is read
         and refused for a manager, with the repository line it would
         have made; an administrator's 7.0, too."""
         manager = self.env(user=self.manager)
         answer = self._import_from_doodba(
-            manager, "odoo_version: '17.0'\nproject_name: Doodba 17\n", "doodba17",
+            manager, "odoo_version: '15.0'\nproject_name: Doodba 15\n", "doodba15",
         )
-        self.assertEqual(answer, self._refusal("17.0"))
-        self._assert_nothing_created("Doodba 17")
+        self.assertEqual(answer, self._refusal("15.0"))
+        self._assert_nothing_created("Doodba 15")
         answer = self._import_from_doodba(
             self.env, "odoo_version: '7.0'\nproject_name: Doodba 7\n", "doodba7",
         )
@@ -1088,15 +1088,15 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
             project.repo_ids.mapped("url"), ["https://github.com/acme/addons.git"],
         )
 
-    def test_a_host_s_instance_on_16_is_refused_naming_both(self):
-        """A manager importing a host's instance whose answers say 16.0."""
+    def test_a_host_s_instance_on_14_is_refused_naming_both(self):
+        """A manager importing a host's instance whose answers say 14.0."""
         answer = self._import_from_host(
             self.env(user=self.manager),
-            "odoo_version: 16.0\nproject_name: Host on 16\n",
-            "/srv/on16", self._REPOS_YAML,
+            "odoo_version: 14.0\nproject_name: Host on 14\n",
+            "/srv/on14", self._REPOS_YAML,
         )
-        self.assertEqual(answer, self._refusal("16.0"))
-        self._assert_nothing_created("Host on 16")
+        self.assertEqual(answer, self._refusal("14.0"))
+        self._assert_nothing_created("Host on 14")
 
     def test_a_host_s_instance_that_names_no_series_is_refused(self):
         """Outside a project: inside one it takes the project's
@@ -1118,12 +1118,12 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
         is one the panel does not offer (an administrator made it), a
         manager's import is refused, not given an instance on it."""
         project = self.env["cloud.project"].create(
-            {"name": "Held on 17", "odoo_version": "17.0"},
+            {"name": "Held on 15", "odoo_version": "15.0"},
         )
         answer = self._import_from_host(
-            self.env(user=self.manager), "project_name: Held on 17\n", "/srv/held17",
+            self.env(user=self.manager), "project_name: Held on 15\n", "/srv/held15",
         )
-        self.assertEqual(answer, self._refusal("17.0"))
+        self.assertEqual(answer, self._refusal("15.0"))
         self.assertFalse(project.instance_ids)
 
     def test_a_series_that_reads_as_none_is_said(self):
