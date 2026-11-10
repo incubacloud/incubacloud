@@ -133,6 +133,25 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
             ("own.example.com", "pypi.org", tag),
         )
 
+    def test_a_tuple_of_commands_is_read_as_its_commands(self):
+        """As a list of them: rows created and tags picked, rows that
+        exist refused."""
+        env = self.env(user=self.consultant)
+        tag = self.env["cloud.instance.tag"].create({"name": "Tuple"})
+        inst = self._create(
+            env, "tuple",
+            domain_ids=((0, 0, {"hostname": "tuple.example.com"}),),
+            tag_ids=((4, tag.id),),
+        )
+        self.assertEqual(
+            (inst.domain_ids.hostname, inst.tag_ids),
+            ("tuple.example.com", tag),
+        )
+        with self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                self.env.cr.savepoint():
+            self._create(env, "refused", domain_ids=((4, self.domain.id),))
+        self._rows_as_they_were()
+
     def test_a_consultant_cannot_create_an_alert_with_it(self):
         """Nor can they create one at all."""
         with self.assertRaises(AccessError), self.env.cr.savepoint():
