@@ -2581,21 +2581,6 @@ msgid "An auto-approval rule cannot be changed."
 msgstr "Una regla de aprobación automática no se puede modificar."
 
 #. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
-msgid ""
-"An auto-approval rule lets one credential of one person act without asking until\n"
-"            a date: an API key, an OAuth client or the panel's assistant. Every other agent\n"
-"            keeps asking. Each action run this way is marked auto-approved in the audit log\n"
-"            and on its jobs."
-msgstr ""
-"Una regla de aprobación automática permite que una credencial de una persona"
-" actúe sin preguntar hasta una fecha: una clave de API, un cliente OAuth o "
-"el asistente del panel. Los demás agentes siguen preguntando. Cada acción "
-"ejecutada así queda marcada como aprobada automáticamente en el registro de "
-"auditoría y en sus trabajos."
-
-#. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__approval
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__approval
 msgid "Approval"
@@ -3408,3 +3393,18 @@ msgid ""
 msgstr ""
 "Sin caducidad, %(credential)s de %(person)s ejecuta sin preguntar toda "
 "acción que esperaría una aprobación, hasta que alguien revoque la regla."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"An auto-approval rule lets one credential of one person act without asking until\n"
+"            a date, or with no end date: an API key, an OAuth client or the panel's assistant. Every other agent\n"
+"            keeps asking. Each action run this way is marked auto-approved in the audit log\n"
+"            and on its jobs."
+msgstr ""
+"Una regla de aprobación automática permite que una credencial de una persona"
+" actúe sin preguntar hasta una fecha, o sin caducidad: una clave de API, un "
+"cliente OAuth o el asistente del panel. Los demás agentes siguen "
+"preguntando. Cada acción ejecutada así queda marcada como aprobada "
+"automáticamente en el registro de auditoría y en sus trabajos."
