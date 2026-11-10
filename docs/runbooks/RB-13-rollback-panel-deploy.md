@@ -61,7 +61,7 @@ in Settings → Technical → Scheduled Actions.
 
 The restore loses whatever was written after step 5. Once customers have
 written to the new release (a payment, a signup), go back in place
-instead: [RB-30](RB-30-roll-back-a-release.md).
+instead: run the previous release's code over the current database.
 
 ## 4. Aftermath
 

@@ -15,9 +15,10 @@ clock starts when we become aware of the breach, not when it happened.
 Stop it first, before anything is measured:
 
 - A leaked secret: rotate it ([RB-01](RB-01-rotate-secret-key.md) for
-  `INCUBACLOUD_SECRET_KEY`, [RB-22](RB-22-rotate-smtp-relay-credential.md)
-  for the SMTP relay, [RB-10](RB-10-github-app-rate-limited.md) for the
-  GitHub App), and revoke the tokens and sessions that used it.
+  `INCUBACLOUD_SECRET_KEY`, [RB-10](RB-10-github-app-rate-limited.md) for
+  the GitHub App, the SMTP relay's password wherever the relay and the
+  instances that send through it hold it), and revoke the tokens and
+  sessions that used it.
 - An intruder on a host: take it off the network from the provider's
   console, keep the disk; do not delete anything that is evidence.
 - A tenant whose panel is the way in: suspend it
