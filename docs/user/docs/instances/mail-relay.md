@@ -97,21 +97,24 @@ The password you had is kept: switching back to **Password** finds it.
 
 Under the relay's fields, **Send test mail** sends one mail to your own address
 through the relay, and the job says whether your provider's server took it, with
-its answer. It is available once the instance is deployed and its changes are
-applied, five times an hour. A mail that did not leave is removed from the
-relay's queue; one that did also sends at once the mail that was waiting.
+its answer. It is available once the instance is deployed, running and its
+changes are applied, five times an hour. A mail that did not leave is removed
+from the relay's queue; one that did also sends at once the mail that was
+waiting. When the server only defers the mail for a reason the panel does not
+recognise, the job gives no verdict and the regular checks decide.
 
 ## When the relay does not deliver
 
 The panel checks every production relay every few minutes. When it cannot hand
-mail to your provider's server for two checks in a row, it raises a critical
+mail to your provider's server for two checks in a row, counting only mail the
+relay has already tried again, it raises a critical
 alert, **smtp_relay_failing**, with the cause and what to do. Mail is not lost
 meanwhile: it waits in the relay's queue for up to 5 days and is sent as soon
 as the relay can; after that it goes back to its sender. A server refusing one
 recipient (a full or unknown mailbox) is not a relay failure and raises nothing.
 
 The alert closes only when mail goes out again: a test mail that was sent, or
-any mail the relay delivers after the alert.
+any mail the relay delivers after the last failure the panel saw.
 
 | What the alert says | What to do |
 |---|---|
@@ -124,6 +127,7 @@ any mail the relay delivers after the alert.
 | Microsoft no longer takes passwords | Switch the relay to OAuth2 – Microsoft 365. |
 | The server refuses the connection, does not answer, or does not resolve | Check the SMTP host and port, and that the server's firewall lets the instance's server out on that port. |
 | TLS fails, or the server offers no STARTTLS | Check the port and the encryption. |
+| The relay's content filter (Amavis) does not take the mail | Restart the instance; if it goes on, rebuild it. |
 
 Exchange Online accepts 30 messages a minute and 10,000 recipients a day per
 mailbox; above that it defers the mail, which the relay sends again later.

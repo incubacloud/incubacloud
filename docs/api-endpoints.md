@@ -97,7 +97,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/fetch_log_archive` | view logs | Read one archived day, with an optional fixed-string filter applied on the host. |
 | `/cloud/search_log_archives` | view logs | Which archived days mention a term, with hit counts (bounded sweep on the host). Rate-limited; audited with the term. |
 | `/cloud/instance/<id>/log_archive/<name>` | view logs | Download one archived day, gzipped (HTTP, not JSON-RPC). Rate-limited; audited. |
-| `/cloud/instance_relay_test_mail` | consultant | Enqueue `relay_test_mail`: one mail through a production's relay to the caller's own address. Refused, with the reason `get_instance` answers as `relay_test_refusal`, for a staging, an instance without a relay, one not deployed or with changes to apply; five an hour per instance. |
+| `/cloud/instance_relay_test_mail` | consultant | Enqueue `relay_test_mail`: one mail through a production's relay to the caller's own address. Refused, with the reason `get_instance` answers as `relay_test_refusal`, for a staging, an instance without a relay, one not deployed, stopped or asleep, or with changes to apply; then five an hour per instance (`cloud.instance.send_relay_test_mail` holds the checks and the count). |
 | `/cloud/instance_mailbox` | view logs | List the mail a staging captured instead of sending. Staging only, deployed and running; rate-limited; nothing stored. |
 | `/cloud/instance_mail` | view logs | One captured message, decoded, with its attachments listed but not carried. Rate-limited. |
 | `/cloud/instance_mailbox_clear` | view logs | Empty a staging's captured mailbox. Rate-limited; audited. |
