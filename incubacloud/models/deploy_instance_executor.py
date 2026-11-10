@@ -251,7 +251,7 @@ _REPO_ANSWER_BYTES = 256 * 1024
 
 #: Seconds before the one repetition of a question to GitHub's API about
 #: a repository that failed for any reason but «this token does not read
-#: it» (Fable's I1, 10-nov-2026).
+#: it» (10-nov-2026).
 _REPO_ACCESS_RETRY_SECONDS = 2
 
 
@@ -621,8 +621,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         (:meth:`_ask_github_repo`); any other failure is asked again once
         and then refuses the job: taking it for «nobody reads it» fetched
         a private repository without credentials and failed for another
-        reason, or handed the PAT where the App reads it (Fable's I1,
-        10-nov-2026). Decided per repository, never per owner: an
+        reason, or handed the PAT where the App reads it (10-nov-2026).
+        Decided per repository, never per owner: an
         owner's repositories are not all in one installation. Always
         ``(None, None, None)`` for a URL that is not a github.com
         repository (``is_safe_repo_url`` once ``canonical_repo_url``

@@ -170,7 +170,7 @@ class TestDockerPruneProtectFilter(TransactionCase):
         )
 
     def test_the_helper_image_is_prepared_where_an_instance_fetches(self):
-        """The night before, not the first job (Fable's M9, 10-nov-2026):
+        """The night before, not the first job (10-nov-2026):
         a host with an instance of a series that fetches its repositories
         on the host gets the helper image's name; one with 19.0 only, not
         while 19.0 clones in the image."""
@@ -222,7 +222,7 @@ class TestDockerPruneProtectFilter(TransactionCase):
     def test_lab_the_play_prepares_the_helper_once_and_drops_other_digests(self):
         """With a Docker of the test's: the tag is built with the label
         the prune spares and a cap on its pull, once; the tags of other
-        digests go (Fable's I3)."""
+        digests go."""
         cmd = self._helper_cmd()
         with tempfile.TemporaryDirectory() as tmp:
             calls = Path(tmp, "calls")
@@ -274,7 +274,7 @@ class TestDockerPruneProtectFilter(TransactionCase):
         """An entry a cut removal left without ``head`` goes two hours on;
         an entry in use and a recent one stay; and while a job holds the
         cache's lock shared, the removal waits for the next night
-        (Fable's M3, 10-nov-2026)."""
+        (10-nov-2026)."""
         import fcntl
 
         cmd = self._trees_cmd()

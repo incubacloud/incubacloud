@@ -234,7 +234,7 @@ class TestTheFilesAServerGets(BaseCase):
 
     def test_a_repos_yaml_entry_that_is_not_a_mapping_refuses_the_job(self):
         """An entry a layer leaves empty, or a list, refuses the job rather
-        than fail it with an ``AttributeError`` (Fable's M7, 10-nov-2026)."""
+        than fail it with an ``AttributeError`` (10-nov-2026)."""
         ex = _make_deploy_executor(odoo_version="18.0")
         for text in ("addons:\n", "addons: [a, b]\n", "addons: text\n"):
             with self.subTest(text=text), self.assertRaises(JobRefused) as caught:

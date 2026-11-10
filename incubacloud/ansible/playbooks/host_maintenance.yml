@@ -149,7 +149,7 @@
     # The cache's lock (``.lock``), which a job holds shared while it
     # checks, links or stores a tree, is taken exclusive without waiting:
     # held, nothing goes until the next night. An entry a cut removal left
-    # without its ``head`` goes too, two hours on (Fable's M3, 10-nov-2026).
+    # without its ``head`` goes too, two hours on (10-nov-2026).
     - name: Remove the cached repository trees no instance uses  # noqa: command-instead-of-shell
       ansible.builtin.shell:
         cmd: >-
@@ -168,7 +168,7 @@
     # (``scripts/lib/common.sh``) makes it: prepared here, after the prune,
     # so no job pays its pull, about 730 MB, and with a cap on it; then the
     # tags of other digests go, which the label would keep for ever, about
-    # 2 GB each (Fable's M9 and I3, 10-nov-2026). Only on a host with an
+    # 2 GB each (10-nov-2026). Only on a host with an
     # instance that fetches (``ic_git_helper_image``); never fails the play.
     - name: Prepare the git helper image  # noqa: command-instead-of-shell risky-shell-pipe
       ansible.builtin.shell:
