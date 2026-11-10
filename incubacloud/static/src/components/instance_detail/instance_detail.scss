@@ -1768,6 +1768,14 @@
 // «Auto-rebuild on push» with GitLab lines whose webhook does not deliver.
 .ic-app .rl-th.ic-gitlab-hook-warn { color: var(--rl-amber-text); }
 
+// The relay's server with OAuth2 is Microsoft's: shown, not edited.
+.ic-smtp-note a { color: var(--rl-green-text); text-decoration: underline; }
+// As specific as the Relay rule that paints every row's input.
+.ic-app .rl-frow > input[readonly]:not([type=checkbox]):not([type=radio]) {
+    color: var(--rl-muted);
+    cursor: default;
+}
+
 // The relay's state and its test mail, under the relay's fields.
 .ic-relay-status {
     display: flex;
@@ -1775,6 +1783,7 @@
     align-items: center;
     gap: 6px 12px;
 
+    .rl-v.ok { color: var(--rl-green-text); }
     .rl-v.error { color: var(--rl-red-text); }
 }
 .ic-relay-status-line {

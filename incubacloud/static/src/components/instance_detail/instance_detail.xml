@@ -2517,6 +2517,7 @@
                         <label>Client secret</label>
                         <PasswordInput
             hasValue="state.has_smtp_relay_oauth_client_secret"
+            emptyHint.translate="Paste the Value of a client secret from Entra ID."
             onChange="(val) => this.onPasswordChange('smtp_relay_oauth_client_secret', val)"
           />
                     </div>

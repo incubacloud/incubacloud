@@ -68,8 +68,7 @@ class _RelayOAuthCase(TransactionCase):
             "smtp_relay_oauth_client_id": CLIENT,
             "smtp_relay_oauth_client_secret": SECRET,
             "smtp_relay_user": MAILBOX,
-            **extra,
-        })
+        } | extra)
         return inst
 
     def _executor(self, cls, code, inst=None):

@@ -212,8 +212,9 @@ class TestRelayProbe(_RelayCase):
         self.assertNotIn("relay_delivery", self._commands())
 
     def test_the_command_keeps_addresses_out(self):
-        executor = InstanceHealthExecutor(self._job("instance_health"), self.host)
-        command = executor._relay_delivery_command("~/i", self.inst)
+        command = InstanceHealthExecutor(
+            self._job("instance_health"), self.host,
+        )._relay_delivery_command("~/i", self.inst)
         self.assertIn("postqueue -j", command)
         self.assertIn("relay=smtp.example.com[", command)
         self.assertIn("tail -n 1 | cut -d", command)
