@@ -24,6 +24,11 @@ settings and purging the audit log; sign-in links and backup downloads; writing
 to any branch and to public repositories. For the assistant, also what it would
 show a card for, including changes after it read logs, files or mail.
 
+**Charges are the exception you choose.** Where the panel has actions that
+charge money — orders, purchases, plan changes billed to your account — a rule
+leaves them out unless you tick **Include charges** when you grant it. Without
+it they keep asking, as before; with it they run without asking too.
+
 What stays as it is: the person's role and projects, every check the panel makes
 before it would ask (an action it refuses is still refused), secrets (they never
 reach an agent), and the limits on calls.
@@ -88,8 +93,10 @@ grant, extend or revoke one.
    long: 1, 7, 30 or 90 days, or until a date. Nothing is chosen for you, and
    90 days is the most a rule lasts — the usual rotation period of a
    credential.
-4. Read the notice. It names the person, the credential and the date, and lists
-   the risks above. Tick **I understand, and I take responsibility for what this
+   Where the panel has actions that charge money, **Include charges** is
+   offered too, unticked: leave it so to keep those actions asking.
+4. Read the notice. It names the person, the credential and the date, says
+   whether charges are included, and lists the risks above. Tick **I understand, and I take responsibility for what this
    agent does without asking** and choose **Grant auto-approval**.
 
 The panel keeps who granted it, when, from which address and which version of
@@ -114,8 +121,9 @@ cover the new role.
 ## Where you see it
 
 - **Settings**, **Agents**: every rule, with its person and role, credential,
-  who granted it and when, its date, when it was last used, how many calls it
-  approved, and its state (active, paused, expired or revoked). **Activity**
+  who granted it and when, its date, whether it includes charges (where the
+  panel has actions that charge money), when it was last used, how many calls
+  it approved, and its state (active, paused, expired or revoked). **Activity**
   lists what the rule approved, with its grant and its end.
 - **Connect an agent**: the person a rule covers sees *… acts without asking
   until …*, with **Revoke**.
@@ -127,4 +135,5 @@ cover the new role.
 - **The assistant's chat**: each action shows *ran without asking*, and says so
   when the assistant had read content other people can write.
 - **The agent itself**: its list of tools says which run without asking, and
-  until when.
+  until when; under a rule without charges, those that charge money say they
+  still ask.
