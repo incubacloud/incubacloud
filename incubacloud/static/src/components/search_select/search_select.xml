@@ -5,6 +5,7 @@
         <div class="ic-search-select"
              t-att-class="{
                  'ic-search-select--open':     state.open,
+                 'ic-search-select--up':       state.open and state.upwards,
                  'ic-search-select--disabled': props.disabled,
                  'ic-search-select--loading':  props.loading,
              }">

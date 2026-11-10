@@ -1,7 +1,19 @@
 import { Component, useState, useRef } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 
-import { useAnchoredMenu } from "../../utils/use_anchored_menu";
+import {
+    placeAnchoredMenu,
+    useAnchoredMenu,
+    viewportHeight,
+} from "../../utils/use_anchored_menu";
+
+// List geometry, in px. The cap equals ``.ic-search-select__dropdown``'s
+// ``max-height`` in search_select.scss; a row is an option's 7 px padding
+// twice plus its text line (18 px at 12 px); the chrome is the list's one
+// border, the other side meeting the input.
+const MENU_MAX_HEIGHT = 220;
+const MENU_ROW_HEIGHT = 32;
+const MENU_CHROME_HEIGHT = 1;
 
 /**
  * SearchSelect — generic searchable single-select widget.
@@ -43,13 +55,18 @@ export class SearchSelect extends Component {
     };
 
     setup() {
-        this.state = useState({ input: "", open: false, dropdownStyle: "" });
+        this.state = useState({
+            input: "",
+            open: false,
+            dropdownStyle: "",
+            upwards: false,
+        });
         this.wrapRef = useRef("wrap");
         // The menu is position:fixed, so it must follow the trigger when
         // anything scrolls or the window resizes.
         useAnchoredMenu(() => {
             if (this.state.open) {
-                this.state.dropdownStyle = this._computeDropdownStyle();
+                this._placeDropdown();
             }
         });
     }
@@ -90,18 +107,57 @@ export class SearchSelect extends Component {
 
     // ── Dropdown positioning ───────────────────────────────────────────────
 
-    _computeDropdownStyle() {
+    /** Height of the viewport the fixed list is placed in (a seam for the tests). */
+    _viewportHeight() {
+        return viewportHeight();
+    }
+
+    /**
+     * Height the open list would have, capped like the stylesheet's
+     * ``max-height``: one row per option the search leaves, the empty row
+     * while nothing is typed, the free-text row, or the "No results" row.
+     *
+     * @returns {number} pixels
+     */
+    _menuHeight() {
+        const options = this.filtered.length;
+        const freeText = this.showFreeTextCreate;
+        const rows =
+            options +
+            (this.props.emptyLabel && !this.state.input ? 1 : 0) +
+            (freeText ? 1 : 0) +
+            (!options && !freeText ? 1 : 0);
+        return Math.min(MENU_MAX_HEIGHT, rows * MENU_ROW_HEIGHT + MENU_CHROME_HEIGHT);
+    }
+
+    /**
+     * Place the list against the input, fixed so it escapes overflow
+     * clipping: below it, or above it when it does not fit below and there
+     * is more room there, with its height limited to that side's room
+     * (``placeAnchoredMenu``). ``state.upwards`` turns the joined corners
+     * to the side it opens on.
+     */
+    _placeDropdown() {
         const el = this.wrapRef.el;
-        if (!el) return "";
+        if (!el) {
+            this.state.dropdownStyle = "";
+            return;
+        }
         const r = el.getBoundingClientRect();
-        return `position:fixed;top:${r.bottom}px;left:${r.left}px;width:${r.width}px`;
+        const { upwards, side, maxHeight } = placeAnchoredMenu(r, this._viewportHeight(), {
+            height: this._menuHeight(),
+            maxHeight: MENU_MAX_HEIGHT,
+            gap: 0,
+        });
+        this.state.upwards = upwards;
+        this.state.dropdownStyle = `position:fixed;${side};left:${r.left}px;width:${r.width}px;max-height:${maxHeight}px`;
     }
 
     // ── Events ────────────────────────────────────────────────────────────
 
     onFocus() {
         this.state.input = "";
-        this.state.dropdownStyle = this._computeDropdownStyle();
+        this._placeDropdown();
         this.state.open = true;
         this.props.onOpen?.();
     }
@@ -116,7 +172,7 @@ export class SearchSelect extends Component {
         if (this.props.disabled || this.props.loading) return;
         if (!this.state.open) {
             this.state.input = "";
-            this.state.dropdownStyle = this._computeDropdownStyle();
+            this._placeDropdown();
             this.state.open = true;
             this.props.onOpen?.();
         }
@@ -124,6 +180,8 @@ export class SearchSelect extends Component {
 
     onInput(ev) {
         this.state.input = ev.target.value;
+        // The rows left decide the side the list fits on.
+        this._placeDropdown();
         this.state.open = true;
         if (this.props.allowFreeText) {
             this.props.onChange(ev.target.value);

@@ -2,7 +2,11 @@
 
 import { Component, useState, useRef, onWillUnmount } from "@odoo/owl";
 
-import { useAnchoredMenu } from "../../utils/use_anchored_menu";
+import {
+    placeAnchoredMenu,
+    useAnchoredMenu,
+    viewportHeight,
+} from "../../utils/use_anchored_menu";
 
 // Menu geometry, in px. The cap equals ``.rl-sel__menu``'s ``max-block-size``
 // in relay.scss; a row is an option's 8 px padding twice plus its text line
@@ -12,9 +16,6 @@ const MENU_MAX_HEIGHT = 280;
 const MENU_MIN_HEIGHT = 96;
 const MENU_ROW_HEIGHT = 35.5;
 const MENU_CHROME_HEIGHT = 12;
-// Gap between trigger and menu, and margin kept to the window's edge.
-const MENU_GAP = 4;
-const MENU_EDGE = 8;
 
 /**
  * RlSelect — custom single-select dropdown styled with the Relay design tokens.
@@ -119,7 +120,7 @@ export class RlSelect extends Component {
 
     /** Height of the viewport the fixed menu is placed in (a seam for the tests). */
     _viewportHeight() {
-        return document.documentElement.clientHeight;
+        return viewportHeight();
     }
 
     /**
@@ -137,13 +138,9 @@ export class RlSelect extends Component {
     /**
      * Fixed-position style anchored to the trigger, escaping overflow clipping.
      *
-     * The menu opens below the trigger, as a native select does. When its
-     * height does not fit there and the space above is larger it opens
-     * upwards instead, anchored by ``bottom`` so it grows away from the
-     * trigger whatever its real height. Its ``max-block-size`` is the space
-     * of the chosen side (at least ``MENU_MIN_HEIGHT``, at most the
-     * stylesheet's cap), so a long list scrolls inside the window rather
-     * than leaving it.
+     * Below the trigger, or above it when it does not fit below and there
+     * is more room there, with its height limited to that side's room
+     * (``placeAnchoredMenu``).
      *
      * @returns {string} the inline style, "" while the trigger is not mounted
      */
@@ -153,16 +150,11 @@ export class RlSelect extends Component {
             return "";
         }
         const r = el.getBoundingClientRect();
-        const viewport = this._viewportHeight();
-        const below = viewport - r.bottom - MENU_GAP - MENU_EDGE;
-        const above = r.top - MENU_GAP - MENU_EDGE;
-        const upwards = below < this._menuHeight() && above > below;
-        const maxHeight = Math.round(
-            Math.max(MENU_MIN_HEIGHT, Math.min(MENU_MAX_HEIGHT, upwards ? above : below))
-        );
-        const side = upwards
-            ? `bottom:${Math.round(viewport - r.top + MENU_GAP)}px`
-            : `top:${Math.round(r.bottom + MENU_GAP)}px`;
+        const { side, maxHeight } = placeAnchoredMenu(r, this._viewportHeight(), {
+            height: this._menuHeight(),
+            maxHeight: MENU_MAX_HEIGHT,
+            minHeight: MENU_MIN_HEIGHT,
+        });
         return `position:fixed;${side};left:${r.left}px;min-width:${r.width}px;max-block-size:${maxHeight}px`;
     }
 
