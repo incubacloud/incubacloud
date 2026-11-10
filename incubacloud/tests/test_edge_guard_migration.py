@@ -1,6 +1,6 @@
 """The update to 1.0.214 queues the edge guard on every host already set up.
 
-Never a Full Setup (owner, 7-nov-2026): ``push_edge_guard`` once per active
+Never a Full Setup (7-nov-2026): ``push_edge_guard`` once per active
 host with the panel's proxy, nothing on an archived host or one whose proxy
 the panel never set up, and nothing on a fresh install.
 """

@@ -195,8 +195,7 @@ class CloudGitProvider(models.Model):
         """Return where this panel may connect to a Git provider.
 
         ``'any'`` in the core: a self-hosted panel reaches any GitLab its
-        manager adds, private addresses included (owner's decision,
-        8-nov-2026). ``incubacloud_tenant`` answers ``'public'``.
+        manager adds, private addresses included (8-nov-2026). ``incubacloud_tenant`` answers ``'public'``.
 
         :rtype: str
         """

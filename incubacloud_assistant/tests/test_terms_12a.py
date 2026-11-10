@@ -3,7 +3,7 @@
 «Actions that delete or restore data, incur charges, deploy to production,
 write to an existing branch or change security settings only run after that
 user confirms them in the panel; the AI model cannot confirm them by itself.»
-(terms §12A, approved by the owner on 28-oct-2026). Every change asks except
+(terms §12A, approved on 28-oct-2026). Every change asks except
 ``_UNASKED`` on a staging: none of those may be of these kinds. Changing
 either one means reviewing the other, and this file.
 """

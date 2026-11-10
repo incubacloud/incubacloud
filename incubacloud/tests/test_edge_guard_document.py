@@ -4,7 +4,7 @@ Odoo answers ``/website/info`` to anyone, with the installed apps and the
 version, and with a language in front too. The guard is a router of the
 proxy's own, on ``https`` only, above every instance's router and below
 the exception an instance can turn on and the direct entrypoint's refusal,
-whose only middleware admits no address (owner's decision, 7-nov-2026).
+whose only middleware admits no address (7-nov-2026).
 """
 import ipaddress
 import re

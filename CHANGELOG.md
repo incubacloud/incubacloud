@@ -559,8 +559,7 @@ provisioning, in the same deployment.
 
 ### Changed
 
-- **A series runs with every service of the panel or is not offered** (owner,
-  7-nov-2026). **7.0 is retired**: its click-odoo can neither dump, restore nor
+- **A series runs with every service of the panel or is not offered** (7-nov-2026). **7.0 is retired**: its click-odoo can neither dump, restore nor
   update its database, so its card is gone from `_odoo_versions.py` and no
   picker, field or tool names it. **PostgreSQL 9.6 is gone** too: doodba's
   template renders no backup service for it. **No series runs below

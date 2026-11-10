@@ -88,7 +88,7 @@ _UNASKED = frozenset(
 )
 #: Whether the "tainted" rule (decision 33) covers the agent's own work too:
 #: writing to a branch the user's agent created, and deploying or rebuilding a
-#: staging that deploys from one. True (the owner's choice of 28-oct): after
+#: staging that deploys from one. True (chosen on 28-oct): after
 #: the task read content others write, every change asks, the agent's own
 #: branch included. False would leave that work as the spec's branch rule has
 #: it, without a card. The one line that decides it.
