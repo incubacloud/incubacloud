@@ -111,14 +111,16 @@ export class RepoEditor extends Component {
     }
 
     /**
-     * Whether this line's URL is read-only for the user: a saved line names
-     * another repository only from Project Manager up, as the server checks
-     * (``can_change_repo_url``). Its branch stays editable.
+     * Whether this line's URL is read-only for the user: a saved line, or a
+     * new instance's line that comes from its project (``from_project``),
+     * names another repository only from Project Manager up, as the server
+     * checks (``can_change_repo_url``). Its branch stays editable.
      *
      * @returns {boolean}
      */
     get urlLocked() {
-        return !!this.props.repo.id && !this.env.permissions?.can_change_repo_url;
+        const repo = this.props.repo;
+        return (!!repo.id || !!repo.from_project) && !this.env.permissions?.can_change_repo_url;
     }
 
     /** The URL field's tooltip while it is read-only. */

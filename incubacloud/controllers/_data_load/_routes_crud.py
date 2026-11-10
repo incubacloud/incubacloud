@@ -1805,22 +1805,23 @@ class CrudMixin:
             # skip_apply_requirements: the frontend already merged requirements
             # via _fetchAndMergeRequirements on branch change; re-fetching here
             # would block the request with N synchronous GitHub API calls.
-            Repo = request.env['cloud.instance.repo'].with_context(
+            # The model says which repositories the user may name.
+            instance.with_context(
                 skip_apply_requirements=True,
-            )
-            for seq, repo in enumerate(repos, start=10):
-                if (repo.get('url') or '').strip():
-                    Repo.create({
-                        'instance_id': instance.id,
-                        'sequence': seq,
-                        'url': repo['url'].strip(),
-                        'branch': (
-                            (repo.get('branch') or 'main').strip() or 'main'
-                        ),
-                        'addons': repo.get('addons') or '',
-                        'excludes': repo.get('excludes') or '',
-                        'commit_sha': repo.get('commit_sha') or '',
-                    })
+            )._create_repo_lines([
+                {
+                    'sequence': seq,
+                    'url': repo['url'].strip(),
+                    'branch': (
+                        (repo.get('branch') or 'main').strip() or 'main'
+                    ),
+                    'addons': repo.get('addons') or '',
+                    'excludes': repo.get('excludes') or '',
+                    'commit_sha': repo.get('commit_sha') or '',
+                }
+                for seq, repo in enumerate(repos, start=10)
+                if (repo.get('url') or '').strip()
+            ])
         git_budget = GitReadBudget(request.env, seconds=ADDON_CHECK_SECONDS)
         instance._check_addon_conflicts(
             seconds=ADDON_CHECK_SECONDS, git_budget=git_budget,

@@ -8,10 +8,15 @@ import base64
 from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
+from odoo import http as odoo_http
 from odoo.exceptions import AccessError
 from odoo.http import Request
 
-from odoo.addons.incubacloud.controllers._data_load import _routes_github
+from odoo.addons.incubacloud.controllers._data_load import (
+    _routes_crud,
+    _routes_github,
+)
+from odoo.addons.incubacloud.controllers.data_load import CloudDataLoadController
 from odoo.addons.incubacloud.github.client import GitHubAPIError
 from odoo.addons.incubacloud.tests.test_cloud_security import (
     CloudSecurityBase,
@@ -182,6 +187,206 @@ class TestRepoUrlRole(CloudSecurityBase):
             Security.with_user(self.pm)._get_user_permissions()
             ["can_change_repo_url"],
         )
+
+
+class TestNewInstanceRepoLines(CloudSecurityBase):
+    """A Consultant or a Project Manager creates an instance in a project
+    with repositories: its lines come from the project's (10-nov-2026).
+
+    Below Developer the user cannot create a repository line, so before
+    this the copy of the project's lines refused the instance. Below
+    Project Manager a line names only a repository of the project's; its
+    branch and its modules are the user's.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.consultant = self._create_user(
+            "new_inst_consultant", "group_cloud_consultant",
+        )
+        self.pm = self._create_user(
+            "new_inst_pm", "group_cloud_project_manager",
+        )
+        self.developer = self._create_user(
+            "new_inst_developer", "group_cloud_developer",
+        )
+        self.project = self._create_project(
+            "New instance repos",
+            members=[self.consultant, self.pm, self.developer],
+        )
+        self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True,
+        ).create({
+            "project_id": self.project.id,
+            "url": _MINE,
+            "branch": "main",
+            "addons": "mod_a",
+        })
+        self.host = self.env["cloud.host"].create({
+            "name": "new-inst-host", "ip_address": "192.0.2.91",
+            "user": "ubuntu", "wildcard_domain": "new-inst.example.com",
+        })
+        patcher = patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts",
+            autospec=True,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _create(self, user, name, **vals):
+        """Create a staging of the project as *user*, through the model.
+
+        :rtype: cloud.instance
+        """
+        return self.env["cloud.instance"].with_user(user).with_context(
+            skip_apply_requirements=True,
+        ).create({
+            "name": name, "project_id": self.project.id,
+            "environment": "staging",
+        } | vals)
+
+    def _serve(self, user, **vals):
+        """Call ``/cloud/create_instance`` as *user*, as the panel's form
+        and the MCP's create_instance do.
+
+        :return: what the route answers
+        """
+        env = self.env(user=user)
+        controller = _routes_crud.CrudMixin()
+        controller._sec = lambda: env["cloud.security.mixin"]
+        fake_request = MagicMock(spec=Request)
+        fake_request.env = env
+        with patch.object(_routes_crud, "request", fake_request):
+            return controller.cloud_create_instance(vals={
+                "project_id": self.project.id, "environment": "staging",
+                "host_id": self.host.id,
+            } | vals)
+
+    def test_a_consultant_and_a_project_manager_get_the_project_s_lines(self):
+        """Through the model, with nothing sent for the lines."""
+        for user in (self.consultant, self.pm):
+            with self.subTest(user=user.login):
+                inst = self._create(user, f"model-{user.id}")
+                self.assertEqual(
+                    inst.repo_ids.read(["url", "branch", "addons"]),
+                    [{
+                        "id": inst.repo_ids.id, "url": _MINE,
+                        "branch": "main", "addons": "mod_a",
+                    }],
+                )
+
+    def test_a_consultant_and_a_project_manager_create_it_from_the_form(self):
+        """The form sends the project's lines, a branch changed.
+
+        Below Project Manager the line takes the project's URL; a Project
+        Manager's keeps the spelling sent, made canonical.
+        """
+        for user, url in ((self.consultant, _MINE), (self.pm, _MINE + ".git")):
+            with self.subTest(user=user.login):
+                answer = self._serve(user, name=f"form-{user.id}", repos=[{
+                    "url": "git@github.com:example/mine.git",
+                    "branch": "19.0", "addons": "mod_b",
+                    "from_project": True,
+                }])
+                inst = self.env["cloud.instance"].browse(answer["id"])
+                self.assertEqual(
+                    (inst.repo_ids.url, inst.repo_ids.branch,
+                     inst.repo_ids.addons),
+                    (url, "19.0", "mod_b"),
+                )
+
+    def test_a_consultant_cannot_name_another_repository(self):
+        """In the form or through the model, no instance is left."""
+        with self.assertRaisesRegex(
+            AccessError,
+            "Only a Project Manager or higher can add the repository "
+            "https://github.com/example/private-elsewhere, which is not one "
+            "of the project's.",
+        ), self.env.cr.savepoint():
+            self._serve(
+                self.consultant, name="refused-form",
+                repos=[{"url": _OTHER, "branch": "main"}],
+            )
+        with self.assertRaises(AccessError), self.env.cr.savepoint():
+            self._create(
+                self.consultant, "refused-model",
+                repo_ids=[(0, 0, {"url": _OTHER, "branch": "main"})],
+            )
+        self.assertFalse(self.env["cloud.instance"].search(
+            [("name", "in", ("refused-form", "refused-model"))],
+        ))
+
+    def test_a_consultant_sends_lines_through_the_model(self):
+        """What a saved line lets them change is taken; the rest is not."""
+        inst = self._create(
+            self.consultant, "model-lines",
+            repo_ids=[(0, 0, {
+                "url": _MINE, "branch": "19.0", "excludes": "mod_c",
+                "repo_path": "other-group/private",
+            })],
+        )
+        line = inst.repo_ids.filtered(lambda r: r.branch == "19.0")
+        self.assertEqual(
+            (line.url, line.excludes, line.repo_path),
+            (_MINE, "mod_c", "example/mine"),
+        )
+
+    def test_lines_that_exist_are_not_moved_to_a_new_instance(self):
+        """Linking another instance's line is refused below Developer."""
+        other = self._create_instance(self.project)
+        Instance = self.env["cloud.instance"].with_user(self.consultant)
+        with self.assertRaisesRegex(AccessError, "cannot be moved"), \
+                self.env.cr.savepoint():
+            Instance.with_context(skip_project_repos=True).create({
+                "name": "linked", "project_id": self.project.id,
+                "environment": "staging",
+                "repo_ids": [(4, other.repo_ids.id)],
+            })
+        self.assertEqual(other.repo_ids.instance_id, other)
+
+    def test_a_project_manager_and_a_developer_name_another_repository(self):
+        """They point lines at any repository, as on a saved line."""
+        for user in (self.pm, self.developer):
+            with self.subTest(user=user.login):
+                answer = self._serve(
+                    user, name=f"other-{user.id}",
+                    repos=[{"url": _OTHER, "branch": "main"}],
+                )
+                inst = self.env["cloud.instance"].browse(answer["id"])
+                self.assertEqual(inst.repo_ids.url, _OTHER)
+
+    def test_a_developer_gets_the_project_s_lines(self):
+        """As before."""
+        inst = self._create(self.developer, "developer")
+        self.assertEqual(inst.repo_ids.url, _MINE)
+
+    def test_a_project_manager_imports_a_repository(self):
+        """The import creates the project, its lines and its production."""
+        inspected = {
+            "ok": True,
+            "repo_name": "pm-import",
+            "repo_type": "simple",
+            "repos_data": [{
+                "url": _MINE, "branch": "19.0", "alias": "addons",
+                "addons": "", "requirements": "",
+            }],
+            "copier": {},
+            "pip_deps": "",
+            "apt_deps": "",
+            "odoo_conf": "",
+            "odoo_version": "19.0",
+            "submodules": [],
+        }
+        fake_request = MagicMock(spec=Request)
+        fake_request.env = self.env(user=self.pm)
+        with patch.object(_routes_github, "request", fake_request), \
+                patch.object(odoo_http, "request", fake_request):
+            result = CloudDataLoadController()._create_bounded_github_import(
+                inspected,
+            )
+        self.assertTrue(result["ok"], result)
+        inst = self.env["cloud.instance"].browse(result["instance_id"])
+        self.assertEqual(inst.repo_ids.url, _MINE)
 
 
 class TestRepoReadsByRole(CloudSecurityBase):

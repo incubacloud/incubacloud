@@ -231,6 +231,64 @@ class TestOperateTools(
             (line.url, line.branch), ("https://github.com/acme/addons", "19.0-dev")
         )
 
+    def test_a_consultant_s_agent_creates_an_instance_with_the_project_s_lines(self):
+        """Its lines come from the project's; another repository is refused.
+
+        A Consultant cannot create a repository line, and the copy of the
+        project's lines refused the instance (10-nov-2026).
+        """
+        self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True
+        ).create(
+            {
+                "project_id": self.project.id,
+                "url": "https://github.com/acme/addons",
+                "branch": "19.0",
+            }
+        )
+        vals = {
+            "project_id": self.project.id,
+            "host_id": self.host.id,
+            "environment": "staging",
+        }
+        with patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts", autospec=True
+        ):
+            created = self._payload(
+                self._call_tool(
+                    self.key,
+                    "create_instance",
+                    {"vals": vals | {"name": "agent-copy"}},
+                )
+            )
+            refused = self._call_tool(
+                self.key,
+                "create_instance",
+                {
+                    "vals": vals
+                    | {
+                        "name": "agent-refused",
+                        "repos": [{"url": "https://github.com/acme/elsewhere"}],
+                    }
+                },
+            )
+        instance = self.env["cloud.instance"].browse(created["id"])
+        self.assertEqual(
+            instance.repo_ids.read(["url", "branch"]),
+            [
+                {
+                    "id": instance.repo_ids.id,
+                    "url": "https://github.com/acme/addons",
+                    "branch": "19.0",
+                }
+            ],
+        )
+        self.assertTrue(refused["isError"], refused)
+        self.assertIn("Project Manager", refused["content"][0]["text"])
+        self.assertFalse(
+            self.env["cloud.instance"].search([("name", "=", "agent-refused")])
+        )
+
     def test_tags_are_listed_and_created(self):
         """A tag is created, then listed."""
         created = self._payload(

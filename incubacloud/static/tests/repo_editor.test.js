@@ -373,6 +373,12 @@ describe("RepoEditor — who changes a saved line's URL", () => {
         expect(editor({ can_change_repo_url: false }, { id: false }).urlLocked).toBe(false);
     });
 
+    test("a new instance's line from its project is read-only below Project Manager", () => {
+        const fromProject = { id: null, from_project: true };
+        expect(editor({ can_change_repo_url: false }, fromProject).urlLocked).toBe(true);
+        expect(editor({ can_change_repo_url: true }, fromProject).urlLocked).toBe(false);
+    });
+
     test("leaving a read-only URL keeps the branch and modules", async () => {
         const comp = editor({ can_change_repo_url: false });
         comp.onUrlInput({ target: { value: "https://github.com/acme/private" } });

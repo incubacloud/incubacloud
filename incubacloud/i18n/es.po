@@ -763,6 +763,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"A new instance takes repositories as new lines; lines that already exist "
+"cannot be moved to it."
+msgstr ""
+"Una instancia nueva recibe los repositorios como líneas nuevas; las líneas "
+"que ya existen no se pueden mover a ella."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_alert.py:0
 msgid "A policy must confirm after at least one sighting."
 msgstr "Una política debe confirmar tras al menos una observación."
@@ -10517,6 +10527,16 @@ msgid ""
 msgstr ""
 "Solo un desarrollador o un administrador puede elegir dónde se guardan las "
 "copias de seguridad."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Only a Project Manager or higher can add the repository %s, which is not "
+"one of the project's."
+msgstr ""
+"Solo un Gerente de proyecto o superior puede añadir el repositorio %s, que "
+"no es uno de los del proyecto."
 
 #. module: incubacloud
 #. odoo-python

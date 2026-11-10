@@ -614,8 +614,11 @@ export class InstanceDetail extends JobsMixin(
         this.state.hosts = allHosts.filter(
           (h) => h.status === "compatible" && h.traefik_deployed
         );
+        // ``from_project``: below Project Manager their URL is read-only,
+        // as on a saved line (RepoEditor's ``urlLocked``).
         const repos = (project?.repos || []).map((r) => ({
           id: null,
+          from_project: true,
           url: r.url || "",
           branch: r.branch || "main",
           addons: "",
