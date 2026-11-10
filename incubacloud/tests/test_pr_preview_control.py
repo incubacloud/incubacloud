@@ -26,17 +26,37 @@ from odoo.addons.incubacloud.models.cloud_github_event import (
 
 REPO_URL = 'https://github.com/owner/repo.git'
 REPO_FULL = 'owner/repo'
+FORK_URL = 'https://github.com/someone/repo.git'
+FORK_FULL = 'someone/repo'
+INSTALLATION_ID = 4242
 
 
-def _pr_payload(pr_number, action='opened', branch='feature-x'):
-    """Return the JSON a ``pull_request`` delivery carries."""
+def _pr_payload(
+    pr_number, action='opened', branch='feature-x', *,
+    installation=INSTALLATION_ID, base=(REPO_FULL, REPO_URL),
+    head=(REPO_FULL, REPO_URL),
+):
+    """Return the JSON a ``pull_request`` delivery carries.
+
+    :param int installation: the App installation GitHub sent it for
+    :param tuple base: ``(full_name, clone_url)`` of the repository the
+        pull request is opened on, where the installation lives
+    :param tuple head: ``(full_name, clone_url)`` of the repository its
+        branch comes from; a fork when it differs from *base*
+    """
     return json.dumps({
         'action': action,
+        'installation': {'id': installation},
         'pull_request': {
             'number': pr_number,
-            'head': {'ref': branch, 'repo': {'clone_url': REPO_URL}},
+            'base': {'ref': 'main', 'repo': {
+                'full_name': base[0], 'clone_url': base[1],
+            }},
+            'head': {'ref': branch, 'repo': head and {
+                'full_name': head[0], 'clone_url': head[1],
+            }},
         },
-        'repository': {'full_name': REPO_FULL},
+        'repository': {'full_name': base[0], 'clone_url': base[1]},
     })
 
 
@@ -67,13 +87,32 @@ class _PreviewBase(TransactionCase):
             'url': REPO_URL,
             'branch': 'main',
         })
+        # The repository is connected to the project, and the App's
+        # installation is the panel's own.
+        self.env['cloud.project.repo'].with_context(
+            skip_apply_requirements=True,
+        ).create({
+            'project_id': self.project.id,
+            'url': REPO_URL,
+            'branch': 'main',
+        })
+        App = self.env['cloud.github.app']
+        App.search([]).unlink()
+        App.create({
+            'app_id': '12345',
+            'private_key': 'not a key',
+            'installation_id': str(INSTALLATION_ID),
+        })
 
-    def _event(self, pr_number=7, action='opened'):
-        """Create an unprocessed ``pull_request`` event."""
+    def _event(self, pr_number=7, action='opened', **payload):
+        """Create an unprocessed ``pull_request`` event.
+
+        :param payload: passed on to ``_pr_payload``
+        """
         return self.env['cloud.github.event'].create({
             'event_type': 'pull_request',
             'delivery_id': f'pr-preview-{self.id()}-{pr_number}-{action}',
-            'payload': _pr_payload(pr_number, action=action),
+            'payload': _pr_payload(pr_number, action=action, **payload),
         })
 
     def _clone_patch(self, **kwargs):
@@ -136,6 +175,64 @@ class TestPreviewEligibility(_PreviewBase):
         with self._clone_patch(return_value={}) as clone:
             self._event()._process_pull_request_event()
         clone.assert_not_called()
+
+
+class TestPreviewBinding(_PreviewBase):
+    """Only the panel's own installation, on a repository connected to the
+    project, and never from a fork: the App is public, so a valid signature
+    says GitHub sent the event, not that it is about one of ours."""
+
+    def _assert_nothing(self, **payload):
+        """Run an ``opened`` event built with *payload*: nothing is cloned
+        and the event is still marked processed."""
+        with self._clone_patch(return_value={}) as clone:
+            event = self._event(**payload)
+            event._process_pull_request_event()
+        clone.assert_not_called()
+        self.assertTrue(event.processed)
+        self.assertFalse(self._alert(), "ignoring is not a failure")
+
+    def test_another_installation_gets_nothing(self):
+        self._assert_nothing(installation=INSTALLATION_ID + 1)
+
+    def test_an_event_without_installation_gets_nothing(self):
+        self._assert_nothing(installation=None)
+
+    def test_nothing_while_the_panel_has_no_installation(self):
+        self.env['cloud.github.app'].search([]).installation_id = False
+        self._assert_nothing()
+
+    def test_a_repository_not_connected_to_the_project_gets_nothing(self):
+        self.project.repo_ids.unlink()
+        self._assert_nothing()
+
+    def test_a_pull_request_from_a_fork_gets_nothing(self):
+        self._assert_nothing(head=(FORK_FULL, FORK_URL))
+
+    def test_a_fork_whose_head_is_a_followed_repository_gets_nothing(self):
+        """Base on a stranger's repository, head on the one production
+        follows: matching on the head used to clone production."""
+        self._assert_nothing(
+            base=(FORK_FULL, FORK_URL), head=(REPO_FULL, REPO_URL),
+        )
+
+    def test_a_deleted_fork_gets_nothing(self):
+        self._assert_nothing(head=None)
+
+    def test_a_closed_pull_request_of_another_installation_keeps_the_preview(self):
+        preview = self.env['cloud.instance'].create({
+            'name': 'pr-7',
+            'project_id': self.project.id,
+            'environment': 'staging',
+            'pr_number': 7,
+            'pr_repo': REPO_FULL,
+        })
+        event = self._event(
+            action='closed', installation=INSTALLATION_ID + 1,
+        )
+        event._process_pull_request_event()
+        self.assertTrue(preview.exists())
+        self.assertTrue(event.processed)
 
 
 class TestPreviewSwitch(_PreviewBase):

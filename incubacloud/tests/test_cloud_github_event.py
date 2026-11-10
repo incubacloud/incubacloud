@@ -60,11 +60,17 @@ def _push_payload(clone_url, branch, deleted=False, sha='abc1234def5678'):
     })
 
 
+# The panel's own GitHub App installation; a pull request event names it.
+INSTALLATION_ID = 4242
+
+
 def _pr_payload(clone_url, branch, pr_number, action='opened', repo_full='owner/repo'):
     return json.dumps({
         'action': action,
+        'installation': {'id': INSTALLATION_ID},
         'pull_request': {
             'number': pr_number,
+            'base': {'ref': 'main', 'repo': {'clone_url': clone_url}},
             'head': {
                 'ref': branch,
                 'repo': {'clone_url': clone_url},
@@ -104,6 +110,13 @@ class _GitHubEventBase(TransactionCase):
             'branch': self.BRANCH,
         })
         self.Event = self.env['cloud.github.event']
+        App = self.env['cloud.github.app']
+        App.search([]).unlink()
+        App.create({
+            'app_id': '12345',
+            'private_key': 'not a key',
+            'installation_id': str(INSTALLATION_ID),
+        })
 
     def _push_event(self, payload):
         return self.Event.create({
@@ -443,6 +456,7 @@ class TestProcessPREventGuards(_GitHubEventBase):
                 'head': {'ref': 'feat/branch', 'repo': {'clone_url': self.REPO_URL}},
             },
             'repository': {'full_name': 'owner/repo'},
+            'installation': {'id': INSTALLATION_ID},
         })
         ev = self._pr_event(payload)
         ev._process_pull_request_event()
@@ -456,6 +470,7 @@ class TestProcessPREventGuards(_GitHubEventBase):
                 'head': {'ref': '', 'repo': {'clone_url': self.REPO_URL}},
             },
             'repository': {'full_name': 'owner/repo'},
+            'installation': {'id': INSTALLATION_ID},
         })
         ev = self._pr_event(payload)
         ev._process_pull_request_event()
@@ -469,6 +484,7 @@ class TestProcessPREventGuards(_GitHubEventBase):
                 'head': {'ref': 'feat/x', 'repo': {'clone_url': ''}},
             },
             'repository': {'full_name': 'owner/repo'},
+            'installation': {'id': INSTALLATION_ID},
         })
         ev = self._pr_event(payload)
         ev._process_pull_request_event()
@@ -525,12 +541,14 @@ class TestProcessPREventGuards(_GitHubEventBase):
             'action': 'synchronize',
             'pull_request': {
                 'number': 7,
+                'base': {'ref': 'main', 'repo': {'clone_url': self.REPO_URL}},
                 'head': {
                     'ref': new_head,
                     'repo': {'clone_url': self.REPO_URL},
                 },
             },
             'repository': {'full_name': 'owner/repo'},
+            'installation': {'id': INSTALLATION_ID},
         })
         calls, mock = self._enqueue_calls()
         with mock:
@@ -555,12 +573,14 @@ class TestProcessPREventGuards(_GitHubEventBase):
             'action': 'closed',
             'pull_request': {
                 'number': 55,
+                'base': {'ref': 'main', 'repo': {'clone_url': self.REPO_URL}},
                 'head': {
                     'ref': 'feat/pr',
                     'repo': {'clone_url': self.REPO_URL},
                 },
             },
             'repository': {'full_name': 'owner/repo'},
+            'installation': {'id': INSTALLATION_ID},
         })
         ev = self._pr_event(payload)
         ev._process_pull_request_event()

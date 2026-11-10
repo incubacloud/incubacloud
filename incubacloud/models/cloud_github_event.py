@@ -462,11 +462,17 @@ class CloudGitHubEvent(models.Model):
         pr        = payload.get('pull_request', {})
         pr_number = pr.get('number')
         head_ref  = pr.get('head', {}).get('ref')
-        clone_url = pr.get('head', {}).get('repo', {}).get('clone_url', '')
+        # The base is the repository the pull request is opened on, where
+        # the installation lives; the head is where its branch comes from.
+        # A deleted fork leaves the head's repository empty.
+        base_url  = ((pr.get('base') or {}).get('repo') or {}).get('clone_url')
+        head_url  = ((pr.get('head') or {}).get('repo') or {}).get('clone_url')
         repo_full = payload.get('repository', {}).get('full_name', '')
-        repo_norm = _normalize_url(clone_url)
+        repo_norm = _normalize_url(base_url or '')
+        from_fork = _normalize_url(head_url or '') != repo_norm
 
-        if not pr_number or not head_ref or not repo_norm:
+        if not (pr_number and head_ref and repo_norm
+                and self._is_own_pull_request(payload)):
             self.write({'processed': True})
             return
         # Same defense-in-depth rejection as in _process_push_event:
@@ -482,15 +488,7 @@ class CloudGitHubEvent(models.Model):
             return
 
         if action in ('opened', 'reopened'):
-            # Find production instances with this repo configured
-            prod_repos = self.env['cloud.instance.repo'].search([
-                ('commit_sha', 'in', (False, '')),
-                ('instance_id.environment', '=', 'production'),
-                ('instance_id.deployed', '=', True),
-                ('instance_id.project_id.pr_reviews_enabled', '=', True),
-            ]).filtered(lambda r: _normalize_url(r.url) == repo_norm)
-
-            for prod in prod_repos.mapped('instance_id'):
+            for prod in self._pr_preview_sources(repo_norm, from_fork):
                 if not self._pr_preview_allowed(prod):
                     continue
                 exists = self.env['cloud.instance'].search([
@@ -600,6 +598,58 @@ class CloudGitHubEvent(models.Model):
                 )
 
         self.write({'processed': True})
+
+    def _is_own_pull_request(self, payload):
+        """Return whether a ``pull_request`` event is the panel's to act on.
+
+        The App is public: every account that installs it sends its events
+        here, signed with the same secret, so a valid signature says that
+        GitHub sent the event, not that it is about one of the panel's
+        repositories. Only the panel's own installation counts.
+
+        :param dict payload: the decoded webhook body
+        :return: ``True`` when it names the panel's installation
+        """
+        if self.env['cloud.github.app'].sudo()._is_own_installation(payload):
+            return True
+        _logger.info(
+            "GitHub PR #%s on %s comes from installation %s, not this "
+            "panel's: ignored.",
+            (payload.get('pull_request') or {}).get('number'),
+            (payload.get('repository') or {}).get('full_name'),
+            (payload.get('installation') or {}).get('id'),
+        )
+        return False
+
+    def _pr_preview_sources(self, repo_norm, from_fork):
+        """Return the production instances a pull request may preview.
+
+        Those that follow the repository the pull request is opened on,
+        unpinned and deployed, in a project with previews switched on and
+        that repository connected. None for a pull request from a fork: a
+        preview carries a copy of production's data, and a fork's branch
+        is code written by someone without access to the repository.
+
+        :param str repo_norm: the normalised address of the base repository
+        :param bool from_fork: whether the head comes from another repository
+        :return: ``cloud.instance`` recordset
+        """
+        if from_fork:
+            _logger.info(
+                "GitHub PR on %s comes from a fork: no preview.", repo_norm,
+            )
+            return self.env['cloud.instance']
+        return self.env['cloud.instance.repo'].search([
+            ('commit_sha', 'in', (False, '')),
+            ('instance_id.environment', '=', 'production'),
+            ('instance_id.deployed', '=', True),
+            ('instance_id.project_id.pr_reviews_enabled', '=', True),
+        ]).filtered(
+            lambda r: _normalize_url(r.url) == repo_norm and any(
+                _normalize_url(p.url) == repo_norm
+                for p in r.instance_id.project_id.repo_ids
+            )
+        ).mapped('instance_id')
 
     def _report_pr_preview_failure(self, prod, pr_repo, pr_number, reason):
         """Say where people are looking that a preview was not created.
