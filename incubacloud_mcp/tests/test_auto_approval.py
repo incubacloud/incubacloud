@@ -17,7 +17,6 @@ from odoo.tests.common import HttpCase, TransactionCase, new_test_user
 from odoo.addons.incubacloud_mcp.models import mcp_confirm
 from odoo.addons.incubacloud_mcp.models.mcp_auto_approval import (
     _INTERNAL,
-    MAX_DAYS,
     NOTICE_VERSION,
     SEEN_EVERY,
     SEEN_KEPT,
@@ -408,21 +407,16 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
             self._grant(self.dev, "API key #424242")
 
     def test_the_period_is_bounded(self):
-        """More than 90 days, none, zero, or a day not after today: refused;
-        a date ends that day and never past 90 days."""
+        """None, zero, a day not after today, or a period with no end date
+        as well: refused; a date ends that day."""
         for kwargs in (
-            {"days": MAX_DAYS + 1},
             {"days": 0},
             {"days": None},
             {"days": True},
             {"days": None, "expires_on": fields.Date.to_string(fields.Date.today())},
-            {
-                "days": None,
-                "expires_on": fields.Date.to_string(
-                    fields.Date.today() + timedelta(days=MAX_DAYS + 2)
-                ),
-            },
             {"days": None, "expires_on": "not a date"},
+            {"days": 7, "no_expiry": True},
+            {"days": None, "no_expiry": "yes"},
         ):
             with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
                 with self.assertRaises(UserError):
@@ -433,10 +427,51 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
             days=None,
             expires_on=fields.Date.to_string(fields.Date.today() + timedelta(days=3)),
         )
-        self.assertLessEqual(
-            rule.expires_at, fields.Datetime.now() + timedelta(days=MAX_DAYS)
-        )
+        self.assertLessEqual(rule.expires_at, fields.Datetime.now() + timedelta(days=4))
         self.assertGreater(rule.expires_at, fields.Datetime.now() + timedelta(days=2))
+
+    def test_there_is_no_longest_period(self):
+        """More than 90 days, as days or as a date, is granted (10-nov-2026)."""
+        rule = self._grant(self.dev, self.credential, days=400)
+        self.assertGreater(rule.expires_at, fields.Datetime.now() + timedelta(days=399))
+        far = fields.Date.today() + timedelta(days=1000)
+        rule = self._grant(
+            self.dev, self.credential, days=None, expires_on=fields.Date.to_string(far)
+        )
+        self.assertEqual(rule.expires_at.date(), far)
+
+    def test_a_rule_with_no_end_date_stays_active(self):
+        """Granted with no end date it has none, approves every call, and
+        its list, its audit row and the listing say so."""
+        rule = self._grant(self.dev, self.credential, days=None, no_expiry=True)
+        self.assertFalse(rule.expires_at)
+        self.assertEqual(rule._state(), "active")
+        self.assertEqual(rule._format()[0]["expires_at"], "")
+        self.assertTrue(self.Rule._active_for(self.dev.id, self.credential))
+        self.assertTrue(rule._use())
+        self.assertTrue(rule._use())
+        rule.invalidate_recordset()
+        self.assertEqual(rule.use_count, 2)
+        row = self.env["cloud.audit.log"].search(
+            [("approval_rule_id", "=", rule.id)], limit=1
+        )
+        self.assertIn("no end date", row.details)
+        plain, _charging = self._charging()
+        result, marks = self._gate(plain)
+        self.assertIsNone(result)
+        self.assertEqual(marks, [{"approval": "auto", "rule": rule.id}])
+        listed = plain.listed(auto_until=rule._until())["description"]
+        self.assertIn("without asking the user, with no end date.", listed)
+        server = self.env["incubacloud.mcp.server"].with_user(self.dev)
+        self.assertIn("with no end date", server._instructions(self._ctx()))
+
+    def test_a_rule_with_no_end_date_ends_when_revoked(self):
+        """Revoked, the rule without an end date approves nothing more."""
+        rule = self._grant(self.dev, self.credential, days=None, no_expiry=True)
+        rule._revoke("manual")
+        self.assertEqual(rule._state(), "revoked")
+        self.assertFalse(rule._use())
+        self.assertFalse(self.Rule._active_for(self.dev.id, self.credential))
 
     def test_nobody_creates_changes_or_deletes_a_rule_directly(self):
         """create, write and unlink refuse an Administrator, and the date never
@@ -522,8 +557,9 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self.assertFalse(rule._use())
 
     def test_a_deleted_key_marks_its_rule(self):
-        """The vacuum ends the rules of keys that no longer exist."""
-        rule = self._grant(self.dev, self.credential)
+        """The vacuum ends the rules of keys that no longer exist, those with
+        no end date too."""
+        rule = self._grant(self.dev, self.credential, days=None, no_expiry=True)
         self.Rule._gc_deleted_credentials()
         self.assertFalse(rule.revoked_reason)
         self._delete_key(self.credential)

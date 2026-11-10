@@ -11,6 +11,7 @@ import {
     credentialText,
     grantPayload,
     grantReady,
+    noEndChosen,
     ownRuleActive,
     periodEnd,
 } from "./auto_approval_format";
@@ -65,6 +66,15 @@ export function chargesText(rule) {
  */
 export function ownRuleText(rule) {
     const values = { credential: credentialText(rule), date: rule.expires_at };
+    if (!rule.expires_at) {
+        if (ownRuleActive(rule)) {
+            return _t("%(credential)s acts without asking, with no end date.", values);
+        }
+        return _t(
+            "%(credential)s has an auto-approval rule with no end date, paused for now: it asks for approval.",
+            values,
+        );
+    }
     if (ownRuleActive(rule)) {
         return _t("%(credential)s acts without asking until %(date)s UTC.", values);
     }
@@ -72,6 +82,16 @@ export function ownRuleText(rule) {
         "%(credential)s has an auto-approval rule until %(date)s UTC, paused for now: it asks for approval.",
         values,
     );
+}
+
+/**
+ * When a rule ends, as the list of rules says it.
+ *
+ * @param {object} rule a rule as the server lists it
+ * @returns {string} its end (UTC), or "No end date"
+ */
+export function ruleEndText(rule) {
+    return rule?.expires_at || _t("No end date");
 }
 
 /**
@@ -139,6 +159,7 @@ export class McpAutoApproval extends Component {
         this.canRevoke = canRevoke;
         this.approvalText = approvalText;
         this.chargesText = chargesText;
+        this.ruleEndText = ruleEndText;
         onWillStart(() => this.load());
     }
 
@@ -178,6 +199,11 @@ export class McpAutoApproval extends Component {
         return periodEnd(this.state.grant?.form);
     }
 
+    /** Whether the rule chosen has no end date. */
+    get noEnd() {
+        return noEndChosen(this.state.grant?.form);
+    }
+
     /**
      * The notice's first sentence, with what was chosen; placeholders
      * until it is.
@@ -185,13 +211,20 @@ export class McpAutoApproval extends Component {
     get noticeLead() {
         const user = this.chosenUser;
         const credential = this.chosenCredential;
+        const values = {
+            date: this.endDay || _t("the date you choose"),
+            credential: credential ? credentialChoiceText(credential) : _t("the credential"),
+            person: user?.name || _t("the person"),
+        };
+        if (this.noEnd) {
+            return _t(
+                "With no end date, %(credential)s of %(person)s runs every action that would wait for an approval, without asking, until someone revokes the rule.",
+                values,
+            );
+        }
         return _t(
             "Until %(date)s, %(credential)s of %(person)s runs every action that would wait for an approval, without asking.",
-            {
-                date: this.endDay || _t("the date you choose"),
-                credential: credential ? credentialChoiceText(credential) : _t("the credential"),
-                person: user?.name || _t("the person"),
-            },
+            values,
         );
     }
 
@@ -221,12 +254,6 @@ export class McpAutoApproval extends Component {
             "Whoever holds it acts as %(person)s, without asking, until the rule ends. Revoke the rule and the credential.",
             { person: this.chosenUser?.name || _t("the person") },
         );
-    }
-
-    /** The latest day the date picker offers. */
-    get maxDay() {
-        const days = this.state.data?.max_days || 90;
-        return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
     }
 
     /** The earliest day the date picker offers: tomorrow. */
