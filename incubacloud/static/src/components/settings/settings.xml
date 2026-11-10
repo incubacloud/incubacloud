@@ -378,8 +378,8 @@
                                 <div class="rl-set-hintbox">
                                     <i class="fa fa-info-circle"/>
                                     After installing, come back here and click
-                                    <strong>Check installation</strong>. The Installation ID
-                                    is auto-detected from the webhook.
+                                    <strong>Check installation</strong>. The panel asks
+                                    GitHub for it and names the account it is installed on.
                                 </div>
                                 <div class="rl-set-actions">
                                     <button class="rl-btn rl-btn-primary"
@@ -391,6 +391,10 @@
                                         ↻ Check installation
                                     </button>
                                 </div>
+                                <t t-if="state.ghActionMsg">
+                                    <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.ghActionMsg.type"
+                                       t-esc="state.ghActionMsg.message"/>
+                                </t>
                                 <t t-if="!state.installUrl">
                                     <p class="rl-set-hint">
                                         No install URL available — go to

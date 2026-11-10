@@ -41,6 +41,7 @@ from ...models._repo_requirements import (
     resolve_git_source,
     resolve_repo_ref,
 )
+from ...models.cloud_github_event import GITHUB_APP_REVOKED_CODE
 from ...models.cloud_repo_mixin import (
     _url_host,
     may_read_with_panel_credentials,
@@ -385,7 +386,13 @@ class GitHubMixin:
 
     @http.route(['/cloud/detect_github_installation'], type='json', auth='user')
     def cloud_detect_github_installation(self):
-        """List active installations via JWT and auto-update installation_id if exactly one."""
+        """List the active installations via JWT; take the only one if there is one.
+
+        The manager's way to take an installation the webhook did not (one
+        on an account other than the App's owner): the answer names the
+        account. Taking one closes the alert a deleted or suspended
+        installation raised.
+        """
         self._sec()._check_can_manage_settings()
         try:
             svc = request.env['cloud.github.credential.service'].sudo()
@@ -406,6 +413,9 @@ class GitHubMixin:
             app = request.env['cloud.github.app'].sudo().search([], limit=1)
             if app:
                 app.write({'installation_id': inst_id})
+                request.env['cloud.alert'].sudo().resolve_alert(
+                    GITHUB_APP_REVOKED_CODE,
+                )
             return {
                 'ok': True,
                 'installation_id': inst_id,

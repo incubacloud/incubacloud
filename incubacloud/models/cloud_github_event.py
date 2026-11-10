@@ -336,7 +336,8 @@ class CloudGitHubEvent(models.Model):
         """Handle an ``installation`` webhook and mark the event processed.
 
         ``created`` auto-detects the installation id (the original reason
-        this event type was subscribed).
+        this event type was subscribed), when the installation is on the
+        account that owns the App (``_process_installation_event``).
 
         ``deleted`` and ``suspend`` are the ones that used to pass
         unnoticed: from that moment every GitHub API call 401s, the client
@@ -345,7 +346,8 @@ class CloudGitHubEvent(models.Model):
         anywhere in the panel to explain why. Raise a critical alert so the
         silence becomes visible. ``unsuspend`` clears it, as does a fresh
         ``created`` after a reinstall: ``deleted`` forgets the installation
-        id so that the reinstall's is the one taken.
+        id so that the reinstall's is the one taken, by the webhook on the
+        App owner's account or by a manager's Check installation.
 
         Only the panel's own installation counts. The App is public, so a
         stranger may install, suspend or delete it on their account, and

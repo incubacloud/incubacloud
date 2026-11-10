@@ -448,11 +448,11 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
-". The Installation ID\n"
-"                                    is auto-detected from the webhook."
+". The panel asks\n"
+"                                    GitHub for it and names the account it is installed on."
 msgstr ""
-". El ID de instalación\n"
-"                                    se detecta automáticamente desde el webhook."
+". El panel consulta a GitHub\n"
+"                                    la instalación y nombra la cuenta en la que está."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1436,6 +1436,11 @@ msgstr "ID de aplicación"
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "App ID is required."
 msgstr "El ID de la aplicación es requerido."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__owner_login
+msgid "App Owner"
+msgstr "Propietario de la App"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__slug
@@ -6221,6 +6226,17 @@ msgid "GitHub Webhook Events"
 msgstr "Eventos webhook de GitHub"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_github_app__owner_login
+msgid ""
+"GitHub account that owns the App, as the manifest flow answered it. The App "
+"is public: only an installation on this account is taken from the webhook by"
+" itself."
+msgstr ""
+"Cuenta de GitHub propietaria de la App, tal como la devolvió el flujo del "
+"manifiesto. La App es pública: el webhook solo toma por sí mismo una "
+"instalación en esta cuenta."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_github_event.py:0
 msgid ""
@@ -7184,12 +7200,15 @@ msgstr "ID"
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_app__installation_id
 msgid ""
 "ID of the GitHub App installation on your organisation or account. Found "
-"under Settings → GitHub Apps → Configure → URL parameter. Auto-detected from"
-" the first installation webhook if left empty."
+"under Settings → GitHub Apps → Configure → URL parameter. Taken from the "
+"installation webhook only when the account that owns the App installs it; "
+"otherwise a manager chooses it with Check installation."
 msgstr ""
 "ID de la instalación de la App de GitHub en su organización o cuenta. Se "
 "encuentra en Settings → GitHub Apps → Configure, como parámetro de la URL. "
-"Si se deja vacío, se detecta solo con el primer webhook de instalación."
+"Se toma del webhook de instalación solo cuando la instala la cuenta "
+"propietaria de la App; si no, un administrador la elige con Verificar "
+"instalación."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_comment_id

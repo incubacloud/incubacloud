@@ -392,8 +392,18 @@ export class Settings extends Component {
         return 3;
     }
 
+    /**
+     * "Check installation": reload, and when the webhook took no
+     * installation, ask GitHub for them. The webhook takes one by itself
+     * only on the account that owns the App (the App is public, anyone may
+     * install it); any other is the manager's to take, here, with its
+     * account named.
+     */
     async refresh() {
         await this.loadConfig();
+        if (!this.state.form.installation_id) {
+            await this.detectInstallation();
+        }
         if (this.state.form.installation_id) {
             this.env.toast?.success(_t("Installation detected! Your GitHub App is now fully connected."));
         } else {

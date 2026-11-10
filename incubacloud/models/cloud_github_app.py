@@ -33,7 +33,9 @@ class CloudGitHubApp(models.Model):
         help=(
             "ID of the GitHub App installation on your organisation or account."
             " Found under Settings → GitHub Apps → Configure → URL parameter."
-            " Auto-detected from the first installation webhook if left empty."
+            " Taken from the installation webhook only when the account that"
+            " owns the App installs it; otherwise a manager chooses it with"
+            " Check installation."
         ),
     )
     private_key = EncryptedText(
@@ -52,6 +54,15 @@ class CloudGitHubApp(models.Model):
         help=(
             "Secret used to validate incoming webhook HMAC-SHA256 signatures."
             " Must match the value configured in the GitHub App webhook settings."
+        ),
+    )
+    owner_login = fields.Char(
+        string="App Owner",
+        readonly=True,
+        help=(
+            "GitHub account that owns the App, as the manifest flow answered"
+            " it. The App is public: only an installation on this account is"
+            " taken from the webhook by itself."
         ),
     )
     slug = fields.Char(
@@ -104,16 +115,32 @@ class CloudGitHubApp(models.Model):
         Called by the webhook controller when it receives an
         ``installation`` event with action ``created``.
 
+        The App is public: GitHub signs the installation of any account
+        with the panel's webhook secret, so a valid signature says nothing
+        about who installed it. Only an installation on the account that
+        owns the App (``owner_login``, kept by the manifest flow) is taken
+        here; any other waits for a manager to choose it with Check
+        installation (``/cloud/detect_github_installation``), which names
+        its account.
+
         Returns ``True`` if the installation_id was updated.
         """
-        installation_id = str(
-            payload.get("installation", {}).get("id", "")
-        )
+        installation = payload.get("installation") or {}
+        installation_id = str(installation.get("id") or "")
         if not installation_id:
             return False
 
         app = self.search([], limit=1)
         if not app:
+            return False
+
+        account = str((installation.get("account") or {}).get("login") or "")
+        if not (app.owner_login and account.lower() == app.owner_login.lower()):
+            _logger.info(
+                "GitHub App installation %s on %r is not on the App owner's "
+                "account: a manager chooses it.",
+                installation_id, account,
+            )
             return False
 
         if not app.installation_id:
