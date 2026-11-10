@@ -105,19 +105,21 @@ _SMTP_HOST_RE = re.compile(
 )
 
 
-def _yaml_text_unsafe(value):
+def _yaml_text_unsafe(value, refused='"\\'):
     """Whether *value* holds a character a one-line YAML scalar cannot.
 
-    A double quote, a backslash, or any Unicode control, format or
-    separator character other than the plain space: YAML reads U+0085,
-    U+2028 and U+2029 as line breaks too.
+    One of *refused*, or any Unicode control, format or separator
+    character other than the plain space: YAML reads U+0085, U+2028 and
+    U+2029 as line breaks too.
 
     :param str value: the text to check.
+    :param str refused: the printable characters refused besides those;
+        a double quote and a backslash by default.
     :returns: True when one such character is in it.
     :rtype: bool
     """
     return any(
-        ch in '"\\'
+        ch in refused
         or (ch != " " and unicodedata.category(ch)[0] in "CZ")
         for ch in value
     )
@@ -4623,16 +4625,11 @@ class CloudInstance(models.Model):
         double-quoted scalars of the compose files: the host is a
         hostname or an IPv4 address, the port a TCP port (0 is "the
         default"), and the user and the admin email one line of text
-        without a double quote or a backslash.
+        without a double quote. The user may hold a backslash, as a
+        Windows ``DOMAIN\\user`` login does: the answers escape it.
 
         :raises ValidationError: when one of them is outside it.
         """
-        # A mapping, not a tuple of pairs: Odoo's extractor would take the
-        # field names of pairs for terms to translate.
-        labels = {
-            "smtp_relay_user": _("SMTP user"),
-            "odoo_admin_email": _("Admin email"),
-        }
         for inst in self:
             host = inst.smtp_relay_host
             if host and (len(host) > 253 or not _SMTP_HOST_RE.fullmatch(host)):
@@ -4646,15 +4643,23 @@ class CloudInstance(models.Model):
                     "SMTP port %(port)s is invalid. Use a port from 1 to 65535.",
                     port=inst.smtp_relay_port,
                 ))
-            for fname, label in labels.items():
-                value = inst[fname]
-                if value and (len(value) > 254 or _yaml_text_unsafe(value)):
-                    raise ValidationError(_(
-                        "%(label)s is invalid. Use one line of at most 254 "
-                        "characters, without double quotes, backslashes, "
-                        "tabs or other control characters.",
-                        label=label,
-                    ))
+            # Not ``user``: ``_()`` reads a local of that name as the uid.
+            relay_user = inst.smtp_relay_user
+            if relay_user and (
+                len(relay_user) > 254 or _yaml_text_unsafe(relay_user, '"')
+            ):
+                raise ValidationError(_(
+                    "SMTP user is invalid. Use one line of at most 254 "
+                    "characters, without double quotes, tabs or other "
+                    "control characters."
+                ))
+            email = inst.odoo_admin_email
+            if email and (len(email) > 254 or _yaml_text_unsafe(email)):
+                raise ValidationError(_(
+                    "Admin email is invalid. Use one line of at most 254 "
+                    "characters, without double quotes, backslashes, tabs "
+                    "or other control characters."
+                ))
 
     @api.constrains("odoo_version")
     def _check_series_may_be_chosen(self):

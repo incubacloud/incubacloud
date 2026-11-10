@@ -247,8 +247,8 @@ class CloudProject(models.Model):
                 for ch in name
             ):
                 raise ValidationError(_(
-                    "A project name cannot contain '{{', '{%', '{#', line "
-                    "breaks or other control characters."
+                    "A project name cannot contain '{{', '{%', '{#' or "
+                    "invisible or control characters."
                 ))
 
     @api.constrains('remote_folder')

@@ -56,7 +56,8 @@ class TestSmtpRelayFieldsSafe(TransactionCase):
                 self.inst.write({"smtp_relay_port": value})
 
     def test_user_and_admin_email_refuse_control_and_quote_characters(self):
-        """Line breaks, control characters, double quotes and backslashes."""
+        """Line breaks, control characters and double quotes; a backslash
+        in the admin email."""
         for field in ("smtp_relay_user", "odoo_admin_email"):
             for value in (
                 'a@b.c"',
@@ -64,13 +65,27 @@ class TestSmtpRelayFieldsSafe(TransactionCase):
                 "a@b.c\rx",
                 "a@b.c\tx",
                 "a@b.c\x1bx",
-                "a@b.c\\",
                 "a@b.c\u2028x",
                 "a@b.c\x85x",
             ):
                 with self.subTest(field=field, value=value), \
                         self.assertRaises(ValidationError):
                     self.inst.write({field: value})
+        with self.assertRaises(ValidationError):
+            self.inst.write({"odoo_admin_email": "a@b.c\\"})
+
+    def test_a_windows_login_is_a_valid_user_and_renders_as_itself(self):
+        """``DOMAIN\\user``: the answers escape the backslash, so the
+        value reads back as itself."""
+        login = "CORP\\mailer"
+        self.inst.write({"smtp_relay_user": login})
+        self.assertEqual(self.inst.smtp_relay_user, login)
+        answers = self.inst._render_copier_answers()
+        self.assertEqual(answers["smtp_relay_user"], "CORP\\\\mailer")
+        for key in ("smtp_relay_user", "smtp_default_from"):
+            with self.subTest(key=key):
+                doc = yaml.safe_load(f'K: "{answers[key]}"\n')
+                self.assertEqual(doc, {"K": login})
 
     def test_answers_escape_a_value_stored_before_the_check(self):
         """A legacy row renders, inside the template's double quotes, as

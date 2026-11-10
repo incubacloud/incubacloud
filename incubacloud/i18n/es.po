@@ -19473,32 +19473,30 @@ msgstr "El puerto SMTP %(port)s no es válido. Use un puerto del 1 al 65535."
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
-msgid "SMTP user"
-msgstr "El usuario SMTP"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_instance.py:0
-msgid "Admin email"
-msgstr "El correo del administrador"
+msgid ""
+"Admin email is invalid. Use one line of at most 254 characters, without "
+"double quotes, backslashes, tabs or other control characters."
+msgstr ""
+"El correo del administrador no es válido. Use una sola línea de 254 "
+"caracteres como máximo, sin comillas dobles, barras invertidas, tabuladores "
+"ni otros caracteres de control."
 
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
-"%(label)s is invalid. Use one line of at most 254 characters, without double"
-" quotes, backslashes, tabs or other control characters."
+"SMTP user is invalid. Use one line of at most 254 characters, without double"
+" quotes, tabs or other control characters."
 msgstr ""
-"%(label)s no es válido. Use una sola línea de 254 caracteres como máximo, "
-"sin comillas dobles, barras invertidas, tabuladores ni otros caracteres de "
-"control."
+"El usuario SMTP no es válido. Use una sola línea de 254 caracteres como "
+"máximo, sin comillas dobles, tabuladores ni otros caracteres de control."
 
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_project.py:0
 msgid ""
-"A project name cannot contain '{{', '{%', '{#', line breaks or other control"
-" characters."
+"A project name cannot contain '{{', '{%', '{#' or invisible or control "
+"characters."
 msgstr ""
-"El nombre de un proyecto no puede contener '{{', '{%', '{#', saltos de línea"
-" ni otros caracteres de control."
+"El nombre de un proyecto no puede contener '{{', '{%', '{#' ni caracteres "
+"invisibles o de control."
