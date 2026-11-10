@@ -51,14 +51,18 @@ _ALLOWED_TOKENS = {
 _ALLOWED_TREES = {
     "images/relay-oauth/": (
         {"tenant"},
-        "Microsoft 365's tenant (its Entra ID directory): the relay's own "
-        "vocabulary, not a customer of anyone's",
+        (
+            "Microsoft 365's tenant (its Entra ID directory): the relay's "
+            "own vocabulary, not a customer of anyone's"
+        ),
     ),
     "docs/user/": (
         {"saas", "tenant", "subdomain"},
-        "the user guide of both editions, the hosted one included, kept in "
-        "core on purpose (10-nov-2026); it says what the hosted service "
-        "offers, never how it is run",
+        (
+            "the user guide of both editions, the hosted one included, kept "
+            "in core on purpose (10-nov-2026); it says what the hosted "
+            "service offers, never how it is run"
+        ),
     ),
     "incubacloud_pitr/": (
         set(_RULES),
