@@ -569,12 +569,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         The App's is the installation's own token, for the panel's calls
         to GitHub's API: what a server is handed for a download is the
-        scoped one (:meth:`_scoped_github_token`).
-
-        :raises JobRefused: when the panel has an installed GitHub App and
-            GitHub did not issue its token
-            (:meth:`_issue_installation_token`): the PAT is not used in
-            its place
+        scoped one (:meth:`_scoped_github_token`). When the panel has an
+        installed App and GitHub does not issue its token
+        (:meth:`_issue_installation_token`), the job goes on without it:
+        a public repository needs none, and :meth:`_github_line_tokens`
+        decides where the PAT may stand in for it.
         """
         svc = self.env["cloud.github.credential.service"]
         app_token = None
@@ -586,18 +585,18 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             pat = svc.get_pat()
         return app_token, pat
 
-    @staticmethod
-    def _issue_installation_token(client):
+    def _issue_installation_token(self, client):
         """Return the App installation's token, asking GitHub twice at most.
 
         A 4xx is GitHub refusing the App and is not asked again; any other
         failure (a 5xx, a timeout, the network) is asked again once after
         ``_REPO_ACCESS_RETRY_SECONDS``, as :meth:`_github_repo_access` does.
+        When GitHub did not issue it, the job's log says why and whether
+        it was a refusal (check the App in Settings) or two failures.
 
         :param GitHubAppClient client: the panel's App
-        :rtype: str
-        :raises JobRefused: when GitHub refused the App (check it in
-            Settings), or failed twice (run the job again)
+        :return: the token, or None when GitHub did not issue it
+        :rtype: str or None
         """
         failure, refused = None, False
         for attempt in (1, 2):
@@ -612,17 +611,20 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 if attempt == 1:
                     time.sleep(_REPO_ACCESS_RETRY_SECONDS)
         if refused:
-            raise JobRefused(
-                "Refused: GitHub refused the GitHub App's installation "
-                f"token ({failure}). Check the App in Settings, then run "
-                "the job again; the personal access token is not used "
-                "instead."
-            ) from failure
-        raise JobRefused(
-            "Refused: GitHub did not issue the GitHub App's installation "
-            f"token ({failure}), also when asked again. Run the job again; "
-            "the personal access token is not used instead."
-        ) from failure
+            cause = (
+                "GitHub refused the GitHub App's installation token "
+                f"({failure}). Check the App in Settings."
+            )
+        else:
+            cause = (
+                "GitHub did not issue the GitHub App's installation token "
+                f"({failure}), also when asked again."
+            )
+        self._sys(
+            f"⚠ {cause} The job goes on without it: the PAT, if there is "
+            "one, is asked which repositories are private."
+        )
+        return None
 
     @staticmethod
     def _ask_github_repo(api, token):
@@ -957,16 +959,19 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         A private repository the App reads gets the token scoped to the
         instance's private repositories the App reads
-        (:meth:`_scoped_github_token`, asked once); one only the PAT reads
+        (:meth:`_scoped_line_tokens`, asked once); one only the PAT reads
         gets the PAT; a public one gets none, whoever reads it. One that
         neither reads gets none either, and the job's log says so: its
-        download then fails, naming it.
+        download then fails, naming it. When an installed App did not
+        issue its token, the PAT a private repository gets may stand in
+        for the App's: :meth:`_check_the_pat_without_the_app`.
 
         :param repos: the instance's ``cloud.instance.repo`` rows
         :param app_token: the installation's token, or None
         :param pat: the PAT, or None
         :rtype: dict
-        :raises JobRefused: see :meth:`_scoped_github_token` and
+        :raises JobRefused: see :meth:`_scoped_line_tokens`,
+            :meth:`_check_the_pat_without_the_app` and
             :meth:`_github_repo_access`
         """
         cache = {}
@@ -982,18 +987,88 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     "installation nor the PAT reads it; it is fetched "
                     "without credentials."
                 )
-        scoped_ids = sorted({
-            repo_id for repo_id, private, by in access.values()
-            if private and by == "app"
-        })
-        scoped = self._scoped_github_token(scoped_ids) if scoped_ids else None
-        tokens = {}
-        for raw_url, (_repo_id, private, by) in access.items():
-            if private and by == "app":
-                tokens[raw_url] = scoped
-            elif private and by == "pat":
-                tokens[raw_url] = pat
+        app_urls = [u for u, (_i, private, by) in access.items()
+                    if private and by == "app"]
+        pat_urls = [u for u, (_i, private, by) in access.items()
+                    if private and by == "pat"]
+        if pat_urls and not app_token and self._github_app_client() is not None:
+            self._check_the_pat_without_the_app(pat_urls)
+        tokens = dict.fromkeys(pat_urls, pat)
+        if app_urls:
+            ids = sorted({access[u][0] for u in app_urls})
+            tokens.update(self._scoped_line_tokens(app_urls, ids, pat))
         return tokens
+
+    def _check_the_pat_without_the_app(self, urls):
+        """Let the PAT read *urls* although the installed App gave no token.
+
+        The App might read them too, so the PAT stands in for it: on a
+        series that downloads on the server (:meth:`_prefetches`), where
+        it does not stay in the image, and the job's log names each one.
+        On a series that clones into the image the PAT would stay there.
+
+        :param list urls: the private lines only the PAT was asked about
+        :raises JobRefused: on a series that clones into the image
+        """
+        names = ", ".join(_strip_userinfo(u) for u in urls)
+        if not self._prefetches():
+            raise JobRefused(
+                "Refused: the GitHub App did not issue its token (the log "
+                f"says why), and {names} is private: this series clones its "
+                "repositories into the image, where the personal access "
+                "token would stay. Run the job again once the App issues "
+                "its token."
+            )
+        for url in urls:
+            self._sys(
+                f"{_strip_userinfo(url)}: fetched with the PAT, because the "
+                "GitHub App did not issue its token."
+            )
+
+    def _scoped_line_tokens(self, urls, repository_ids, pat):
+        """Return ``{line URL: token}`` for the private lines the App reads.
+
+        The token scoped to *repository_ids* (:meth:`_scoped_github_token`).
+        When GitHub does not issue it, a series that downloads on the
+        server (:meth:`_prefetches`) hands the PAT instead, if it reads
+        every one of them (asked with the PAT alone), and the job's log
+        names each; a series that clones into the image is refused, as
+        the PAT would stay there.
+
+        :param list urls: the private lines the App reads
+        :param list repository_ids: GitHub's ids of those repositories
+        :param pat: the PAT, or None
+        :rtype: dict
+        :raises JobRefused: when the scoped token is not issued and the
+            series clones into the image, or the PAT does not read one
+            of *urls* (named)
+        """
+        try:
+            return dict.fromkeys(urls, self._scoped_github_token(repository_ids))
+        except JobRefused as refusal:
+            if not self._prefetches():
+                raise
+            cause = refusal.__cause__
+        cache = {}
+        unread = [
+            u for u in urls
+            if self._github_repo_access(u, None, pat, cache)[2] != "pat"
+        ]
+        if unread:
+            raise JobRefused(
+                "Refused: GitHub did not issue the App's token limited to "
+                f"this instance's private repositories ({cause}), and the "
+                "personal access token does not read "
+                f"{', '.join(_strip_userinfo(u) for u in unread)}. The "
+                "installation's own token is not used instead."
+            )
+        for url in urls:
+            self._sys(
+                f"{_strip_userinfo(url)}: fetched with the PAT, because "
+                "GitHub did not issue the App's token limited to this "
+                f"instance's private repositories ({cause})."
+            )
+        return dict.fromkeys(urls, pat)
 
     def _repos_yaml_content(self, pinned=None):
         """Build repos.yaml: odoo first, then the instance's git repos.

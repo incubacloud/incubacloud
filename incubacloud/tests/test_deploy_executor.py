@@ -366,7 +366,8 @@ class TestGetTokenForRepo(BaseCase):
 
 class TestAnAppThatIssuesNoToken(TransactionCase):
     """When the panel asks GitHub for its App's token, and what it does
-    when GitHub does not issue it (10-nov-2026)."""
+    when GitHub does not issue it: the job goes on without it, and its log
+    says why (10-nov-2026)."""
 
     def setUp(self):
         super().setUp()
@@ -377,7 +378,8 @@ class TestAnAppThatIssuesNoToken(TransactionCase):
 
         :param client: the App's client, or None for a panel without one
         :return: the tokens, or the exception raised, and how often the
-            App's token was asked
+            App's token was asked; what the job's log got is left in
+            ``self.logged``
         :rtype: tuple
         """
         from odoo.addons.incubacloud.models import deploy_instance_executor as mod
@@ -387,12 +389,15 @@ class TestAnAppThatIssuesNoToken(TransactionCase):
         with patch.object(
             mod.DeployInstanceExecutor, "_github_app_client", autospec=True,
             return_value=client,
-        ), patch.object(mod, "_REPO_ACCESS_RETRY_SECONDS", 0):
+        ), patch.object(
+            mod.DeployInstanceExecutor, "_sys", autospec=True,
+        ) as sys_log, patch.object(mod, "_REPO_ACCESS_RETRY_SECONDS", 0):
             try:
                 outcome = executor._get_github_tokens()
             except Exception as exc:  # noqa: BLE001 — the outcome under test
                 outcome = exc
         asked = client.get_installation_token.call_count if client else 0
+        self.logged = [call.args[1] for call in sys_log.call_args_list]
         return outcome, asked
 
     @staticmethod
@@ -404,20 +409,23 @@ class TestAnAppThatIssuesNoToken(TransactionCase):
         client.get_installation_token.side_effect = list(answers)
         return client
 
-    def test_a_refusal_of_github_refuses_the_job_at_once(self):
-        """A 4xx is the App's to fix in Settings; the PAT is not tried."""
+    def test_a_refusal_of_github_goes_on_without_the_app_and_warns(self):
+        """A 4xx is not asked again: the job goes on with the PAT alone, and
+        its log says GitHub refused the App, to be checked in Settings."""
         from odoo.addons.incubacloud.github.client import GitHubAPIError
-        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 
         for code in (401, 404, 422):
             with self.subTest(code=code):
                 outcome, asked = self._tokens(
                     self._client(GitHubAPIError(code, "No"), "app_tok"),
                 )
-                self.assertIsInstance(outcome, JobRefused)
-                self.assertIn("Check the App in Settings", str(outcome))
-                self.assertNotIn("pat_tok", str(outcome))
+                self.assertEqual(outcome, (None, "pat_tok"))
                 self.assertEqual(asked, 1)
+                self.assertEqual(len(self.logged), 1)
+                self.assertIn("GitHub refused the GitHub App's", self.logged[0])
+                self.assertIn(str(code), self.logged[0])
+                self.assertIn("Check the App in Settings", self.logged[0])
+                self.assertNotIn("pat_tok", self.logged[0])
 
     def test_a_passing_failure_is_asked_again_once(self):
         """A 5xx, a timeout or the network, then the token: the job goes on."""
@@ -434,22 +442,24 @@ class TestAnAppThatIssuesNoToken(TransactionCase):
                 outcome, asked = self._tokens(self._client(failure, "app_tok"))
                 self.assertEqual(outcome, ("app_tok", "pat_tok"))
                 self.assertEqual(asked, 2)
+                self.assertEqual(self.logged, [])
 
-    def test_a_failure_twice_refuses_the_job_to_be_run_again(self):
-        """Twice a failure of GitHub: the job is refused, and the message
-        says GitHub did not issue the token, not to check the App."""
+    def test_a_failure_twice_goes_on_without_the_app_and_warns(self):
+        """Twice a failure of GitHub: the job goes on with the PAT alone, and
+        its log says GitHub did not issue the token, not to check the App."""
         from odoo.addons.incubacloud.github.client import GitHubAPIError
-        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 
         outcome, asked = self._tokens(self._client(
             GitHubAPIError(503, "Unavailable"), TimeoutError("timed out"),
         ))
-        self.assertIsInstance(outcome, JobRefused)
-        self.assertIn("GitHub did not issue", str(outcome))
-        self.assertIn("Run the job again", str(outcome))
-        self.assertNotIn("Settings", str(outcome))
-        self.assertNotIn("pat_tok", str(outcome))
+        self.assertEqual(outcome, (None, "pat_tok"))
         self.assertEqual(asked, 2)
+        self.assertEqual(len(self.logged), 1)
+        self.assertIn("GitHub did not issue", self.logged[0])
+        self.assertIn("also when asked again", self.logged[0])
+        self.assertIn("timed out", self.logged[0])
+        self.assertNotIn("Settings", self.logged[0])
+        self.assertNotIn("pat_tok", self.logged[0])
 
     def test_a_panel_without_an_app_uses_the_pat(self):
         """No App configured is not a failure."""
@@ -651,6 +661,233 @@ class TestTheTokenEachLineGets(BaseCase):
             self._executor(list(access), access, scoped=GitHubAPIError(422, "no"))
         self.assertIn("installation's own token is not used", str(caught.exception))
         self.assertNotIn(self._GENERAL, str(caught.exception))
+
+
+class TestThePatWhereTheAppGivesNoToken(TransactionCase):
+    """Where the App gives no token, the PAT stands in only on a series that
+    downloads on the server, where it does not stay in the image
+    (10-nov-2026). 18.0 downloads on the server; 19.0 clones into the image.
+    """
+
+    _GENERAL = "ghs_installationToken"
+    _SCOPED = "ghs_scopedTokenOfTheJob"
+
+    def setUp(self):
+        super().setUp()
+        self.env["cloud.settings"]._get_system().github_pat = "pat_tok"
+
+    def _render(self, version, access, *, app=None, scoped=None, pat_access=None):
+        """Render repos.yaml of a *version* instance with GitHub answering *access*.
+
+        :param str version: the instance's series
+        :param dict access: ``{url: (repo_id, private, by)}``, GitHub's
+            answer when the App's token is at hand
+        :param app: what the App's token request raises, or None when GitHub
+            issues it
+        :param scoped: what the scoped token request raises, or None when
+            GitHub issues it
+        :param dict pat_access: ``{url: answer}`` when asked with the PAT
+            alone; *access* when not given
+        :return: the rendered text, or the exception raised; what the job's
+            log got; and the mocks of the App's client and of
+            ``_github_repo_access``
+        :rtype: tuple
+        """
+        from odoo.addons.incubacloud.github.client import GitHubAppClient
+        from odoo.addons.incubacloud.models import deploy_instance_executor as mod
+
+        from .test_executor_features import _make_deploy_executor
+
+        ex = _make_deploy_executor(
+            odoo_version=version, odoo_commit_sha=False,
+            repo_ids=[SimpleNamespace(url=u, branch="main", commit_sha=False)
+                      for u in access],
+        )
+        ex.env = self.env
+        client = MagicMock(spec=GitHubAppClient)
+        client.get_installation_token.side_effect = [app, app] if app else [self._GENERAL]
+        client.get_scoped_installation_token.side_effect = [scoped or self._SCOPED]
+        pat_access = access if pat_access is None else pat_access
+
+        def answer(_self, url, app_token, _pat, _cache):
+            """GitHub's answer for *url*, as the token at hand reads it."""
+            return (access if app_token else pat_access)[url]
+
+        with patch.object(
+            mod.DeployInstanceExecutor, "_github_app_client", autospec=True,
+            return_value=client,
+        ), patch.object(
+            mod.DeployInstanceExecutor, "_github_repo_access", autospec=True,
+            side_effect=answer,
+        ) as repo_access, patch.object(
+            mod.DeployInstanceExecutor, "_sys", autospec=True,
+        ) as sys_log, patch.object(mod, "_REPO_ACCESS_RETRY_SECONDS", 0):
+            try:
+                outcome = ex._repos_yaml_content(set())
+            except Exception as exc:  # noqa: BLE001 — the outcome under test
+                outcome = exc
+        logged = [call.args[1] for call in sys_log.call_args_list]
+        return outcome, logged, client, repo_access
+
+    @staticmethod
+    def _remote(text, alias):
+        """The URL of *alias* in the rendered *text*."""
+        return next(iter(yaml.safe_load(text)[alias]["remotes"].values()))
+
+    def _no_secret_in(self, text):
+        """Assert *text* holds none of the job's tokens."""
+        for token in ("pat_tok", self._GENERAL, self._SCOPED):
+            self.assertNotIn(token, text)
+
+    def test_public_repositories_deploy_without_the_app_and_the_log_warns(self):
+        """The App's token refused: every repository is public, the job goes
+        on in both kinds of series, and the log says GitHub refused it."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+
+        access = {
+            "https://github.com/acme/a": (11, False, "pat"),
+            "https://github.com/acme/b": (12, False, "pat"),
+        }
+        for version in ("18.0", "19.0"):
+            with self.subTest(version=version):
+                text, logged, _client, repo_access = self._render(
+                    version, access, app=GitHubAPIError(401, "Bad credentials"),
+                )
+                self.assertIsInstance(text, str)
+                self.assertEqual(self._remote(text, "a"), "https://github.com/acme/a")
+                self.assertEqual(self._remote(text, "b"), "https://github.com/acme/b")
+                for call in repo_access.call_args_list:
+                    self.assertIsNone(call.args[2])
+                    self.assertEqual(call.args[3], "pat_tok")
+                warning = [line for line in logged if "GitHub App's" in line]
+                self.assertEqual(len(warning), 1)
+                self.assertIn("refused", warning[0])
+                self.assertIn("401", warning[0])
+                self._no_secret_in("\n".join(logged))
+
+    def test_a_private_one_the_pat_reads_gets_it_where_it_is_downloaded_on_the_server(self):
+        """The App failed and the PAT reads a private repository: on a series
+        that downloads on the server it gets the PAT, and the log says why."""
+        access = {"https://github.com/acme/secret": (14, True, "pat")}
+        text, logged, _client, _access = self._render(
+            "18.0", access, app=TimeoutError("timed out"),
+        )
+        self.assertIn("x-access-token:pat_tok@", self._remote(text, "secret"))
+        used = [line for line in logged if "acme/secret" in line]
+        self.assertEqual(len(used), 1)
+        self.assertIn("with the PAT", used[0])
+        self.assertIn("did not issue its token", used[0])
+        self._no_secret_in("\n".join(logged))
+
+    def test_a_private_one_the_pat_reads_refuses_the_job_where_it_goes_into_the_image(self):
+        """The same on a series that clones into the image: the PAT would
+        stay there, so the job is refused, naming the repository."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        access = {
+            "https://github.com/acme/pub": (13, False, "pat"),
+            "https://github.com/acme/secret": (14, True, "pat"),
+        }
+        outcome, _logged, _client, _access = self._render(
+            "19.0", access, app=GitHubAPIError(404, "Not Found"),
+        )
+        self.assertIsInstance(outcome, JobRefused)
+        self.assertIn("did not issue its token", str(outcome))
+        self.assertIn("image", str(outcome))
+        self.assertIn("https://github.com/acme/secret", str(outcome))
+        self.assertNotIn("acme/pub", str(outcome))
+        self._no_secret_in(str(outcome))
+
+    def test_a_refused_scoped_token_hands_the_pat_that_reads_them_on_the_server(self):
+        """The App reads the private repositories but its scoped token is
+        refused: on a series that downloads on the server, the PAT, which
+        reads them too, goes instead, and the log says so."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+
+        access = {
+            "https://github.com/acme/a": (11, True, "app"),
+            "https://github.com/acme/b": (12, True, "app"),
+        }
+        pat_access = {
+            "https://github.com/acme/a": (11, True, "pat"),
+            "https://github.com/acme/b": (12, True, "pat"),
+        }
+        text, logged, client, repo_access = self._render(
+            "18.0", access, scoped=GitHubAPIError(422, "Unprocessable"),
+            pat_access=pat_access,
+        )
+        client.get_scoped_installation_token.assert_called_once_with([11, 12])
+        for alias in ("a", "b"):
+            self.assertIn("x-access-token:pat_tok@", self._remote(text, alias))
+        asked_with_pat = [
+            call.args[1] for call in repo_access.call_args_list
+            if call.args[2] is None
+        ]
+        self.assertEqual(sorted(asked_with_pat), sorted(access))
+        used = [line for line in logged if "with the PAT" in line]
+        self.assertEqual(len(used), 2)
+        self.assertIn("422", used[0])
+        self._no_secret_in("\n".join(logged))
+
+    def test_a_refused_scoped_token_still_refuses_where_they_go_into_the_image(self):
+        """On a series that clones into the image the job is refused, as
+        before: the PAT would stay in the image."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        access = {"https://github.com/acme/a": (11, True, "app")}
+        outcome, _logged, _client, repo_access = self._render(
+            "19.0", access, scoped=GitHubAPIError(422, "Unprocessable"),
+        )
+        self.assertIsInstance(outcome, JobRefused)
+        self.assertIn("installation's own token is not used", str(outcome))
+        self.assertTrue(all(call.args[2] for call in repo_access.call_args_list))
+        self._no_secret_in(str(outcome))
+
+    def test_a_refused_scoped_token_refuses_naming_one_the_pat_does_not_read(self):
+        """On the server too, when the PAT does not read one of them: the job
+        is refused, naming it, and not the ones it reads."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        access = {
+            "https://github.com/acme/a": (11, True, "app"),
+            "https://github.com/acme/b": (12, True, "app"),
+        }
+        pat_access = {
+            "https://github.com/acme/a": (11, True, "pat"),
+            "https://github.com/acme/b": (None, None, None),
+        }
+        outcome, _logged, _client, _access = self._render(
+            "18.0", access, scoped=GitHubAPIError(422, "Unprocessable"),
+            pat_access=pat_access,
+        )
+        self.assertIsInstance(outcome, JobRefused)
+        self.assertIn("https://github.com/acme/b", str(outcome))
+        self.assertNotIn("acme/a", str(outcome))
+        self.assertIn("422", str(outcome))
+        self._no_secret_in(str(outcome))
+
+    def test_one_only_the_pat_reads_with_the_app_working_is_unchanged(self):
+        """The App issues its token and only the PAT reads a private
+        repository, as with Enterprise: it gets the PAT in both kinds of
+        series, with no warning."""
+        access = {
+            "https://github.com/acme/app-repo": (11, True, "app"),
+            "https://github.com/odoo/enterprise": (21, True, "pat"),
+        }
+        for version in ("18.0", "19.0"):
+            with self.subTest(version=version):
+                text, logged, client, _access = self._render(version, access)
+                self.assertIn(
+                    "x-access-token:pat_tok@", self._remote(text, "enterprise"),
+                )
+                self.assertIn(
+                    f"x-access-token:{self._SCOPED}@", self._remote(text, "app-repo"),
+                )
+                client.get_scoped_installation_token.assert_called_once_with([11])
+                self.assertEqual(logged, [])
 
 
 # ── Tier 2: _build_answers domain format ─────────────────────────────────────
