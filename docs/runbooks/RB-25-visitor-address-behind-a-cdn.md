@@ -5,7 +5,7 @@
 list or failed sign-ins show the CDN's addresses instead of the
 visitors'; Odoo shares its Docker network with other containers; the log
 says `[real-ip] the proxy … does not resolve`.
-**Who runs it:** platform manager, or whoever runs a self-hosted panel.
+**Who runs it:** whoever runs the panel.
 
 Odoo records the last entry of `X-Forwarded-For` as the visitor. With a
 CDN and a reverse proxy in front, that entry is the CDN's edge: every
@@ -80,48 +80,49 @@ resolve, a **warning** is logged there and then.
 
 It does not fall back to believing nobody: every visitor would then be
 recorded as the proxy's own address, and every limit keyed on the
-visitor — sign-up, OIDC, `/saas/*`, Odoo's lock-out after failed sign-ins
-— would be one bucket that a single caller could fill for everybody.
+visitor — sign-up, OIDC, the routes of modules on top, Odoo's lock-out
+after failed sign-ins — would be one bucket that a single caller could
+fill for everybody.
 
 A warning at start-up with no error after it is expected wherever the
 image runs without Traefik and serves no proxied request:
 
-- the master's **job runner** (`odoo_runner` in `prod.yaml`), which
-  loads the same configuration and is kept off `inverseproxy_shared` on
-  purpose — it warns on every deploy;
+- a separate **job runner** that loads the same configuration and is
+  kept off the proxy's network on purpose — it warns on every start;
 - stacks built from the same image without Traefik in front, such as a
   restore drill;
-- devel, which loads the master's configuration and has no such
-  container.
+- a development copy that loads the production configuration and has
+  no such container.
 
-The CI of `core` and `saas` does not load that configuration at all:
-without the options, nothing is installed there.
+A CI that does not load that configuration installs nothing: without
+the options, nothing is corrected.
 
 ## What the platform sets
 
-- **The master** (`odoo/custom/conf.d/<deployment>.conf` in
-  the deployment repository): the header, Cloudflare's ranges and
+- **The panel itself**: set the three options in its Odoo
+  configuration file (with doodba, a file under `odoo/custom/conf.d/`):
+  the header, the CDN's ranges and, behind doodba's Traefik,
   `x_real_ip_proxy=inverseproxy-proxy-1.`, the name `docker compose -p
   inverseproxy` gives Traefik's container.
-- **A panel on a host behind the CDN**: the deploy writes all three
+- **A panel the panel deploys on a host behind the CDN**: the deploy writes all three
   into the panel's configuration (`DeployInstanceExecutor._conf_content`),
   the proxy being the host's Traefik container, `inverseproxy-proxy-1.`.
   A host that is not behind a CDN gets none of them. A panel deployed
   before the option existed runs **without it** until its next deploy or
   plan apply rewrites its configuration.
-- **A customer's instance** gets the options too, but nothing in it reads
-  them: the correction is part of `incubacloud`, which a customer's
-  instance does not run. Its Odoo keeps recording the CDN's edges.
+- **Any other instance** gets the options too, but nothing in it reads
+  them: the correction is part of `incubacloud`, which such an instance
+  does not run. Its Odoo keeps recording the CDN's edges.
 
 The container name rather than the service alias `proxy` avoids picking
 the wrong container by accident. It is not what makes the guarantee
 hold: any compose project on the network could declare the same name as
-an alias. What does is that only the platform writes compose files onto
+an alias. What does is that only the panel writes compose files onto
 `inverseproxy_shared`.
 
 ## Check it
 
-On the master, after a restart, from a `psql` session on its database
+On the panel, after a restart, from a `psql` session on its database
 (`db$`, see the conventions in the index):
 
 ```

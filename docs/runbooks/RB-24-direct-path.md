@@ -7,11 +7,11 @@ metrics stopped while the direct path says _Working_; Grafana refusing logins; t
 DNS token has to be rotated.
 **Who runs it:** platform manager.
 
-The direct path is the platform talking to itself without the CDN: hosts and rented
-servers push metrics to `direct.metrics.…:9443`, tenant panels call `direct.www.…:9443`
-for `/saas/*` and the OIDC back channel, Grafana exchanges its logins there. The public
-path (`metrics.…`, `www`) is never touched and is always the way back: every failure
-below ends with hosts, panels and Grafana on it.
+The direct path is the platform talking to itself without the CDN: hosts push metrics
+to `direct.metrics.…:9443`, Grafana exchanges its logins at the panel's direct name, and
+a module on top may send calls of its own there too. The public path (`metrics.…`, the
+panel's name) is never touched and is always the way back: every failure below ends
+with hosts, panels and Grafana on it.
 
 ## Symptoms
 
@@ -25,8 +25,8 @@ below ends with hosts, panels and Grafana on it.
 - **`direct_certificate_expiring`.** Under 21 days left: Let's Encrypt renews at 30, so
   the renewal failed. Check the DNS token and Traefik's log.
 - **`direct_path_unreachable_from_host`.** The host's own try failed twice: its agents
-  use the public path; it is tried again every six hours. Usually the customer blocks
-  outbound 9443 (`hosts/hire.md` tells them).
+  use the public path; it is tried again every six hours. Usually the server's network
+  blocks outbound 9443.
 - **A host gone quiet while the path says _Working_.** The agents only try the path when
   they are installed. After 20 minutes without metrics the reconciliation re-applies
   them (at most hourly, only while the central answers), and they fall to the public
@@ -62,7 +62,7 @@ print(requests.get('https://<name>:9443/oauth/jwks', timeout=5).status_code)"
 
 1. Cloudflare → API Tokens: create a token with _Zone → Zone → Read_ and _Zone → DNS →
    Edit_ on the zone, client addresses filtered to those of the hosts that publish a
-   direct name (the central's host and the master's): their Traefik asks for the
+   direct name (the central's host and the panel's): their Traefik asks for the
    certificates, not the panel.
 2. Settings → Monitoring → Advanced → _DNS token for direct certificates_: paste it and
    save.
@@ -74,7 +74,7 @@ print(requests.get('https://<name>:9443/oauth/jwks', timeout=5).status_code)"
 
 - One host: tick _Use the public path_ on it. Its agents and the panels on it go back at
   once.
-- Everybody's metrics: empty _Central's direct name_. Everybody's API: empty the panel's
-  direct name (SaaS tab). Grafana: empty its back channel.
+- Everybody's metrics: empty _Central's direct name_. Calls a module on top sends there:
+  empty the direct name it keeps. Grafana: empty its back channel.
 - The port itself: direct port 0 and Full Setup on the host (Traefik restarts), then
   remove the provider's firewall rule and the two DNS records.
