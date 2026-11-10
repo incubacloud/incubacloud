@@ -1532,7 +1532,8 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
     _PERSON = "81.40.12.7"
     _PERSON6 = "2a01:4f8:c0c:1234::1"
     _CDN = "104.22.23.52"
-    _HOST_IP = "77.42.42.201"
+    # A public address: a host on a private network offers private ones.
+    _HOST_IP = "45.10.21.201"
     _UNCONFIRMED = (
         "Your address could not be confirmed. Close this dialog and open "
         "it again."

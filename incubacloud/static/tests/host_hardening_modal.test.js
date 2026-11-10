@@ -62,7 +62,7 @@ describe("HostHardeningModal production gate", () => {
  * server is ``rpc`` answering what each test says.
  */
 
-const PANEL = "95.217.1.126";
+const PANEL = "198.51.100.126";
 const PERSON = "81.40.12.7";
 
 /**
@@ -195,7 +195,7 @@ describe("HostHardeningModal says who can open SSH", () => {
     });
 
     test("closed by IncubaCloud's edge: said so, and no box", () => {
-        const comp = dialog(access("edge", { panel_ip: "37.27.0.82" }));
+        const comp = dialog(access("edge", { panel_ip: "198.51.100.82" }));
         expect(comp.sshAccessLevel).toBe("info");
         expect(String(comp.sshAccessText)).toBe(
             "Only IncubaCloud and this panel's server can open SSH on this server: " +
