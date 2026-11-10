@@ -25,7 +25,7 @@ restore script with its next restore.
   repository heads* and *Trust the Git servers* are gone from those series.
   Only a repository whose head moved is downloaded again; a repository with
   several merges is supported. The trees have no `.git`, nor does the image,
-  which no longer carries Odoo's (206 MB on 19.0).
+  which no longer carries Odoo's.
 - **One tree per commit on each server.** The trees are kept in
   `~/.incubacloud/git-trees` and each instance's is made of hard links to
   one, so the instances of a server at the same commit of Odoo hold a single
@@ -48,10 +48,12 @@ restore script with its next restore.
 - **The GitHub App is asked for its token only when a job needs it.** An
   instance with no repository on github.com besides Odoo's deploys and
   rebuilds without it, and an App not installed yet counts as no App: the
-  personal access token is used, as before. When GitHub fails to issue the
-  App's token for a reason other than refusing it, such as a server error
-  or a timeout, it is asked again once before the job is refused; the
-  message says whether to check the App in Settings or to run the job again.
+  personal access token is used, as before. When GitHub refuses the App's
+  token, or fails to issue it twice (a server error or a timeout is asked
+  again once), the job goes on without it and its log says why: a public
+  repository needs no credential, and the personal access token says which
+  repositories are private. An instance whose repositories are all public
+  deploys as usual.
 - **A refused save says why.** Creating or saving a project or an instance
   shows the reason the server gives, such as a value it does not accept,
   instead of only «Failed to save».
@@ -63,7 +65,7 @@ Upgrading is recommended.
 - **Project names, the SMTP relay fields and the administrator email are
   validated** before they reach the deployment. A value saved by
   an earlier version is written out as it was saved. The relay user may be
-  a Windows login (`DOMAIN\user`). Spanish translation included.
+  a Windows login (`DOMAIN\user`).
 - **Project membership is checked on every change.** Instances, their
   repositories, domains and egress whitelist rows, and a project's
   repositories, are checked against the record rules whenever they are
@@ -83,9 +85,16 @@ Upgrading is recommended.
 - **Scoped GitHub App tokens.** A server is handed a token of the App limited
   to the instance's private repositories the App reads, with read access to
   their contents only, asked for each job. The installation's own token stays
-  in the panel. If GitHub refuses the scoped token, or does not issue the
-  App's own, the job is refused: the personal access token is not used
-  instead.
+  in the panel. The personal access token stands in for the App only where
+  it does not stay in the image. When GitHub does not issue the App's own
+  token, a series that downloads on the server hands the personal access
+  token to the private repositories it reads, and the job's log names each;
+  a series that clones in the image (19.0) refuses the job if a repository
+  is private. When GitHub refuses the scoped token, a series that downloads
+  on the server hands the personal access token if it reads every one of
+  those repositories, with the log naming each, and refuses the job, naming
+  the one it does not read, otherwise; a series that clones in the image
+  refuses the job.
 - **No token where none is needed.** A public repository gets no credential,
   and one neither the App nor the personal access token reads gets none
   either; the job's log names it. The decision is made per repository. Only
