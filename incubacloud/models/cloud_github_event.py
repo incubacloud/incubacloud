@@ -7,6 +7,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
+from ._concurrency import is_concurrency_error
 from ._repo_requirements import _normalize_url, is_safe_git_ref
 from .cloud_repo_mixin import repo_url_key
 from .res_users_ext import as_platform
@@ -593,17 +594,23 @@ class CloudGitHubEvent(models.Model):
                 inst_name = inst.name
                 if inst.pr_comment_id:
                     inst._delete_pr_comment()
-                if inst.deployed and inst.host_id:
-                    try:
-                        self.env['cloud.job'].enqueue(
-                            inst.host_id.id, inst.id, 'delete_instance'
-                        )
-                    except Exception:
-                        _logger.exception(
-                            "Failed to enqueue delete for PR instance %s", inst_name,
-                        )
-                else:
-                    inst.unlink()
+                # Closed outside the delete's savepoint: a preview whose
+                # delete could not be queued is still known to be closed,
+                # and its restore deletes it instead of announcing it.
+                inst.sudo().write({'pr_state': 'closed'})
+                try:
+                    # One still in 'deploying' was unlinked here, which
+                    # its job refused: the event failed and the preview
+                    # lived on. Its delete now waits for that job.
+                    with self.env.cr.savepoint():
+                        inst._remove_closed_preview()
+                except Exception as exc:
+                    if is_concurrency_error(exc):
+                        raise
+                    _logger.exception(
+                        "Failed to delete PR instance %s", inst_name,
+                    )
+                    continue
                 _logger.info(
                     "PR preview instance %s queued for deletion (PR #%s closed)",
                     inst_name, pr_number,

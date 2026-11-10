@@ -25,6 +25,9 @@ then re-reads and applies. No abort, no ERROR line, no alert.
 import logging
 from contextlib import contextmanager
 
+from psycopg2 import OperationalError
+
+from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.sql_db import Cursor
 
 _logger = logging.getLogger(__name__)
@@ -114,3 +117,20 @@ def run_after_commit(cr, label, func):
             _logger.exception("after the commit: %s failed", label)
 
     cr.postcommit.add(_guarded)
+
+
+def is_concurrency_error(exc):
+    """Return whether *exc* is a lost race Odoo retries the whole request for.
+
+    A serialization failure, a deadlock or a lock not available: caught
+    in a savepoint and set aside, the request would commit without what
+    it lost, while Odoo's retry (``odoo.service.model.retrying``, and
+    queue_job's for a job) runs it again from a fresh snapshot.
+
+    :param Exception exc: what was raised
+    :rtype: bool
+    """
+    return (
+        isinstance(exc, OperationalError)
+        and exc.pgcode in PG_CONCURRENCY_ERRORS_TO_RETRY
+    )
