@@ -138,9 +138,12 @@ class CloudSettings(models.Model):
 
     @api.model
     def _mcp_auto_approval_charges(self):
-        """Whether agents' actions on this panel can charge an account.
+        """Whether agents' actions on this panel can charge an account: some
+        tool of the catalog says it charges money (``ToolSpec.charges``).
 
-        False here; a panel that bills through its tools says True, and the
-        notice of auto-approval says so.
+        Then the grant of auto-approval offers to include charges, and its
+        notice says whether it does.
         """
-        return False
+        return any(
+            spec.charges for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()
+        )

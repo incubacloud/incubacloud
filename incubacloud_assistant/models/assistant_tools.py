@@ -231,16 +231,19 @@ class AssistantTools(models.AbstractModel):
         """Return the tools for the provider, in a stable order (prompt cache).
 
         While an auto-approval rule covers the person's assistant, the tools
-        that would ask say they run without asking, as an agent's listing does.
+        that would ask say they run without asking, as an agent's listing does
+        (those that charge money only under a rule that includes charges).
         """
         rule = self.env["incubacloud.mcp.auto.approval"]._active_for(
             self.env.uid, ASSISTANT_CREDENTIAL
         )
         until = fields.Datetime.to_string(rule.expires_at) if rule else ""
+        charges = bool(rule.include_charges)
         return tuple(
             ToolDef(listed["name"], listed["description"], listed["inputSchema"])
             for listed in (
-                spec.listed(auto_until=until) for spec in self._visible_specs()
+                spec.listed(auto_until=until, auto_charges=charges)
+                for spec in self._visible_specs()
             )
         )
 

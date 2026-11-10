@@ -85,8 +85,12 @@ class McpAutoApprovalController(http.Controller):
         expires_on=None,
         acknowledged=False,
         notice_version="",
+        include_charges=False,
     ):
-        """Grant a rule, once the notice is accepted. Administrators."""
+        """Grant a rule, once the notice is accepted. Administrators.
+
+        ``include_charges`` lets the tools that charge money through too.
+        """
         Rule = self._rules()
         try:
             rule = Rule._grant(
@@ -97,6 +101,7 @@ class McpAutoApprovalController(http.Controller):
                 acknowledged=acknowledged,
                 notice_version=notice_version or "",
                 ip=client_ip(),
+                include_charges=include_charges is True,
             )
         except UserError as exc:
             return {"ok": False, "error": str(exc)}

@@ -23,6 +23,8 @@ user documentation).
 An auto-approval rule of the very user and credential
 (``incubacloud.mcp.auto.approval``) answers instead of the person: the
 call runs at once, after every check that comes before the question.
+A tool that charges money asks as before under a rule that does not
+include charges.
 Whoever approved it — the person or a rule — is left on the request
 (``set_approval_mark``), and the audit rows and jobs the call writes
 carry it.
@@ -126,6 +128,7 @@ class McpConfirm(models.AbstractModel):
     def _auto_approved(self, spec, ctx, credential):
         """Return whether a rule of the user and *credential* approves the call.
 
+        A tool that charges money needs a rule that includes charges.
         It is counted, and the call marked ``auto``, before the action runs;
         a line in the server's log says so, where it stays even if the
         transaction is rolled back.
@@ -137,7 +140,7 @@ class McpConfirm(models.AbstractModel):
         """
         Rule = self.env["incubacloud.mcp.auto.approval"]
         rule = Rule._active_for(ctx.principal.uid, credential)
-        if not rule or not rule._use():
+        if not rule or not rule._covers(spec) or not rule._use():
             return False
         set_approval_mark({"approval": "auto", "rule": rule.id})
         _logger.info(

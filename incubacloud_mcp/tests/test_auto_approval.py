@@ -530,10 +530,123 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self.Rule._gc_deleted_credentials()
         self.assertEqual(rule.revoked_reason, "credential deleted")
 
-    def test_the_gate_lets_every_tool_through_with_a_rule(self):
-        """For every installed tool that asks: with an active rule, ``_gate``
-        runs it and marks it auto, whatever the tool."""
+    def _ctx(self):
+        """The call context of the developer's key."""
+        return CallContext(
+            MODERN,
+            True,
+            {},
+            "test-agent",
+            Principal(self.dev.id, "API key ci", self.credential),
+        )
+
+    def _gate(self, spec):
+        """Return what ``_gate`` answers to the developer's key calling *spec*,
+        and the marks it leaves; the tool always asks without a rule."""
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        marks = []
+        with (
+            patch.object(
+                Tools, "_confirmation", autospec=True, return_value="Approve this."
+            ),
+            patch.object(mcp_confirm, "set_approval_mark", side_effect=marks.append),
+        ):
+            result = (
+                self.env["incubacloud.mcp.confirm"]
+                .with_user(self.dev)
+                ._gate(spec, {}, self._ctx(), {})
+            )
+        return result, [mark for mark in marks if mark]
+
+    def _charging(self):
+        """Return ``delete_project``'s spec, and the same declared as charging."""
+        spec = self.env["incubacloud.mcp.catalog"]._spec("delete_project")
+        return spec, dataclasses.replace(spec, charges=True)
+
+    def test_a_rule_without_charges_leaves_a_tool_that_charges_asking(self):
+        """By default a rule leaves out charges: a tool that charges asks, and
+        the rule counts no use; any other tool runs, marked auto."""
         rule = self._grant(self.dev, self.credential)
+        self.assertFalse(rule.include_charges)
+        plain, charging = self._charging()
+        result, marks = self._gate(charging)
+        self.assertIsNotNone(result)
+        self.assertEqual(marks, [])
+        rule.invalidate_recordset()
+        self.assertEqual(rule.use_count, 0)
+        result, marks = self._gate(plain)
+        self.assertIsNone(result)
+        self.assertEqual(marks, [{"approval": "auto", "rule": rule.id}])
+
+    def test_a_rule_with_charges_lets_a_tool_that_charges_through(self):
+        """With its box ticked, a tool that charges runs as any other, marked
+        auto; the rule, its list and its audit row say it includes charges."""
+        rule = self._grant(self.dev, self.credential, include_charges=True)
+        self.assertTrue(rule.include_charges)
+        self.assertTrue(rule._format()[0]["include_charges"])
+        row = self.env["cloud.audit.log"].search(
+            [("approval_rule_id", "=", rule.id)], limit=1
+        )
+        self.assertIn("charges included", row.details)
+        plain, charging = self._charging()
+        for spec in (charging, plain):
+            with self.subTest(charges=spec.charges):
+                result, marks = self._gate(spec)
+                self.assertIsNone(result)
+                self.assertEqual(marks, [{"approval": "auto", "rule": rule.id}])
+
+    def test_only_true_includes_charges(self):
+        """A box sent as anything but true includes no charges."""
+        rule = self._grant(self.dev, self.credential, include_charges="yes")
+        self.assertFalse(rule.include_charges)
+        self.assertFalse(rule._format()[0]["include_charges"])
+        row = self.env["cloud.audit.log"].search(
+            [("approval_rule_id", "=", rule.id)], limit=1
+        )
+        self.assertNotIn("charges included", row.details)
+
+    def test_the_instructions_say_charges_still_ask(self):
+        """Under a rule without charges, with a tool that charges, the
+        instructions say those still wait; with charges, or without such a
+        tool, they do not."""
+        plain, charging = self._charging()
+        Server = type(self.env["incubacloud.mcp.server"])
+        server = self.env["incubacloud.mcp.server"].with_user(self.dev)
+        rule = self._grant(self.dev, self.credential)
+        for specs, said in (([charging], True), ([plain], False)):
+            with (
+                self.subTest(charges=said),
+                patch.object(Server, "_visible_specs", autospec=True, return_value=specs),
+            ):
+                instructions = server._instructions(self._ctx())
+                self.assertIn("auto-approval rule", instructions)
+                self.assertEqual("does not include charges" in instructions, said)
+        rule._revoke("manual")
+        self._grant(self.dev, self.credential, include_charges=True)
+        with patch.object(
+            Server, "_visible_specs", autospec=True, return_value=[charging]
+        ):
+            self.assertNotIn(
+                "does not include charges", server._instructions(self._ctx())
+            )
+
+    def test_the_panel_offers_charges_when_a_tool_charges(self):
+        """Settings offers to include charges when a tool of the catalog charges."""
+        plain, charging = self._charging()
+        Catalog = type(self.env["incubacloud.mcp.catalog"])
+        Settings = self.env["cloud.settings"]
+        for specs, offered in (([plain], False), ([plain, charging], True)):
+            with (
+                self.subTest(offered=offered),
+                patch.object(Catalog, "_tool_specs", autospec=True, return_value=specs),
+            ):
+                self.assertEqual(Settings._mcp_auto_approval_charges(), offered)
+
+    def test_the_gate_lets_every_tool_through_with_a_rule(self):
+        """For every installed tool that asks: with an active rule that
+        includes charges, ``_gate`` runs it and marks it auto, whatever the
+        tool."""
+        rule = self._grant(self.dev, self.credential, include_charges=True)
         Gate = self.env["incubacloud.mcp.confirm"].with_user(self.dev)
         ctx = CallContext(
             MODERN, True, {}, "test-agent", Principal(self.dev.id, "API key ci", self.credential)
@@ -560,6 +673,22 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self.assertTrue(
             all(mark == {"approval": "auto", "rule": rule.id} for mark in approved)
         )
+
+    def test_without_charges_only_the_tools_that_charge_still_ask(self):
+        """For every installed tool that asks: under a rule without charges,
+        ``_gate`` runs it unless it charges money, and those that charge
+        still ask, whatever module declares them."""
+        self._grant(self.dev, self.credential)
+        specs = [
+            spec
+            for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()
+            if spec.confirm != "never"
+        ]
+        for spec in specs:
+            with self.subTest(tool=spec.name):
+                result, marks = self._gate(spec)
+                self.assertEqual(result is None, not spec.charges)
+                self.assertEqual(bool(marks), not spec.charges)
 
 
 @tagged("post_install", "-at_install")

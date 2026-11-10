@@ -158,6 +158,22 @@
     }
 }
 
+// The charges' box sits under the form, before the notice; plain weight:
+// the notice's own box is the one that commits.
+.ic-mcp-auto-charges {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-block: 4px 12px;
+    color: var(--rl-fg);
+    cursor: pointer;
+
+    input {
+        margin-block-start: 4px;
+        flex: none;
+    }
+}
+
 .ic-mcp-auto-ack {
     display: flex;
     align-items: flex-start;

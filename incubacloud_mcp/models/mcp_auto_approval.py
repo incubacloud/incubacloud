@@ -7,6 +7,10 @@ would wait for an approval runs at once, marked ``auto`` in the audit and
 on its jobs. Nothing else changes: the role, the routes' checks, the
 secrets and the limits stay.
 
+A tool that charges money (``ToolSpec.charges``) runs without asking only
+under a rule that includes charges (``include_charges``), a box of the
+grant left unticked by default; under any other rule it still asks.
+
 The rule is active when, at the very call (no cache, no cron):
 
 1. its user and credential are the request's, exactly;
@@ -50,7 +54,8 @@ MAX_DAYS = 90
 PERIOD_DAYS = (1, 7, 30, 90)
 #: The version of the notice the Administrator accepts (§6.7). A new text
 #: gets a new version, and the panel refuses a grant that accepted another.
-NOTICE_VERSION = "2026-11-10"
+#: ``.2``: the notice says whether the rule includes charges.
+NOTICE_VERSION = "2026-11-10.2"
 #: A credential is recorded again when last seen longer ago than this.
 SEEN_EVERY = timedelta(hours=1)
 #: A credential not seen for this long, and without a live rule, is forgotten.
@@ -133,6 +138,12 @@ class McpAutoApproval(models.Model):
     credential_label = fields.Char(readonly=True, help="How the audit names it.")
     role_at_grant = fields.Selection(ROLE_SELECTION, required=True, readonly=True)
     expires_at = fields.Datetime(required=True, readonly=True)
+    include_charges = fields.Boolean(
+        readonly=True,
+        default=False,
+        help="The tools that charge money run without asking too; without "
+        "it they still ask.",
+    )
     granted_by_id = fields.Many2one("res.users", readonly=True, ondelete="set null")
     granted_ip = fields.Char(readonly=True)
     notice_version = fields.Char(readonly=True)
@@ -222,6 +233,16 @@ class McpAutoApproval(models.Model):
         if rule and rule._state() == "active":
             return rule
         return self.sudo().browse()
+
+    def _covers(self, spec):
+        """Return whether this rule approves the tool of *spec*: every tool,
+        but one that charges money only when the rule includes charges.
+
+        :param spec: the tool's :class:`ToolSpec`
+        :rtype: bool
+        """
+        self.ensure_one()
+        return not spec.charges or self.sudo().include_charges
 
     def _use(self):
         """Count one call this rule approves; return whether it still approves.
@@ -405,6 +426,7 @@ class McpAutoApproval(models.Model):
         acknowledged=False,
         notice_version="",
         ip="",
+        include_charges=False,
     ):
         """Grant a rule to *credential* of *user_id*, as the current user.
 
@@ -419,6 +441,8 @@ class McpAutoApproval(models.Model):
         :param bool acknowledged: the notice's box was ticked
         :param str notice_version: the notice's version the panel showed
         :param str ip: the Administrator's address
+        :param bool include_charges: the tools that charge money run
+            without asking too (only ``True`` counts)
         :return: the rule
         :raises AccessError: through an agent, or below Administrator
         :raises UserError: for anything else that does not hold
@@ -466,23 +490,26 @@ class McpAutoApproval(models.Model):
                 "granted_by_id": self.env.uid,
                 "granted_ip": ip or "",
                 "notice_version": notice_version,
+                "include_charges": include_charges is True,
             }
         )
-        rule._audit(
-            "Auto-approval rule granted",
-            self.env._(
-                "%(person)s · %(credential)s · until %(date)s UTC",
-                person=user.name,
-                credential=rule.credential_label,
-                date=fields.Datetime.to_string(expires_at),
-            ),
+        details = self.env._(
+            "%(person)s · %(credential)s · until %(date)s UTC",
+            person=user.name,
+            credential=rule.credential_label,
+            date=fields.Datetime.to_string(expires_at),
         )
+        if rule.include_charges:
+            details += " · " + self.env._("charges included")
+        rule._audit("Auto-approval rule granted", details)
         _logger.info(
-            "[mcp] auto-approval rule %s granted to uid=%s via=%s until %s by uid=%s",
+            "[mcp] auto-approval rule %s granted to uid=%s via=%s until %s "
+            "charges=%s by uid=%s",
             rule.id,
             user.id,
             credential,
             expires_at,
+            rule.include_charges,
             self.env.uid,
         )
         return rule
@@ -572,6 +599,7 @@ class McpAutoApproval(models.Model):
                 if rule.last_used_at
                 else "",
                 "use_count": rule.use_count,
+                "include_charges": rule.include_charges,
                 "state": rule._state(),
                 "revoked_at": fields.Datetime.to_string(rule.revoked_at)
                 if rule.revoked_at

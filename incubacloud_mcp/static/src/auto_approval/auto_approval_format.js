@@ -103,6 +103,7 @@ export function grantPayload(form, noticeVersion) {
         ...periodPayload(form),
         acknowledged: form.acknowledged === true,
         notice_version: noticeVersion,
+        include_charges: form.includeCharges === true,
     };
 }
 

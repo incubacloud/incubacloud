@@ -44,6 +44,9 @@ class ToolSpec:
     ``requires`` says what must hold before the tool can work — the state
     of the records it acts on, a setting, another tool to call first —
     and is listed with its description.
+    ``charges`` marks a tool that changes what an account is billed (an
+    order, a purchase, a plan): an auto-approval rule lets it through only
+    when the rule includes charges.
     """
 
     name: str
@@ -59,6 +62,7 @@ class ToolSpec:
     untrusted: bool = False
     audit: bool = True
     requires: str = ""
+    charges: bool = False
 
     def __post_init__(self):
         """Refuse a declaration the server could not honour safely.
@@ -71,12 +75,14 @@ class ToolSpec:
         if self.destructive and self.confirm == "never":
             raise ValueError(f"{self.name}: a destructive tool asks for approval")
 
-    def listed(self, auto_until=""):
+    def listed(self, auto_until="", auto_charges=False):
         """Return this tool's ``tools/list`` entry.
 
         :param str auto_until: when an auto-approval rule of the credential
             that lists ends (UTC); the tools that would ask then say they
             run without asking
+        :param bool auto_charges: that rule includes charges; without it, a
+            tool that charges says the panel still asks
         :rtype: dict
         """
         description = self.description
@@ -85,7 +91,10 @@ class ToolSpec:
         description += f" Minimum role: {ROLE_LABELS[self.min_group]}."
         if self.destructive:
             description += " Destructive."
-        if auto_until and self.confirm != "never":
+        ruled = bool(auto_until) and self.confirm != "never"
+        # A rule without charges leaves a tool that charges asking.
+        charge_asks = ruled and self.charges and not auto_charges
+        if ruled and not charge_asks:
             description += (
                 " An auto-approval rule lets this credential run it without asking "
                 f"the user, until {auto_until} UTC."
@@ -95,6 +104,11 @@ class ToolSpec:
         elif self.confirm == "conditional":
             description += (
                 " In some cases the panel asks the user to approve it before it runs."
+            )
+        if charge_asks:
+            description += (
+                " It charges money, and this credential's auto-approval rule does "
+                "not include charges."
             )
         if self.untrusted:
             description += _UNTRUSTED_NOTE

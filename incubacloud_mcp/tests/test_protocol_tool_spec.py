@@ -61,6 +61,25 @@ class TestToolSpec(BaseCase):
             {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
         )
 
+    def test_a_tool_that_charges_says_it_asks_under_a_rule_without_charges(self):
+        """Under a rule that does not include charges, a tool that charges
+        says the panel asks; under one that does, and any other tool, that
+        it runs without asking."""
+        charging = self._spec(confirm="always", charges=True)
+        plain = self._spec(confirm="always")
+        until = "2026-12-01 00:00:00"
+        without = charging.listed(auto_until=until)["description"]
+        self.assertIn("The panel asks the user to approve it", without)
+        self.assertIn("does not include charges", without)
+        self.assertNotIn("run it without asking", without)
+        for spec, charges in ((charging, True), (plain, False), (plain, True)):
+            with self.subTest(charges=spec.charges, rule_charges=charges):
+                described = spec.listed(auto_until=until, auto_charges=charges)[
+                    "description"
+                ]
+                self.assertIn("run it without asking the user, until", described)
+                self.assertNotIn("does not include charges", described)
+
     def test_a_read_tool_is_hinted_read_only_and_untrusted_output_is_announced(self):
         """A read tool is hinted read-only; untrusted output is announced."""
         listed = self._spec(read_only=True, untrusted=True).listed()
