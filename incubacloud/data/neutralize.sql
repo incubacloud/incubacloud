@@ -124,3 +124,12 @@ END $$;
 -- database.uuid; odoo neutralize after a pg_restore did not.
 UPDATE ir_config_parameter SET value = gen_random_uuid()::text
  WHERE key = 'database.secret';
+
+-- 10. Checkpoints of jobs with steps run apart on a server (1.0.225): a row
+-- says the job may have something running on a server of production's,
+-- which the copy's reconciliation would go and stop. Its plan holds
+-- commands with secrets too. Newer than older copies.
+DO $$ BEGIN
+    DELETE FROM cloud_job_checkpoint;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;

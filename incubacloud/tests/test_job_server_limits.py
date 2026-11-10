@@ -50,6 +50,10 @@ class TestJobServerLimitProblems(BaseCase):
         self.assertEqual(job_server_limit_problems(_options(
             limit_time_real=3600, limit_memory_soft=0, limit_memory_hard=0,
         )), [])
+        # Odoo.sh's limit: the long steps run apart from the request.
+        self.assertEqual(job_server_limit_problems(_options(
+            limit_time_real=900, limit_memory_soft=0, limit_memory_hard=0,
+        )), [])
         self.assertEqual(job_server_limit_problems(_options(
             limit_time_real=0,
             limit_memory_soft=6 * _GIB,
