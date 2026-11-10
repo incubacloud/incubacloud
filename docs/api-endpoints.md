@@ -327,7 +327,7 @@ The assistant's chat and its settings, for the panel's own pages; the MCP exclud
 | POST | `/cloud/instance/<id>/restore` | user (manage backups) | Upload a backup ZIP (≤ 2 GiB) and enqueue restore. Rate-limited. |
 | GET | `/cloud/terminal/<sid>` | user (owner) | xterm.js terminal page. |
 | GET | `/cloud/health` | **public** | DB liveness probe → 200/503 (429 when rate-limited). |
-| POST | `/cloud/gitlab/webhook/<hook_key>` | **public** | GitLab webhook receiver. Per-IP limit (the GitHub bucket, counted at READ COMMITTED), 8 MB, `X-Gitlab-Token` compared in constant time before the body is read (401), duplicates by `Idempotency-Key` and by push answered 200. Every answer after the token is 200, a failed dispatch included. |
+| POST | `/cloud/gitlab/webhook/<hook_key>` | **public** | GitLab webhook receiver. Per-IP limit (the GitHub bucket, counted at READ COMMITTED), 8 MB, `X-Gitlab-Token` compared in constant time before the body is read (401), duplicates by `Idempotency-Key` and by push answered 200. Every answer after the token is 200, a failed dispatch included. Push and merge request events (previews); tag pushes only count as deliveries. |
 | POST | `/cloud/github/webhook` | **public** | GitHub App webhook receiver. HMAC-SHA256 signature required, per-IP rate limit, replay protection by delivery id. |
 | GET | `/cloud/github/setup` | user (manage settings) | Start GitHub App creation via manifest flow. |
 | GET | `/cloud/github/callback` | user (manage settings) | Exchange the manifest code for credentials (state token, 10 min TTL). |

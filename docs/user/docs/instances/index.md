@@ -213,7 +213,8 @@ panel must be reachable from the internet.
 A project can create a throwaway staging for every pull request, so a change can
 be looked at running — on real data — before it is merged. It is **off by
 default**; turn it on under **Project → Settings → Preview instances for pull
-requests**.
+requests and merge requests**. GitLab merge requests get previews the same way:
+see [Merge request previews](../projects/gitlab.md#merge-request-previews).
 
 With it on, opening (or reopening) a pull request on a repository that one of
 the project's **production** instances follows does this, with nobody pressing
