@@ -3272,3 +3272,67 @@ msgstr "· aprobada automáticamente"
 #: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
 msgid "%(credential)s [%(key)s, last connected %(date)s UTC]"
 msgstr "%(credential)s [%(key)s, última conexión el %(date)s UTC]"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"Actions that charge your account are not included: they still ask for "
+"approval."
+msgstr ""
+"No incluye las acciones que cobran a su cuenta: siguen pidiendo aprobación."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Charges"
+msgstr "Cobros"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__include_charges
+msgid "Include Charges"
+msgstr "Incluir cobros"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"Include charges: orders, purchases and plan changes billed to your account\n"
+"                    run without asking too. Unticked, they still ask for approval."
+msgstr ""
+"Incluir cobros: los pedidos, las compras y los cambios de plan que se "
+"facturan a su cuenta también se ejecutan sin preguntar. Sin marcar, siguen "
+"pidiendo aprobación."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Included"
+msgstr "Incluidos"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "It also includes what is charged to your account."
+msgstr "También incluye lo que se cobra a su cuenta."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Still ask for approval"
+msgstr "Siguen pidiendo aprobación"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_auto_approval__include_charges
+msgid ""
+"The tools that charge money run without asking too; without it they still "
+"ask."
+msgstr ""
+"Las herramientas que cobran también se ejecutan sin preguntar; sin ello, "
+"siguen preguntando."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "charges included"
+msgstr "cobros incluidos"
