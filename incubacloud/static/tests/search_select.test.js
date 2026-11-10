@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { SearchSelect } from "@incubacloud/components/search_select/search_select";
 
@@ -163,5 +163,104 @@ describe("SearchSelect — method existence", () => {
 
     test("pickFreeText method exists", () => {
         expect(typeof SearchSelect.prototype.pickFreeText).toBe("function");
+    });
+});
+
+/**
+ * A select stand-in with *count* options whose input sits at
+ * *top*..*bottom* in a viewport of *viewport* px.
+ *
+ * @param {number} top input's top edge
+ * @param {number} bottom input's bottom edge
+ * @param {number} viewport viewport height
+ * @param {number} [count] how many options it has
+ * @returns {object} the stand-in
+ */
+function placed(top, bottom, viewport, count = 3) {
+    const comp = Object.create(SearchSelect.prototype);
+    comp.props = {
+        options: Array.from({ length: count }, (_, i) => `option ${i}`),
+        value: "",
+        onChange() {},
+        emptyLabel: "— select —",
+        allowFreeText: false,
+    };
+    comp.state = { input: "", open: true, dropdownStyle: "", upwards: false };
+    comp.wrapRef = {
+        el: { getBoundingClientRect: () => ({ top, bottom, left: 40, width: 200 }) },
+    };
+    comp._viewportHeight = () => viewport;
+    return comp;
+}
+
+/** The numeric value of *property* in an inline style, or null when absent. */
+function px(style, property) {
+    const match = style.match(new RegExp(`(?:^|;)${property}:(-?\\d+)px`));
+    return match ? Number(match[1]) : null;
+}
+
+describe("SearchSelect — dropdown placement", () => {
+    beforeEach(() => patchTranslations());
+
+    test("an input near the top opens its list below, against it", () => {
+        const comp = placed(100, 136, 720);
+        comp._placeDropdown();
+        const style = comp.state.dropdownStyle;
+        expect(style).toInclude("position:fixed");
+        expect(px(style, "top")).toBe(136);
+        expect(px(style, "bottom")).toBe(null);
+        expect(style).toInclude("left:40px");
+        expect(style).toInclude("width:200px");
+        expect(comp.state.upwards).toBe(false);
+    });
+
+    test("an input at the foot of the window opens its list upwards, inside it", () => {
+        // 10 options and the empty row need more than the 220 px cap.
+        const comp = placed(664, 700, 720, 10);
+        comp._placeDropdown();
+        const style = comp.state.dropdownStyle;
+        expect(px(style, "top")).toBe(null);
+        // Against the input's top edge: 720 - 664.
+        expect(px(style, "bottom")).toBe(56);
+        expect(px(style, "max-height")).toBe(220);
+        expect(comp.state.upwards).toBe(true);
+    });
+
+    test("the height is the room of the side chosen", () => {
+        // Below: 400 - 136 - 8 = 256 > 220 cap; 10 options need the cap.
+        const comp = placed(100, 136, 400, 10);
+        comp._placeDropdown();
+        expect(px(comp.state.dropdownStyle, "max-height")).toBe(220);
+        // 300 px window: 156 below, 92 above: it stays below with its room.
+        const low = placed(100, 136, 300, 10);
+        low._placeDropdown();
+        expect(px(low.state.dropdownStyle, "top")).toBe(136);
+        expect(px(low.state.dropdownStyle, "max-height")).toBe(156);
+    });
+
+    test("what is typed decides the rows the list needs", () => {
+        // 76 px below: ten options need more, the one matching fits.
+        const comp = placed(600, 636, 720, 10);
+        comp._placeDropdown();
+        expect(comp.state.upwards).toBe(true);
+        comp.state.input = "option 3";
+        comp._placeDropdown();
+        expect(comp.state.upwards).toBe(false);
+        expect(px(comp.state.dropdownStyle, "top")).toBe(636);
+    });
+
+    test("no results still needs its row, and so does the empty one", () => {
+        const comp = placed(0, 36, 720, 3);
+        comp.state.input = "nothing like it";
+        expect(comp._menuHeight()).toBe(33);
+        const none = placed(0, 36, 720, 0);
+        expect(none._menuHeight()).toBe(65);
+    });
+
+    test("an input that is not mounted gives no style", () => {
+        const comp = placed(0, 36, 720);
+        comp.wrapRef = { el: null };
+        comp._placeDropdown();
+        expect(comp.state.dropdownStyle).toBe("");
     });
 });

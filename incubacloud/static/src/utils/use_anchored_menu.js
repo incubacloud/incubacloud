@@ -34,3 +34,53 @@ export function useAnchoredMenu(onReposition) {
         window.removeEventListener("resize", handler);
     });
 }
+
+/**
+ * Where a ``position:fixed`` menu goes beside its trigger, and how tall it may be.
+ *
+ * The menu opens below the trigger, as a native select does. When the
+ * height it needs does not fit there and the space above is larger it
+ * opens upwards instead, anchored by ``bottom`` so it grows away from the
+ * trigger whatever its real height. Its height is limited to the space of
+ * the chosen side (at least *minHeight*, at most *maxHeight*), so a long
+ * list scrolls inside the window rather than leaving it.
+ *
+ * @param {{top: number, bottom: number}} rect the trigger's rectangle, in
+ *   viewport coordinates
+ * @param {number} viewportHeight the height of the viewport, in px
+ * @param {object} menu the menu's geometry, in px
+ * @param {number} menu.height the height the open menu needs
+ * @param {number} menu.maxHeight the stylesheet's cap on its height
+ * @param {number} [menu.minHeight=96] the least height it is given
+ * @param {number} [menu.gap=4] the gap between the trigger and the menu
+ * @param {number} [menu.edge=8] the margin kept to the window's edge
+ * @returns {{upwards: boolean, side: string, maxHeight: number}} whether it
+ *   opens upwards, its ``top`` or ``bottom`` declaration, and its height cap
+ */
+export function placeAnchoredMenu(
+    rect,
+    viewportHeight,
+    { height, maxHeight, minHeight = 96, gap = 4, edge = 8 }
+) {
+    const below = viewportHeight - rect.bottom - gap - edge;
+    const above = rect.top - gap - edge;
+    const upwards = below < Math.min(height, maxHeight) && above > below;
+    return {
+        upwards,
+        side: upwards
+            ? `bottom:${Math.round(viewportHeight - rect.top + gap)}px`
+            : `top:${Math.round(rect.bottom + gap)}px`,
+        maxHeight: Math.round(
+            Math.max(minHeight, Math.min(maxHeight, upwards ? above : below))
+        ),
+    };
+}
+
+/**
+ * Height of the viewport a ``position:fixed`` menu is placed in.
+ *
+ * @returns {number} pixels
+ */
+export function viewportHeight() {
+    return document.documentElement.clientHeight;
+}

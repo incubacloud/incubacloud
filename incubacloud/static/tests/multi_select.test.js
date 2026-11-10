@@ -133,3 +133,74 @@ describe("MultiSelect", () => {
         expect(String(selector([]).removeLabel({ label: "Claude Opus" }))).toBe("Remove Claude Opus");
     });
 });
+
+/**
+ * A selector stand-in with *count* options whose field sits at
+ * *top*..*bottom* in a viewport of *viewport* px.
+ *
+ * @param {number} top field's top edge
+ * @param {number} bottom field's bottom edge
+ * @param {number} viewport viewport height
+ * @param {number} [count] how many options it has
+ * @param {Array} [value] the values chosen
+ * @returns {object} the stand-in
+ */
+function placed(top, bottom, viewport, count = 3, value = []) {
+    const comp = selector(value, {
+        options: Array.from({ length: count }, (_, i) => ({
+            value: `m${i}`,
+            label: `Model ${i}`,
+        })),
+    });
+    comp.wrapRef = {
+        el: { getBoundingClientRect: () => ({ top, bottom, left: 40, width: 300 }) },
+    };
+    comp._viewportHeight = () => viewport;
+    return comp;
+}
+
+/** The numeric value of *property* in an inline style, or null when absent. */
+function px(style, property) {
+    const match = style.match(new RegExp(`(?:^|;)${property}:(-?\\d+)px`));
+    return match ? Number(match[1]) : null;
+}
+
+describe("MultiSelect — menu placement", () => {
+    beforeEach(() => allowTranslations());
+
+    test("a field near the top opens its menu below", () => {
+        const style = placed(100, 140, 720)._menuStyle();
+        expect(style).toInclude("position:fixed");
+        expect(px(style, "top")).toBe(144);
+        expect(px(style, "bottom")).toBe(null);
+        expect(style).toInclude("left:40px");
+        expect(style).toInclude("width:300px");
+    });
+
+    test("a field at the foot of the window opens its menu upwards, inside it", () => {
+        const style = placed(660, 700, 720, 10)._menuStyle();
+        expect(px(style, "top")).toBe(null);
+        // 4 px above the field's top edge: 720 - 660 + 4.
+        expect(px(style, "bottom")).toBe(64);
+        expect(px(style, "max-block-size")).toBe(280);
+    });
+
+    test("the height is the room of the side chosen", () => {
+        // 400 px window: 212 px above the field, 124 below.
+        const style = placed(224, 264, 400, 10)._menuStyle();
+        expect(px(style, "bottom")).toBe(180);
+        expect(px(style, "max-block-size")).toBe(212);
+    });
+
+    test("the options chosen leave the menu, and so its height", () => {
+        // 90 px below: three options need more, one left fits.
+        const all = placed(590, 630, 720, 3);
+        expect(px(all._menuStyle(), "bottom")).toBe(134);
+        const one = placed(590, 630, 720, 3, ["m0", "m1"]);
+        expect(px(one._menuStyle(), "top")).toBe(634);
+    });
+
+    test("a field that is not mounted gives no style", () => {
+        expect(selector([])._menuStyle()).toBe("");
+    });
+});

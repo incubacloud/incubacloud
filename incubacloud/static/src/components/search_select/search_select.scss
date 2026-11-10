@@ -1,6 +1,6 @@
 // ─── SearchSelect ─────────────────────────────────────────────────────────────
 // Generic searchable single-select, restyled onto the rl design tokens.
-// The dropdown is position:fixed (coords injected from _computeDropdownStyle)
+// The dropdown is position:fixed (coords injected from _placeDropdown)
 // so it escapes any overflow:hidden ancestor (e.g. a modal body / repo card).
 
 .ic-search-select {
@@ -64,8 +64,20 @@
         border-bottom-right-radius: 0;
     }
 
+    // Opened upwards (no room below): the list meets the input's top edge.
+    &--up &__input {
+        border-radius: 0 0 var(--rl-rsm) var(--rl-rsm);
+    }
+
+    &--up &__dropdown {
+        border-top: 1px solid var(--rl-green);
+        border-bottom: none;
+        border-radius: var(--rl-rsm) var(--rl-rsm) 0 0;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+    }
+
     // ── Dropdown ──────────────────────────────────────────────────────────
-    // position:fixed + inline coords (see _computeDropdownStyle in the .js).
+    // position:fixed + inline coords (see _placeDropdown in the .js).
 
     &__dropdown {
         position: fixed; // fallback; overridden by inline style from JS

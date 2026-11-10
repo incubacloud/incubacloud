@@ -3,7 +3,19 @@
 import { Component, useRef, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 
-import { useAnchoredMenu } from "../../utils/use_anchored_menu";
+import {
+    placeAnchoredMenu,
+    useAnchoredMenu,
+    viewportHeight,
+} from "../../utils/use_anchored_menu";
+
+// Menu geometry, in px. The cap equals ``.ic-multi-select__menu``'s
+// ``max-block-size`` in multi_select.scss; a row is an option's 8 px padding
+// twice plus its text line (19.5 px at 13 px); the chrome is the menu's 5 px
+// padding twice plus its 1 px border twice.
+const MENU_MAX_HEIGHT = 280;
+const MENU_ROW_HEIGHT = 35.5;
+const MENU_CHROME_HEIGHT = 12;
 
 /**
  * MultiSelect — generic searchable multi-value select.
@@ -96,17 +108,43 @@ export class MultiSelect extends Component {
         );
     }
 
-    /** Fixed-position style under the field, as wide as it. */
+    /** Height of the viewport the fixed menu is placed in (a seam for the tests). */
+    _viewportHeight() {
+        return viewportHeight();
+    }
+
+    /**
+     * Height the open menu would have, capped like the stylesheet's
+     * ``max-block-size``: one row per option left, or the empty text's.
+     *
+     * @returns {number} pixels
+     */
+    _menuHeight() {
+        const rows = Math.max(this.filtered.length, 1);
+        return Math.min(MENU_MAX_HEIGHT, rows * MENU_ROW_HEIGHT + MENU_CHROME_HEIGHT);
+    }
+
+    /**
+     * Fixed-position style beside the field, as wide as it: below it, or
+     * above it when it does not fit below and there is more room there,
+     * with its height limited to that side's room (``placeAnchoredMenu``).
+     *
+     * @returns {string} the inline style, "" while the field is not mounted
+     */
     _menuStyle() {
         const el = this.wrapRef.el;
         if (!el) {
             return "";
         }
         const rect = el.getBoundingClientRect();
-        return `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;width:${rect.width}px`;
+        const { side, maxHeight } = placeAnchoredMenu(rect, this._viewportHeight(), {
+            height: this._menuHeight(),
+            maxHeight: MENU_MAX_HEIGHT,
+        });
+        return `position:fixed;${side};left:${rect.left}px;width:${rect.width}px;max-block-size:${maxHeight}px`;
     }
 
-    /** Open the menu under the field, its first option active. */
+    /** Open the menu beside the field, its first option active. */
     open() {
         if (this.props.disabled || this.state.open) {
             return;
