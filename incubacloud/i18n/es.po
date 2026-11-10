@@ -19580,3 +19580,13 @@ msgid ""
 msgstr ""
 "Solo un administrador establece valores predeterminados personales en los "
 "registros de IncubaCloud."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_repo_mixin.py:0
+msgid ""
+"Only a Project Manager or higher can move the repository %s to another "
+"project or instance."
+msgstr ""
+"Solo un Gerente de proyecto o superior puede mover el repositorio %s a otro "
+"proyecto o instancia."

@@ -96,6 +96,63 @@ class TestRepoUrlRole(CloudSecurityBase):
                     })
                 self.assertEqual(line.url, _MINE)
 
+    def _other_parents(self):
+        """Another instance and another project the consultant writes.
+
+        :return: each line with the parent of its model it could move to
+        :rtype: list
+        """
+        other_project = self._create_project(
+            "Repo URL elsewhere", members=[self.consultant, self.pm],
+        )
+        return [
+            (self.instance_repo, self._create_instance(
+                self.project, name="inst-elsewhere",
+            )),
+            (self.project_repo, other_project),
+        ]
+
+    def test_a_consultant_cannot_move_a_line(self):
+        """Written on the line, or linked or set from the other parent."""
+        for line, other in self._other_parents():
+            parent = line[line._owner_field]
+            attempts = (
+                (line, {line._owner_field: other.id}),
+                (other, {"repo_ids": [(4, line.id)]}),
+                (other, {"repo_ids": [(6, 0, [line.id])]}),
+            )
+            for record, vals in attempts:
+                with self.subTest(model=line._name, written=record._name,
+                                  vals=vals):
+                    with self.assertRaisesRegex(
+                        AccessError,
+                        "Only a Project Manager or higher can move the "
+                        "repository https://github.com/example/mine to "
+                        "another project or instance.",
+                    ), self.env.cr.savepoint():
+                        self._as(record, self.consultant).write(vals)
+                    self.assertEqual(line[line._owner_field], parent)
+
+    def test_a_consultant_sets_the_lines_a_parent_has(self):
+        """Its own lines again, as a form's ``Command.SET`` sends them."""
+        for line in self.lines:
+            parent = line[line._owner_field]
+            with self.subTest(model=line._name):
+                self._as(parent, self.consultant).write(
+                    {"repo_ids": [(6, 0, [line.id])]},
+                )
+                self._as(line, self.consultant).write(
+                    {line._owner_field: parent.id},
+                )
+                self.assertEqual(line[line._owner_field], parent)
+
+    def test_a_project_manager_moves_a_line(self):
+        """To another project or instance they write."""
+        for line, other in self._other_parents():
+            with self.subTest(model=line._name):
+                self._as(line, self.pm).write({line._owner_field: other.id})
+                self.assertEqual(line[line._owner_field], other)
+
     def test_a_consultant_cannot_create_a_line(self):
         """Of a project or of an instance: the access rights say so."""
         for line in self.lines:

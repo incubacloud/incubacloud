@@ -102,13 +102,15 @@ class TestParentMemberRule(CloudSecurityBase):
         ]))
 
     def test_moves_between_own_projects_still_work(self):
-        """A member moves rows between the instances of their projects."""
-        for row in (self.repo, self.domain, self.whitelist):
+        """A member moves rows between the instances of their projects.
+
+        Not a repository line, which below Project Manager stays on its
+        project or instance (test_repo_url_role).
+        """
+        for row in (self.domain, self.whitelist):
             with self.subTest(model=row._name):
                 self._as(row).write({"instance_id": self.inst_mine_too.id})
                 self.assertEqual(row.instance_id, self.inst_mine_too)
-        self._as(self.project_repo).write({"project_id": self.mine_too.id})
-        self.assertEqual(self.project_repo.project_id, self.mine_too)
         own = self.env["cloud.instance"].with_user(self.consultant).create({
             "name": "own-new",
             "project_id": self.mine.id,
