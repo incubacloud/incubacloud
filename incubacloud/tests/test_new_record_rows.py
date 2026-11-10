@@ -16,6 +16,11 @@ from odoo.addons.incubacloud.tests.test_cloud_security import (
 _URL = "https://github.com/example/mine"
 _FOREIGN_URL = "https://github.com/example/foreign"
 _OWN_ROWS = "can only create"
+#: A default that links or changes a row the user may not write: Odoo's
+#: ``default_get`` refuses it before the panel's check reads it, once its
+#: 19.0 checks the commands of the context (odoo/odoo#285233); an older
+#: 19.0 leaves the refusal to the panel. Either keeps the row where it was.
+_OWN_ROWS_OR_ODOOS = _OWN_ROWS + "|doesn't have 'write' access"
 
 
 class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
@@ -230,10 +235,11 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
         """Refused, and so is an alert or a repository of another project."""
         env = self.env(user=self.consultant)
         for context, error in (
-            ({"default_domain_ids": [(4, self.domain.id)]}, _OWN_ROWS),
-            ({"default_whitelist_ids": [(4, self.whitelist.id)]}, _OWN_ROWS),
+            ({"default_domain_ids": [(4, self.domain.id)]}, _OWN_ROWS_OR_ODOOS),
+            ({"default_whitelist_ids": [(4, self.whitelist.id)]},
+             _OWN_ROWS_OR_ODOOS),
             ({"default_alert_ids": [(1, self.alert.id, {"message": "Changed"})]},
-             _OWN_ROWS),
+             _OWN_ROWS_OR_ODOOS),
             ({"default_alert_ids": [(0, 0, {
                 "code": "own_rows", "message": "New", "level": "warning",
             })]}, "not allowed"),
