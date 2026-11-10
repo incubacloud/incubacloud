@@ -7,15 +7,23 @@ fails on one that has neither: a type added later is either specified
 or exempted on purpose.
 
 Delivery C1 of the idempotency plan (8-nov-2026) specifies two types here:
-``delete_instance`` and ``restore_instance``. The rest wait for C2-C5.
+``delete_instance`` and ``restore_instance``; ``relay_test_mail`` came with
+the relay's test mail. The rest wait for C2-C5.
 """
+import json
+import shlex
 from pathlib import Path
 
 from odoo.tests.common import TransactionCase
 
 from ..models.abstract_executor import HANDOFF_PREFIX, handoff_archive_path
 from ..models.transport import CommandResult
-from .idempotency_harness import IdempotencyCase, JobSpec, uncovered_job_types
+from .idempotency_harness import (
+    Call,
+    IdempotencyCase,
+    JobSpec,
+    uncovered_job_types,
+)
 
 #: The core repository: the types its addons declare are checked here.
 CORE_ROOT = Path(__file__).resolve().parents[2]
@@ -165,6 +173,72 @@ RESTORE_SPEC = JobSpec(
 )
 
 
+def _relay_test_setup(case):
+    """A production whose relay signs in with a password, and its test.
+
+    The job is created as the test's user, whose address the mail goes
+    to (``RelayTestMailExecutor.get_commands``).
+    """
+    host = _host(case, "idem-relay", "192.0.2.84")
+    inst = _deployed_instance(case, host, "idem-relay-inst")
+    inst.write({
+        "smtp_relay_host": "smtp.example.com",
+        "smtp_relay_user": "relay@example.com",
+        "smtp_relay_password": "relay-pass",
+    })
+    case.env.user.email = "asker@example.com"
+    return case.dispatched_job("relay_test_mail", host, inst)
+
+
+def _sends_the_test_mail(call):
+    """The host call that hands the mail to the relay."""
+    return (
+        call.kind == "ssh" and call.method in ("execute", "run")
+        and "relay_test.sh" in call.detail
+    )
+
+
+def _is_a_mail(call):
+    """A mail the relay took: it must happen once.
+
+    Recorded apart from the host call that sends it, whose command
+    carries a tag and a staging directory new on every attempt.
+    """
+    return call.kind == "mail"
+
+
+def _the_relay_takes_it(ledger, host, method, detail):
+    """The script's answer: the relay's server took the mail."""
+    if method in ("execute", "run") and "relay_test.sh" in detail:
+        recipient = shlex.split(detail)[4]
+        ledger.calls.append(Call("mail", host.id, "relay_test", recipient))
+        answer = {"status": "sent", "response": "250 2.0.0 Ok", "token": None}
+        return CommandResult(
+            stdout=f"IC_RELAY_TEST {json.dumps(answer)}\n", exit_status=0,
+        )
+    return None
+
+
+_SENDS_IT_AGAIN = (
+    "the mail left before anything stores it: an attempt that dies after"
+    " the relay took it and before on_success commits sends the person a"
+    " second test mail, which says the same of the relay"
+)
+
+#: The relay's test mail. No retry on a lost connection
+#: (``_retry_on_connection_loss``), no point of no return (a stop removes
+#: the waiting mail from the relay's queue, ``relay_test.sh``), and a
+#: failure holds no queue. What it may not repeat is the mail itself.
+RELAY_TEST_SPEC = JobSpec(
+    code="relay_test_mail",
+    setup=_relay_test_setup,
+    answer=_the_relay_takes_it,
+    once=_is_a_mail,
+    divergent={"hook": _SENDS_IT_AGAIN},
+    divergent_after=((_sends_the_test_mail, _SENDS_IT_AGAIN),),
+)
+
+
 class TestCoreJobTypesRunTwice(IdempotencyCase):
     """The specified core types leave one attempt's world, whatever happens."""
 
@@ -176,13 +250,17 @@ class TestCoreJobTypesRunTwice(IdempotencyCase):
         """A restore whose commit is lost does not look for its archive again."""
         self.check_spec(RESTORE_SPEC)
 
+    def test_relay_test_mail(self):
+        """A test whose commit is lost does not send its mail again."""
+        self.check_spec(RELAY_TEST_SPEC)
+
 
 class TestEveryCoreJobTypeIsSpecified(TransactionCase):
     """A core job type has a specification or an exemption with its reason."""
 
     def test_no_type_is_left_out(self):
         """The registry's core types are all accounted for."""
-        specs = {DELETE_SPEC.code, RESTORE_SPEC.code}
+        specs = {DELETE_SPEC.code, RESTORE_SPEC.code, RELAY_TEST_SPEC.code}
         missing, unreasoned = uncovered_job_types(
             self.env, CORE_ROOT, specs, EXEMPT,
         )
