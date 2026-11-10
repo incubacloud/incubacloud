@@ -1324,9 +1324,6 @@ class CloudJob(models.Model):
         "start_instance": "group_cloud_consultant",
         "stop_instance": "group_cloud_consultant",
         "restart_instance": "group_cloud_consultant",
-        # One mail to the person who asks, through their production's
-        # relay; it changes nothing on the instance.
-        "relay_test_mail": "group_cloud_consultant",
         # Non-production only at this level: production deletion is
         # escalated to manager in ``_check_job_type_allowed``, so the
         # remote teardown can never start for a caller who would not be
@@ -1356,6 +1353,11 @@ class CloudJob(models.Model):
         # daily cron queues it.
         "capture_secret_key": "group_cloud_manager",
         "host_metrics": "group_cloud_manager",
+        # One mail through a production's relay to its asker. A consultant
+        # asks for it with ``cloud.instance.send_relay_test_mail``, which
+        # holds the checks and the hourly count and queues it with
+        # ``sudo``; queued directly it would skip them.
+        "relay_test_mail": "group_cloud_manager",
         # Closes upload doors of every instance of the host; only the
         # cron queues it.
         "watch_restore_uploads": "group_cloud_manager",

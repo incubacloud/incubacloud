@@ -19816,7 +19816,7 @@ msgstr "Esta instancia no tiene relé de correo."
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "This relay sent %(count)s test mails in the last hour. Try again later."
 msgstr ""
@@ -19855,3 +19855,24 @@ msgstr "comprobado %s"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Paste the Value of a client secret from Entra ID."
 msgstr "Pegue el Valor de un secreto de cliente de Entra ID."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Start the instance first: its relay is stopped."
+msgstr "Inicie antes la instancia: su relé está detenido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "The instance is asleep: wake it first."
+msgstr "La instancia está dormida: despiértela antes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/relay_test_mail_executor.py:0
+msgid ""
+"The user who asked for the test has no valid e-mail address to send it to."
+msgstr ""
+"El usuario que pidió la prueba no tiene una dirección de correo válida a la "
+"que enviarla."

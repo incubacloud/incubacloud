@@ -16,8 +16,10 @@ does, at once: the person who asked has just seen the result.
 import json
 import logging
 import re
+import uuid
 
-from odoo import fields
+from odoo import _, fields
+from odoo.exceptions import UserError
 
 from . import _relay_oauth
 from .abstract_executor import AbstractSSHExecutor
@@ -51,12 +53,20 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
         """Return the one step that sends the mail and waits for its verdict.
 
         The sender is the relay's: its mailbox, or the default sender the
-        deploy gave Odoo. The recipient and the mail's tag come from the
-        payload, set by ``send_relay_test_mail`` from the person who asked.
+        deploy gave Odoo. The recipient is the job's creator, whoever
+        asked for it or for its retry, never an address in the payload;
+        the mail's tag is new on every run.
+
+        :raises UserError: when the creator has no address to send to
         """
         inst = self._inst().sudo()
-        payload = self.job.payload or {}
         sender = inst.smtp_relay_user or inst.odoo_admin_email or ""
+        recipient = self.job.sudo().create_uid.email or ""
+        if not _relay_oauth.valid_mailbox(recipient):
+            raise UserError(_(
+                "The user who asked for the test has no valid e-mail "
+                "address to send it to."
+            ))
         oauth = "1" if inst._relay_oauth_renders() else "0"
         return [
             (
@@ -64,8 +74,8 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
                 self.run_script("relay_test.sh", [
                     self._inst_dir(inst),
                     sender,
-                    payload.get("to") or "",
-                    payload.get("tag") or "",
+                    recipient,
+                    uuid.uuid4().hex,
                     oauth,
                     WAIT_SECONDS,
                 ]),
@@ -110,7 +120,8 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
         :param inst: the ``cloud.instance``
         :returns: ``(delivered, cause, message)``; *cause* is None when
             the answer says nothing about the relay as a whole (a timeout,
-            or the server refusing the one recipient)
+            the server refusing the one recipient, or deferring the mail
+            for a reason none of the causes names)
         :rtype: tuple
         """
         status = answer.get("status")
@@ -135,6 +146,14 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
             return False, None, (
                 f"The server refused your address as a recipient: {response}"
             )
+        if status == "deferred":
+            # A temporary answer none of the causes names: the server may
+            # take the mail on the next try. The health probe, which
+            # watches the queue over time, decides.
+            return False, None, (
+                f"{inst.smtp_relay_host} deferred the mail: {response}. "
+                f"The health probe keeps watching the relay's queue."
+            )
         # A refusal none of the causes names, at the end of the mail (a
         # bounce): still the relay's server refusing what the relay sends.
         return False, "refused", (
@@ -149,7 +168,8 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
         two sightings the probe waits for, and the probe's suspicion of it
         is dropped, so the probe updates this alert instead of confirming
         a second one ten minutes later. Anything else (a timeout, the
-        recipient refused) leaves the state and the alert as they were.
+        recipient refused, a deferral of no known cause) leaves the state
+        and the alert as they were.
         """
         inst = self._inst()
         answer = self._parse_answer(results.get(_LABEL, {}).get("stdout"))

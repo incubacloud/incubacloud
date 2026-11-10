@@ -2330,8 +2330,9 @@ class CrudMixin:
             'smtp_relay_oauth_client_id': inst.smtp_relay_oauth_client_id or '',
             # Whether one is saved, never the secret: unlike the
             # password, ``/cloud/get_secret`` does not reveal it either.
+            # Only the system reads the field.
             'has_smtp_relay_oauth_client_secret':
-                _has_encrypted(inst, 'smtp_relay_oauth_client_secret'),
+                _has_encrypted(inst.sudo(), 'smtp_relay_oauth_client_secret'),
             'smtp_relay_state': inst.smtp_relay_state or 'unknown',
             'smtp_relay_checked_at': inst.smtp_relay_checked_at or None,
             'smtp_relay_error': inst.smtp_relay_error or '',

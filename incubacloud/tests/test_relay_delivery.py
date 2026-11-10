@@ -12,15 +12,19 @@ The ``delay_reason`` texts are Postfix 3.10's in docker-mailserver
 """
 import asyncio
 import json
+import subprocess
 from datetime import timedelta
 from unittest.mock import patch
 
 from odoo import fields
-from odoo.exceptions import UserError
-from odoo.tests.common import BaseCase, TransactionCase
+from odoo.exceptions import AccessError, UserError
+from odoo.service.model import call_kw
+from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
 from odoo.addons.incubacloud.models import _relay_oauth
+from odoo.addons.incubacloud.models.cloud_instance import RELAY_TEST_MAILS_PER_HOUR
 from odoo.addons.incubacloud.models.instance_health_executor import (
+    _RELAY_QUEUE_REDUCER,
     InstanceHealthExecutor,
 )
 from odoo.addons.incubacloud.models.relay_test_mail_executor import (
@@ -53,6 +57,9 @@ RCPT = (
     f"host {HOST}[192.0.2.5] said: 550 5.1.1 <someone@example.org>: "
     "Recipient address rejected (in reply to RCPT TO command)"
 )
+AMAVIS = "connect to 127.0.0.1[127.0.0.1]:10024: Connection refused"
+#: Older than ``_relay_oauth.RETRIED_SECONDS``: Postfix has tried it again.
+RETRIED = 15 * 60
 
 
 class TestClassification(BaseCase):
@@ -69,6 +76,9 @@ class TestClassification(BaseCase):
             NO_TOKEN: "no_token",
             "host h said: 554 5.2.252 SendAsDenied; x not allowed to send "
             "as y (in reply to end of DATA command)": "send_as_denied",
+            AMAVIS: "content_filter",
+            "lost connection with 127.0.0.1[127.0.0.1] while sending end "
+            "of data": "content_filter",
         }
         for reason, cause in cases.items():
             with self.subTest(cause=cause):
@@ -88,6 +98,35 @@ class TestClassification(BaseCase):
             AUTH_535.replace("smtp.office365.com", HOST), False, HOST,
         )
         self.assertNotIn("OAuth2", other[1])
+
+    def test_the_hop_to_amavis_is_the_relay_s_own_container(self):
+        cause, message = _relay_oauth.classify_reason(AMAVIS, False, HOST)
+        self.assertEqual(cause, "content_filter")
+        self.assertIn("Amavis", message)
+        self.assertNotIn(HOST, message)
+
+    def test_the_queue_keeps_the_relay_s_failures_past_old_refused_recipients(self):
+        """Recipients refused are left out before the twenty are kept."""
+        lines = [
+            json.dumps({
+                "queue_name": "deferred", "arrival_time": 1_000 + i,
+                "recipients": [{"address": f"u{i}@example.org", "delay_reason": RCPT}],
+            })
+            for i in range(25)
+        ] + [json.dumps({
+            "queue_name": "deferred", "arrival_time": 9_000_000_000,
+            "recipients": [
+                {"address": "a@example.org", "delay_reason": REFUSED},
+                {"address": "b@example.org", "delay_reason": RCPT},
+            ],
+        })]
+        out = subprocess.run(
+            ["python3", "-c", _RELAY_QUEUE_REDUCER],
+            input="\n".join(lines), capture_output=True, text=True, check=True,
+        ).stdout
+        queue = json.loads(out)
+        self.assertEqual(queue["deferred"], 26)
+        self.assertEqual(queue["oldest"], [{"age": queue["oldest"][0]["age"], "reasons": [REFUSED]}])
 
     def test_a_recipient_refused_is_not_the_relay(self):
         self.assertIsNone(_relay_oauth.classify_reason(RCPT, False, HOST))
@@ -133,10 +172,13 @@ class _RelayCase(TransactionCase):
             {"state": "deployed"},
         )
 
-    def _job(self, code, payload=None):
-        """Create a job of *code* on the production."""
+    def _job(self, code, payload=None, user=None):
+        """Create a job of *code* on the production, by *user* if given."""
         job_type = self.env["cloud.job.type"].search([("code", "=", code)], limit=1)
-        return self.env["cloud.job"].create({
+        Job = self.env["cloud.job"]
+        if user:
+            Job = Job.with_user(user).sudo()
+        return Job.create({
             "name": code, "host_id": self.host.id, "instance_id": self.inst.id,
             "job_type_id": job_type.id, "payload": payload or {},
         })
@@ -148,7 +190,7 @@ class _RelayCase(TransactionCase):
             ("instance_id", "=", self.inst.id), ("state", "=", "active"),
         ])
 
-    def _reading(self, reasons=(), age=60, sent_at=None, status=None,
+    def _reading(self, reasons=(), age=RETRIED, sent_at=None, status=None,
                  lifetime="5d", rc=0):
         """Render what the ``relay_delivery`` step prints."""
         queue = {
@@ -217,6 +259,8 @@ class TestRelayProbe(_RelayCase):
         )._relay_delivery_command("~/i", self.inst)
         self.assertIn("postqueue -j", command)
         self.assertIn("relay=smtp.example.com[", command)
+        # The host as typed and as Postfix logs it may differ in case.
+        self.assertIn("grep -aiF", command)
         self.assertIn("tail -n 1 | cut -d", command)
         self.assertIn("<address>", command)
 
@@ -233,6 +277,16 @@ class TestRelayProbe(_RelayCase):
         self.assertIn("up to 5 days, then goes back to its sender", alert.message)
         self.assertEqual(self.inst.smtp_relay_state, "failing")
         self.assertIn("refuses", self.inst.smtp_relay_error)
+
+    def test_one_deferral_seen_by_two_probes_raises_nothing(self):
+        """Postfix tries it again up to ten minutes later: not yet a verdict."""
+        self._probe(self._reading([REFUSED], age=60))
+        self._probe(self._reading([REFUSED], age=360))
+        self.assertFalse(self._alert())
+        self.assertFalse(self._suspicion())
+        self._probe(self._reading([REFUSED], age=700))
+        self._probe(self._reading([REFUSED], age=1000))
+        self.assertEqual(self._alert().payload, {"cause": "connection_refused"})
 
     def test_a_recipient_refused_raises_nothing(self):
         for _i in range(3):
@@ -274,6 +328,18 @@ class TestRelayProbe(_RelayCase):
         self.assertFalse(self._alert())
         self.assertEqual(self.inst.smtp_relay_state, "ok")
 
+    def test_a_delivery_before_the_last_failure_seen_does_not_resolve_it(self):
+        """The last failure the probe saw, not the alert's birth, is the line."""
+        alert = self._raised()
+        now = fields.Datetime.now()
+        alert.last_raised_at = now + timedelta(minutes=10)
+        # The probe grades on a cursor of its own: it reads what is stored.
+        alert.flush_recordset()
+        self._probe(self._reading(sent_at=now + timedelta(minutes=5)))
+        self.assertEqual(self._alert(), alert)
+        self._probe(self._reading(sent_at=now + timedelta(minutes=15)))
+        self.assertFalse(self._alert())
+
     def test_a_relay_that_cannot_be_read_changes_nothing(self):
         alert = self._raised()
         self._probe(self._reading(rc=1))
@@ -308,7 +374,7 @@ class TestRelayTestMail(_RelayCase):
 
     def _run(self, answer, exit_status=0):
         """Run the test mail's outcome on *answer*; return the job."""
-        job = self._job("relay_test_mail", {"to": "me@example.org", "tag": "t1"})
+        job = self._job("relay_test_mail")
         executor = RelayTestMailExecutor(job, self.host)
         stdout = f"IC_RELAY_TEST {json.dumps(answer)}\n" if answer else ""
         results = {"Send the relay's test mail": {
@@ -335,13 +401,22 @@ class TestRelayTestMail(_RelayCase):
             self.env["cloud.job"]._queue_holding_alerts(self.inst.id, self.host.id),
         )
 
-    def test_the_mail_goes_to_the_asker_from_the_relay_s_sender(self):
-        job = self._job("relay_test_mail", {"to": "me@example.org", "tag": "t1"})
-        executor = RelayTestMailExecutor(job, self.host)
-        (label, command, opts), = executor.get_commands()
-        self.assertIn("relay_test.sh", command)
-        self.assertIn(" relay@example.com me@example.org t1 0 120", command)
-        self.assertEqual(opts, {"timeout": 150})
+    def test_a_refusal_of_no_known_cause_waits_for_the_probe(self):
+        """A 4xx none of the causes names may pass on the next try."""
+        job, _errors = self._run({
+            "status": "deferred", "response": "451 4.3.0 Temporary server error",
+            "token": None,
+        })
+        self.assertFalse(job.result["delivered"])
+        self.assertIsNone(job.result["cause"])
+        self.assertFalse(self._alert())
+        self.assertEqual(self.inst.smtp_relay_state, "unknown")
+        job, _errors = self._run({
+            "status": "bounced", "response": "554 5.7.1 Rejected by policy",
+            "token": None,
+        })
+        self.assertEqual(job.result["cause"], "refused")
+        self.assertTrue(self._alert())
 
     def test_a_delivered_mail_resolves_the_alert(self):
         self.env["cloud.alert"].raise_alert(
@@ -392,20 +467,20 @@ class TestRelayTestMail(_RelayCase):
 
 class TestRelayTestMailRequest(_RelayCase):
 
-    def test_it_goes_to_the_asker_and_waits_for_a_deployed_relay(self):
-        self.env.user.email = "me@example.org"
-        with patch.object(
-            type(self.env["cloud.job"]), "enqueue", autospec=True, return_value=7,
-        ) as enqueue:
-            self.assertEqual(self.inst.send_relay_test_mail(), 7)
-        args = enqueue.call_args.args
-        self.assertEqual(args[1:4], (self.host.id, self.inst.id, "relay_test_mail"))
-        payload = enqueue.call_args.kwargs["payload"]
-        self.assertEqual(payload["to"], "me@example.org")
-        self.assertRegex(payload["tag"], r"^[0-9a-f]{32}$")
+    def setUp(self):
+        """The production runs."""
+        super().setUp()
+        self.inst.running = True
 
     def test_it_says_why_it_cannot_run(self):
         self.assertEqual(self.inst._relay_test_refusal(), "")
+        self.inst.running = False
+        self.assertIn("Start the instance first", self.inst._relay_test_refusal())
+        with patch.object(
+            type(self.inst), "_stop_is_expected", autospec=True, return_value=True,
+        ):
+            self.assertIn("asleep", self.inst._relay_test_refusal())
+        self.inst.running = True
         self.inst.applied_config_hash = "a-hash-of-another-configuration"
         self.assertIn("Apply the changes first", self.inst._relay_test_refusal())
         self.inst.applied_config_hash = False
@@ -418,3 +493,108 @@ class TestRelayTestMailRequest(_RelayCase):
         self.env.user.email = False
         with self.assertRaisesRegex(UserError, "no e-mail address"):
             self.inst.send_relay_test_mail()
+
+
+@tagged("post_install", "-at_install")
+class TestRelayTestMailAsker(_RelayCase):
+    """Only ``send_relay_test_mail`` queues a test, and to its asker.
+
+    ``post_install``: the users need a partner, and a module installed
+    later may add a column to it.
+    """
+
+    def setUp(self):
+        """A consultant of the project and a manager, each with an address."""
+        super().setUp()
+        self.inst.running = True
+        self.consultant = new_test_user(
+            self.env, login="relay-consultant", email="consultant@example.org",
+            groups="base.group_user,incubacloud.group_cloud_consultant",
+        )
+        self.project.member_ids = [(4, self.consultant.id)]
+        self.manager = new_test_user(
+            self.env, login="relay-manager", email="manager@example.org",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+
+    def _command(self, job):
+        """Return the command the test mail's executor runs for *job*."""
+        (_label, command, _opts), = RelayTestMailExecutor(job, self.host).get_commands()
+        return command
+
+    def test_the_mail_goes_to_the_job_s_creator_never_to_the_payload(self):
+        job = self._job(
+            "relay_test_mail", {"to": "x@example.net,y@example.net", "tag": "t1"},
+            user=self.consultant,
+        )
+        command = self._command(job)
+        self.assertIn("relay_test.sh", command)
+        self.assertRegex(
+            command, r" relay@example\.com consultant@example\.org [0-9a-f]{32} 0 120",
+        )
+        self.assertNotIn("example.net", command)
+        self.assertNotIn(" t1 ", command)
+        self.assertNotEqual(self._command(job), command)
+
+    def test_a_creator_without_an_address_gets_no_mail(self):
+        self.consultant.email = "x@example.org, y@example.org"
+        job = self._job("relay_test_mail", user=self.consultant)
+        with self.assertRaisesRegex(UserError, "no valid e-mail"):
+            self._command(job)
+
+    def test_a_consultant_cannot_queue_one_directly(self):
+        with self.assertRaises(AccessError):
+            self.env["cloud.job"].with_user(self.consultant).enqueue(
+                self.host.id, self.inst.id, "relay_test_mail",
+                payload={"to": "x@example.net"},
+            )
+
+    def test_asked_through_call_kw_it_keeps_its_hourly_count(self):
+        """A refusal costs nothing; past the count, nothing is queued."""
+        model = self.env["cloud.instance"].with_user(self.consultant)
+        # Tests skip the hourly counts unless they ask for them.
+        counted = {"context": {"force_rate_limit": True}}
+        self.inst.running = False
+        with self.assertRaisesRegex(UserError, "Start the instance first"):
+            call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted)
+        self.inst.running = True
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", autospec=True, return_value=7,
+        ) as enqueue:
+            for _i in range(RELAY_TEST_MAILS_PER_HOUR):
+                self.assertEqual(
+                    call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted), 7,
+                )
+            with self.assertRaisesRegex(UserError, "in the last hour"):
+                call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted)
+        self.assertEqual(enqueue.call_count, RELAY_TEST_MAILS_PER_HOUR)
+        jobs, *args = enqueue.call_args.args
+        self.assertTrue(jobs.env.su)
+        self.assertEqual(jobs.env.uid, self.consultant.id)
+        self.assertEqual(args, [self.host.id, self.inst.id, "relay_test_mail"])
+        self.assertNotIn("payload", enqueue.call_args.kwargs)
+
+    def test_queued_for_a_consultant_it_is_theirs(self):
+        job_id = self.inst.with_user(self.consultant).send_relay_test_mail()
+        job = self.env["cloud.job"].browse(job_id)
+        self.assertEqual(job.create_uid, self.consultant)
+        self.assertFalse(job.payload)
+
+    def test_a_consultant_outside_the_project_is_refused(self):
+        self.project.member_ids = [(3, self.consultant.id)]
+        with self.assertRaises(AccessError):
+            self.inst.with_user(self.consultant).send_relay_test_mail()
+
+    def test_a_retry_goes_to_whoever_retries(self):
+        job = self._job(
+            "relay_test_mail", {"to": "x@example.net"}, user=self.consultant,
+        )
+        job.state = "failed"
+        with self.assertRaises(AccessError):
+            job.with_user(self.consultant).retry_job()
+        retry = self.env["cloud.job"].browse(job.with_user(self.manager).retry_job())
+        self.assertEqual(retry.create_uid, self.manager)
+        command = self._command(retry)
+        self.assertIn(" manager@example.org ", command)
+        self.assertNotIn("consultant@", command)
+        self.assertNotIn("example.net", command)

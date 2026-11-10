@@ -22,11 +22,13 @@
 #   IC_RELAY_TEST {"status": "sent|deferred|bounced|timeout", "response": "<the server's answer>", "token": <ic-relay-oauth status, or null>}
 #
 # A test mail that was not sent is removed from the queue (postsuper -d),
-# so it does not arrive hours later. One that was sent flushes the queue
-# (postqueue -f): mail deferred by what the person just fixed leaves now
-# instead of at Postfix's next retry. Addresses are left out of the
-# server's answer. The script fails (ic_die) only when the relay could not
-# be asked: no instance directory, or the relay did not take the mail.
+# so it does not arrive hours later; so is one whose job was cancelled
+# while it waited (SIGHUP or SIGTERM: the traps below). One that was sent
+# flushes the queue (postqueue -f): mail deferred by what the person just
+# fixed leaves now instead of at Postfix's next retry. Addresses are left
+# out of the server's answer. The script fails (ic_die) only when the
+# relay could not be asked: no instance directory, or the relay did not
+# take the mail.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -68,12 +70,6 @@ if [ "$oauth" = 1 ]; then
 fi
 
 msgid="<ic-relay-test-${tag}@incubacloud.invalid>"
-smtp swaks --server 127.0.0.1:25 --from "$from" --to "$to" \
-    --header "Subject: IncubaCloud relay test" \
-    --header "Message-Id: $msgid" \
-    --header "X-IC-Relay-Test: $tag" \
-    --body "A test mail sent through this instance's mail relay from the panel." \
-    >/dev/null 2>&1 || ic_die "the relay did not take the test mail on its port 25"
 
 # The IDs the mail had in the relay's queue, joined with "|".
 queue_ids() {
@@ -81,6 +77,27 @@ queue_ids() {
         | sed -n 's/.* \([0-9A-Za-z]\{6,\}\): message-id=.*/\1/p' \
         | sort -u | paste -sd '|' -
 }
+
+# remove_mail [IDS] — remove the test mail from the queue under each of
+# its IDs ("|"-joined); without IDS, under the ones the log names now.
+remove_mail() {
+    local id found="${1-$(queue_ids || true)}"
+    for id in ${found//|/ }; do
+        smtp postsuper -d "$id" >/dev/null 2>&1 || true
+    done
+}
+
+# Cancelled while it waits: the mail the relay may still be trying to
+# hand over must not leave later.
+trap 'remove_mail; exit 129' HUP
+trap 'remove_mail; exit 143' TERM
+
+smtp swaks --server 127.0.0.1:25 --from "$from" --to "$to" \
+    --header "Subject: IncubaCloud relay test" \
+    --header "Message-Id: $msgid" \
+    --header "X-IC-Relay-Test: $tag" \
+    --body "A test mail sent through this instance's mail relay from the panel." \
+    >/dev/null 2>&1 || ic_die "the relay did not take the test mail on its port 25"
 
 line=""
 ids=""
@@ -105,12 +122,11 @@ if [ -n "$line" ]; then
     response="$(printf '%s' "$line" | sed -n 's/.*, status=[a-z]* (\(.*\))$/\1/p')"
 fi
 
+trap - HUP TERM
 if [ "$status" = sent ]; then
     smtp postqueue -f >/dev/null 2>&1 || true
 else
-    for id in ${ids//|/ }; do
-        smtp postsuper -d "$id" >/dev/null 2>&1 || true
-    done
+    remove_mail "$ids"
 fi
 
 printf 'IC_RELAY_TEST {"status": "%s", "response": "%s", "token": %s}\n' \

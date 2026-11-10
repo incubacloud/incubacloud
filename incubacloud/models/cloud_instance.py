@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import unicodedata
-import uuid
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -33,6 +32,7 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from .cloud_rate_limit import consume_quota
 from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
 from .cloud_security_mixin import defaults_as_sent
 from .encrypted_char import EncryptedChar
@@ -48,6 +48,12 @@ _ADDON_CHECK_MAX_BYTES = 128 * 1024 * 1024
 #: deploy) may take, every GitHub request included: a GitHub that is
 #: slow with many repositories would otherwise outlast the request.
 ADDON_CHECK_SECONDS = 20
+#: Test mails one production's relay sends in an hour
+#: (``send_relay_test_mail``). Each is a real mail through the provider,
+#: which counts what the mailbox sends (Microsoft 365: 30 a minute,
+#: 10 000 recipients a day); five covers fixing and trying again several
+#: times.
+RELAY_TEST_MAILS_PER_HOUR = 5
 
 # Staging autopurge: how much notice an expiring staging gets, in days
 # before its deadline. Constants rather than settings because the two
@@ -598,9 +604,13 @@ class CloudInstance(models.Model):
     )
     smtp_relay_oauth_directory_id = fields.Char(string="Directory ID")
     smtp_relay_oauth_client_id = fields.Char(string="Application (client) ID")
+    # Read by the system alone, as a host's password: the platform reads
+    # it with ``sudo`` to write the credentials file
+    # (``_relay_oauth_secret``). Written by a developer, as the relay's
+    # password (``_WRITE_ONLY_FIELDS``).
     smtp_relay_oauth_client_secret = EncryptedChar(
         string="Client Secret",
-        groups="incubacloud.group_cloud_developer",
+        groups="base.group_system",
     )
     # What the platform last read of the relay's deliveries to its
     # server: the health probe and the relay's test mail write them.
@@ -1065,6 +1075,31 @@ class CloudInstance(models.Model):
                 if inst._relay_oauth_renders() else {}
             ),
         }
+
+    #: Fields a group writes and only the system reads: ``{field: group}``.
+    #: Saving the OAuth2 relay's client secret is a developer's, as its
+    #: password is, and nobody reads it back (``_has_field_access``).
+    _WRITE_ONLY_FIELDS = {
+        "smtp_relay_oauth_client_secret": "incubacloud.group_cloud_developer",
+    }
+
+    def _has_field_access(self, field, operation):
+        """Let a write-only field be written by its group, read by none.
+
+        A field of :attr:`_WRITE_ONLY_FIELDS` keeps ``base.group_system``
+        on its definition, so ``read``, ``search_read`` and an export
+        refuse it to everyone else; writing it asks for the group listed
+        there instead, so the form's save, ``create`` and the constraints
+        that run with it work as for any field.
+
+        :param field: the field
+        :param str operation: ``read`` or ``write``
+        :rtype: bool
+        """
+        group = self._WRITE_ONLY_FIELDS.get(field.name)
+        if group and operation == "write" and not self.env.su:
+            return self.env.user.has_group(group)
+        return super()._has_field_access(field, operation)
 
     def _relay_oauth_renders(self):
         """Whether a deploy renders this instance's relay with OAuth2.
@@ -1682,6 +1717,10 @@ class CloudInstance(models.Model):
             return _("This instance has no mail relay.")
         if not self.host_id or not self.deployed:
             return _("Deploy the instance first.")
+        if not self.running:
+            if self._stop_is_expected():
+                return _("The instance is asleep: wake it first.")
+            return _("Start the instance first: its relay is stopped.")
         if self.config_dirty:
             return _(
                 "Apply the changes first: the test would use the relay as "
@@ -1693,29 +1732,47 @@ class CloudInstance(models.Model):
         """Queue one test mail through this production's relay.
 
         It goes to the person who asks, at their own address, never to
-        anyone else; the job says whether the relay's server took it
-        (``RelayTestMailExecutor``). Its type lets one wait at most per
-        instance.
+        anyone else: the job sends it to its creator's address
+        (``RelayTestMailExecutor``). Everything that holds the test back
+        is checked here, the only way to ask for one: the role, the
+        instance as the caller reads it, the refusal, the address and,
+        last, :data:`RELAY_TEST_MAILS_PER_HOUR`, so a refused test costs
+        none of the hour's. The job type is the manager's
+        (``cloud.job._job_type_min_group``), so the job is queued with
+        superuser rights once all of it passed; its creator stays the
+        caller. Its type lets one wait at most per instance.
 
         :returns: the ``cloud.job`` id
         :rtype: int
-        :raises UserError: when the test cannot run now, or the person
-            has no address
+        :raises UserError: when the test cannot run now, the person has
+            no address, or the hour's test mails are spent
+        :raises AccessError: when the caller is below a consultant or
+            cannot read the instance
         """
         self.ensure_one()
         self._check_cloud_group("group_cloud_consultant")
+        # ``enqueue`` reads the target as the caller; with ``sudo`` it
+        # does not, so the record rules are applied here.
+        self.check_access("read")
         refusal = self._relay_test_refusal()
         if refusal:
             raise UserError(refusal)
-        recipient = self.env.user.email
-        if not recipient or not _relay_oauth.valid_mailbox(recipient):
+        if not _relay_oauth.valid_mailbox(self.env.user.email):
             raise UserError(_(
                 "Your user has no e-mail address to send the test to. Add "
                 "one to your profile."
             ))
-        return self.env["cloud.job"].enqueue(
+        if not consume_quota(
+            self.env, f"relay_test_mail:{self.id}",
+            max_per_window=RELAY_TEST_MAILS_PER_HOUR, window_seconds=3600,
+        ):
+            raise UserError(_(
+                "This relay sent %(count)s test mails in the last hour. "
+                "Try again later.",
+                count=RELAY_TEST_MAILS_PER_HOUR,
+            ))
+        return self.env["cloud.job"].sudo().enqueue(
             self.host_id.id, self.id, "relay_test_mail",
-            payload={"to": recipient, "tag": uuid.uuid4().hex},
         )
 
     def _extra_env_files(self):

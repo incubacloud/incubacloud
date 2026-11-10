@@ -194,9 +194,23 @@ ALERT_CODE = "smtp_relay_failing"
 #: 2026-11-10.
 STUCK_MINUTES = 30
 
+#: How old a deferred message must be before its reason counts against
+#: the relay, in seconds. Postfix tries a deferred message again once
+#: ``minimal_backoff_time`` (300 s) has passed, at its next scan of the
+#: deferred queue (``queue_run_delay``, 300 s): up to 600 s after it was
+#: deferred. A younger message may have failed only once, and two probes
+#: five minutes apart can both see that one failure; past 660 s the
+#: message has been tried again and failed again, whatever the probes'
+#: timing. Chosen on 2026-11-10.
+RETRIED_SECONDS = 660
+
 #: A reason that ends so is the server refusing one recipient (a full or
 #: unknown mailbox): the relay works, and no alert is raised for it.
-_RECIPIENT_ONLY = "(in reply to RCPT TO command)"
+RECIPIENT_ONLY = "(in reply to RCPT TO command)"
+
+#: A reason that names the relay's own container (``127.0.0.1``, ``::1``)
+#: as the other end: the hop to Amavis, never the relay host.
+_LOCAL_HOP_RE = re.compile(r"\[(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1)\]")
 
 _ADDRESS_RE = re.compile(r"[^\s<>()\[\];:,\"']+@[^\s<>()\[\];:,\"']+")
 
@@ -219,7 +233,7 @@ def recipient_only(reason):
     :param str reason: a ``delay_reason``
     :rtype: bool
     """
-    return (reason or "").rstrip().endswith(_RECIPIENT_ONLY)
+    return (reason or "").rstrip().endswith(RECIPIENT_ONLY)
 
 
 def classify_reason(reason, oauth, host):
@@ -240,6 +254,15 @@ def classify_reason(reason, oauth, host):
     microsoft = host.lower().endswith(".office365.com") or host.lower().endswith(
         ".outlook.com"
     )
+    if _LOCAL_HOP_RE.search(reason):
+        # docker-mailserver hands every mail to Amavis on 127.0.0.1:10024
+        # and takes it back on :10025 before the relay host sees it: a
+        # failure there is the relay's own container, not its server.
+        return ("content_filter", (
+            "The relay's content filter (Amavis) does not take the mail "
+            "inside the relay's container. Restart the instance; if it "
+            "goes on, rebuild it."
+        ))
     if "5.7.139" in reason:
         return ("smtp_auth_disabled", (
             f"{host} refuses to sign the relay in: SMTP AUTH is disabled in "

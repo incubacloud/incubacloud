@@ -232,13 +232,17 @@ _ROUTES_RC_RE = re.compile(r'^rc=(\d+)$', re.MULTILINE)
 
 # What the ``relay_delivery`` step keeps of ``postqueue -j``: per deferred
 # message its age and why each recipient waits, without who wrote to
-# whom; the oldest first, twenty at most. Runs with the relay's python3
-# (docker-mailserver ships it).
+# whom; the oldest first, twenty at most. A recipient the server refused
+# (``_relay_oauth.recipient_only``) is left out before the twenty are
+# chosen, and a message with nothing else with it: old mail to a full
+# mailbox must not push the relay's own failures out of the list. Runs
+# with the relay's python3 (docker-mailserver ships it).
 _RELAY_QUEUE_REDUCER = r"""
 import json, re, sys, time
 now = time.time()
 address = re.compile(r"[^\s<>()\[\];:,\"]+@[^\s<>()\[\];:,\"]+")
 msgs = []
+deferred = 0
 for line in sys.stdin:
     try:
         m = json.loads(line)
@@ -246,14 +250,18 @@ for line in sys.stdin:
         continue
     if m.get("queue_name") != "deferred":
         continue
+    deferred += 1
     reasons = sorted({
         address.sub("<address>", r.get("delay_reason") or "")[:300]
         for r in m.get("recipients") or []
+        if not (r.get("delay_reason") or "").rstrip().endswith(%(rcpt)r)
     })
+    if not reasons:
+        continue
     msgs.append({"age": int(now - (m.get("arrival_time") or now)), "reasons": reasons})
 msgs.sort(key=lambda m: -m["age"])
-print(json.dumps({"deferred": len(msgs), "oldest": msgs[:20]}))
-"""
+print(json.dumps({"deferred": deferred, "oldest": msgs[:20]}))
+""" % {"rcpt": _relay_oauth.RECIPIENT_ONLY}
 _RELAY_SECTION_RE = re.compile(r"^== (status|queue|sent|lifetime)$")
 _RELAY_RC_RE = re.compile(r"^rc=(\d+)$", re.MULTILINE)
 _QUEUE_LIFETIME_RE = re.compile(r"^(\d+)([smhdw]?)$")
@@ -818,10 +826,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         state (``ic-relay-oauth status``; nothing on an image without
         it), the deferred mail reduced by :data:`_RELAY_QUEUE_REDUCER`,
         the time of the last mail delivered to the relay host in
-        ``mail.log`` (the time only), and how long Postfix keeps a
-        deferred mail (``maximal_queue_lifetime``). The exec gets 30
-        seconds and an ``rc=`` line follows, as for the gatekeeper's
-        network: a stopped ``smtp`` leaves no failed step, and
+        ``mail.log`` (the time only; the host matched without regard to
+        case, as typed and as Postfix logs it may differ), and how long
+        Postfix keeps a deferred mail (``maximal_queue_lifetime``). The
+        exec gets 30 seconds and an ``rc=`` line follows, as for the
+        gatekeeper's network: a stopped ``smtp`` leaves no failed step, and
         ``instance_service_smtp_down`` speaks for it.
 
         :param str d: remote instance directory
@@ -838,7 +847,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             "postqueue -j 2>/dev/null | python3 -c "
             f"{shlex.quote(_RELAY_QUEUE_REDUCER)}; "
             "echo '== sent'; "
-            f"grep -aF {sent} /var/log/mail/mail.log 2>/dev/null"
+            f"grep -aiF {sent} /var/log/mail/mail.log 2>/dev/null"
             " | grep -aF ', status=sent ' | tail -n 1 | cut -d' ' -f1; "
             "echo '== lifetime'; "
             "postconf -h maximal_queue_lifetime 2>/dev/null"
@@ -1709,18 +1718,22 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         A failure is mail the relay's queue defers for a cause of the
         relay's (``_relay_oauth.classify_reason``: connection, DNS, TLS,
-        credentials refused, the OAuth2 token, a sender refused), mail
-        deferred longer than ``_relay_oauth.STUCK_MINUTES`` for any other
-        reason, or an OAuth2 renewer that has no token left
+        credentials refused, the OAuth2 token, a sender refused, Amavis)
+        once Postfix has tried it again (``_relay_oauth.RETRIED_SECONDS``),
+        mail deferred longer than ``_relay_oauth.STUCK_MINUTES`` for any
+        other reason, or an OAuth2 renewer that has no token left
         (``_relay_oauth.token_failure``). A server refusing one recipient
         is not one. Two probes in a row raise ``smtp_relay_failing``,
         critical (its ``cloud.alert.policy``).
 
         Only a delivery resolves it: a mail delivered to the relay host
-        after the alert was raised, read in ``mail.log``, or a test mail
-        that went out. A clean queue and a token ``ok`` do not: the most
-        likely misconfiguration (Exchange refusing a good token) gives
-        both, and the test mail removes what it could not send.
+        after the last time a failure was seen (the alert's
+        ``last_raised_at``, which every sighting stamps), read in
+        ``mail.log``, or a test mail that went out. A delivery older than
+        that last failure says nothing of the relay now. A clean queue
+        and a token ``ok`` do not: the most likely misconfiguration
+        (Exchange refusing a good token) gives both, and the test mail
+        removes what it could not send.
 
         No reading (a relay that could not be read; ``smtp`` stopped)
         changes nothing. An instance whose relay is gone has its alert
@@ -1768,7 +1781,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                     Alert._dedup_domain(code, instance=instance), limit=1,
                 )
                 sent_at = reading.get('sent_at')
-                if alert and sent_at and sent_at > alert.create_date:
+                last_failure = alert.last_raised_at or alert.create_date
+                if alert and sent_at and sent_at > last_failure:
                     Alert.resolve_alert(code, instance=instance)
                     alert = Alert.browse()
                 elif not alert:
@@ -1785,6 +1799,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     def _relay_queue_failure(queue, oauth, host):
         """Name the relay's failure in its deferred mail, or None.
 
+        Only a message Postfix has tried again counts
+        (``_relay_oauth.RETRIED_SECONDS``): one deferral by a passing
+        glitch, seen by two probes before the next try, is not a relay
+        that does not deliver.
+
         :param dict queue: ``deferred`` and ``oldest`` (the reducer's)
         :param bool oauth: whether the relay signs in with OAuth2
         :param str host: the relay host
@@ -1793,6 +1812,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         """
         oldest = [m for m in queue.get('oldest') or [] if isinstance(m, dict)]
         for message in oldest:
+            # A message deferred once may leave at Postfix's next try.
+            if (message.get('age') or 0) < _relay_oauth.RETRIED_SECONDS:
+                continue
             for reason in message.get('reasons') or []:
                 found = _relay_oauth.classify_reason(reason, oauth, host)
                 if found:
