@@ -7,6 +7,7 @@ from odoo.addons.incubacloud.models._odoo_versions import (
     ODOO_VERSION_SELECTION,
     POSTGRES_MAJORS,
 )
+from odoo.addons.incubacloud.models._repo_requirements import _normalize_url
 
 from ..protocol.tool_spec import (
     ToolSpec,
@@ -23,6 +24,10 @@ from ..protocol.tool_spec import (
 from .mcp_catalog import tool_policies
 from .mcp_tools import quoted
 from .mcp_tools_code import _repo_key
+
+#: Stands for the commit a branch has when ``freeze_repos`` pins it, read
+#: only once the call runs.
+_BRANCH_HEAD = object()
 
 _CONSULTANT = "group_cloud_consultant"
 _PROJECT_MANAGER = "group_cloud_project_manager"
@@ -417,6 +422,9 @@ TOOLS = (
             required=("instance_id", "actions"),
         ),
         route="/cloud/apply_sync",
+        # Taking the project's repositories or branches gives a production
+        # code it did not deploy from (_confirm_apply_config).
+        confirm="conditional",
         requires="the actions compare_config proposed for this instance, unchanged.",
     ),
     ToolSpec(
@@ -451,6 +459,9 @@ TOOLS = (
             required=("model", "repo_ids"),
         ),
         handler="_tool_freeze_repos",
+        # Pinning or releasing a production's commit changes the code it
+        # deploys (_confirm_freeze_repos).
+        confirm="conditional",
         requires=(
             "repositories of a project or an instance the user can change, with "
             "a branch to read the commit of."
@@ -575,40 +586,122 @@ class McpToolsOperate(models.AbstractModel):
         if repos is None:
             return None
         instance = self.env["cloud.instance"].browse(args["instance_id"]).exists()
+        return self._ask_production_code(
+            instance,
+            [
+                _deployed_code(
+                    repo["url"], repo.get("branch"), repo.get("commit_sha")
+                )
+                for repo in repos
+                if (repo.get("url") or "").strip()
+            ],
+        )
+
+    @api.model
+    def _confirm_apply_config(self, args):
+        """Ask before the project's configuration changes a production's code.
+
+        The repositories the actions take from the project (``pull``) and
+        the conflicts the project's line wins give the instance their
+        branch and pinned commit: asked as :meth:`_confirm_update_instance`
+        asks. Dependencies, the instance's lines copied to the project and
+        a staging ask nothing.
+
+        :param dict args: the validated arguments: ``instance_id`` and ``actions``
+        :return: what the user approves, or None
+        """
+        actions = args.get("actions")
+        repo_actions = actions.get("repos") if isinstance(actions, dict) else None
+        if not isinstance(repo_actions, dict):
+            return None
+        instance = self.env["cloud.instance"].browse(args["instance_id"]).exists()
+        project_lines = {
+            _normalize_url(line.url): line for line in instance.project_id.repo_ids
+        }
+        taken = [url for url in repo_actions.get("pull") or () if isinstance(url, str)]
+        conflicts = repo_actions.get("conflicts")
+        if isinstance(conflicts, dict):
+            # As apply_sync reads it: any winner but the instance is the project.
+            taken += [
+                url
+                for url, winner in conflicts.items()
+                if isinstance(url, str) and winner != "instance"
+            ]
+        codes = []
+        for url in taken:
+            line = project_lines.get(_normalize_url(url))
+            if line:
+                codes.append(_deployed_code(line.url, line.branch, line.commit_sha))
+        return self._ask_production_code(instance, codes)
+
+    @api.model
+    def _confirm_freeze_repos(self, args):
+        """Ask before pinning or releasing the commit of a production's line.
+
+        Pinned, the line deploys its branch's commit of the moment;
+        released, whatever its branch holds at the next rebuild. Asked
+        for the lines of a production the call changes, as the routes
+        read them: one line is pinned again even when it already is,
+        several only where none is; releasing changes a pinned line
+        alone. A project's lines and a staging's ask nothing.
+
+        :param dict args: the validated arguments: ``model``, ``repo_ids``
+            and ``freeze``
+        :return: what the user approves, or None
+        """
+        if args["model"] != "cloud.instance.repo" or not args["repo_ids"]:
+            return None
+        freeze = args.get("freeze", True)
+        lines = self.env["cloud.instance.repo"].search(
+            [("id", "in", args["repo_ids"])]
+        )
+        if freeze and len(args["repo_ids"]) > 1:
+            lines = lines.filtered(
+                lambda line: line.url and line.branch and not line.commit_sha
+            )
+        elif not freeze:
+            lines = lines.filtered("commit_sha")
+        questions = [
+            self._ask_production_code(
+                instance,
+                [
+                    (
+                        *_deployed_code(line.url, line.branch, "")[:2],
+                        _BRANCH_HEAD if freeze else "",
+                    )
+                    for line in lines.filtered(
+                        lambda line, inst=instance: line.instance_id == inst
+                    )
+                ],
+            )
+            for instance in lines.instance_id
+        ]
+        return "\n\n".join(question for question in questions if question) or None
+
+    @api.model
+    def _ask_production_code(self, instance, codes):
+        """Return what to approve before *instance* deploys *codes*, or None.
+
+        Only a production asks, and only for code none of its lines holds
+        yet; each entry is listed once.
+
+        :param instance: the instance whose lines would change
+        :param list codes: ``(repository, branch, commit)`` as
+            :func:`_deployed_code` gives them; ``_BRANCH_HEAD`` for the
+            commit the branch has when the call runs
+        :return: the question, or None
+        """
         if instance.environment != "production":
             return None
         held = {
             _deployed_code(line.url, line.branch, line.commit_sha)
             for line in instance.repo_ids
         }
-        new = []
-        for repo in repos:
-            if not (repo.get("url") or "").strip():
-                continue
-            code = _deployed_code(
-                repo["url"], repo.get("branch"), repo.get("commit_sha")
-            )
-            if code not in held and code not in new:
-                new.append(code)
+        new = [code for code in dict.fromkeys(codes) if code not in held]
         if not new:
             return None
         lines = "\n".join(
-            "- "
-            + (
-                self.env._(
-                    "%(repo)s, branch %(branch)s, commit %(sha)s",
-                    repo=quoted(repo),
-                    branch=quoted(branch),
-                    sha=quoted(sha),
-                )
-                if sha
-                else self.env._(
-                    "%(repo)s, branch %(branch)s",
-                    repo=quoted(repo),
-                    branch=quoted(branch),
-                )
-            )
-            for repo, branch, sha in new
+            "- " + self._code_entry(repo, branch, sha) for repo, branch, sha in new
         )
         return self.env._(
             "Change the code production %(name)s deploys from. It reaches "
@@ -616,6 +709,35 @@ class McpToolsOperate(models.AbstractModel):
             "every push. New in it:\n%(lines)s",
             name=quoted(instance.name),
             lines=lines,
+        )
+
+    @api.model
+    def _code_entry(self, repo, branch, sha):
+        """Return one entry of :meth:`_ask_production_code`'s list.
+
+        :param str repo: the repository, as :func:`_deployed_code` names it
+        :param str branch: the branch
+        :param sha: the pinned commit, empty to follow the branch, or
+            ``_BRANCH_HEAD``
+        :rtype: str
+        """
+        if sha is _BRANCH_HEAD:
+            return self.env._(
+                "%(repo)s, branch %(branch)s, pinned at its current commit",
+                repo=quoted(repo),
+                branch=quoted(branch),
+            )
+        if sha:
+            return self.env._(
+                "%(repo)s, branch %(branch)s, commit %(sha)s",
+                repo=quoted(repo),
+                branch=quoted(branch),
+                sha=quoted(sha),
+            )
+        return self.env._(
+            "%(repo)s, branch %(branch)s",
+            repo=quoted(repo),
+            branch=quoted(branch),
         )
 
     @api.model
