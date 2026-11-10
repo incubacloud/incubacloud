@@ -202,6 +202,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 f"f={self._tmp('backup.env')};"
                 f" [ -f \"$f\" ] && mv \"$f\" {d}/.docker/backup.env || true",
             ),
+            *self._relay_oauth_file_step(d),
             *self._write_extra_env_step(d),
             # 4b. Write the panel's copy of the encryption key (merged
             #     with the host's in ``before_execute``), then make sure

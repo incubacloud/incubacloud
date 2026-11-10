@@ -110,6 +110,12 @@ _ALLOWED_FILES = {
     "incubacloud/static/src/utils/icons.js": (
         2, "an icon's name, which the screens of modules on top ask for",
     ),
+    "incubacloud/models/_relay_oauth.py": (
+        1, (
+            "the key the relay image's renewer reads the directory ID from, "
+            "Microsoft 365's own word (images/relay-oauth)"
+        ),
+    ),
 }
 
 #: Text files by extension; anything else is not read.

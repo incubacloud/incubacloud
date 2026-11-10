@@ -37,6 +37,7 @@ import {RestoreUploadMixin} from "./instance_detail_restore";
 import {RefreshMixin} from "./instance_detail_refresh";
 import {AuditMixin} from "./instance_detail_audit";
 import {MailsMixin} from "./instance_detail_mails";
+import {RelayMixin} from "./instance_detail_relay";
 import { confirmVia } from "../../utils/use_confirm";
 import {
   fetchOdooVersionFacts,
@@ -205,7 +206,8 @@ export class InstanceDetail extends JobsMixin(
   RefreshMixin(
   AuditMixin(
   MailsMixin(
-  Component))))))))) {
+  RelayMixin(
+  Component)))))))))) {
   static props = {
     instance_id: {type: Number, optional: true},
     project_id: {type: Number},
@@ -370,6 +372,8 @@ export class InstanceDetail extends JobsMixin(
       has_odoo_admin_password: false,
       has_postgres_password: false,
       has_smtp_relay_password: false,
+      has_smtp_relay_oauth_client_secret: false,
+      relayTestLoading: false,
       // sync modal
       syncModal: null, // { diff, actions, loading, applying, error }
       // action-related state
@@ -543,6 +547,8 @@ export class InstanceDetail extends JobsMixin(
     this.state.has_odoo_admin_password = inst.has_odoo_admin_password || false;
     this.state.has_postgres_password = inst.has_postgres_password || false;
     this.state.has_smtp_relay_password = inst.has_smtp_relay_password || false;
+    this.state.has_smtp_relay_oauth_client_secret =
+      inst.has_smtp_relay_oauth_client_secret || false;
     this.state.pipDeps = inst.pip_dependencies || "";
     this.state.aptDeps = inst.apt_dependencies || "";
     this.state.form = {
@@ -563,6 +569,10 @@ export class InstanceDetail extends JobsMixin(
       smtp_relay_security: inst.smtp_relay_security || "starttls",
       smtp_relay_user: inst.smtp_relay_user || "",
       smtp_relay_password: "",
+      smtp_relay_auth: inst.smtp_relay_auth || "password",
+      smtp_relay_oauth_directory_id: inst.smtp_relay_oauth_directory_id || "",
+      smtp_relay_oauth_client_id: inst.smtp_relay_oauth_client_id || "",
+      smtp_relay_oauth_client_secret: "",
       odoo_conf: inst.odoo_conf || "",
       odoo_memory_limit: inst.odoo_memory_limit || "2g",
       odoo_cpus: inst.odoo_cpus || 2.0,
@@ -655,6 +665,10 @@ export class InstanceDetail extends JobsMixin(
           smtp_relay_security: "starttls",
           smtp_relay_user: "",
           smtp_relay_password: "",
+          smtp_relay_auth: "password",
+          smtp_relay_oauth_directory_id: "",
+          smtp_relay_oauth_client_id: "",
+          smtp_relay_oauth_client_secret: "",
           odoo_conf: "",
           odoo_memory_limit: "2g",
           odoo_cpus: 2.0,

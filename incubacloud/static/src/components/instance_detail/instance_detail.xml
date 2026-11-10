@@ -2420,14 +2420,27 @@
                 <div class="rl-frow rl-full">
                     <div class="ic-smtp-note" t-esc="mailCaptureNotice"/>
                 </div>
+                <t t-if="showsRelayAuth">
+                    <div class="rl-frow">
+                        <label>SMTP Authentication</label>
+                        <RlSelect
+            options="relayAuthOptions"
+            ariaLabel="'SMTP authentication'"
+            value="state.form.smtp_relay_auth"
+            onChange="(value) => this.onRelayAuthChange(value)"
+          />
+                    </div>
+                </t>
                 <div class="rl-frow">
                     <label>SMTP Host <span
+              t-if="!isOAuthRelay"
               class="rl-opt"
             >— leave empty to skip</span></label>
                     <input
             type="text"
             placeholder="smtp.example.com"
             t-att-value="state.form.smtp_relay_host"
+            t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
             t-on-input="(ev) => this.onInput('smtp_relay_host', ev)"
           />
                 </div>
@@ -2441,6 +2454,7 @@
                     t-att-aria-describedby="validator.fieldError('smtp_relay_port') ? 'idet-err-smtp_relay_port' : undefined"
             type="number"
             t-att-value="state.form.smtp_relay_port"
+            t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
             t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"
             t-on-blur="() => validator.touch('smtp_relay_port')"
           />
@@ -2457,24 +2471,96 @@
                     <RlSelect
             options="[{value:'none',label:'None'},{value:'starttls',label:'STARTTLS'},{value:'ssl',label:'SSL/TLS'}]"
             value="state.form.smtp_relay_security"
+            disabled="isOAuthRelay"
             onChange="(value) => { state.form.smtp_relay_security = value; state.saved = false; }"
           />
                 </div>
                 <div class="rl-frow">
-                    <label>SMTP User</label>
+                    <label t-if="isOAuthRelay">Sender mailbox</label>
+                    <label t-else="">SMTP User</label>
                     <input
             type="text"
+            t-att-placeholder="isOAuthRelay ? 'notifications@example.com' : undefined"
             t-att-value="state.form.smtp_relay_user"
             t-on-input="(ev) => this.onInput('smtp_relay_user', ev)"
           />
                 </div>
-                <div class="rl-frow">
-                    <label>SMTP Password</label>
-                    <PasswordInput
+                <t t-if="!isOAuthRelay">
+                    <div class="rl-frow">
+                        <label>SMTP Password</label>
+                        <PasswordInput
             hasValue="state.has_smtp_relay_password"
             onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"
           />
-                </div>
+                    </div>
+                </t>
+                <t t-else="">
+                    <div class="rl-frow">
+                        <label>Directory ID</label>
+                        <input
+            type="text"
+            placeholder="00000000-0000-0000-0000-000000000000"
+            t-att-value="state.form.smtp_relay_oauth_directory_id"
+            t-on-input="(ev) => this.onInput('smtp_relay_oauth_directory_id', ev)"
+          />
+                    </div>
+                    <div class="rl-frow">
+                        <label>Application (client) ID</label>
+                        <input
+            type="text"
+            placeholder="00000000-0000-0000-0000-000000000000"
+            t-att-value="state.form.smtp_relay_oauth_client_id"
+            t-on-input="(ev) => this.onInput('smtp_relay_oauth_client_id', ev)"
+          />
+                    </div>
+                    <div class="rl-frow">
+                        <label>Client secret</label>
+                        <PasswordInput
+            hasValue="state.has_smtp_relay_oauth_client_secret"
+            onChange="(val) => this.onPasswordChange('smtp_relay_oauth_client_secret', val)"
+          />
+                    </div>
+                    <div class="rl-frow rl-full">
+                        <div class="ic-smtp-note">
+                            <span>Register an app in Entra ID with the SMTP.SendAsApp permission and give it this mailbox in Exchange Online.</span>
+                            <t t-out="' '"/>
+                            <a
+                t-att-href="relayGuideUrl"
+                target="_blank"
+                rel="noopener"
+              >Step-by-step guide</a>
+                        </div>
+                    </div>
+                </t>
+                <t t-if="relayStatus">
+                    <div class="rl-frow rl-full ic-relay-status">
+                        <div class="ic-relay-status-line">
+                            <span class="rl-l">Relay</span>
+                            <span
+                class="rl-v"
+                t-att-class="relayStatus.tone"
+                t-esc="relayStatus.label"
+              />
+                            <span
+                t-if="relayStatus.detail"
+                class="ic-relay-status-detail"
+                t-esc="relayStatus.detail"
+              />
+                        </div>
+                        <button
+              type="button"
+              class="rl-btn rl-btn-ghost rl-btn-sm"
+              t-att-disabled="relayTestDisabledReason or state.relayTestLoading"
+              t-att-title="relayTestDisabledReason or undefined"
+              t-on-click="sendRelayTestMail"
+            >Send test mail</button>
+                        <span
+              t-if="relayTestDisabledReason"
+              class="ic-smtp-note"
+              t-esc="relayTestDisabledReason"
+            />
+                    </div>
+                </t>
 
                 <!-- Backup backend (production only) -->
                 <t t-if="state.form.environment === 'production'">

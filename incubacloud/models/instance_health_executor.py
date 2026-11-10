@@ -1,12 +1,14 @@
+import json
 import re
 import shlex
 from contextlib import suppress
-from datetime import timedelta
+from datetime import datetime, timedelta
 from datetime import timezone as tz
 from operator import itemgetter
 
 from odoo import fields as odoo_fields
 
+from . import _relay_oauth
 from .abstract_executor import NOT_ONEOFF, AbstractSSHExecutor
 
 # Alert thresholds
@@ -228,6 +230,39 @@ _ROUTE6_LINK_ONLY = ('fe8', 'fe9', 'fea', 'feb', 'ff')
 _ROUTES_RC_RE = re.compile(r'^rc=(\d+)$', re.MULTILINE)
 
 
+# What the ``relay_delivery`` step keeps of ``postqueue -j``: per deferred
+# message its age and why each recipient waits, without who wrote to
+# whom; the oldest first, twenty at most. Runs with the relay's python3
+# (docker-mailserver ships it).
+_RELAY_QUEUE_REDUCER = r"""
+import json, re, sys, time
+now = time.time()
+address = re.compile(r"[^\s<>()\[\];:,\"]+@[^\s<>()\[\];:,\"]+")
+msgs = []
+for line in sys.stdin:
+    try:
+        m = json.loads(line)
+    except ValueError:
+        continue
+    if m.get("queue_name") != "deferred":
+        continue
+    reasons = sorted({
+        address.sub("<address>", r.get("delay_reason") or "")[:300]
+        for r in m.get("recipients") or []
+    })
+    msgs.append({"age": int(now - (m.get("arrival_time") or now)), "reasons": reasons})
+msgs.sort(key=lambda m: -m["age"])
+print(json.dumps({"deferred": len(msgs), "oldest": msgs[:20]}))
+"""
+_RELAY_SECTION_RE = re.compile(r"^== (status|queue|sent|lifetime)$")
+_RELAY_RC_RE = re.compile(r"^rc=(\d+)$", re.MULTILINE)
+_QUEUE_LIFETIME_RE = re.compile(r"^(\d+)([smhdw]?)$")
+_QUEUE_LIFETIME_UNITS = {
+    "s": ("second", 1), "m": ("minute", 60), "h": ("hour", 3600),
+    "d": ("day", 86400), "w": ("week", 604800),
+}
+
+
 class InstanceHealthExecutor(AbstractSSHExecutor):
     """Checks the health of a deployed doodba instance.
 
@@ -250,6 +285,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     6. Memory recycles — how many workers Odoo replaced for passing
        ``limit_memory_soft`` in the last hour; more than
        ``_RECYCLE_WARN_PER_HOUR`` raises ``instance_memory_recycling``.
+    7. A production's mail relay — whether it delivers to its server:
+       the mail its queue defers and why, its OAuth2 token, and the last
+       mail it delivered (``_grade_relay``). A failure raises
+       ``smtp_relay_failing``, which only a delivery resolves.
 
     Skipped entirely when an intrusive job (deploy / rebuild / restore /
     full setup) is in flight on the same instance, or a host job that
@@ -266,7 +305,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
     Instance-scoped alert codes: ``instance_down``, ``instance_unresponsive``,
     ``instance_high_cpu``, ``instance_high_memory``, ``instance_error_logs``,
-    ``instance_memory_recycling``.
+    ``instance_memory_recycling``, ``smtp_relay_failing``.
     """
 
     _job_type = "instance_health"
@@ -296,6 +335,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # What ``parse_results`` read of the network odoo runs in under a
     # gatekeeper (see ``_parse_gatekeeper_network``); None when not read.
     _gatekeeper_network = None
+
+    # What ``parse_results`` read of the relay (``_parse_relay_delivery``):
+    # None when the step did not run.
+    _relay_delivery = None
 
     # Whether the pass was skipped for a host job alone (see
     # ``_is_blocked_by_active_job``): the skip then leaves the streaks
@@ -716,6 +759,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             #    is the gatekeeper's. No other stack reads it.
             [("gatekeeper_network", self._gatekeeper_network_command(d))]
             if 'gatekeeper' in inst.expected_services() else []
+        ) + (
+            # 8. Whether a production's relay delivers to its server.
+            [("relay_delivery", self._relay_delivery_command(d, inst))]
+            if self._relay_probed(inst) else []
         )
         if self._state_only():
             # The containers and whether Odoo answers: what the panel
@@ -748,6 +795,118 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             f"cd {d} && {{ timeout 30 docker compose exec -T odoo "
             f'sh -c {shlex.quote(read)}; echo "rc=$?"; }}'
         )
+
+    @staticmethod
+    def _relay_probed(inst):
+        """Whether the probe reads this instance's relay.
+
+        A production's ``smtp`` is the relay; a staging's is a mail
+        catcher, and an instance without a relay host has none.
+
+        :param inst: the ``cloud.instance``
+        :rtype: bool
+        """
+        return (
+            inst.environment == 'production'
+            and 'smtp' in inst.expected_services()
+        )
+
+    def _relay_delivery_command(self, d, inst):
+        """Return the command that reads whether the relay delivers.
+
+        Inside the ``smtp`` container, in sections: the OAuth2 renewer's
+        state (``ic-relay-oauth status``; nothing on an image without
+        it), the deferred mail reduced by :data:`_RELAY_QUEUE_REDUCER`,
+        the time of the last mail delivered to the relay host in
+        ``mail.log`` (the time only), and how long Postfix keeps a
+        deferred mail (``maximal_queue_lifetime``). The exec gets 30
+        seconds and an ``rc=`` line follows, as for the gatekeeper's
+        network: a stopped ``smtp`` leaves no failed step, and
+        ``instance_service_smtp_down`` speaks for it.
+
+        :param str d: remote instance directory
+        :param inst: the ``cloud.instance``
+        :return: the shell command
+        """
+        host = inst.smtp_relay_host or ""
+        sent = shlex.quote(f"relay={host}[")
+        read = (
+            "echo '== status'; "
+            "if command -v ic-relay-oauth >/dev/null 2>&1; then "
+            "ic-relay-oauth status 2>/dev/null; fi; "
+            "echo '== queue'; "
+            "postqueue -j 2>/dev/null | python3 -c "
+            f"{shlex.quote(_RELAY_QUEUE_REDUCER)}; "
+            "echo '== sent'; "
+            f"grep -aF {sent} /var/log/mail/mail.log 2>/dev/null"
+            " | grep -aF ', status=sent ' | tail -n 1 | cut -d' ' -f1; "
+            "echo '== lifetime'; "
+            "postconf -h maximal_queue_lifetime 2>/dev/null"
+        )
+        return (
+            f"cd {d} && {{ timeout 30 docker compose exec -T smtp "
+            f'sh -c {shlex.quote(read)}; echo "rc=$?"; }}'
+        )
+
+    @staticmethod
+    def _parse_relay_delivery(step):
+        """Turn the ``relay_delivery`` reading into a dict, or None.
+
+        :param dict step: the step's result, or None when it did not run
+        :return: None when the step did not run; ``{'read': False}`` when
+            the relay could not be read (its container stopped, the exec
+            timed out); else ``read``, ``status`` (the renewer's dict or
+            None), ``queue`` (``deferred`` and ``oldest``), ``sent_at``
+            (naive UTC datetime or None) and ``lifetime`` (seconds or
+            None)
+        :rtype: dict or None
+        """
+        if step is None:
+            return None
+        out = step.get('stdout') or ''
+        if _RELAY_RC_RE.findall(out)[-1:] != ['0']:
+            return {'read': False}
+        sections = {}
+        current = None
+        for line in out.splitlines():
+            match = _RELAY_SECTION_RE.match(line.strip())
+            if match:
+                current = match.group(1)
+                sections[current] = []
+            elif current and not line.startswith('rc='):
+                sections[current].append(line.strip())
+        if 'queue' not in sections:
+            return {'read': False}
+
+        def _json(name):
+            for line in reversed(sections.get(name) or []):
+                with suppress(ValueError):
+                    value = json.loads(line)
+                    if isinstance(value, dict):
+                        return value
+            return None
+
+        queue = _json('queue') or {'deferred': 0, 'oldest': []}
+        sent_at = None
+        for line in sections.get('sent') or []:
+            with suppress(ValueError):
+                stamp = datetime.fromisoformat(line)
+                if stamp.tzinfo is not None:
+                    stamp = stamp.astimezone(tz.utc).replace(tzinfo=None)
+                sent_at = stamp
+        lifetime = None
+        for line in sections.get('lifetime') or []:
+            match = _QUEUE_LIFETIME_RE.match(line)
+            if match:
+                unit = _QUEUE_LIFETIME_UNITS[match.group(2) or 'd']
+                lifetime = int(match.group(1)) * unit[1]
+        return {
+            'read': True,
+            'status': _json('status'),
+            'queue': queue,
+            'sent_at': sent_at,
+            'lifetime': lifetime,
+        }
 
     def parse_results(self, results):
         # Skipped pass: nothing to parse, on_success just stamps the timestamp.
@@ -825,6 +984,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         # 7. Whether odoo runs in the gatekeeper's network of now.
         self._gatekeeper_network = self._parse_gatekeeper_network(
             results.get("gatekeeper_network"),
+        )
+
+        # 8. Whether the relay delivers to its server.
+        self._relay_delivery = self._parse_relay_delivery(
+            results.get("relay_delivery"),
         )
 
         return []  # never hard-fail the job — report via status/alerts
@@ -1167,6 +1331,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         # container: grade it before any branch that returns early, so
         # a sleeping or stopped instance is graded too.
         self._grade_log_health(inst)
+        # The relay neither: it delivers or not while odoo sleeps.
+        self._grade_relay(inst)
 
         # Keep what the container listing said, rather than only
         # alerting on it and dropping it. Every branch below returns at
@@ -1537,6 +1703,136 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             else:
                 self._resolve_inst_alert(code)
         self._grade_egress_filter(inst, issues)
+
+    def _grade_relay(self, inst):
+        """Grade whether a production's relay delivers to its server.
+
+        A failure is mail the relay's queue defers for a cause of the
+        relay's (``_relay_oauth.classify_reason``: connection, DNS, TLS,
+        credentials refused, the OAuth2 token, a sender refused), mail
+        deferred longer than ``_relay_oauth.STUCK_MINUTES`` for any other
+        reason, or an OAuth2 renewer that has no token left
+        (``_relay_oauth.token_failure``). A server refusing one recipient
+        is not one. Two probes in a row raise ``smtp_relay_failing``,
+        critical (its ``cloud.alert.policy``).
+
+        Only a delivery resolves it: a mail delivered to the relay host
+        after the alert was raised, read in ``mail.log``, or a test mail
+        that went out. A clean queue and a token ``ok`` do not: the most
+        likely misconfiguration (Exchange refusing a good token) gives
+        both, and the test mail removes what it could not send.
+
+        No reading (a relay that could not be read; ``smtp`` stopped)
+        changes nothing. An instance whose relay is gone has its alert
+        resolved.
+
+        :param inst: the ``cloud.instance`` probed
+        """
+        code = _relay_oauth.ALERT_CODE
+        reading = self._relay_delivery
+        if reading is None:
+            if not self._relay_probed(inst):
+                self._resolve_inst_alert(code)
+            return
+        if not reading.get('read'):
+            return
+        oauth = inst._relay_oauth_renders()
+        host = inst.smtp_relay_host
+        now = odoo_fields.Datetime.now()
+        failure = (
+            _relay_oauth.token_failure(
+                reading.get('status'), now.replace(tzinfo=tz.utc).timestamp(),
+            ) if oauth else None
+        ) or self._relay_queue_failure(reading.get('queue') or {}, oauth, host)
+        vals = {'smtp_relay_checked_at': now}
+        with self._durable_env() as env:
+            instance = env['cloud.instance'].browse(inst.id)
+            Alert = env['cloud.alert']
+            if failure:
+                cause, message = failure
+                message += self._relay_queue_lifetime_note(reading)
+                self._alerted = True
+                alert = Alert.raise_alert(
+                    code, message, level='critical', instance=instance,
+                    job=env['cloud.job'].browse(self.job.id),
+                    payload={'cause': cause},
+                )
+                self._sys(f"✗ Mail relay: {message}")
+                if alert:
+                    vals.update({
+                        'smtp_relay_state': 'failing',
+                        'smtp_relay_error': message[:500],
+                    })
+            else:
+                alert = Alert.search(
+                    Alert._dedup_domain(code, instance=instance), limit=1,
+                )
+                sent_at = reading.get('sent_at')
+                if alert and sent_at and sent_at > alert.create_date:
+                    Alert.resolve_alert(code, instance=instance)
+                    alert = Alert.browse()
+                elif not alert:
+                    # A clean reading ends a suspicion that never became
+                    # an alert, as ``resolve_alert`` would.
+                    env['cloud.alert.suspicion']._forget(code, None, instance)
+                if not alert and sent_at:
+                    vals.update({
+                        'smtp_relay_state': 'ok', 'smtp_relay_error': False,
+                    })
+        inst.sudo().write(vals)
+
+    @staticmethod
+    def _relay_queue_failure(queue, oauth, host):
+        """Name the relay's failure in its deferred mail, or None.
+
+        :param dict queue: ``deferred`` and ``oldest`` (the reducer's)
+        :param bool oauth: whether the relay signs in with OAuth2
+        :param str host: the relay host
+        :returns: ``(cause, message)`` or None
+        :rtype: tuple or None
+        """
+        oldest = [m for m in queue.get('oldest') or [] if isinstance(m, dict)]
+        for message in oldest:
+            for reason in message.get('reasons') or []:
+                found = _relay_oauth.classify_reason(reason, oauth, host)
+                if found:
+                    return found
+        stuck_after = _relay_oauth.STUCK_MINUTES * 60
+        for message in oldest:
+            reasons = [
+                r for r in message.get('reasons') or []
+                if not _relay_oauth.recipient_only(r)
+            ]
+            if reasons and (message.get('age') or 0) >= stuck_after:
+                return ('stuck', (
+                    f"Mail has waited in the relay's queue for more than "
+                    f"{_relay_oauth.STUCK_MINUTES} minutes without reaching "
+                    f"{host or 'its server'}: {reasons[0][:200]}"
+                ))
+        return None
+
+    @staticmethod
+    def _relay_queue_lifetime_note(reading):
+        """Say how long deferred mail waits, from Postfix's own setting.
+
+        :param dict reading: the relay's reading
+        :returns: a sentence starting with a space, or ``""``
+        :rtype: str
+        """
+        seconds = reading.get('lifetime')
+        if not seconds:
+            return ""
+        for name, size in sorted(
+            _QUEUE_LIFETIME_UNITS.values(), key=itemgetter(1), reverse=True,
+        ):
+            if seconds % size == 0:
+                count = seconds // size
+                return (
+                    f" Mail waits in the relay's queue for up to {count} "
+                    f"{name}{'s' if count != 1 else ''}, then goes back to "
+                    f"its sender."
+                )
+        return ""
 
     def _grade_egress_filter(self, inst, issues):
         """Alert, critical, while a staging's egress filter is not in force.

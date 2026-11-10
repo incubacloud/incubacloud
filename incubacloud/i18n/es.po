@@ -19596,3 +19596,256 @@ msgid ""
 msgstr ""
 "Solo un Gerente de proyecto o superior puede mover el repositorio %s a otro "
 "proyecto o instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_oauth_client_id
+msgid "Application (client) ID"
+msgstr "ID de la aplicación (cliente)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Application (client) ID '%(value)s' is invalid. Use the GUID shown on the "
+"app registration's overview in Entra ID."
+msgstr ""
+"El ID de la aplicación (cliente) «%(value)s» no es válido. Use el GUID que "
+"muestra la información general del registro de la aplicación en Entra ID."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Apply the changes first: the test would use the relay as it was deployed."
+msgstr ""
+"Aplique antes los cambios: la prueba usaría el relé tal como se desplegó."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_oauth_client_secret
+msgid "Client Secret"
+msgstr "Secreto de cliente"
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Client secret"
+msgstr "Secreto de cliente"
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+msgid "Could not send the test mail"
+msgstr "No se pudo enviar el correo de prueba"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_state__ok
+msgid "Delivering"
+msgstr "Entrega"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Deploy the instance first."
+msgstr "Despliegue antes la instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_oauth_directory_id
+msgid "Directory ID"
+msgstr "ID de directorio"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Directory ID '%(value)s' is invalid. Use the GUID shown in Entra ID, or one "
+"of the directory's domains, such as contoso.onmicrosoft.com."
+msgstr ""
+"El ID de directorio «%(value)s» no es válido. Use el GUID que muestra Entra "
+"ID o uno de los dominios del directorio, como contoso.onmicrosoft.com."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_state__unknown
+msgid "Not checked"
+msgstr "Sin comprobar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_state__failing
+msgid "Not delivering"
+msgstr "No entrega"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"OAuth2 for the mail relay is for production instances only: a staging "
+"captures its mail and never uses the relay."
+msgstr ""
+"OAuth2 en el relé de correo es solo para instancias de producción: un "
+"staging captura su correo y nunca usa el relé."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_auth__oauth2_microsoft
+msgid "OAuth2 – Microsoft 365"
+msgstr "OAuth2 – Microsoft 365"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "OAuth2 – Microsoft 365 needs: %(fields)s."
+msgstr "OAuth2 – Microsoft 365 necesita: %(fields)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Only a production's relay sends mail: a staging captures it."
+msgstr "Solo el relé de una producción envía correo: un staging lo captura."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Register an app in Entra ID with the SMTP.SendAsApp permission and give it "
+"this mailbox in Exchange Online."
+msgstr ""
+"Registre una aplicación en Entra ID con el permiso SMTP.SendAsApp y dele "
+"este buzón en Exchange Online."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Relay"
+msgstr "Relé"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_checked_at
+msgid "Relay Checked At"
+msgstr "Relé comprobado el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_error
+msgid "Relay Error"
+msgstr "Error del relé"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_state
+msgid "Relay State"
+msgstr "Estado del relé"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.relay_test_mail
+msgid "Relay Test Mail"
+msgstr "Correo de prueba del relé"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_auth
+msgid "SMTP Authentication"
+msgstr "Autenticación SMTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+msgid "Save the changes and apply them first."
+msgstr "Guarde los cambios y aplíquelos antes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Send test mail"
+msgstr "Enviar correo de prueba"
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Sender mailbox"
+msgstr "Buzón remitente"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Sender mailbox '%(value)s' is invalid. Use the address of the Microsoft 365 "
+"mailbox the relay sends as, such as notifications@example.com."
+msgstr ""
+"El buzón remitente «%(value)s» no es válido. Use la dirección del buzón de "
+"Microsoft 365 con el que envía el relé, como notifications@example.com."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.relay_test_mail
+msgid ""
+"Sends one mail through a production instance's mail relay to the person who "
+"asks, and says whether the relay's server took it. Changes nothing on the "
+"instance."
+msgstr ""
+"Envía un correo a través del relé de correo de una instancia de producción a"
+" la persona que lo pide e indica si el servidor del relé lo aceptó. No "
+"cambia nada en la instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Step-by-step guide"
+msgstr "Guía paso a paso"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "This instance has no mail relay."
+msgstr "Esta instancia no tiene relé de correo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid ""
+"This relay sent %(count)s test mails in the last hour. Try again later."
+msgstr ""
+"Este relé envió %(count)s correos de prueba en la última hora. Inténtelo más"
+" tarde."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"With OAuth2 – Microsoft 365 the relay sends through smtp.office365.com, port"
+" 587, with STARTTLS; the host, port and encryption cannot be changed."
+msgstr ""
+"Con OAuth2 – Microsoft 365 el relé envía a través de smtp.office365.com, "
+"puerto 587, con STARTTLS; el host, el puerto y el cifrado no se pueden "
+"cambiar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Your user has no e-mail address to send the test to. Add one to your "
+"profile."
+msgstr ""
+"Su usuario no tiene dirección de correo a la que enviar la prueba. Añada una"
+" en su perfil."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
+msgid "checked %s"
+msgstr "comprobado %s"

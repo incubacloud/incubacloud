@@ -370,6 +370,23 @@
             <field name="priority_tier">low</field>
         </record>
 
+        <record id="relay_test_mail" model="cloud.job.type">
+            <field name="name">Relay Test Mail</field>
+            <field name="code">relay_test_mail</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Sends one mail through a production instance's mail relay to the person who asks, and says whether the relay's server took it. Changes nothing on the instance.</field>
+            <!-- One waiting at most, not a collapse: the payload carries
+                 who asks and the mail's tag, so a collapse would merge
+                 nothing, and each test may wait two minutes in a
+                 production's queue. -->
+            <field name="queue_exclusive">True</field>
+            <!-- False, not left out: an update writes only the fields
+                 listed. A test that could not reach the relay must not
+                 stop a production's backups and deploys; its alert says
+                 what failed. -->
+            <field name="failure_holds_queue">False</field>
+        </record>
+
         <record id="read_last_login" model="cloud.job.type">
             <field name="name">Read Last Login</field>
             <field name="code">read_last_login</field>

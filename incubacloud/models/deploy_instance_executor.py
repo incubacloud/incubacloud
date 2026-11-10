@@ -32,6 +32,7 @@ from ._odoo_versions import (
     image_git_safe,
     prefetch_repos,
 )
+from . import _relay_oauth
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -141,6 +142,18 @@ GATEKEEPER_IMAGE = (
 #: a decision: read the release's breaking changes against the relay's
 #: settings in the template's ``common.yaml``.
 SMTP_RELAY_IMAGE = "ghcr.io/docker-mailserver/docker-mailserver:16.0.1"
+#: The relay of a production instance that signs in to Microsoft 365 with
+#: OAuth2: :data:`SMTP_RELAY_IMAGE` plus sasl-xoauth2 and the token
+#: renewer (``images/relay-oauth``), built by this repository's
+#: ``relay-oauth-image`` workflow, signed with cosign and published on
+#: 2026-11-09. By digest: a published tag never moves, and the digest
+#: proves it. Its tag starts with the docker-mailserver release it was
+#: built on, which must be :data:`SMTP_RELAY_IMAGE`'s: the two move
+#: together, in the same release, never one without the other (RB-31).
+RELAY_OAUTH_IMAGE = (
+    "ghcr.io/incubacloud/relay-oauth:16.0.1-0.28-1@sha256:"
+    "6578664e3ea576f8a9cb194ed4c420215a202a79e173672014a782433b859117"
+)
 
 # Path to the incubacloud_connect module.  Navigate from __file__ via
 # abspath (stays in auto/addons/) then realpath the result to resolve
@@ -2083,6 +2096,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             services["smtp"]["environment"] = {"ENABLE_UPDATE_CHECK": "0"}
             # The release is the panel's too: see SMTP_RELAY_IMAGE.
             services["smtp"]["image"] = SMTP_RELAY_IMAGE
+            if _relay_oauth.renders(inst):
+                self._apply_relay_oauth_override(inst, services["smtp"])
         elif "smtp" in allowed:
             # A staging's ``smtp`` is a different animal: the mail
             # catcher (MailHog), so there is no update check to switch
@@ -2129,6 +2144,29 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             data,
             default_flow_style=False,
             allow_unicode=True,
+        )
+
+    def _apply_relay_oauth_override(self, inst, entry):
+        """Turn the production ``smtp`` entry into the OAuth2 relay.
+
+        The image :data:`RELAY_OAUTH_IMAGE`, the credentials file
+        mounted read-only where its renewer reads it, and a label with
+        their fingerprint: a bind-mounted file's content is not part of
+        a container's configuration, so without it a new secret would
+        reach the host and leave the running relay on the old one
+        (``_relay_oauth.CREDENTIALS_LABEL``). The labels already there
+        are kept.
+
+        :param inst: the ``cloud.instance``
+        :param dict entry: the service's override, changed in place
+        """
+        entry["image"] = RELAY_OAUTH_IMAGE
+        entry["volumes"] = [
+            f"./{_relay_oauth.CREDENTIALS_FILE}"
+            f":{_relay_oauth.CREDENTIALS_MOUNT}:ro",
+        ]
+        entry.setdefault("labels", {})[_relay_oauth.CREDENTIALS_LABEL] = (
+            inst._relay_oauth_fingerprint()
         )
 
     def _scheduling_priority_entry(self, inst, entry):
@@ -2703,6 +2741,30 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 {self._extra_env_tmp(rel): text for rel, text in files.items()},
             )
 
+    def _relay_oauth_file_step(self, d):
+        """Return the step that clears the OAuth2 relay's credentials path.
+
+        Without OAuth2 the file has no business on the host: it holds a
+        secret, and nothing else would remove it (``_extra_env_files``
+        says so of a file nobody lists). With OAuth2, the path is cleared
+        only when it is a directory: Docker creates one when a
+        bind-mounted file is missing at ``up``, and ``mv`` would then put
+        the new file inside it. ``rm -rf`` names that one path.
+
+        :param str d: the instance directory
+        :return: a one-step tuple
+        :rtype: tuple
+        """
+        path = f"{d}/{_relay_oauth.CREDENTIALS_FILE}"
+        if _relay_oauth.renders(self._inst()):
+            return (
+                (
+                    "Clear the relay credentials path",
+                    f"if [ -d {path} ]; then rm -rf {path}; fi",
+                ),
+            )
+        return (("Remove the relay credentials", f"rm -rf {path}"),)
+
     def _write_extra_env_step(self, d):
         """Return the step moving the staged addon files into place, or ().
 
@@ -2919,6 +2981,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 f' [ -f "$f" ] &&'
                 f' mv "$f" {d}/.docker/backup.env || true',
             ),
+            *self._relay_oauth_file_step(d),
             *self._write_extra_env_step(d),
             # 3b. Write docker-compose.override.yml: resource limits,
             #     protect label and container log rotation.

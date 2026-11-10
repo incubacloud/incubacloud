@@ -1324,6 +1324,9 @@ class CloudJob(models.Model):
         "start_instance": "group_cloud_consultant",
         "stop_instance": "group_cloud_consultant",
         "restart_instance": "group_cloud_consultant",
+        # One mail to the person who asks, through their production's
+        # relay; it changes nothing on the instance.
+        "relay_test_mail": "group_cloud_consultant",
         # Non-production only at this level: production deletion is
         # escalated to manager in ``_check_job_type_allowed``, so the
         # remote teardown can never start for a caller who would not be

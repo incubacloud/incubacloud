@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import unicodedata
+import uuid
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -20,7 +21,7 @@ from ..net.restore_source import (
     validate as validate_restore_url,
 )
 from ..restore_staging import purge_stale
-from . import _odoo_versions
+from . import _odoo_versions, _relay_oauth
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import (
@@ -146,14 +147,17 @@ def _yaml_dq_escape(value):
 #: on the old host with its cut's length; a pull request's identity is
 #: what the GitHub webhook rebuilds and deletes by when the request changes
 #: or closes; ``removal_finalized`` tells a teardown there is nothing left
-#: to remove. ``move_to_host``, the rollback, the watchdog, the move's
-#: executors, the webhook and the teardown write them with ``sudo``.
+#: to remove; the relay's state is what the health probe and the relay's
+#: test mail read of its deliveries. ``move_to_host``, the rollback, the
+#: watchdog, the move's executors, the webhook, the teardown, the probe
+#: and the test mail write them with ``sudo``.
 _PLATFORM_FIELDS = frozenset({
     "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
     "move_rollback_in_progress", "move_frozen_source_host_id",
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
     "removal_finalized",
+    "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
 })
 
 #: When an instance was archived and up to when its purge deletes: set by
@@ -579,6 +583,41 @@ class CloudInstance(models.Model):
         string="SMTP Password",
         groups="incubacloud.group_cloud_developer",
     )
+    # How the production relay signs in to its server. With OAuth2 the
+    # server is Microsoft 365's (``_relay_oauth.MICROSOFT_SMTP_SERVER``),
+    # ``smtp_relay_user`` is the sender mailbox and the password, kept,
+    # is not used: switching back finds it.
+    smtp_relay_auth = fields.Selection(
+        selection=[
+            (_relay_oauth.AUTH_PASSWORD, "Password"),
+            (_relay_oauth.AUTH_OAUTH2_MICROSOFT, "OAuth2 – Microsoft 365"),
+        ],
+        string="SMTP Authentication",
+        required=True,
+        default=_relay_oauth.AUTH_PASSWORD,
+    )
+    smtp_relay_oauth_directory_id = fields.Char(string="Directory ID")
+    smtp_relay_oauth_client_id = fields.Char(string="Application (client) ID")
+    smtp_relay_oauth_client_secret = EncryptedChar(
+        string="Client Secret",
+        groups="incubacloud.group_cloud_developer",
+    )
+    # What the platform last read of the relay's deliveries to its
+    # server: the health probe and the relay's test mail write them.
+    smtp_relay_state = fields.Selection(
+        selection=[
+            ("unknown", "Not checked"),
+            ("ok", "Delivering"),
+            ("failing", "Not delivering"),
+        ],
+        string="Relay State",
+        default="unknown",
+        readonly=True,
+    )
+    smtp_relay_checked_at = fields.Datetime(
+        string="Relay Checked At", readonly=True,
+    )
+    smtp_relay_error = fields.Char(string="Relay Error", readonly=True)
 
     # ── Resource limits (docker-compose.override.yml) ─────────────────
     odoo_memory_limit = fields.Char(
@@ -872,6 +911,18 @@ class CloudInstance(models.Model):
             bb = bb.sudo()
         has_backup = inst._backup_enabled()
 
+        relay_host = inst.smtp_relay_host
+        relay_port = inst.smtp_relay_port or 587
+        relay_password = inst.smtp_relay_password or ""
+        if inst._relay_oauth_renders():
+            # The same keys with other values: Microsoft's server, and the
+            # token file's path where the password goes, which is what
+            # sasl-xoauth2 reads from ``sasl_passwd``. The credentials
+            # travel in a file of their own (``_extra_env_files``).
+            server = _relay_oauth.MICROSOFT_SMTP_SERVER
+            relay_host = server["smtp_relay_host"]
+            relay_port = server["smtp_relay_port"]
+            relay_password = _relay_oauth.TOKEN_PATH
         answers = {
             "project_author": inst.project_id.project_author or "IncubaCloud",
             "project_license": inst.project_id.project_license or "BSL-1.0",
@@ -891,11 +942,11 @@ class CloudInstance(models.Model):
             # escaped for them, so a row stored before the model checked
             # these fields still renders as its own text. A valid value
             # has nothing to escape and goes out as it is.
-            "smtp_relay_host": _yaml_dq_escape(inst.smtp_relay_host),
-            "smtp_relay_port": inst.smtp_relay_port or 587,
+            "smtp_relay_host": _yaml_dq_escape(relay_host),
+            "smtp_relay_port": relay_port,
             "smtp_relay_version": "latest",
             "smtp_relay_user": _yaml_dq_escape(inst.smtp_relay_user),
-            "smtp_relay_password": inst.smtp_relay_password or "",
+            "smtp_relay_password": relay_password,
             "smtp_default_from": _yaml_dq_escape(
                 inst.smtp_relay_user or inst.odoo_admin_email
             ),
@@ -1005,7 +1056,68 @@ class CloudInstance(models.Model):
             # default, hashes as it did before the switch existed, so
             # the fleet does not all come out with changes to apply.
             **({"website_info_public": True} if inst.website_info_public else {}),
+            # Only for an OAuth2 relay, for the same reason. The answers
+            # do not carry the credentials, which go in a file of their
+            # own: without this a new secret left nothing to apply. The
+            # secret as a salted fingerprint, never in clear.
+            **(
+                {"smtp_relay_oauth": inst._relay_oauth_snapshot()}
+                if inst._relay_oauth_renders() else {}
+            ),
         }
+
+    def _relay_oauth_renders(self):
+        """Whether a deploy renders this instance's relay with OAuth2.
+
+        See ``_relay_oauth.renders``.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return _relay_oauth.renders(self)
+
+    def _relay_oauth_secret(self):
+        """Return the client secret, read as the platform.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return self.sudo().smtp_relay_oauth_client_secret or ""
+
+    def _relay_oauth_snapshot(self):
+        """Return what the configuration snapshot keeps of OAuth2.
+
+        :returns: the provider, both identifiers, and the secret's
+            fingerprint salted with the instance's id
+        :rtype: dict
+        """
+        self.ensure_one()
+        return {
+            "provider": "microsoft",
+            "directory_id": self.smtp_relay_oauth_directory_id or "",
+            "client_id": self.smtp_relay_oauth_client_id or "",
+            "client_secret_hash": _relay_oauth.fingerprint(
+                self.id, self._relay_oauth_secret(),
+            ),
+        }
+
+    def _relay_oauth_fingerprint(self):
+        """Return the fingerprint of everything the credentials file holds.
+
+        The ``smtp`` service carries it as a label, so a deploy or a
+        rebuild recreates the relay whenever the file changed
+        (``_relay_oauth.CREDENTIALS_LABEL``).
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return _relay_oauth.fingerprint(
+            self.id,
+            self.smtp_relay_oauth_directory_id,
+            self.smtp_relay_oauth_client_id,
+            self._relay_oauth_secret(),
+            self.smtp_relay_user,
+        )
 
     def _config_snapshot_hash(self):
         """SHA-256 hex digest of the canonical-JSON config snapshot."""
@@ -1269,11 +1381,17 @@ class CloudInstance(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        vals = self._relay_server_vals(vals)
         # A form sends the series back on every save: unchanged, it is
         # not a choice for ``_check_series_may_be_chosen`` to judge.
         vals = _odoo_versions.without_unchanged_series(self, vals)
         changed, old_snap = self._audit_snapshot(vals)
+        relay_moved = self.filtered(lambda inst: any(
+            name in vals and (inst[name] or False) != (vals[name] or False)
+            for name in ("smtp_relay_auth", "smtp_relay_host")
+        ))
         result = super().write(vals)
+        relay_moved._forget_relay_state()
         # Odoo checks the record rules on the instance as it was: one moved
         # to another project is checked again as it is now, so it goes
         # only to a project its writer is a member of.
@@ -1529,19 +1647,105 @@ class CloudInstance(models.Model):
         self.ensure_one()
         return {}
 
+    def _forget_relay_state(self):
+        """Start the relay's state over: its server or sign-in changed.
+
+        What was read about the relay before is about another relay: the
+        state goes back to unknown and its alert is resolved.
+        """
+        for inst in self:
+            self.env["cloud.alert"].resolve_alert(
+                _relay_oauth.ALERT_CODE, instance=inst,
+            )
+        if self:
+            self.sudo().write({
+                "smtp_relay_state": "unknown",
+                "smtp_relay_checked_at": False,
+                "smtp_relay_error": False,
+            })
+
+    def _relay_test_refusal(self):
+        """Say why the relay's test mail cannot be sent now, or nothing.
+
+        The form shows it beside the disabled button, and
+        :meth:`send_relay_test_mail` refuses with it.
+
+        :returns: the reason, translated; empty when the test may run
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.environment != "production":
+            return _(
+                "Only a production's relay sends mail: a staging captures it."
+            )
+        if not self.smtp_relay_host:
+            return _("This instance has no mail relay.")
+        if not self.host_id or not self.deployed:
+            return _("Deploy the instance first.")
+        if self.config_dirty:
+            return _(
+                "Apply the changes first: the test would use the relay as "
+                "it was deployed."
+            )
+        return ""
+
+    def send_relay_test_mail(self):
+        """Queue one test mail through this production's relay.
+
+        It goes to the person who asks, at their own address, never to
+        anyone else; the job says whether the relay's server took it
+        (``RelayTestMailExecutor``). Its type lets one wait at most per
+        instance.
+
+        :returns: the ``cloud.job`` id
+        :rtype: int
+        :raises UserError: when the test cannot run now, or the person
+            has no address
+        """
+        self.ensure_one()
+        self._check_cloud_group("group_cloud_consultant")
+        refusal = self._relay_test_refusal()
+        if refusal:
+            raise UserError(refusal)
+        recipient = self.env.user.email
+        if not recipient or not _relay_oauth.valid_mailbox(recipient):
+            raise UserError(_(
+                "Your user has no e-mail address to send the test to. Add "
+                "one to your profile."
+            ))
+        return self.env["cloud.job"].enqueue(
+            self.host_id.id, self.id, "relay_test_mail",
+            payload={"to": recipient, "tag": uuid.uuid4().hex},
+        )
+
     def _extra_env_files(self):
-        """Files an addon ships into the instance directory on every build.
+        """Files shipped into the instance directory on every build.
 
         Written by deploy, rebuild and warm claim after copier, before
         the stack starts, readable by their owner only — they hold
-        credentials. The content is never logged. A file an addon stops
-        listing stays on the host until the addon removes it.
+        credentials. The content is never logged. A file nobody lists
+        any more stays on the host until whoever listed it removes it.
 
-        :return: ``{relative_path: content}``; empty in core
+        Core lists the OAuth2 relay's credentials
+        (``_relay_oauth.CREDENTIALS_FILE``) when the relay renders with
+        OAuth2; deploy and rebuild remove the file otherwise
+        (``DeployInstanceExecutor._relay_oauth_file_step``). An addon
+        adds its own files to what ``super()`` returns.
+
+        :return: ``{relative_path: content}``
         :rtype: dict
         """
         self.ensure_one()
-        return {}
+        if not self._relay_oauth_renders():
+            return {}
+        return {
+            _relay_oauth.CREDENTIALS_FILE: _relay_oauth.credentials_json(
+                self.smtp_relay_oauth_directory_id or "",
+                self.smtp_relay_oauth_client_id or "",
+                self._relay_oauth_secret(),
+                self.smtp_relay_user or "",
+            ),
+        }
 
     def _teardown_pre_steps(self, inst_dir, keep_in_panel):
         """Steps an addon runs before a delete tears the stack down.
@@ -4459,6 +4663,10 @@ class CloudInstance(models.Model):
             "smtp_relay_host",
             "smtp_relay_port",
             "smtp_relay_security",
+            # Never the client secret, as never a password.
+            "smtp_relay_auth",
+            "smtp_relay_oauth_directory_id",
+            "smtp_relay_oauth_client_id",
             "odoo_proxy",
             "postgres_version",
             "postgres_dbname",
@@ -4475,6 +4683,7 @@ class CloudInstance(models.Model):
         "odoo_admin_user_password",
         "postgres_password",
         "smtp_relay_password",
+        "smtp_relay_oauth_client_secret",
     )
     # Subset that must always have a value (auto-generated if not provided)
     _REQUIRED_PASSWORD_FIELDS = (
@@ -4668,6 +4877,104 @@ class CloudInstance(models.Model):
                     "Admin email is invalid. Use one line of at most 254 "
                     "characters, without double quotes, backslashes, tabs "
                     "or other control characters."
+                ))
+
+    def _relay_server_vals(self, vals):
+        """Return *vals* with Microsoft's server when the relay is OAuth2.
+
+        An OAuth2 relay always sends through ``smtp.office365.com:587``
+        with STARTTLS (``_relay_oauth.MICROSOFT_SMTP_SERVER``): choosing
+        OAuth2 writes it, and a host, port or security sent for records
+        that all sign in with OAuth2 is replaced by it. Records that would
+        end up with another server (a write to several instances with
+        different authentications) are refused by
+        :meth:`_check_smtp_relay_oauth`.
+
+        :param dict vals: the values of a create, or of a write of ``self``
+        :returns: *vals*, or a copy with the server's three values
+        :rtype: dict
+        """
+        oauth = _relay_oauth.AUTH_OAUTH2_MICROSOFT
+        server = _relay_oauth.MICROSOFT_SMTP_SERVER
+        if "smtp_relay_auth" in vals:
+            if vals["smtp_relay_auth"] != oauth:
+                return vals
+        elif not (server.keys() & vals.keys()) or not self or any(
+            inst.smtp_relay_auth != oauth for inst in self
+        ):
+            return vals
+        return {**vals, **server}
+
+    @api.constrains(
+        "smtp_relay_auth", "smtp_relay_oauth_directory_id",
+        "smtp_relay_oauth_client_id", "smtp_relay_oauth_client_secret",
+        "smtp_relay_user", "smtp_relay_host", "smtp_relay_port",
+        "smtp_relay_security", "environment",
+    )
+    def _check_smtp_relay_oauth(self):
+        """Hold an OAuth2 relay to what Entra ID and the image need.
+
+        Production only: a staging captures its mail and never uses the
+        relay. Microsoft's server; a directory ID, which goes in
+        the token endpoint's URL, as a GUID or a domain; an application
+        (client) ID as a GUID; the sender mailbox as an address; and a
+        client secret saved. The identifiers are checked whenever they are
+        set, whatever the authentication.
+
+        :raises ValidationError: naming what is missing or wrong
+        """
+        oauth = _relay_oauth.AUTH_OAUTH2_MICROSOFT
+        server = _relay_oauth.MICROSOFT_SMTP_SERVER
+        for inst in self:
+            directory = inst.smtp_relay_oauth_directory_id
+            client = inst.smtp_relay_oauth_client_id
+            if directory and not _relay_oauth.valid_directory_id(directory):
+                raise ValidationError(_(
+                    "Directory ID '%(value)s' is invalid. Use the "
+                    "GUID shown in Entra ID, or one of the directory's "
+                    "domains, such as contoso.onmicrosoft.com.",
+                    value=directory,
+                ))
+            if client and not _relay_oauth.valid_client_id(client):
+                raise ValidationError(_(
+                    "Application (client) ID '%(value)s' is invalid. Use the "
+                    "GUID shown on the app registration's overview in "
+                    "Entra ID.",
+                    value=client,
+                ))
+            if inst.smtp_relay_auth != oauth:
+                continue
+            if inst.environment != "production":
+                raise ValidationError(_(
+                    "OAuth2 for the mail relay is for production instances "
+                    "only: a staging captures its mail and never uses the "
+                    "relay."
+                ))
+            if any(inst[name] != value for name, value in server.items()):
+                raise ValidationError(_(
+                    "With OAuth2 – Microsoft 365 the relay sends through "
+                    "smtp.office365.com, port 587, with STARTTLS; the host, "
+                    "port and encryption cannot be changed."
+                ))
+            missing = [
+                label for label, value in (
+                    (_("Directory ID"), directory),
+                    (_("Application (client) ID"), client),
+                    (_("Sender mailbox"), inst.smtp_relay_user),
+                    (_("Client secret"), inst._relay_oauth_secret()),
+                ) if not value
+            ]
+            if missing:
+                raise ValidationError(_(
+                    "OAuth2 – Microsoft 365 needs: %(fields)s.",
+                    fields=", ".join(missing),
+                ))
+            if not _relay_oauth.valid_mailbox(inst.smtp_relay_user):
+                raise ValidationError(_(
+                    "Sender mailbox '%(value)s' is invalid. Use the address "
+                    "of the Microsoft 365 mailbox the relay sends as, such "
+                    "as notifications@example.com.",
+                    value=inst.smtp_relay_user,
                 ))
 
     @api.constrains("odoo_version")
@@ -5079,6 +5386,7 @@ class CloudInstance(models.Model):
             # on every duplicate — so the default is applied here rather
             # than on the field, where a copy would skip it.
             vals.setdefault("last_touched_at", fields.Datetime.now())
+            vals.update(self.browse()._relay_server_vals(vals))
             for field in self._REQUIRED_PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
