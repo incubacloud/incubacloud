@@ -93,7 +93,7 @@ lasts ten minutes, and once confirmed it is used once; writing a new message ins
 of answering it cancels it, and the assistant is told.
 
 An Administrator can grant your assistant an [auto-approval](../agents/auto-approval.md)
-rule, until a date: then none of these shows a card, including after the assistant
+rule, until a date or with no end date: then none of these shows a card, including after the assistant
 read text others write, and each action says *ran without asking* in the chat. Read
 its risks first.
 
