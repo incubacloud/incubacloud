@@ -55,9 +55,9 @@ webhook. `incubacloud_assistant` 1.0.3 comes with it.
 - **The assistant asks before every change after reading what a lower role
   writes.** `get_project` and `list_jobs` mark the task when the project
   has a member who writes in it (Consultant or above) with a lower role
-  than the person's. A message written while the assistant works no longer
-  lifts the mark when it enters the conversation; one written while
-  nothing runs still does.
+  than the person's. A message written while the assistant works leaves
+  the mark when it enters the conversation; one written while nothing
+  runs lifts it.
 
 ### Fixed
 
