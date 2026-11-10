@@ -28,7 +28,6 @@ from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
 from .deploy_instance_executor import (
     DeployInstanceExecutor,
     _build_retried_once,
-    _fetch_timeout,
 )
 from .docker_prune_executor import build_cache_prune_if_low
 
@@ -118,26 +117,21 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 "Fast rebuild: only code changes detected, using Docker cache."
             )
 
-        # 8.0 to 10.0 fetch every repository in a step of their own,
-        # with the downloads' timeout, and the build keeps its own. One
-        # step for both had the transport's TERM kill the outer ``bash
-        # -c`` and leave deploy.sh running. The
-        # others record the heads in the build's step (below).
+        # A series that fetches its repositories does it in a step of its
+        # own, with the download's timeout, and the build keeps its own.
+        # One step for both had the transport's TERM kill the outer ``bash
+        # -c`` and leave deploy.sh running. The seconds it took count
+        # for the build's repetition. The others record the heads in the
+        # build's step (below).
         prefetch = self._prefetches()
         build = _build_retried_once(
             "docker compose build --pull --no-cache odoo"
-            if needs_full_rebuild else "docker compose build odoo"
+            if needs_full_rebuild else "docker compose build odoo",
+            fetched=prefetch,
         )
         fetch_steps = []
         if prefetch:
-            fetch_steps = [(
-                "Fetch the repositories",
-                self._fetch_repos_command(d),
-                {
-                    "stop_on_failure": True,
-                    "timeout": _fetch_timeout(self._alias_count()),
-                },
-            )]
+            fetch_steps = [self._fetch_step(d)]
             build = f"cd {d} && {build}"
         else:
             build = f"{self._record_heads_command(d)} && cd {d} && {build}"
@@ -279,8 +273,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     written first is in the build context (5-nov-2026). One
             #     step with the build, so a layer that drops the build
             #     drops the lookup with it.
-            #     8.0 to 10.0 fetch every repository first instead, in a
-            #     step of their own.
+            #     A series that fetches its repositories does it first
+            #     instead, in a step of its own.
             *fetch_steps,
             (_LABEL_BUILD, build, {"stop_on_failure": True}),
         ]

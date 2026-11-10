@@ -98,14 +98,23 @@ teardown() {
 
 @test "pulls the git helper image when given one" {
     _stub docker 'echo "docker $*" >> "$TMP/docker_calls"; case "$*" in "--version") echo "Docker version 27";; *) exit 0;; esac'
-    run bash "$SCRIPT" "alpine/git:2.54.0@sha256:abc"
+    run bash "$SCRIPT" "ghcr.io/tecnativa/doodba:19.0@sha256:abc"
     [ "$status" -eq 0 ]
-    grep -qx "docker pull -q alpine/git:2.54.0@sha256:abc" "$TMP/docker_calls"
+    grep -qx "docker pull -q ghcr.io/tecnativa/doodba:19.0@sha256:abc" "$TMP/docker_calls"
+}
+
+@test "keeps the git helper image under its local tag, with the label the prune spares" {
+    _stub docker 'echo "docker $*" >> "$TMP/docker_calls"; case "$*" in "--version") echo "Docker version 27";; "image inspect"*) exit 1;; build*) cat > "$TMP/dockerfile";; *) exit 0;; esac'
+    run bash "$SCRIPT" "ghcr.io/tecnativa/doodba:19.0@sha256:0123456789abcdef"
+    [ "$status" -eq 0 ]
+    grep -qx "docker build -q -t incubacloud-git-helper:0123456789ab -" "$TMP/docker_calls"
+    grep -qx "FROM ghcr.io/tecnativa/doodba:19.0@sha256:0123456789abcdef" "$TMP/dockerfile"
+    grep -qx "LABEL incubacloud.protect=1" "$TMP/dockerfile"
 }
 
 @test "a helper image that cannot be pulled only warns" {
     _stub docker 'case "$*" in "--version") echo "Docker version 27";; pull*) exit 1;; *) exit 0;; esac'
-    run bash "$SCRIPT" "alpine/git:2.54.0@sha256:abc"
+    run bash "$SCRIPT" "ghcr.io/tecnativa/doodba:19.0@sha256:abc"
     [ "$status" -eq 0 ]
     [[ "$output" == *"could not pull the git helper image"* ]]
 }

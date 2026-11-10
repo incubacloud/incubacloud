@@ -56,7 +56,7 @@ class TestTheSeriesCards(BaseCase):
         def card(
             postgres, neutralize="odoo", db_tool="click-odoo", template=None,
             offered=False, debian_archive=False, headless="--no-http",
-            beyond_template=False, prefetch_repos=False,
+            beyond_template=False, prefetch_repos=True, image_git_safe=True,
         ):
             return {
                 "offered": offered, "postgres": postgres, "db_tool": db_tool,
@@ -64,6 +64,7 @@ class TestTheSeriesCards(BaseCase):
                 "debian_archive": debian_archive, "headless": headless,
                 "postgres_beyond_template": beyond_template,
                 "prefetch_repos": prefetch_repos,
+                "image_git_safe": image_git_safe,
             }
 
         expected = {
@@ -76,14 +77,16 @@ class TestTheSeriesCards(BaseCase):
             # (7-nov-2026). No neutralization of Odoo's own before 16.0.
             # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
             # and have no ``--no-http`` (7-nov-2026). Their git 2.1.4
-            # follows a redirect to plain http with the token: every
-            # repository is fetched before the build (8-nov-2026).
+            # follows a redirect to plain http with the token: no way back
+            # to cloning in the image (8-nov-2026). Every series
+            # but 19.0 fetches its repositories before the build
+            # (10-nov-2026).
             **dict.fromkeys(
                 ("8.0", "9.0", "10.0"),
                 card(
                     ("12", "12", "12"), "sql", debian_archive=True,
                     headless="--no-xmlrpc", beyond_template=True,
-                    prefetch_repos=True,
+                    image_git_safe=False,
                 ),
             ),
             **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
@@ -93,8 +96,11 @@ class TestTheSeriesCards(BaseCase):
             # since their run of the series passed (10-nov-2026); the rest
             # open one by one as theirs passes.
             **dict.fromkeys(
-                ("16.0", "17.0", "18.0", "19.0"), card(("14", "18", "17"), offered=True),
+                ("16.0", "17.0", "18.0"), card(("14", "18", "17"), offered=True),
             ),
+            # Still clones in the image: it follows once the others ran
+            # with the download on the host (plan of the Git tokens).
+            "19.0": card(("14", "18", "17"), offered=True, prefetch_repos=False),
             # Offered since core 1.0.198: PostgreSQL 16 to 18, odoo db,
             # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
             "20.0": card(
@@ -112,6 +118,7 @@ class TestTheSeriesCards(BaseCase):
                         "offered", "postgres", "db_tool", "neutralize",
                         "template_min", "debian_archive", "headless",
                         "postgres_beyond_template", "prefetch_repos",
+                        "image_git_safe",
                     },
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
@@ -123,10 +130,11 @@ class TestTheSeriesCards(BaseCase):
                 self.assertLessEqual(lowest, default)
                 self.assertLessEqual(default, highest)
 
-    def test_only_the_series_on_git_2_1_fetch_their_repositories_first(self):
+    def test_every_series_but_19_0_fetches_its_repositories_first(self):
+        """19.0 follows in its own phase of the plan."""
         self.assertEqual(
-            [v for v in versions.VERSIONS if versions.prefetch_repos(v)],
-            ["8.0", "9.0", "10.0"],
+            [v for v in versions.VERSIONS if not versions.prefetch_repos(v)],
+            ["19.0"],
         )
 
     def test_a_card_refuses_what_the_scripts_do_not_implement(self):

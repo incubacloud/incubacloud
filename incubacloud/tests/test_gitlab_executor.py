@@ -3,11 +3,12 @@
 - ``repos.yaml`` carries each server's own credential and never another's;
 - the heads spec has seven columns for a GitLab line (``cred_authority``
   always filled, so ``git-trust`` tells it from GitHub);
-- 11.0 to 19.0 trust the server in the build (``git-trust``) and, under
-  the ``public`` policy, pin its address with ``build.extra_hosts``;
-- 8.0 to 10.0 fetch every repository before the build (``fetch-repos``,
-  with a step timeout of N × 600 s and more), write ``repos.yaml``
-  without credentials and build with ``AGGREGATE=false``;
+- 19.0, which still clones in the image, trusts the server in the build
+  (``git-trust``) and, under the ``public`` policy, pins its address with
+  ``build.extra_hosts``;
+- every other series fetches every repository before the build
+  (``fetch-repos``, with a fixed step timeout), writes ``repos.yaml``
+  without credentials and builds with ``AGGREGATE=false``;
 - the pinned address is resolved once per job and never makes the
   instance look changed;
 - J5: a GitLab the panel cannot reach is tolerated only when its
@@ -85,7 +86,9 @@ class _GitLabExecutorCase(TransactionCase):
         pinned = set()
         with patch.object(
             ex, "_get_github_tokens", return_value=(_GH_TOKEN, ""),
-        ), patch.object(ex, "_get_token_for_repo", return_value=_GH_TOKEN):
+        ), patch.object(
+            ex, "_github_repo_access", return_value=(7, True, "app"),
+        ), patch.object(ex, "_scoped_github_token", return_value=_GH_TOKEN):
             text = ex._repos_yaml_content(pinned)
         return text, pinned
 
@@ -167,17 +170,21 @@ class TestReposYamlAndSpec(_GitLabExecutorCase):
         inst = ex._inst()
         inst.odoo_commit_sha = False
         inst.repo_ids = self._repos()[:1]
+        ex._sys = lambda *_a, **_k: None
         with patch.object(
             ex, "_get_github_tokens", return_value=("", ""),
-        ), patch.object(ex, "_get_token_for_repo", return_value=None):
+        ), patch.object(
+            ex, "_github_repo_access", return_value=(None, None, None),
+        ):
             ex._repos_yaml_content(set())
         self.assertEqual(ex._odoo_build_override(), {})
 
 
 class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
 
-    def test_8_0_fetches_every_repository_before_the_build(self):
-        for version in ("8.0", "9.0", "10.0"):
+    def test_every_series_but_19_0_fetches_every_repository_before_the_build(self):
+        """The fetch step, its arguments and timeout, and the build override."""
+        for version in ("8.0", "9.0", "10.0", "11.0", "15.0", "18.0", "20.0"):
             with self.subTest(version=version):
                 ex = _make_deploy_executor(odoo_version=version)
                 text, _unused = self._ready(ex, version)
@@ -191,10 +198,10 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
                 fetch = _find_cmd(cmds, "Fetch the repositories")
                 argv = shlex.split(fetch[1])
                 self.assertEqual(argv[2], "fetch-repos")
-                self.assertEqual(argv[5:], [deploy_mod.GIT_HELPER_IMAGE, "60"])
                 self.assertEqual(
-                    fetch[2]["timeout"], deploy_mod._fetch_timeout(3),
+                    argv[5:], [deploy_mod.GIT_HELPER_IMAGE, version, "60", "1200"],
                 )
+                self.assertEqual(fetch[2]["timeout"], 1260)
                 self.assertLess(
                     labels.index("Fetch the repositories"),
                     labels.index("Initialize database"),
@@ -221,9 +228,20 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertEqual(shlex.split(trust)[2], "git-trust")
         self.assertNotIn("Fetch the repositories", labels)
 
-    def test_the_fetch_budget_covers_each_download_and_its_retry(self):
-        self.assertEqual(deploy_mod._fetch_timeout(3), 3 * (2 * 600 + 60))
-        self.assertGreater(deploy_mod._fetch_timeout(4), deploy_mod._fetch_timeout(3))
+    def test_the_fetch_step_has_a_fixed_budget_whatever_the_repositories(self):
+        """Three repositories at N × 1 260 s already passed the 3 600 s at
+        which the job runner kills a job."""
+        for count in (1, 3, 9):
+            with self.subTest(count=count):
+                ex = _make_deploy_executor(
+                    odoo_version="18.0",
+                    repo_ids=[SimpleNamespace(url=f"https://github.com/a/r{n}")
+                              for n in range(count)],
+                )
+                fetch = _find_cmd(ex.get_commands(), "Fetch the repositories")
+                self.assertEqual(fetch[2]["timeout"], deploy_mod._FETCH_STEP_TIMEOUT_S)
+        self.assertEqual(deploy_mod._FETCH_BUDGET_S, 1200)
+        self.assertEqual(deploy_mod._FETCH_STEP_TIMEOUT_S, 1260)
 
     def test_a_rebuild_of_8_0_fetches_in_its_own_step_before_the_build(self):
         # One step for both had the transport's TERM kill the outer
@@ -235,7 +253,7 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         _label, fetch, fetch_opts = _find_cmd(cmds, "Fetch the repositories")
         self.assertEqual(shlex.split(fetch)[2], "fetch-repos")
         self.assertNotIn("docker compose build", fetch)
-        self.assertEqual(fetch_opts["timeout"], deploy_mod._fetch_timeout(3))
+        self.assertEqual(fetch_opts["timeout"], deploy_mod._FETCH_STEP_TIMEOUT_S)
         self.assertTrue(fetch_opts["stop_on_failure"])
         build = _find_cmd(cmds, "Rebuild Odoo image")
         self.assertEqual(labels.index("Fetch the repositories") + 1,

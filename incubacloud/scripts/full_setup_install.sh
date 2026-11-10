@@ -4,10 +4,11 @@
 # (copier, invoke, pre-commit), plus zip and logrotate.
 #
 # Usage: full_setup_install.sh [git_helper_image]
-#   <git_helper_image>  the git helper image (``alpine/git`` by digest)
-#                       that 8.0 to 10.0 fetch their repositories with,
-#                       pulled now so a first deploy does not depend on
-#                       Docker Hub's anonymous limits
+#   <git_helper_image>  the git helper image (doodba's by digest) that the
+#                       deploys fetch their repositories with, pulled now
+#                       and kept under its local tag with the label the
+#                       daily prune spares, so a first deploy does not wait
+#                       for it
 #
 # Every step is idempotent — re-running only installs what is missing, so
 # this doubles as a repair. Driven by ``full_setup_executor``; the per-tool
@@ -116,8 +117,12 @@ command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
 
 if [ -n "${1:-}" ]; then
     ic_log "Pulling the git helper image..."
-    sudo docker pull -q "$1" >/dev/null \
-        || ic_warn "could not pull the git helper image: the first deploy that needs it pulls it"
+    if sudo docker pull -q "$1" >/dev/null; then
+        ic_git_helper_prepare "$1" sudo docker \
+            || ic_warn "could not tag the git helper image: the first deploy that needs it does"
+    else
+        ic_warn "could not pull the git helper image: the first deploy that needs it pulls it"
+    fi
 fi
 
 ic_log "Host toolchain installation complete."

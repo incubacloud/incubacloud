@@ -137,6 +137,41 @@ ic_git_exclude() {
     fi
 }
 
+# Print the local tag a host keeps the git helper image <image> under:
+# ``incubacloud-git-helper:`` and the first 12 hex of its digest. An
+# image not pinned by digest is printed as it is.
+#
+# Usage: ic_git_helper_tag <image>
+ic_git_helper_tag() {
+    local image="$1" digest
+    if [[ "$image" != *@sha256:* ]]; then
+        printf '%s' "$image"
+        return 0
+    fi
+    digest="${image##*@sha256:}"
+    printf 'incubacloud-git-helper:%s' "${digest:0:12}"
+}
+
+# Make sure the host has the git helper image <image> under its local tag
+# (ic_git_helper_tag), built from it with the label the daily prune spares
+# (``incubacloud.protect=1``): the prune removes every image no container
+# uses, and the helper would be pulled again, hundreds of MB, every day.
+# The tag takes no more disk than the image. <docker> is the command that
+# runs Docker (``sudo docker`` while a host is being prepared).
+#
+# Usage: ic_git_helper_prepare <image> [docker...]
+# Returns 0 when the tag is there, Docker's status otherwise.
+ic_git_helper_prepare() {
+    local image="$1" tag
+    shift
+    [ "$#" -gt 0 ] || set -- docker
+    tag="$(ic_git_helper_tag "$image")"
+    [ "$tag" != "$image" ] || return 0
+    "$@" image inspect "$tag" >/dev/null 2>&1 && return 0
+    printf 'FROM %s\nLABEL incubacloud.protect=1\n' "$image" \
+        | "$@" build -q -t "$tag" - >/dev/null
+}
+
 # Keep the instance's live Odoo log out of the copier repo's index
 # (see ic_git_exclude).
 #

@@ -69,9 +69,18 @@ Fields of a card:
     Whether every repository of ``repos.yaml`` is fetched on the host,
     in a helper container with a current git, before the image is
     built with ``AGGREGATE=false``, instead of being cloned by the
-    image's own git. 8.0 to 10.0: their git 2.1.4 (Debian 8) follows a
-    302 to plain http on the same host and sends the token in clear,
-    and knows no ``http.followRedirects`` (checked on 8-nov-2026).
+    image's own git: the credential of a private repository then never
+    enters the image, its build or the instance's container, and no
+    ``.git`` does either (10-nov-2026). Every series but 19.0, which
+    follows once the others have run with it. 8.0 to 10.0 had it first
+    (8-nov-2026), see ``image_git_safe``.
+``image_git_safe``
+    Whether the series' image may clone its repositories itself again
+    when the parameter ``incubacloud.repos_in_image_series`` names it,
+    the way back from ``prefetch_repos``. Not 8.0 to 10.0: their git
+    2.1.4 (Debian 8) follows a 302 to plain http on the same host and
+    sends the token in clear, and knows no ``http.followRedirects``
+    (checked on 8-nov-2026).
 """
 import re
 
@@ -105,7 +114,7 @@ _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 def _card(
     offered, postgres, db_tool, template_min, neutralize="odoo",
     debian_archive=False, headless="--no-http", postgres_beyond_template=False,
-    prefetch_repos=False,
+    prefetch_repos=True, image_git_safe=True,
 ):
     """Build one series' card, checking its values.
 
@@ -119,6 +128,7 @@ def _card(
     :param str headless: one of ``HEADLESS_FLAGS``.
     :param bool postgres_beyond_template: see the module docstring.
     :param bool prefetch_repos: see the module docstring.
+    :param bool image_git_safe: see the module docstring.
     :rtype: dict
     """
     lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
@@ -142,6 +152,7 @@ def _card(
         "headless": headless,
         "postgres_beyond_template": bool(postgres_beyond_template),
         "prefetch_repos": bool(prefetch_repos),
+        "image_git_safe": bool(image_git_safe),
     }
 
 
@@ -175,17 +186,17 @@ VERSIONS = {
     "8.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True, prefetch_repos=True,
+        postgres_beyond_template=True, image_git_safe=False,
     ),
     "9.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True, prefetch_repos=True,
+        postgres_beyond_template=True, image_git_safe=False,
     ),
     "10.0": _card(
         False, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
-        postgres_beyond_template=True, prefetch_repos=True,
+        postgres_beyond_template=True, image_git_safe=False,
     ),
     "11.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
     "12.0": _card(False, ("12", "13", "13"), "click-odoo", None, "sql"),
@@ -195,7 +206,12 @@ VERSIONS = {
     "16.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
-    "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    # 19.0 fetches its repositories on the host in a later version, once
+    # the other series have run with it: it is the series of most
+    # instances and of the nightly QA (plan of the Git tokens, phase 2).
+    "19.0": _card(
+        True, ("14", "18", "17"), "click-odoo", None, prefetch_repos=False,
+    ),
     # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the
     # series (``qa-run -m versiones``) tests it with the rest. PostgreSQL 16
     # to 18, as the template requires; odoo db, since click-odoo-contrib
@@ -363,6 +379,15 @@ def prefetch_repos(version):
     :rtype: bool
     """
     return card(version)["prefetch_repos"]
+
+
+def image_git_safe(version):
+    """Whether *version*'s image may clone its repositories itself again.
+
+    :param str version: a series.
+    :rtype: bool
+    """
+    return card(version)["image_git_safe"]
 
 
 def headless_flag(version):

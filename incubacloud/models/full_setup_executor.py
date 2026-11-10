@@ -47,6 +47,7 @@ from .cloud_host_direct import (
     publishes_direct_port,
 )
 from .cloud_host_edge_guard import EDGE_GUARD_STAGED, edge_guard_digest
+from .deploy_instance_executor import GIT_HELPER_IMAGE
 from .host_probe_executor import (
     LOW_DISK_ALERT,
     MIN_DISK_GB,
@@ -451,7 +452,10 @@ class FullSetupExecutor(
             ("check:os",   "uname -s"),
             ("check:disk", "df -B1 --output=avail / | tail -n 1"),
             # ── Phase 2: tools (versioned script) + per-tool verify ────
-            ("Install host tools", self.run_script("full_setup_install.sh")),
+            (
+                "Install host tools",
+                self.run_script("full_setup_install.sh", [GIT_HELPER_IMAGE]),
+            ),
         ] + VERIFY_COMMANDS + [
             # ── Phase 3: Traefik ──────────────────────────────────────
             *direct_check,

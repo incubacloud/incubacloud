@@ -56,6 +56,8 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
     ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
     # Same reason: the log archive retention lives in cloud.settings.
     ex._log_archive_days = lambda: 60
+    # And the series sent back to cloning in the image, a system parameter.
+    ex._repos_in_image_series = frozenset
     ex.job = SimpleNamespace(id=42)
     ex._scripts_requested = False
     ex._scripts_uploaded = False
@@ -104,6 +106,8 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
     ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
     # Same reason: the log archive retention lives in cloud.settings.
     ex._log_archive_days = lambda: 60
+    # And the series sent back to cloning in the image, a system parameter.
+    ex._repos_in_image_series = frozenset
     ex.job = SimpleNamespace(id=42)
     ex._scripts_requested = False
     ex._scripts_uploaded = False
@@ -773,7 +777,9 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
         with mock.patch.object(
             ex, "_get_github_tokens", return_value=("", ""),
         ), mock.patch.object(
-            ex, "_get_token_for_repo", return_value=self._TOKEN,
+            ex, "_github_repo_access", return_value=(5, True, "app"),
+        ), mock.patch.object(
+            ex, "_scoped_github_token", return_value=self._TOKEN,
         ):
             text = ex._repos_yaml_content(pinned)
         return text, pinned
@@ -848,7 +854,12 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
         opened = mock.MagicMock(spec=http.client.HTTPResponse)
         opened.__enter__.return_value = opened
         with mock.patch.object(
-            ex, "_get_github_tokens", return_value=(self._TOKEN, ""),
+            ex, "_get_github_tokens", return_value=("app_tok", ""),
+        ), mock.patch.object(
+            ex, "_scoped_github_token", return_value=self._TOKEN,
+        ), mock.patch(
+            "odoo.addons.incubacloud.models.deploy_instance_executor.read_json_limited",
+            autospec=True, return_value={"id": 9, "private": True},
         ), mock.patch(
             "odoo.addons.incubacloud.models.deploy_instance_executor.safe_urlopen",
             autospec=True, return_value=opened,
