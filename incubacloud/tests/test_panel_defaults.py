@@ -9,7 +9,7 @@ the platform's alerts are not reached through the context or ``call_kw``.
 import importlib.util
 import os
 
-from odoo import fields
+from odoo import api, fields
 from odoo.exceptions import AccessError, UserError
 from odoo.modules.module import get_module_path
 from odoo.service.model import get_public_method
@@ -120,6 +120,16 @@ class TestPersonalDefaultsArePanelAdministrators(_QueueCase):
             self.Default.with_user(self.consultant)._get_model_defaults(
                 "cloud.project",
             ),
+            {"apt_dependencies": "libfoo"},
+        )
+
+    def test_without_a_user_the_shared_defaults_are_read(self):
+        """As a route with ``auth='none'`` reads them: nobody's own."""
+        self.Default.set("cloud.project", "apt_dependencies", "libfoo")
+        Default = api.Environment(self.env.cr, None, {})["ir.default"]
+        self.assertFalse(Default._keeps_personal_panel_defaults())
+        self.assertEqual(
+            Default._get_model_defaults("cloud.project"),
             {"apt_dependencies": "libfoo"},
         )
 
