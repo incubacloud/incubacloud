@@ -131,7 +131,7 @@ class _Handler(BaseHTTPRequestHandler):
         """Constant-time Bearer-token check against ``_AUTH_TOKEN``.
 
         The server listens on 127.0.0.1, so a local attacker (sandbox
-        escape, co-tenant) could otherwise derive the token byte-by-byte
+        escape, another user of the host) could otherwise derive the token byte-by-byte
         from the RTT timing of ``==``.
         """
         header = self.headers.get("Authorization", "")

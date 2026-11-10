@@ -20,7 +20,7 @@ def as_platform(records):
 
     Odoo's ``sudo()`` raises privileges but leaves ``env.uid`` alone, so
     work the platform does on its own account inside somebody's request
-    — refilling the warm pool during a signup, rebuilding the fleet from
+    — preparing an instance during a signup, rebuilding the fleet from
     a GitHub push, filing an alert — is stamped with whoever happened to
     trigger it. That author then outlives the request: it lands on the
     record, on ``queue_job.user_id`` (so the executor *runs* as them),
@@ -574,8 +574,8 @@ class ResUsers(models.Model):
         # requires the executing user to have *write* access on the
         # action's model. The cron bot is a cloud manager but deliberately
         # lacks write on append-only / abstract orchestration models
-        # (audit log, rate-limit buckets, terminal routes, the warm-pool
-        # and host-provisioner helper AbstractModels), so those crons
+        # (audit log, rate-limit buckets, terminal routes, and the helper
+        # AbstractModels of layered modules), so those crons
         # raised AccessError before their internal ``sudo()`` ever ran.
         # Scoping each bot-owned cron's server action to a group the bot
         # belongs to makes the check take the group-membership branch,

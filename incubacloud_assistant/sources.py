@@ -2,8 +2,7 @@
 
 Only inside core's repository — the folder that holds the ``incubacloud``
 module — and only its public entries, a closed list. Never anything else
-on the disk: on the master and on the tenant panels, saas's private code
-is installed beside it. A path with ``..``, a hidden part, a link that
+on the disk: modules of other repositories may be installed beside it. A path with ``..``, a hidden part, a link that
 leaves the repository or a binary file is refused; a vendored library and
 a generated site are not searched. Where the image carries no ``docs``
 folder, the documentation is searched on its published site instead.
@@ -91,7 +90,7 @@ DOCS_DIR = ("docs", "user", "docs")
 DOCS_URL = "https://docs.incubacloud.io/"
 #: The search index mkdocs publishes with the site, read when an image
 #: carries no ``docs`` folder: Doodba's ``400-clean`` keeps only the
-#: modules of core's repository, on the master and on the tenant panels.
+#: modules of core's repository, on a panel run from an image.
 PUBLISHED_INDEX_URL = DOCS_URL + "search/search_index.json"
 #: Seconds the published index is kept before it is read again.
 PUBLISHED_INDEX_SECONDS = 3600

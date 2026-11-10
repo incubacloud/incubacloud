@@ -9,7 +9,7 @@ update``, even though nothing about the two writes actually conflicts.
 It is pinned here rather than left to a comment because the failure it
 prevents is invisible in normal runs and expensive when it lands:
 PostgreSQL's error reaches Odoo's SQL layer, which logs ``bad query``
-at ERROR before any Python can catch it, and the tenant log scraper
+at ERROR before any Python can catch it, and the instance log scraper
 reports those lines straight back to the panel as an
 ``instance_error_logs`` alert. Seen on five separate days in August.
 

@@ -1,7 +1,7 @@
 <templates>
 
     <t t-name="incubacloud.HostDetail">
-        <!-- Root keeps `ic-host-detail` so the saas Traefik-panel patch
+        <!-- Root keeps `ic-host-detail` so a layer's Traefik-panel patch
              (xpath on `hasclass('ic-host-detail')`) keeps resolving. -->
         <div class="ic-host-detail">
 
@@ -181,7 +181,7 @@
                 </t>
 
                 <!-- ═══════════════════════════════════════════════════════════
-                     Tabs — keeps `ic-detail-tabs` so the saas Security patch
+                     Tabs — keeps `ic-detail-tabs` so a layer's Security patch
                      (xpath on `hasclass('ic-detail-tabs')`) resolves.
                      ═══════════════════════════════════════════════════════════ -->
                 <div class="rl-tabs ic-detail-tabs">
@@ -393,8 +393,8 @@
 
                         <!-- ── General tab ──────────────────────────────────────── -->
                         <t t-if="state.tab === 'general'">
-                            <!-- Keeps `ic-form-grid` so the saas warm_pool /
-                                 pool_host patches (xpath on this grid) resolve. -->
+                            <!-- Keeps `ic-form-grid` so a layer's patches
+                                 (xpath on this grid) resolve. -->
                             <div class="rl-fgrid ic-form-grid">
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('name') ? 'has-error' : ''">
@@ -685,7 +685,7 @@
 
                         <!-- ── Traefik tab ──────────────────────────────────────── -->
                         <t t-if="state.tab === 'traefik'">
-                            <!-- Keeps `ic-traefik-meta` so the saas DNS patch
+                            <!-- Keeps `ic-traefik-meta` so a layer's DNS patch
                                  (xpath on this grid) resolves. -->
                             <div class="rl-fgrid ic-traefik-meta">
                                 <div class="rl-frow"
@@ -755,7 +755,7 @@
 
                         <!-- ── Whitelist tab ────────────────────────────────────── -->
                         <!-- Keep the exact `state.tab === 'whitelist'` t-if as the
-                             anchor the saas Security patch appends after. -->
+                             anchor a layer's Security patch appends after. -->
                         <t t-if="state.tab === 'whitelist'">
                             <div class="ic-whitelist-panel">
                                 <p class="rl-tabnote">

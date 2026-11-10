@@ -15,7 +15,7 @@
 # ``version_info`` call, whose result carries ``server_version``; the
 # catch-all page is HTML and never matches.
 #
-# POST, not GET: tenant hostnames sit behind a CDN rule that answers
+# POST, not GET: instance hostnames may sit behind a CDN rule that answers
 # every GET/HEAD from a non-browser with a challenge page (403). A
 # ``GET /web/health`` from here never reached the instance, so every
 # claim timed out on it. POST is never challenged — JSON-RPC and the

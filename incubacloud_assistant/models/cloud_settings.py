@@ -20,7 +20,7 @@ from ..providers import PROVIDERS
 #: positive.
 DEFAULT_STEP_CAP = 30
 #: A system parameter that keeps the assistant off on this database for good,
-#: its value the reason shown (IncubaCloud's own panel sets it, from saas).
+#: its value the reason shown (a module that extends the panel may set it).
 BLOCKED_PARAM = "incubacloud_assistant.blocked"
 #: The context key the Settings routes set, with sudo, to write the
 #: assistant's fields: the ORM alone (a manager's ``call_kw``) never does.
@@ -257,9 +257,9 @@ class CloudSettings(models.Model):
     def _assistant_terms_label(self):
         """Return the box a manager ticks to switch the assistant on, translated.
 
-        Core alone has no Terms of IncubaCloud's to accept: a self-hosted
-        panel acknowledges what the assistant does. A tenant panel
-        overrides it with section 12A of the Terms (incubacloud_tenant).
+        Core alone has no Terms to accept: a self-hosted panel acknowledges
+        what the assistant does. A module that extends the panel may
+        override it with a section of its own Terms.
         The refusal without the box quotes it.
 
         :rtype: str
@@ -273,8 +273,8 @@ class CloudSettings(models.Model):
     def _assistant_terms_url(self):
         """Return the address of the Terms the box accepts, or "" for none.
 
-        Empty on core alone: the tab links nowhere. A tenant panel
-        overrides it with the platform's Terms (incubacloud_tenant).
+        Empty on core alone: the tab links nowhere. A module that
+        extends the panel may override it with the address of its Terms.
 
         :rtype: str
         """
@@ -285,8 +285,8 @@ class CloudSettings(models.Model):
         """Record a manager's acceptance of section 12A; return what to keep.
 
         Called on switching the assistant on, before anything is written. A
-        tenant panel overrides it to have IncubaCloud record it on the
-        customer's contact first (incubacloud_tenant). Here nothing outside
+        module that extends the panel may override it to record it where
+        it keeps its contracts first. Here nothing outside
         the panel knows the Terms: the acceptance stays on the panel, with
         no version.
 
@@ -303,8 +303,8 @@ class CloudSettings(models.Model):
 
         Settings → Assistant neither lists nor accepts them. Here the users
         whose login starts with ``__``: the cron bot (``__incubacloud_cron__``)
-        and Odoo's own (``__system__``). A tenant panel adds IncubaCloud's
-        support user (incubacloud_tenant), as its Users page leaves it out.
+        and Odoo's own (``__system__``). A module that extends the panel may
+        add a support user of its own, which its Users page leaves out.
 
         :param user: a ``res.users`` record
         :rtype: bool

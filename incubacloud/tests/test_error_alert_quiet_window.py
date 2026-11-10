@@ -10,8 +10,8 @@ minutes later, notifying on-call twice for something nobody could act
 on in between. The panel filters to active by default, so the row was
 gone before anyone looked.
 
-That is how the reconcile cron stayed broken across the whole tenant
-fleet for a week. Now the alert stays up until a full day passes
+That is how the reconcile cron stayed broken across a whole fleet of
+panels for a week. Now the alert stays up until a full day passes
 without the error being seen again.
 """
 import asyncio

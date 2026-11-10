@@ -283,8 +283,8 @@ class TestSettingsTools(
         def observability(configure):
             """Answer get_config with observability editable here or not.
 
-            Said either way, so a layer that hides it by itself (the
-            tenant's) changes neither half of the test.
+            Said either way, so a layer that hides it by itself changes
+            neither half of the test.
             """
 
             def answer(dispatch, path, params):

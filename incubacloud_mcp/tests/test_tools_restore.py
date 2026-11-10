@@ -24,14 +24,14 @@ from .common import ConfirmMixin, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 RESTORES = ("restore_from_link", "restore_from_host_file", "restore_from_upload")
 #: A presigned link: its query is the credential.
 SIGNED = (
-    "https://93.184.216.34/bucket/tenant-7/backup.zip"
+    "https://93.184.216.34/bucket/acme-7/backup.zip"
     "?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=deadbeefcafe"
 )
 SHOWN = "https://93.184.216.34/…/backup.zip?…"
 #: What the approval and the assistant's card show of it: who signed it
 #: whole, as the bucket of a link a storage signed; the signature cut.
 TOLD = (
-    "https://93.184.216.34/bucket/tenant-7/backup.zip"
+    "https://93.184.216.34/bucket/acme-7/backup.zip"
     "?X-Amz-Credential=AKIAEXAMPLE&X-Amz-Signature=de…fe"
 )
 SHA = "ab" * 32
@@ -307,7 +307,7 @@ class TestRestoreTools(
         for mine, theirs in (
             (
                 SIGNED,
-                SIGNED.replace("bucket/tenant-7", "attacker/tenant-7"),
+                SIGNED.replace("bucket/acme-7", "attacker/acme-7"),
             ),
             (
                 f"https://cloud.example.com/s/{share}/download",
@@ -833,7 +833,7 @@ class TestRestoreToolsOverHttp(
         self.assertEqual(row.user_id, self.dev)
         self.assertIn("(test-agent)", row.via_client)
         self.assertIn(SHOWN, row.details)
-        for hidden in ("deadbeefcafe", "AKIAEXAMPLE", "tenant-7"):
+        for hidden in ("deadbeefcafe", "AKIAEXAMPLE", "acme-7"):
             self.assertNotIn(hidden, row.details)
         approval = (
             self.env["incubacloud.mcp.approval"]

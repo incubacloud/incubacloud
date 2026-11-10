@@ -118,7 +118,7 @@ class TestTheCheckerCatchesWhatItMust(BaseCase):
         """), [])
 
     def test_a_subclass_of_an_executor_from_another_repository(self):
-        """How saas is checked: core's classes resolve its bases."""
+        """How a layer on top is checked: core's classes resolve its bases."""
         context = {
             "deploy.py": "class DeployInstanceExecutor(AbstractExecutor):\n"
                          "    pass\n",

@@ -407,7 +407,7 @@ class McpToolsSettings(models.AbstractModel):
 
         D2: the audit retention, the trusted proxy ranges, every rate
         limit, the agents' issuer and MCP URL, and what ``get_config``
-        hides on this panel (observability, on a tenant); and the hours a
+        hides on this panel (observability, on a managed panel); and the hours a
         move's frozen copy is kept, when lowered (``LOWERED_ASKS_GENERAL``).
         A value equal to the one held once normalised
         (:func:`normalized_setting`) is no change.

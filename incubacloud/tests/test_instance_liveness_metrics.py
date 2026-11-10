@@ -298,9 +298,9 @@ class TestWhichContainerDecides(InstanceLivenessCase):
     backup containers up. Asked about any container of the stack, the
     backend therefore answers "seen seconds ago" all night,
     the flag never falls, and everything hanging off it never happens:
-    the tenant is never marked sleeping, its activity clock is refreshed
+    the instance is never marked sleeping, its activity clock is refreshed
     as though somebody had visited, and the panel shows a sleeping
-    tenant as running.
+    instance as running.
 
     Nothing fails while that is wrong, which is why it is pinned here
     rather than left to the fail-safes above.
@@ -355,7 +355,7 @@ class TestWhichContainerDecides(InstanceLivenessCase):
         self.assertIn('"odoo"', second)
 
     def test_a_stack_whose_odoo_is_gone_is_not_running(self):
-        """The sleeping tenant, exactly: still reporting containers, but
+        """The sleeping instance, exactly: still reporting containers, but
         not that one."""
         self.inst.write({"running": True})
         self.awake.write({"running": True})
@@ -390,7 +390,7 @@ class TestWhenTheSecondQuestionCannotBeTrusted(InstanceLivenessCase):
         instance stopping at once, and the two need opposite reactions.
 
         Believing it would mark the whole fleet stopped, which flips
-        every sleep-eligible tenant to sleeping and hands a false answer
+        every sleep-eligible instance to sleeping and hands a false answer
         to the clock behind the 14-day auto-suspend. Refusing to believe
         it costs, at worst, the flag staying where it already was.
         """
@@ -568,7 +568,7 @@ class TestSeveralSeriesOfOneSubject(InstanceLivenessCase):
     def test_the_rebuild_boot_test_does_not_pass_for_the_service(self):
         """The rebuild boots the new image as ``ic_boot_odoo_<id>``, a
         ``docker compose run`` of ``odoo`` under a name of its own, while
-        the instance's odoo may be stopped — a Free tenant asleep."""
+        the instance's odoo may be stopped — an instance asleep."""
         self.inst.write({"running": True})
         self._run_series(odoo=[
             (self.inst.id, 600, "p1-odoo-1"),

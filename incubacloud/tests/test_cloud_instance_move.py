@@ -810,7 +810,7 @@ class TestMoveDnsRepointNotice(TransactionCase):
         self.assertEqual(alert.project_id, self.project)
 
     def test_notice_is_skipped_when_dns_is_managed(self):
-        """The SaaS layer re-points DNS itself — no false alarm."""
+        """A layer that manages the DNS re-points it itself — no false alarm."""
         with patch.object(
             type(self.inst), '_move_dns_is_managed', return_value=True,
         ):

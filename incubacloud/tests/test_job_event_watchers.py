@@ -8,7 +8,7 @@ one place that says which events count; this is what keeps a subscriber
 added later from forgetting it.
 
 Static: it reads the sources, as the front end's own tests cannot mount
-these components. The SaaS manager has the same test for its pages.
+these components. A layer on top may run the same test for its pages.
 """
 import pathlib
 import re

@@ -12,7 +12,7 @@
 # next redeploy.
 #
 # ── Why vmauth sits in front ───────────────────────────────────────────
-# The central is shared: several panels (in SaaS, every tenant) write to
+# The central can be shared: several panels write to
 # and read from the same VictoriaMetrics. Single-node VM has no notion of
 # accounts, so the boundary has to be imposed by something in front.
 # vmauth is the auth proxy VictoriaMetrics ships for exactly this, and it
@@ -36,7 +36,7 @@
 # that); everything vmauth serves is plain request/response.
 #
 # Grafana is no longer anonymous. It authenticates through the panel's
-# identity provider when there is one (SaaS), or through a header set by
+# identity provider when there is one, or through a header set by
 # the panel's own reverse proxy when there is not (self-hosted), and each
 # account lands in its own organisation with a datasource it cannot
 # change. Operators get a second, unfiltered credential that is never
@@ -170,7 +170,7 @@
 
     - name: Write the log store configuration
       # Retention is short and deliberate: these lines carry the IP
-      # addresses of our tenants' end users, so we keep what an incident
+      # addresses of the instances' visitors, so we keep what an incident
       # needs and no more. ``auth_enabled`` is what makes the account
       # header meaningful — without it Loki ignores it and every account
       # shares one namespace.
@@ -222,7 +222,7 @@
       # whose ``groups`` claim matches no entry in ``orgMapping``.
       #
       # That made the fallback the most privileged view in the system: a
-      # tenant whose account exists but is not yet in the map — the window
+      # panel whose account exists but is not yet in the map — the window
       # between minting it and the next sync — would land there and read
       # the whole fleet, unfiltered, with nothing on screen saying so.
       #
@@ -426,7 +426,7 @@
                 # generic_oauth block is written afterwards through
                 # Grafana's SSO settings API (tasks/grafana_orgs.yml),
                 # because the organisation map names every account and so
-                # changed with every tenant — which changed this file,
+                # changed with every account — which changed this file,
                 # and a changed compose definition means ``up -d``
                 # recreates the container. Adding one account dropped
                 # every open session in the fleet.

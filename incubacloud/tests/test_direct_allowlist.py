@@ -3,9 +3,9 @@
 ``direct-hosts`` is the platform's hosts by their own public address plus
 the private ranges (traffic born on the host itself crosses the forward
 hook with its container's address). ``direct-peers`` adds what a layer
-above admits besides: the servers customers rent, in the SaaS build.
+above admits besides: say, the servers customers rent.
 A host that may not be ours any more is left out: archived, absent from
-the metrics for over a day, or (SaaS) bought on demand and without a
+the metrics for over a day, or bought on demand and without a
 server. An address counts as applied only by its own /32.
 """
 import ipaddress

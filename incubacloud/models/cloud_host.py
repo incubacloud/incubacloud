@@ -376,8 +376,8 @@ class CloudHost(models.Model):
     # auditd). When ``hardened`` is True the host is reached as the
     # non-root operator user on the randomized SSH port stored in ``port``.
     # The network-edge firewall (layer 2, e.g. Hetzner Cloud Firewall) is
-    # NOT modelled here — it follows the provider and lives in the SaaS
-    # layer (``incubacloud_saas_manager``).
+    # NOT modelled here — it follows the provider and belongs to a layer
+    # that knows the provider.
     hardened = fields.Boolean(
         string="Hardened",
         default=False,
@@ -652,8 +652,8 @@ class CloudHost(models.Model):
         ``additional_domain`` is an optional extra search domain ANDed
         into the eligibility filter (and therefore the fallback too), so
         inheriting layers can constrain placement without forking this
-        method — e.g. the SaaS layer passes ``[('pool_id', '=', ...)]``
-        to keep free and paid tenants on separate hardware.
+        method — e.g. a layer passes its own ``[('field', '=', ...)]``
+        to keep some instances on separate hardware.
         """
         domain = [
             # Spelled out, not left to ``active_test``: a caller reached
@@ -897,7 +897,7 @@ class CloudHost(models.Model):
         """Host fields full_setup renders and uploads.
 
         Override in modules whose full_setup variant renders more state
-        (e.g. the SaaS catch-all flag changes the Traefik config) and
+        (e.g. a layer's flag that changes the Traefik config) and
         extend the list via ``super()``.
         """
         return [
@@ -1970,7 +1970,7 @@ class CloudHost(models.Model):
         * ``list``: the panel, when it has an address, and the list.
 
         The list leaves out the entries equal to the panel's address (a
-        moved tenant panel keeps its own there). An entry stored before
+        panel moved between hosts keeps its own there). An entry stored before
         ``_check_allowed_ssh_ips`` that is no address is shown as written
         and counts for nothing.
 
@@ -3050,7 +3050,7 @@ class CloudHost(models.Model):
             f"for every router\n"
             f"{child_indent}# on this entrypoint. Without it no HSTS header "
             f"reaches the\n"
-            f"{child_indent}# tenants, because their routers are generated "
+            f"{child_indent}# instances, because their routers are generated "
             f"by copier.\n"
             f"{child_indent}middlewares:\n"
             f"{child_indent}  - hsts@file\n"
@@ -3069,7 +3069,7 @@ class CloudHost(models.Model):
         "{i}  # Per-source-IP rate limit. Auto-added by IncubaCloud as an "
         "https\n"
         "{i}  # entrypoint default so it reaches every copier-generated "
-        "tenant\n"
+        "instance\n"
         "{i}  # router, throttling by client IP before a request hits "
         "Odoo's\n"
         "{i}  # pbkdf2 login. Direct traffic only: a host behind a trusted "
@@ -3724,7 +3724,7 @@ class CloudHost(models.Model):
         is rendered: a module that adds to it extends this method rather
         than rewriting the uploaded file afterwards, because a rewrite
         from the stored template drops whatever was rendered before it
-        (11-oct-2026: every host the SaaS layer set up lost the CDN's
+        (11-oct-2026: every host a layer set up lost the CDN's
         trusted ranges from its ``traefik.yml`` that way).
 
         :rtype: str
@@ -3784,7 +3784,7 @@ class CloudHost(models.Model):
         """Return why this certificate and key cannot serve traffic, or None.
 
         Worded for whoever pasted the pair. Shared with any module that
-        stores a pair of its own (the SaaS zone certificate), so the same
+        stores a pair of its own (a zone certificate, say), so the same
         mistake reads the same everywhere. Callable before writing, which
         matters: a constraint raises at flush, after the row has already
         changed inside the transaction.
@@ -4320,8 +4320,8 @@ class CloudHost(models.Model):
                 )
 
             # Frame guard. Off unless the host names who may embed it,
-            # because a tenant's own site may legitimately be framed by
-            # its customers and this control reaches every router here.
+            # because an instance's own site may legitimately be framed
+            # by its customers and this control reaches every router here.
             # Same interlocked pair, and it *sets* rather than adds: the
             # source list moves, and clearing it has to take the header
             # back out.

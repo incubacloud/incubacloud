@@ -344,7 +344,7 @@ class TestBackendFailSafe(MetricRuleCase):
     """The property that matters most: silence is not health.
 
     The backend alert itself needs two failed evaluations in a row: one
-    slow answer through a CDN is not an outage (2026-10-13, a tenant
+    slow answer through a CDN is not an outage (2026-10-13, a managed
     panel paged its customer over a single 10 s read timeout).
     """
 
@@ -795,8 +795,8 @@ class TestInstanceScopedRules(MetricRuleCase):
         purpose, so cAdvisor goes quiet and a naive rule concludes it is
         down. Every Free instance would then raise a critical alert
         nightly, and operators would learn to ignore the one that
-        matters. Core asks the instance; the SaaS layer is what knows
-        about sleeping.
+        matters. Core asks the instance; a layer that puts instances to
+        sleep is what knows about sleeping.
         """
         self.patch(
             type(self.instance), "_metric_alerts_suppressed",

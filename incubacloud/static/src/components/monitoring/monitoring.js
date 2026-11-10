@@ -15,8 +15,8 @@ import { SearchSelect } from "../search_select/search_select";
  * Auth: Grafana runs anonymous **behind the panel's proxy**, and access
  * is gated by the panel itself (this route only renders for users who can
  * manage hosts). A second Grafana session would duplicate the operator's
- * login for no isolation gain — per-tenant isolation is a different
- * problem (the deferred tenant-facing view) that needs query-level
+ * login for no isolation gain — per-account isolation is a different
+ * problem (a deferred view for other panels) that needs query-level
  * filtering, not a login prompt.
  *
  * The component degrades honestly: when observability is off or the base

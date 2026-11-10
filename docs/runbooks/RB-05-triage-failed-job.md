@@ -8,7 +8,7 @@ anything".
 errors.
 
 A failed job is the only blocking failure surface in the system —
-deploys, rebuilds, backups and tenant provisioning all run as
+deploys, rebuilds, backups and provisioning all run as
 `queue.job` items. When one of these fails, `cloud.alert` opens an
 alert and the SPA shows a red badge in the header. The alert auto-
 closes when the same job succeeds (e.g. on a retry).

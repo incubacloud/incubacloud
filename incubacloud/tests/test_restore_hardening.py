@@ -73,7 +73,7 @@ from odoo.addons.incubacloud.restore_space import (
 #: A presigned link: its query downloads the archive by itself.
 SIGNATURE = "deadbeefcafe0123456789abcdef0123456789abcdef0123456789abcdef0123"
 SIGNED = (
-    "https://93.184.216.34/bucket/tenant-7/backup.zip"
+    "https://93.184.216.34/bucket/acme-7/backup.zip"
     "?X-Amz-Credential=AKIAEXAMPLE20261104&X-Amz-Signature=" + SIGNATURE
 )
 #: A digest the upload check reports.
@@ -290,7 +290,7 @@ class TestTheLinksForms(BaseCase):
             "fsn1.your-objectstorage.com",
             "minio.acme.example",
         ):
-            mine = f"https://{host}/acme-backups-prod/tenant-7/backup.zip{query}"
+            mine = f"https://{host}/acme-backups-prod/acme-7/backup.zip{query}"
             bucket = mine.replace("acme-backups-prod", "acme-evilish-prod")
             signer = mine.replace("AKIAMINE", "AKIAEVIL")
             with self.subTest(host=host):
@@ -411,7 +411,7 @@ class TestTheLinkLeavesThePayload(RestoreFixture, TransactionCase):
                 rows += Jobs.browse(job_id).read(["payload", "name"])
                 text = json.dumps(rows)
                 self.assertTrue(rows)
-                for hidden in (SIGNATURE, "AKIAEXAMPLE20261104", "tenant-7"):
+                for hidden in (SIGNATURE, "AKIAEXAMPLE20261104", "acme-7"):
                     self.assertNotIn(hidden, text)
                 payload = rows[0]["payload"]
                 self.assertNotIn("url", payload)
@@ -517,7 +517,7 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
         _label, command, _opts = self.executor._download_command(
             self.executor._remote_path(),
         )
-        for hidden in (SIGNATURE, "X-Amz", "tenant-7", "backup.zip"):
+        for hidden in (SIGNATURE, "X-Amz", "acme-7", "backup.zip"):
             self.assertNotIn(hidden, command)
         self.assertIn(f"--config {self.executor._curl_config_path()}", command)
         self.assertIn(f"rm -f {self.executor._curl_config_path()}", command)

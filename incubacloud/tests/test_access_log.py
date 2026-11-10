@@ -2,7 +2,7 @@
 
 The proxy logs every request for every instance on the host into one
 stream, so the whole value of this view depends on the filter being
-exactly right. Too loose and one tenant reads another's traffic — IP
+exactly right. Too loose and one customer reads another's traffic — IP
 addresses of somebody else's end users; too tight and the panel shows an
 empty page during the incident it exists for.
 

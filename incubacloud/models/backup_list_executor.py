@@ -6,7 +6,7 @@ from .abstract_executor import AbstractSSHExecutor
 
 _logger = logging.getLogger(__name__)
 
-# Cap the S3 listing per instance.  Backup chains for typical tenants
+# Cap the S3 listing per instance.  Backup chains for typical instances
 # come in well below this; the cap is a defence against pointing the
 # backend at an oversized unrelated bucket and accidentally enumerating
 # millions of objects.

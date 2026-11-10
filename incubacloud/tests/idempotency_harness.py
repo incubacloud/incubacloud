@@ -11,7 +11,7 @@ must happen once (a server bought, a charge, a mail, the removal of a
 file somebody else still needs) a second time.
 
 This module is importable, not a test: core runs it over its job types
-(``test_job_idempotency``) and the saas repository over its own, with
+(``test_job_idempotency``) and a repository layered on top over its own, with
 specifications of its own. For each specified type, three scenarios:
 
 * **once** — one attempt, stored done, committed: the reference.

@@ -87,8 +87,8 @@ def advance(current, outcome, now):
 def reset_values(prefix):
     """Return the ``cloud.settings`` values that start a direct name over.
 
-    :param str prefix: ``metrics_central_direct`` or, in the SaaS build,
-        ``saas_backchannel``.
+    :param str prefix: ``metrics_central_direct`` or the prefix of a
+        direct name a module that extends the panel adds.
     :rtype: dict
     """
     return {

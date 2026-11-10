@@ -300,7 +300,7 @@ SECRETS = (
 class StandalonePanelMixin:
     """Run the test as a panel nobody manages from above.
 
-    A layer over core (the tenant's) may say the issuer and the resource
+    A layer over core may say the issuer and the resource
     URL are set by the platform and hide the observability settings. The
     tests of a panel that edits them itself say what they are about: this
     holds the panel to that whatever is installed, and changes nothing

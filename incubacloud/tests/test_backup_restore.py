@@ -60,7 +60,7 @@ class TestBackupRestoreCommands(BaseCase):
         self.assertIn('now', step)
 
     def test_the_health_probe_waits_for_a_restore(self):
-        # It stops Odoo; graded then, a tenant being revived goes to draft.
+        # It stops Odoo; graded then, an instance being revived goes to draft.
         from odoo.addons.incubacloud.models.instance_health_executor import (
             _BLOCKING_JOB_TYPES,
         )

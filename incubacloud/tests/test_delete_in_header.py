@@ -87,7 +87,7 @@ class TestDeleteInHeader(TransactionCase):
         for handler in ("openImportBrowser", "hostAction", "trustHostKey"):
             with self.subTest(handler=handler):
                 self.assertTrue([c for c in in_menu if handler in c])
-        # The SaaS manager adds its Traefik button before this one.
+        # A layer may add a button of its own before this one.
         self.assertTrue(
             bar.xpath(".//IcMenu//button[@title='Import existing instance']"),
             "an extension's xpath anchors on the import button",

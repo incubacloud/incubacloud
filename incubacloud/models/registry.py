@@ -49,7 +49,7 @@ class ExecutorRegistry:
 
         ``register`` keeps the first class it sees, which is what a
         layered module wanting to *replace* core's recipe needs to get
-        around — and both SaaS modules did so by writing straight into
+        around — and layered modules did so by writing straight into
         the private dict, which is silent and unordered.
 
         This is the supported way to do it. It differs from ``register``

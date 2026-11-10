@@ -122,7 +122,7 @@ teardown() {
 @test "a live dump's one-off container stays out of Traefik and Sablier" {
     # It inherits the service's labels: the proxy would send visitors to a
     # container that serves nothing while the dump runs, and Sablier would
-    # hold a sleeping tenant's panel behind its waiting page.
+    # hold a sleeping instance behind its waiting page.
     run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"run --label traefik.enable=false --label sablier.enable=false --rm "* ]]

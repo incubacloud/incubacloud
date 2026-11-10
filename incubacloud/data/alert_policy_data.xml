@@ -24,8 +24,8 @@
     </record>
 
     <!-- The health probe (every 5 min) found the odoo container not
-         running. True at that instant, but a deploy, a rebuild or a
-         tenant waking up restarts it for seconds, and a probe landing
+         running. True at that instant, but a deploy, a rebuild or an
+         instance waking up restarts it for seconds, and a probe landing
          inside that window mailed the customer a critical outage. -->
     <record id="alert_policy_instance_down" model="cloud.alert.policy">
         <field name="code">instance_down</field>

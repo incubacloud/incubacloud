@@ -356,7 +356,7 @@ class TestAdmission(_QueueCase):
     def test_a_different_secret_is_another_job(self):
         """The identity a layer gives the load (secret apart) is compared.
 
-        Plays the SaaS manager: ``_queue_identity`` splits the secret off
+        Plays a layer: ``_queue_identity`` splits the secret off
         the payload the way its ``create`` stores it.
         """
         self._job("deploy_instance")
@@ -2848,7 +2848,7 @@ class TestMoves(_QueueCase):
 
     def test_a_deploy_that_fails_before_the_cutover_holds_the_queue(self):
         """The first step: the destination never came up (15-oct-2026's
-        ``tenant_deploy_instance`` is the SaaS manager's)."""
+        deploy was a layer's own type)."""
         self._assert_a_failure_before_the_cutover_holds_the_queue("deploy_instance")
 
     def test_a_restore_that_fails_before_the_cutover_holds_the_queue(self):

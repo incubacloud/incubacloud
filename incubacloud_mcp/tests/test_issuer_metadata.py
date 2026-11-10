@@ -40,10 +40,10 @@ class TestIssuerMetadata(BaseCase):
     def test_rfc_8414_first_with_the_path_after_the_well_known(self):
         """RFC 8414's document is tried first, the path after the well-known."""
         self.assertEqual(
-            _issuer_metadata.metadata_urls("https://idp.example.test/tenant1"),
+            _issuer_metadata.metadata_urls("https://idp.example.test/realm1"),
             [
-                "https://idp.example.test/.well-known/oauth-authorization-server/tenant1",
-                "https://idp.example.test/tenant1/.well-known/openid-configuration",
+                "https://idp.example.test/.well-known/oauth-authorization-server/realm1",
+                "https://idp.example.test/realm1/.well-known/openid-configuration",
             ],
         )
 

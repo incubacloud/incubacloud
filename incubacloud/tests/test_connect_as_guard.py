@@ -1,15 +1,15 @@
 """Tests for the connect-as hardening (Imprescindible #4).
 
 Connect-as used to be a flat Stakeholder+ action: any cloud role could
-impersonate any user of any instance, production and tenant admins
+impersonate any user of any instance, production and instance admins
 included, with no throttle. The agreed shape gates it by environment:
 
-              | Staging      | Production
-    normal    | Stakeholder+ | Developer+
-    tenant admin | Stakeholder+ | Manager
+                   | Staging      | Production
+    normal         | Stakeholder+ | Developer+
+    instance admin | Stakeholder+ | Manager
 
 Both routes are additionally rate-limited per panel user and per
-instance, and the token carries the panel login so the tenant can log
+instance, and the token carries the panel login so the instance can log
 who opened the session.
 
 ``run_async`` is patched throughout so no SSH connection is ever
@@ -105,7 +105,7 @@ class TestConnectAsGate(ConnectAsBase):
         user = self._create_user('ca_stake_a', 'group_cloud_user')
         self.assertTrue(self._check(user, self.staging, False))
 
-    def test_staging_allows_stakeholder_for_tenant_admin(self):
+    def test_staging_allows_stakeholder_for_instance_admin(self):
         # The owner's own use case: a client watching their staging.
         user = self._create_user('ca_stake_b', 'group_cloud_user')
         self.assertTrue(self._check(user, self.staging, True))
@@ -114,7 +114,7 @@ class TestConnectAsGate(ConnectAsBase):
         user = self._create_user('ca_stake_c', 'group_cloud_user')
         self.assertFalse(self._check(user, self.production, False))
 
-    def test_production_denies_stakeholder_for_tenant_admin(self):
+    def test_production_denies_stakeholder_for_instance_admin(self):
         user = self._create_user('ca_stake_d', 'group_cloud_user')
         self.assertFalse(self._check(user, self.production, True))
 
@@ -122,7 +122,7 @@ class TestConnectAsGate(ConnectAsBase):
         user = self._create_user('ca_dev_a', 'group_cloud_developer')
         self.assertTrue(self._check(user, self.production, False))
 
-    def test_production_denies_developer_for_tenant_admin(self):
+    def test_production_denies_developer_for_instance_admin(self):
         # The one combination that needs the top role.
         user = self._create_user('ca_dev_b', 'group_cloud_developer')
         self.assertFalse(self._check(user, self.production, True))
@@ -131,7 +131,7 @@ class TestConnectAsGate(ConnectAsBase):
         user = self._create_user('ca_mgr_a', 'group_cloud_manager')
         self.assertTrue(self._check(user, self.production, False))
 
-    def test_production_allows_manager_for_tenant_admin(self):
+    def test_production_allows_manager_for_instance_admin(self):
         user = self._create_user('ca_mgr_b', 'group_cloud_manager')
         self.assertTrue(self._check(user, self.production, True))
 
@@ -199,9 +199,9 @@ class TestConnectAsRoutes(ConnectAsBase):
         run.assert_not_called()
 
     def test_prepare_connect_on_production_forbids_admin_via_script(self):
-        """A Developer reaches the tenant, but with allow_admin False.
+        """A Developer reaches the instance, but with allow_admin False.
 
-        The refusal is decided inside the tenant database — the panel
+        The refusal is decided inside the instance's database — the panel
         never trusts a client-supplied "this user is not an admin".
         """
         user = self._member('cr_dev_a', 'group_cloud_developer')
@@ -322,7 +322,7 @@ class TestConnectAsRateLimit(ConnectAsBase):
         self.assertIn('this instance', blocked['error'])
 
 
-# ── 4. The scripts sent to the tenant ───────────────────────────────────
+# ── 4. The scripts sent to the instance ─────────────────────────────────
 
 
 class TestConnectAsScripts(ConnectAsBase):

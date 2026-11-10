@@ -272,7 +272,7 @@ class TestTraefikHstsRetrofit(TransactionCase):
         It sets ``frameDeny``, which blanks out the panel's Grafana
         iframes and breaks Odoo's website editor, and it sets
         ``stsIncludeSubdomains``/``stsPreload``, which would make an
-        expired tenant certificate unreachable with no click-through.
+        expired instance certificate unreachable with no click-through.
         Those are HARD-001 decisions, not this one's.
         """
         traefik = _read_traefik_template('traefik.yml')

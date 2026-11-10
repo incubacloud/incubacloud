@@ -847,7 +847,7 @@ class TestWhoAddsMayRemove(CloudSecurityBase):
     The panel shows the remove button to the role that adds the row;
     saving used to fail with an access error because the ACL had no
     unlink for that role. Checked on the models and through the two
-    save routes, the way the master and the tenant panels call them.
+    save routes, the way every panel calls them.
     """
 
     REPO_URL = 'https://github.com/OCA/server-tools.git'

@@ -206,13 +206,13 @@ class TestGetTokenForRepo(BaseCase):
 
     @patch(_PATCH_PATH)
     def test_an_ssh_spelled_github_repo_still_gets_its_token(self, mock_urlopen):
-        """``git@github.com:`` is the saas layer's own spelling of its repo."""
+        """``git@github.com:`` is how a deployment may spell its own repo."""
         mock_urlopen.return_value.__enter__ = lambda s: s
         mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
         executor = self._make_executor()
         self.assertEqual(
             executor._get_token_for_repo(
-                "git@github.com:incubacloud/saas.git", "app_tok", "pat_tok", {},
+                "git@github.com:acme/addons.git", "app_tok", "pat_tok", {},
             ),
             "app_tok",
         )
@@ -318,7 +318,7 @@ class TestBuildAnswersDomains(TransactionCase):
     #
     # The three options map onto the three shapes doodba's Traefik macro
     # accepts, and the mapping is the whole point of the feature: a wrong
-    # value here silently changes a tenant's TLS on the next rebuild.
+    # value here silently changes an instance's TLS on the next rebuild.
 
     def _host(self, **vals):
         """Return a host an instance can be placed on."""
@@ -385,7 +385,7 @@ class TestBuildAnswersDomains(TransactionCase):
 
         The copier copy runs against a moving upstream ref, so a default
         that changes between template releases would rewrite every
-        tenant's TLS on their next rebuild with nothing to show for it.
+        instance's TLS on its next rebuild with nothing to show for it.
         """
         self.assertIn("cert_resolver", self._entry_for())
 

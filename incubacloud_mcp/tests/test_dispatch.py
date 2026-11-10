@@ -23,7 +23,7 @@ class _ProbeBase(http.Controller):
 
 
 class _ProbeOverride(_ProbeBase):
-    """The same route, overridden the way saas overrides core's."""
+    """The same route, overridden the way a layered module overrides core's."""
 
     @http.route()
     def mcp_test_probe(self, value=0):

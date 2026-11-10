@@ -135,7 +135,7 @@ class TestMcpSettingsTabsKeepTheirEdits(
     def test_read_only_agents_offer_no_save(self):
         """Where the platform sets both, the tab shows them and no Save.
 
-        A tenant's Agents tab showed "Save changes" under two read-only
+        A managed panel's Agents tab showed "Save changes" under two read-only
         fields (visual pass of the release candidate, 29-oct-2026).
         """
         with self._managed_panel():

@@ -226,8 +226,8 @@ class TestTheSyncJob(TransactionCase):
 class TestTheButton(TransactionCase):
     """The host page offers Sync Direct Path only where it can run.
 
-    The job refuses a host that publishes no direct port, and a tenant
-    panel's hosts never publish one: the button showed on all of them
+    The job refuses a host that publishes no direct port, and the hosts
+    of a managed panel never publish one: the button showed on all of them
     (visual pass of the release candidate, 29-oct-2026).
     """
 

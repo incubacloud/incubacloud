@@ -1,6 +1,6 @@
 """Structural guards on the rebuild boot test, in ``scripts/rebuild.sh``.
 
-The boot test twice took every tenant on a host down (2026-08-13, 09:06
+The boot test twice took every instance on a host down (2026-08-13, 09:06
 and 13:03). Both times the mechanism was the same: its throwaway
 Postgres held an endpoint on the project's compose network, so when
 ``docker compose run`` decided to reconcile that network it could not
@@ -55,7 +55,7 @@ class TestRebuildBootTestIsolation(BaseCase):
             "the boot test's Postgres must not hold an endpoint on the "
             "project network: docker compose cannot then recreate that "
             "network, the step dies with 'has active endpoints' and the "
-            "tenant is left half stopped.",
+            "instance is left half stopped.",
         )
 
     def test_the_throwaway_postgres_has_a_network_of_its_own(self):

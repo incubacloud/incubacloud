@@ -29,9 +29,9 @@ class TestCodeToolsOnGitLab(
         super().setUp()
         self._resource_here()
         self._panel_fixture()
-        # The core's policy, whatever else is installed: the saas CI runs
-        # this suite in a tenant's panel too, whose 'public' policy has
-        # tests of its own (incubacloud_tenant).
+        # The core's policy, whatever else is installed: a layer's CI may
+        # run this suite with a 'public' policy of its own, which has
+        # tests of its own.
         self.startPatcher(patch.object(
             type(self.env["cloud.git.provider"]), "_network_policy",
             autospec=True, return_value="any",

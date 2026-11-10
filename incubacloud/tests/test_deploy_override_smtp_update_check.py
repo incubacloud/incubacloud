@@ -4,9 +4,9 @@ docker-mailserver ships an ``update-check`` service that asks GitHub for
 the latest release and, when the running image is older, mails
 postmaster once per container start. Three things turn that into a
 flood here: copier renders the hostname as ``smtp.<relay domain>``, so
-all twelve instances relaying through ``incubacloud.io`` announce
-themselves under the *same* name; free tenants restart on every Sablier
-wake, so "once per start" is several times a day each; and the tag the
+all twelve instances relaying through one domain announce
+themselves under the *same* name; instances put to sleep restart on
+every Sablier wake, so "once per start" is several times a day each; and the tag the
 instances run (``smtp_relay_version``) is the panel's to move, never
 the container's to announce.
 

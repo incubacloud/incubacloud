@@ -170,8 +170,8 @@ class TestDomainOrderPreserved(TransactionCase):
 class TestCertResolverDomain(TransactionCase):
     """``cert_resolver`` went from a free Char to a closed Selection.
 
-    The value flows into the tenant's copier answers file, so an open
-    domain was both a way to break a tenant's routing (by naming a
+    The value flows into the instance's copier answers file, so an open
+    domain was both a way to break an instance's routing (by naming a
     resolver no host defines) and a needless injection surface.
     """
 

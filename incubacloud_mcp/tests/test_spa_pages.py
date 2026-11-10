@@ -175,7 +175,7 @@ _SET_FROM_ABOVE_URL_NOTICE = """
     if (!notice.textContent.includes("{words}")) {{
         fail("the notice about the address: {words}");
     }}
-    if (!notice.textContent.includes("On IncubaCloud SaaS, contact support.")) {{
+    if (!notice.textContent.includes("Ask whoever manages this panel.")) {{
         fail("support, where the address is set from above");
     }}
     if (notice.textContent.includes("Settings")) {{
@@ -239,11 +239,11 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
         )
 
     def test_where_the_platform_sets_the_address_its_notice_sends_to_support(self):
-        """Without a usable MCP address on a panel set from above (a tenant's),
+        """Without a usable MCP address on a panel set from above,
         whose Settings show it read-only, the notice sends to support, not
         there: an address that is missing, and one the page will not put in a
         command (an IPv6 host, which the panel accepts)."""
-        self._cloud_user("mcp-spa-tenant", group="group_cloud_user")
+        self._cloud_user("mcp-spa-managed", group="group_cloud_user")
         for resource, words in (
             ("ftp://x", "not configured yet"),
             ("https://[2001:db8::1]/mcp", "not a plain web address"),
@@ -254,7 +254,7 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
                     "/cloud/connect-agent",
                     ".ic-mcp-connect .ic-mcp-notice",
                     _SET_FROM_ABOVE_URL_NOTICE.format(words=words),
-                    "mcp-spa-tenant",
+                    "mcp-spa-managed",
                 )
 
     def test_the_agents_settings_tab_opens(self):
@@ -268,7 +268,7 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
         )
 
     def test_where_the_platform_sets_them_the_fields_are_read_only(self):
-        """On a panel set from above (a tenant's), both fields are read-only."""
+        """On a panel set from above, both fields are read-only."""
         self._cloud_user("mcp-spa-mgr2", group="group_cloud_manager")
         with self._managed_panel():
             self._open(

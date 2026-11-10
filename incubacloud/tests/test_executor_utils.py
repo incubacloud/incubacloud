@@ -201,7 +201,7 @@ class TestExecutorRegistry(BaseCase):
 
     def test_duplicate_different_class_keeps_first_with_warning(self):
         """Two distinct classes registering for the same job_type
-        happens when the saas-manager and the tenant module both ship
+        happens when two layered modules both ship
         a host_hardening executor and live in the same Python process
         (different DBs). The registry must NOT raise — it logs a
         warning and keeps whichever class registered first."""

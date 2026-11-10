@@ -117,8 +117,8 @@ class CloudAlert(models.Model):
              "one, provider alerts are taken to the provider instead of "
              "paging the operator about something they cannot touch.",
     )
-    #: Set by a layer that hands provider alerts over (the tenant module,
-    #: whose global record rule on it hides them from the panel's users);
+    #: Set by a layer that hands provider alerts over (a module whose
+    #: global record rule on it hides them from the panel's users);
     #: core never sets it. Declared here because that rule is in the
     #: database while core loads alone -- its at_install tests, a
     #: migration or a ``<function>`` of core or pitr that raises an
@@ -593,8 +593,8 @@ class CloudAlert(models.Model):
         Core knows nobody but this panel's operator, so by default
         nothing goes anywhere and the operator is notified as usual:
         on a self-hosted install they *are* the provider. A layer that
-        has one (the tenant module, whose panel is hosted by
-        IncubaCloud) overrides this to hand the alert over and returns
+        has one (a module for a panel hosted by someone else)
+        overrides this to hand the alert over and returns
         True, which keeps it out of the operator's inbox and channels.
 
         :param bool resolved: the alert just closed on its own, rather
@@ -628,7 +628,7 @@ class CloudAlert(models.Model):
         digest (``res.users._send_cloud_digest_for``). The panel itself
         -- the Alerts list, the bell's count, the host's card, the bus --
         does not. Core announces every alert: an empty set. A layer whose
-        panel only lists one adds its code (the tenant module, for an
+        panel only lists one adds its code (for instance, an
         outdated hardening).
 
         :returns: the codes of the alerts nobody is told about
@@ -671,7 +671,7 @@ class CloudAlert(models.Model):
         Closing the conflict answered that failure: left open, its
         ``job_failed`` kept holding the instance's queue and the alerts
         panel said the job had failed after the conflict was resolved
-        (an Odoo 18 instance on a tenant's panel, 9-nov-2026).
+        (an Odoo 18 instance on a managed panel, 9-nov-2026).
 
         :param str resolution: how the conflicts were closed, passed on
             to the failures; ``auto`` when not given

@@ -1,6 +1,6 @@
 """A deploy builds the image in a step of its own, repeated once if it fails.
 
-On 8-nov-2026 a tenant's move to the paid pool failed in «Start instance»:
+On 8-nov-2026 an instance's move to another host failed in «Start instance»:
 the image was built there, by the first ``docker compose`` that needed it,
 and a passing failure of GitHub in ``100-repos-aggregate`` failed the
 whole deploy. The rebuild has repeated a failed build once since

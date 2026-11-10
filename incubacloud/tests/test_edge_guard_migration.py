@@ -72,7 +72,7 @@ class TestTheUpdateQueuesTheGuard(TransactionCase):
 class TestTheUpdateHealsHostsLeftWithoutIt(TransactionCase):
     """1.0.220 queues the guard again where 1.0.214's push never landed.
 
-    Its job failed on a tenant's panel, taken by a server whose code had no
+    Its job failed on a managed panel, taken by a server whose code had no
     executor for it (7-nov-2026), and nothing queued it again.
     """
 

@@ -174,10 +174,10 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
             "job commits", name,
         )
         # Whatever the instance leaves behind — an emptied project, a
-        # tenant link — is cleaned up by ``unlink`` itself, layer by
+        # layer's link — is cleaned up by ``unlink`` itself, layer by
         # layer. Doing it from here would mean core deciding to delete a
-        # project because its last instance went, which is true of a
-        # tenant's disposable project and wrong for an operator's.
+        # project because its last instance went, which may be true of a
+        # layer's disposable project and is wrong for an operator's.
         await self._after_purge()
 
     async def _after_purge(self):
@@ -185,7 +185,7 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
 
         Empty in core, where deleting an archived instance is the end of
         the story. A module that owns a lifecycle *above* the instance —
-        a tenant, say — may need to act exactly here and nowhere
+        a customer account, say — may need to act exactly here and nowhere
         earlier: a customer who asks to start over must not have a fresh
         instance provisioned until this has run, because it would take
         the same name and therefore the same backup prefix, and this

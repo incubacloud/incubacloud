@@ -38,9 +38,9 @@ Issuer down:
     since does not open the panel forever.
 
 Home:
-    Moved from ``incubacloud_tenant`` to ``incubacloud_mcp``, which
-    validates agents' tokens with it; the tenant's single sign-on
-    and back-channel logout import it from here.
+    Lives in ``incubacloud_mcp``, which validates agents' tokens with
+    it; a module that extends the panel with single sign-on and
+    back-channel logout imports it from here.
 
 Scope:
     Per worker process, not cluster-wide, matching the existing

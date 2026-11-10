@@ -34,7 +34,7 @@ class FrontEndSuite(ChromeStartRetry):
     """Run one module's hoot suite in a headless browser.
 
     A mixin, not a test case, so a module that runs its own suite with
-    it (the tenant panel's) does not collect this module's test as well.
+    it (a layered module's) does not collect this module's test as well.
     Mixed into an ``HttpCase``.
     """
 
@@ -45,10 +45,9 @@ class FrontEndSuite(ChromeStartRetry):
         skipped that way is the one this exists to stop: it fails. It
         signs in as a user of its own: on a copy of production (the
         deploy's check of the image) ``admin`` does not answer to the
-        test password. A system administrator: a tenant panel keeps
-        ``/web``, the runner's page included, from everyone else
-        (``incubacloud_tenant/models/ir_http.py``), and it is installed
-        with core in one of saas's CI legs.
+        test password. A system administrator: a layer may keep
+        ``/web``, the runner's page included, from everyone else, and
+        its CI may run this suite with that layer installed.
 
         :param str suite: the suite, e.g. ``@incubacloud``
         """

@@ -7,7 +7,7 @@ name before any router is consulted — so a name whose router was
 changed to serve the host's certificate keeps being answered with the
 stored one until that one is gone from the store.
 
-Measured on Traefik 2.11, and the reason six tenants moved behind a CDN
+Measured on Traefik 2.11, and the reason six instances moved behind a CDN
 went on presenting certificates they can no longer renew: the routers
 were right, the store was stale, and nothing said so.
 

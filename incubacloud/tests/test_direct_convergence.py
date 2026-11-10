@@ -142,7 +142,7 @@ class TestAHostGoneQuiet(_ConvergenceCase):
 
 
 class TestANameInForceThatThisPanelDoesNotProbe(_ConvergenceCase):
-    """A panel offered the name by someone else, as a tenant's is by its manager.
+    """A panel offered the name by someone else, as a managed panel is.
 
     Core's own state of the name stays ``unknown`` there: nobody on that
     panel probes it. Whether the name is in force is the layer's to say

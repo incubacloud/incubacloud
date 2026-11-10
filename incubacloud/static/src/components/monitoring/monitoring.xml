@@ -64,8 +64,8 @@
 
             <!-- No server in the fleet: nothing can report metrics yet.
                  Every chart would read "No data", which looks broken; a
-                 tenant's panel itself runs on our servers, and those are
-                 ours to watch, not part of its fleet. -->
+                 managed panel itself runs on servers it does not manage,
+                 and those are not part of its fleet. -->
             <t t-elif="!hasHosts">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>

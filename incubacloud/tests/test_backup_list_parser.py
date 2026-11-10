@@ -295,7 +295,7 @@ class TestBackupSetSizes(TransactionCase):
     def test_prefixed_objects_of_the_backup_image_count(self):
         """The image writes ``archive-``/``manifest-``/``signature-`` host
         prefixes: every file of a set is added to that set's size."""
-        host = 'backup.tenant.example.io'
+        host = 'backup.acme.example.io'
         client = self._listing([
             (f'archive-{host}-duplicity-full.20260319T165004Z'
              '.vol1.difftar.gpg', 2 * self.GIB),

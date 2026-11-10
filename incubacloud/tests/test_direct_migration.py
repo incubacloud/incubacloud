@@ -1,8 +1,7 @@
 """The update records the URL every installed host's agents use, and moves no one.
 
 Without it the first reconciliation would compare an empty URL with the
-one each host should have and re-apply the whole fleet, the master's and
-every tenant panel's.
+one each host should have and re-apply the whole fleet, every panel's.
 """
 import importlib.util
 import os

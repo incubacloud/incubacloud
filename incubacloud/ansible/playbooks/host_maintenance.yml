@@ -11,9 +11,9 @@
 
   vars:
     # Resources carrying this label are excluded from the prune: they are
-    # meant to stay around while stopped (a warm pool instance is a
-    # stopped container by design, and an unfiltered prune wipes the
-    # whole pool). DockerPruneExecutor.get_extra_vars() overrides this
+    # meant to stay around while stopped (an instance kept stopped on
+    # purpose is a stopped container by design, and an unfiltered prune
+    # wipes it). DockerPruneExecutor.get_extra_vars() overrides this
     # with the same constant; the default keeps the playbook runnable
     # standalone with identical semantics.
     ic_protect_label: "incubacloud.protect=1"

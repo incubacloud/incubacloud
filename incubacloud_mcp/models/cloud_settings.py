@@ -2,9 +2,9 @@
 
 The issuer and the limit are fields of the settings singleton, edited in
 Settings. The HMAC key and the canonical URL of ``/mcp`` are system
-parameters: the key is never shown, and on a tenant panel the URL is
-pushed by the master, which has no other channel into the tenant's
-database than its parameters.
+parameters: the key is never shown, and on a panel whose settings another
+panel pushes, the URL arrives that way, through the database's
+parameters.
 """
 
 import secrets
@@ -102,7 +102,7 @@ class CloudSettings(models.Model):
         """Give the module its key and this panel its resource URL.
 
         Runs on every install and update (``data/mcp_defaults.xml``) and
-        changes nothing already set: a tenant's URL comes from the master.
+        changes nothing already set: a URL pushed from another panel stays.
         """
         self._mcp_secret()
         ICP = self.env["ir.config_parameter"].sudo()
@@ -118,7 +118,7 @@ class CloudSettings(models.Model):
         """Whether agents may present an API key instead of a token.
 
         True here: a self-hosted panel's users have passwords and keys. A
-        tenant panel, whose users sign in through the master, says False.
+        panel whose users sign in through another panel may say False.
         """
         return True
 
@@ -126,8 +126,8 @@ class CloudSettings(models.Model):
     def _mcp_settings_managed(self):
         """Whether the issuer and the resource URL are set from above.
 
-        False here; a tenant panel says True and Settings shows them
-        read-only.
+        False here; a panel whose settings another panel pushes says True
+        and Settings shows them read-only.
         """
         return False
 

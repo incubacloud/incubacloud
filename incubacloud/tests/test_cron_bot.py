@@ -66,7 +66,7 @@ class TestCronBotUser(TransactionCase):
         run only if the action is scoped to a group the executing user
         shares, *or* the user has write access to the action's model.
         Crons targeting append-only / abstract models (audit log,
-        rate-limit, terminal routes, warm-pool & provisioner helpers)
+        rate-limit, terminal routes, layered modules' helpers)
         carried neither and failed with ``AccessError`` on every tick.
 
         We replicate that gate's logic here — reading the action with

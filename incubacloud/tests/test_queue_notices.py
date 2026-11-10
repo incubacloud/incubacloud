@@ -119,7 +119,7 @@ class TestJobTypeNames(_NoticeCase):
         """The shipped catalogues translate what core and PITR declare.
 
         Each type's name, and its description and confirmation where it
-        has them. The SaaS layer's types are its own catalogues' business.
+        has them. A layer's types are its own catalogues' business.
         """
         modules = {"incubacloud", "incubacloud_pitr"}
         ours = self.env["ir.model.data"].search([

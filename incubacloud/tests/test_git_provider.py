@@ -4,7 +4,7 @@ A provider is one server, its base URL stored canonical; a credential is
 a token scoped to a namespace, chosen by the longest namespace that
 covers the repository and meets the scopes the operation needs. Where
 the panel may connect is ``_network_policy``: ``'any'`` in the core,
-``'public'`` in a tenant's panel, which pins the address it checked.
+``'public'`` where a layer says so, which pins the address it checked.
 """
 import socket
 from datetime import date, timedelta
@@ -42,10 +42,9 @@ class _ProviderCase(TransactionCase):
         super().setUpClass()
         cls.Provider = cls.env["cloud.git.provider"]
         cls.Credential = cls.env["cloud.git.credential"]
-        # A tenant's panel (the saas CI's leg that runs this suite with
-        # incubacloud_tenant installed) admits no Git server until the
-        # master has named its own servers: one is named, which is no
-        # test's. The core does not read the parameter.
+        # A layer with the 'public' policy (whose CI may run this suite)
+        # admits no Git server until the panel that manages it has named
+        # its own servers: one is named, which is no test's. The core does not read the parameter.
         cls.env["ir.config_parameter"].sudo().set_param(
             "incubacloud.platform_addresses", "192.0.2.1",
         )

@@ -63,7 +63,7 @@
                                      dashboards to show, OR when there are
                                      none but this operator is the one who
                                      could set them up. A panel whose
-                                     settings are injected (a tenant's)
+                                     settings are injected from another
                                      gets neither, which is the case the
                                      old single flag could not express. -->
                                 <t t-if="env.permissions?.can_view_metrics and (env.features?.observability?.dashboards or (env.features?.observability?.collect and env.features?.observability?.configure))">

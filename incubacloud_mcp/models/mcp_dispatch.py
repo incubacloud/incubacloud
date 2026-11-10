@@ -2,11 +2,12 @@
 
 The route is looked up in the database's routing map and its final
 endpoint is called — the most derived override, the one Odoo would run —
-so whatever saas puts on top of a core route applies to agents too. No
+so whatever a layered module puts on top of a core route applies to
+agents too. No
 logic is copied out of the routes and no core class is imported.
 
 ``ir.http.routing_map()`` is read directly, not through ``ir.http._match``:
-a tenant panel's ``_match`` redirects any request without a session.
+a layer's ``_match`` may redirect any request without a session.
 """
 
 from werkzeug.exceptions import HTTPException
@@ -53,7 +54,7 @@ class McpDispatch(models.AbstractModel):
         """Return the controller that serves *path*, the most derived one.
 
         What a tool reads from it — the fields a route writes — is then
-        what the route itself goes by, saas's additions included.
+        what the route itself goes by, layered modules' additions included.
 
         :raises UserError: when *path* is not a JSON-RPC route here
         """

@@ -17,7 +17,7 @@ from .common import KEY, MODELS, AssistantMixin
 _LIMIT = "Monthly limit per user (EUR)"
 _KEY_FIELD = "Provider key"
 _ON = "Assistant on"
-#: The box and the Terms of a tenant panel, as incubacloud_tenant answers them.
+#: The box and the Terms of a panel whose layer has Terms of its own.
 _TERMS = "I accept section 12A (AI features) of the Terms of Service"
 _TERMS_URL = "https://www.incubacloud.io/terms"
 #: The options of a selector of the tab, once it is opened: the menu of the
@@ -117,8 +117,8 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         """,
         )
 
-    def _tenant_terms(self):
-        """Answer the box and the Terms a tenant panel has (incubacloud_tenant)."""
+    def _layer_terms(self):
+        """Answer the box and the Terms a layer with Terms of its own has."""
         Settings = type(self.env["cloud.settings"])
         for name, value in (
             ("_assistant_terms_label", _TERMS),
@@ -129,12 +129,12 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
             self.addCleanup(patcher.stop)
 
     def test_switching_on_needs_section_12a(self):
-        """A tenant panel: the switch waits for the box; the Terms are a link.
+        """A layer with Terms: the switch waits for the box; the Terms are a link.
 
         Saved, the tab says who accepted, when, and the version.
         """
         self._configure(enabled=False, terms=False)
-        self._tenant_terms()
+        self._layer_terms()
         Settings = type(self.env["cloud.settings"])
         with patch.object(
             Settings,
@@ -175,10 +175,8 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
 
     def test_a_self_hosted_panel_asks_an_acknowledgement_and_links_nowhere(self):
         """No Terms of IncubaCloud's on core alone: another box, and no link."""
-        if self.env["ir.module.module"].search_count(
-            [("name", "=", "incubacloud_tenant"), ("state", "=", "installed")]
-        ):
-            self.skipTest("a tenant panel has IncubaCloud's Terms (incubacloud_tenant)")
+        if self.env["cloud.settings"]._assistant_terms_url():
+            self.skipTest("a layer installed here has Terms of its own")
         self._configure(enabled=False, terms=False)
         label = self.env["cloud.settings"]._assistant_terms_label()
         self._in_settings(

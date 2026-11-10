@@ -51,7 +51,7 @@ sorted by name, lists only the tools the user's role reaches and, on
 | Credential | When | Checks |
 |---|---|---|
 | OAuth access token | An issuer is configured (`cloud.settings.mcp_oauth_issuer`). | RS256 only; header `typ: at+jwt` (RFC 9068); `iss` = the issuer; `aud` = this panel's canonical MCP address; `exp`, `nbf`, `iat` with 60 s of leeway; `sub`, `jti` and `client_id` present. Keys: the `jwks_uri` of the issuer's metadata (`/.well-known/oauth-authorization-server`, else `/.well-known/openid-configuration`, whose `issuer` must match), cached an hour; the key set cached ten minutes, fetched again for an unknown `kid` at most every 30 s per process, and kept for a day when the issuer is down. Downloads are bounded in size and time and follow no redirect. User: the `auth.oauth.provider` whose `issuer` is the token's, and its user with `oauth_uid = sub`. |
-| Odoo API key | Where the panel allows them (`cloud.settings._mcp_api_keys_allowed()`; a tenant panel with its single sign-on refuses them). | `res.users.apikeys._check_credentials(scope='rpc')`. Revoked or expired: 401. |
+| Odoo API key | Where the panel allows them (`cloud.settings._mcp_api_keys_allowed()`; a module that extends the panel may refuse them, as on a panel entered only through single sign-on). | `res.users.apikeys._check_credentials(scope='rpc')`. Revoked or expired: 401. |
 
 A credential longer than 8 KB is refused before it is read. Answers: no or
 bad credential 401 (with an issuer:
@@ -78,7 +78,7 @@ answer 404 otherwise.
 | Setting | Where | Notes |
 |---|---|---|
 | Agents' OAuth issuer | Settings → Agents (`cloud.settings.mcp_oauth_issuer`) | An https URL without credentials, query or fragment. Empty: API keys only. Needs an enabled `auth.oauth.provider` with the same `issuer` (with or without its final slash). |
-| MCP address | Settings → Agents (`incubacloud.mcp.resource`) | Canonical form: lower-case scheme and host, no default port, no trailing slash, nothing after the path; a host and a path a shell would not read (letters, digits, `.`, `_`, `-`; `~` and `%` in the path), since *Connect an agent* pastes it into commands. Set at install from `web.base.url` + `/mcp`, never overwritten. On a tenant panel the master pushes it and Settings shows it read-only. |
+| MCP address | Settings → Agents (`incubacloud.mcp.resource`) | Canonical form: lower-case scheme and host, no default port, no trailing slash, nothing after the path; a host and a path a shell would not read (letters, digits, `.`, `_`, `-`; `~` and `%` in the path), since *Connect an agent* pastes it into commands. Set at install from `web.base.url` + `/mcp`, never overwritten. On a panel whose settings another panel pushes, it arrives that way and Settings shows it read-only. |
 | Agent calls per user and minute | Settings → Rates (`rate_limit_mcp_user_per_min`) | 120 by default (zero or less falls back to it); counts every tool call of all the user's agents. |
 | HMAC key | `incubacloud.mcp.secret` | 32 random bytes, created at install. Signs session ids and approval states, with a label each. |
 
@@ -188,7 +188,8 @@ N+1 starts where page N ended.
 Seventy-three tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
-and whatever `get_config` hides on that panel (observability, on a tenant).
+and whatever `get_config` hides on that panel (observability, on a panel whose
+settings another panel pushes).
 The approval says each value before and after; a value equal to the one held
 once normalised asks nothing. A setting the section does not have is refused
 before anyone is asked.
@@ -478,7 +479,7 @@ panel shows it in both audit tables (*· via agent …*).
   `_with_job_state`). `test_inventory` runs in the module's CI and fails on a
   route it left out.
 - **Secrets.** `incubacloud.mcp.secrets._extra_known_values()` (secrets kept
-  outside encrypted fields, such as the tenant's OIDC client secret) and
+  outside encrypted fields, such as an OIDC client secret a module stores) and
   `_structured_secret_fields()` (encrypted fields that store a document), both
   calling `super()`.
 - **How the layer above runs the panel.** `cloud.settings._mcp_api_keys_allowed()`,

@@ -3,9 +3,8 @@
 Repatriated to core per the architecture decision (2026-07-17): the
 in-host hardening recipe is generic and belongs in the distributable
 core, while the network-edge firewall (layer 2 — Hetzner Cloud Firewall,
-etc.) follows the provider and stays in the SaaS layer. The two SaaS
-modules that previously each carried a full copy of this recipe now keep
-only a thin subclass that overrides the edge-firewall hook.
+etc.) follows the provider and stays in a layer that knows it. Such a
+layer keeps only a thin subclass that overrides the edge-firewall hook.
 
 The recipe itself lives in ``ansible/playbooks/host_hardening.yml``
 (machine-state convergence via Ansible). This executor supplies the
@@ -202,8 +201,7 @@ class HostHardeningExecutor(AnsibleExecutor):
         open SSH. Core knows no address of its own, so it is ``''`` there
         and the allowlist is built entirely from ``allowed_ssh_ips`` —
         open to any address when that is empty; the layers that know where
-        the panel connects from (the SaaS manager's ``core_public_ip``, a
-        tenant panel's ``tenant_public_ip``) answer on the host.
+        the panel connects from answer on the host.
         """
         return self._host()._hardening_panel_ip()
 
@@ -320,7 +318,7 @@ class HostHardeningExecutor(AnsibleExecutor):
         host = self._host()
 
         # Layer 2: open SSH on the rotated port at the network edge. No-op
-        # in core; SaaS subclasses override for Hetzner / RPC-to-core.
+        # in core; a layer that knows the provider overrides it.
         await self._open_edge_firewall_port(self._new_port)
 
         if not await self._finalize_disable_root():
@@ -382,14 +380,14 @@ class HostHardeningExecutor(AnsibleExecutor):
             level="critical",
         )
 
-    # ── Layer-2 edge firewall hook (overridden by SaaS) ───────────────────
+    # ── Layer-2 edge firewall hook (overridden by a layer) ───────────────────
 
     async def _open_edge_firewall_port(self, new_port):
         """Open SSH on *new_port* at the network edge firewall.
 
         No-op in core: a self-hosted / BYOH host has no provider-managed
-        edge firewall. SaaS modules override this to update the Hetzner
-        Cloud Firewall (manager) or RPC core to do it (tenant), so the
+        edge firewall. A layer that knows the provider overrides this to
+        update its firewall, or to ask the panel that can, so the
         new-port login test below is not dropped by a stale allowlist.
         """
         return None

@@ -209,8 +209,8 @@ export class AssistantSettingsTab extends Component {
     }
 
     /**
-     * Whether switching on needs the box ticked (section 12A of the Terms on
-     * a tenant panel): the assistant is saved off, or the form changes its
+     * Whether switching on needs the box ticked (a section of the Terms
+     * where a module on top has them): the assistant is saved off, or the form changes its
      * provider, on a database that does not block it.
      */
     get needsTerms() {
@@ -252,7 +252,7 @@ export class AssistantSettingsTab extends Component {
 
     /**
      * Who ticked the box, when and from where; or "". With a version, it was
-     * section 12A of IncubaCloud's Terms (a tenant panel); without one, the
+     * the Terms of a module on top; without one, the
      * acknowledgement of a self-hosted panel.
      */
     get termsLine() {
@@ -418,7 +418,7 @@ export class AssistantSettingsTab extends Component {
             return { ok: true };
         }
         if (vals.enabled === true) {
-            // The box (section 12A on a tenant panel): each switch-on ticks it again.
+            // The box (the Terms, where a module on top has them): each switch-on ticks it again.
             vals.accept_ai_terms = this.state.form.accept_ai_terms === true;
         }
         const sent = { ...this.state.form, api_key: "", clear_api_key: "", accept_ai_terms: "" };

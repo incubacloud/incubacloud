@@ -62,7 +62,7 @@ legitimately still needs it.
 
 The 2026-09-10 rotation found exactly one:
 `cloud_instance(118).odoo_admin_user_password`, unreadable since April.
-It was dead data — that instance is the panel itself, it has no tenant
+It was dead data — that instance is the panel itself, it has no customer
 attached, and the panel has no `admin` user at all — so regenerating it
 cost nothing. But had it been missed, step 6 would have been
 unreachable.

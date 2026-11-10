@@ -849,17 +849,17 @@ describe("InstanceDetail — connect-as gate", () => {
         expect(gate("staging", STAKEHOLDER).canConnectAsTarget(user)).toBe(true);
     });
 
-    test("tenant admin on staging stays open to stakeholders", () => {
+    test("instance admin on staging stays open to stakeholders", () => {
         const admin = { id: 2, is_admin: true };
         expect(gate("staging", STAKEHOLDER).canConnectAsTarget(admin)).toBe(true);
     });
 
-    test("tenant admin on production is denied to a developer", () => {
+    test("instance admin on production is denied to a developer", () => {
         const admin = { id: 2, is_admin: true };
         expect(gate("production", DEVELOPER).canConnectAsTarget(admin)).toBe(false);
     });
 
-    test("tenant admin on production is allowed to a manager", () => {
+    test("instance admin on production is allowed to a manager", () => {
         const admin = { id: 2, is_admin: true };
         expect(gate("production", MANAGER).canConnectAsTarget(admin)).toBe(true);
     });

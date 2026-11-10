@@ -1,14 +1,13 @@
 """Core's job types, run once, twice and cut off (``idempotency_harness``).
 
-The specifications here are core's; the saas repository runs the same
-harness over its own types. Every type core declares has a
+The specifications here are core's; a repository layered on top may run
+the same harness over its own types. Every type core declares has a
 specification or an exemption that says why, and the coverage test
 fails on one that has neither: a type added later is either specified
 or exempted on purpose.
 
-Delivery C1 of the idempotency plan (8-nov-2026) specifies three types:
-``delete_instance``, ``restore_instance`` here and
-``warm_rebuild_instance`` in saas. The rest wait for C2-C5.
+Delivery C1 of the idempotency plan (8-nov-2026) specifies two types here:
+``delete_instance`` and ``restore_instance``. The rest wait for C2-C5.
 """
 from pathlib import Path
 

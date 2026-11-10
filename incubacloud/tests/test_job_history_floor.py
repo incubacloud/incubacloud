@@ -2,9 +2,9 @@
 
 A ``cloud.instance`` normally owns its whole job history, so core draws
 no line and every job shows. The hook exists for layers that hand an
-existing instance to a new owner (the SaaS warm pool): there, the jobs
+existing instance to a new owner (one deployed ahead of time, say): there, the jobs
 logged before the handover are still true of the machine but are not the
-new owner's, and listing them unannounced makes a brand-new tenant look
+new owner's, and listing them unannounced makes a brand-new account look
 months old.
 
 These tests pin the core half of that contract: the default is "no cut",

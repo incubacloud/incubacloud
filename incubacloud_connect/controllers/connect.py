@@ -255,7 +255,7 @@ class IncubaCloudConnectController(http.Controller):
             )
             return Response('Internal error.', status=500)
 
-        # Forensic marker: the tenant's own log is the only place where an
+        # Forensic marker: the instance's own log is the only place where an
         # IncubaCloud-brokered session is distinguishable from a normal
         # login. One line, invisible to the end user, evidence for the
         # operator if the impersonation is ever questioned.

@@ -1,8 +1,8 @@
 """Every /cloud route and every call of the screens has a policy; no read
 tool leaks a secret.
 
-A route added to core, to PITR or to a module built on the MCP (the
-tenant panel's) without a policy fails here — in saas's CI too. So does a
+A route added to core, to PITR or to a module built on the MCP
+without a policy fails here — in that module's CI too. So does a
 call the panel's screens make that no route policy covers: an ``orm``
 call to a model's method, or a job type they queue, read from the files
 of the panel's bundle (``js_calls``).
@@ -37,7 +37,7 @@ def declaring_addons(endpoint):
     """Return the addons whose classes define the method behind *endpoint*.
 
     The routing map holds the final (most derived) endpoint; a route
-    declared by core and overridden by saas is core's too. Classes of test
+    declared by core and overridden by a layer is core's too. Classes of test
     modules do not count: their routes (``/cloud/mcp_test/*``) exist only
     while tests run.
 
@@ -60,7 +60,7 @@ def declaring_addons(endpoint):
 
 def watched_modules(env):
     """Return core, PITR, the MCP and every installed module built on it,
-    directly or through another one (the bridge's, the tenant's).
+    directly or through another one (the bridge's, say).
 
     :rtype: set[str]
     """
@@ -84,7 +84,7 @@ class TestRouteInventory(TransactionCase):
     """The registry classifies every route of the panel.
 
     After every module is installed: while this one installs, the modules
-    on top of it — the PITR bridge, the tenant panel — have neither their
+    on top of it — the PITR bridge, a layer — have neither their
     routes nor their policies loaded yet.
     """
 
@@ -94,7 +94,7 @@ class TestRouteInventory(TransactionCase):
 
     def test_a_module_on_top_of_a_module_on_top_is_watched(self):
         """A module that reaches the MCP through another one — on top of the
-        PITR bridge, or of the tenant panel — is watched too."""
+        PITR bridge, or of a layer — is watched too."""
         Module = self.env["ir.module.module"].sudo()
         Module.create(
             {

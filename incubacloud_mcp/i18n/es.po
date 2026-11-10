@@ -951,12 +951,13 @@ msgstr "Emisor"
 msgid ""
 "Issuer (``iss``) of the tokens this provider signs. The MCP endpoint finds "
 "the provider of an agent's token by it, then the user by the token's "
-"``sub``; a tenant panel also checks its single sign-on id_token against it."
+"``sub``; a panel entered through single sign-on may also check its id_token "
+"against it."
 msgstr ""
 "Emisor (``iss``) de los tokens que firma este proveedor. El endpoint MCP "
 "encuentra con él el proveedor del token de un agente, y luego el usuario por"
-" el ``sub`` del token; el panel de un tenant también comprueba con él el "
-"id_token de su inicio de sesión único."
+" el ``sub`` del token; un panel al que se entra con inicio de sesión único "
+"también puede comprobar con él su id_token."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -1154,8 +1155,8 @@ msgstr "Proveedor OAuth2"
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "On IncubaCloud SaaS, contact support."
-msgstr "En IncubaCloud SaaS, contacte con soporte."
+msgid "Ask whoever manages this panel."
+msgstr "Consulte a quien gestiona este panel."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1965,8 +1966,7 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_manager.py:0
 msgid "Unknown server field(s): %(keys)s. Accepted: %(accepted)s."
-msgstr ""
-"Campos del servidor desconocidos: %(keys)s. Se aceptan: %(accepted)s."
+msgstr "Campos del servidor desconocidos: %(keys)s. Se aceptan: %(accepted)s."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -2369,7 +2369,8 @@ msgstr "Esa puerta ya está cerrada: no hay nada que hacer."
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_jobs.py:0
-msgid "Stop every notification: no job notification reaches you at the level none."
+msgid ""
+"Stop every notification: no job notification reaches you at the level none."
 msgstr ""
 "Dejar de enviarle todas las notificaciones: ninguna notificación de tareas "
 "le llegará con el nivel «ninguna»."

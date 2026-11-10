@@ -9,7 +9,7 @@ once and reach every copier-generated router.
 Two properties make this one different from its HSTS and rate-limit
 siblings, and they are what these pin:
 
-* It is **off unless asked for**. A tenant's own site may legitimately be
+* It is **off unless asked for**. An instance's own site may legitimately be
   embedded by its customers, and this reaches every router on the host,
   so core ships the capability and leaves the policy to whoever runs it.
 * It **sets** rather than adds. The source list is a policy that moves,

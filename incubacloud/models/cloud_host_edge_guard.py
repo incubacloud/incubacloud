@@ -29,13 +29,13 @@ from odoo import api, fields, models
 _logger = logging.getLogger(__name__)
 
 #: Where the document lives on the host. The underscore keeps it apart
-#: from every tenant's ``{slug}.yml``: a slug cannot hold one.
+#: from every instance's ``{slug}.yml``: a slug cannot hold one.
 EDGE_GUARD_FILE = "~/traefik/dynamic/ic_guard.yml"
 
 #: The name the jobs stage it under, in their own directory.
 EDGE_GUARD_STAGED = "ic_guard.yml"
 
-#: Above every router an instance or the saas puts on ``https`` (Sablier's
+#: Above every router an instance or a layer puts on ``https`` (Sablier's
 #: ``-draining`` is the highest, 1000), below the per-instance exception.
 EDGE_GUARD_PRIORITY = 2000
 
@@ -133,7 +133,7 @@ class CloudHostEdgeGuard(models.Model):
         """Whether the guard must not be written to this host.
 
         Never in core: every host the panel set up gets it. A module whose
-        hosts include one the panel itself runs on (the saas master's)
+        hosts include one the panel itself runs on (a panel's own host)
         excludes it here; the migration, the Check and the job all ask.
 
         :rtype: bool

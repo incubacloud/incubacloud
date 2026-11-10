@@ -204,9 +204,9 @@ ic_compose_services() {
 # A ``docker compose run`` container inherits its service's labels, and
 # what reads those labels takes it for the live service. Traefik routes
 # visitors to a container that serves nothing. Sablier counts it in a
-# sleeping tenant's group: while it lives, visitors get the waiting page
+# sleeping instance's group: while it lives, visitors get the waiting page
 # instead of their panel (QA, 2026-10-22: an ``odoo shell`` push of the
-# tenant's settings, in the very seconds the customer first opened the
+# panel's settings, in the very seconds the customer first opened the
 # panel), and an expired session or a Sablier restart stops it
 # mid-work. Sablier has no setting to leave one-offs out; it only reads
 # ``sablier.enable``.
