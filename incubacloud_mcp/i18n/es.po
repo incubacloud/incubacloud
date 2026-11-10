@@ -3266,3 +3266,9 @@ msgstr "· aprobada"
 #: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
 msgid "· auto-approved"
 msgstr "· aprobada automáticamente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "%(credential)s [%(key)s, last connected %(date)s UTC]"
+msgstr "%(credential)s [%(key)s, última conexión el %(date)s UTC]"
