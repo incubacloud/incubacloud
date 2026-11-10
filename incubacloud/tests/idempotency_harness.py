@@ -532,8 +532,15 @@ class IdempotencyCase(TransactionCase):
         return photo
 
     def _comparable(self, model, column, value, linked):
-        """*value* of *column*, or ``"<created>"`` for a link to a new row."""
+        """*value* of *column*, or ``"<created>"`` for a link to a new row.
+
+        A serialized column is compared by the values it holds: the
+        replay of a committed outcome (``cloud.job.outcome``) writes the
+        same dict back from ``jsonb``, whose keys come in another order.
+        """
         fld = self.env[model]._fields.get(column)
+        if value and fld and fld.type == "serialized":
+            return json.loads(value)
         if not value or not fld or fld.type != "many2one":
             return value
         table = self.env[fld.comodel_name]._table
