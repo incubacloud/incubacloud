@@ -108,5 +108,5 @@ check `cloud_job` for anything that ran against a production host, and
 
 ## See also
 
-- [RB-02: restore the master database](RB-02-restore-master-db.md)
+- [RB-02: restore the panel's database](RB-02-restore-master-db.md)
 - [RB-05: triage a failed job](RB-05-triage-failed-job.md)

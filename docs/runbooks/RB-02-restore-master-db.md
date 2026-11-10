@@ -1,4 +1,4 @@
-# RB-02: Restore master DB from off-site backup
+# RB-02: Restore the panel's database from off-site backup
 
 **Severity:** critical
 **Typical trigger:** control-plane DB lost, corrupted, or returning
@@ -178,4 +178,4 @@ the new empty database at that point, so no user data is at risk.
 - [RB-01](RB-01-rotate-secret-key.md) — after a restore, consider
   rotating the Fernet key (the off-site backup was encrypted with
   the old key but its transit integrity is now uncertain).
-- `doodba.yaml` — `backup` service definition.
+- `prod.yaml` of the Doodba project — `backup` service definition.
