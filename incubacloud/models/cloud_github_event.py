@@ -8,6 +8,7 @@ from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
 from ._repo_requirements import _normalize_url, is_safe_git_ref
+from .cloud_repo_mixin import repo_url_key
 from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
@@ -471,7 +472,9 @@ class CloudGitHubEvent(models.Model):
         head_url  = ((pr.get('head') or {}).get('repo') or {}).get('clone_url')
         repo_full = payload.get('repository', {}).get('full_name', '')
         repo_norm = _normalize_url(base_url or '')
-        from_fork = _normalize_url(head_url or '') != repo_norm
+        from_fork = (
+            repo_url_key(self.env, head_url) != repo_url_key(self.env, base_url)
+        )
 
         if not (pr_number and head_ref and repo_norm
                 and self._is_own_pull_request(payload)):
@@ -490,7 +493,7 @@ class CloudGitHubEvent(models.Model):
             return
 
         if action in ('opened', 'reopened'):
-            for prod in self._pr_preview_sources(repo_norm, from_fork):
+            for prod in self._pr_preview_sources(base_url, from_fork):
                 if not self._pr_preview_allowed(prod):
                     continue
                 exists = self.env['cloud.instance'].search([
@@ -623,34 +626,37 @@ class CloudGitHubEvent(models.Model):
         )
         return False
 
-    def _pr_preview_sources(self, repo_norm, from_fork):
+    def _pr_preview_sources(self, repo_url, from_fork):
         """Return the production instances a pull request may preview.
 
-        Those that follow the repository the pull request is opened on,
-        unpinned and deployed, in a project with previews switched on and
-        that repository connected. None for a pull request from a fork: a
-        preview carries a copy of production's data, and a fork's branch
-        is code written by someone without access to the repository.
+        Those whose own repository lines follow the repository the pull
+        request is opened on, unpinned, deployed, in a project with
+        previews switched on. The instance's lines decide, not its
+        project's: a project's lines are only the template its instances
+        start from, and an instance often follows repositories they do
+        not list. Both URLs are compared in their canonical form. None for
+        a pull request from a fork: a preview carries a copy of
+        production's data, and a fork's branch is code written by someone
+        without access to the repository.
 
-        :param str repo_norm: the normalised address of the base repository
+        :param str repo_url: the clone URL of the base repository
         :param bool from_fork: whether the head comes from another repository
         :return: ``cloud.instance`` recordset
         """
         if from_fork:
             _logger.info(
-                "GitHub PR on %s comes from a fork: no preview.", repo_norm,
+                "GitHub PR on %s comes from a fork: no preview.", repo_url,
             )
             return self.env['cloud.instance']
+        key = repo_url_key(self.env, repo_url)
         return self.env['cloud.instance.repo'].search([
+            ('url', 'ilike', key.rsplit('/', 1)[-1]),
             ('commit_sha', 'in', (False, '')),
             ('instance_id.environment', '=', 'production'),
             ('instance_id.deployed', '=', True),
             ('instance_id.project_id.pr_reviews_enabled', '=', True),
         ]).filtered(
-            lambda r: _normalize_url(r.url) == repo_norm and any(
-                _normalize_url(p.url) == repo_norm
-                for p in r.instance_id.project_id.repo_ids
-            )
+            lambda r: repo_url_key(self.env, r.url) == key
         ).mapped('instance_id')
 
     def _report_pr_preview_failure(self, prod, pr_repo, pr_number, reason):

@@ -82,17 +82,11 @@ class _PreviewBase(TransactionCase):
             'environment': 'production',
             'state': 'deployed',
         })
-        self.env['cloud.instance.repo'].create({
+        # The production's own line is what it follows; the project, with
+        # no lines, is only the template new instances start from. The
+        # App's installation is the panel's own.
+        self.prod_line = self.env['cloud.instance.repo'].create({
             'instance_id': self.prod.id,
-            'url': REPO_URL,
-            'branch': 'main',
-        })
-        # The repository is connected to the project, and the App's
-        # installation is the panel's own.
-        self.env['cloud.project.repo'].with_context(
-            skip_apply_requirements=True,
-        ).create({
-            'project_id': self.project.id,
             'url': REPO_URL,
             'branch': 'main',
         })
@@ -178,9 +172,9 @@ class TestPreviewEligibility(_PreviewBase):
 
 
 class TestPreviewBinding(_PreviewBase):
-    """Only the panel's own installation, on a repository connected to the
-    project, and never from a fork: the App is public, so a valid signature
-    says GitHub sent the event, not that it is about one of ours."""
+    """Only the panel's own installation, on a repository a production's
+    own lines follow, and never from a fork: the App is public, so a valid
+    signature says GitHub sent the event, not that it is about one of ours."""
 
     def _assert_nothing(self, **payload):
         """Run an ``opened`` event built with *payload*: nothing is cloned
@@ -202,9 +196,37 @@ class TestPreviewBinding(_PreviewBase):
         self.env['cloud.github.app'].search([]).installation_id = False
         self._assert_nothing()
 
-    def test_a_repository_not_connected_to_the_project_gets_nothing(self):
-        self.project.repo_ids.unlink()
+    def test_a_repository_only_the_production_follows_gets_a_preview(self):
+        """The project's lines are a template: an instance often follows
+        repositories its project does not list."""
+        self.assertFalse(self.project.repo_ids)
+        with self._clone_patch(return_value={}) as clone:
+            self._event()._process_pull_request_event()
+        clone.assert_called_once()
+
+    def test_a_repository_of_the_project_the_production_does_not_follow_gets_nothing(self):
+        self.env['cloud.project.repo'].with_context(
+            skip_apply_requirements=True,
+        ).create({
+            'project_id': self.project.id,
+            'url': REPO_URL,
+            'branch': 'main',
+        })
+        self.prod_line.with_context(skip_apply_requirements=True).url = (
+            'https://github.com/owner/other.git'
+        )
         self._assert_nothing()
+
+    def test_a_production_line_saved_in_another_spelling_is_the_same_repository(self):
+        """A line saved before its URL was stored canonical still matches."""
+        self.env.cr.execute(
+            "UPDATE cloud_instance_repo SET url = %s WHERE id = %s",
+            ('git@github.com:Owner/Repo.git', self.prod_line.id),
+        )
+        self.prod_line.invalidate_recordset(['url'])
+        with self._clone_patch(return_value={}) as clone:
+            self._event()._process_pull_request_event()
+        clone.assert_called_once()
 
     def test_a_pull_request_from_a_fork_gets_nothing(self):
         self._assert_nothing(head=(FORK_FULL, FORK_URL))
