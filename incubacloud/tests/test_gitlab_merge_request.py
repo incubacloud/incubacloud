@@ -434,18 +434,44 @@ class TestUpdateAndClose(_MergeRequestCase):
         self.assertEqual(self._note_jobs(), closing)
 
     def test_a_delete_that_cannot_be_queued_fails_the_event(self):
-        preview = self._preview()
-        with patch.object(
-            type(self.env["cloud.job"]), "enqueue",
-            side_effect=UserError("The queue is full."),
-        ):
+        """The event is left in error for the cron, and what the close did stays.
+
+        Not undone with the failed delete: a restore running meanwhile
+        would see the preview open and announce it on a closed merge
+        request. The retry deletes what was left.
+        """
+        self._preview()
+        self._preview(name="mr-12-b")
+        previews = self.env["cloud.instance"].sudo().search([
+            ("pr_provider_id", "=", self.provider.id), ("pr_number", "=", 12),
+        ])
+        self.assertEqual(len(previews), 2)
+        failing, queued = previews[-1], previews[:-1]
+        Job = type(self.env["cloud.job"])
+        enqueue = Job.enqueue
+
+        def refuse_one(job, host_id, instance_id, job_type_code, *args, **kwargs):
+            if instance_id == failing.id and job_type_code == "delete_instance":
+                raise UserError("The queue is full.")
+            return enqueue(job, host_id, instance_id, job_type_code, *args, **kwargs)
+
+        with patch.object(Job, "enqueue", autospec=True, side_effect=refuse_one):
             event = self._mr(action="close")
         self.assertFalse(event.processed)
         self.assertIn("The queue is full.", event.error)
+        self.assertEqual(event.dispatch_attempts, 1)
+        self.assertEqual(set(previews.mapped("pr_state")), {"closed"})
+        self.assertEqual(len(self._note_jobs().filtered(
+            lambda j: j.kwargs["kind"] == "closed",
+        )), 1, "one job of the note per merge request")
+        for preview in queued:
+            self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+        self.assertFalse(self._jobs(failing, "delete_instance"))
         event._dispatch_safely()
         self.assertTrue(event.processed)
-        self.assertEqual(preview.pr_state, "closed")
-        self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+        self.assertFalse(event.error)
+        for preview in previews:
+            self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
 
     def test_a_lost_race_reaches_odoo_s_retry(self):
         self._preview()
