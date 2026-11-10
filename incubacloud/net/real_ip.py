@@ -44,11 +44,11 @@ How much the rest proves depends on how the proxy is recognised:
   only connections from it count as the proxy. Nobody else on Odoo's
   network can set the visitor's address: not with the CDN's header, and
   not with ``X-Forwarded-For`` either, which is replaced by the
-  caller's own address before Odoo reads it. This is how the master
-  runs, and every panel once deployed again: their Odoo shares one
-  Docker network with Traefik, with the other panels of the host and,
-  on the master, with QA. A panel deployed before the option existed
-  runs unnamed until its next deploy or plan apply.
+  caller's own address before Odoo reads it. This is how a panel
+  deployed with the option runs: its Odoo shares one Docker network
+  with Traefik and, often, with other panels or services of the host.
+  A panel deployed before the option existed runs unnamed until its
+  next deploy.
 - **Unnamed**, any connection from this machine or a private network
   is taken for the proxy. A caller from a public address cannot choose
   its address; anything on a private network Odoo shares can, exactly
@@ -66,7 +66,7 @@ about it as it starts.
 
 Until 2026-10-27 the proof was the connection to Odoo being the CDN's.
 It never is with a proxy in between — it is the proxy's container — so
-nothing was ever corrected, on the master or on any panel.
+nothing was ever corrected, on any panel.
 
 Deliberately free of any particular CDN or proxy: the header name, the
 addresses to believe and the proxy's name are given by the caller.

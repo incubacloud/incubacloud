@@ -52,9 +52,8 @@ its private addresses counts as the CDN's.
   already lets it with `X-Forwarded-For` alone.
 
 **If Odoo shares its network with anything but its proxy, set
-`x_real_ip_proxy`.** On the hosted service that is always the case: the
-master shares `inverseproxy_shared` with QA's services, and a pool
-host's panels share it with each other.
+`x_real_ip_proxy`.** That is the case wherever several panels, or other
+services, share `inverseproxy_shared` on the same host.
 
 ### When the name does not resolve
 
