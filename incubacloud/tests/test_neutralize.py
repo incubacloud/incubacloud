@@ -196,6 +196,45 @@ class NeutralizeInventory:
             "is updated; leave 'active' out: %s" % ", ".join(offending),
         )
 
+    def test_no_script_names_a_column_that_is_gone(self):
+        """One stale column aborts neutralization entirely, not its line."""
+        stale = []
+        for module, statement in self._scripts():
+            update = re.match(r"update (\w+)\s+set (.*)", statement)
+            delete = re.match(r"delete from (\w+)", statement)
+            if delete:
+                self.env.cr.execute("SELECT to_regclass(%s)", (delete.group(1),))
+                if not self.env.cr.fetchone()[0]:
+                    stale.append(f"{module}: {delete.group(1)} (table)")
+                continue
+            if not update:
+                continue
+            table = update.group(1)
+            self.env.cr.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                 WHERE table_schema = current_schema() AND table_name = %s
+                """,
+                (table,),
+            )
+            present = {row[0] for row in self.env.cr.fetchall()}
+            if not present:
+                stale.append(f"{module}: {table} (table)")
+                continue
+            stale.extend(
+                f"{module}: {table}.{column}"
+                for column in re.findall(
+                    r"([\w]+)\s*=", update.group(2).split(" where ")[0]
+                )
+                if column not in present
+            )
+        self.assertFalse(
+            stale,
+            "these scripts name columns that no longer exist, which aborts "
+            "neutralization and leaves the database armed: %s"
+            % ", ".join(sorted(stale)),
+        )
+
 
 @tagged("post_install", "-at_install")
 class TestNeutralize(NeutralizeInventory, TransactionCase):
@@ -245,45 +284,6 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
             missed,
             "neutralization leaves these secrets in a restored copy of "
             "production: %s" % ", ".join(missed),
-        )
-
-    def test_no_script_names_a_column_that_is_gone(self):
-        """One stale column aborts neutralization entirely, not its line."""
-        stale = []
-        for module, statement in self._scripts():
-            update = re.match(r"update (\w+)\s+set (.*)", statement)
-            delete = re.match(r"delete from (\w+)", statement)
-            if delete:
-                self.env.cr.execute("SELECT to_regclass(%s)", (delete.group(1),))
-                if not self.env.cr.fetchone()[0]:
-                    stale.append(f"{module}: {delete.group(1)} (table)")
-                continue
-            if not update:
-                continue
-            table = update.group(1)
-            self.env.cr.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                 WHERE table_schema = current_schema() AND table_name = %s
-                """,
-                (table,),
-            )
-            present = {row[0] for row in self.env.cr.fetchall()}
-            if not present:
-                stale.append(f"{module}: {table} (table)")
-                continue
-            stale.extend(
-                f"{module}: {table}.{column}"
-                for column in re.findall(
-                    r"([\w]+)\s*=", update.group(2).split(" where ")[0]
-                )
-                if column not in present
-            )
-        self.assertFalse(
-            stale,
-            "these scripts name columns that no longer exist, which aborts "
-            "neutralization and leaves the database armed: %s"
-            % ", ".join(sorted(stale)),
         )
 
     def test_a_copy_from_before_the_instance_key_is_neutralized(self):

@@ -165,12 +165,16 @@ class TestConversation(AssistantMixin, TransactionCase):
         trap.assert_jobs_count(1)
 
     def test_an_expired_card_tells_the_model(self):
-        """Past ten minutes: expired, and the call answered so the model knows."""
+        """Past ten minutes: expired, and the call answered so the model knows.
+
+        Expired by the database's clock, which the approval reads: ``now()``
+        is when the class's transaction began, and a minute before the
+        Python clock was still ahead of it once the tests before this one
+        had taken a minute.
+        """
         mine = self._conversation()
         card = self._card(mine)
-        card.approval_id.sudo().expires_at = fields.Datetime.now() - timedelta(
-            minutes=1
-        )
+        card.approval_id.sudo().expires_at = self.env.cr.now() - timedelta(minutes=1)
         with trap_jobs():
             self.assertFalse(card._confirm_card()["ok"])
         self.assertEqual(card.card_state, "expired")
