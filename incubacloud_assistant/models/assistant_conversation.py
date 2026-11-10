@@ -179,8 +179,22 @@ class AssistantConversation(models.Model):
         self._notify({"kind": "message", "message": message._format()})
         return message.with_env(self.env)
 
-    def _answer_call(self, call_id, tool_name, text, is_error=False):
-        """Answer a tool call of the model with *text* (a result or why not)."""
+    def _answer_call(
+        self,
+        call_id,
+        tool_name,
+        text,
+        is_error=False,
+        auto_approved=False,
+        auto_after_untrusted=False,
+    ):
+        """Answer a tool call of the model with *text* (a result or why not).
+
+        :param bool auto_approved: an auto-approval rule ran the call without
+            a card; the chat's line says so
+        :param bool auto_after_untrusted: and the task had read content
+            others can write
+        """
         return self._add_message(
             {
                 "role": "tool",
@@ -188,6 +202,8 @@ class AssistantConversation(models.Model):
                 "tool_name": tool_name,
                 "content": text,
                 "is_error": is_error,
+                "auto_approved": auto_approved,
+                "auto_after_untrusted": auto_approved and auto_after_untrusted,
             }
         )
 

@@ -21,7 +21,7 @@ reading core's public code. On top of the MCP's rules, the assistant's
 
 import json
 
-from odoo import api, models
+from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.incubacloud.models.cloud_security_mixin import _GROUP_HIERARCHY
@@ -45,6 +45,7 @@ from ..sources import (
     search_code,
     search_docs,
 )
+from .mcp_auto_approval import ASSISTANT_CREDENTIAL
 
 _USER = "group_cloud_user"
 _DEVELOPER = "group_cloud_developer"
@@ -227,10 +228,20 @@ class AssistantTools(models.AbstractModel):
 
     @api.model
     def _definitions(self):
-        """Return the tools for the provider, in a stable order (prompt cache)."""
+        """Return the tools for the provider, in a stable order (prompt cache).
+
+        While an auto-approval rule covers the person's assistant, the tools
+        that would ask say they run without asking, as an agent's listing does.
+        """
+        rule = self.env["incubacloud.mcp.auto.approval"]._active_for(
+            self.env.uid, ASSISTANT_CREDENTIAL
+        )
+        until = fields.Datetime.to_string(rule.expires_at) if rule else ""
         return tuple(
             ToolDef(listed["name"], listed["description"], listed["inputSchema"])
-            for listed in (spec.listed() for spec in self._visible_specs())
+            for listed in (
+                spec.listed(auto_until=until) for spec in self._visible_specs()
+            )
         )
 
     @api.model

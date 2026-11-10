@@ -6,6 +6,12 @@ user confirms them in the panel; the AI model cannot confirm them by itself.»
 (terms §12A, approved on 28-oct-2026). Every change asks except
 ``_UNASKED`` on a staging: none of those may be of these kinds. Changing
 either one means reviewing the other, and this file.
+
+What this checks is what asks without an auto-approval rule
+(``_extra_confirmation``). A rule an Administrator grants to a person's
+assistant lets those changes run without a card (issue #8,
+``test_auto_approval.py``); the Terms' wording of that case is the
+platform's, reviewed with its next update.
 """
 
 from odoo.tests import tagged

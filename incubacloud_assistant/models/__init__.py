@@ -8,6 +8,7 @@ from . import mcp_approval
 from . import assistant_engine
 from . import assistant_tools
 from . import mcp_confirm
+from . import mcp_auto_approval
 from . import res_users
 from . import mcp_catalog
 from . import mcp_tools_assistant

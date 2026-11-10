@@ -26,6 +26,7 @@ from odoo import api, models
 from odoo.exceptions import AccessError
 from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
+from odoo.addons.incubacloud_mcp.protocol.context import APPROVAL_REQUEST_ATTR
 from odoo.addons.incubacloud_mcp.protocol.errors import McpError
 
 from .. import pricing
@@ -34,6 +35,7 @@ from ..connectors.base import ChatRequest, ProviderError, ToolCall, Turn, same_m
 from ..request_scope import call_context, tool_request
 from .assistant_prompt import SUMMARY_PROMPT, SUMMARY_SYSTEM, system_prompt
 from .assistant_tools import THIRD_PARTY_READS
+from .mcp_auto_approval import ASSISTANT_CREDENTIAL
 
 _logger = logging.getLogger(__name__)
 
@@ -348,9 +350,12 @@ class AssistantEngine(models.AbstractModel):
             .name
             or "English"
         )
+        auto = conv.env["incubacloud.mcp.auto.approval"]._active_for(
+            conv.sudo().user_id.id, ASSISTANT_CREDENTIAL
+        )
         return ChatRequest(
             model=model,
-            system=system_prompt(language),
+            system=system_prompt(language, auto_approved=bool(auto)),
             tools=conv.env["incubacloud.assistant.tools"]._definitions(),
             turns=self._turns(conv),
         )
@@ -752,8 +757,8 @@ class AssistantEngine(models.AbstractModel):
         Nothing of the conversation is written here.
 
         :return: ``{"gone": True}``, ``{"card": {approval_id, message,
-            arguments, production}}`` or ``{"text", "is_error", "job_id",
-            "tainted"}``
+            arguments, production}}`` or ``{"text", "is_error",
+            "auto_approved", "auto_after_untrusted", "job_id", "tainted"}``
         """
         if not self._conversation_in(self.env, conversation_id):
             return {"gone": True}
@@ -775,7 +780,8 @@ class AssistantEngine(models.AbstractModel):
                 "is_error": True,
             }
         ctx = call_context(self.env.uid, conversation_id)
-        with tool_request(self.env, ctx.via()):
+        tainted = self.env["incubacloud.mcp.confirm"]._tainted(ctx)
+        with tool_request(self.env, ctx.via()) as bound:
             try:
                 result = self.env["incubacloud.mcp.server"]._tools_call(
                     {"name": call.name, "arguments": call.arguments}, ctx
@@ -785,6 +791,7 @@ class AssistantEngine(models.AbstractModel):
                     "content": [{"type": "text", "text": error.message}],
                     "isError": True,
                 }
+            mark = getattr(bound, APPROVAL_REQUEST_ATTR, None) or {}
         if isinstance(result, dict) and result.get("assistant_confirmation"):
             return {
                 "card": {
@@ -800,9 +807,14 @@ class AssistantEngine(models.AbstractModel):
             if isinstance(part, dict)
         )
         is_error = bool(result.get("isError"))
+        auto = mark.get("approval") == "auto"
         return {
             "text": text,
             "is_error": is_error,
+            # A rule ran it without a card: the chat says so, and whether
+            # the task had read content others can write.
+            "auto_approved": auto,
+            "auto_after_untrusted": auto and tainted,
             "job_id": self._job_of(spec, text, is_error).id,
             # Logs, files, mail, a command's output: others write them; and
             # a project a member of a lower role writes in.
@@ -838,7 +850,14 @@ class AssistantEngine(models.AbstractModel):
                 )
                 conv._halt("waiting_confirmation", "")
                 return "card"
-            conv._answer_call(call.id, call.name, outcome["text"], outcome["is_error"])
+            conv._answer_call(
+                call.id,
+                call.name,
+                outcome["text"],
+                outcome["is_error"],
+                auto_approved=bool(outcome.get("auto_approved")),
+                auto_after_untrusted=bool(outcome.get("auto_after_untrusted")),
+            )
             if outcome.get("tainted"):
                 conv.sudo().tainted = True
             job = env["cloud.job"].sudo().browse(outcome.get("job_id") or []).exists()

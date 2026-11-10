@@ -9,13 +9,20 @@ the user, the conversation, the tool, the arguments and whether production
 is reached, ten minutes, once.
 The model has no tool that approves; the card is answered by the person's
 own request (``incubacloud.assistant.message._confirm_card``).
+
+An auto-approval rule of the person's assistant (credential
+``assistant``) answers instead of the card: everything that would show one
+runs — the MCP's approvals, the assistant's own rules and the mark of
+content others can write — and the chat says it ran without asking.
 """
 
 from odoo import api, models
 
+from odoo.addons.incubacloud_mcp.models.cloud_audit_log import set_approval_mark
 from odoo.addons.incubacloud_mcp.protocol.signing import fingerprint
 
 from ..request_scope import ASSISTANT_VERSION
+from .mcp_auto_approval import ASSISTANT_CREDENTIAL
 
 #: The credential of an assistant's call: ``assistant:<conversation id>``.
 _CLIENT_PREFIX = "assistant:"
@@ -36,6 +43,7 @@ class McpConfirm(models.AbstractModel):
         """
         if ctx.version != ASSISTANT_VERSION:
             return super()._gate(spec, args, ctx, params)
+        set_approval_mark(None)
         texts = [
             text
             for text in (
@@ -48,6 +56,8 @@ class McpConfirm(models.AbstractModel):
         ]
         if not texts:
             return None
+        if self._auto_approved(spec, ctx, ASSISTANT_CREDENTIAL):
+            return None
         # Bound to whether production is reached too: an approval given
         # while it was not never covers the call once it is.
         reaches = self.env["incubacloud.assistant.tools"]._acts_on_production(
@@ -57,6 +67,7 @@ class McpConfirm(models.AbstractModel):
         Approval = self.env["incubacloud.mcp.approval"]
         approved = Approval._find_approved(spec.name, digest, ctx.principal.client)
         if approved and approved._consume("approved"):
+            self._mark_person()
             return None
         scrubber = self.env["incubacloud.mcp.secrets"]._scrubber()
         message = scrubber.text("\n\n".join(texts))
