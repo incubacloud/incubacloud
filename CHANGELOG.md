@@ -13,16 +13,17 @@ The update needs no data migration.
 ### Security
 
 - **Only a Project Manager or higher changes a repository line's URL**, on a
-  project or on an instance. The panel fetches a line's repository with its
-  own GitHub App or personal access token, which may reach private
-  repositories of other projects: a Consultant who pointed a line at one of
-  them would have the panel fetch it into an instance of theirs. A Consultant
-  still changes a line's branch and the Python dependencies, and a save that
-  sends a line's own URL again, in any spelling of the same repository, goes
-  through. The rule is the model's, so the panel's forms, the MCP, the
-  assistant and RPC all follow it; the editor shows a saved line's URL
-  read-only below Project Manager, and `/cloud/get_config` answers
-  `permissions.can_change_repo_url`.
+  project or on an instance. A Consultant still changes a line's branch and
+  the Python dependencies, and a save that sends a line's own URL again, in
+  any spelling of the same repository, goes through. The rule is the model's,
+  so the panel's forms, the MCP, the assistant and RPC all follow it; the
+  editor shows a saved line's URL read-only below Project Manager, and
+  `/cloud/get_config` answers `permissions.can_change_repo_url`.
+- **Below Project Manager, the panel reads a repository's branches, modules
+  and requirements with its own GitHub credentials only when a line the user
+  sees names that repository.** Any other is read as a public repository: a
+  public one still answers, a private one is not found. From Project Manager
+  up, as before.
 
 ## [1.0.222] — 2026-11-10
 

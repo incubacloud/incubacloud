@@ -25,16 +25,18 @@ class TestBranchesOfAPublicRepository(HttpCase):
         # No credentials at all, as on a new customer's panel.
         self.env["cloud.github.app"].sudo().search([]).unlink()
         self.env["cloud.settings"].sudo()._get().github_pat = False
+        # A Project Manager, who imports: below, a repository no line names
+        # is read as a public one only (10-nov-2026).
         self.env["res.users"].create({
-            "name": "branches-consultant",
-            "login": "branches-consultant",
-            "password": "branches-consultant",
+            "name": "branches-pm",
+            "login": "branches-pm",
+            "password": "branches-pm",
             "groups_id": [(6, 0, [
                 self.env.ref("base.group_user").id,
-                self.env.ref("incubacloud.group_cloud_consultant").id,
+                self.env.ref("incubacloud.group_cloud_project_manager").id,
             ])],
         })
-        self.authenticate("branches-consultant", "branches-consultant")
+        self.authenticate("branches-pm", "branches-pm")
 
     def _branches(self):
         """POST ``/cloud/get_repo_branches`` for the test repository."""

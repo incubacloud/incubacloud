@@ -64,6 +64,77 @@ def _with_canonical_url(env, vals):
     }
 
 
+#: Written from the URL by :func:`_with_canonical_url`, never sent.
+_DERIVED_FROM_URL = ('provider_id', 'repo_path')
+
+
+def _without_derived_fields(env, vals):
+    """Return *vals* without the fields the URL alone writes.
+
+    ``provider_id`` and ``repo_path`` say which credential reads a
+    line's repository: below the superuser, a value sent for them is
+    dropped, and :func:`_with_canonical_url` writes them from the URL.
+
+    :param env: an Odoo environment
+    :param dict vals: the values being written
+    :return: *vals* itself, or a copy without those fields
+    :rtype: dict
+    """
+    if env.su or not any(name in vals for name in _DERIVED_FROM_URL):
+        return vals
+    return {k: v for k, v in vals.items() if k not in _DERIVED_FROM_URL}
+
+
+def repo_url_key(env, url):
+    """Return the form every spelling of *url*'s repository shares.
+
+    The URL as a line stores it (:func:`_with_canonical_url`), in lower
+    case, without ``.git`` or a final slash: two URLs of the same
+    repository give the same key.
+
+    :param env: an Odoo environment
+    :param str url: a repository URL as typed or stored
+    :rtype: str
+    """
+    return _normalize_url(_with_canonical_url(env, {'url': url}).get('url'))
+
+
+def user_sees_repo_line(env, url):
+    """Return whether *url* names the repository of a line the user sees.
+
+    A project's line or an instance's, under the user's record rules.
+
+    :param env: an Odoo environment, of the user
+    :param str url: a repository URL as typed or stored
+    :rtype: bool
+    """
+    key = repo_url_key(env, url)
+    if not key:
+        return False
+    name = key.rsplit('/', 1)[-1]
+    for model in ('cloud.project.repo', 'cloud.instance.repo'):
+        lines = env[model].search([('url', 'ilike', name)])
+        if any(repo_url_key(env, line.url) == key for line in lines):
+            return True
+    return False
+
+
+def may_read_with_panel_credentials(env, url):
+    """Return whether the panel reads *url* with its own credentials.
+
+    From Project Manager up, any repository: they point lines at any.
+    Below, only the repository of a line the user sees; any other is
+    read as a public one, so a private repository is not found.
+
+    :param env: an Odoo environment, of the user who reads
+    :param str url: the repository URL the user sent
+    :rtype: bool
+    """
+    if env['cloud.security.mixin']._can_change_repo_url():
+        return True
+    return user_sees_repo_line(env, url)
+
+
 def _url_host(url):
     """Return the host *url* names, or '' when it names none.
 
@@ -318,9 +389,10 @@ class CloudRepoMixin(models.AbstractModel):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super().create(
-            [_with_canonical_url(self.env, v) for v in vals_list],
-        )
+        records = super().create([
+            _with_canonical_url(self.env, _without_derived_fields(self.env, v))
+            for v in vals_list
+        ])
         records._apply_requirements()
         return records
 
@@ -339,8 +411,7 @@ class CloudRepoMixin(models.AbstractModel):
             return
         wanted = _normalize_url(url)
         for repo in self:
-            current = _with_canonical_url(self.env, {'url': repo.url})['url']
-            if _normalize_url(current) != wanted:
+            if repo_url_key(self.env, repo.url) != wanted:
                 raise AccessError(_(
                     "Only a Project Manager or higher can change the URL "
                     "of the repository %s; you can still change its "
@@ -348,7 +419,9 @@ class CloudRepoMixin(models.AbstractModel):
                 ) % repo.url)
 
     def write(self, vals):
-        vals = _with_canonical_url(self.env, vals)
+        vals = _with_canonical_url(
+            self.env, _without_derived_fields(self.env, vals),
+        )
         if 'url' in vals:
             self._check_url_unchanged(vals['url'])
             result = super().write(vals)

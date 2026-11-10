@@ -76,9 +76,7 @@ class CloudSecurityMixin(models.AbstractModel):
     def _can_change_repo_url(self):
         """Whether the user may point a repository line at another repository.
 
-        From Project Manager up (10-nov-2026): the panel fetches a line's
-        repository with its own GitHub App or token, which may reach
-        private repositories of other projects, so a Consultant changes a
+        From Project Manager up (10-nov-2026): a Consultant changes a
         line's branch but not the repository it names.
 
         :rtype: bool
