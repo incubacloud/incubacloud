@@ -385,6 +385,8 @@ msgid "Calls panel routes for MCP tools"
 msgstr "Llama a las rutas del panel para las herramientas MCP"
 
 #. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 #: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
 msgid "Cancel"
 msgstr "Cancelar"
@@ -595,6 +597,8 @@ msgstr ""
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__create_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__create_uid
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__create_uid
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__create_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__create_uid
 msgid "Created by"
 msgstr "Creado por"
@@ -602,12 +606,17 @@ msgstr "Creado por"
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__create_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__create_date
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__create_date
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__create_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__create_date
 msgid "Created on"
 msgstr "Creado el"
 
 #. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__credential
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__credential
 msgid "Credential"
 msgstr "Credencial"
 
@@ -702,18 +711,22 @@ msgstr "Borrar el proyecto %(name)s. No se puede deshacer."
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auth__display_name
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_catalog__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_confirm__display_name
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_dispatch__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_secrets__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_server__display_name
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_tools__display_name
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_res_users__display_name
 msgid "Display Name"
 msgstr "Nombre para mostrar"
 
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__expires_at
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__expires_at
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__expires_at
 msgid "Expires At"
 msgstr "Caduca el"
@@ -904,13 +917,16 @@ msgstr "Cómo trabajan los agentes con el panel"
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auth__id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_catalog__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_confirm__id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_dispatch__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_secrets__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_server__id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_tools__id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_res_users__id
 msgid "ID"
 msgstr "ID"
 
@@ -1031,6 +1047,8 @@ msgstr ""
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__write_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__write_uid
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__write_uid
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__write_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__write_uid
 msgid "Last Updated by"
 msgstr "Última actualización por"
@@ -1038,6 +1056,8 @@ msgstr "Última actualización por"
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__write_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__write_date
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__write_date
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__write_date
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__write_date
 msgid "Last Updated on"
 msgstr "Última actualización el"
@@ -1059,6 +1079,7 @@ msgstr "Enlace en el cliente del agente"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 #: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
 msgid "Loading…"
@@ -1386,6 +1407,7 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 #: code:addons/incubacloud_mcp/static/src/settings/mcp_rates_section.xml:0
 #: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
 msgid "Retry"
@@ -2019,8 +2041,11 @@ msgid "Used At"
 msgstr "Usado el"
 
 #. module: incubacloud_mcp
+#: model:ir.model,name:incubacloud_mcp.model_res_users
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__user_id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__user_id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__user_id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__user_id
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__user_id
 msgid "User"
 msgstr "Usuario"
@@ -2448,3 +2473,796 @@ msgstr "Se alcanzó el límite de lecturas Git. Vuelva a intentarlo más tarde."
 #: code:addons/incubacloud_mcp/models/mcp_tools_operate.py:0
 msgid "%(repo)s, branch %(branch)s, pinned at its current commit"
 msgstr "%(repo)s, rama %(branch)s, fijado en su commit actual"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "%(credential)s acts without asking until %(date)s UTC."
+msgstr "%(credential)s actúa sin preguntar hasta el %(date)s UTC."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"%(credential)s has an auto-approval rule until %(date)s UTC, paused for now:"
+" it asks for approval."
+msgstr ""
+"%(credential)s tiene una regla de aprobación automática hasta el %(date)s "
+"UTC, en pausa por ahora: pide aprobación."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "%(person)s · %(credential)s · %(reason)s"
+msgstr "%(person)s · %(credential)s · %(reason)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "%(person)s · %(credential)s · until %(date)s UTC"
+msgstr "%(person)s · %(credential)s · hasta el %(date)s UTC"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "1 day"
+msgstr "1 día"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "30 days"
+msgstr "30 días"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "7 days"
+msgstr "7 días"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "90 days"
+msgstr "90 días"
+
+#. module: incubacloud_mcp
+#: model:ir.model.constraint,message:incubacloud_mcp.constraint_incubacloud_mcp_auto_approval_live_uniq
+msgid "A credential has one live auto-approval rule at most."
+msgstr ""
+"Una credencial tiene como máximo una regla de aprobación automática vigente."
+
+#. module: incubacloud_mcp
+#: model:ir.model.constraint,message:incubacloud_mcp.constraint_incubacloud_mcp_credential_user_client_uniq
+msgid "A credential is recorded once per user."
+msgstr "Una credencial se registra una sola vez por usuario."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "A leaked credential."
+msgstr "Una credencial filtrada."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"A wrong call runs at once. Agents treat \"the panel asks first\" as a\n"
+"                            safety net; with this rule there is none."
+msgstr ""
+"Una llamada equivocada se ejecuta en el acto. Los agentes cuentan con que "
+"«el panel pregunta primero» como red de seguridad; con esta regla no la hay."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__kind__api_key
+msgid "API key"
+msgstr "Clave de API"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Active"
+msgstr "Activa"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Activity"
+msgstr "Actividad"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__role_at_grant__manager
+msgid "Administrator"
+msgstr "Administrador"
+
+#. module: incubacloud_mcp
+#: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_credential
+msgid "Agent credential seen on the MCP endpoint"
+msgstr "Credencial de agente vista en el endpoint MCP"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "An auto-approval rule cannot be changed."
+msgstr "Una regla de aprobación automática no se puede modificar."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"An auto-approval rule lets one credential of one person act without asking until\n"
+"            a date: an API key, an OAuth client or the panel's assistant. Every other agent\n"
+"            keeps asking. Each action run this way is marked auto-approved in the audit log\n"
+"            and on its jobs."
+msgstr ""
+"Una regla de aprobación automática permite que una credencial de una persona"
+" actúe sin preguntar hasta una fecha: una clave de API, un cliente OAuth o "
+"el asistente del panel. Los demás agentes siguen preguntando. Cada acción "
+"ejecutada así queda marcada como aprobada automáticamente en el registro de "
+"auditoría y en sus trabajos."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__approval
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__approval
+msgid "Approval"
+msgstr "Aprobación"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_audit_log__approval_rule_id
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_job__approval_rule_id
+msgid "Approval Rule"
+msgstr "Regla de aprobación"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__cloud_audit_log__approval__person
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__cloud_job__approval__person
+msgid "Approved by the person"
+msgstr "Aprobada por la persona"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Auto-approval"
+msgstr "Aprobación automática"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Auto-approval activity"
+msgstr "Actividad de la aprobación automática"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Auto-approval granted."
+msgstr "Aprobación automática concedida."
+
+#. module: incubacloud_mcp
+#: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_auto_approval
+msgid "Auto-approval of an agent's credential"
+msgstr "Aprobación automática de la credencial de un agente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.js:0
+msgid "Auto-approval revoked."
+msgstr "Aprobación automática revocada."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Auto-approval rules are granted in Settings, Agents."
+msgstr ""
+"Las reglas de aprobación automática se conceden en Configuración, Agentes."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Auto-approval rules are kept as history."
+msgstr "Las reglas de aprobación automática se conservan como historial."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid ""
+"Auto-approval rules are managed by a person in the panel, never through an "
+"agent."
+msgstr ""
+"Las reglas de aprobación automática las gestiona una persona en el panel, "
+"nunca un agente."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__cloud_audit_log__approval__auto
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__cloud_job__approval__auto
+msgid "Auto-approved by a rule"
+msgstr "Aprobada automáticamente por una regla"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Auto-approved calls"
+msgstr "Llamadas aprobadas automáticamente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Choose a credential…"
+msgstr "Elija una credencial…"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Choose a person…"
+msgstr "Elija una persona…"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose an active user with a role."
+msgstr "Elija un usuario activo con un rol."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose how long the rule lasts."
+msgstr "Elija cuánto dura la regla."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Choose how long…"
+msgstr "Elija cuánto tiempo…"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose one of this user's credentials that connected to the panel."
+msgstr ""
+"Elija una credencial de este usuario que ya se haya conectado al panel."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__client
+msgid "Client"
+msgstr "Cliente"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__client_name
+msgid "Client Name"
+msgstr "Nombre del cliente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Close"
+msgstr "Cerrar"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__role_at_grant__consultant
+msgid "Consultant"
+msgstr "Consultor"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Could not load the users and their credentials."
+msgstr "No se pudieron cargar los usuarios y sus credenciales."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Could not load what this rule approved."
+msgstr "No se pudo cargar lo que aprobó esta regla."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__credential_label
+msgid "Credential Label"
+msgstr "Etiqueta de la credencial"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__revoked_reason__credential_deleted
+msgid "Credential deleted"
+msgstr "Credencial eliminada"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__role_at_grant__developer
+msgid "Developer"
+msgstr "Desarrollador"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"Each action run this way is marked auto-approved in the audit log and on\n"
+"                        its jobs. You can revoke the rule at any time."
+msgstr ""
+"Cada acción ejecutada así queda marcada como aprobada automáticamente en el "
+"registro de auditoría y en sus trabajos. Puede revocar la regla en cualquier"
+" momento."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Ended"
+msgstr "Fin"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Expired"
+msgstr "Caducada"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Failed to load the auto-approval rules."
+msgstr "No se pudieron cargar las reglas de aprobación automática."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__first_seen
+msgid "First Seen"
+msgstr "Visto por primera vez"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "For"
+msgstr "Durante"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Grant auto-approval"
+msgstr "Conceder aprobación automática"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Grant auto-approval…"
+msgstr "Conceder aprobación automática…"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__granted_by_id
+msgid "Granted By"
+msgstr "Concedida por"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__granted_ip
+msgid "Granted Ip"
+msgstr "IP de concesión"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Granted by"
+msgstr "Concedida por"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_cloud_job__approval
+msgid ""
+"How the agent's call that queued the job was approved, as in the audit log."
+msgstr ""
+"Cómo se aprobó la llamada del agente que encoló el trabajo, como en el "
+"registro de auditoría."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_cloud_audit_log__approval
+msgid ""
+"How the agent's call that wrote the row was approved. Empty: it needed no "
+"approval, or the row is older than this field."
+msgstr ""
+"Cómo se aprobó la llamada del agente que escribió la fila. Vacío: no "
+"necesitaba aprobación o la fila es anterior a este campo."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_auto_approval__credential_label
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_credential__label
+msgid "How the audit names it."
+msgstr "Cómo la nombra la auditoría."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"I understand, and I take responsibility for what this agent does without\n"
+"                        asking."
+msgstr ""
+"Lo entiendo, y asumo la responsabilidad de lo que este agente haga sin "
+"preguntar."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Instructions hidden in what the agent reads:"
+msgstr "Instrucciones escondidas en lo que lee el agente:"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__kind
+msgid "Kind"
+msgstr "Tipo"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__label
+msgid "Label"
+msgstr "Etiqueta"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_credential__last_seen
+msgid "Last Seen"
+msgstr "Visto por última vez"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__last_used_at
+msgid "Last Used At"
+msgstr "Último uso"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Last day"
+msgstr "Último día"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Last used"
+msgstr "Último uso"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Let this agent act without asking"
+msgstr "Dejar que este agente actúe sin preguntar"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Newer"
+msgstr "Más recientes"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"No credential has connected yet. A rule is granted to an agent that already\n"
+"                connected to this panel: connect it first, then come back."
+msgstr ""
+"Todavía no se ha conectado ninguna credencial. Una regla se concede a un "
+"agente que ya se conectó a este panel: conéctelo primero y vuelva después."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "No rule has been granted."
+msgstr "No se ha concedido ninguna regla."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/controllers/auto_approval.py:0
+msgid "No such auto-approval rule."
+msgstr "No existe esa regla de aprobación automática."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Nothing yet."
+msgstr "Nada todavía."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__notice_version
+msgid "Notice Version"
+msgstr "Versión del aviso"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__kind__oauth
+msgid "OAuth client"
+msgstr "Cliente OAuth"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Older"
+msgstr "Más antiguas"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"On this panel the platform does not allow auto-approval now: the rules below are\n"
+"                paused, and none can be granted."
+msgstr ""
+"En este panel la plataforma no permite ahora la aprobación automática: las "
+"reglas de abajo están en pausa y no se puede conceder ninguna."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/cloud_audit_log.py:0
+msgid "Only the platform marks an audit row as done by an agent."
+msgstr ""
+"Solo la plataforma marca una fila de auditoría como hecha por un agente."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Paused by the platform"
+msgstr "En pausa por la plataforma"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "Paused: the role went up"
+msgstr "En pausa: el rol subió"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Person"
+msgstr "Persona"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__role_at_grant__project_manager
+msgid "Project Manager"
+msgstr "Gerente de proyecto"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid ""
+"Read the notice again and confirm it: it changed, or it was not confirmed."
+msgstr "Vuelva a leer el aviso y confírmelo: ha cambiado o no se confirmó."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__revoked_reason__superseded
+msgid "Replaced by a new rule"
+msgstr "Sustituida por una regla nueva"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "Revoke"
+msgstr "Revocar"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Revoke auto-approval"
+msgstr "Revocar aprobación automática"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__revoked_reason__manual
+msgid "Revoked"
+msgstr "Revocada"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__revoked_at
+msgid "Revoked At"
+msgstr "Revocada el"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__revoked_by_id
+msgid "Revoked By"
+msgstr "Revocada por"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__revoked_reason
+msgid "Revoked Reason"
+msgstr "Motivo de la revocación"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__role_at_grant
+msgid "Role At Grant"
+msgstr "Rol al concederla"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__role_at_grant__user
+msgid "Stakeholder"
+msgstr "Interesado"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_cloud_job__approval_rule_id
+msgid "The auto-approval rule that approved the call that queued the job."
+msgstr ""
+"La regla de aprobación automática que aprobó la llamada que encoló el "
+"trabajo."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_cloud_audit_log__approval_rule_id
+msgid ""
+"The auto-approval rule the row is about: the one that approved the call, or "
+"the one granted or revoked."
+msgstr ""
+"La regla de aprobación automática de la fila: la que aprobó la llamada, o la"
+" concedida o revocada."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_auto_approval__credential
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_credential__client
+msgid ""
+"The credential, as an approval binds it: 'API key #<id>' or 'client_id "
+"<id>'."
+msgstr ""
+"La credencial, tal como la vincula una aprobación: «API key #<id>» o "
+"«client_id <id>»."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "The model's mistakes."
+msgstr "Los errores del modelo."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_credential__client_name
+msgid "The name the client declares (not verified)."
+msgstr "El nombre que declara el cliente (sin verificar)."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "The next call of"
+msgstr "La siguiente llamada de"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.js:0
+msgid "The rule could not be revoked."
+msgstr "No se pudo revocar la regla."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "The rule ends on a day after today, at most %(max)s days ahead."
+msgstr ""
+"La regla termina un día posterior a hoy, como máximo dentro de %(max)s días."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "The rule lasts from 1 to %(max)s days."
+msgstr "La regla dura de 1 a %(max)s días."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "The rule was not granted."
+msgstr "La regla no se concedió."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "This panel does not allow auto-approval."
+msgstr "Este panel no permite la aprobación automática."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"Until %(date)s, %(credential)s of %(person)s runs every action that would "
+"wait for an approval, without asking."
+msgstr ""
+"Hasta el %(date)s, %(credential)s de %(person)s ejecuta sin preguntar toda "
+"acción que esperaría una aprobación."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Until (UTC)"
+msgstr "Hasta (UTC)"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Until a date…"
+msgstr "Hasta una fecha…"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_auto_approval__use_count
+msgid "Use Count"
+msgstr "Usos"
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_auto_approval__revoked_reason__user_archived
+msgid "User archived"
+msgstr "Usuario archivado"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "What the panel stops protecting you from:"
+msgstr "De qué deja de protegerle el panel:"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"Whoever holds it acts as %(person)s, without asking, until the rule ends. "
+"Revoke the rule and the credential."
+msgstr ""
+"Quien la tenga actúa como %(person)s, sin preguntar, hasta que la regla "
+"termine. Revoque la regla y la credencial."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"With %(person)s's role, that includes deleting projects, instances, servers "
+"and backups; restoring over production; commands on production instances and"
+" on servers; security settings and purging the audit log; sign-in links and "
+"backup downloads; writing to any branch and to public repositories."
+msgstr ""
+"Con el rol de %(person)s, eso incluye borrar proyectos, instancias, "
+"servidores y copias; restaurar sobre producción; comandos en instancias de "
+"producción y en servidores; ajustes de seguridad y purgar el registro de "
+"auditoría; enlaces de acceso y descargas de copias; escribir en cualquier "
+"rama y en repositorios públicos."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"a log, a mail, a file of a repository, a command's output. If the\n"
+"                            agent follows them, they run."
+msgstr ""
+"un log, un correo, un fichero de un repositorio, la salida de un comando. Si"
+" el agente las sigue, se ejecutan."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "approved"
+msgstr "aprobada"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"asks for approval\n"
+"                again. What already ran, or is queued, stays as it is."
+msgstr ""
+"vuelve a pedir aprobación. Lo que ya se ejecutó, o está en cola, se queda "
+"como está."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "auto-approved"
+msgstr "aprobada automáticamente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "the credential"
+msgstr "la credencial"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "the date you choose"
+msgstr "la fecha que elija"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "the person"
+msgstr "la persona"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
+msgid "via agent"
+msgstr "vía agente"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
+msgid "· approved"
+msgstr "· aprobada"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
+msgid "· auto-approved"
+msgstr "· aprobada automáticamente"
