@@ -4,14 +4,27 @@ The diagnosis turns a board into sentences (``metrics_diagnosis``); the
 two readings, "Queries now" and "Slow routes", ask the instance's host
 over SSH when somebody presses their button. Here the host is replaced
 at the controller's ``_read_with_script``, and what the scripts print is
-taken from their documented shape.
+taken from their documented shape; ``_read_with_script`` itself is run
+against a local bash, with only the SSH connection replaced.
 """
+import asyncio
 import json
-from unittest.mock import patch
+import os
+import pathlib
+import shutil
+import subprocess
+import tempfile
+import time
+from unittest.mock import MagicMock, patch
+
+import asyncssh
+from asyncssh.misc import _ACMWrapper
 
 from odoo.tests.common import HttpCase, TransactionCase, tagged
 
+from ..controllers._data_load import _routes_ops
 from ..controllers._data_load._routes_ops import OpsMixin
+from ..models.cloud_rate_limit import CloudRateLimit
 from ..models.cloud_instance_slow_routes import parse_slow_routes, route_key
 from ..models.metrics_diagnosis import diagnose_instance
 
@@ -36,9 +49,17 @@ _LOG = "\n".join([
     "C\t2026-11-10 09:47:00\t15\tJob 'Big import' (9) starting",
     "M\t2026-11-10 09:46:00",
     "M\t2026-11-10 09:48:00",
+    # With workers: the master kills the worker and logs no trace.
     "K\t2026-11-10 09:47:00\tWorkerHTTP (56) timeout after 1200s",
-    "+\tTraceback (most recent call last):",
-    "+\t  File \"x.py\", line 1",
+    # Without workers: the stack Odoo dumps, header and innermost frames.
+    "K\t2026-11-10 09:50:59\tDumping stacktrace of limit exceeding threads"
+    " before reloading",
+    "+\t# Thread: <Thread(odoo.service.http.request.140245, started 140245)>"
+    " (db:prod) (uid:2) (url:http://prod.example.com/web/dataset/call_kw/"
+    "stock.quant/action_apply) (qc:5210 qt:12.004 pt:118.310)",
+    "+\tFile: \"/opt/odoo/custom/src/private/stock_x/models/stock_quant.py\","
+    " line 91, in action_apply",
+    "+\t  quant._recompute_value()",
 ])
 
 
@@ -78,13 +99,23 @@ class TestSlowRoutesParsing(TransactionCase):
         # Still running comes first: it is the likeliest culprit.
         self.assertEqual(parse_slow_routes(_LOG, 15)["crons"][0]["name"], "Big import")
 
-    def test_kills_carry_the_start_of_their_trace_and_recycles_a_rate(self):
+    def test_kills_carry_the_stack_odoo_logged_and_recycles_a_rate(self):
         out = parse_slow_routes(_LOG, 15)
-        self.assertEqual(out["kills"], [{
+        self.assertEqual(out["kills"][0], {
             "at": "2026-11-10T09:47:00Z",
             "message": "WorkerHTTP (56) timeout after 1200s",
-            "trace": ["Traceback (most recent call last):", '  File "x.py", line 1'],
-        }])
+            "trace": [],
+        })
+        dumped = out["kills"][1]
+        self.assertEqual(dumped["at"], "2026-11-10T09:50:59Z")
+        self.assertEqual(len(dumped["trace"]), 3)
+        self.assertIn("(url:http://prod.example.com/web/dataset/call_kw/"
+                      "stock.quant/action_apply)", dumped["trace"][0])
+        self.assertEqual(dumped["trace"][-1], "  quant._recompute_value()")
+        # Two threads over the limit at once: ten lines of each.
+        two = "\n".join(["K\t2026-11-10 09:50:59\tDumping stacktrace"]
+                        + [f"+\tline {i}" for i in range(20)])
+        self.assertEqual(len(parse_slow_routes(two, 15)["kills"][0]["trace"]), 20)
         self.assertEqual(out["recycles"], {"count": 2, "per_hour": 8.0})
 
     def test_an_empty_log_is_an_empty_reading(self):
@@ -181,6 +212,19 @@ class TestDiagnosis(TransactionCase):
         self.assertEqual([f["code"] for f in result["findings"]],
                          ["restarted", "nothing_saturated"])
         self.assertIn("12 minutes", result["findings"][0]["text"])
+
+    def test_only_the_last_15_minutes_restarts_and_kills_count(self):
+        """The card reads the last quarter of an hour, its moments too."""
+        board, end = _board()
+        board["panels"]["events"]["markers"] = [
+            {"ts": end - 1800, "role": "oom", "name": "odoo"},
+            {"ts": end - 3000, "role": "restart", "name": "odoo"},
+        ]
+        result = diagnose_instance(board, self.instance, 2, end)
+        self.assertEqual(result["tone"], "ok")
+        self.assertEqual([f["code"] for f in result["findings"]], ["nothing_saturated"])
+        self.assertEqual((result["facts"]["oom"], result["facts"]["last_restart"]),
+                         (False, None))
 
     def test_a_window_in_the_past_gets_no_diagnosis(self):
         board, end = _board(throttled={"series": [_line("odoo", "use", 90, _END)]})
@@ -293,15 +337,49 @@ class TestReadingRoutes(HttpCase):
         self.assertIn("not deployed", res["error"])
         read.assert_not_called()
 
+    def test_an_instance_on_no_host_says_so(self):
+        """Not the proxy log's words: these readings read the database and the log."""
+        self.instance.host_id = False
+        self.authenticate("read-dev", "read-dev")
+        for route in ("/cloud/instance/db_activity", "/cloud/instance/slow_routes"):
+            with patch.object(OpsMixin, "_read_with_script", autospec=True) as read:
+                res = self._call(route, instance_id=self.instance.id)["result"]
+            self.assertEqual(res, {"ok": False, "error": (
+                "This instance is not placed on a host yet, so there is "
+                "nothing to read on it."
+            )}, route)
+            read.assert_not_called()
+
+    def test_readings_are_limited_per_user_as_the_logs_are(self):
+        self.authenticate("read-dev", "read-dev")
+        uid = self.env["res.users"].search([("login", "=", "read-dev")]).id
+        for route, bucket, words in (
+            ("/cloud/instance/db_activity", f"logs_db_activity_user:{uid}",
+             "Too many database reads recently"),
+            ("/cloud/instance/slow_routes", f"logs_slow_routes_user:{uid}",
+             "Too many log reads recently"),
+        ):
+            with patch.object(CloudRateLimit, "hit", autospec=True,
+                              return_value=False) as hit, \
+                    patch.object(OpsMixin, "_read_with_script", autospec=True) as read:
+                res = self._call(route, instance_id=self.instance.id)["result"]
+            self.assertFalse(res["ok"], route)
+            self.assertIn(words, res["error"])
+            self.assertEqual(hit.call_args.args[1], bucket)
+            self.assertEqual(hit.call_args.kwargs, {"cap_key": "rate_limit_logs_per_min"})
+            read.assert_not_called()
+
     def test_a_role_below_developer_reads_nothing(self):
         self.authenticate("read-user", "read-user")
         for route in ("/cloud/instance/db_activity", "/cloud/instance/slow_routes",
                       "/cloud/instance/access_log"):
-            with patch.object(OpsMixin, "_read_with_script", autospec=True) as read:
+            with patch.object(OpsMixin, "_read_with_script", autospec=True) as read, \
+                    patch.object(OpsMixin, "_ssh_run", autospec=True) as ssh:
                 answer = self._call(route, instance_id=self.instance.id)
             self.assertEqual(answer["error"]["data"]["name"],
                              "odoo.exceptions.AccessError", route)
             read.assert_not_called()
+            ssh.assert_not_called()
 
     def test_an_unknown_instance_is_not_found(self):
         self.authenticate("read-dev", "read-dev")
@@ -309,3 +387,99 @@ class TestReadingRoutes(HttpCase):
                       "/cloud/instance/access_log"):
             res = self._call(route, instance_id=self.instance.id + 10**6)["result"]
             self.assertEqual(res, {"ok": False, "error": "Instance not found"}, route)
+
+
+#: A script standing in for the readings': it prints its arguments, what
+#: it finds on its standard input and where its own text was written.
+_PROBE = """printf 'arg=%s\\n' "$@"
+if read -r line; then echo "stdin=$line"; else echo "stdin=closed"; fi
+echo "self=$0"
+stat -c 'mode=%a' "$0"
+"""
+
+
+class TestReadWithScript(TransactionCase):
+    """``OpsMixin._read_with_script``: the command it sends, run by bash here."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "HScript", "ip_address": "203.0.113.63", "user": "root",
+            "wildcard_domain": "hscript.example.com",
+        })
+        scripts = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, scripts)
+        (scripts / "probe.sh").write_text(_PROBE)
+        patcher = patch.object(_routes_ops, "_SCRIPTS_DIR", scripts)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = patch.object(
+            type(self.host), "ssh_connect_kwargs", autospec=True,
+            return_value={"host": "203.0.113.63", "connect_timeout": 30,
+                          "login_timeout": 30},
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _connection(self, conn, login_seconds=0):
+        """What ``asyncssh.connect()`` hands back, the login taking *login_seconds*."""
+        async def enter(*_args):
+            await asyncio.sleep(login_seconds)
+            return conn
+
+        connection = MagicMock(spec=_ACMWrapper)
+        connection.__aenter__.side_effect = enter
+        connection.__aexit__.return_value = False
+        return connection
+
+    def _bash_conn(self):
+        """A connection whose ``run`` runs the command in a local bash."""
+        def run(command, input=None, check=False):  # noqa: A002 — asyncssh's name
+            done = subprocess.run(
+                ["bash", "-c", command], input=input, capture_output=True,
+                text=True, timeout=10, check=False,
+            )
+            return MagicMock(spec=asyncssh.SSHCompletedProcess, stdout=done.stdout,
+                             stderr=done.stderr, exit_status=done.returncode)
+
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.run.side_effect = run
+        return conn
+
+    def test_arguments_are_quoted_and_the_script_runs_from_a_private_file(self):
+        conn = self._bash_conn()
+        with patch.object(asyncssh, "connect", return_value=self._connection(conn)) as connect:
+            out, err, status = OpsMixin()._read_with_script(
+                self.host, "probe.sh",
+                ["~/instances/a b", "it's; touch /tmp/ic-pwned", 15],
+            )
+        self.assertEqual((status, err), (0, ""))
+        lines = out.splitlines()
+        self.assertEqual(lines[:3], [
+            "arg=" + os.path.expanduser("~/instances/a b"),
+            "arg=it's; touch /tmp/ic-pwned",
+            "arg=15",
+        ])
+        self.assertFalse(pathlib.Path("/tmp/ic-pwned").exists())
+        # The script's own text went to its file, not to its standard input.
+        self.assertEqual(lines[3], "stdin=closed")
+        command = conn.run.call_args.args[0]
+        self.assertIn('f="$(mktemp)"', command)
+        self.assertTrue(command.endswith("</dev/null"), command)
+        self.assertEqual(conn.run.call_args.kwargs["input"], _PROBE)
+        mine = lines[4].removeprefix("self=")
+        self.assertEqual(lines[5], "mode=600")
+        self.assertFalse(pathlib.Path(mine).exists(), "the temporary file is removed")
+        # The connection and the login share the reading's deadline.
+        kwargs = connect.call_args.kwargs
+        self.assertEqual((kwargs["connect_timeout"], kwargs["login_timeout"]), (20, 20))
+
+    def test_a_slow_login_counts_against_the_deadline(self):
+        conn = self._bash_conn()
+        with patch.object(asyncssh, "connect",
+                          return_value=self._connection(conn, login_seconds=2)):
+            began = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                OpsMixin()._read_with_script(self.host, "probe.sh", [], timeout=0.3)
+        self.assertLess(time.monotonic() - began, 1.5)
+        conn.run.assert_not_called()

@@ -14,8 +14,18 @@
 #                 a request, with the timing Odoo appends to it
 #   C <stamp> <pid> <message>     a line of the scheduled actions (ir_cron)
 #   M <stamp>                     a worker recycled for memory
-#   K <stamp> <message>           a worker killed by a time limit, followed
-#   + <line>                      by up to ten lines of its trace
+#   K <stamp> <message>           a request stopped by a time limit, followed
+#   + <line>                      by where it was, when Odoo logged it
+#
+# Where a stopped request was depends on how Odoo runs. With workers, the
+# master kills a worker past its real-time limit with SIGKILL and logs
+# only "WorkerHTTP (<pid>) timeout after <n>s": there is no trace to keep.
+# Without workers (threaded mode), Odoo logs "Dumping stacktrace of limit
+# exceeding threads before reloading" and, on the next line of its log
+# (``odoo.tools.misc``), the stack of each such thread: a "# Thread:"
+# header with its database, user, URL and timings, then its frames,
+# outermost first. Of each thread the header and its last nine lines,
+# the innermost frames, are kept.
 #
 # Only the projection crosses SSH: a busy instance logs tens of thousands
 # of requests an hour, and the panel needs five fields of each.
@@ -49,10 +59,30 @@ live_tail=20000
 # Intervals are spelled out: mawk, Debian's awk, reads this.
 # shellcheck disable=SC2016  # awk's own $ fields, not the shell's
 program='
+# Odoo appends its timing (queries, SQL s, Python s, or "- - -") to
+# every line it logs; on a message it is noise.
+function untimed(text) {
+    sub(/ (-|[0-9]+) (-|[0-9.]+) (-|[0-9.]+)$/, "", text)
+    return text
+}
+# Print the header and the last nine lines of the thread being read.
+function flush(    i) {
+    if (header != "") print "+\t" header
+    for (i = (frames > 9 ? frames - 9 : 0); i < frames; i++) print "+\t" ring[i % 9]
+    header = ""
+    frames = 0
+}
 match($0, /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) {
     stamp = substr($0, RSTART, RLENGTH)
+    if (stack) flush()
+    stack = 0
     keep = (stamp >= c)
-    trace = 0
+    if (dump && keep && index($0, " odoo.tools.misc: ")) {
+        dump = 0
+        stack = 1
+        next
+    }
+    dump = 0
     if (!keep) next
     if (index($0, " werkzeug: ") && index($0, "\"")) {
         n = split($0, part, "\"")
@@ -65,7 +95,7 @@ match($0, /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-
     if (index($0, "ir_cron: ")) {
         message = $0
         sub(/^.*ir_cron: /, "", message)
-        print "C\t" stamp "\t" $3 "\t" message
+        print "C\t" stamp "\t" $3 "\t" untimed(message)
         next
     }
     if ($0 ~ /Worker \([0-9]+\) virtual memory limit \([0-9]+\) reached/) {
@@ -74,13 +104,23 @@ match($0, /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-
     }
     if ($0 ~ /\) timeout after [0-9]+s|CPU time limit|Dumping stacktrace of limit/) {
         # Past date, time, pid, level, database and logger.
-        message = substr($0, index($0, " " $6 " ") + length($6) + 2)
+        message = untimed(substr($0, index($0, " " $6 " ") + length($6) + 2))
         print "K\t" stamp "\t" message
-        trace = 10
+        dump = (index($0, "Dumping stacktrace of limit") > 0)
     }
     next
 }
-keep && trace > 0 { print "+\t" $0; trace-- }
+stack && $0 != "" {
+    line = untimed($0)
+    if (line ~ /^# Thread: /) {
+        flush()
+        header = line
+        next
+    }
+    ring[frames % 9] = line
+    frames++
+}
+END { if (stack) flush() }
 '
 
 live_is_regular() {

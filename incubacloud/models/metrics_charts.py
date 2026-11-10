@@ -62,7 +62,9 @@ _MIN_WINDOW_SECONDS = 300
 #: zoom into the oldest part of "7d" still fits.
 _MAX_LOOKBACK_SECONDS = 8 * 86400
 
-#: Seconds the central has to answer each query. The page waits on it.
+#: Seconds the central has to answer each query, asked once: the page
+#: waits on it, and a retry would double the wait of a central that is
+#: already slow (10-nov-2026).
 _CHART_QUERY_TIMEOUT = 8
 
 #: Queries of one board in flight at once. A worker of the panel must
@@ -267,7 +269,7 @@ def chart_window(range_key=None, start=None, end=None, now=None):
     if start is not None and end is not None:
         try:
             start, end = int(start), int(end)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             raise UserError(_("The chart window is not valid.")) from exc
         end = min(end, now)
         start = max(start, now - _MAX_LOOKBACK_SECONDS)
@@ -421,12 +423,13 @@ def run_board(scope, values, available, base, user, token,
             if panel["kind"] == "stat":
                 raw = promql_query(
                     base, expression, timeout=_CHART_QUERY_TIMEOUT,
-                    token=token, user=user,
+                    token=token, user=user, retries=0,
                 )
                 return {"value": shape_stat(panel, raw)}
             raw = promql_query_range(
                 base, expression, win_start, win_end, step,
                 timeout=_CHART_QUERY_TIMEOUT, token=token, user=user,
+                retries=0,
             )
             key = "markers" if panel["kind"] == "markers" else "series"
             return {key: shape_series(panel, raw, win_start, win_end)}

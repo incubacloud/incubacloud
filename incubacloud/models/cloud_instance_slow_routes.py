@@ -22,6 +22,11 @@ SLOW_ROUTE_WINDOWS = (15, 60)
 #: Rows of each table the answer carries.
 _TOP = 10
 
+#: Lines of a stopped request's trace the answer carries: the script
+#: sends ten of each thread Odoo dumped (its header and innermost
+#: frames), and a dump seldom holds more than three threads.
+_TRACE_LINES = 30
+
 #: A path segment that is a record id, a hash or a token: it would make
 #: every record its own route.
 _VOLATILE_SEGMENT = re.compile(r"^(\d+|[0-9a-f]{16,}|[0-9a-f-]{32,36})$")
@@ -148,7 +153,7 @@ def parse_slow_routes(raw, minutes):
             recycles += 1
         elif kind == "K" and len(cols) >= 2:
             kills.append({"at": _iso(cols[0]), "message": cols[1], "trace": []})
-        elif kind == "+" and kills and len(kills[-1]["trace"]) < 10:
+        elif kind == "+" and kills and len(kills[-1]["trace"]) < _TRACE_LINES:
             kills[-1]["trace"].append(rest)
 
     table = []
@@ -222,13 +227,17 @@ class CloudInstance(models.Model):
             deployed, so it has no log nor database to read.
         """
         self.ensure_one()
-        host = self._require_access_log_host()
+        if not self.host_id:
+            raise UserError(_(
+                "This instance is not placed on a host yet, so there is "
+                "nothing to read on it."
+            ))
         if not self.deployed:
             raise UserError(_(
                 "This instance is not deployed, so there is nothing to read "
                 "on its host yet."
             ))
-        return host
+        return self.host_id
 
     @staticmethod
     def _now_iso():
