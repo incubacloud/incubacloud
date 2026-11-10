@@ -8,6 +8,7 @@ from odoo.addons.incubacloud.models._odoo_versions import (
     POSTGRES_MAJORS,
 )
 from odoo.addons.incubacloud.models._repo_requirements import _normalize_url
+from odoo.addons.incubacloud.models.cloud_repo_mixin import repo_url_key
 
 from ..protocol.tool_spec import (
     ToolSpec,
@@ -181,23 +182,25 @@ _UPDATE_INSTANCE = obj(
 )
 
 
-def _deployed_code(url, branch, commit_sha):
+def _deployed_code(env, url, branch, commit_sha):
     """Return what a repository line deploys, as two spellings of it compare.
 
     The branch and the commit as ``/cloud/save_instance`` stores them: an
     empty branch is ``main``.
 
+    :param env: an Odoo environment
     :param str url: the repository's address, in any spelling the panel takes
     :param str branch: the branch
     :param str commit_sha: the pinned commit; empty follows the branch
-    :return: ``(owner/name, branch, commit)``; the address as given when it
-        is not a GitHub repository's
+    :return: ``(owner/name, branch, commit)``; for a repository that is
+        not GitHub's, the address every spelling of it shares
+        (``repo_url_key``)
     :rtype: tuple
     """
     url = (url or "").strip()
     key = _repo_key(url)
     return (
-        "/".join(key) if key else url,
+        "/".join(key) if key else repo_url_key(env, url) or url,
         (branch or "main").strip() or "main",
         (commit_sha or "").strip(),
     )
@@ -590,7 +593,10 @@ class McpToolsOperate(models.AbstractModel):
             instance,
             [
                 _deployed_code(
-                    repo["url"], repo.get("branch"), repo.get("commit_sha")
+                    self.env,
+                    repo["url"],
+                    repo.get("branch"),
+                    repo.get("commit_sha"),
                 )
                 for repo in repos
                 if (repo.get("url") or "").strip()
@@ -604,8 +610,10 @@ class McpToolsOperate(models.AbstractModel):
         The repositories the actions take from the project (``pull``) and
         the conflicts the project's line wins give the instance their
         branch and pinned commit: asked as :meth:`_confirm_update_instance`
-        asks. Dependencies, the instance's lines copied to the project and
-        a staging ask nothing.
+        asks. When the project has several lines of one repository, the
+        first is the one the actions apply, as ``apply_sync`` takes it.
+        Dependencies, the instance's lines copied to the project and a
+        staging ask nothing.
 
         :param dict args: the validated arguments: ``instance_id`` and ``actions``
         :return: what the user approves, or None
@@ -615,9 +623,10 @@ class McpToolsOperate(models.AbstractModel):
         if not isinstance(repo_actions, dict):
             return None
         instance = self.env["cloud.instance"].browse(args["instance_id"]).exists()
-        project_lines = {
-            _normalize_url(line.url): line for line in instance.project_id.repo_ids
-        }
+        # The line apply_sync takes for an address: the first of the project's.
+        project_lines = {}
+        for line in instance.project_id.repo_ids:
+            project_lines.setdefault(_normalize_url(line.url), line)
         taken = [url for url in repo_actions.get("pull") or () if isinstance(url, str)]
         conflicts = repo_actions.get("conflicts")
         if isinstance(conflicts, dict):
@@ -631,7 +640,11 @@ class McpToolsOperate(models.AbstractModel):
         for url in taken:
             line = project_lines.get(_normalize_url(url))
             if line:
-                codes.append(_deployed_code(line.url, line.branch, line.commit_sha))
+                codes.append(
+                    _deployed_code(
+                        self.env, line.url, line.branch, line.commit_sha
+                    )
+                )
         return self._ask_production_code(instance, codes)
 
     @api.model
@@ -666,7 +679,7 @@ class McpToolsOperate(models.AbstractModel):
                 instance,
                 [
                     (
-                        *_deployed_code(line.url, line.branch, "")[:2],
+                        *_deployed_code(self.env, line.url, line.branch, "")[:2],
                         _BRANCH_HEAD if freeze else "",
                     )
                     for line in lines.filtered(
@@ -694,7 +707,7 @@ class McpToolsOperate(models.AbstractModel):
         if instance.environment != "production":
             return None
         held = {
-            _deployed_code(line.url, line.branch, line.commit_sha)
+            _deployed_code(self.env, line.url, line.branch, line.commit_sha)
             for line in instance.repo_ids
         }
         new = [code for code in dict.fromkeys(codes) if code not in held]

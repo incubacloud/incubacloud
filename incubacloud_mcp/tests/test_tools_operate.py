@@ -529,6 +529,55 @@ class TestProductionCodeAsks(PanelFixtureMixin, McpUsersMixin, TransactionCase):
         )
         self.assertIsNone(self._ask(self.production, {"repos": []}))
 
+    def test_another_spelling_of_a_provider_s_repository_asks_nothing(self):
+        """A GitLab line of production, sent in the spelling the panel stores
+        or in another: the same repository."""
+        self.startPatcher(
+            patch.object(
+                type(self.env["cloud.git.provider"]),
+                "_network_policy",
+                autospec=True,
+                return_value="any",
+            )
+        )
+        self.env["cloud.git.provider"].sudo().create(
+            {"name": "GitLab.com", "base_url": "https://gitlab.com"}
+        )
+        line = (
+            self.env["cloud.instance.repo"]
+            .with_context(skip_apply_requirements=True)
+            .create(
+                {
+                    "instance_id": self.production.id,
+                    "url": "https://gitlab.com/Acme/Odoo-Addons",
+                    "branch": "main",
+                }
+            )
+        )
+        for url in (
+            "https://gitlab.com/acme/odoo-addons",
+            "https://gitlab.com/ACME/Odoo-Addons.git/",
+            "git@gitlab.com:acme/odoo-addons.git",
+        ):
+            with self.subTest(url=url):
+                self.assertIsNone(
+                    self._ask(
+                        self.production,
+                        {
+                            "repos": self._repo()
+                            + [{"id": line.id, "url": url, "branch": "main"}]
+                        },
+                    )
+                )
+        message = self._ask(
+            self.production,
+            {
+                "repos": self._repo()
+                + [{"id": line.id, "url": line.url, "branch": "agent/x"}]
+            },
+        )
+        self.assertIn('"agent/x"', message)
+
     def test_production_s_other_fields_ask_nothing(self):
         self.assertIsNone(self._ask(self.production, {"auto_update": True}))
 
@@ -627,6 +676,26 @@ class TestProductionConfigAndFreezeAsk(
             self.production, {"pull": ["https://github.com/acme/z"]}
         )
         self.assertIn('"acme/z", branch "main", commit "' + "b" * 40 + '"', message)
+
+    def test_the_first_line_of_an_address_is_the_one_applied(self):
+        """Two of the project's lines name one repository; apply_sync takes
+        the first: it asks when that one is new code for production, and
+        not when only the second is."""
+        self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True
+        ).create(
+            {
+                "project_id": self.project.id,
+                "url": "https://github.com/acme/x",
+                "branch": "main",
+            }
+        )
+        conflict = {"conflicts": {"https://github.com/acme/x": "project"}}
+        message = self._apply(self.production, conflict)
+        self.assertIn('"acme/x", branch "19.0"', message)
+        self.project_line.sequence = 99
+        self.project.invalidate_recordset(["repo_ids"])
+        self.assertIsNone(self._apply(self.production, conflict))
 
     def test_production_s_own_side_and_staging_ask_nothing(self):
         self.assertIsNone(

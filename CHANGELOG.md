@@ -43,8 +43,9 @@ webhook. `incubacloud_assistant` 1.0.3 comes with it.
   repository, branch or pinned commit none of its lines holds, and the
   approval lists them; so does `apply_config` when it takes them from the
   project, and `freeze_repos` before it pins or releases the commit of a
-  production's line. The same lines in another spelling, a line taken out
-  and any change on a staging ask nothing. `harden_host` asks before it
+  production's line. The same lines in another spelling, a GitHub
+  repository's or a Git provider's, a line taken out and any change on a
+  staging ask nothing. `harden_host` asks before it
   applies the hardening and the full setup it chains, with the words
   `run_host_action` uses for those jobs; checking what it would change
   asks nothing. Spanish translation included.
