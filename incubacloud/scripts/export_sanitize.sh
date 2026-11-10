@@ -32,9 +32,10 @@ archive="$(ic_expand_home "$3")"
 #    override that carries the platform's resource limits and the
 #    continuous recovery agent's ``.walg/`` (wal-g, the host's libraries it
 #    runs with, the logs of past restores). Nor what the platform writes
-#    for the image's build: the trees 8.0 to 10.0 fetch into
-#    ``odoo/custom/src`` (every directory there but ``private``; a
-#    developer clones them with ``invoke git-aggregate``), their
+#    for the image's build: the trees fetched into ``odoo/custom/src``
+#    before it (every directory there but ``private``; a developer clones
+#    them with ``invoke git-aggregate``, from the repos.yaml exported with
+#    every line), the step's own files there (``.ic-*``), their
 #    Dockerfile.dockerignore, and the git settings and CA certificates of
 #    the instance's Git servers.
 ic_log "copying $inst_dir to a staging area"
@@ -43,6 +44,7 @@ mkdir -p "$staging"
 rsync -a \
     --include='/odoo/custom/src/private/' \
     --exclude='/odoo/custom/src/*/' \
+    --exclude='/odoo/custom/src/.ic-*' \
     --exclude='/odoo/Dockerfile.dockerignore' \
     --exclude='/odoo/custom/build.d/060-incubacloud-git' \
     --exclude='/odoo/custom/incubacloud-git' \

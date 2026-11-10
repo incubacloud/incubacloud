@@ -10,7 +10,7 @@
 #   deploy.sh set-system-params  <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   deploy.sh record-heads       <dir> <spec_file> [helper_image]
 #   deploy.sh git-trust          <dir> <spec_file>
-#   deploy.sh fetch-repos        <dir> <spec_file> <helper_image> [retry_wait]
+#   deploy.sh fetch-repos        <dir> <spec_file> <helper_image> <series> [retry_wait] [budget]
 #   deploy.sh debian-archive     <dir>
 #
 # The executor keeps each deploy step as its own labelled command (so
@@ -44,24 +44,43 @@ HEADS_TIMEOUT=20
 # IC_DB_WAIT_SECONDS overrides it, so a test need not wait a minute.
 DB_WAIT_SECONDS="${IC_DB_WAIT_SECONDS:-60}"
 
-# Seconds one repository's download may take in fetch-repos: Odoo 8.0's
-# tree at depth 1 is hundreds of MB, and a network failure must not hold
-# the job (8-nov-2026). IC_FETCH_TIMEOUT overrides it, for the tests.
+# Seconds one repository's download may take in fetch-repos: Odoo's tree
+# at depth 1 is hundreds of MB, and a network failure must not hold the
+# job (8-nov-2026). IC_FETCH_TIMEOUT overrides it, for the tests.
 FETCH_TIMEOUT="${IC_FETCH_TIMEOUT:-600}"
 
-# The git helper image (``alpine/git`` by digest, the executor's
-# GIT_HELPER_IMAGE), for record-heads with a pinned address and for
-# fetch-repos. Empty: no helper container is run.
+# Seconds the whole of fetch-repos may take, unless the executor passes
+# its own (its _FETCH_BUDGET_S): each repository has FETCH_TIMEOUT or
+# what is left, and the step's timeout is a minute more as a second
+# barrier (10-nov-2026). IC_FETCH_BUDGET overrides it, for the tests.
+FETCH_BUDGET="${IC_FETCH_BUDGET:-1200}"
+
+# Where fetch-repos keeps the trees it downloads, one per repository and
+# commit, for every instance of the host's account: each instance's
+# ``odoo/custom/src/<alias>`` is a copy made of hard links to one, so
+# twenty instances at the same commit of Odoo hold one tree of it on the
+# disk, not twenty (10-nov-2026: a host of 25 panels had 26 GB free, and
+# Odoo 19.0's tree is 1.2 GB). The daily prune removes the trees no
+# instance links (host_maintenance.yml). IC_GIT_TREES overrides it, for
+# the tests.
+IC_TREES="${IC_GIT_TREES:-$HOME/.incubacloud/git-trees}"
+
+# The git helper image (the executor's GIT_HELPER_IMAGE, doodba's by
+# digest), for record-heads with a pinned address and for fetch-repos,
+# which run it under its local, protected tag (ic_git_helper_tag). Empty:
+# no helper container is run.
 GIT_HELPER_IMAGE=""
 
 # Set by fetch-repos: every git call goes through the helper container,
-# with redirects refused for GitHub too (8.0 to 10.0).
+# with redirects refused for GitHub too.
 IC_GIT_ALL_IN_CONTAINER=""
 
 # The helper container running now, removed on exit, hang-up or
-# termination; and the temporary directories to remove on exit.
+# termination; the temporary directories to remove on exit; and the
+# ``-e`` variables of the next helper container.
 IC_GIT_CONTAINER=""
 IC_TMP_DIRS=()
+IC_GIT_ENV=()
 
 # A label naming the instance directory's job, on every helper container:
 # the next run of a step on that directory removes those a killed run left.
@@ -119,25 +138,36 @@ ic_git_reap() {
 
 # Run the helper image with its own HOME, and print what it prints.
 #
-# Usage: ic_git_container <seconds> <home> <workdir|-> <add_host|-> <entry> [args...]
-#   <home>      an owner-only directory, mounted read-only as git's HOME
-#   <workdir>   mounted read-write as /w and made the working directory
-#   <add_host>  ``host:ip`` pinned in the container's /etc/hosts
-#   <entry>     the image's command: git or sh
+# Usage: ic_git_container <seconds> <home> <workdir|-> <add_hosts|-> <entry> [args...]
+#   <home>       an owner-only directory, mounted read-only as git's HOME
+#   <workdir>    mounted read-write as /w and made the working directory
+#   <add_hosts>  ``host:ip`` pinned in the container's /etc/hosts, several
+#                separated by spaces
+#   <entry>      the image's command: git or sh
+# The variables of IC_GIT_ENV (``NAME=value``) are set in the container:
+# never a credential, as ``docker inspect`` shows them.
 #
 # Run in the background and waited for, so a hang-up or a termination
 # reaches the trap at once, not when the download ends. Returns the
 # command's status, 124 (137) when it ran out of time, in which case the
 # container is removed: killing ``docker run`` does not stop it.
 ic_git_container() {
-    local secs="$1" home="$2" work="$3" add_host="$4" entry="$5" name rc=0
+    local secs="$1" home="$2" work="$3" add_hosts="$4" entry="$5" name rc=0
+    local pin var
     shift 5
     name="ic-git-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
     local args=(run --rm --name "$name" --label "ic.job=$IC_JOB_TOKEN"
         --user "$(id -u):$(id -g)" -v "$home:/h:ro" -e HOME=/h
         -e GIT_CONFIG_NOSYSTEM=1 -e GIT_TERMINAL_PROMPT=0)
+    for var in "${IC_GIT_ENV[@]}"; do
+        args+=(-e "$var")
+    done
     [ "$work" = - ] || args+=(-v "$work:/w" -w /w)
-    [ "$add_host" = - ] || args+=(--add-host "$add_host")
+    if [ "$add_hosts" != - ]; then
+        for pin in $add_hosts; do
+            args+=(--add-host "$pin")
+        done
+    fi
     args+=(--entrypoint "$entry" "$GIT_HELPER_IMAGE" "$@")
     IC_GIT_CONTAINER="$name"
     timeout -k 5 "$secs" docker "${args[@]}" &
@@ -149,23 +179,46 @@ ic_git_container() {
     return "$rc"
 }
 
-# Write git's config for one repository into <home>, and print the URL
-# without its credentials.
+# Start git's config in <home>: what holds for every URL of the call.
+# Redirects are refused for every server when every git call runs in the
+# helper container (fetch-repos), and git has the identity a merge needs
+# (``rebuild.sh``'s own).
 #
-# Usage: ic_git_home <home> <url> <cred_authority> <ca_file> <in_container>
+# Usage: ic_git_home_begin <home>
+ic_git_home_begin() {
+    local home="$1"
+    rm -f "${home:?}/.gitconfig" "$home"/ca-*.pem
+    (
+        umask 077
+        {
+            printf '[user]\n\tname = IncubaCloud\n\temail = system@incubacloud\n'
+            if [ -n "$IC_GIT_ALL_IN_CONTAINER" ]; then
+                printf '[http]\n\tfollowRedirects = false\n'
+            fi
+        } > "$home/.gitconfig"
+    )
+}
+
+# Add to <home>'s git config what one URL needs, and print the URL without
+# its credentials.
+#
+# Usage: ic_git_home_add <home> <url> <cred_authority> <ca_file> <in_container>
 #
 # The credentials of an https URL travel as an ``Authorization`` header in
 # that HOME's config, not on git's command line, which every user of the
-# host can read; one HOME per repository, so a container sees its own
-# token alone. They go only to <cred_authority> (empty: github.com),
+# host can read, nor in repos.yaml; one HOME per repository, so a
+# container sees its own token alone. The header is scoped to that
+# repository's URL (10-nov-2026: to the whole server before), so neither
+# another repository of the same server nor a redirect or a submodule
+# gets it. Credentials go only to <cred_authority> (empty: github.com),
 # exactly, over https, and not at all with a ? # or \ before the path
-# (5-nov-2026); off GitHub, a URL without them must name that
-# server over https too. Off GitHub (and for every URL in fetch-repos)
-# redirects are refused, and a server's own CA (<ca_file>) is trusted for
-# its URLs alone. Returns 1, writing nothing, for a URL refused.
-ic_git_home() {
+# (5-nov-2026); off GitHub, a URL without them must name that server over
+# https too. Off GitHub, redirects are refused for that server, and its
+# own CA (<ca_file>) is trusted for its URLs alone. Returns 1, writing
+# nothing, for a URL refused.
+ic_git_home_add() {
     local home="$1" url="$2" cred_authority="${3:-github.com}" ca_file="$4"
-    local in_container="$5" auth="" authority bare ca_ref=""
+    local in_container="$5" auth="" authority bare ca_ref="" user_info pem
     authority="${url#*://}"
     authority="${authority%%/*}"
     bare="${authority##*@}"
@@ -183,18 +236,23 @@ ic_git_home() {
             || "$authority" == *[?#\\]* ]]; then
         return 1
     fi
-    # Percent-encoded credentials stay in the URL, as git needs them
-    # decoded in a header and this does not decode (5-nov-2026).
-    if [[ "$url" =~ ^(https://)([^/@]+)@(.+)$ ]] \
-        && [[ "${BASH_REMATCH[2]}" != *%* ]]; then
-        auth="$(printf '%s' "${BASH_REMATCH[2]}" | base64 -w0)"
+    if [[ "$url" =~ ^(https://)([^/@]+)@(.+)$ ]]; then
+        # Percent-encoded credentials are decoded, as git would before
+        # sending them; the header carries them in base64.
+        user_info="${BASH_REMATCH[2]}"
         url="${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
+        auth="$(printf '%b' "${user_info//%/\\x}" | base64 -w0)"
     fi
-    rm -f "${home:?}/ca.pem"
+    # The URL names a section of git's config: nothing in it may end the
+    # section's quotes or line.
+    if [ -n "$auth" ] && [[ ! "$url" =~ ^https://[^[:space:]\"\\]+$ ]]; then
+        return 1
+    fi
     if [ -n "$ca_file" ]; then
         if [ -n "$in_container" ]; then
-            install -m 0600 "$ca_file" "$home/ca.pem"
-            ca_ref=/h/ca.pem
+            pem="ca-${cred_authority//[^A-Za-z0-9.-]/_}.pem"
+            install -m 0600 "$ca_file" "$home/$pem"
+            ca_ref="/h/$pem"
         else
             ca_ref="$ca_file"
         fi
@@ -203,13 +261,9 @@ ic_git_home() {
         umask 077
         {
             if [ -n "$auth" ]; then
-                # Scoped to the server it is for, never global: a
-                # redirect or a submodule elsewhere does not get it.
-                printf '[http "https://%s/"]\n\textraHeader = Authorization: Basic %s\n' \
-                    "$cred_authority" "$auth"
-            fi
-            if [ -n "$IC_GIT_ALL_IN_CONTAINER" ]; then
-                printf '[http]\n\tfollowRedirects = false\n'
+                # Scoped to the repository it is for, never global.
+                printf '[http "%s"]\n\textraHeader = Authorization: Basic %s\n' \
+                    "$url" "$auth"
             fi
             if [ "$cred_authority" != github.com ]; then
                 printf '[http "https://%s/"]\n\tfollowRedirects = false\n' \
@@ -218,9 +272,18 @@ ic_git_home() {
                     printf '\tsslCAInfo = %s\n' "$ca_ref"
                 fi
             fi
-        } > "$home/.gitconfig"
+        } >> "$home/.gitconfig"
     )
     printf '%s\n' "$url"
+}
+
+# Write git's config for one URL into <home>, and print the URL without
+# its credentials: ic_git_home_begin, then ic_git_home_add.
+#
+# Usage: ic_git_home <home> <url> <cred_authority> <ca_file> <in_container>
+ic_git_home() {
+    ic_git_home_begin "$1"
+    ic_git_home_add "$@"
 }
 
 # Split one line of a heads spec on its tabs into IC_COLS, keeping empty
@@ -417,86 +480,215 @@ ic_reserved_alias() {
     return 1
 }
 
-# Write <sha> as <src>'s marker for <alias>, replacing whatever entry is
-# there (a rename replaces a link, never writes through it); the
-# directory is made again when it is not a plain one.
+# Make <src>'s marker for <alias> a hard link to <head>, the marker of a
+# tree of the host's cache, replacing whatever entry is there (a rename
+# replaces a link, never writes through it); the directory is made again
+# when it is not a plain one. The link is what tells the daily prune the
+# cached tree is in use; on another file system it is a copy.
 #
-# Usage: ic_marker_write <src> <alias> <sha>
-ic_marker_write() {
+# Usage: ic_marker_link <src> <alias> <head>
+ic_marker_link() {
     local dir tmp
     dir="$(ic_heads_dir "$1")"
     ic_heads_dir_unlink "$1"
     mkdir -p "$dir"
     tmp="$(mktemp "$dir/.tmp-XXXXXXXX")"
-    printf '%s\n' "$3" > "$tmp"
+    ln -f "${3:?}" "$tmp" 2>/dev/null || cp -f "$3" "$tmp"
     mv -fT "$tmp" "$dir/${2:?}"
 }
 
-# Download one repository at one commit into <src>/<alias>, through a
-# temporary tree in the same file system that is renamed into place as
-# the last step. Sets IC_FETCHED to the commit that arrived (a variable:
-# see remote_ref_head).
+# Print the name of the host's cached tree for <lines>: their SHA-256.
+# The lines are each merge's URL, without its credentials, and commit, and
+# with several merges each one's ref too, so that one name always comes
+# with one marker. The same repository at the same commits is the same
+# tree, whatever instance or alias asks for it; the cache is the host
+# account's, which deploys for one panel only.
 #
-# Usage: ic_fetch_one <src> <alias> <ref> <url> <cred_authority> <ca_file> <pin_ip> <sha>
-#   <sha>  the head resolved for it; ``unknown-…`` fetches <ref> by name
+# Usage: ic_tree_key <lines>
+ic_tree_key() {
+    printf '%s' "$1" | sha256sum | cut -c1-64
+}
+
+# Return whether <entry> is a complete cached tree whose marker says
+# <marker>: a plain ``tree`` directory and a plain ``head`` file.
 #
-# The tree that was there stays until the new one is complete; its
-# marker (ic_heads_dir) goes first and the new one is written last, so a
-# run cut anywhere leaves no tree with a marker it does not match.
-# Returns 0, or the download's status (3: the commit that arrived is not
-# <sha>; 4: the server redirects; 5: the URL is refused, see ic_git_home;
-# 124 or 137: out of time).
-ic_fetch_one() {
-    local src="$1" alias="$2" ref="$3" url="$4" cred_authority="$5"
-    local ca_file="$6" pin_ip="$7" sha="$8" tmp home add_host=- target expect
-    local got rc=0 out_file
-    IC_FETCHED=""
-    ic_git_tmpdir
-    home="$IC_TMP"
-    url="$(ic_git_home "$home" "$url" "${cred_authority:-github.com}" "$ca_file" 1)" \
-        || return 5
+# Usage: ic_tree_ready <entry> <marker>
+ic_tree_ready() {
+    local entry="$1"
+    [ -d "$entry" ] && [ ! -L "$entry" ] \
+        && [ -d "$entry/tree" ] && [ ! -L "$entry/tree" ] \
+        && [ -f "$entry/head" ] && [ ! -L "$entry/head" ] \
+        && [ "$(head -c 64 "$entry/head")" = "$2" ]
+}
+
+# Put the cached tree <entry> in place as <src>/<alias>, a copy made of
+# hard links (a plain copy on another file system), through a temporary
+# tree in <src> renamed into place as the last step; then link its
+# marker. The tree that was there stays until the new one is complete;
+# its marker goes first, so a run cut anywhere leaves no tree with a
+# marker it does not match. The trees are never written in place: a
+# write would reach every instance that links them.
+#
+# Usage: ic_tree_link <src> <alias> <entry>
+ic_tree_link() {
+    local src="$1" alias="$2" entry="$3" tmp
     tmp="${src:?}/.ic-tmp-${alias:?}"
+    IC_TMP_DIRS+=("$tmp")
     rm -rf "${tmp:?}"
-    mkdir -p "$tmp"
-    [ -z "$pin_ip" ] || add_host="${cred_authority%:*}:$pin_ip"
-    target="$sha"
-    expect="$sha"
-    if [[ "$sha" == unknown-* ]]; then
-        target="$ref"
-        expect=""
-    fi
-    out_file="$home/.ic-out"
-    # shellcheck disable=SC2016  # expanded by the container's shell
-    ic_git_container "$FETCH_TIMEOUT" "$home" "$tmp" "$add_host" sh -c '
-        set -e
-        git init -q .
-        if ! git -c credential.helper= -c protocol.version=2 \
-            fetch -q --depth=1 --no-tags -- "$1" "$2" 2>.ic-err; then
-            grep -qE "error: 30[1278]" .ic-err && exit 4
-            exit 2
-        fi
-        head="$(git rev-parse FETCH_HEAD)"
-        [ -z "$3" ] || [ "$head" = "$3" ] || exit 3
-        git checkout -q --detach FETCH_HEAD
-        rm -rf .git .ic-err
-        echo "$head"
-    ' sh "$url" "$target" "$expect" > "$out_file" 2>/dev/null || rc=$?
-    got="$(cat "$out_file")"
-    rm -f "$out_file"
-    if [ "$rc" -eq 0 ] && [ -z "$got" ]; then
-        rc=2
-    fi
-    if [ "$rc" -ne 0 ]; then
+    # Its marker's change time keeps the daily prune off it meanwhile.
+    touch "$entry/head"
+    if ! cp -al "$entry/tree" "$tmp" 2>/dev/null; then
         rm -rf "${tmp:?}"
-        return "$rc"
+        cp -a "$entry/tree" "$tmp"
     fi
     rm -f "$(ic_heads_dir "$src")/${alias:?}"
     if [ -e "$src/$alias" ] || [ -L "$src/$alias" ]; then
         rm -rf "${src:?}/${alias:?}"
     fi
     mv "$tmp" "$src/$alias"
-    ic_marker_write "$src" "$alias" "$got"
-    IC_FETCHED="$got"
+    ic_marker_link "$src" "$alias" "$entry/head"
+}
+
+# Print <url> without its user and token.
+#
+# Usage: ic_strip_userinfo <url>
+ic_strip_userinfo() {
+    local url="$1"
+    if [[ "$url" =~ ^(https?://)[^/@]*@(.*)$ ]]; then
+        url="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+    fi
+    printf '%s' "$url"
+}
+
+# Undo fetch-repos in <dir>: remove the trees it put in place (those with
+# a marker, never through a link), the markers, its temporary trees, the
+# build's ignore file and its seconds. Nothing to do on an instance that
+# never fetched.
+#
+# Usage: ic_unfetch <dir>
+ic_unfetch() {
+    local src="$1/odoo/custom/src" heads_dir marker name
+    heads_dir="$(ic_heads_dir "$src")"
+    ic_heads_dir_unlink "$src"
+    if [ -d "$heads_dir" ]; then
+        for marker in "$heads_dir"/*; do
+            [ -e "$marker" ] || continue
+            name="${marker##*/}"
+            if [[ "$name" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] \
+                && ! ic_reserved_alias "$name" \
+                && [ -d "$src/$name" ] && [ ! -L "$src/$name" ]; then
+                rm -rf "${src:?}/${name:?}"
+            fi
+        done
+        rm -rf "${heads_dir:?}"
+        ic_log "removed the repositories fetched on the host: the image clones them"
+    fi
+    for marker in "$src"/.ic-tmp-*; do
+        [ -e "$marker" ] || [ -L "$marker" ] || continue
+        rm -rf "${marker:?}"
+    done
+    rm -f "$1/odoo/Dockerfile.dockerignore" "$src/.ic-fetch-seconds"
+}
+
+# Download one repository of the spec, every merge of it, into a new tree
+# of the host's cache (IC_TREES), with doodba's git-aggregator in the
+# helper container: the command doodba's ``autoaggregate`` runs in the
+# image, limited to that alias, from a copy of the instance's repos.yaml
+# (no credential in it). Sets IC_FETCHED to the commit the tree is at and
+# IC_ENTRY_TMP to the new entry, not in the cache yet (variables: see
+# remote_ref_head).
+#
+# Usage: ic_fetch_tree <src> <alias> <seconds>
+#   reads ROWS, the spec's lines, and IDX_OF[<alias>], those of <alias>
+#
+# The credential of each merge's URL goes in the container's HOME
+# (ic_git_home_add), the only place it is; the files are made with umask
+# 0027, the modes doodba's ``800-permissions`` leaves as they are, so the
+# image's build does not copy the tree again into its layer; no ``.git``
+# is kept. git-aggregator's output goes to a file, of which the last lines
+# are shown when it fails: its URLs carry no credential, and the header
+# is never printed.
+# Returns 0, or the download's status (2: it failed; 3: the commit that
+# arrived is not the one pinned; 4: the server redirects; 5: a URL is
+# refused, see ic_git_home_add; 124 or 137: out of time).
+ic_fetch_tree() {
+    local src="$1" alias="$2" secs="$3" home tmp add_hosts="" i rc=0
+    local url cred_authority ca_file pin_ip expect="" idx=()
+    IC_FETCHED=""
+    IC_ENTRY_TMP=""
+    read -ra idx <<< "${IDX_OF[$alias]}"
+    ic_git_tmpdir
+    home="$IC_TMP"
+    ic_git_home_begin "$home"
+    for i in "${idx[@]}"; do
+        ic_split_tabs "${ROWS[$i]}"
+        url="${IC_COLS[3]}" cred_authority="${IC_COLS[4]:-github.com}"
+        ca_file="${IC_COLS[5]}" pin_ip="${IC_COLS[6]}"
+        ic_git_home_add "$home" "$url" "$cred_authority" "$ca_file" 1 \
+            >/dev/null || return 5
+        [ -z "$pin_ip" ] || add_hosts+=" ${cred_authority%:*}:$pin_ip"
+        if [ "${#idx[@]}" -eq 1 ] && [ "${IC_COLS[1]}" = pin ]; then
+            expect="${IC_COLS[2]}"
+        fi
+    done
+    add_hosts="${add_hosts# }"
+    # The account's own: private repositories' code is kept there.
+    (umask 077 && mkdir -p "$IC_TREES")
+    tmp="$(mktemp -d "$IC_TREES/.tmp-$IC_JOB_TOKEN-XXXXXXXX")"
+    IC_TMP_DIRS+=("$tmp")
+    cp "$src/repos.yaml" "$tmp/repos.yaml"
+    IC_GIT_ENV=("ODOO_VERSION=$SERIES" DEPTH_DEFAULT=1 DEPTH_MERGE=100)
+    # shellcheck disable=SC2016  # expanded by the container's shell
+    ic_git_container "$secs" "$home" "$tmp" "${add_hosts:--}" sh -c '
+        set -e
+        umask 0027
+        if ! gitaggregate --no-color --expand-env --config repos.yaml \
+            --log-level INFO --jobs 1 -d "$1" aggregate >.ic-log 2>&1; then
+            grep -qE "error: 30[1278]" .ic-log && exit 4
+            exit 2
+        fi
+        head="$(git -C "$1" rev-parse HEAD)"
+        [ -z "$2" ] || [ "$head" = "$2" ] || exit 3
+        rm -rf "$1/.git"
+        echo "$head" > .ic-head
+    ' sh "$alias" "$expect" >/dev/null 2>&1 || rc=$?
+    IC_GIT_ENV=()
+    # The credential's HOME goes as soon as the container has.
+    rm -rf "${home:?}"
+    if [ "$rc" -eq 0 ]; then
+        IC_FETCHED="$(head -c 64 "$tmp/.ic-head" 2>/dev/null || true)"
+        [ -n "$IC_FETCHED" ] && [ -d "$tmp/$alias" ] || rc=2
+    fi
+    if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -eq 2 ] && [ -f "$tmp/.ic-log" ]; then
+            tail -n 15 "$tmp/.ic-log" | grep -vi 'authorization' >&2 || true
+        fi
+        rm -rf "${tmp:?}"
+        return "$rc"
+    fi
+    mkdir "$tmp/entry"
+    mv "$tmp/$alias" "$tmp/entry/tree"
+    IC_ENTRY_TMP="$tmp/entry"
+}
+
+# Move the downloaded entry <new> into the host's cache as <key>, with
+# <marker> as its marker, and print where the cached tree is. Another job
+# that put the same tree there first wins: <new> is then dropped.
+#
+# Usage: ic_tree_store <new> <key> <marker>
+ic_tree_store() {
+    local new="$1" entry="$IC_TREES/$2"
+    printf '%s\n' "$3" > "$new/head"
+    if ic_tree_ready "$entry" "$3"; then
+        rm -rf "${new:?}"
+    elif [ -e "$entry" ] || [ -L "$entry" ]; then
+        # An entry cut short or not the cache's: replaced.
+        rm -rf "${entry:?}"
+        mv -T "$new" "$entry"
+    elif ! mv -T "$new" "$entry" 2>/dev/null; then
+        rm -rf "${new:?}"
+    fi
+    printf '%s' "$entry"
 }
 
 case "$op" in
@@ -686,6 +878,17 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         # running reads its token from the HOME it mounts.
         [ -z "$GIT_HELPER_IMAGE" ] || ic_git_reap
         ic_git_sweep
+        # An instance back from fetching its repositories on the host
+        # (the series named in incubacloud.repos_in_image_series): its
+        # trees, their markers and the build's ignore file go, or the
+        # image's gitaggregate would find directories without ``.git``
+        # where it clones, and fail.
+        ic_unfetch "$dir"
+        if [ -n "$GIT_HELPER_IMAGE" ]; then
+            ic_git_helper_prepare "$GIT_HELPER_IMAGE" \
+                || ic_die "could not prepare the git helper image"
+            GIT_HELPER_IMAGE="$(ic_git_helper_tag "$GIT_HELPER_IMAGE")"
+        fi
         ic_resolve_heads "$spec" "$heads"
         # Rewritten by every build: kept out of the instance's history.
         ic_git_exclude "$dir" odoo/custom/incubacloud-heads.txt
@@ -752,21 +955,31 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         ;;
 
     fetch-repos)
-        ic_require_args 2 "$#" \
-            "deploy.sh fetch-repos <dir> <spec_file> <helper_image> [retry_wait]"
+        ic_require_args 3 "$#" \
+            "deploy.sh fetch-repos <dir> <spec_file> <helper_image> <series> [retry_wait] [budget]"
         spec="$1"
         GIT_HELPER_IMAGE="$2"
-        retry_wait="${3:-60}"
-        # 8.0 to 10.0: the image's git (2.1.4)
-        # sends a token in the clear after a 302 to http on the same
-        # host and knows no http.followRedirects (spike of 8-nov-2026),
-        # so it touches no repository. Every repository of the spec is
-        # fetched here, at one commit, by the helper container, into
-        # odoo/custom/src/<alias>, and the image builds with
-        # AGGREGATE=false. See ic_resolve_heads for the spec; ``pin``
-        # lines carry their URL too.
+        SERIES="$3"
+        retry_wait="${4:-60}"
+        budget="${5:-$FETCH_BUDGET}"
+        [[ "$SERIES" =~ ^[0-9]{1,2}\.[0-9]$ ]] || ic_die "invalid series: $SERIES"
+        # Every repository of the spec is downloaded here, by the helper
+        # container, and the image builds with AGGREGATE=false: no
+        # credential enters the image, its build or the instance's
+        # container, and no ``.git`` does either (10-nov-2026; 8.0 to
+        # 10.0 since 8-nov-2026, whose git 2.1.4 sends a token in the
+        # clear after a redirect). Each tree is the host's cached one at
+        # its commits, linked into odoo/custom/src/<alias> (see
+        # IC_TREES). See ic_resolve_heads for the spec, one line per
+        # merge; ``pin`` lines carry their URL too. The step keeps its
+        # budget by itself (SECONDS, from its start).
+        SECONDS=0
         src="$dir/odoo/custom/src"
         [ -d "$src" ] || ic_die "build context not found: $src"
+        [ -f "$src/repos.yaml" ] || ic_die "repos.yaml not found in $src"
+        if [ -L "$IC_TREES" ] || [ -L "$(dirname "$IC_TREES")" ]; then
+            ic_die "the host's cache of trees is a link: $IC_TREES"
+        fi
         IC_GIT_ALL_IN_CONTAINER=1
         ic_git_traps
         # 1. Before fetching anything: what a run cut short left, and the
@@ -777,20 +990,24 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         #    removed under it, or read its token from a HOME removed.
         ic_git_reap
         ic_git_sweep
-        for leftover in "$src"/.ic-tmp-*; do
+        for leftover in "$src"/.ic-tmp-* "$IC_TREES/.tmp-$IC_JOB_TOKEN-"*; do
             [ -e "$leftover" ] || [ -L "$leftover" ] || continue
             rm -rf "${leftover:?}"
         done
         # The markers' directory is never read or written through a
-        # link, and the temporary markers of a killed ic_marker_write,
+        # link, and the temporary markers of a killed ic_marker_link,
         # which the removal of dropped trees does not see, go too.
         heads_dir="$(ic_heads_dir "$src")"
         ic_heads_dir_unlink "$src"
         if [ -d "$heads_dir" ]; then
             rm -f "$heads_dir"/.tmp-*
         fi
-        declare -A seen=()
-        rows=()
+        # What cloning in the image needed, which nothing builds with now.
+        rm -f "$dir/odoo/custom/build.d/060-incubacloud-git"
+        rm -rf "${dir:?}/odoo/custom/incubacloud-git"
+        declare -A IDX_OF=()
+        ROWS=()
+        ALIASES=()
         while IFS= read -r line; do
             ic_split_tabs "$line"
             alias="${IC_COLS[0]}"
@@ -799,65 +1016,122 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                 || ic_reserved_alias "$alias"; then
                 ic_die "invalid repository alias: $alias"
             fi
-            [ -z "${seen[$alias]+x}" ] \
-                || ic_die "$alias has several merges: on 8.0 to 10.0 each repository is fetched at a single commit"
-            seen[$alias]=1
-            rows+=("$line")
+            if [ -z "${IDX_OF[$alias]+x}" ]; then
+                ALIASES+=("$alias")
+                IDX_OF[$alias]="${#ROWS[@]}"
+            else
+                IDX_OF[$alias]+=" ${#ROWS[@]}"
+            fi
+            ROWS+=("$line")
         done < "$spec"
-        for row in "${rows[@]}"; do
-            ic_git_exclude "$dir" "odoo/custom/src/${row%%$'\t'*}/"
+        for alias in "${ALIASES[@]}"; do
+            ic_git_exclude "$dir" "odoo/custom/src/$alias/"
         done
         ic_git_exclude "$dir" 'odoo/custom/src/.ic-*'
         ic_git_exclude "$dir" odoo/Dockerfile.dockerignore
         ic_git_exclude "$dir" odoo/custom/incubacloud-heads.txt
-        # 2. The heads, as record-heads reads them.
+        # 2. The helper image, under its local tag the daily prune spares.
+        ic_git_helper_prepare "$GIT_HELPER_IMAGE" \
+            || ic_die "could not prepare the git helper image"
+        GIT_HELPER_IMAGE="$(ic_git_helper_tag "$GIT_HELPER_IMAGE")"
+        # 3. The heads, as record-heads reads them: one per merge.
         heads="$dir/odoo/custom/incubacloud-heads.txt"
         ic_resolve_heads "$spec" "$heads"
-        declare -A head_of=()
-        while read -r alias _ref sha; do
-            head_of[$alias]="$sha"
+        HEAD_AT=()
+        while read -r _alias _ref sha; do
+            HEAD_AT+=("$sha")
         done < "$heads"
-        # 3. Each repository whose tree is not at its head already.
+        [ "${#HEAD_AT[@]}" -eq "${#ROWS[@]}" ] \
+            || ic_die "the heads read do not match the spec"
+        # 4. Each repository whose tree is not at its heads already: from
+        #    the host's cache when it has it, else downloaded into it.
         fetched=0
-        for row in "${rows[@]}"; do
-            ic_split_tabs "$row"
-            alias="${IC_COLS[0]}" ref="${IC_COLS[2]}" url="${IC_COLS[3]}"
-            cred_authority="${IC_COLS[4]}" ca_file="${IC_COLS[5]}"
-            pin_ip="${IC_COLS[6]}"
-            sha="${head_of[$alias]}"
-            if [[ "$sha" != unknown-* ]] && [ -d "$src/$alias" ] \
+        cached=0
+        for alias in "${ALIASES[@]}"; do
+            read -ra idx <<< "${IDX_OF[$alias]}"
+            marker=""
+            key_lines=""
+            unknown=""
+            for i in "${idx[@]}"; do
+                ic_split_tabs "${ROWS[$i]}"
+                [[ "${HEAD_AT[$i]}" != unknown-* ]] || unknown=1
+                if [ "${#idx[@]}" -eq 1 ]; then
+                    marker="${HEAD_AT[$i]}"
+                    key_lines="$(ic_strip_userinfo "${IC_COLS[3]}") ${HEAD_AT[$i]}"
+                else
+                    marker+="${IC_COLS[2]} ${HEAD_AT[$i]}"$'\n'
+                    key_lines+="$(ic_strip_userinfo "${IC_COLS[3]}") ${IC_COLS[2]} ${HEAD_AT[$i]}"$'\n'
+                fi
+            done
+            if [ "${#idx[@]}" -gt 1 ]; then
+                marker="$(printf '%s' "$marker" | sha256sum | cut -c1-64)"
+            fi
+            if [ -z "$unknown" ] && [ -d "$src/$alias" ] \
                 && [ ! -L "$src/$alias" ] \
-                && [ "$(ic_marker_read "$src" "$alias")" = "$sha" ]; then
-                ic_log "$alias is at $sha already"
+                && [ "$(ic_marker_read "$src" "$alias")" = "$marker" ]; then
+                ic_log "$alias is at $marker already"
                 continue
+            fi
+            entry=""
+            if [ -z "$unknown" ]; then
+                entry="$IC_TREES/$(ic_tree_key "$key_lines")"
+                if ic_tree_ready "$entry" "$marker"; then
+                    ic_tree_link "$src" "$alias" "$entry"
+                    ic_log "$alias at $marker, from the host's cache"
+                    cached=$((cached + 1))
+                    continue
+                fi
             fi
             attempt=1
             while :; do
+                left=$((budget - SECONDS))
+                [ "$left" -gt 0 ] \
+                    || ic_die "the step's budget of ${budget}s ran out before $alias was fetched"
+                secs="$FETCH_TIMEOUT"
+                [ "$left" -ge "$secs" ] || secs="$left"
                 rc=0
-                ic_fetch_one "$src" "$alias" "$ref" "$url" \
-                    "$cred_authority" "$ca_file" "$pin_ip" "$sha" || rc=$?
-                got="$IC_FETCHED"
+                ic_fetch_tree "$src" "$alias" "$secs" || rc=$?
                 [ "$rc" -ne 0 ] || break
-                if [ "$rc" -eq 4 ]; then
-                    ic_die "$alias: the server redirects; update the repository's URL"
-                fi
-                if [ "$rc" -eq 5 ]; then
-                    ic_die "$alias: its URL is refused: credentials go only to the server they are for, over https, and a URL off GitHub must name that server over https"
-                fi
+                case "$rc" in
+                    3) ic_die "$alias: the commit that arrived is not the one pinned" ;;
+                    4) ic_die "$alias: the server redirects; update the repository's URL" ;;
+                    5) ic_die "$alias: its URL is refused: credentials go only to the server they are for, over https, and a URL off GitHub must name that server over https" ;;
+                    124|137)
+                        if [ "$secs" -lt "$FETCH_TIMEOUT" ]; then
+                            ic_die "the step's budget of ${budget}s ran out while $alias was fetched"
+                        fi
+                        ic_die "$alias: the download did not end within ${secs}s"
+                        ;;
+                esac
                 if [ "$attempt" -ge 2 ]; then
                     ic_die "$alias: the download failed twice (status $rc)"
+                fi
+                if [ $((budget - SECONDS - retry_wait)) -le 0 ]; then
+                    ic_die "$alias: the download failed (status $rc), and the step's budget of ${budget}s leaves no time to try again"
                 fi
                 ic_warn "$alias: the download failed (status $rc); trying again in ${retry_wait}s"
                 sleep "$retry_wait"
                 attempt=$((attempt + 1))
             done
+            got="$IC_FETCHED"
+            if [ "${#idx[@]}" -eq 1 ]; then
+                # The head may have moved since it was read: the commit
+                # that arrived is the one named, in the marker and in the
+                # heads file.
+                i="${idx[0]}"
+                ic_split_tabs "${ROWS[$i]}"
+                marker="$got"
+                key_lines="$(ic_strip_userinfo "${IC_COLS[3]}") $got"
+                if [ "${HEAD_AT[$i]}" != "$got" ]; then
+                    awk -v n="$((i + 1))" -v g="$got" \
+                        'NR == n {$3 = g} {print}' "$heads" > "$heads.ic-tmp"
+                    mv "$heads.ic-tmp" "$heads"
+                fi
+            fi
+            entry="$(ic_tree_store "$IC_ENTRY_TMP" "$(ic_tree_key "$key_lines")" "$marker")"
+            ic_tree_link "$src" "$alias" "$entry"
             ic_log "$alias fetched at $got"
             fetched=$((fetched + 1))
-            if [[ "$sha" == unknown-* ]]; then
-                awk -v a="$alias" -v s="$sha" -v g="$got" \
-                    '$1 == a && $3 == s {$3 = g} {print}' "$heads" > "$heads.ic-tmp"
-                mv "$heads.ic-tmp" "$heads"
-            fi
         done
         # Trees of repositories the instance no longer has (only those
         # this step wrote, which have a marker), from a markers'
@@ -870,7 +1144,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         for marker in "${markers[@]}"; do
             [ -e "$marker" ] || [ -L "$marker" ] || continue
             name="${marker##*/}"
-            if ic_reserved_alias "$name" || [ -n "${seen[$name]+x}" ]; then
+            if ic_reserved_alias "$name" || [ -n "${IDX_OF[$name]+x}" ]; then
                 continue
             fi
             rm -f "${marker:?}"
@@ -880,7 +1154,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                 ic_log "removed the tree of $name, no longer a repository of the instance"
             fi
         done
-        # 4. The build context: the template's .dockerignore leaves
+        # 5. The build context: the template's .dockerignore leaves
         #    custom/src/* out, so the fetched trees are let in by name.
         #    BuildKit prefers Dockerfile.dockerignore and copier still owns
         #    .dockerignore. The template's ``!custom/src/*.*`` would let
@@ -891,13 +1165,15 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                 cat "$dir/odoo/.dockerignore"
                 [ -z "$(tail -c 1 "$dir/odoo/.dockerignore")" ] || printf '\n'
             fi
-            for row in "${rows[@]}"; do
-                printf '!custom/src/%s\n' "${row%%$'\t'*}"
+            for alias in "${ALIASES[@]}"; do
+                printf '!custom/src/%s\n' "$alias"
             done
             printf 'custom/src/.ic-*\n'
         } > "$ignore.ic-tmp"
         mv "$ignore.ic-tmp" "$ignore"
-        ic_log "${#rows[@]} repositories ready for the build, $fetched fetched"
+        # 6. The seconds this took, which the build's repetition counts.
+        printf '%s\n' "$SECONDS" > "$src/.ic-fetch-seconds"
+        ic_log "${#ALIASES[@]} repositories ready for the build, $fetched fetched, $cached from the host's cache, in ${SECONDS}s"
         ;;
 
     *)

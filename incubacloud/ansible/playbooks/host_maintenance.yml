@@ -125,6 +125,37 @@
       register: ic_prune
       changed_when: true
 
+    # Docker keeps the record of each host's last builds, with their
+    # output: while an image cloned its repositories that output carried
+    # their URLs with a token (10-nov-2026). Emptied every day, for good;
+    # a Docker without ``buildx history`` fails nothing. Builds that run
+    # meanwhile go on.
+    - name: Remove the record of past image builds
+      ansible.builtin.command:
+        cmd: docker buildx history rm --all
+      register: ic_build_history
+      changed_when: ic_build_history.rc == 0
+      failed_when: false
+
+    # The trees of repositories ``deploy.sh fetch-repos`` keeps for the
+    # account's instances (``~/.incubacloud/git-trees``): each instance's
+    # tree is made of hard links to one of them, and links its marker,
+    # ``head``. A tree whose marker no instance links any more (one link
+    # left) and has not changed for two hours (longer than any job, so not
+    # one a job is linking now) goes, with the temporary trees of
+    # downloads killed that long ago. Never through a link; never fails
+    # the play.
+    - name: Remove the cached repository trees no instance uses  # noqa: command-instead-of-shell
+      ansible.builtin.shell:
+        cmd: >-
+          d="$HOME/.incubacloud/git-trees"; if [ -d "$d" ] && [ ! -L "$d" ];
+          then find "$d" -mindepth 2 -maxdepth 2 -type f -name head -links 1
+          -cmin +120 -exec sh -c 'rm -rf -- "${1%/head}"' sh {} \; ; find "$d"
+          -mindepth 1 -maxdepth 1 -type d -name '.tmp-*' -mmin +120 -exec rm
+          -rf {} +; fi
+      changed_when: false
+      failed_when: false
+
     # Post-prune inventory: every container still present, any state.
     # The panel compares it against the containers each deployed
     # instance must have, so a prune that swept a managed stack is

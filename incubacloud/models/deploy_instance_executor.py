@@ -22,9 +22,15 @@ from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..net import real_ip
 from ..net.git_reader import GitReader, GitReaderError
-from ..github.http_utils import safe_urlopen
+from ..github.http_utils import read_json_limited, safe_urlopen
 from ._git_urls import clone_url_with_credential, parse_provider_repo_url
-from ._odoo_versions import VERSIONS, copier_defaults, debian_archive, prefetch_repos
+from ._odoo_versions import (
+    VERSIONS,
+    copier_defaults,
+    debian_archive,
+    image_git_safe,
+    prefetch_repos,
+)
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
@@ -174,37 +180,52 @@ def _ic_connect_for_instances():
 # keeping dependencies in step with the code a rebuild ships is the
 # desired steady state, and an operator who wants the old frozen
 # behaviour sets the parameter to '0' explicitly.
-#: The git helper container: ``alpine/git``
-#: pinned by digest, like ``GATEKEEPER_IMAGE``, taken from Docker Hub on
-#: 8-nov-2026 (paso 0-7). ``deploy.sh`` runs it for ``record-heads`` of a
-#: server whose address is pinned and for ``fetch-repos`` (8.0 to 10.0);
-#: ``full_setup_install.sh`` pulls it when a host is prepared.
+#: The git helper container: doodba's own image of 19.0, pinned by digest
+#: (the tag's on 10-nov-2026: git 2.39.5, git-aggregator 4.0), for every
+#: series. ``deploy.sh fetch-repos`` downloads each repository with it,
+#: with the same ``gitaggregate`` command doodba's build runs, and
+#: ``record-heads`` asks a server whose address is pinned from it. One
+#: image for every series: the git that handles a credential has to be a
+#: maintained one, and 8.0 to 15.0's images carry old ones. The host keeps
+#: it under a local tag with the ``PROTECT_LABEL`` the daily prune spares
+#: (``deploy.sh``); ``full_setup_install.sh`` prepares it with the host.
+#: Review the digest with every version of core.
 GIT_HELPER_IMAGE = (
-    "alpine/git:2.54.0@sha256:"
-    "ac6c828f15d82775d204d3d75112e1d34af8945da80ccf922713c9891ba68e7a"
+    "ghcr.io/tecnativa/doodba:19.0@sha256:"
+    "aceea81257de6906c925d22d45add9cac52cfeca66136a6f49373e2f2b3fa5fe"
 )
 
-#: Seconds one repository's download may take in ``fetch-repos``.
-_FETCH_ONE_S = 600
+#: The label of the step that fetches every repository before the build.
+#: A layer that drops the build by its label drops this one too.
+_LABEL_FETCH = "Fetch the repositories"
 
-#: Seconds ``fetch-repos`` waits before its one retry of an alias: the
-#: rebuild's ``_BUILD_RETRY_WAIT_S``, which no longer covers a clone that
-#: left the build.
+#: Seconds the whole of ``fetch-repos`` may take: each repository has
+#: 600 s or what is left of these, and is retried once only while some is
+#: left (plan of the Git tokens, 10-nov-2026). A fixed budget, not one per
+#: repository: three of 1 260 s each already passed the 3 600 s at which
+#: the job runner kills a job. It counts for the build's repetition too
+#: (``_build_retried_once``).
+_FETCH_BUDGET_S = 1200
+
+#: Seconds ``fetch-repos`` waits before its one retry of a repository:
+#: the rebuild's ``_BUILD_RETRY_WAIT_S``, which no longer covers a clone
+#: that left the build.
 _FETCH_RETRY_WAIT_S = 60
 
+#: The fetch step's timeout: the budget, which ``deploy.sh`` keeps by
+#: itself with its traps, and a minute more as a second barrier.
+_FETCH_STEP_TIMEOUT_S = _FETCH_BUDGET_S + 60
 
-def _fetch_timeout(aliases):
-    """Return the timeout of the step that runs ``fetch-repos``.
+#: Where ``fetch-repos`` writes the seconds it took, relative to the
+#: instance's directory, for the build's repetition rule. Under
+#: ``custom/src/.ic-*``: out of the build context and of the history.
+_FETCH_SECONDS_FILE = "odoo/custom/src/.ic-fetch-seconds"
 
-    Each download may take :data:`_FETCH_ONE_S` and is retried once after
-    :data:`_FETCH_RETRY_WAIT_S`. Below that, the transport would kill the
-    command halfway through a download. The build is a step of its own
-    with its own timeout, in a deploy and in a rebuild.
-
-    :param int aliases: the repositories of ``repos.yaml``, odoo included
-    :rtype: int
-    """
-    return aliases * (2 * _FETCH_ONE_S + _FETCH_RETRY_WAIT_S)
+#: What a ``repos.yaml`` entry may hold, the only keys core renders.
+#: git-aggregator runs any ``shell_command_after`` of the file in the
+#: helper container, which sees the credential's HOME: a job whose file
+#: holds any other key is refused (10-nov-2026).
+_REPOS_YAML_KEYS = frozenset({"defaults", "remotes", "merges", "target", "fetch_all"})
 
 
 def _strip_userinfo(url):
@@ -218,6 +239,15 @@ def _strip_userinfo(url):
 
 _ICP_RESYNC = "incubacloud.requirements_resync_enabled"
 
+#: The series that clone their repositories in the image again, comma
+#: separated: the way back from fetching them on the host, without a new
+#: version of core (plan of the Git tokens, 10-nov-2026). Empty by default.
+_ICP_REPOS_IN_IMAGE = "incubacloud.repos_in_image_series"
+
+#: The most of GitHub's answer about one repository read, in bytes: the
+#: ``GET /repos/{owner}/{repo}`` of a repository is a few kB.
+_REPO_ANSWER_BYTES = 256 * 1024
+
 
 _ADDONS_CONFLICT_RE = re.compile(
     r"AddonsConfigError: Addon (\w+) defined in several repos \{([^}]+)\}"
@@ -229,8 +259,10 @@ _LABEL_BUILD_DEPLOY = "Build Odoo image"
 #: What a failed image build waits before its one repetition, in seconds.
 _BUILD_RETRY_WAIT_S = 60
 #: The longest a failed first build may have run and still be repeated,
-#: in seconds (8-nov-2026). The passing failure the
-#: repetition is for comes in the image's first layer
+#: in seconds (8-nov-2026), with the download of the repositories before
+#: it when the series fetches them (``_FETCH_SECONDS_FILE``, 10-nov-2026).
+#: The passing failure the
+#: repetition is for came in the image's first layer
 #: (``100-repos-aggregate``, cloning from GitHub). The job runner kills a
 #: job at 3600 s (``limit_time_real``), and that SIGKILL leaves the job
 #: orphaned and the instance in ``deploying``: a first attempt that ran
@@ -238,32 +270,44 @@ _BUILD_RETRY_WAIT_S = 60
 _BUILD_RETRY_MAX_FIRST_S = 900
 
 
-def _build_retried_once(build):
+def _build_retried_once(build, fetched=False):
     """Return a shell command that repeats a failed image build once.
 
-    The build clones every repository of the image, so a passing failure
+    The build cloned every repository of the image, so a passing failure
     at GitHub would otherwise fail the whole rebuild (QA, 31-oct-2026) or
     deploy (QA, 8-nov-2026). The repetition also runs for a build that
     fails for good: it only costs that build's time, and the job then
     fails with the same error. A first attempt that ran
-    ``_BUILD_RETRY_MAX_FIRST_S`` or more is not repeated. It is timed
+    ``_BUILD_RETRY_MAX_FIRST_S`` or more is not repeated; with *fetched*,
+    the seconds ``fetch-repos`` took before it count as well, so the
+    worst case of the job does not grow with the download. It is timed
     with ``date +%s`` (coreutils and busybox), as the step runs in the
     login shell of the host's user: dash, with no ``SECONDS``, when a
     self-hosted user was made with ``useradd`` and no ``-s``.
 
-    :param str build: the ``docker compose build`` command to run.
+    :param str build: the ``docker compose build`` command to run, from
+        the instance's directory.
+    :param bool fetched: whether ``fetch-repos`` ran before it and wrote
+        ``_FETCH_SECONDS_FILE``.
     :return: the command, exiting with the status of its last attempt.
     :rtype: str
     """
+    before = "ic_fetch_s=0;"
+    if fetched:
+        before = (
+            f"ic_fetch_s=$(cat {_FETCH_SECONDS_FILE} 2>/dev/null);"
+            ' case "$ic_fetch_s" in ""|*[!0-9]*) ic_fetch_s=0;; esac;'
+        )
     return (
-        f"{{ ic_build_t0=$(date +%s); {build} || {{ ic_build_s=$?;"
-        f" if [ $(( $(date +%s) - ic_build_t0 ))"
+        f"{{ {before} ic_build_t0=$(date +%s); {build} || {{ ic_build_s=$?;"
+        f" if [ $(( $(date +%s) - ic_build_t0 + ic_fetch_s ))"
         f" -lt {_BUILD_RETRY_MAX_FIRST_S} ]; then"
         f" echo 'The image build failed: trying once more"
         f" in {_BUILD_RETRY_WAIT_S} s.';"
         f" sleep {_BUILD_RETRY_WAIT_S}; {build};"
         f" else echo 'The image build failed after"
-        f" {_BUILD_RETRY_MAX_FIRST_S} s or more: not trying again.';"
+        f" {_BUILD_RETRY_MAX_FIRST_S} s or more, with the download of the"
+        f" repositories: not trying again.';"
         f" (exit $ic_build_s); fi; }}; }}"
     )
 
@@ -489,39 +533,68 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
+    def _github_app_client(self):
+        """Return the panel's GitHub App client, or None when it has none.
+
+        Built once per job run.
+
+        :rtype: GitHubAppClient or None
+        """
+        if "_gh_app_client" not in self.__dict__:
+            client = None
+            with suppress(Exception):
+                client = GitHubAppClient(
+                    self.env["cloud.github.credential.service"].get_credentials()
+                )
+            self.__dict__["_gh_app_client"] = client
+        return self.__dict__["_gh_app_client"]
+
     def _get_github_tokens(self):
-        """Return available tokens: (app_token, pat) — either may be None."""
+        """Return available tokens: (app_token, pat) — either may be None.
+
+        The App's is the installation's own token, for the panel's calls
+        to GitHub's API: what a server is handed for a download is the
+        scoped one (:meth:`_scoped_github_token`).
+        """
         svc = self.env["cloud.github.credential.service"]
         app_token = None
-        with suppress(Exception):
-            creds = svc.get_credentials()
-            app_token = GitHubAppClient(creds).get_installation_token()
+        client = self._github_app_client()
+        if client is not None:
+            with suppress(Exception):
+                app_token = client.get_installation_token()
         pat = None
         with suppress(Exception):
             pat = svc.get_pat()
         return app_token, pat
 
-    def _get_token_for_repo(self, repo_url, app_token, pat, cache):
-        """Check which token can access a repo.
+    def _github_repo_access(self, repo_url, app_token, pat, cache):
+        """Return who reads *repo_url* on GitHub, as ``(repo_id, private, by)``.
 
-        App first, PAT fallback. Caches results by owner to avoid
-        repeated API calls for repos in the same org.
-        Returns the working token or None: always None for a URL that
-        is not a github.com repository (``is_safe_repo_url`` once
-        ``canonical_repo_url`` spelled it), which used to get the App's
-        token or the PAT on the chance it needed one (5-nov-2026).
+        ``GET /repos/{owner}/{repo}`` with the App's token, then with the
+        PAT; *by* is ``"app"``, ``"pat"`` or None when neither reads it,
+        and ``repo_id`` and ``private`` come from GitHub's answer (None
+        when nobody reads it). Decided per repository, never per owner:
+        an owner's repositories are not all in one installation. Always
+        ``(None, None, None)`` for a URL that is not a github.com
+        repository (``is_safe_repo_url`` once ``canonical_repo_url``
+        spelled it).
+
+        :param str repo_url: the line's URL
+        :param app_token: the installation's token, or None
+        :param pat: the PAT, or None
+        :param dict cache: ``{"owner/repo": answer}``, filled here
+        :rtype: tuple
         """
         url = canonical_repo_url((repo_url or "").strip())
         if not is_safe_repo_url(url):
-            return None
+            return None, None, None
         owner, repo = _parse_github_repo_path(url)
-
-        # Check cache by owner — repos in the same org use the same token
-        if owner in cache:
-            return cache[owner]
-
+        key = f"{owner}/{repo}".lower()
+        if key in cache:
+            return cache[key]
+        answer = (None, None, None)
         api = f"https://api.github.com/repos/{owner}/{repo}"
-        for token in (app_token, pat):
+        for by, token in (("app", app_token), ("pat", pat)):
             if not token:
                 continue
             req = urllib.request.Request(
@@ -532,15 +605,57 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 },
             )
             try:
-                with safe_urlopen(req, timeout=5):  # nosec B310 — hardcoded https://api.github.com
-                    cache[owner] = token
-                    return token
+                with safe_urlopen(req, timeout=5) as resp:  # nosec B310 — hardcoded https://api.github.com
+                    data = read_json_limited(resp, max_bytes=_REPO_ANSWER_BYTES)
             except Exception:
                 continue
+            if not isinstance(data, dict) or not isinstance(data.get("id"), int):
+                continue
+            answer = (data["id"], bool(data.get("private", True)), by)
+            break
+        cache[key] = answer
+        return answer
 
-        fallback = app_token or pat
-        cache[owner] = fallback
-        return fallback
+    def _get_token_for_repo(self, repo_url, app_token, pat, cache):
+        """Return the token that reads *repo_url*, the App's first, or None.
+
+        None when neither reads it: no token is handed out on the chance a
+        repository needs one (it used to be the App's or the PAT, 10-nov-2026),
+        and always for a URL that is not a github.com repository.
+        For the panel's own use; what a server gets is decided by
+        :meth:`_repos_yaml_content`.
+
+        :param str repo_url: the repository's URL
+        :param app_token: the installation's token, or None
+        :param pat: the PAT, or None
+        :param dict cache: see :meth:`_github_repo_access`
+        :rtype: str or None
+        """
+        by = self._github_repo_access(repo_url, app_token, pat, cache)[2]
+        return {"app": app_token, "pat": pat}.get(by)
+
+    def _scoped_github_token(self, repository_ids):
+        """Return an App token that reads *repository_ids* only.
+
+        One per job run, asked for every private repository of the
+        instance the App reads (:meth:`GitHubAppClient.get_scoped_installation_token`).
+
+        :param list repository_ids: GitHub's ids of those repositories
+        :rtype: str
+        :raises JobRefused: when the App has no client or GitHub refuses
+            the token: the installation's own token is never used instead
+        """
+        client = self._github_app_client()
+        try:
+            if client is None:
+                raise RuntimeError("the GitHub App is not configured")
+            return client.get_scoped_installation_token(repository_ids)
+        except Exception as exc:
+            raise JobRefused(
+                "Refused: GitHub did not issue the App's token limited to "
+                f"this instance's private repositories ({exc}). The "
+                "installation's own token is not used instead."
+            ) from exc
 
     def _inst(self):
         return self.job.instance_id
@@ -693,11 +808,55 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """
         return repo.commit_sha or branch
 
+    def _github_line_tokens(self, repos, app_token, pat):
+        """Return ``{line URL: token}`` for the GitHub lines that need one.
+
+        A private repository the App reads gets the token scoped to the
+        instance's private repositories the App reads
+        (:meth:`_scoped_github_token`, asked once); one only the PAT reads
+        gets the PAT; a public one gets none, whoever reads it. One that
+        neither reads gets none either, and the job's log says so: its
+        download then fails, naming it.
+
+        :param repos: the instance's ``cloud.instance.repo`` rows
+        :param app_token: the installation's token, or None
+        :param pat: the PAT, or None
+        :rtype: dict
+        :raises JobRefused: see :meth:`_scoped_github_token`
+        """
+        cache = {}
+        access = {}
+        for repo in repos:
+            raw_url = (repo.url or "").strip()
+            if not raw_url or getattr(repo, "provider_id", False):
+                continue
+            if not is_safe_repo_url(canonical_repo_url(raw_url)):
+                continue
+            access[raw_url] = self._github_repo_access(raw_url, app_token, pat, cache)
+            if access[raw_url][2] is None:
+                self._sys(
+                    f"{_strip_userinfo(raw_url)}: neither the GitHub App's "
+                    "installation nor the PAT reads it; it is fetched "
+                    "without credentials."
+                )
+        scoped_ids = sorted({
+            repo_id for repo_id, private, by in access.values()
+            if private and by == "app"
+        })
+        scoped = self._scoped_github_token(scoped_ids) if scoped_ids else None
+        tokens = {}
+        for raw_url, (_repo_id, private, by) in access.items():
+            if private and by == "app":
+                tokens[raw_url] = scoped
+            elif private and by == "pat":
+                tokens[raw_url] = pat
+        return tokens
+
     def _repos_yaml_content(self, pinned=None):
         """Build repos.yaml: odoo first, then the instance's git repos.
 
-        For each repo, verifies which token (App or PAT) has access
-        and injects the correct one into the URL.
+        Each GitHub line gets the credential :meth:`_github_line_tokens`
+        decides for it, and a GitLab line its provider's.
 
         :param set pinned: when given, receives the alias of every
             repository whose merge is a commit the panel pinned
@@ -712,6 +871,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         app_token, pat = self._get_github_tokens()
         if pinned is None:
             pinned = set()
+        tokens = self._github_line_tokens(inst.repo_ids, app_token, pat)
 
         # odoo is always first — public, no token needed
         odoo_merge = inst.odoo_commit_sha or "$ODOO_VERSION"
@@ -724,7 +884,6 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             "merges": [f"odoo {odoo_merge}"],
         }
 
-        token_cache = {}  # owner → token
         self._git_servers = {}
 
         for repo in inst.repo_ids:
@@ -737,13 +896,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             if provider:
                 url = self._gitlab_clone_url(raw_url, provider)
             else:
-                token = self._get_token_for_repo(
-                    raw_url,
-                    app_token,
-                    pat,
-                    token_cache,
-                )
-                url = _github_authed_url(raw_url, token)
+                url = _github_authed_url(raw_url, tokens.get(raw_url))
             merge_ref = self._repo_merge_ref(repo, branch)
             # _repo_merge_ref answers a commit or the branch itself; a
             # repository that replaces an alias replaces its pin too.
@@ -799,7 +952,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         The credential git reads the path with
         (``cloud.git.provider._git_credential``): one that cannot write
-        first, as 11.0 to 19.0 carry it inside the image, then the longest
+        first, as a series that clones in the image carries it there, then the longest
         namespace; none for a public repository. The URL is rebuilt from
         the provider's base, with ``.git``. The server is noted for the
         spec and the override.
@@ -858,23 +1011,57 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _prefetches(self):
         """Whether this series fetches its repositories before the build.
 
+        The series' card says so (``prefetch_repos``); the system
+        parameter ``incubacloud.repos_in_image_series``, a comma-separated
+        list of series, sends one back to cloning in the image without a
+        new version of core, except a series whose image git is not safe
+        (``image_git_safe``). Its next deploy or rebuild then removes the
+        fetched trees (``deploy.sh record-heads``).
+
         :rtype: bool
         """
         version = self._inst().odoo_version or ""
-        return version in VERSIONS and prefetch_repos(version)
+        if version not in VERSIONS or not prefetch_repos(version):
+            return False
+        if not image_git_safe(version):
+            return True
+        return version not in self._repos_in_image_series()
+
+    def _repos_in_image_series(self):
+        """Return the series ``incubacloud.repos_in_image_series`` names.
+
+        :rtype: frozenset
+        """
+        value = self.env["ir.config_parameter"].sudo().get_param(
+            _ICP_REPOS_IN_IMAGE, "",
+        ) or ""
+        return frozenset(filter(None, (v.strip() for v in str(value).split(","))))
 
     @staticmethod
     def _strip_repo_credentials(repos_yaml):
         """Return *repos_yaml* with no user or token in any remote.
 
-        What 8.0 to 10.0 write on the host: with ``AGGREGATE=false``
-        nobody clones from it, but it enters the image.
+        What a series that fetches its repositories on the host writes
+        there: with ``AGGREGATE=false`` nobody clones from it in the
+        build, the helper container reads it without credentials (they
+        travel in the spec), and it enters the image.
 
         :param str repos_yaml: the rendered file, with tokens
         :rtype: str
+        :raises JobRefused: when an entry holds a key besides
+            ``_REPOS_YAML_KEYS``: git-aggregator would run a
+            ``shell_command_after`` in the container that holds the
+            credential
         """
         data = yaml.safe_load(repos_yaml) or {}
-        for entry in data.values():
+        for alias, entry in data.items():
+            unknown = set(entry or {}) - _REPOS_YAML_KEYS
+            if unknown:
+                raise JobRefused(
+                    f"Refused: repos.yaml's {alias} holds "
+                    f"{', '.join(sorted(map(str, unknown)))}; only "
+                    f"{', '.join(sorted(_REPOS_YAML_KEYS))} are allowed."
+                )
             remotes = entry.get("remotes") or {}
             for name, url in remotes.items():
                 remotes[name] = _strip_userinfo(url)
@@ -882,18 +1069,11 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             data, default_flow_style=False, sort_keys=False, allow_unicode=True,
         )
 
-    def _alias_count(self):
-        """Return the repositories of ``repos.yaml``, odoo included.
-
-        :rtype: int
-        """
-        return 1 + len([
-            r for r in self._inst().repo_ids
-            if (r.url or "").strip() and _repo_alias((r.url or "").strip())
-        ])
-
     def _fetch_repos_command(self, d):
         """Return the command that fetches every repository before the build.
+
+        ``deploy.sh fetch-repos`` with the series (``$ODOO_VERSION`` of
+        ``repos.yaml``), the retry's wait and the step's budget.
 
         :param str d: the instance's directory on the host
         :rtype: str
@@ -901,16 +1081,33 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         return self.run_script(
             "deploy.sh", [
                 "fetch-repos", d, self._tmp(self._HEADS_SPEC),
-                GIT_HELPER_IMAGE, str(_FETCH_RETRY_WAIT_S),
+                GIT_HELPER_IMAGE, self._inst().odoo_version or "",
+                str(_FETCH_RETRY_WAIT_S), str(_FETCH_BUDGET_S),
             ],
         )
 
-    def _git_trust_steps(self, d):
-        """Return the step that writes the image's git settings (11.0 to 19.0).
+    def _fetch_step(self, d):
+        """Return the step that fetches every repository before the build.
 
-        ``deploy.sh git-trust`` writes ``build.d/060-incubacloud-git`` and
-        the servers' CAs for the image's git, and removes them when no
-        line is of GitLab. Not in 8.0 to 10.0, whose image clones nothing.
+        Its timeout is fixed (``_FETCH_STEP_TIMEOUT_S``), whatever the
+        number of repositories: ``deploy.sh`` keeps the budget by itself.
+
+        :param str d: the instance's directory on the host
+        :rtype: tuple
+        """
+        return (
+            _LABEL_FETCH,
+            self._fetch_repos_command(d),
+            {"stop_on_failure": True, "timeout": _FETCH_STEP_TIMEOUT_S},
+        )
+
+    def _git_trust_steps(self, d):
+        """Return the step that writes the image's git settings.
+
+        For a series that clones in the image: ``deploy.sh git-trust``
+        writes ``build.d/060-incubacloud-git`` and the servers' CAs for
+        the image's git, and removes them when no line is of GitLab. Not
+        for one that fetches on the host, whose image clones nothing.
 
         :param str d: the instance's directory on the host
         :rtype: list
@@ -927,23 +1124,15 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _heads_steps(self, d):
         """Return the steps that name, or fetch, each repository's head.
 
-        8.0 to 10.0 fetch every repository on the host
-        (``fetch-repos``), with a timeout that covers each download and
-        its retry (:func:`_fetch_timeout`; the build is a step of its
-        own); the others record the heads and trust their Git servers.
+        A series that fetches its repositories does it on the host
+        (:meth:`_fetch_step`; the build is a step of its own); the others
+        record the heads and trust their Git servers.
 
         :param str d: the instance's directory on the host
         :rtype: list
         """
         if self._prefetches():
-            return [(
-                "Fetch the repositories",
-                self._fetch_repos_command(d),
-                {
-                    "stop_on_failure": True,
-                    "timeout": _fetch_timeout(self._alias_count()),
-                },
-            )]
+            return [self._fetch_step(d)]
         return [
             ("Record repository heads", self._record_heads_command(d)),
             *self._git_trust_steps(d),
@@ -952,8 +1141,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _odoo_build_override(self):
         """Return ``{"build": …}`` for the odoo service in the override, or {}.
 
-        8.0 to 10.0 build with ``AGGREGATE=false``; the others, under the
-        ``public`` policy, pin each GitLab server with ``extra_hosts``.
+        A series that fetches its repositories on the host builds with
+        ``AGGREGATE=false``; the others, under the ``public`` policy, pin
+        each GitLab server with ``extra_hosts``.
         Neither enters ``rebuild_fingerprint`` nor the configuration
         snapshot: an address that rotates must not mark the instance as
         changed.
@@ -980,8 +1170,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         whatever a layer renders into it is what gets resolved.
         ``$ODOO_VERSION`` is expanded as the build expands it. *kind* is
         ``pin`` for a repository in *pinned*, whose ref is its own head
-        and carries no URL (its token need not travel twice), and
-        ``ref`` for a branch or tag, asked to the remote. Whether a ref
+        and carries no URL when the image clones it (its token need not
+        travel twice), and ``ref`` for a branch or tag, asked to the
+        remote. A series that fetches on the host (``fetch-repos``) reads
+        every URL, with its credential, from here alone. Whether a ref
         is a pin comes from where it came from, never from its shape
         (5-nov-2026).
 
@@ -2068,8 +2260,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         repos_yaml = self._repos_yaml_content(pinned)
         private = {
             self._tmp("answers.yml"): answers_yml,
-            # 8.0 to 10.0 fetch on the host: the file the image gets has
-            # no credential.
+            # A series that fetches on the host: the file the host and
+            # the image get has no credential, which the spec carries.
             self._tmp("repos.yaml"): (
                 self._strip_repo_credentials(repos_yaml)
                 if self._prefetches() else repos_yaml
@@ -2479,7 +2671,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 "Write repos.yaml",
                 f"mv {tmp_repos} {src}/repos.yaml",
             ),
-            # 4b. Name each repository's head in the build context: the
+            # 4b. Fetch every repository on the host (every series but
+            #     19.0), or name each one's head in the build context: the
             #     image is built by «Build Odoo image» below, and Docker's
             #     cache of the clone has to follow the branches, not the
             #     token in repos.yaml.
@@ -2542,7 +2735,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     was; with the image there, nothing after it builds.
             (
                 _LABEL_BUILD_DEPLOY,
-                f"cd {d} && " + _build_retried_once("docker compose build odoo"),
+                f"cd {d} && " + _build_retried_once(
+                    "docker compose build odoo", fetched=self._prefetches(),
+                ),
                 {"stop_on_failure": True},
             ),
             # 10. Start the database service first so it is ready for init.

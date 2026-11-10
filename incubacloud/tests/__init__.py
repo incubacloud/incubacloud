@@ -268,6 +268,7 @@ from . import test_server_only_methods
 from . import test_git_reader
 from . import test_gitlab_client
 from . import test_gitlab_executor
+from . import test_repos_on_host
 from . import test_merge_queued_payload
 from . import test_cloud_gitlab_event
 from . import test_gitlab_webhook

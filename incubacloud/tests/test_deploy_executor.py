@@ -6,8 +6,12 @@ Tier 1 & 2 — Tests for deploy_instance_executor helpers:
   - _repos_yaml_content (Tier 2)
 """
 
+import http.client
+import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import yaml
 from odoo.tests.common import BaseCase, TransactionCase
 
 from ._certs import make_pair
@@ -99,6 +103,18 @@ class TestGithubAuthedUrl(BaseCase):
 # ── Tier 1: _get_token_for_repo (mocked HTTP) ───────────────────────────────
 
 
+def _answer(repo_id=101, private=True):
+    """GitHub's answer to ``GET /repos/{owner}/{repo}``, as ``safe_urlopen`` opens it.
+
+    :rtype: MagicMock
+    """
+    body = json.dumps({"id": repo_id, "private": private}).encode()
+    resp = MagicMock(spec=http.client.HTTPResponse)
+    resp.__enter__.return_value = resp
+    resp.read.return_value = body
+    return resp
+
+
 class TestGetTokenForRepo(BaseCase):
     """Test token resolution per-repo with mocked GitHub API."""
 
@@ -119,8 +135,7 @@ class TestGetTokenForRepo(BaseCase):
 
     @patch(_PATCH_PATH)
     def test_app_token_preferred_when_both_work(self, mock_urlopen):
-        mock_urlopen.return_value.__enter__ = lambda s: s
-        mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = _answer()
         executor = self._make_executor()
         cache = {}
         result = executor._get_token_for_repo(
@@ -138,7 +153,7 @@ class TestGetTokenForRepo(BaseCase):
         # First call (app_tok) raises 404, second (pat_tok) succeeds
         mock_urlopen.side_effect = [
             urllib.error.HTTPError(None, 404, "Not Found", {}, None),
-            MagicMock(__enter__=lambda s: s, __exit__=MagicMock(return_value=False)),
+            _answer(),
         ]
         executor = self._make_executor()
         cache = {}
@@ -150,23 +165,37 @@ class TestGetTokenForRepo(BaseCase):
         )
         self.assertEqual(result, "pat_tok")
 
-    def test_cache_hit_avoids_api_call(self):
+    @patch(_PATCH_PATH)
+    def test_the_answer_is_kept_per_repository_not_per_owner(self, mock_urlopen):
+        """Two repositories of one owner are each asked: an installation
+        does not hold all of an owner's (10-nov-2026)."""
+        mock_urlopen.side_effect = [_answer(1), _answer(2)]
         executor = self._make_executor()
-        cache = {"OCA": "cached_tok"}
-        result = executor._get_token_for_repo(
-            "https://github.com/OCA/web.git",
-            "app_tok",
-            "pat_tok",
-            cache,
-        )
-        self.assertEqual(result, "cached_tok")
+        cache = {}
+        for url in ("https://github.com/OCA/web.git", "https://github.com/OCA/web.git",
+                    "https://github.com/OCA/server-ux"):
+            executor._get_token_for_repo(url, "app_tok", None, cache)
+        self.assertEqual(mock_urlopen.call_count, 2)
+        self.assertEqual(cache["oca/web"], (1, True, "app"))
+        self.assertEqual(cache["oca/server-ux"], (2, True, "app"))
+
+    @patch(_PATCH_PATH)
+    def test_no_token_when_neither_reads_the_repository(self, mock_urlopen):
+        """No token on the chance it needs one: it used to be the App's."""
+        import urllib.error
+
+        mock_urlopen.side_effect = urllib.error.HTTPError(None, 404, "Not Found", {}, None)
+        executor = self._make_executor()
+        self.assertIsNone(executor._get_token_for_repo(
+            "https://github.com/acme/secret.git", "app_tok", "pat_tok", {},
+        ))
+        self.assertEqual(mock_urlopen.call_count, 2)
 
     def test_only_pat_when_no_app_token(self):
         executor = self._make_executor()
         cache = {}
         with patch(self._PATCH_PATH) as mock_urlopen:
-            mock_urlopen.return_value.__enter__ = lambda s: s
-            mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = _answer()
             result = executor._get_token_for_repo(
                 "https://github.com/OCA/web.git",
                 None,
@@ -207,8 +236,7 @@ class TestGetTokenForRepo(BaseCase):
     @patch(_PATCH_PATH)
     def test_an_ssh_spelled_github_repo_still_gets_its_token(self, mock_urlopen):
         """``git@github.com:`` is how a deployment may spell its own repo."""
-        mock_urlopen.return_value.__enter__ = lambda s: s
-        mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = _answer()
         executor = self._make_executor()
         self.assertEqual(
             executor._get_token_for_repo(
@@ -216,6 +244,111 @@ class TestGetTokenForRepo(BaseCase):
             ),
             "app_tok",
         )
+
+
+class TestTheTokenEachLineGets(BaseCase):
+    """What a server is handed for each GitHub line (10-nov-2026).
+
+    A private repository the App reads gets a token scoped to the
+    instance's private repositories the App reads, asked once; one only
+    the PAT reads, the PAT; a public one, nothing; one nobody reads,
+    nothing either. The installation's own token never reaches the spec.
+    """
+
+    _SCOPED = "ghs_scopedTokenOfTheJob"
+    _GENERAL = "ghs_installationToken"
+
+    def _executor(self, repos, access, scoped=None):
+        """Render repos.yaml for *repos* with GitHub answering *access*.
+
+        :param list repos: URLs of the instance's lines
+        :param dict access: ``{url: (repo_id, private, by)}``
+        :param scoped: what the scoped token request does: a token, or an
+            exception to raise
+        :return: the rendered text, the scoped token mock and the log
+        :rtype: tuple
+        """
+        from odoo.addons.incubacloud.github.client import GitHubAppClient
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+
+        from .test_executor_features import _make_deploy_executor
+
+        ex = _make_deploy_executor(
+            odoo_version="18.0", odoo_commit_sha=False,
+            repo_ids=[SimpleNamespace(url=u, branch="main", commit_sha=False)
+                      for u in repos],
+        )
+        logged = []
+        ex._sys = logged.append
+        client = MagicMock(spec=GitHubAppClient)
+        if isinstance(scoped, Exception):
+            client.get_scoped_installation_token.side_effect = scoped
+        else:
+            client.get_scoped_installation_token.return_value = scoped or self._SCOPED
+        ex._github_app_client = lambda: client
+        with patch.object(
+            DeployInstanceExecutor, "_get_github_tokens", autospec=True,
+            return_value=(self._GENERAL, "pat_tok"),
+        ), patch.object(
+            DeployInstanceExecutor, "_github_repo_access", autospec=True,
+            side_effect=lambda _self, url, *_a: access[url],
+        ):
+            text = ex._repos_yaml_content(set())
+        return ex, text, client.get_scoped_installation_token, logged
+
+    def _remote(self, text, alias):
+        """The URL of *alias* in the rendered *text*."""
+        return next(iter(yaml.safe_load(text)[alias]["remotes"].values()))
+
+    def test_the_scoped_token_is_asked_with_the_private_repositories_the_app_reads(self):
+        """One request, with the ids of the private repositories the App reads."""
+        access = {
+            "https://github.com/acme/a": (11, True, "app"),
+            "https://github.com/acme/b": (12, True, "app"),
+            "https://github.com/acme/pub": (13, False, "app"),
+            "https://github.com/acme/pat-only": (14, True, "pat"),
+        }
+        _ex, text, scoped, _log = self._executor(list(access), access)
+        scoped.assert_called_once_with([11, 12])
+        self.assertIn(f"x-access-token:{self._SCOPED}@", self._remote(text, "a"))
+        self.assertIn(f"x-access-token:{self._SCOPED}@", self._remote(text, "b"))
+        self.assertNotIn(self._GENERAL, text)
+
+    def test_a_public_repository_gets_no_credential_even_if_the_app_reads_it(self):
+        """Nothing for a public repository, whoever reads it."""
+        access = {"https://github.com/acme/pub": (13, False, "app")}
+        _ex, text, scoped, _log = self._executor(list(access), access)
+        self.assertEqual(self._remote(text, "pub"), "https://github.com/acme/pub")
+        scoped.assert_not_called()
+
+    def test_one_nobody_reads_gets_no_credential_and_the_log_says_so(self):
+        """No token handed out on the chance it needs one."""
+        access = {"https://github.com/acme/secret": (None, None, None)}
+        _ex, text, _scoped, logged = self._executor(list(access), access)
+        self.assertEqual(self._remote(text, "secret"), "https://github.com/acme/secret")
+        self.assertNotIn("pat_tok", text)
+        self.assertNotIn(self._GENERAL, text)
+        self.assertTrue(any("neither the GitHub App" in line for line in logged))
+
+    def test_one_only_the_pat_reads_gets_the_pat(self):
+        """The PAT for what only it reads, and no scoped token asked."""
+        access = {"https://github.com/acme/pat-only": (14, True, "pat")}
+        _ex, text, scoped, _log = self._executor(list(access), access)
+        self.assertIn("x-access-token:pat_tok@", self._remote(text, "pat-only"))
+        scoped.assert_not_called()
+
+    def test_a_refused_scoped_token_refuses_the_job_and_no_token_reaches_the_spec(self):
+        """The installation's own token is never used instead."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        access = {"https://github.com/acme/a": (11, True, "app")}
+        with self.assertRaises(JobRefused) as caught:
+            self._executor(list(access), access, scoped=GitHubAPIError(422, "no"))
+        self.assertIn("installation's own token is not used", str(caught.exception))
+        self.assertNotIn(self._GENERAL, str(caught.exception))
 
 
 # ── Tier 2: _build_answers domain format ─────────────────────────────────────

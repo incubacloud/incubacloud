@@ -32,6 +32,7 @@ from odoo.tests.common import BaseCase
 from ..models.deploy_instance_executor import (
     _BUILD_RETRY_MAX_FIRST_S,
     _BUILD_RETRY_WAIT_S,
+    _FETCH_SECONDS_FILE,
     DeployInstanceExecutor,
     _build_retried_once,
 )
@@ -235,6 +236,59 @@ class TestTheBuildIsRepeatedOnceInDash(TestTheBuildIsRepeatedOnce):
 
     allow_inherited_tests_method = True
     _SHELL = "dash"
+
+
+class TestTheDownloadCountsForTheRepetition(BaseCase):
+    """After ``fetch-repos``, its seconds count with the first attempt's.
+
+    The download left the build for a step of its own (10-nov-2026): the
+    repetition still keeps the job under the runner's 3600 s only if the
+    time it took counts, as it did when the build cloned.
+    """
+
+    def _run(self, seconds, docker_secs, shell="sh"):
+        """Run the wrapped build after a download that wrote *seconds*.
+
+        :param seconds: what the seconds file holds, or None for no file
+        :param int docker_secs: the seconds each ``docker`` call «takes»
+        :return: the exit status and the ``docker`` calls
+        :rtype: tuple
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            host = _FakeHost(tmp, [3, 0], docker_secs=docker_secs)
+            work = Path(tmp, "inst")
+            target = work / _FETCH_SECONDS_FILE
+            target.parent.mkdir(parents=True)
+            if seconds is not None:
+                target.write_text(f"{seconds}\n", encoding="utf-8")
+            status, _out = host.run(
+                f"cd {work} && "
+                + _build_retried_once(_COMPOSE_BUILD, fetched=True),
+                shell,
+            )
+            return status, [c for c in host.calls() if c.startswith("docker")]
+
+    def test_a_long_download_and_a_short_build_are_not_repeated(self):
+        """890 s of download and 20 s of build reach the cap."""
+        status, calls = self._run(_BUILD_RETRY_MAX_FIRST_S - 10, 20)
+        self.assertEqual(status, 3)
+        self.assertEqual(calls, [_COMPOSE_BUILD])
+
+    def test_a_short_download_and_a_short_build_are_repeated(self):
+        """Under the cap together: repeated, in bash and in sh."""
+        for shell in ("bash", "sh"):
+            with self.subTest(shell=shell):
+                status, calls = self._run(100, 20, shell)
+                self.assertEqual(status, 0)
+                self.assertEqual(calls, [_COMPOSE_BUILD] * 2)
+
+    def test_no_file_or_one_that_is_not_a_number_counts_as_nothing(self):
+        """A missing or tampered file is zero, never a command."""
+        for seconds in (None, "", "12; touch pwned", "-5"):
+            with self.subTest(seconds=seconds):
+                status, calls = self._run(seconds, 20)
+                self.assertEqual(status, 0)
+                self.assertEqual(calls, [_COMPOSE_BUILD] * 2)
 
 
 class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):

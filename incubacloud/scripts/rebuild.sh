@@ -56,8 +56,9 @@ case "$op" in
         for path in "${secrets[@]}"; do
             ic_git_exclude "$dir" "$path"
         done
-        # And the repository trees that 8.0 to 10.0 fetch before their
-        # build (deploy.sh fetch-repos): every directory of
+        # And the repository trees fetched before the build (deploy.sh
+        # fetch-repos, every series that does: 8.0 to 10.0 since
+        # 8-nov-2026, all but 19.0 since 10-nov-2026): every directory of
         # odoo/custom/src but private, their temporary trees and the
         # build's Dockerfile.dockerignore. fetch-repos excludes them
         # itself before fetching; this is the second lock: hundreds of MB

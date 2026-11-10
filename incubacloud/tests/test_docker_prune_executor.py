@@ -96,6 +96,33 @@ class TestDockerPruneProtectFilter(TransactionCase):
         self.assertIn("docker image prune", joined)
         self.assertIn("docker builder prune", joined)
 
+    def test_the_daily_prune_empties_the_record_of_past_builds(self):
+        """It kept each build's output, with the URLs and their token while
+        the image cloned its repositories (10-nov-2026); a Docker without
+        ``buildx history`` fails nothing."""
+        tasks = [
+            task for task in self._command_tasks()
+            if task["ansible.builtin.command"].get("cmd")
+            == "docker buildx history rm --all"
+        ]
+        self.assertEqual(len(tasks), 1)
+        self.assertIs(tasks[0]["failed_when"], False)
+
+    def test_the_daily_prune_removes_the_cached_trees_no_instance_links(self):
+        """``deploy.sh fetch-repos``' trees go once no marker links them,
+        two hours on, never through a link and never failing the play."""
+        tasks = [
+            task for task in self._play()["tasks"]
+            if "git-trees" in str(task.get("ansible.builtin.shell", ""))
+        ]
+        self.assertEqual(len(tasks), 1)
+        cmd = tasks[0]["ansible.builtin.shell"]["cmd"]
+        self.assertIn('d="$HOME/.incubacloud/git-trees"', cmd)
+        self.assertIn('[ ! -L "$d" ]', cmd)
+        self.assertIn("-name head -links 1 -cmin +120", cmd)
+        self.assertIn("-name '.tmp-*' -mmin +120", cmd)
+        self.assertIs(tasks[0]["failed_when"], False)
+
     def test_prune_command_excludes_protected_resources(self):
         """The prunes that can sweep a stopped stack carry the filter.
 

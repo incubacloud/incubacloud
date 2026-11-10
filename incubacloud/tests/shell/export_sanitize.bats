@@ -268,6 +268,7 @@ YAML
     echo tree > "$INST/odoo/custom/src/odoo/setup.py"
     echo tree > "$INST/odoo/custom/src/addons/README"
     echo half > "$INST/odoo/custom/src/.ic-tmp-addons/x"
+    echo 412 > "$INST/odoo/custom/src/.ic-fetch-seconds"
     echo mine > "$INST/odoo/custom/src/private/mod/__manifest__.py"
     echo '!custom/src/odoo' > "$INST/odoo/Dockerfile.dockerignore"
     echo 'git config' > "$INST/odoo/custom/build.d/060-incubacloud-git"
@@ -277,10 +278,38 @@ YAML
     [ ! -e "$OUT/odoo/custom/src/odoo" ]
     [ ! -e "$OUT/odoo/custom/src/addons" ]
     [ ! -e "$OUT/odoo/custom/src/.ic-tmp-addons" ]
+    [ ! -e "$OUT/odoo/custom/src/.ic-fetch-seconds" ]
     [ ! -e "$OUT/odoo/Dockerfile.dockerignore" ]
     [ ! -e "$OUT/odoo/custom/build.d/060-incubacloud-git" ]
     [ ! -e "$OUT/odoo/custom/incubacloud-git" ]
     [ -f "$OUT/odoo/custom/src/private/mod/__manifest__.py" ]
     [ -f "$OUT/odoo/custom/build.d/05-incubacloud-debian-archive" ]
     [ -f "$OUT/odoo/custom/src/addons.yaml" ]
+}
+
+@test "the exported repos.yaml keeps every line, without any credential" {
+    mkdir -p "$INST/odoo/custom/src/odoo" "$INST/odoo/custom/src/addons"
+    cat > "$INST/odoo/custom/src/repos.yaml" <<'YAML'
+odoo:
+  remotes:
+    odoo: https://github.com/odoo/odoo.git
+  merges:
+  - odoo $ODOO_VERSION
+addons:
+  remotes:
+    addons: https://github.com/acme/addons.git
+  merges:
+  - addons main
+priv:
+  remotes:
+    priv: https://x-access-token:ghs_leftover@github.com/acme/priv.git
+  merges:
+  - priv main
+YAML
+    run_export
+    for alias in odoo addons priv; do
+        grep -q "^$alias:" "$OUT/odoo/custom/src/repos.yaml"
+    done
+    ! grep -q '://[^/]*@' "$OUT/odoo/custom/src/repos.yaml" || false
+    ! grep -q ghs_leftover "$OUT/odoo/custom/src/repos.yaml" || false
 }
