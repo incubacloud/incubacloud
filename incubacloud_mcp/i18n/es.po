@@ -2505,12 +2505,6 @@ msgstr "%(person)s · %(credential)s · hasta el %(date)s UTC"
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
-msgid "1 day"
-msgstr "1 día"
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 msgid "30 days"
 msgstr "30 días"
 
@@ -3112,19 +3106,6 @@ msgid "The rule could not be revoked."
 msgstr "No se pudo revocar la regla."
 
 #. module: incubacloud_mcp
-#. odoo-python
-#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
-msgid "The rule ends on a day after today, at most %(max)s days ahead."
-msgstr ""
-"La regla termina un día posterior a hoy, como máximo dentro de %(max)s días."
-
-#. module: incubacloud_mcp
-#. odoo-python
-#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
-msgid "The rule lasts from 1 to %(max)s days."
-msgstr "La regla dura de 1 a %(max)s días."
-
-#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
 msgid "The rule was not granted."
@@ -3336,3 +3317,94 @@ msgstr ""
 #: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
 msgid "charges included"
 msgstr "cobros incluidos"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid "%(credential)s acts without asking, with no end date."
+msgstr "%(credential)s actúa sin preguntar, sin caducidad."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"%(credential)s has an auto-approval rule with no end date, paused for now: "
+"it asks for approval."
+msgstr ""
+"%(credential)s tiene una regla de aprobación automática sin caducidad, en "
+"pausa por ahora: pide aprobación."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "%(person)s · %(credential)s · no end date"
+msgstr "%(person)s · %(credential)s · sin caducidad"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose a nearer end."
+msgstr "Elija un final más cercano."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose a period or no end date, not both."
+msgstr "Elija un plazo o sin caducidad, no ambos."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid ""
+"It lasts until someone revokes it, the credential is deleted or the person\n"
+"                        is archived. Whoever grants it decides for how long; a date is safer."
+msgstr ""
+"Dura hasta que alguien la revoque, se borre la credencial o se archive a la "
+"persona. Quien la concede decide cuánto dura; una fecha es más segura."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "No end date"
+msgstr "Sin caducidad"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "Recommended: 90 days, the usual rotation period of a credential."
+msgstr ""
+"Recomendado: 90 días, el periodo habitual de rotación de una credencial."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "The rule ends on a day after today."
+msgstr "La regla termina un día posterior a hoy."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "The rule lasts 1 day or more."
+msgstr "La regla dura 1 día o más."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
+msgid "This rule has no end date."
+msgstr "Esta regla no caduca."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_auto_approval__expires_at
+msgid "When the rule ends; empty, it has no end date."
+msgstr "Cuándo termina la regla; vacío, no caduca."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.js:0
+msgid ""
+"With no end date, %(credential)s of %(person)s runs every action that would "
+"wait for an approval, without asking, until someone revokes the rule."
+msgstr ""
+"Sin caducidad, %(credential)s de %(person)s ejecuta sin preguntar toda "
+"acción que esperaría una aprobación, hasta que alguien revoque la regla."
