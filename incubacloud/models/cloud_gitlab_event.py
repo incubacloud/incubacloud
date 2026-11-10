@@ -16,9 +16,12 @@ here: no call to GitLab inside a delivery.
 
 A lost race (a serialization failure, a deadlock) is never kept as the
 event's error: it reaches Odoo's retry of the whole request. Any other
-failure of one preview is logged, the others are handled, and the first
-is raised at the end, so the event keeps ``error`` and the daily cron
-dispatches it again.
+failure of one preview is logged and the others are handled. A rebuild
+raises the first at the end, which undoes the ones queued, so the event
+keeps ``error`` and the daily cron dispatches it again whole. A close
+keeps what it did (the preview closed, its note's job, the deletes of
+the others) and returns the failures: the event keeps ``error`` outside
+the dispatch's savepoint, and the cron deletes what is left.
 """
 import json
 import logging
@@ -186,6 +189,7 @@ class CloudGitLabEvent(models.Model):
         self.ensure_one()
         event = as_platform(self)
         attempts = event.dispatch_attempts + 1
+        failures = []
         # Outside the dispatch's savepoint: a valid delivery makes the
         # webhook active even when its dispatch fails. In one of its own:
         # a state that cannot be written must not cost the delivery nor
@@ -197,29 +201,48 @@ class CloudGitLabEvent(models.Model):
             _logger.exception("GitLab event %s: the webhook's state was not written", event.id)
         try:
             with self.env.cr.savepoint():
-                event._dispatch()
-                event.write({"error": False, "dispatch_attempts": attempts})
+                failures = event._dispatch() or []
+                if not failures:
+                    event.write({"error": False, "dispatch_attempts": attempts})
         except Exception as exc:
             if is_concurrency_error(exc):
                 raise
             _logger.exception("GitLab event %s: the dispatch failed", event.id)
-            event.write({
-                "processed": False, "dispatch_attempts": attempts,
-                "error": f"{type(exc).__name__}: {exc}"[:2000],
-            })
+            event._keep_failure(exc, attempts)
+            return False
+        if failures:
+            # Outside the savepoint: what the dispatch did stays.
+            event._keep_failure(failures[0], attempts)
             return False
         return True
 
+    def _keep_failure(self, exc, attempts):
+        """Leave the event unprocessed with *exc* as its error, for the cron.
+
+        :param Exception exc: what failed
+        :param int attempts: the dispatches made, this one included
+        """
+        self.write({
+            "processed": False, "dispatch_attempts": attempts,
+            "error": f"{type(exc).__name__}: {exc}"[:2000],
+        })
+
     def _dispatch(self):
-        """Route the event to its handler; every path ends ``processed``."""
+        """Route the event to its handler; every path ends ``processed``.
+
+        :return: the failures of a handler that keeps its work when some
+            of it failed (a close), the event then not ``processed``
+        :rtype: list
+        """
         self.ensure_one()
         if self.event_type == "Push Hook":
             self._process_push()
         elif self.event_type == "Merge Request Hook":
-            self._process_merge_request()
+            return self._process_merge_request()
         else:
             # Tag pushes (the «Verify» test included) count as deliveries only.
             self.write({"processed": True})
+        return []
 
     def _moved(self, summary):
         """Raise ``gitlab_repo_moved`` when the project's path changed in GitLab.
@@ -297,6 +320,10 @@ class CloudGitLabEvent(models.Model):
         nothing either for a project with an active webhook of its own:
         GitLab delivers the merge request to both, and each would clone
         and rebuild.
+
+        :return: the failures of a close, none otherwise; the event is
+            ``processed`` only when there are none
+        :rtype: list
         """
         self.ensure_one()
         summary = self._summary()
@@ -311,7 +338,7 @@ class CloudGitLabEvent(models.Model):
             or self._delivered_by_project_hook(hook, path)
         ):
             self.write({"processed": True})
-            return
+            return []
         review = {
             "provider": hook.provider_id, "path": path, "iid": iid,
             "branch": branch,
@@ -322,8 +349,11 @@ class CloudGitLabEvent(models.Model):
         elif action == "update" and summary.get("oldrev"):
             self._sync_mr_previews(review)
         elif action in MR_CLOSE_ACTIONS:
-            self._close_mr_previews(review)
+            failures = self._close_mr_previews(review)
+            if failures:
+                return failures
         self.write({"processed": True})
+        return []
 
     def _delivered_by_project_hook(self, hook, path):
         """Return whether *hook* is a group's and *path* has an active webhook of its own.
@@ -622,7 +652,15 @@ class CloudGitLabEvent(models.Model):
         any other, one being built included. The alert about the merge
         request's note is resolved: nothing is left to write on it.
 
+        A delete that fails is logged and the others go on. The failures
+        are returned, not raised: raising would undo, in the dispatch's
+        savepoint, the closed state, the note's job and the deletes
+        already queued, and a restore running meanwhile would announce a
+        preview of a closed merge request.
+
         :param dict review: what :meth:`_process_merge_request` read
+        :return: the exceptions of the previews whose delete failed
+        :rtype: list
         """
         Note = self.env["cloud.gitlab.mr.note"]
         failures = []
@@ -645,7 +683,7 @@ class CloudGitLabEvent(models.Model):
                 name, review["iid"],
             )
         Note._resolve_request(review["provider"], review["path"], review["iid"])
-        self._raise_first(failures)
+        return failures
 
     def _report_mr_preview_failure(self, prod, review, reason):
         """Say where people look that a preview was not created.
