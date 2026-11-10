@@ -590,6 +590,63 @@ class TestProcessPREventGuards(_GitHubEventBase):
             "Un-deployed PR instance should be unlinked on PR close",
         )
 
+    def test_closed_while_its_preview_deploys_queues_the_delete(self):
+        """The delete waits for the deploy running now and cancels what waits.
+
+        Until 1.0.224 the preview was unlinked, which the running job
+        refused: the event failed and the preview lived on.
+        """
+        Job = self.env['cloud.job'].sudo()
+        pr_instance = self.env['cloud.instance'].create({
+            'name': 'pr-deploying',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+            'state': 'deploying',
+            'pr_number': 56,
+            'pr_repo': 'acme/repo',
+            'pr_state': 'open',
+        })
+
+        def job(code):
+            """Create a job of *code* on the preview."""
+            return Job.create({
+                'name': code, 'host_id': self.host.id,
+                'instance_id': pr_instance.id,
+                'job_type_id': _ensure_job_type(self.env, code).id,
+            })
+
+        deploy, restore = job('deploy_instance'), job('restore_instance')
+        self._force_job_state(deploy, 'started')
+        self._force_job_state(restore, 'queued')
+        self.env.invalidate_all()
+        payload = json.dumps({
+            'action': 'closed',
+            'pull_request': {
+                'number': 56,
+                'base': {'ref': 'main', 'repo': {'clone_url': self.REPO_URL}},
+                'head': {
+                    'ref': 'feat/pr',
+                    'repo': {'clone_url': self.REPO_URL},
+                },
+            },
+            'repository': {'full_name': 'acme/repo'},
+            'installation': {'id': INSTALLATION_ID},
+        })
+        ev = self._pr_event(payload)
+        ev._process_pull_request_event()
+        self.assertTrue(ev.processed)
+        self.assertTrue(pr_instance.exists())
+        self.assertEqual(pr_instance.pr_state, 'closed')
+        delete = Job.search([
+            ('instance_id', '=', pr_instance.id),
+            ('job_type_id.code', '=', 'delete_instance'),
+        ])
+        self.assertEqual(len(delete), 1)
+        self.assertEqual(delete.state, 'queued')
+        self.assertEqual(deploy.state, 'started')
+        self.assertEqual(restore.state, 'cancelled')
+
 
 class TestDeliveryIdAntiReplay(TransactionCase):
     """Regression guard for the partial unique index on delivery_id.

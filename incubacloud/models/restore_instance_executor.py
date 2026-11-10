@@ -1,3 +1,4 @@
+import logging
 import os
 import posixpath
 import shlex
@@ -23,6 +24,7 @@ from ..restore_space import (
     room_refusal,
 )
 from ..restore_staging import is_staged_upload
+from ._concurrency import is_concurrency_error
 from ._odoo_versions import headless_flag, script_env
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
@@ -38,6 +40,8 @@ from .cloud_restore_upload_grant import SAFE_UPLOAD_NAME
 from .move_steps_executor import parse_fingerprint
 from .password_utils import merge_secret_key_lines
 from .secret_key_escrow import SecretKeyEscrowMixin
+
+_logger = logging.getLogger(__name__)
 
 
 def _curl_quoted(value):
@@ -1168,12 +1172,38 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         inst = self._inst()
         inst.write({"status": "ok", **inst._running_confirmed_vals()})
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
-        if inst.pr_number and inst.pr_provider_id:
+        if inst.pr_number and inst.pr_state == "closed":
+            # The request closed and nothing deletes the preview (its
+            # delete was cancelled, or never queued): it goes now, with
+            # no note saying it is ready.
+            self._queue_preview_follow_up(inst._remove_closed_preview)
+        elif inst.pr_number and inst.pr_provider_id:
             # A merge request's note is written by a job of its own,
             # queued in this transaction: no call to GitLab here.
-            self.env['cloud.gitlab.mr.note']._enqueue(inst)
+            self._queue_preview_follow_up(
+                lambda: self.env['cloud.gitlab.mr.note']._enqueue(inst),
+            )
         elif inst.pr_number:
             inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
+
+    def _queue_preview_follow_up(self, queue):
+        """Queue what follows a preview's restore, in a savepoint of its own.
+
+        The restore succeeded whatever happens here: a note or a delete
+        that cannot be queued is written to the log, and must not cost
+        the restore its outcome.
+
+        :param queue: a callable that queues it
+        """
+        try:
+            with self.env.cr.savepoint():
+                queue()
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.exception(
+                "Restore of %s: what follows it was not queued", self._inst().name,
+            )
 
     async def _cleanup_cross_host_handoff(self):
         """Best-effort removal of the handoff on the *source* host after

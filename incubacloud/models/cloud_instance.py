@@ -3393,6 +3393,38 @@ class CloudInstance(models.Model):
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)
 
+    def _remove_closed_preview(self):
+        """Delete a preview whose pull or merge request closed, whatever it is doing.
+
+        One never deployed (``draft``) is unlinked now, with what waits
+        on it. Any other has ``delete_instance`` queued, unless one
+        waits or runs already: the delete waits for the job running now
+        — the deploy of a clone still in ``deploying`` included — and
+        cancels what waits, the rest of the clone's chain among it. So a
+        request closed while its preview was being built leaves no
+        preview behind once that job ends.
+
+        :return: ``unlinked``, ``queued`` or ``pending`` (a delete
+            already waits or runs)
+        :rtype: str
+        """
+        self.ensure_one()
+        inst = self.sudo()
+        if inst.state == "draft" and not inst.removal_finalized:
+            inst.unlink()
+            return "unlinked"
+        Job = as_platform(self.env["cloud.job"])
+        if inst.removal_finalized or Job.search_count([
+            ("instance_id", "=", inst.id),
+            ("job_type_id.code", "=", "delete_instance"),
+            ("state", "in", (
+                "queued", "pending", "enqueued", "wait_dependencies", "started",
+            )),
+        ], limit=1):
+            return "pending"
+        Job.enqueue(inst.host_id.id, inst.id, "delete_instance")
+        return "queued"
+
     archived_at = fields.Datetime(
         copy=False,
         readonly=True,
