@@ -28,6 +28,7 @@ from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
 from .deploy_instance_executor import (
     DeployInstanceExecutor,
     _build_retried_once,
+    _then_context_prune,
 )
 from .docker_prune_executor import build_cache_prune_if_low
 
@@ -132,7 +133,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         fetch_steps = []
         if prefetch:
             fetch_steps = [self._fetch_step(d)]
-            build = f"cd {d} && {build}"
+            # Its context holds the trees: removed once it is built.
+            build = _then_context_prune(f"cd {d} && {build}")
         else:
             build = f"{self._record_heads_command(d)} && cd {d} && {build}"
 

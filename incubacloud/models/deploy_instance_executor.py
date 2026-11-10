@@ -56,7 +56,11 @@ from .abstract_executor import (
     sql_escape_literal,
 )
 from .cloud_host_edge_guard import WEBSITE_INFO_EXCEPTION_PRIORITY, WEBSITE_INFO_RULE
-from .docker_prune_executor import PROTECT_LABEL, build_cache_prune_if_low
+from .docker_prune_executor import (
+    PROTECT_LABEL,
+    build_cache_prune_if_low,
+    build_context_prune,
+)
 from .secret_key_escrow import SecretKeyEscrowMixin
 
 _logger = logging.getLogger(__name__)
@@ -320,6 +324,23 @@ def _build_retried_once(build, fetched=False):
         f" {_BUILD_RETRY_MAX_FIRST_S} s or more, with the download of the"
         f" repositories: not trying again.';"
         f" (exit $ic_build_s); fi; }}; }}"
+    )
+
+
+def _then_context_prune(build):
+    """Return *build* followed by ``build_context_prune``, with its status.
+
+    For a series that fetches its repositories on the host: the context
+    of its build holds their trees, and Docker would keep it until the
+    daily prune (10-nov-2026). Run whether the build failed or not.
+
+    :param str build: the build's whole command, from ``cd``.
+    :return: the command, exiting with *build*'s status.
+    :rtype: str
+    """
+    return (
+        f"{{ {build}; }}; ic_build_rc=$?; {build_context_prune()};"
+        " (exit $ic_build_rc)"
     )
 
 
@@ -1229,6 +1250,23 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     server["ca_pem"]
                 )
         return files
+
+    def _build_step_command(self, d):
+        """Return the deploy's «Build Odoo image» command, run in *d*.
+
+        Cached and without a pull, repeated once if it fails
+        (``_build_retried_once``); on a series that fetches its
+        repositories, followed by the removal of the build contexts
+        (``_then_context_prune``).
+
+        :param str d: the instance's directory on the host.
+        :rtype: str
+        """
+        prefetch = self._prefetches()
+        build = f"cd {d} && " + _build_retried_once(
+            "docker compose build odoo", fetched=prefetch,
+        )
+        return _then_context_prune(build) if prefetch else build
 
     def _prefetches(self):
         """Whether this series fetches its repositories before the build.
@@ -2963,9 +3001,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     was; with the image there, nothing after it builds.
             (
                 _LABEL_BUILD_DEPLOY,
-                f"cd {d} && " + _build_retried_once(
-                    "docker compose build odoo", fetched=self._prefetches(),
-                ),
+                self._build_step_command(d),
                 {"stop_on_failure": True},
             ),
             # 10. Start the database service first so it is ready for init.
