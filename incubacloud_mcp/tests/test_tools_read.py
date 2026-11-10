@@ -2,11 +2,13 @@
 
 import json
 import string
+from contextlib import ExitStack
 from unittest.mock import patch
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
+from odoo.addons.incubacloud.controllers._data_load import _routes_github
 from odoo.addons.incubacloud_mcp.models.mcp_server import PAGE_SLACK
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
@@ -550,3 +552,83 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         for text in texts:
             self._assert_no_secret(text)
         self.assertFalse([text for text in texts if '"postgres_password"' in text])
+
+
+@tagged("post_install", "-at_install")
+class TestRepoInfoByRole(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+    """github_repo_info reads as the panel's routes do, for the agent's user.
+
+    Below Project Manager, the panel's GitHub App or token reads only a
+    repository of a line the user sees; any other is read as a public
+    one. From Project Manager up, any repository.
+    """
+
+    def setUp(self):
+        """A consultant and a project manager of a project with one line."""
+        super().setUp()
+        self._resource_here()
+        self._panel_fixture()
+        self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True
+        ).create({"project_id": self.project.id, "url": "https://github.com/acme/addons"})
+        self.consultant = self._cloud_user(
+            "mcp-info-consultant", group="group_cloud_consultant"
+        )
+        self.pm = self._cloud_user("mcp-info-pm", group="group_cloud_project_manager")
+        self.project.member_ids = [(4, self.consultant.id), (4, self.pm.id)]
+        Service = type(self.env["cloud.github.credential.service"])
+        for name, value in (("get_credentials", {}), ("get_pat", "ghp_test")):
+            self.startPatcher(patch.object(Service, name, return_value=value))
+
+    def _branches(self, user, url):
+        """Ask github_repo_info for *url*'s branches as *user*'s agent.
+
+        :return: the tool's payload, and the GitHub clients the route built
+        :rtype: tuple
+        """
+        key = self._api_key(user)
+        clients = {}
+        with ExitStack() as stack:
+            for name in (
+                "GitHubAppClient",
+                "GitHubPATClient",
+                "GitHubAnonymousClient",
+            ):
+                client = stack.enter_context(
+                    patch.object(_routes_github, name, autospec=True)
+                )
+                client.return_value.get.return_value = [{"name": "main"}]
+                clients[name] = client
+            result = self._call_tool(
+                key, "github_repo_info", {"url": url, "what": "branches"}
+            )
+        self.assertFalse(result["isError"], result)
+        return self._payload(result), {
+            name: mock.called for name, mock in clients.items()
+        }
+
+    def test_a_consultant_s_agent_reads_another_repository_as_a_public_one(self):
+        payload, built = self._branches(
+            self.consultant, "https://github.com/acme/private-elsewhere"
+        )
+        self.assertEqual(payload["branches"], ["main"])
+        self.assertEqual(
+            built,
+            {
+                "GitHubAppClient": False,
+                "GitHubPATClient": False,
+                "GitHubAnonymousClient": True,
+            },
+        )
+
+    def test_a_consultant_s_agent_reads_a_line_s_repository_with_the_panel_s(self):
+        payload, built = self._branches(self.consultant, "https://github.com/acme/addons")
+        self.assertEqual(payload["branches"], ["main"])
+        self.assertTrue(built["GitHubAppClient"] or built["GitHubPATClient"])
+
+    def test_a_project_manager_s_agent_reads_any_repository_with_the_panel_s(self):
+        payload, built = self._branches(
+            self.pm, "https://github.com/acme/private-elsewhere"
+        )
+        self.assertEqual(payload["branches"], ["main"])
+        self.assertTrue(built["GitHubAppClient"] or built["GitHubPATClient"])

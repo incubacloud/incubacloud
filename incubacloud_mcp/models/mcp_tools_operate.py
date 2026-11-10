@@ -227,7 +227,7 @@ TOOLS = (
     ToolSpec(
         "import_project",
         "Create a project and its production instance from a GitHub repository.",
-        _CONSULTANT,
+        _PROJECT_MANAGER,
         obj(
             {
                 "url": string("The repository's https URL.", max_length=500),

@@ -257,7 +257,9 @@ TOOLS = (
         untrusted=True,
         requires=(
             "a repository the panel's GitHub App or token, or a Git provider's "
-            "credential, can read; branch for all but branches."
+            "credential, can read; below project manager, only a repository of "
+            "a project or an instance the user sees is read with them, any "
+            "other as a public one; branch for all but branches."
         ),
     ),
     ToolSpec(
