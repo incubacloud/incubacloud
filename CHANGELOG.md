@@ -20,10 +20,11 @@ The update needs no data migration.
   editor shows a saved line's URL read-only below Project Manager, and
   `/cloud/get_config` answers `permissions.can_change_repo_url`.
 - **Below Project Manager, the panel reads a repository's branches, modules
-  and requirements with its own GitHub credentials only when a line the user
-  sees names that repository.** Any other is read as a public repository: a
-  public one still answers, a private one is not found. From Project Manager
-  up, as before.
+  and requirements with its own GitHub credentials, or a Git provider's, only
+  when a line the user sees names that repository.** Any other is read as a
+  public repository: a public one still answers, a private one is not found.
+  From Project Manager up, any repository; with a Git provider's credential
+  this took a Developer before.
 - **A repository line's Git provider and path are set by the panel alone**,
   from the line's URL; a value sent for them by a form, the MCP or RPC is
   ignored.

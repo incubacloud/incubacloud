@@ -452,8 +452,9 @@ class TestReadsDispatchOnTheProvider(_RoutesCase):
 @tagged("post_install", "-at_install")
 class TestReadsUseTheCredentialOnlyForTheUsersRepositories(_RoutesCase):
     """The panel's credential covers a whole namespace: a user reads with it
-    only a repository of a line they see, or, to add one, as a developer of
-    a project they can edit; any other is read as a public one."""
+    only a repository of a line they see, or, from Project Manager up, who
+    point a line at any repository, any; any other is read as a public
+    one."""
 
     def setUp(self):
         super().setUp()
@@ -461,6 +462,10 @@ class TestReadsUseTheCredentialOnlyForTheUsersRepositories(_RoutesCase):
         self.developer = new_test_user(
             self.env, login="git-routes-developer",
             groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        self.project_manager = new_test_user(
+            self.env, login="git-routes-project-manager",
+            groups="base.group_user,incubacloud.group_cloud_project_manager",
         )
         self.project = self.env["cloud.project"].create({
             "name": "Reads of GitLab",
@@ -518,13 +523,14 @@ class TestReadsUseTheCredentialOnlyForTheUsersRepositories(_RoutesCase):
         self._line(self.env["cloud.project"].create({"name": "Someone else's"}))
         self.assertIsNone(self._credential_used(self.consultant))
 
-    def test_a_developer_of_a_project_may_read_a_repository_to_add(self):
-        # A developer edits every project (rule «Project: all (PM+)»), so
-        # the stakeholders and consultants are the ones read as public.
-        self.assertEqual(
-            self._credential_used(self.developer),
-            ("gitlab+deploy-token-7", "glpat-routes12"),
-        )
+    def test_from_project_manager_up_any_repository_uses_the_credential(self):
+        """As on GitHub: they point a line at any repository."""
+        for user in (self.project_manager, self.developer):
+            with self.subTest(user=user.login):
+                self.assertEqual(
+                    self._credential_used(user),
+                    ("gitlab+deploy-token-7", "glpat-routes12"),
+                )
 
 
 @tagged("post_install", "-at_install")

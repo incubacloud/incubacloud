@@ -406,9 +406,9 @@ def user_may_use_credential(env, provider, path):
 
     A credential covers a whole namespace, more than any one user works
     on. It is used for a repository of a line the user sees under their
-    record rules (a project's or an instance's), or, to add a new one,
-    for a developer of a project they can edit; any other read goes as
-    a public one.
+    record rules (a project's or an instance's), or, from Project Manager
+    up, who point a line at any repository, for any; any other read goes
+    as a public one, as GitHub's (``may_read_with_panel_credentials``).
 
     :param env: an Odoo environment, of the user who reads
     :param provider: the ``cloud.git.provider``
@@ -421,9 +421,7 @@ def user_may_use_credential(env, provider, path):
     for model in ('cloud.project.repo', 'cloud.instance.repo'):
         if env[model].search_count(domain, limit=1):
             return True
-    if not env['cloud.security.mixin']._has_cloud_group('group_cloud_developer'):
-        return False
-    return bool(env['cloud.project'].search([])._filtered_access('write'))
+    return env['cloud.security.mixin']._can_change_repo_url()
 
 
 def resolve_git_source(env, url, for_user=False):
