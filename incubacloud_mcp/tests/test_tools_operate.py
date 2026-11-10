@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 from odoo.tests import tagged
-from odoo.tests.common import HttpCase
+from odoo.tests.common import HttpCase, TransactionCase
 
 from .common import CLIENT_ID, JwtMixin, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
@@ -289,6 +289,45 @@ class TestOperateTools(
             self.env["cloud.instance"].search([("name", "=", "agent-refused")])
         )
 
+    def test_repointing_production_waits_for_approval(self):
+        """A production's branch changed by an agent is not written until
+        the user approves it: what production deploys from is code reaching
+        production, as a write to a branch it deploys from is."""
+        line = (
+            self.env["cloud.instance.repo"]
+            .with_context(skip_apply_requirements=True)
+            .create(
+                {
+                    "instance_id": self.production.id,
+                    "url": "https://github.com/acme/x",
+                    "branch": "main",
+                }
+            )
+        )
+        with patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts", autospec=True
+        ):
+            result = self._call_tool(
+                self.key,
+                "update_instance",
+                {
+                    "instance_id": self.production.id,
+                    "vals": {
+                        "repos": [
+                            {
+                                "id": line.id,
+                                "url": "https://github.com/acme/x",
+                                "branch": "agent/x",
+                            }
+                        ]
+                    },
+                },
+            )
+        self.assertTrue(result["isError"], result)
+        self.assertIn("approval", result["content"][0]["text"])
+        self.env.invalidate_all()
+        self.assertEqual(line.branch, "main")
+
     def test_tags_are_listed_and_created(self):
         """A tag is created, then listed."""
         created = self._payload(
@@ -401,4 +440,107 @@ class TestOperateAnswers(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCas
         self.assertEqual(
             [(repo["url"], repo["branch"]) for repo in payload["repos"]],
             [("https://github.com/acme/addons", "19.0")],
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestProductionCodeAsks(PanelFixtureMixin, McpUsersMixin, TransactionCase):
+    """update_instance asks before it changes the repositories or branches a
+    production deploys from, as repo_write_files asks before a write to a
+    branch a production deploys from."""
+
+    def setUp(self):
+        """A consultant member of the project; a repository on each instance."""
+        super().setUp()
+        self._panel_fixture()
+        self.consultant = self._cloud_user(
+            "mcp-code-consultant", group="group_cloud_consultant"
+        )
+        self.project.member_ids = [(4, self.consultant.id)]
+        Line = self.env["cloud.instance.repo"].with_context(
+            skip_apply_requirements=True
+        )
+        self.line = Line.create(
+            {
+                "instance_id": self.production.id,
+                "url": "https://github.com/acme/x",
+                "branch": "main",
+            }
+        )
+        Line.create(
+            {
+                "instance_id": self.staging.id,
+                "url": "https://github.com/acme/x",
+                "branch": "main",
+            }
+        )
+
+    def _ask(self, instance, vals):
+        """Return what the consultant is asked to update *instance* with *vals*."""
+        spec = self.env["incubacloud.mcp.catalog"]._spec("update_instance")
+        return (
+            self.env["incubacloud.mcp.tools"]
+            .with_user(self.consultant)
+            ._confirmation(spec, {"instance_id": instance.id, "vals": vals})
+        )
+
+    def _repo(self, **line):
+        """Return a ``repos`` list of one line: production's, changed by *line*."""
+        return [
+            {"id": self.line.id, "url": "https://github.com/acme/x", "branch": "main"}
+            | line
+        ]
+
+    def test_another_branch_on_production_asks(self):
+        message = self._ask(self.production, {"repos": self._repo(branch="agent/x")})
+        self.assertIn('"mcp-acme-prod"', message)
+        self.assertIn('"acme/x"', message)
+        self.assertIn('"agent/x"', message)
+
+    def test_another_repository_on_production_asks(self):
+        message = self._ask(
+            self.production,
+            {"repos": self._repo(url="https://github.com/stranger/y")},
+        )
+        self.assertIn('"stranger/y"', message)
+
+    def test_a_repository_added_to_production_asks(self):
+        repos = self._repo() + [{"url": "https://github.com/acme/z", "branch": "19.0"}]
+        self.assertIn('"acme/z"', self._ask(self.production, {"repos": repos}))
+
+    def test_a_pinned_commit_on_production_asks(self):
+        message = self._ask(
+            self.production, {"repos": self._repo(commit_sha="a" * 40)}
+        )
+        self.assertIn("a" * 40, message)
+
+    def test_production_s_own_lines_again_ask_nothing(self):
+        """The same repositories in another spelling, their modules changed,
+        or one of them removed: production deploys from no new code."""
+        self.assertIsNone(
+            self._ask(
+                self.production,
+                {
+                    "repos": self._repo(
+                        url="git@github.com:ACME/x.git", addons="sale_x"
+                    )
+                },
+            )
+        )
+        self.assertIsNone(self._ask(self.production, {"repos": []}))
+
+    def test_production_s_other_fields_ask_nothing(self):
+        self.assertIsNone(self._ask(self.production, {"auto_update": True}))
+
+    def test_a_staging_s_branch_asks_nothing(self):
+        line = self.staging.repo_ids
+        self.assertIsNone(
+            self._ask(
+                self.staging,
+                {
+                    "repos": [
+                        {"id": line.id, "url": line.url, "branch": "agent/x"}
+                    ]
+                },
+            )
         )

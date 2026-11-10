@@ -21,6 +21,8 @@ from ..protocol.tool_spec import (
     string,
 )
 from .mcp_catalog import tool_policies
+from .mcp_tools import quoted
+from .mcp_tools_code import _repo_key
 
 _CONSULTANT = "group_cloud_consultant"
 _PROJECT_MANAGER = "group_cloud_project_manager"
@@ -174,6 +176,28 @@ _UPDATE_INSTANCE = obj(
 )
 
 
+def _deployed_code(url, branch, commit_sha):
+    """Return what a repository line deploys, as two spellings of it compare.
+
+    The branch and the commit as ``/cloud/save_instance`` stores them: an
+    empty branch is ``main``.
+
+    :param str url: the repository's address, in any spelling the panel takes
+    :param str branch: the branch
+    :param str commit_sha: the pinned commit; empty follows the branch
+    :return: ``(owner/name, branch, commit)``; the address as given when it
+        is not a GitHub repository's
+    :rtype: tuple
+    """
+    url = (url or "").strip()
+    key = _repo_key(url)
+    return (
+        "/".join(key) if key else url,
+        (branch or "main").strip() or "main",
+        (commit_sha or "").strip(),
+    )
+
+
 def _with_vals(description, vals):
     """Return the description of a tool that takes *vals*, with its fields.
 
@@ -270,6 +294,10 @@ TOOLS = (
             required=("instance_id", "vals"),
         ),
         route="/cloud/save_instance",
+        # A production's repositories, branches and pinned commits are the
+        # code it deploys: changing them asks, as a write to a branch a
+        # production deploys from does (_confirm_update_instance).
+        confirm="conditional",
         requires=(
             "an instance the user can see; the environment chosen at creation "
             "cannot change."
@@ -527,6 +555,68 @@ class McpToolsOperate(models.AbstractModel):
                 for repo in project.repo_ids
             ],
         }
+
+    @api.model
+    def _confirm_update_instance(self, args):
+        """Ask before a production deploys from code it did not deploy from.
+
+        A repository, a branch or a pinned commit that none of the
+        production's lines holds yet is code that reaches production at
+        its next rebuild, or at once with Auto-Rebuild: the same outcome a
+        write to a branch it deploys from asks for (repo_write_files).
+        Another spelling of the same address, other modules of the same
+        repository, or a line taken out bring no new code and ask nothing,
+        and neither does a staging.
+
+        :param dict args: the validated arguments: ``instance_id`` and ``vals``
+        :return: what the user approves, or None
+        """
+        repos = args["vals"].get("repos")
+        if repos is None:
+            return None
+        instance = self.env["cloud.instance"].browse(args["instance_id"]).exists()
+        if instance.environment != "production":
+            return None
+        held = {
+            _deployed_code(line.url, line.branch, line.commit_sha)
+            for line in instance.repo_ids
+        }
+        new = []
+        for repo in repos:
+            if not (repo.get("url") or "").strip():
+                continue
+            code = _deployed_code(
+                repo["url"], repo.get("branch"), repo.get("commit_sha")
+            )
+            if code not in held and code not in new:
+                new.append(code)
+        if not new:
+            return None
+        lines = "\n".join(
+            "- "
+            + (
+                self.env._(
+                    "%(repo)s, branch %(branch)s, commit %(sha)s",
+                    repo=quoted(repo),
+                    branch=quoted(branch),
+                    sha=quoted(sha),
+                )
+                if sha
+                else self.env._(
+                    "%(repo)s, branch %(branch)s",
+                    repo=quoted(repo),
+                    branch=quoted(branch),
+                )
+            )
+            for repo, branch, sha in new
+        )
+        return self.env._(
+            "Change the code production %(name)s deploys from. It reaches "
+            "production at its next rebuild, or at once when it rebuilds on "
+            "every push. New in it:\n%(lines)s",
+            name=quoted(instance.name),
+            lines=lines,
+        )
 
     @api.model
     def _tool_create_backup(self, args):

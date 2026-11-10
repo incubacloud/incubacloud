@@ -35,6 +35,18 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_operate.py:0
+msgid "%(repo)s, branch %(branch)s"
+msgstr "%(repo)s, rama %(branch)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_operate.py:0
+msgid "%(repo)s, branch %(branch)s, commit %(sha)s"
+msgstr "%(repo)s, rama %(branch)s, commit %(sha)s"
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid ""
 "%s is not a GitHub repository address (https://github.com/<owner>/<name>)."
@@ -392,6 +404,16 @@ msgstr "Cancelada"
 #: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
 msgid "Cancelled. The agent will not do it."
 msgstr "Cancelada. El agente no lo hará."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_operate.py:0
+msgid ""
+"Change the code production %(name)s deploys from. It reaches production at its next rebuild, or at once when it rebuilds on every push. New in it:\n"
+"%(lines)s"
+msgstr ""
+"Cambiar el código desde el que se despliega la producción %(name)s. Llega a producción en su próxima reconstrucción, o de inmediato si se reconstruye con cada push. Lo nuevo:\n"
+"%(lines)s"
 
 #. module: incubacloud_mcp
 #. odoo-python
