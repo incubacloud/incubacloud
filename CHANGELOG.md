@@ -6,13 +6,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.222] — 2026-11-09
+## [1.0.222] — 2026-11-10
 
-Hardening. The update changes nothing in the database: the new checks apply
-to values written from this version on. Publish with `incubacloud_pitr`
-1.0.12, whose restore script the hosts receive with the next restore.
+Every series but 19.0 downloads its repositories on the server before the
+image is built, instead of cloning them inside the build. 19.0 follows in a
+later version. The update needs no data migration: an instance moves to the
+new way at its next deploy or rebuild, which downloads all its repositories
+once. The new checks under Security apply to values written from this
+version on. `incubacloud_pitr` 1.0.12 comes with it; a host receives its
+restore script with its next restore.
+
+### Changed
+
+- **The repositories are downloaded on the server.** A new step, *Fetch the
+  repositories*, downloads each repository of `repos.yaml` with doodba's own
+  `gitaggregate`, in a helper container (doodba's 19.0 image, pinned by
+  digest), and the image is built with `AGGREGATE=false`. The steps *Record
+  repository heads* and *Trust the Git servers* are gone from those series.
+  Only a repository whose head moved is downloaded again; a repository with
+  several merges is supported. The trees have no `.git`, nor does the image,
+  which no longer carries Odoo's (206 MB on 19.0).
+- **One tree per commit on each server.** The trees are kept in
+  `~/.incubacloud/git-trees` and each instance's is made of hard links to
+  one, so the instances of a server at the same commit of Odoo hold a single
+  tree of it. The daily maintenance removes the trees no instance uses.
+- **The step has a fixed budget**, 1 200 s, whatever the number of
+  repositories, with 600 s for each and one retry while time is left. The
+  seconds it took count for the build's repetition, which is now decided on
+  the download and the first build together.
+- **A series can go back** to cloning in the image with the system parameter
+  `incubacloud.repos_in_image_series` (series separated by commas), except
+  8.0 to 10.0. Its next deploy or rebuild removes the downloaded trees.
+- **The git helper image is kept** under a local tag with the label the
+  daily prune spares, so it is not downloaded again every day. A full setup
+  prepares it.
 
 ### Security
+
+Upgrading is recommended.
 
 - **An instance's mail relay fields hold what they are for.** The relay
   host is a hostname or an IPv4 address, the port a TCP port, and the relay
@@ -23,10 +54,10 @@ to values written from this version on. Publish with `incubacloud_pitr`
   Spanish translation included.
 - **A project's name is plain text, and reaches the observability agents as
   data.** A name with a template opener (`{{`, `{%`, `{#`), a line break or
-  another control character is refused. The labels people name
-  (project and tenant) reach the `install_observability` playbook marked as
-  not templates, and it writes them into the host's scrape configuration
-  through `to_json`. Spanish translation included.
+  another control character is refused. The labels people name (the
+  project's, and any a module adds) reach the `install_observability`
+  playbook marked as not templates, and it writes them into the host's
+  scrape configuration through `to_json`. Spanish translation included.
 - **Rows stay within their writer's projects.** An instance moved to another
   project, and a repository, domain or egress whitelist row moved to another
   instance (or a project's repository row to another project), is checked
@@ -41,6 +72,21 @@ to values written from this version on. Publish with `incubacloud_pitr`
   event triggers none. The restore's connections to it set the same at
   login, over a role's or a database's own settings. `incubacloud_pitr`
   1.0.12.
+- **No Git credential in the image or the instance.** For the series that
+  download on the server, a repository's credential travels only to the
+  helper container that downloads it, as a header scoped to that
+  repository's URL, and is removed with it: `repos.yaml` on the server, the
+  build context, the image, its layers and the instance's container hold
+  none.
+- **Scoped GitHub App tokens.** A server is handed a token of the App limited
+  to the instance's private repositories the App reads, with read access to
+  their contents only, asked for each job. The installation's own token stays
+  in the panel. If GitHub refuses the scoped token, the job is refused.
+- **No token where none is needed.** A public repository gets no credential,
+  and one neither the App nor the personal access token reads gets none
+  either; the job's log names it. The decision is made per repository.
+- **Build records are cleared daily.** The daily maintenance removes Docker's
+  record of past builds, which kept their output.
 
 ## [1.0.221] — 2026-11-09
 
