@@ -417,7 +417,7 @@ user guide says so.
 ## Auto-approval
 
 An Administrator lets **one credential of one user** run without asking,
-until a date (`incubacloud.mcp.auto.approval`, issue #8). While the rule is
+until a date or with no end date (`incubacloud.mcp.auto.approval`, issue #8). While the rule is
 active, every call of that credential that would wait for an approval runs
 at once; nothing depends on the tool, the target or what the agent read.
 Everything that is not an approval stays: the role, the routes' checks, the
@@ -443,13 +443,15 @@ methods (`_grant`, `_revoke`, `_use`), which Odoo's RPC cannot reach.
 1. the request's user and credential are the rule's, exactly — another key
    (even with the same name), another client, another user with the same
    client, or the assistant, ask;
-2. it is not revoked and `expires_at` is after the database's clock;
+2. it is not revoked and, if it has one, `expires_at` is after the
+   database's clock;
 3. the user's panel role is not above `role_at_grant`: a role that goes up
    pauses the rule until an Administrator grants a new one;
 4. `cloud.settings._mcp_auto_approval_allowed()` says yes (see *Extending*).
 
 The use is one `UPDATE … SET use_count = use_count + 1 … WHERE id = … AND
-revoked_at IS NULL AND expires_at > clock_timestamp() … RETURNING id`, on a
+revoked_at IS NULL AND (expires_at IS NULL OR expires_at > clock_timestamp())
+… RETURNING id`, on a
 cursor of its own at READ COMMITTED, committed before the action runs: no
 cron decides when a rule ends, an agent's parallel calls do not wait for
 each other during a long action, and the count stays if the request rolls
@@ -501,8 +503,9 @@ for five minutes, so the text may lag; the gate never does.
 
 | Value | Why (10-nov-2026) |
 |---|---|
-| A rule lasts 90 days at most, and cannot be extended or changed | The usual rotation period of a credential: a forgotten rule does not outlive the key that holds it. A new rule shows the notice again. |
-| No period is chosen beforehand (1, 7, 30 or 90 days, or a date) | Whoever grants it picks one on purpose. |
+| The end date is optional, with no longest period; a rule cannot be extended or changed (10-nov-2026) | How long an agent acts without asking is the decision of whoever grants it. A rule with no end date lasts until it is revoked, its API key deleted or its person archived, and the notice says so. A new rule shows the notice again. |
+| 90 days is recommended next to the period (10-nov-2026) | The usual rotation period of a credential: a forgotten rule does not outlive the key that holds it. |
+| No period is chosen beforehand (7, 30 or 90 days, no end date, or a date) | Whoever grants it picks one on purpose. |
 | A credential seen is recorded once an hour at most, and kept 90 days | A short list to choose from, without a write per call. |
 | `NOTICE_VERSION` | The text the Administrator accepted: a new text gets a new version, and a grant that accepted another is refused. |
 

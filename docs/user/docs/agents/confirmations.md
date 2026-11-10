@@ -57,4 +57,4 @@ another of your agents (another client or API key) cannot use it.
     trust, and [revoke](revoke.md) any you stop trusting.
 
 An Administrator can let one credential of one person act without these
-approvals, until a date: see [Auto-approval](auto-approval.md).
+approvals, until a date or with no end date: see [Auto-approval](auto-approval.md).

@@ -41,7 +41,7 @@ the agents already send.
 
 - **Auto-approval rules.** An Administrator lets one credential of one user
   — an API key, an OAuth client, or the panel's assistant — run without
-  asking until a date, at most 90 days ahead (Settings → Agents, **Grant
+  asking until a date or with no end date (Settings → Agents, **Grant
   auto-approval…**). While the rule is active, every call of that credential
   that would wait for an approval runs at once, production included; every
   other agent keeps asking. The role, the routes' checks, the secrets and the
@@ -51,15 +51,22 @@ the agents already send.
   already connected (`incubacloud.mcp.credential`) and, for an API key,
   still exists; the list and the notice name each one with its id and when
   it last connected, so two keys with the same name are told apart. A rule
-  cannot be extended or changed, and ends when its date passes, when it is
-  revoked (an Administrator any rule, a person their own, also from Connect
-  an agent), when the user is archived or the API key deleted; a role that
-  goes up pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True, defined
+  cannot be extended or changed, and ends when its date (if it has one)
+  passes, when it is revoked (an Administrator any rule, a person their
+  own, also from Connect an agent), when the user is archived or the API key
+  deleted; a role that goes up pauses it.
+  `cloud.settings._mcp_auto_approval_allowed()` (True, defined
   in `incubacloud`, so a layer that overrides it answers after it whatever
   the order the modules load in) pauses every rule and refuses new ones when
   a layer says False. A *Decline* or
   *Cancel* the person answers to a question asked before the rule existed
   still runs nothing.
+- **The end date is optional.** The grant offers 7, 30 or 90 days, **No
+  end date** or a date, none chosen beforehand, and recommends 90 days, the
+  usual rotation period of a credential; there is no longest period. A rule
+  with no end date (`expires_at` empty) lasts until it is revoked, its API
+  key deleted or its person archived; its notice, its audit row, the rules'
+  list, Connect an agent, the listing and the instructions say so.
 - **Charges are left out unless the rule includes them.** A tool declares
   that it charges money (`ToolSpec.charges`); under a rule, such a tool
   still asks unless the Administrator ticked **Include charges** when
