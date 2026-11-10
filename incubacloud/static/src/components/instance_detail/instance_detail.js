@@ -28,6 +28,7 @@ import {IcModal} from "../ic_modal/ic_modal";
 import {SearchSelect} from "../search_select/search_select";
 import {RlSelect} from "../rl_select/rl_select";
 import {IcPager} from "../ic_pager/ic_pager";
+import {MetricsBoard} from "../metrics/metrics_board";
 import {JobsMixin} from "./instance_detail_jobs";
 import {MoveMixin} from "./instance_detail_move";
 import {SyncMixin} from "./instance_detail_sync";
@@ -195,6 +196,18 @@ function applyPipResolutions(text, choices) {
   );
 }
 
+/**
+ * The access log's summary before anything was read, every cut empty.
+ *
+ * @returns {Object}
+ */
+function emptyAccessSummary() {
+  return {
+    by_status: [], top_clients: [], top_paths: [], by_minute: [],
+    login_posts: [], scan: {total: 0, top_clients: [], top_paths: []},
+  };
+}
+
 // Responsibility mixins, split out in Fase 4 / B3. Order is
 // irrelevant: no mixin overrides another's methods.
 export class InstanceDetail extends JobsMixin(
@@ -227,6 +240,7 @@ export class InstanceDetail extends JobsMixin(
     SearchSelect,
     RlSelect,
     IcPager,
+    MetricsBoard,
   };
 
   get isCreate() {
@@ -348,13 +362,12 @@ export class InstanceDetail extends JobsMixin(
       // The package "Edit Manually" opened the Dependencies tab on.
       pipFocusName: null,
       pipFocusSeq: 0,
-      // Metrics tab. The config is fetched once per visit; the access
+      // Metrics tab. The board reads the central itself; the access
       // log is read on demand, because it is live data from the host and
       // a stale copy would be worse than none during an incident.
-      metricsCfg: { loading: true, enabled: false, baseUrl: "" },
       accessLog: {
         loading: false, loaded: false, error: "",
-        entries: [], summary: { by_status: [], top_clients: [], top_paths: [] },
+        entries: [], summary: emptyAccessSummary(),
         // Table view over the entries already read: the search text,
         // the status class chip ("all", "2".."5") and the page offset.
         q: "", cls: "all", offset: 0,
@@ -734,7 +747,6 @@ export class InstanceDetail extends JobsMixin(
       this._loadAuditLog();
     }
     if (tab === "metrics") {
-      this._loadMetricsConfig();
       if (!this.state.accessLog.loaded && !this.state.accessLog.loading) {
         this.loadAccessLog();
       }
@@ -753,32 +765,6 @@ export class InstanceDetail extends JobsMixin(
    */
   get canConfigureObservability() {
     return this.env.features?.observability?.configure !== false;
-  }
-
-  /**
-   * Fetch whether observability is on and where the dashboards live.
-   *
-   * Deliberately narrow: the backend never hands the browser the metrics
-   * credentials, only the public Grafana URL.
-   */
-  async _loadMetricsConfig() {
-    if (!this.state.metricsCfg.loading && this.state.metricsCfg.fetched) {
-      return;
-    }
-    this.state.metricsCfg.loading = true;
-    try {
-      const cfg = await rpc("/cloud/monitoring/config", {});
-      this.state.metricsCfg = {
-        loading: false,
-        fetched: true,
-        enabled: !!cfg.enabled,
-        baseUrl: cfg.grafana_base_url || "",
-      };
-    } catch {
-      this.state.metricsCfg = {
-        loading: false, fetched: true, enabled: false, baseUrl: "",
-      };
-    }
   }
 
   /**
@@ -801,9 +787,7 @@ export class InstanceDetail extends JobsMixin(
         this.state.accessLog.entries = [];
       } else {
         this.state.accessLog.entries = res.entries || [];
-        this.state.accessLog.summary = res.summary || {
-          by_status: [], top_clients: [], top_paths: [],
-        };
+        this.state.accessLog.summary = {...emptyAccessSummary(), ...(res.summary || {})};
       }
     } catch (e) {
       this.state.accessLog.error =
@@ -815,31 +799,17 @@ export class InstanceDetail extends JobsMixin(
     }
   }
 
+  /** Bring the recent requests of the Metrics tab into view. */
+  showRequests() {
+    document.getElementById("ic-requests")?.scrollIntoView({behavior: "smooth", block: "start"});
+  }
+
   /**
-   * Grafana URL for this instance's dashboard, pinned to this instance.
-   *
-   * The variable is a view filter, never a boundary: what a viewer may
-   * see is decided by the gateway, from the credentials the datasource
-   * authenticates with. Changing it by hand only moves within what that
-   * account could already read.
-   *
-   * The host is pinned too. Container names repeat across hosts and an
-   * instance name is only unique within its project, so filtering by the
-   * instance alone can quietly add up series from two different machines.
+   * The busiest minute of the requests read, for scaling the per-minute
+   * bars.
    */
-  get instanceDashboardUrl() {
-    const base = (this.state.metricsCfg.baseUrl || "").replace(/\/+$/, "");
-    if (!base || !this.state.inst) {
-      return "";
-    }
-    const theme =
-      document.documentElement.dataset.icTheme === "light" ? "light" : "dark";
-    const name = encodeURIComponent(this.state.inst.name || "");
-    const host = encodeURIComponent(this.state.inst.host || "");
-    return `${base}/d/ic-instance/incubacloud-instance` +
-      `?kiosk&theme=${theme}` +
-      (host ? `&var-host=${host}` : "") +
-      `&var-instance=${name}`;
+  get requestsPeakMinute() {
+    return Math.max(1, ...(this.state.accessLog.summary.by_minute || []).map((m) => m.count));
   }
 
   /** Most recent requests first, which is how an incident is read. */

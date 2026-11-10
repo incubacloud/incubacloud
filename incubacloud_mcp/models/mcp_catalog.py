@@ -40,6 +40,12 @@ _GIT_HOOKS = (
     "as their Git providers are."
 )
 
+_METRICS_BOARD = (
+    "The charts and the on-demand readings of an instance's Metrics tab, "
+    "drawn by the panel; no tool reads them yet, read_access_log reads its "
+    "requests."
+)
+
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
     "/cloud": _SPA,
@@ -86,6 +92,9 @@ CORE_EXCLUDED = {
     "/cloud/instance/<int:instance_id>/log_archive/<string:name>": (
         _EXCLUDED_FOR_THE_BROWSER.format(tool="read_logs")
     ),
+    "/cloud/instance/resource_series": _METRICS_BOARD,
+    "/cloud/instance/db_activity": _METRICS_BOARD,
+    "/cloud/instance/slow_routes": _METRICS_BOARD,
     "/cloud/ping": _FORMS,
     "/cloud/get_nav_counts": (
         "The sidebar's count badges; the list tools count the same records."
@@ -147,6 +156,12 @@ CORE_DYNAMIC_CALLS = {
     },
     "/incubacloud/static/src/components/instance_detail/instance_detail.js": {
         "action.code": frozenset(),
+    },
+    # A reading on demand of the Metrics tab calls the route its board
+    # hands it: /cloud/instance/db_activity or /cloud/instance/slow_routes,
+    # both classified above, written in the board's template.
+    "/incubacloud/static/src/components/metrics/on_demand_panel.js": {
+        "this.props.route": frozenset(),
     },
     "/incubacloud/static/src/components/instance_detail/instance_detail_restore.js": {
         "`/cloud/instance/${this.props.instance_id}/restore/${path}`": frozenset(

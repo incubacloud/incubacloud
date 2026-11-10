@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.MetricsBoard">
+        <div class="ic-mb">
+
+            <t t-if="state.loading and !state.board and !state.error">
+                <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
+                    <div class="ic-skeleton-line ic-skeleton-title"/>
+                    <div class="ic-skeleton-line"/>
+                </div>
+            </t>
+            <t t-elif="state.reason === 'disabled' or state.reason === 'unconfigured'">
+                <t t-if="props.canConfigure">
+                    <div class="rl-stub ic-mb-stub">
+                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                        <h3>Observability is not enabled</h3>
+                        <p>Turn it on in Settings; every host is enrolled automatically.</p>
+                    </div>
+                </t>
+            </t>
+            <t t-elif="state.error">
+                <div class="rl-card rl-stub ic-mb-stub" role="alert">
+                    <span class="rl-si"><t t-out="env.icon('alert', 40)"/></span>
+                    <h3>Could not load the charts</h3>
+                    <p t-esc="state.error"/>
+                    <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.load()">Try again</button>
+                </div>
+            </t>
+            <t t-else="">
+                <!-- What is happening now -->
+                <section class="ic-mb-section" aria-labelledby="ic-mb-now">
+                    <h3 class="ic-mb-h" id="ic-mb-now">What is happening now?</h3>
+                    <div t-att-class="'rl-card ic-mb-diag ic-mb-tone-' + diagnosis.tone" role="status">
+                        <t t-if="!diagnosis.current">
+                            <p class="ic-mb-diag-text">The window shown ends in the past: the diagnosis reads only the last 15 minutes up to now. Reset the zoom to see it.</p>
+                        </t>
+                        <t t-elif="!hasData">
+                            <p class="ic-mb-diag-text">No data for this period. The host's agent has not reported this instance in the selected window: a stopped or newly deployed instance shows nothing until its containers run.</p>
+                        </t>
+                        <t t-else="">
+                            <div class="ic-mb-diag-head">
+                                <span t-att-class="'ic-mb-dot ic-mb-dot-' + diagnosis.tone" aria-hidden="true"/>
+                                <strong t-esc="diagnosisHeading"/>
+                                <span class="ic-mb-diag-span">last 15 minutes</span>
+                            </div>
+                            <ul class="ic-mb-findings">
+                                <t t-foreach="diagnosis.findings" t-as="f" t-key="f.code">
+                                    <li t-att-class="'ic-mb-finding ic-mb-tone-' + f.tone" t-att-data-code="f.code" t-esc="f.text"/>
+                                </t>
+                            </ul>
+                        </t>
+                        <div class="ic-mb-diag-actions">
+                            <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.scrollTo('ic-mb-queries')">Queries now</button>
+                            <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.scrollTo('ic-mb-slow')">Slow routes</button>
+                            <button t-if="props.onShowRequests" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-on-click="() => this.props.onShowRequests()">Recent requests</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Since when -->
+                <section class="ic-mb-section" aria-labelledby="ic-mb-since">
+                    <div class="ic-mb-head">
+                        <div>
+                            <h3 class="ic-mb-h" id="ic-mb-since">Since when?</h3>
+                            <p class="ic-mb-sub">
+                                <t t-if="isZoomed">Zoomed window.</t>
+                                <t t-else="">Drag across a chart to zoom.</t>
+                                <span class="ic-mb-legend">
+                                    <span class="ic-mb-mk ic-mb-mk-restart" aria-hidden="true" t-esc="markerStyles.restart.glyph"/> restart
+                                    <span class="ic-mb-mk ic-mb-mk-oom" aria-hidden="true" t-esc="markerStyles.oom.glyph"/> out of memory
+                                </span>
+                            </p>
+                        </div>
+                        <div class="ic-mb-controls">
+                            <t t-if="isZoomed">
+                                <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetZoom">Reset zoom</button>
+                            </t>
+                            <div class="ic-mb-seg" role="group" aria-label="Time range">
+                                <t t-foreach="ranges" t-as="r" t-key="r.key">
+                                    <button t-att-class="'ic-mb-segbtn' + (state.range === r.key and !isZoomed ? ' active' : '')"
+                                            t-att-aria-pressed="state.range === r.key and !isZoomed ? 'true' : 'false'"
+                                            t-on-click="() => this.setRange(r.key)"
+                                            t-esc="r.label"/>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                        <div class="rl-card ic-mb-card" data-panel="latency">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Request time</span><span class="ic-mb-hint">p50 and p95, at the proxy</span></div>
+                            <TimeSeriesChart series="series('latency')" markers="markers" window="window" step="state.board.step"
+                                             unit="'seconds'" palette="'role'" label.translate="Request time over time" onZoom.bind="zoomTo"/>
+                        </div>
+                        <div class="rl-card ic-mb-card" data-panel="requests">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Requests</span><span class="ic-mb-hint">per second, and server errors</span></div>
+                            <TimeSeriesChart series="series('requests')" markers="markers" window="window" step="state.board.step"
+                                             unit="'rps'" palette="'role'" label.translate="Requests per second over time" onZoom.bind="zoomTo"/>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Which resource -->
+                <section class="ic-mb-section" aria-labelledby="ic-mb-resource">
+                    <h3 class="ic-mb-h" id="ic-mb-resource">Which resource?</h3>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <div class="rl-card ic-mb-card" data-panel="cpu">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">CPU per container</span><span class="ic-mb-hint">100 % = one core · dashed: quota</span></div>
+                            <TimeSeriesChart series="series('cpu')" markers="markers" window="window" step="state.board.step"
+                                             unit="'percent'" label.translate="CPU use per container over time" onZoom.bind="zoomTo"/>
+                        </div>
+                        <div class="rl-card ic-mb-card" data-panel="throttled">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Held back by the CPU quota</span><span class="ic-mb-hint">% of the time</span></div>
+                            <TimeSeriesChart series="series('throttled')" window="window" step="state.board.step"
+                                             unit="'percent'" label.translate="Share of time each container was held back by its CPU quota" onZoom.bind="zoomTo"/>
+                        </div>
+                        <div class="rl-card ic-mb-card" data-panel="memory">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Memory per container</span><span class="ic-mb-hint">working set · dashed: limit</span></div>
+                            <TimeSeriesChart series="series('memory')" markers="markers" window="window" step="state.board.step"
+                                             unit="'bytes'" label.translate="Memory use per container over time" onZoom.bind="zoomTo"/>
+                        </div>
+                        <div class="rl-card ic-mb-card" data-panel="pressure">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Server: waiting for resources</span><span class="ic-mb-hint">% of the time some task waited</span></div>
+                            <t t-if="hasSeries('pressure')">
+                                <TimeSeriesChart series="series('pressure')" window="window" step="state.board.step"
+                                                 unit="'percent'" palette="'role'" label.translate="Time the server's tasks waited for CPU, memory or disk" onZoom.bind="zoomTo"/>
+                            </t>
+                            <p t-else="" class="ic-mb-empty">No pressure readings from this server. The instance has no server yet, or its kernel does not report them.</p>
+                        </div>
+                        <div class="rl-card ic-mb-card ic-mb-wide" data-panel="neighbours">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Neighbours: CPU per instance on this server</span><span class="ic-mb-hint">this instance in green</span></div>
+                            <t t-if="hasSeries('neighbours')">
+                                <TimeSeriesChart series="series('neighbours')" window="window" step="state.board.step"
+                                                 unit="'percent'" palette="'neighbours'" highlightId="instanceKey"
+                                                 label.translate="CPU use of every instance on this server over time" onZoom.bind="zoomTo"/>
+                            </t>
+                            <p t-else="" class="ic-mb-empty">No instance of this server has reported yet.</p>
+                        </div>
+                    </div>
+                </section>
+            </t>
+
+            <!-- Which process or query: read from the host, so shown even
+                 when the central has nothing for this window. -->
+            <t t-if="state.board or state.error">
+                <section class="ic-mb-section" aria-labelledby="ic-mb-process">
+                    <h3 class="ic-mb-h" id="ic-mb-process">Which process or query?</h3>
+                    <p class="ic-mb-sub" t-if="state.board" t-esc="workersText"/>
+
+                    <div id="ic-mb-queries">
+                        <OnDemandPanel title.translate="Queries now" buttonLabel.translate="Read the database"
+                                       hint.translate="Sessions of this instance's database, what they wait for and who blocks whom. Read from the host when you ask; nothing is stored."
+                                       route="'/cloud/instance/db_activity'" params="{instance_id: props.instanceId}"
+                                       busy="state.reading" onBusy.bind="setReading">
+                            <t t-set-slot="default" t-slot-scope="scope">
+                                <p class="ic-mb-dbline" t-esc="dbSummary(scope.data.summary)"/>
+                                <div class="ic-mb-tablebox" t-if="scope.data.sessions.length">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead>
+                                            <tr>
+                                                <th>PID</th><th>State</th><th>Waiting for</th><th>Age</th>
+                                                <th>Program</th><th>Locks</th><th>Query</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="scope.data.sessions" t-as="row" t-key="row.pid">
+                                                <tr t-att-class="row.blocked_by.length ? 'ic-mb-blocked' : ''">
+                                                    <td class="ic-mb-mono" t-esc="row.pid"/>
+                                                    <td t-esc="row.state or '—'"/>
+                                                    <td><span class="ic-mb-k">Waiting for</span><t t-esc="waitText(row)"/></td>
+                                                    <td class="ic-mb-mono"><span class="ic-mb-k">Age</span><t t-esc="fmtDuration(row.age)"/></td>
+                                                    <td><span class="ic-mb-k">Program</span><t t-esc="row.application or '—'"/></td>
+                                                    <td t-esc="blockText(row)"/>
+                                                    <td class="ic-path ic-mb-query" t-esc="row.query"/>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p class="ic-mb-empty" t-else="">No other session is connected to this database.</p>
+                                <t t-if="scope.data.tables.length">
+                                    <h5 class="ic-mb-h5">Tables with most dead rows</h5>
+                                    <div class="ic-mb-tablebox">
+                                        <table class="rl-table ic-mb-table">
+                                            <thead><tr><th>Table</th><th>Live rows</th><th>Dead rows</th><th>Last vacuum</th></tr></thead>
+                                            <tbody>
+                                                <t t-foreach="scope.data.tables" t-as="t" t-key="t.table">
+                                                    <tr>
+                                                        <td class="ic-mb-mono ic-mb-cardtitle" t-esc="t.table"/>
+                                                        <td class="ic-mb-num"><span class="ic-mb-k">Live rows</span><t t-esc="fmtNumber(t.live)"/></td>
+                                                        <td class="ic-mb-num"><span class="ic-mb-k">Dead rows</span><t t-esc="fmtNumber(t.dead)"/></td>
+                                                        <td><span class="ic-mb-k">Last vacuum</span><t t-esc="fmtAt(t.last_vacuum)"/></td>
+                                                    </tr>
+                                                </t>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </t>
+                            </t>
+                        </OnDemandPanel>
+                    </div>
+
+                    <div id="ic-mb-slow">
+                        <OnDemandPanel title.translate="Slow routes" buttonLabel.translate="Read the log"
+                                       hint.translate="Where Odoo's time went, from its own log: routes, scheduled actions and workers stopped by a limit."
+                                       route="'/cloud/instance/slow_routes'" params="{instance_id: props.instanceId, minutes: state.slowMinutes}"
+                                       busy="state.reading" onBusy.bind="setReading">
+                            <t t-set-slot="controls">
+                                <select class="ic-mb-select" aria-label="Window of the log" t-on-change="onSlowWindow">
+                                    <t t-foreach="slowWindows" t-as="m" t-key="m">
+                                        <option t-att-value="m" t-att-selected="state.slowMinutes === m" t-esc="m === 15 ? '15 min' : '60 min'"/>
+                                    </t>
+                                </select>
+                            </t>
+                            <t t-set-slot="default" t-slot-scope="scope">
+                                <p class="ic-mb-sub" t-esc="slowSummary(scope.data)"/>
+                                <p class="ic-mb-empty" t-if="scope.data.untimed">Some requests carry no timing in the log (Odoo before 11.0): they are counted, not timed.</p>
+                                <div class="ic-mb-tablebox" t-if="scope.data.routes.length">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead>
+                                            <tr><th>Route</th><th>Requests</th><th>Mean</th><th>p95</th><th>SQL</th><th>Python</th><th>Queries</th></tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="scope.data.routes" t-as="r" t-key="r.route">
+                                                <tr>
+                                                    <td class="ic-path ic-mb-cardtitle" t-esc="r.route"/>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">Requests</span><t t-esc="r.count"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">Mean</span><t t-esc="fmtSeconds(r.mean)"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">p95</span><t t-esc="fmtSeconds(r.p95)"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">SQL</span><t t-esc="fmtPercent(r.sql_share)"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">Python</span><t t-esc="fmtPercent(r.python_share)"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">Queries</span><t t-esc="r.queries === null ? '—' : r.queries"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p class="ic-mb-empty" t-else="">No request was logged in this window.</p>
+                                <t t-if="scope.data.crons.length">
+                                    <h5 class="ic-mb-h5">Scheduled actions</h5>
+                                    <div class="ic-mb-tablebox">
+                                        <table class="rl-table ic-mb-table">
+                                            <thead><tr><th>Action</th><th>Runs</th><th>Longest</th><th>Total</th></tr></thead>
+                                            <tbody>
+                                                <t t-foreach="scope.data.crons" t-as="c" t-key="c.name">
+                                                    <tr>
+                                                        <td class="ic-mb-cardtitle" t-esc="c.name"/>
+                                                        <t t-if="c.running_since">
+                                                            <td colspan="3" t-esc="runningSince(c.running_since)"/>
+                                                        </t>
+                                                        <t t-else="">
+                                                            <td class="ic-mb-num"><span class="ic-mb-k">Runs</span><t t-esc="c.runs"/></td>
+                                                            <td class="ic-mb-num"><span class="ic-mb-k">Longest</span><t t-esc="fmtDuration(c.max)"/></td>
+                                                            <td class="ic-mb-num"><span class="ic-mb-k">Total</span><t t-esc="fmtDuration(c.total)"/></td>
+                                                        </t>
+                                                    </tr>
+                                                </t>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </t>
+                                <t t-if="scope.data.kills.length">
+                                    <h5 class="ic-mb-h5">Workers stopped by a time limit</h5>
+                                    <t t-foreach="scope.data.kills" t-as="k" t-key="k_index">
+                                        <details class="ic-mb-kill">
+                                            <summary><t t-esc="fmtAt(k.at)"/> · <t t-esc="k.message"/></summary>
+                                            <pre t-if="k.trace.length" class="ic-mb-trace" t-esc="k.trace.join('\n')"/>
+                                        </details>
+                                    </t>
+                                </t>
+                            </t>
+                        </OnDemandPanel>
+                    </div>
+                </section>
+            </t>
+
+            <!-- Size -->
+            <t t-if="state.board">
+                <section class="ic-mb-section" aria-labelledby="ic-mb-size">
+                    <h3 class="ic-mb-h" id="ic-mb-size">Size</h3>
+                    <div class="rl-card ic-mb-card" data-panel="disk">
+                        <div class="ic-mb-cardhead">
+                            <span class="rl-ovtitle">Directory on the server</span>
+                            <span class="ic-mb-hint" t-esc="directorySize"/>
+                        </div>
+                        <t t-if="hasSeries('disk')">
+                            <TimeSeriesChart series="series('disk')" window="window" step="state.board.step"
+                                             unit="'bytes'" palette="'role'" label.translate="Size of the instance's directory over time" onZoom.bind="zoomTo"/>
+                        </t>
+                        <p t-else="" class="ic-mb-empty">The server measures the directory every 10 minutes; nothing has been reported in this window.</p>
+                    </div>
+                </section>
+                <p class="ic-mb-meta" t-if="state.updatedAt" t-esc="metaText"/>
+            </t>
+        </div>
+    </t>
+
+</templates>

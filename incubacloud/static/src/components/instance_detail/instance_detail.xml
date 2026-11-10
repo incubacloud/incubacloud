@@ -2955,51 +2955,20 @@
         <t t-if="state.tab === 'metrics'">
             <div class="ic-metrics-panel">
 
-                <!-- Charts. Embedded rather than redrawn: rebuilding
-                     time-series charts here would be weeks of work to end
-                     up with something worse than the tool the dashboards
-                     are already provisioned for. -->
-                <t t-if="state.metricsCfg.loading">
-                    <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
-                        <div class="ic-skeleton-line ic-skeleton-title"/>
-                        <div class="ic-skeleton-line"/>
-                    </div>
-                </t>
-                <!-- Nothing to embed. On a panel that owns its settings
-                     that is a prompt; on one where they are injected it
-                     is not, so the charts block is simply absent and the
-                     tab keeps what it can actually deliver — the recent
-                     requests below, which need no Grafana. -->
-                <t t-elif="!canConfigureObservability">
-                    <!-- nothing: no charts, no instruction to nowhere -->
-                </t>
-                <t t-elif="!state.metricsCfg.enabled">
-                    <div class="rl-stub">
-                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
-                        <h3>Observability is not enabled</h3>
-                        <p>Turn it on in Settings; every host is enrolled automatically.</p>
-                    </div>
-                </t>
-                <t t-elif="!state.metricsCfg.baseUrl">
-                    <div class="rl-stub">
-                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
-                        <h3>No dashboards configured</h3>
-                        <p>Set the Grafana base URL in Settings to show charts here.</p>
-                    </div>
-                </t>
-                <t t-else="">
-                    <div class="rl-card ic-monitoring-frame">
-                        <iframe t-att-src="instanceDashboardUrl"
-                                t-att-title="'Metrics for ' + (state.inst.name || '')"
-                                loading="lazy"/>
-                    </div>
+                <!-- The board: a diagnosis, then since when, which
+                     resource, which process or query, and how big —
+                     drawn by the panel from the central's series. -->
+                <t t-if="state.inst">
+                    <MetricsBoard instanceId="props.instance_id"
+                                  canConfigure="canConfigureObservability"
+                                  onShowRequests.bind="showRequests"/>
                 </t>
 
                 <!-- Recent requests. This is the half the charts cannot
                      give: the client IP and the path. Read live from the
                      host and never stored — these lines carry the IP
                      addresses of this instance's end users. -->
-                <div class="rl-phead" style="margin-block-start:18px;">
+                <div class="rl-phead" id="ic-requests" style="margin-block-start:18px;">
                     <div>
                         <h2 class="rl-ptitle" style="font-size:15px;">Recent requests</h2>
                         <p class="rl-psub">Read from the proxy on this host. Nothing is stored.</p>
@@ -3054,6 +3023,42 @@
                                     <span class="rl-l ic-path" t-esc="row.key"/>
                                     <span class="rl-v" t-esc="row.count"/>
                                 </div>
+                            </t>
+                        </div>
+                        <div class="rl-card rl-card-pad" data-cut="login">
+                            <div class="rl-ovtitle">Login attempts</div>
+                            <t t-if="state.accessLog.summary.login_posts.length">
+                                <t t-foreach="state.accessLog.summary.login_posts" t-as="row" t-key="row.key">
+                                    <div class="rl-ovrow">
+                                        <span class="rl-l ic-path" t-esc="row.key"/>
+                                        <span class="rl-v" t-esc="row.count"/>
+                                    </div>
+                                </t>
+                            </t>
+                            <p t-else="" class="ic-requests-none">No one posted to the login page in these requests.</p>
+                        </div>
+                        <div class="rl-card rl-card-pad" data-cut="scan">
+                            <div class="rl-ovtitle">Scanners</div>
+                            <t t-if="state.accessLog.summary.scan.total">
+                                <p class="ic-requests-none">Requests for other software's files (WordPress, .env, .git…) answered 404: <t t-esc="state.accessLog.summary.scan.total"/></p>
+                                <t t-foreach="state.accessLog.summary.scan.top_clients" t-as="row" t-key="row.key">
+                                    <div class="rl-ovrow">
+                                        <span class="rl-l ic-path" t-esc="row.key"/>
+                                        <span class="rl-v" t-esc="row.count"/>
+                                    </div>
+                                </t>
+                            </t>
+                            <p t-else="" class="ic-requests-none">No one probed for other software's files in these requests.</p>
+                        </div>
+                    </div>
+
+                    <div class="rl-card rl-card-pad ic-requests-minutes" t-if="state.accessLog.summary.by_minute.length > 1">
+                        <div class="rl-ovtitle">Requests per minute</div>
+                        <div class="ic-requests-bars" role="img" aria-label="Requests per minute in the requests read">
+                            <t t-foreach="state.accessLog.summary.by_minute" t-as="m" t-key="m.key">
+                                <span t-att-class="'ic-requests-bar' + (m.errors ? ' has-errors' : '')"
+                                      t-att-style="'block-size:' + Math.max(4, Math.round(100 * m.count / requestsPeakMinute)) + '%'"
+                                      t-att-title="m.key.replace('T', ' ') + ' UTC · ' + m.count + (m.errors ? ' · 5xx ' + m.errors : '')"/>
                             </t>
                         </div>
                     </div>

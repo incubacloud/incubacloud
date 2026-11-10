@@ -4,10 +4,13 @@ browse/import host directory, container log streaming, captured mail.
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 
+import asyncio
 import json
 import logging
+import pathlib
 import re
 import shlex
+import time
 from contextlib import suppress
 from operator import itemgetter
 
@@ -15,10 +18,11 @@ import asyncssh
 import yaml
 
 from odoo import _, http
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 
 from ...models._repo_requirements import canonical_repo_url, resolve_repo_ref
+from ...models.cloud_instance_slow_routes import parse_slow_routes
 from ...models.cloud_repo_mixin import _url_host
 from .._rate_limit import Rule, rate_gate_json
 from .._safe_error import safe_error_response
@@ -43,6 +47,13 @@ from ._mailbox import (
 )
 
 _logger = logging.getLogger(__name__)
+
+#: The module's versioned host scripts.
+_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
+
+#: Seconds an on-demand reading of a host may take: the worker that
+#: serves it waits, and so does the person who pressed the button.
+_READ_TIMEOUT = 20
 
 #: The user and token of an https remote (``https://oauth2:<token>@host/…``),
 #: dropped before the URL is stored.
@@ -252,6 +263,64 @@ class OpsMixin:
             return {"ok": False, "error": str(exc)}
 
 
+    def _metrics_instance(self, instance_id):
+        """Return the instance a Metrics reading is about, or None.
+
+        The gate of every reading of the Metrics tab: the Developer role
+        (``_check_can_view_metrics``, which raises) and the record rules
+        on the instance. An instance the caller cannot read is answered
+        as one that does not exist.
+
+        :param int instance_id: the instance asked about.
+        :rtype: cloud.instance | None
+        """
+        self._sec()._check_can_view_metrics()
+        instance = request.env["cloud.instance"].browse(instance_id)
+        try:
+            if not instance.exists():
+                return None
+            instance.check_access("read")
+        except AccessError:
+            return None
+        return instance
+
+    def _read_with_script(self, host, name, args, timeout=_READ_TIMEOUT):
+        """Run a versioned script of ``scripts/`` on a host, on demand.
+
+        A reading somebody asks for is no job, so nothing uploads the
+        script beforehand: its text travels on stdin into a private
+        temporary file (``mktemp``, 0600) that is removed when it ends,
+        and the script runs with its own standard input, so a command
+        in it cannot swallow the rest of it. Its arguments are quoted;
+        a remote path starting with ``~/`` keeps the home expansion.
+
+        :param host: the ``cloud.host`` to run it on.
+        :param str name: the script's name under ``scripts/``.
+        :param args: its arguments, in order.
+        :param int timeout: seconds the reading may take; a worker of the
+            panel waits on it.
+        :returns: ``(stdout, stderr, exit status)``.
+        :raises TimeoutError: when the host does not answer in time.
+        """
+        script = (_SCRIPTS_DIR / name).read_text()
+        quoted = " ".join(
+            _quote_remote_path(a) if str(a).startswith("~") else shlex.quote(str(a))
+            for a in args
+        )
+        command = (
+            'f="$(mktemp)" && trap \'rm -f "$f"\' EXIT && cat > "$f" && '
+            f'bash "$f" {quoted} </dev/null'
+        )
+
+        async def _run():
+            async with asyncssh.connect(**host.ssh_connect_kwargs()) as conn:
+                result = await asyncio.wait_for(
+                    conn.run(command, input=script, check=False), timeout,
+                )
+                return result.stdout or "", result.stderr or "", result.exit_status
+
+        return run_async(_run())
+
     @http.route(["/cloud/instance/access_log"], type="jsonrpc", auth="user")
     def cloud_instance_access_log(self, instance_id, tail=None):
         """Return this instance's recent requests from the proxy log.
@@ -262,11 +331,11 @@ class OpsMixin:
 
         Read live over SSH and not stored: these lines contain the IP
         addresses of somebody else's end users, so the fewer copies exist
-        the better. Gated on the same role as the metrics view.
+        the better. Gated on the same role as the metrics view, and on
+        the record rules of the instance.
         """
-        self._sec()._check_can_view_metrics()
-        instance = request.env["cloud.instance"].browse(instance_id)
-        if not instance.exists():
+        instance = self._metrics_instance(instance_id)
+        if not instance:
             return {"ok": False, "error": _("Instance not found")}
         try:
             host = instance._require_access_log_host()
@@ -286,6 +355,123 @@ class OpsMixin:
             "ok": True,
             "entries": rows,
             "summary": instance._access_log_summary(rows),
+        }
+
+    @http.route(["/cloud/instance/resource_series"], type="jsonrpc",
+                auth="user")
+    def cloud_instance_resource_series(self, instance_id, range_key="1h",
+                                       start=None, end=None):
+        """Return the board of this instance's Metrics tab, diagnosed.
+
+        Every panel of ``metrics_charts.PANELS["instance"]`` read from
+        the central with this panel's own credential, and the plain-words
+        diagnosis of its last 15 minutes. The browser names a range or,
+        when it zooms, a window inside the last week; the PromQL is built
+        on the server (``cloud.instance._metrics_board``).
+
+        ``timing.total_ms`` is the whole route as the server saw it,
+        ``timing.central_ms`` the panels' queries run in parallel.
+
+        :param int instance_id: the instance to chart.
+        :param str range_key: ``1h``, ``6h``, ``24h`` or ``7d``.
+        :param start: zoom window start, unix seconds.
+        :param end: zoom window end, unix seconds.
+        """
+        began = time.monotonic()
+        instance = self._metrics_instance(instance_id)
+        if not instance:
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            result = instance._metrics_board(range_key, start, end)
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        if result.get("ok"):
+            result["timing"]["total_ms"] = round(
+                (time.monotonic() - began) * 1000, 1,
+            )
+        return result
+
+    @http.route(["/cloud/instance/db_activity"], type="jsonrpc", auth="user")
+    def cloud_instance_db_activity(self, instance_id):
+        """Return what this instance's database is doing right now.
+
+        Its sessions with what they wait on and who blocks whom, the
+        totals of the "Queries now" line and the tables with most dead
+        rows (``scripts/read_pg_activity.sh``). Read on demand and never
+        stored: the text of a query can carry personal data.
+
+        :param int instance_id: the instance to read.
+        """
+        instance = self._metrics_instance(instance_id)
+        if not instance:
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            host = instance._require_deployed_host()
+            stdout, stderr, status = self._read_with_script(
+                host, "read_pg_activity.sh",
+                [instance.get_remote_dir(), instance.postgres_dbname or "prod"],
+            )
+            if status:
+                _logger.warning(
+                    "[db-activity] instance %s: exit %s: %s",
+                    instance.id, status, (stderr or "")[-500:],
+                )
+                raise UserError(_(
+                    "The database of this instance could not be read. Is it "
+                    "running?"
+                ))
+            reading = instance._parse_db_activity(stdout)
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            _logger.warning(
+                "[db-activity] instance %s: %s", instance.id, exc,
+            )
+            return safe_error_response(
+                exc, _("Could not read the database of this instance"),
+            )
+        return {"ok": True, "read_at": instance._now_iso(), **reading}
+
+    @http.route(["/cloud/instance/slow_routes"], type="jsonrpc", auth="user")
+    def cloud_instance_slow_routes(self, instance_id, minutes=15):
+        """Return where this instance's time went in the last minutes.
+
+        Its slowest routes with their SQL and Python share, its scheduled
+        actions with their duration, the workers killed by a time limit
+        with the start of their trace and those recycled for memory,
+        added up from its Odoo log (``scripts/read_odoo_log.sh``).
+
+        :param int instance_id: the instance to read.
+        :param int minutes: 15 or 60.
+        """
+        instance = self._metrics_instance(instance_id)
+        if not instance:
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            host = instance._require_deployed_host()
+            cutoff, minutes = instance._slow_routes_args(minutes)
+            stdout, stderr, status = self._read_with_script(
+                host, "read_odoo_log.sh",
+                [instance.get_remote_dir(), cutoff, minutes],
+            )
+            if status:
+                _logger.warning(
+                    "[slow-routes] instance %s: exit %s: %s",
+                    instance.id, status, (stderr or "")[-500:],
+                )
+                raise UserError(_("The log of this instance could not be read."))
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            _logger.warning("[slow-routes] instance %s: %s", instance.id, exc)
+            return safe_error_response(
+                exc, _("Could not read the log of this instance"),
+            )
+        return {
+            "ok": True,
+            "read_at": instance._now_iso(),
+            "minutes": minutes,
+            **parse_slow_routes(stdout, minutes),
         }
 
     @http.route(["/cloud/move_instance"], type="jsonrpc", auth="user")

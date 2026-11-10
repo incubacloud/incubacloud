@@ -21,12 +21,13 @@ from unittest.mock import patch
 from odoo.tests.common import TransactionCase
 
 
-def _line(service, path="/web/login", status=200, ip="203.0.113.9"):
+def _line(service, path="/web/login", status=200, ip="203.0.113.9",
+          method="GET", time="2026-08-09T00:00:00Z"):
     """Build one proxy access-log line as Traefik emits it."""
     return json.dumps({
-        "time": "2026-08-09T00:00:00Z",
+        "time": time,
         "ClientHost": ip,
-        "RequestMethod": "GET",
+        "RequestMethod": method,
         "RequestPath": path,
         "RequestHost": "acme.example.com",
         "DownstreamStatus": status,
@@ -131,6 +132,60 @@ class TestSummary(AccessLogCase):
         summary = self.instance._access_log_summary([])
         self.assertEqual(summary["total"], 0)
         self.assertEqual(summary["top_clients"], [])
+        self.assertEqual(summary["by_minute"], [])
+        self.assertEqual(summary["login_posts"], [])
+        self.assertEqual(summary["scan"]["total"], 0)
+
+    def test_requests_are_counted_per_minute_with_their_server_errors(self):
+        raw = "\n".join([
+            _line(self.service, time="2026-08-09T10:00:05Z"),
+            _line(self.service, time="2026-08-09T10:00:50Z", status=502),
+            _line(self.service, time="2026-08-09T10:01:10Z"),
+        ])
+        summary = self.instance._access_log_summary(
+            self.instance._parse_access_log(raw),
+        )
+        self.assertEqual(summary["by_minute"], [
+            {"key": "2026-08-09T10:00", "count": 2, "errors": 1},
+            {"key": "2026-08-09T10:01", "count": 1, "errors": 0},
+        ])
+
+    def test_posts_to_the_login_page_are_ranked_by_client(self):
+        """Somebody trying passwords posts to /web/login over and over;
+        opening the page (a GET) is no attempt."""
+        raw = "\n".join(
+            [_line(self.service, method="POST", ip="198.51.100.4")] * 4
+            + [_line(self.service, method="POST", path="/web/login?db=x",
+                     ip="203.0.113.9")]
+            + [_line(self.service, method="GET", ip="203.0.113.50")] * 9
+        )
+        summary = self.instance._access_log_summary(
+            self.instance._parse_access_log(raw),
+        )
+        self.assertEqual(summary["login_posts"], [
+            {"key": "198.51.100.4", "count": 4},
+            {"key": "203.0.113.9", "count": 1},
+        ])
+
+    def test_probes_for_other_software_are_told_apart(self):
+        """A 404 on a WordPress or dotfile path is a scanner; Odoo's own
+        ``/xmlrpc/2`` and a found page are not."""
+        raw = "\n".join([
+            _line(self.service, path="/wp-login.php", status=404, ip="198.51.100.4"),
+            _line(self.service, path="/.env", status=404, ip="198.51.100.4"),
+            _line(self.service, path="/.git/config", status=404, ip="192.0.2.7"),
+            _line(self.service, path="/xmlrpc/2/common", status=404),
+            _line(self.service, path="/wp-admin", status=200),
+        ])
+        scan = self.instance._access_log_summary(
+            self.instance._parse_access_log(raw),
+        )["scan"]
+        self.assertEqual(scan["total"], 3)
+        self.assertEqual(scan["top_clients"][0], {"key": "198.51.100.4", "count": 2})
+        self.assertEqual(
+            {row["key"] for row in scan["top_paths"]},
+            {"/wp-login.php", "/.env", "/.git/config"},
+        )
 
 
 class TestCommandBounds(AccessLogCase):

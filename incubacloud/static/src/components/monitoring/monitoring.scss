@@ -40,16 +40,10 @@
 }
 
 // ── Per-instance metrics tab ─────────────────────────────────────────
-// Same embed, plus the request view the charts cannot provide.
-.ic-metrics-panel {
-  .ic-monitoring-frame iframe {
-    // Shorter than the fleet view: this sits inside a tab that already
-    // has its own header and a table underneath it.
-    block-size: #{"min(52vh, 640px)"};
-  }
-}
+// The board (components/metrics), then the request view the charts
+// cannot provide.
 
-// Three side-by-side summaries that collapse to one column when there
+// Side-by-side summaries that collapse to one column when there
 // is no room — this tab is opened from a phone during an incident at
 // least as often as from a desk.
 .ic-metrics-summary {
@@ -66,4 +60,37 @@
   font-family: var(--rl-fm);
   font-size: 11.5px;
   overflow-wrap: anywhere;
+}
+
+// A sentence inside a summary card, where a list would be empty.
+.ic-requests-none {
+  margin-block: 6px 0;
+  color: var(--rl-muted);
+  font-size: 12px;
+}
+
+// Requests per minute of the lines read: plain bars, no chart library,
+// the 5xx minutes in red.
+.ic-requests-minutes {
+  margin-block-end: 12px;
+}
+
+.ic-requests-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  block-size: 56px;
+  margin-block-start: 8px;
+}
+
+.ic-requests-bar {
+  flex: 1 1 0;
+  min-inline-size: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--rl-green);
+  opacity: 0.75;
+
+  &.has-errors {
+    background: var(--rl-red);
+  }
 }

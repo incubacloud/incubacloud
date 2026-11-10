@@ -43,6 +43,16 @@ _PROXY_CONTAINER = "inverseproxy-proxy-1"
 #: during an incident, bounded enough not to move megabytes per click.
 _MAX_TAIL = 5000
 
+#: Paths only a scanner asks for: they belong to other software
+#: (WordPress, phpMyAdmin) or are files no site serves (``.env``,
+#: ``.git``). A 404 on one of them is somebody probing for a known hole,
+#: not a lost visitor. Odoo's own ``/xmlrpc/`` is not ``/xmlrpc.php``.
+_SCAN_PREFIXES = (
+    "/wp-", "/wordpress", "/.env", "/.git", "/phpmyadmin", "/pma",
+    "/xmlrpc.php", "/cgi-bin/", "/vendor/phpunit", "/.aws", "/.ssh",
+    "/server-status", "/config.json", "/admin.php", "/boaform",
+)
+
 #: Fields kept from each line. Everything else is noise for this view,
 #: and not copying it is one less way to leak something by accident.
 _KEEP = (
@@ -147,15 +157,20 @@ class CloudInstance(models.Model):
     def _access_log_summary(self, rows):
         """Summarise a slice of requests the way an incident is triaged.
 
-        Answers the three questions actually asked when an instance is
-        under load: how many requests, which status codes, and who is
-        sending the most.
+        Answers the questions actually asked when an instance is under
+        load or under attack: how many requests and when, which status
+        codes, who is sending the most, who is trying passwords (posts
+        to ``/web/login``) and who is probing for other software's holes
+        (a 404 on a path of ``_SCAN_PREFIXES``).
 
         :param rows: parsed entries from ``_parse_access_log``.
-        :return: dict with totals, status counts and the top clients.
+        :return: dict with totals, status counts, the top clients and
+            paths, requests per minute, login posts by client and the
+            scanners.
         """
         self.ensure_one()
         by_status, by_client, by_path = {}, {}, {}
+        by_minute, logins, scan_clients, scan_paths = {}, {}, {}, {}
         for row in rows:
             status = str(row.get("DownstreamStatus") or "?")
             by_status[status] = by_status.get(status, 0) + 1
@@ -163,6 +178,18 @@ class CloudInstance(models.Model):
             by_client[client] = by_client.get(client, 0) + 1
             path = row.get("RequestPath") or "?"
             by_path[path] = by_path.get(path, 0) + 1
+            minute = (row.get("time") or "")[:16]
+            if minute:
+                slot = by_minute.setdefault(minute, {"count": 0, "errors": 0})
+                slot["count"] += 1
+                if status.startswith("5"):
+                    slot["errors"] += 1
+            bare = path.split("?", 1)[0]
+            if row.get("RequestMethod") == "POST" and bare == "/web/login":
+                logins[client] = logins.get(client, 0) + 1
+            if status == "404" and bare.lower().startswith(_SCAN_PREFIXES):
+                scan_clients[client] = scan_clients.get(client, 0) + 1
+                scan_paths[bare] = scan_paths.get(bare, 0) + 1
 
         def _top(counter, size=5):
             return [
@@ -177,6 +204,15 @@ class CloudInstance(models.Model):
             "by_status": _top(by_status, 8),
             "top_clients": _top(by_client),
             "top_paths": _top(by_path),
+            "by_minute": [
+                {"key": key, **by_minute[key]} for key in sorted(by_minute)
+            ],
+            "login_posts": _top(logins),
+            "scan": {
+                "total": sum(scan_paths.values()),
+                "top_clients": _top(scan_clients),
+                "top_paths": _top(scan_paths),
+            },
         }
 
     def _require_access_log_host(self):

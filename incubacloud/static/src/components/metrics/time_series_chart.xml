@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.TimeSeriesChart">
+        <div class="ic-mb-canvas">
+            <canvas t-ref="canvas" role="img" t-att-aria-label="props.label"/>
+        </div>
+    </t>
+
+</templates>
