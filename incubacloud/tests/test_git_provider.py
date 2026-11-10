@@ -8,7 +8,7 @@ the panel may connect is ``_network_policy``: ``'any'`` in the core,
 """
 import socket
 from datetime import date, timedelta
-from unittest.mock import DEFAULT, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from psycopg2 import IntegrityError
 
@@ -343,10 +343,22 @@ class TestExpiryCron(_ProviderCase):
             "token": "glpat-abcdefgh12", "expires_on": date.today(),
         })
         Alert = type(self.env["cloud.alert"])
-        # The first alert fails; the second is raised for real.
+        real = Alert.raise_alert
+
+        def first_fails(*args, **kwargs):
+            """Fail the first alert of the pass and raise the next for real.
+
+            Not ``wraps`` with ``side_effect=[..., DEFAULT]``: on Python
+            3.10, the CI's, an autospec'd function already holds a
+            ``return_value``, which ``DEFAULT`` returns instead of
+            calling what it wraps.
+            """
+            if raise_alert.call_count == 1:
+                raise RuntimeError("boom")
+            return real(*args, **kwargs)
+
         with patch.object(
-            Alert, "raise_alert", autospec=True, wraps=Alert.raise_alert,
-            side_effect=[RuntimeError("boom"), DEFAULT],
+            Alert, "raise_alert", autospec=True, side_effect=first_fails,
         ) as raise_alert:
             self.Provider._cron_check_git_providers()
         self.assertEqual(raise_alert.call_count, 2)
