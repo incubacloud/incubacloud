@@ -326,7 +326,7 @@ class TestGetTokenForRepo(BaseCase):
         from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 
         moved = {"Location": "https://api.github.com/repositories/101"}
-        for code in (301, 302, 307, 308):
+        for code in (301, 308):
             with self.subTest(code=code):
                 outcome, mock_urlopen = self._ask([
                     urllib.error.HTTPError(None, code, "Moved", moved, None),
@@ -337,6 +337,31 @@ class TestGetTokenForRepo(BaseCase):
                 self.assertIn("renamed or moved", str(outcome))
                 self.assertNotIn("app_tok", str(outcome))
                 self.assertEqual(mock_urlopen.call_count, 1)
+
+    def test_a_temporary_redirect_is_asked_again_like_any_failure(self):
+        """A 302 or a 307 says nothing of a rename: it is asked again once,
+        and then refuses the job without speaking of a move."""
+        import urllib.error
+
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        moved = {"Location": "https://api.github.com/repositories/101"}
+        for code in (302, 307):
+            with self.subTest(code=code, then="answer"):
+                outcome, mock_urlopen = self._ask([
+                    urllib.error.HTTPError(None, code, "Found", moved, None),
+                    _answer(),
+                ])
+                self.assertEqual(outcome, "app_tok")
+                self.assertEqual(mock_urlopen.call_count, 2)
+            with self.subTest(code=code, then="again"):
+                outcome, mock_urlopen = self._ask([
+                    urllib.error.HTTPError(None, code, "Found", moved, None),
+                    urllib.error.HTTPError(None, code, "Found", moved, None),
+                ])
+                self.assertIsInstance(outcome, JobRefused)
+                self.assertNotIn("renamed or moved", str(outcome))
+                self.assertEqual(mock_urlopen.call_count, 2)
 
 
 class TestAnAppThatIssuesNoToken(TransactionCase):
