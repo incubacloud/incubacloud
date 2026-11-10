@@ -533,8 +533,10 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_tools__display_name
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__display_name
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_auto_approval__display_name
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_catalog__display_name
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_confirm__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_tools__display_name
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_res_users__display_name
 msgid "Display Name"
 msgstr "Nombre para mostrar"
@@ -636,8 +638,10 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_tools__id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_auto_approval__id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_catalog__id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_confirm__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_tools__id
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_res_users__id
 msgid "ID"
 msgstr "ID"
@@ -1990,3 +1994,59 @@ msgstr "nada"
 #: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
 msgid "· queued"
 msgstr "· en cola"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "%(label)s · ran without asking"
+msgstr "%(label)s · se ejecutó sin preguntar"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid ""
+"%(label)s · ran without asking, after reading content other people can write"
+msgstr ""
+"%(label)s · se ejecutó sin preguntar, después de leer contenido que otras "
+"personas pueden escribir"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__auto_approved
+msgid "An auto-approval rule ran the call without asking the person."
+msgstr ""
+"Una regla de aprobación automática ejecutó la llamada sin preguntar a la "
+"persona."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__auto_after_untrusted
+msgid "Auto After Untrusted"
+msgstr "Automática tras contenido no fiable"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__auto_approved
+msgid "Auto Approved"
+msgstr "Aprobada automáticamente"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_mcp_auto_approval
+msgid "Auto-approval of an agent's credential"
+msgstr "Aprobación automática de la credencial de un agente"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__auto_after_untrusted
+msgid "It ran without asking after the task read content others can write."
+msgstr ""
+"Se ejecutó sin preguntar después de que la tarea leyera contenido que otros "
+"pueden escribir."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_auto_approval__kind
+msgid "Kind"
+msgstr "Tipo"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/mcp_auto_approval.py:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_mcp_auto_approval__kind__assistant
+msgid "Panel assistant"
+msgstr "Asistente del panel"
