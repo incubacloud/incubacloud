@@ -21,17 +21,6 @@ certificate. That field is left empty under *Advanced* and the job log
 says so, because inventing a value would leave a fleet quietly failing to
 push.
 
-### Adding or removing a tenant (SaaS)
-
-vmauth's user list **is** the access-control list: a user in it may write
-series labelled with itself and read those same series, and nothing else.
-It is rebuilt from the tenant list by the account sync, which a new or
-departed tenant queues on its own (and by every deployment of the
-central). Their Grafana organisation and scoped datasource are created in
-the same run — and, since 1.0.135, the organisation of an account no
-longer on the list is deleted there too. A deleted tenant's series are
-deleted 30 minutes after its account is revoked; see *Deleting series*.
-
 # Observability — operations guide
 
 How the metrics stack is put together, what it costs, and how to move or
@@ -343,7 +332,7 @@ Agents and browsers that are not on the central's host reach it over
 public HTTPS, terminated by the panel's existing Traefik. This is a
 one-time edit to Traefik's dynamic config on the central's host — a
 **separate file**, so a bad edit is rejected without taking the rest of
-the proxy down. A reference copy lives beside this guide; the shape is:
+the proxy down. Its shape:
 
 - `Host(metrics.<domain>)` and `/admin-r/`, `/admin-d/` or `/gadmin/` →
   **denied** from the public (an `ipWhitelist`). Every operator route
@@ -353,9 +342,10 @@ the proxy down. A reference copy lives beside this guide; the shape is:
   Traefik.
 - `Host(metrics.<domain>)` and `/grafana/` → Grafana's bridge port
   (websockets pass through; Grafana authenticates via OIDC). This router
-  carries its own `frame-ancestors` — see *Who may frame Grafana* below —
-  because panels on other origins embed it, and the host-wide
-  `frame_ancestors` field would override it.
+  carries its own `frame-ancestors` when panels on other origins embed
+  it, and the host's `frame_ancestors` field then stays empty: Traefik
+  applies that one as an entrypoint default, and an entrypoint header
+  overrides every router's (measured on Traefik v2.11).
 - `Host(metrics.<domain>)` and `/w/ /r/ /lw/ /lr/` → vmauth's bridge
   port, which returns 401 without a credential. **Only those four
   prefixes**: vmauth answers its own `/flags`, `/metrics`,
@@ -596,118 +586,3 @@ make sense together" is a reading, not an assertion.
 | Tenant, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | no charts; recent requests | hidden |
 | Tenant, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | charts + recent requests | hidden |
 | Tenant, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no charts; recent requests | hidden |
-
-## Tenant dashboards
-
-Off by default, behind `cloud.settings.metrics_tenant_dashboards_enabled`
-on the manager. There is no UI for it, the same as its siblings
-`metrics_tenant_write_url` and `metrics_tenant_read_url`: set it from a
-shell on the manager.
-
-Turning it on adds `grafana_base_url` to what
-`cloud.tenant._metrics_settings_payload()` pushes. That changes the
-settings fingerprint, so the reconciliation cron re-pushes each tenant on
-its own tick and the entry appears in their panel by itself. Turning it
-off pushes an **empty** URL rather than omitting the key — the push
-writes what it is given and nothing more, so omission would leave the old
-URL in place forever and the switch would be a no-op.
-
-What makes this safe on the Grafana side was already built for the
-operator: one organisation per account, each with a datasource
-credentialled as that account and its own copies of the dashboards
-(`provision_grafana_org.yml`). The only door that had to change is the
-OIDC client, which was registered `internal_only` — operators only.
-It is now `account_scoped`: anyone carrying at least one metrics account
-may authenticate, which covers operators and tenant users alike, and
-nobody else. That last part is not a nicety. A user with no account has
-no organisation to be mapped into and lands in Grafana's **default**
-one, which holds the file-provisioned datasource — and that one
-authenticates as `operator`, unfiltered across every account.
-
-### Why the cross-origin embed works (measured 16-ago-2026)
-
-The embed is cross-origin — `<slug>.incubacloud.io` framing
-`metrics.incubacloud.io` — so before switching tenant dashboards on we
-measured what actually happens to a browser that has no Grafana session
-yet. Recorded here because the headers alone read as if it could not
-work:
-
-| Checked | Result |
-|---|---|
-| `metrics.incubacloud.io/grafana/` | `302` → `/grafana/login`, no `X-Frame-Options` |
-| Grafana's session cookie | `SameSite=Lax` — travels fine, same registrable domain |
-| The provider's login **page** | `content-security-policy: frame-ancestors 'self'` |
-
-The cookie is not an obstacle: the panel and Grafana share a registrable
-domain, so the frame is same-site.
-
-The header on the login page is real, but it only applies to a page the
-browser is asked to **render**. Inside the frame, Grafana redirects to
-the provider's authorize endpoint, and when the browser already carries a
-session there, that endpoint answers with a redirect straight back —
-**no login page is ever rendered, so nothing is ever blocked**. Every
-panel is entered through that same provider, so carrying its session is
-the ordinary state, not a lucky one. That is why the charts come up.
-
-**What it depends on, stated so it is not forgotten:** a live session at
-the *provider*, which is a different cookie from the one for the panel
-the user is looking at. The two live on different servers with their own
-lifetimes. If the provider's expires while the panel's does not — or if
-someone reaches a panel without ever passing through the provider — the
-authorize step would have to draw its login inside the frame, and that is
-the case the header forbids. The symptom would be an empty area where the
-charts belong, with no error. Nothing in the panel can detect it: a frame
-blocked by CSP still fires `load`.
-
-A version shipped (1.0.68) that pre-empted this with an "Open in Grafana"
-link and a permanent note. It was reverted the same day: the case does
-not arise in normal use, and the note contradicted what a reader with
-working charts was looking at. If it ever does arise, an incident is a
-better basis for the fix than this paragraph.
-
-Switch the toggle on for one tenant with a live VPS first: pause the
-`SaaS: Reconcile tenant observability settings` cron, push that tenant by
-hand, look at the panel, then resume. Note that `search()` hides inactive
-records — re-activating that cron needs
-`with_context(active_test=False)`, or the write silently finds nothing.
-
-### Who may frame Grafana (15-sep-2026)
-
-Tenant dashboards went blank for a week without anyone noticing, and the
-cause was not Grafana. On 8-sep Cloud 1 gained a `frame-ancestors` list
-through `cloud.host.frame_ancestors`, which Traefik applies as an
-https-entrypoint default. That list named the operator's panel, and an
-entrypoint header reaches every router on the host — Grafana included.
-A tenant panel frames Grafana from its own origin, which was not on the
-list, so the browser refused it. Nothing in the panel can see that: a
-frame blocked by CSP still fires `load`.
-
-Two measurements decide the shape of the fix, both on Traefik v2.11:
-
-| Where the policy is set | What the browser receives |
-|---|---|
-| Entrypoint and router both | the entrypoint's, always |
-| Router, application sends its own | the router's, one header |
-
-So one entrypoint list cannot keep the panel strict while letting tenant
-panels frame Grafana. The host field stays **empty** on Cloud 1, and each
-router carries its own policy:
-
-| Router | `frame-ancestors` | Defined in |
-|---|---|---|
-| The panel, `www` | `'self'`, plus `X-Frame-Options: SAMEORIGIN` | `prod.yaml`, middleware `panel-privacy` |
-| Grafana, `metrics…/grafana/` | `'self' https://*.incubacloud.io` | `incubacloud/data/observability-traefik-metrics-gateway.yml` |
-| vmauth, the rest of `metrics…` | none | JSON and 401s, never framed |
-
-The cost of the wildcard is written next to it in the gateway file:
-any site in the zone, a tenant's own included, can frame Grafana signed
-in as its viewer. Tenant users are Viewers there; the operator is Editor
-on its own dashboards. The panel is not reachable that way.
-
-The gateway file ships inside the module, so the release that changes
-it carries it: a panel whose central sits next to it installs it in its
-Traefik's dynamic directory with each release, never by hand, or its
-copy drifts from the code that renders the other half of these routes.
-
-When checking this by hand, look at the frame, not at the page holding
-it: the console names the framed URL and the list it was refused by.
