@@ -329,9 +329,7 @@ class CloudRepoMixin(models.AbstractModel):
             result = super().write(vals)
         else:
             result = self._write_with_legacy_urls_canonical(vals)
-        # Odoo checks the record rules on the line as it was: one moved
-        # to another parent is checked again where it landed, so it goes
-        # only under a parent its writer may write.
+        # A line moved to another parent is checked again where it landed.
         if self._owner_field in vals:
             self.check_access('write')
         if 'url' in vals or 'branch' in vals:

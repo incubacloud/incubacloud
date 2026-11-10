@@ -61,7 +61,7 @@ restore script with its next restore.
 Upgrading is recommended.
 
 - **Project names, the SMTP relay fields and the administrator email are
-  validated** before they reach the deployment playbooks. A value saved by
+  validated** before they reach the deployment. A value saved by
   an earlier version is written out as it was saved. The relay user may be
   a Windows login (`DOMAIN\user`). Spanish translation included.
 - **Project membership is checked on every change.** Instances, their
