@@ -25,6 +25,14 @@ The update needs no data migration.
   public one still answers, a private one is not found. From Project Manager
   up, as before.
 
+### Fixed
+
+- **A Consultant or a Project Manager can create an instance in a project
+  with repositories**; its repositories come from the project's. Below
+  Project Manager, the new instance's lines name only the project's
+  repositories, with the branch and modules the user chooses, and the form
+  shows their URL read-only.
+
 ## [1.0.222] — 2026-11-10
 
 Every series but 19.0 downloads its repositories on the server before the

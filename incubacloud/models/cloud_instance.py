@@ -32,6 +32,7 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from .cloud_repo_mixin import repo_url_key
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password, generate_secret_key
 from .res_users_ext import as_platform
@@ -4931,9 +4932,112 @@ class CloudInstance(models.Model):
                 )
             )
 
+    #: What a repository line of a new instance takes from a creator who
+    #: cannot create lines: what that creator changes on a saved line.
+    _NEW_REPO_LINE_FIELDS = (
+        "sequence", "url", "branch", "addons", "excludes", "commit_sha",
+    )
+
+    def _repo_line_commands_to_vals(self, commands):
+        """Return the values of the lines *commands* create on a new instance.
+
+        For a creator who cannot create lines: ``repo_ids`` in the values
+        of ``create`` is taken out and its lines go through
+        :meth:`_create_repo_lines`. Only commands that create a line are
+        accepted; one that links lines that exist would move them here.
+
+        :param commands: the ``repo_ids`` value of ``create``, or None
+        :return: a list of the lines' values
+        :rtype: list
+        :raises AccessError: for any other command
+        """
+        lines = []
+        for command in commands or ():
+            if (
+                isinstance(command, (list, tuple))
+                and command
+                and command[0] == fields.Command.CREATE
+            ):
+                lines.append(dict(command[2] or {}))
+            else:
+                raise AccessError(
+                    _(
+                        "A new instance takes repositories as new lines; "
+                        "lines that already exist cannot be moved to it."
+                    )
+                )
+        return lines
+
+    def _create_repo_lines(self, lines):
+        """Create the repository lines *lines* on this instance, just created.
+
+        Developer and up create them as any line. Below, the user cannot
+        create lines, so they are created as the system, from what the
+        user may change on a saved line (:attr:`_NEW_REPO_LINE_FIELDS`).
+        Below Project Manager, a line names only a repository of the
+        project's lines, and takes the project's URL for it.
+
+        :param list lines: the values of each line, without ``instance_id``
+        :return: the lines, in the user's environment
+        :rtype: cloud.instance.repo
+        :raises AccessError: below Project Manager, for a repository that
+            is not one of the project's
+        """
+        self.ensure_one()
+        Repo = self.env["cloud.instance.repo"]
+        if not lines:
+            return Repo
+        if Repo.has_access("create"):
+            return Repo.create(
+                [{**line, "instance_id": self.id} for line in lines]
+            )
+        self.check_access("write")
+        may_change_url = self.env["cloud.security.mixin"]._can_change_repo_url()
+        project_urls = {
+            repo_url_key(self.env, repo.url): repo.url
+            for repo in self.project_id.repo_ids
+        }
+        vals_list = []
+        for line in lines:
+            vals = {
+                name: line[name]
+                for name in self._NEW_REPO_LINE_FIELDS
+                if name in line
+            }
+            if not may_change_url:
+                url = project_urls.get(repo_url_key(self.env, vals.get("url")))
+                if not url:
+                    raise AccessError(
+                        _(
+                            "Only a Project Manager or higher can add the "
+                            "repository %s, which is not one of the "
+                            "project's.",
+                        )
+                        % vals.get("url")
+                    )
+                vals["url"] = url
+            vals_list.append({**vals, "instance_id": self.id})
+        records = (
+            Repo.sudo()
+            .with_context(skip_apply_requirements=True)
+            .create(vals_list)
+            .with_env(self.env)
+        )
+        records._apply_requirements()
+        return records
+
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_create_instance()
+        # Below Developer the lines of ``repo_ids`` are created after the
+        # instance, from what the user may send (``_create_repo_lines``):
+        # the instance itself is created as the system.
+        sent_lines = [[] for _vals in vals_list]
+        if not self.env["cloud.instance.repo"].has_access("create"):
+            sent_lines = [
+                self._repo_line_commands_to_vals(vals.pop("repo_ids", None))
+                for vals in vals_list
+            ]
         for vals in vals_list:
             # Checked as a creation whatever ``create`` was called on: a
             # clone calls it on its production, whose environment the
@@ -5067,16 +5171,15 @@ class CloudInstance(models.Model):
         # project's pip_dependencies (and inherited by the instance above).
         # Re-fetching from GitHub here would just duplicate the work and block
         # the request with N synchronous HTTP calls.
-        Repo = self.env["cloud.instance.repo"].with_context(
-            skip_apply_requirements=True,
-        )
-        for inst in records:
+        for inst, lines in zip(records, sent_lines):
+            if lines:
+                inst._create_repo_lines(lines)
+        for inst in records.with_context(skip_apply_requirements=True):
             if self.env.context.get("skip_project_repos"):
                 continue  # caller will create repos explicitly
-            for repo in inst.project_id.repo_ids:
-                Repo.create(
+            inst._create_repo_lines(
+                [
                     {
-                        "instance_id": inst.id,
                         "sequence": repo.sequence,
                         "url": repo.url,
                         "branch": repo.branch or "main",
@@ -5084,5 +5187,7 @@ class CloudInstance(models.Model):
                         "excludes": repo.excludes or "",
                         "commit_sha": repo.commit_sha or "",
                     }
-                )
+                    for repo in inst.project_id.repo_ids
+                ]
+            )
         return records
