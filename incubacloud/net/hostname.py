@@ -7,7 +7,7 @@ router rule, the certificate it asks for, the subdomain of every instance
 that lands there. Until this module existed the field was ``required=True``
 and nothing else: no shape, no length, no character set.
 
-Two separate things went wrong with that.
+Two separate things can go wrong with that.
 
 The first needs no attacker. ``full_setup_executor._build_inverseproxy``
 splices the value into a Traefik rule delimited by backticks, and it did so
@@ -17,16 +17,12 @@ killed the setup job halfway through; one carrying a backtick closed the
 rule early and turned the dashboard router into a catch-all. An operator
 typo reaches both.
 
-The second is why this lives in ``net`` rather than in a model. Ordering an
-on-demand VPS has two doors. The tenant's own controller validated hard —
-shape, an internal-address blocklist, a platform-reserved list — but the
-door that actually decides is the manager's ``/saas/vps/request``, reached
-with a tenant token that the tenant's own administrator can read straight
-out of their database. That endpoint checked the length and nothing else,
-and the tenant executor then takes whatever the manager echoes back as
-authoritative. So the strict check was never the one that mattered. Both
-doors call this module now, and the constraint underneath means a value
-that somehow skips both still cannot land on a host.
+The second is why this lives in ``net`` rather than in a model. A value
+can reach a host through more than one caller — a form of the panel, a
+controller, an endpoint of another module — and a check that only one of
+them runs protects nothing once another one takes the value as given.
+Every caller validates here, and the constraint underneath means a value
+that somehow skips them still cannot land on a host.
 
 The split of responsibilities is deliberate:
 
@@ -35,12 +31,13 @@ The split of responsibilities is deliberate:
   that table also holds hosts an operator named by hand, and calling one
   ``h.local`` on an internal network is legitimate.
 * ``check_internal`` and ``reserved`` add the policy that only means
-  something where the value is "a public DNS name a tenant chose". That is
-  the two BYOD doors, and nowhere else.
+  something where the value is "a public DNS name somebody else chose".
+  That is the callers that take it from outside the panel's operators,
+  and nowhere else.
 
 Comparison is case-insensitive and the stored value is **not** rewritten.
-DNS is case-insensitive, production already holds a host recorded as
-``Tenants1.incubacloud.io``, and this codebase deliberately refuses to
+DNS is case-insensitive, a host may well be recorded as
+``Example1.example.com``, and this codebase deliberately refuses to
 silently lower-case what an operator typed: a canonical hostname that
 differs from what they entered is its own kind of surprise.
 """
@@ -104,8 +101,8 @@ def validate_wildcard_domain(value, *, check_internal=False, reserved=()):
 
     :param value: candidate domain, with or without a leading ``*.``.
     :param check_internal: also refuse names that are, or sit under,
-        internal infrastructure. Turn it on at the doors where the value is
-        a public DNS name a tenant chose; leave it off for the model
+        internal infrastructure. Turn it on where the value is a public
+        DNS name somebody else chose; leave it off for the model
         constraint, which also guards operator-named hosts.
     :param reserved: domains the platform keeps for itself. A candidate
         equal to one of them, or underneath one, is refused.

@@ -1195,11 +1195,13 @@ class CloudHost(models.Model):
         Traefik rule, the certificate request, every instance subdomain — so
         a malformed value does not surface as a bad value, it surfaces as a
         setup job dying on ``re.error`` or a router that matches the wrong
-        thing. This is the floor under both BYOD doors: a value that reaches
-        the ORM without passing either of them still cannot land here.
+        thing. This is the floor under every caller that validates: a value
+        that reaches the ORM without passing one of them still cannot land
+        here.
 
         Shape only. ``check_internal`` and the reserved list belong to the
-        callers where the value means "a public DNS name a tenant chose";
+        callers where the value means "a public DNS name somebody else
+        chose";
         this table also holds hosts an operator named, and ``h.local`` on an
         internal network is a fair name for one.
         """
