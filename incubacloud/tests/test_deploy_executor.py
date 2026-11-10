@@ -191,6 +191,77 @@ class TestGetTokenForRepo(BaseCase):
         ))
         self.assertEqual(mock_urlopen.call_count, 2)
 
+    def _ask(self, side_effect, app="app_tok", pat="pat_tok"):
+        """Ask for ``acme/secret`` with GitHub answering *side_effect*.
+
+        :param list side_effect: what each ``safe_urlopen`` call does
+        :return: the outcome (the token, or the exception raised) and the
+            ``safe_urlopen`` mock
+        :rtype: tuple
+        """
+        from odoo.addons.incubacloud.models import deploy_instance_executor as mod
+
+        executor = self._make_executor()
+        with patch(self._PATCH_PATH) as mock_urlopen, \
+                patch.object(mod, "_REPO_ACCESS_RETRY_SECONDS", 0):
+            mock_urlopen.side_effect = side_effect
+            try:
+                outcome = executor._get_token_for_repo(
+                    "https://github.com/acme/secret.git", app, pat, {},
+                )
+            except Exception as exc:  # noqa: BLE001 — the outcome under test
+                outcome = exc
+        return outcome, mock_urlopen
+
+    def test_a_failure_of_the_api_is_asked_again_once(self):
+        """A 500 then GitHub's answer: the App's token (10-nov-2026)."""
+        import urllib.error
+
+        outcome, mock_urlopen = self._ask([
+            urllib.error.HTTPError(None, 500, "Server Error", {}, None),
+            _answer(),
+        ])
+        self.assertEqual(outcome, "app_tok")
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    def test_a_failure_of_the_api_twice_refuses_the_job(self):
+        """A 500, a timeout, a rate limit or an answer without an id twice
+        is not «nobody reads it»: the job is refused with the reason,
+        not run without credentials, and the PAT is not asked instead
+        of the App (10-nov-2026)."""
+        import urllib.error
+
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        limited = {"X-RateLimit-Remaining": "0"}
+        for name, failure in (
+            ("500", lambda: urllib.error.HTTPError(None, 500, "Server Error", {}, None)),
+            ("timeout", lambda: TimeoutError("timed out")),
+            ("url", lambda: urllib.error.URLError("unreachable")),
+            ("403 limit", lambda: urllib.error.HTTPError(None, 403, "Forbidden", limited, None)),
+            ("429", lambda: urllib.error.HTTPError(None, 429, "Too Many", {}, None)),
+            ("no id", lambda: _answer(repo_id="x")),
+        ):
+            with self.subTest(failure=name):
+                side = [failure(), failure()]
+                outcome, mock_urlopen = self._ask(side)
+                self.assertIsInstance(outcome, JobRefused)
+                self.assertIn("acme/secret", str(outcome))
+                self.assertEqual(mock_urlopen.call_count, 2)
+
+    def test_401_and_403_without_a_rate_limit_mean_the_token_does_not_read_it(self):
+        """A 401 or a plain 403 of the App goes on to the PAT, unasked again."""
+        import urllib.error
+
+        for code in (401, 403):
+            with self.subTest(code=code):
+                outcome, mock_urlopen = self._ask([
+                    urllib.error.HTTPError(None, code, "No", {}, None),
+                    _answer(),
+                ])
+                self.assertEqual(outcome, "pat_tok")
+                self.assertEqual(mock_urlopen.call_count, 2)
+
     def test_only_pat_when_no_app_token(self):
         executor = self._make_executor()
         cache = {}

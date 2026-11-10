@@ -8,6 +8,7 @@ import shlex
 import shutil
 import string
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from contextlib import contextmanager, suppress
@@ -247,6 +248,11 @@ _ICP_REPOS_IN_IMAGE = "incubacloud.repos_in_image_series"
 #: The most of GitHub's answer about one repository read, in bytes: the
 #: ``GET /repos/{owner}/{repo}`` of a repository is a few kB.
 _REPO_ANSWER_BYTES = 256 * 1024
+
+#: Seconds before the one repetition of a question to GitHub's API about
+#: a repository that failed for any reason but «this token does not read
+#: it» (Fable's I1, 10-nov-2026).
+_REPO_ACCESS_RETRY_SECONDS = 2
 
 
 _ADDONS_CONFLICT_RE = re.compile(
@@ -567,14 +573,57 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             pat = svc.get_pat()
         return app_token, pat
 
+    @staticmethod
+    def _ask_github_repo(api, token):
+        """Ask GitHub's API about one repository with one token.
+
+        :param str api: ``https://api.github.com/repos/{owner}/{repo}``
+        :param str token: the App's installation token or the PAT
+        :return: GitHub's answer, with an integer ``id``; None when this
+            token does not read the repository: a 404, or a 401 or 403
+            that is not a rate limit
+        :rtype: dict or None
+        :raises Exception: on any other failure (a timeout, a 5xx, a rate
+            limit, an answer without an id), which says nothing of who
+            reads it
+        """
+        req = urllib.request.Request(
+            api,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        try:
+            with safe_urlopen(req, timeout=5) as resp:  # nosec B310 — hardcoded https://api.github.com
+                data = read_json_limited(resp, max_bytes=_REPO_ANSWER_BYTES)
+        except urllib.error.HTTPError as exc:
+            headers = exc.headers or {}
+            limited = (
+                headers.get("X-RateLimit-Remaining") == "0"
+                or headers.get("Retry-After") is not None
+            )
+            if exc.code == 404 or (exc.code in (401, 403) and not limited):
+                return None
+            raise
+        if not isinstance(data, dict) or not isinstance(data.get("id"), int):
+            raise TypeError("GitHub's answer names no repository")
+        return data
+
     def _github_repo_access(self, repo_url, app_token, pat, cache):
         """Return who reads *repo_url* on GitHub, as ``(repo_id, private, by)``.
 
         ``GET /repos/{owner}/{repo}`` with the App's token, then with the
         PAT; *by* is ``"app"``, ``"pat"`` or None when neither reads it,
         and ``repo_id`` and ``private`` come from GitHub's answer (None
-        when nobody reads it). Decided per repository, never per owner:
-        an owner's repositories are not all in one installation. Always
+        when nobody reads it). Only a 404, or a 401 or 403 that is not a
+        rate limit, means a token does not read it
+        (:meth:`_ask_github_repo`); any other failure is asked again once
+        and then refuses the job: taking it for «nobody reads it» fetched
+        a private repository without credentials and failed for another
+        reason, or handed the PAT where the App reads it (Fable's I1,
+        10-nov-2026). Decided per repository, never per owner: an
+        owner's repositories are not all in one installation. Always
         ``(None, None, None)`` for a URL that is not a github.com
         repository (``is_safe_repo_url`` once ``canonical_repo_url``
         spelled it).
@@ -584,6 +633,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :param pat: the PAT, or None
         :param dict cache: ``{"owner/repo": answer}``, filled here
         :rtype: tuple
+        :raises JobRefused: when GitHub's API failed twice for a token
         """
         url = canonical_repo_url((repo_url or "").strip())
         if not is_safe_repo_url(url):
@@ -597,19 +647,20 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         for by, token in (("app", app_token), ("pat", pat)):
             if not token:
                 continue
-            req = urllib.request.Request(
-                api,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                },
-            )
             try:
-                with safe_urlopen(req, timeout=5) as resp:  # nosec B310 — hardcoded https://api.github.com
-                    data = read_json_limited(resp, max_bytes=_REPO_ANSWER_BYTES)
-            except Exception:
-                continue
-            if not isinstance(data, dict) or not isinstance(data.get("id"), int):
+                data = self._ask_github_repo(api, token)
+            except Exception:  # noqa: BLE001 — asked again; the second says why
+                time.sleep(_REPO_ACCESS_RETRY_SECONDS)
+                try:
+                    data = self._ask_github_repo(api, token)
+                except Exception as exc:
+                    who = "the GitHub App" if by == "app" else "the PAT"
+                    raise JobRefused(
+                        f"Refused: GitHub's API did not answer for {owner}/{repo} "
+                        f"with {who} ({exc}). It is not fetched without "
+                        "credentials; run the job again."
+                    ) from exc
+            if data is None:
                 continue
             answer = (data["id"], bool(data.get("private", True)), by)
             break
@@ -630,6 +681,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :param pat: the PAT, or None
         :param dict cache: see :meth:`_github_repo_access`
         :rtype: str or None
+        :raises JobRefused: when GitHub's API did not answer
+            (:meth:`_github_repo_access`): a caller then stops with that
+            reason rather than «no token»
         """
         by = self._github_repo_access(repo_url, app_token, pat, cache)[2]
         return {"app": app_token, "pat": pat}.get(by)
@@ -822,7 +876,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :param app_token: the installation's token, or None
         :param pat: the PAT, or None
         :rtype: dict
-        :raises JobRefused: see :meth:`_scoped_github_token`
+        :raises JobRefused: see :meth:`_scoped_github_token` and
+            :meth:`_github_repo_access`
         """
         cache = {}
         access = {}
@@ -1048,14 +1103,19 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         :param str repos_yaml: the rendered file, with tokens
         :rtype: str
-        :raises JobRefused: when an entry holds a key besides
-            ``_REPOS_YAML_KEYS``: git-aggregator would run a
+        :raises JobRefused: when an entry is not a mapping, or holds a
+            key besides ``_REPOS_YAML_KEYS``: git-aggregator would run a
             ``shell_command_after`` in the container that holds the
             credential
         """
         data = yaml.safe_load(repos_yaml) or {}
         for alias, entry in data.items():
-            unknown = set(entry or {}) - _REPOS_YAML_KEYS
+            if not isinstance(entry, dict):
+                raise JobRefused(
+                    f"Refused: repos.yaml's {alias} is not a mapping of "
+                    f"{', '.join(sorted(_REPOS_YAML_KEYS))}."
+                )
+            unknown = set(entry) - _REPOS_YAML_KEYS
             if unknown:
                 raise JobRefused(
                     f"Refused: repos.yaml's {alias} holds "
