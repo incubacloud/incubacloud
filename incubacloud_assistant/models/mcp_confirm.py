@@ -31,7 +31,8 @@ class McpConfirm(models.AbstractModel):
         """Return None when the call may run now, else what stops it.
 
         For the assistant, ``{"assistant_confirmation": approval id,
-        "message": what the person confirms}``.
+        "message": what the person confirms, "arguments": the whole
+        arguments when the card cuts them, else ""}``, both masked.
         """
         if ctx.version != ASSISTANT_VERSION:
             return super()._gate(spec, args, ctx, params)
@@ -57,13 +58,19 @@ class McpConfirm(models.AbstractModel):
         approved = Approval._find_approved(spec.name, digest, ctx.principal.client)
         if approved and approved._consume("approved"):
             return None
-        message = (
-            self.env["incubacloud.mcp.secrets"]._scrubber().text("\n\n".join(texts))
+        scrubber = self.env["incubacloud.mcp.secrets"]._scrubber()
+        message = scrubber.text("\n\n".join(texts))
+        arguments = self.env["incubacloud.assistant.tools"]._full_arguments(
+            spec, args
         )
         approval, _token = Approval._open(
             spec.name, digest, message, "assistant", ctx.principal.client
         )
-        return {"assistant_confirmation": approval.id, "message": message}
+        return {
+            "assistant_confirmation": approval.id,
+            "message": message,
+            "arguments": scrubber.text(arguments) if arguments else "",
+        }
 
     @api.model
     def _tainted(self, ctx):

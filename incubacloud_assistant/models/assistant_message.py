@@ -83,6 +83,11 @@ class AssistantMessage(models.Model):
         readonly=True,
     )
     production = fields.Boolean(readonly=True, help="The card acts on production.")
+    card_arguments = fields.Text(
+        readonly=True,
+        help="The whole arguments of a card that cuts them, masked: the person "
+        "reads them all before confirming.",
+    )
 
     def _calls(self):
         """Return the tool calls of this answer of the model, as dicts."""
@@ -139,7 +144,11 @@ class AssistantMessage(models.Model):
         elif self.role == "job":
             data["label"] = self.env._("A job ended")
         elif self.role == "card":
-            data["card"] = {"state": self.card_state, "production": self.production}
+            data["card"] = {
+                "state": self.card_state,
+                "production": self.production,
+                "arguments": self.card_arguments or "",
+            }
         elif self.role == "assistant":
             data["cost"] = round(self.cost, 4) if self.cost_known else None
         return data

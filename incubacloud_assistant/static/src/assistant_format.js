@@ -122,6 +122,8 @@ export function messageView(message) {
                 id: message.id,
                 text: message.text,
                 production: Boolean(message.card?.production),
+                // The whole arguments when the card's text cuts them.
+                arguments: message.card?.arguments || "",
                 state: message.card?.state,
                 open: message.card?.state === "pending",
             };

@@ -139,6 +139,25 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
         for card in cards:
             self.assertNotIn(signature, card)
 
+    def test_a_card_says_where_it_cuts_the_arguments(self):
+        """Arguments past what a card quotes: the card says how much it
+        left out and where they all are; the whole arguments are kept for
+        the card, the hidden part included. Short ones are quoted whole."""
+        Tools = self.env["incubacloud.assistant.tools"].with_user(self.developer)
+        spec = self.env["incubacloud.mcp.catalog"]._spec("update_instance")
+        long_args = {
+            "instance_id": self.staging.id,
+            "vals": {"odoo_conf": "x" * 2000, "pip_dependencies": "hidden-req==0.0"},
+        }
+        card = Tools._extra_confirmation(spec, long_args)
+        self.assertNotIn("hidden-req", card)
+        self.assertRegex(card, r"cut: \d+ more characters")
+        self.assertIn("All arguments", card)
+        self.assertIn("hidden-req==0.0", Tools._full_arguments(spec, long_args))
+        short = {"instance_id": self.staging.id, "vals": {"auto_update": True}}
+        self.assertNotIn("more characters", Tools._extra_confirmation(spec, short))
+        self.assertIsNone(Tools._full_arguments(spec, short))
+
     def test_production_is_found_by_any_id_of_the_arguments(self):
         """A repository line of production, the server production runs on."""
         Tools = self.env["incubacloud.assistant.tools"].with_user(self.manager)
