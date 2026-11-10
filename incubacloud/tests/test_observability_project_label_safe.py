@@ -6,6 +6,7 @@ travels to Ansible marked as not a template, and the playbook writes it
 into the YAML file through ``to_json``, so it reads back as itself.
 """
 import json
+import re
 from pathlib import Path
 
 import jinja2
@@ -88,21 +89,26 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
         env = jinja2.Environment(undefined=jinja2.StrictUndefined)
         env.filters["to_json"] = lambda v, **kw: json.dumps(v, **kw)
         odd = 'x"\ny: [z]: #'
+        # Every label the file writes through ``to_json`` holds the odd
+        # value: the project's, and any other a module fills in.
+        free = set(re.findall(r"inst\.(\w+) \| to_json", content))
+        self.assertIn("project", free)
+        instance = dict.fromkeys(re.findall(r"inst\.(\w+)", content), "")
+        instance |= {
+            "compose_project": "cp", "instance_id": "7",
+            "instance": "inst", "traefik_prefix": "cp-19-0-",
+            "traefik_extra": [],
+        }
+        instance |= dict.fromkeys(free, odd)
         rendered = env.from_string(content).render(
             ic_host_name="h", ic_host_id="1", ic_account="a",
-            ic_has_traefik=True,
-            ic_instances=[{
-                "compose_project": "cp", "instance_id": "7",
-                "instance": "inst", "project": odd, "tenant": odd,
-                "tenant_id": "", "traefik_prefix": "cp-19-0-",
-                "traefik_extra": [],
-            }],
+            ic_has_traefik=True, ic_instances=[instance],
         )
         doc = yaml.safe_load(rendered)
         labels = [
             rule["replacement"]
             for job in doc["scrape_configs"]
             for rule in job.get("metric_relabel_configs") or []
-            if rule["target_label"] in ("project", "tenant")
+            if rule["target_label"] in free
         ]
-        self.assertEqual(labels, [odd, odd, odd])
+        self.assertEqual(labels, [odd] * content.count("| to_json"))
