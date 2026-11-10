@@ -1908,7 +1908,7 @@ with an older core — publish this core first.
   delete (`backup_archive.sh`) start their one-off with `--no-deps` when
   the instance's database runs. Without it Compose recreates every
   dependency whose definition changed since the stack started: on
-  22-oct-2026 the free host backup recreated firma1-staging's live `db`
+  22-oct-2026 a host's backup recreated acme-staging's live `db`
   under its workers and started a `gatekeeper` its running `odoo` was
   not on (template v10, job 352272). A stopped database is still started
   with what it depends on, as before (a move's source asleep under
@@ -1980,7 +1980,7 @@ with an older core — publish this core first.
 - **A staging rendered before template v10 can be rebuilt under it.** Its
   first rebuild finds the files rewritten by copier and the old stack
   still running, with no gatekeeper, and the safe boot test refused to
-  start (firma1-staging, the canary of the v10 bump in production). The
+  start (acme-staging, the first staging rebuilt under v10). The
   test now starts the gatekeeper alone, and removes it again if the boot
   fails, so the stack is left as it was found. The boot container runs
   with `--no-deps`: without it Compose recreated any dependency whose

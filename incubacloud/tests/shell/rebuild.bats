@@ -604,7 +604,7 @@ STUB
 }
 
 @test "boot-test starts the gatekeeper a staging rendered before v10 does not have yet" {
-    # firma1-staging, the canary of the v10 bump in production
+    # acme-staging, the first staging rebuilt under v10
     # (2026-10-22): copier had rewritten its files, but the old odoo
     # still ran without a gatekeeper and the test refused to boot.
     _first_gatekeeper_docker 0
