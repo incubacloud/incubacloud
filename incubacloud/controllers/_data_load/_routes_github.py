@@ -41,7 +41,10 @@ from ...models._repo_requirements import (
     resolve_git_source,
     resolve_repo_ref,
 )
-from ...models.cloud_repo_mixin import _url_host
+from ...models.cloud_repo_mixin import (
+    _url_host,
+    may_read_with_panel_credentials,
+)
 from ...net.git_reader import GitReaderError
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
@@ -467,24 +470,30 @@ class GitHubMixin:
                 page += 1
             return branches
 
-        branches, error = self._github_read(_fetch, 'branches')
+        branches, error = self._github_read(_fetch, 'branches', url)
         if error:
             return {**error, 'branches': []}
         return {'ok': True, 'branches': branches}
 
-    def _github_read(self, fetch, tag):
+    def _github_read(self, fetch, tag, url):
         """Run *fetch* with the App, then the PAT, then anonymously.
 
         One ladder for every route that reads a repository, so each
         answers the same way: a public repository needs no credentials,
         and when nothing answers the error says what to configure
-        (``settings_hint`` lets the editor link to the settings).
+        (``settings_hint`` lets the editor link to the settings). A
+        repository the user may not read with the panel's credentials
+        (:func:`may_read_with_panel_credentials`) is read anonymously
+        only.
 
         :param fetch: called with a GitHub client; returns the value.
         :param str tag: names the route in the log.
+        :param str url: the repository the user asked for.
         :return: ``(value, None)``, or ``(None, error)`` with *error* the
             response to give: ``ok``, ``error`` and ``settings_hint``.
         """
+        if not may_read_with_panel_credentials(request.env, url):
+            return self._github_read_public(fetch, tag)
         svc = request.env['cloud.github.credential.service'].sudo()
         app_status = 'not_configured'  # not_configured | no_access | error
         pat_status = 'not_configured'
@@ -519,15 +528,30 @@ class GitHubMixin:
 
         # 3. A public repository, anonymously. A private one answers 404
         #    here too, and the message below says what to configure.
+        value, error = self._github_read_public(fetch, tag)
+        if not error:
+            return value, None
+
+        msg = self._build_github_error(app_status, pat_status, bool(pat))
+        return None, {'ok': False, 'error': msg, 'settings_hint': 'github'}
+
+    @staticmethod
+    def _github_read_public(fetch, tag):
+        """Run *fetch* anonymously, as for a public repository.
+
+        :param fetch: called with a GitHub client; returns the value.
+        :param str tag: names the route in the log.
+        :return: ``(value, None)``, or ``(None, error)`` with *error* a
+            response that says the repository was not found.
+        :rtype: tuple
+        """
         try:
             return fetch(GitHubAnonymousClient()), None
         except GitHubAPIError as exc:
             _logger.info("[%s] anonymous %s: %s", tag, exc.status_code, exc)
         except Exception:
             _logger.exception("[%s] anonymous unexpected error", tag)
-
-        msg = self._build_github_error(app_status, pat_status, bool(pat))
-        return None, {'ok': False, 'error': msg, 'settings_hint': 'github'}
+        return None, {'ok': False, 'error': git_error_message('not_found')}
 
     @staticmethod
     def _is_gitlab(url):
@@ -641,7 +665,7 @@ class GitHubMixin:
             )
             return data['commit']['sha']
 
-        sha, error = self._github_read(_fetch, 'branch_head')
+        sha, error = self._github_read(_fetch, 'branch_head', url)
         if not error:
             return {'ok': True, 'sha': sha}
         with suppress(Exception):
@@ -746,6 +770,11 @@ class GitHubMixin:
                 and item['path'].endswith('/__manifest__.py')
             })
 
+        if not may_read_with_panel_credentials(request.env, url):
+            modules, error = self._github_read_public(_fetch, 'repo_modules')
+            if error:
+                return {**error, 'modules': []}
+            return {'ok': True, 'modules': modules}
         svc = request.env['cloud.github.credential.service'].sudo()
 
         # 1. Try PAT first if configured
@@ -813,6 +842,13 @@ class GitHubMixin:
                 data.get('content', '').replace('\n', '').replace(' ', '')
             ).decode('utf-8')
 
+        if not may_read_with_panel_credentials(request.env, url):
+            content, error = self._github_read_public(
+                _fetch, 'repo_requirements',
+            )
+            if error:
+                return {'ok': True, 'found': False, 'content': ''}
+            return {'ok': True, 'found': True, 'content': content}
         svc = request.env['cloud.github.credential.service'].sudo()
 
         # 1. Try PAT first
