@@ -708,7 +708,12 @@ printf '%s\n' "${envs[@]}" > "$CALLS.env.$n"
 [ "$entry" = git ] || [ -d "$work" ] || exit 137
 if [ "$entry" = git ]; then
     [ -z "${LS_REMOTE_FAIL:-}" ] || exit 128
-    printf '%s' "${LS_REMOTE_OUT:-}"
+    # The heads a download moved ($LS_REMOTE_AFTER_FETCH), once it ran.
+    if [ -f "$CALLS.ls-remote-moved" ]; then
+        cat "$CALLS.ls-remote-moved"
+    else
+        printf '%s' "${LS_REMOTE_OUT:-}"
+    fi
     exit 0
 fi
 alias="$4" expect="$5"
@@ -726,6 +731,8 @@ echo "tree of $alias" > "$work/$alias/README"
 [ -z "${FETCH_PLANT_LINK:-}" ] || ln -s "$FETCH_PLANT_LINK" "$work/$alias/.incubacloud-head"
 first="${LS_REMOTE_OUT%%[[:space:]]*}"
 echo "${expect:-${FETCH_SHA:-${first:-4444444444444444444444444444444444444444}}}" > "$work/.ic-head"
+[ -z "${LS_REMOTE_AFTER_FETCH:-}" ] \
+    || printf '%s' "$LS_REMOTE_AFTER_FETCH" > "$CALLS.ls-remote-moved"
 STUB
     chmod +x "$TMP/bin/docker"
 }
@@ -1036,8 +1043,10 @@ $HEADS_SHA	refs/heads/fix
     [ -f "$DIR/odoo/custom/src/addons/README" ]
     first="$(cat "$DIR/odoo/custom/src/.ic-heads/addons")"
     [ "${#first}" -eq 64 ]
-    # One container holds both credentials, each for its own repository.
-    cfg="$(grep -l 'Authorization' "$CALLS".gitconfig.* | tail -1)"
+    # One container holds both credentials, each for its own repository:
+    # the download's, the one with the series in its variables.
+    env_file="$(grep -l '^ODOO_VERSION=' "$CALLS".env.* | tail -1)"
+    cfg="$CALLS.gitconfig.${env_file##*.}"
     grep -q 'name = IncubaCloud' "$cfg"
     [ "$(grep -c 'extraHeader' "$cfg")" -eq 2 ]
     # Nothing moved: nothing fetched.
@@ -1052,6 +1061,39 @@ $PIN_SHA	refs/heads/fix
     [ "$status" -eq 0 ]
     [ "$(wc -l < "$CALLS.fetches")" -eq 2 ]
     [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" != "$first" ]
+}
+
+@test "fetch-repos keeps out of the host's cache a tree of several merges whose head moved during the download" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    printf 'addons\tref\tfix\t%s\t\t\t\n' "$HEADS_URL" >> "$TMP/spec"
+    moved="$HEADS_SHA	refs/heads/main
+$PIN_SHA	refs/heads/fix
+"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+$HEADS_SHA	refs/heads/fix
+" LS_REMOTE_AFTER_FETCH="$moved"
+    _fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"addons: a head of its merges moved during the download"* ]]
+    [ -f "$DIR/odoo/custom/src/addons/README" ]
+    [[ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" == moved-* ]]
+    # The only entry of the cache is that instance's, under a name of its
+    # own: none holds the heads read before the download.
+    heads=("$TREES"/*/head)
+    [ "${#heads[@]}" -eq 1 ]
+    [[ "$(cat "${heads[0]}")" == moved-* ]]
+    # The next run reads the moved heads and fetches the tree again,
+    # into the cache under them.
+    unset LS_REMOTE_AFTER_FETCH
+    rm -f "$CALLS.ls-remote-moved"
+    export LS_REMOTE_OUT="$moved"
+    _fetch
+    [ "$status" -eq 0 ]
+    [ "$(wc -l < "$CALLS.fetches")" -eq 2 ]
+    marker="$(cat "$DIR/odoo/custom/src/.ic-heads/addons")"
+    [[ "$marker" =~ ^[0-9a-f]{64}$ ]]
+    grep -qx "$marker" "$TREES"/*/head
 }
 
 @test "fetch-repos names the commit that arrived when the head moved during the download" {

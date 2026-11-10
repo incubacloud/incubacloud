@@ -651,6 +651,35 @@ ic_pins_readable() {
     done
 }
 
+# Return whether every merge of <alias> that follows a branch or tag
+# still names the commit read before its download (HEAD_AT), asked again
+# with its own credential. With several merges the container tells only
+# the commit their merge made, not where each merge stood: a head that
+# moved during the download would leave newer code under the name of the
+# heads read before it, for every instance that asks for them (M12,
+# 10-nov-2026). A pinned merge does not move; a head that cannot be read
+# counts as moved.
+#
+# Usage: ic_heads_unmoved <alias>
+#   reads ROWS, HEAD_AT and IDX_OF[<alias>], as ic_fetch_tree
+ic_heads_unmoved() {
+    local i merge_idx=()
+    read -ra merge_idx <<< "${IDX_OF[$1]}"
+    for i in "${merge_idx[@]}"; do
+        ic_split_tabs "${ROWS[$i]}"
+        [ "${IC_COLS[1]}" != pin ] || continue
+        [ -n "${IC_COLS[3]}" ] || return 1
+        if [ -z "$IC_ACCESS_HOME" ]; then
+            ic_git_tmpdir
+            IC_ACCESS_HOME="$IC_TMP"
+        fi
+        remote_ref_head "$IC_ACCESS_HOME" "${IC_COLS[3]}" "${IC_COLS[2]}" \
+            "${IC_COLS[4]:-github.com}" "${IC_COLS[5]}" "${IC_COLS[6]}" \
+            || return 1
+        [ "$IC_HEAD" = "${HEAD_AT[$i]}" ] || return 1
+    done
+}
+
 # Undo fetch-repos in <dir>: remove the trees it put in place (those with
 # a marker, never through a link), the markers, its temporary trees, the
 # build's ignore file and its seconds. Nothing to do on an instance that
@@ -1005,7 +1034,8 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         ic_require_args 1 "$#" "deploy.sh git-trust <dir> <spec_file>"
         spec="$1"
         # What the image's git needs to clone from a Git provider other
-        # than GitHub (11.0 to 19.0, which clone inside the build): no
+        # than GitHub (a series incubacloud.repos_in_image_series sends
+        # back to cloning inside the build): no
         # redirect followed for that server, and its own CA trusted for
         # its URLs alone. doodba runs ``odoo/custom/build.d`` in name
         # order with its own, and 060 comes before 100-repos-aggregate
@@ -1254,6 +1284,14 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                         'NR == n {$3 = g} {print}' "$heads" > "$heads.ic-tmp"
                     mv "$heads.ic-tmp" "$heads"
                 fi
+            elif ! ic_heads_unmoved "$alias"; then
+                # Which merge brought what is not known: the tree is
+                # this instance's alone, under a name no other asks for,
+                # and its marker matches no heads, so the next run
+                # takes it from the cache or downloads it again (M12).
+                ic_warn "$alias: a head of its merges moved during the download, or could not be read again: its tree is not shared, and the next run fetches it again"
+                marker="moved-$(date +%s%N)-$$-$RANDOM"
+                key_lines+="$marker"$'\n'
             fi
             ic_trees_lock
             entry="$(ic_tree_store "$IC_ENTRY_TMP" "$(ic_tree_key "$key_lines")" "$marker")"
