@@ -8,32 +8,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.224] — 2026-11-10
 
-19.0 downloads its repositories on the server too, as every other series
-has since 1.0.222. The update needs no data migration: a 19.0 instance
-moves at its next deploy or rebuild, which downloads all its repositories
-once. A server keeps one tree of each commit of Odoo its instances are
-on, about 1.2 GB for 19.0.
-
-Auto-approval of agents' actions, per person and credential (issue #8). The
-update adds two tables, `incubacloud_mcp_auto_approval` and
-`incubacloud_mcp_credential`, and two empty columns on `cloud_audit_log` and
-`cloud_job` (`approval`, `approval_rule_id`); rows written before it have no
-approval mark, which the panel does not show. `incubacloud_assistant` 1.0.4
+Agents' actions can be auto-approved per person and credential (issue #8);
+a production's mail relay can sign in to Microsoft 365 with OAuth2, before
+Microsoft turns SMTP AUTH with passwords off by default at the end of
+December 2026 (issue #6); GitLab merge requests get previews; 19.0
+downloads its repositories on the server too, as every other series has
+since 1.0.222; and the user guide takes someone who never set up a server
+to Odoo in production, or from another host. `incubacloud_assistant` 1.0.4
 comes with it.
 
-A production's mail relay can sign in to Microsoft 365 with OAuth2, before
-Microsoft turns SMTP AUTH with passwords off by default at the end of
-December 2026 (issue #6). The update adds seven columns to
-`cloud_instance`: `smtp_relay_auth`, filled with `password` for every
-instance, and six empty ones (`smtp_relay_oauth_directory_id`,
-`smtp_relay_oauth_client_id`, `smtp_relay_oauth_client_secret`,
-`smtp_relay_state`, `smtp_relay_checked_at`, `smtp_relay_error`), the job
-type `relay_test_mail` and the alert policy of `smtp_relay_failing`. No
-instance shows changes to apply: a relay with a password renders as before.
-
-GitLab merge requests get previews. The update adds two empty columns,
-`cloud_instance.pr_provider_id` and `cloud_instance.pr_state`, and needs no
-data migration.
+The update adds two tables, `incubacloud_mcp_auto_approval` and
+`incubacloud_mcp_credential`, and empty columns: `approval` and
+`approval_rule_id` on `cloud_audit_log` and `cloud_job` (rows written
+before it have no approval mark, which the panel does not show), and on
+`cloud_instance` `pr_provider_id`, `pr_state`,
+`smtp_relay_oauth_directory_id`, `smtp_relay_oauth_client_id`,
+`smtp_relay_oauth_client_secret`, `smtp_relay_state`,
+`smtp_relay_checked_at` and `smtp_relay_error`. It also adds
+`cloud_instance.smtp_relay_auth`, filled with `password` for every
+instance, the job type `relay_test_mail` and the alert policy of
+`smtp_relay_failing`. No instance shows changes to apply: a relay with a
+password renders as before. A 19.0 instance moves to downloading at its
+next deploy or rebuild, which downloads all its repositories once; a
+server keeps one tree of each commit of Odoo its instances are on, about
+1.2 GB for 19.0.
 
 ### Added
 
@@ -50,10 +48,9 @@ data migration.
   still exists; the list and the notice name each one with its id and when
   it last connected, so two keys with the same name are told apart. A rule
   cannot be extended or changed, and ends when its date passes, when it is
-  revoked (an
-  Administrator any rule, a person their own, also from Connect an agent),
-  when the user is archived or the API key deleted; a role that goes up
-  pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True, defined
+  revoked (an Administrator any rule, a person their own, also from Connect
+  an agent), when the user is archived or the API key deleted; a role that
+  goes up pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True, defined
   in `incubacloud`, so a layer that overrides it answers after it whatever
   the order the modules load in) pauses every rule and refuses new ones when
   a layer says False. A *Decline* or
