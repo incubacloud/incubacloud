@@ -63,6 +63,11 @@ webhook. `incubacloud_assistant` 1.0.3 comes with it.
   Project Manager, the new instance's lines name only the project's
   repositories, with the branch and modules the user chooses, and the form
   shows their URL read-only.
+- **A select near the bottom of the window opens its list upwards.** The
+  list of a select in the panel (the language, a credential's type) always
+  opened below it and went off the screen when the select was at the foot
+  of the window. It now opens upwards when it does not fit below and there is more
+  room above, and a long list scrolls inside it.
 
 ## [1.0.222] — 2026-11-10
 

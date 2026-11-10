@@ -4,6 +4,18 @@ import { Component, useState, useRef, onWillUnmount } from "@odoo/owl";
 
 import { useAnchoredMenu } from "../../utils/use_anchored_menu";
 
+// Menu geometry, in px. The cap equals ``.rl-sel__menu``'s ``max-block-size``
+// in relay.scss; a row is an option's 8 px padding twice plus its text line
+// (19.5 px, measured at 13 px); the chrome is the menu's 5 px padding twice
+// plus its 1 px border twice.
+const MENU_MAX_HEIGHT = 280;
+const MENU_MIN_HEIGHT = 96;
+const MENU_ROW_HEIGHT = 35.5;
+const MENU_CHROME_HEIGHT = 12;
+// Gap between trigger and menu, and margin kept to the window's edge.
+const MENU_GAP = 4;
+const MENU_EDGE = 8;
+
 /**
  * RlSelect — custom single-select dropdown styled with the Relay design tokens.
  *
@@ -105,14 +117,53 @@ export class RlSelect extends Component {
 
     // ── Dropdown positioning ─────────────────────────────────────────────────
 
-    /** Fixed-position style anchored to the trigger, escaping overflow clipping. */
+    /** Height of the viewport the fixed menu is placed in (a seam for the tests). */
+    _viewportHeight() {
+        return document.documentElement.clientHeight;
+    }
+
+    /**
+     * Height the open menu would have, capped like the stylesheet's
+     * ``max-block-size``: its rows, one per option plus the clear row, with
+     * the menu's padding and border.
+     *
+     * @returns {number} pixels
+     */
+    _menuHeight() {
+        const rows = this._opts.length + (this.props.emptyLabel ? 1 : 0);
+        return Math.min(MENU_MAX_HEIGHT, rows * MENU_ROW_HEIGHT + MENU_CHROME_HEIGHT);
+    }
+
+    /**
+     * Fixed-position style anchored to the trigger, escaping overflow clipping.
+     *
+     * The menu opens below the trigger, as a native select does. When its
+     * height does not fit there and the space above is larger it opens
+     * upwards instead, anchored by ``bottom`` so it grows away from the
+     * trigger whatever its real height. Its ``max-block-size`` is the space
+     * of the chosen side (at least ``MENU_MIN_HEIGHT``, at most the
+     * stylesheet's cap), so a long list scrolls inside the window rather
+     * than leaving it.
+     *
+     * @returns {string} the inline style, "" while the trigger is not mounted
+     */
     _computeDropdownStyle() {
         const el = this.wrapRef.el;
         if (!el) {
             return "";
         }
         const r = el.getBoundingClientRect();
-        return `position:fixed;top:${r.bottom + 4}px;left:${r.left}px;min-width:${r.width}px`;
+        const viewport = this._viewportHeight();
+        const below = viewport - r.bottom - MENU_GAP - MENU_EDGE;
+        const above = r.top - MENU_GAP - MENU_EDGE;
+        const upwards = below < this._menuHeight() && above > below;
+        const maxHeight = Math.round(
+            Math.max(MENU_MIN_HEIGHT, Math.min(MENU_MAX_HEIGHT, upwards ? above : below))
+        );
+        const side = upwards
+            ? `bottom:${Math.round(viewport - r.top + MENU_GAP)}px`
+            : `top:${Math.round(r.bottom + MENU_GAP)}px`;
+        return `position:fixed;${side};left:${r.left}px;min-width:${r.width}px;max-block-size:${maxHeight}px`;
     }
 
     // ── Open / close ──────────────────────────────────────────────────────────
