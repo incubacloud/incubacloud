@@ -360,7 +360,11 @@ class TestGitLabClientHooks(BaseCase):
             lambda c: c.list_mr_notes("acme/web", 12), _response(200, []),
         )
         self.assertEqual(method, "GET")
-        self.assertEqual(path, f"{notes}?sort=asc&order_by=created_at&per_page=100")
+        self.assertEqual(path, f"{notes}?sort=asc&order_by=created_at&per_page=100&page=1")
+        _r, method, path, _b = self._send(
+            lambda c: c.list_mr_notes("acme/web", 12, page=3), _response(200, []),
+        )
+        self.assertEqual(path, f"{notes}?sort=asc&order_by=created_at&per_page=100&page=3")
         for call, expected, body in (
             (lambda c: c.create_mr_note("acme/web", 12, "hi"), ("POST", notes), {"body": "hi"}),
             (lambda c: c.update_mr_note("acme/web", 12, 9, "re"), ("PUT", f"{notes}/9"),

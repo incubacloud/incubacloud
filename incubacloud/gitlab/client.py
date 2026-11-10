@@ -44,6 +44,9 @@ MAX_MESSAGE_CHARS = 200
 #: gets its own wait, bounded by what the budget has left.
 READ_BLOCK_BYTES = 16 * 1024
 
+#: Notes of a merge request on each page read: GitLab's largest page.
+NOTES_PER_PAGE = 100
+
 #: The code of an HTTP status that is not a success.
 _STATUS_CODES = {401: "auth", 403: "forbidden", 404: "not_found", 429: "rate_limited"}
 
@@ -217,20 +220,24 @@ class GitLabClient:
             [_hook_kind(kind), target, "hooks", hook_id, "test", "tag_push_events"],
         )
 
-    def list_mr_notes(self, project, iid):
-        """Return the first page of a merge request's notes, oldest first.
+    def list_mr_notes(self, project, iid, page=1):
+        """Return one page of a merge request's notes, oldest first.
 
         The panel's note is written when the preview is up, early in the
-        merge request's life: oldest first, the first hundred hold it.
+        merge request's life: oldest first, the first pages hold it.
 
         :param project: the project's id or path
         :param int iid: the merge request's number in the project
+        :param int page: the page, from 1, of :data:`NOTES_PER_PAGE` notes
         :rtype: list
         :raises GitLabError: when the call fails
         """
         return self._get(
             ["projects", project, "merge_requests", iid, "notes"],
-            query={"sort": "asc", "order_by": "created_at", "per_page": 100},
+            query={
+                "sort": "asc", "order_by": "created_at",
+                "per_page": NOTES_PER_PAGE, "page": int(page),
+            },
         )
 
     def create_mr_note(self, project, iid, body):
