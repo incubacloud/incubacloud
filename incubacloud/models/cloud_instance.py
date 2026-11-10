@@ -150,19 +150,20 @@ def _yaml_dq_escape(value):
 #: What only the platform writes on an instance (``_check_guarded_vals``).
 #: A move's markers say which jobs a rollback and the watchdog cancel and
 #: on which host the cleanup removes a copy, and the copy a cutover froze
-#: on the old host with its cut's length; a pull request's identity is
-#: what the GitHub webhook rebuilds and deletes by when the request changes
-#: or closes; ``removal_finalized`` tells a teardown there is nothing left
-#: to remove; the relay's state is what the health probe and the relay's
-#: test mail read of its deliveries. ``move_to_host``, the rollback, the
-#: watchdog, the move's executors, the webhook, the teardown, the probe
-#: and the test mail write them with ``sudo``.
+#: on the old host with its cut's length; a pull or merge request's
+#: identity is what the GitHub or GitLab webhook rebuilds and deletes by
+#: when the request changes or closes, and its state what the merge
+#: request's note follows; ``removal_finalized`` tells a teardown there is
+#: nothing left to remove; the relay's state is what the health probe and
+#: the relay's test mail read of its deliveries. ``move_to_host``, the
+#: rollback, the watchdog, the move's executors, the webhook, the teardown,
+#: the probe and the test mail write them with ``sudo``.
 _PLATFORM_FIELDS = frozenset({
     "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
     "move_rollback_in_progress", "move_frozen_source_host_id",
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
-    "removal_finalized",
+    "pr_provider_id", "pr_state", "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
 })
 
@@ -418,13 +419,15 @@ class CloudInstance(models.Model):
         string="PR Number",
         copy=False,
         index=True,
-        help="GitHub PR number that created this instance. "
-        "When set, this instance is a PR preview — auto-destroyed on PR close.",
+        help="Number of the GitHub pull request, or of the GitLab merge "
+        "request, that created this instance. When set, this instance is a "
+        "preview — auto-destroyed when the request closes.",
     )
     pr_repo = fields.Char(
         string="PR Repository",
         copy=False,
-        help="Full repository name (owner/repo) of the PR.",
+        help="Repository of the request: owner/repo on GitHub, the "
+        "project's path on GitLab.",
     )
     pr_head_branch = fields.Char(
         string="PR Branch",
@@ -433,7 +436,25 @@ class CloudInstance(models.Model):
     )
     pr_comment_id = BigInteger(
         string="GitHub Comment ID",
-        help="ID of the GitHub issue comment posted on the PR.",
+        help="ID of the comment posted on the pull request, or of the "
+        "note on the merge request.",
+    )
+    pr_provider_id = fields.Many2one(
+        "cloud.git.provider",
+        string="Merge Request Provider",
+        copy=False,
+        ondelete="restrict",
+        index="btree_not_null",
+        help="The GitLab server of a merge request preview; empty for a "
+        "GitHub pull request.",
+    )
+    pr_state = fields.Selection(
+        [("open", "Open"), ("closed", "Closed")],
+        string="Request State",
+        copy=False,
+        help="Whether the request of a preview is still open. Written "
+        "closed when it closes, before the note is taken off the merge "
+        "request.",
     )
 
     # ── Copier template parameters ──────────────────────────────────────────
@@ -2358,14 +2379,20 @@ class CloudInstance(models.Model):
         return job_ids[0]
 
     def clone_to_staging(
-        self, staging_name, pr_number=0, pr_repo="", pr_head_branch=""
+        self, staging_name, pr_number=0, pr_repo="", pr_head_branch="",
+        pr_provider_id=False,
     ):
         """Create a staging copy of this production instance with its data.
 
-        When *pr_number* is provided the clone is a PR preview instance:
-        the repo whose URL matches *pr_repo* has its branch set to
-        *pr_head_branch* so the PR code is deployed instead of the
-        default branch.
+        When *pr_number* is provided the clone is a preview instance: the
+        line of the request's repository has its branch set to
+        *pr_head_branch* so the request's code is deployed instead of the
+        default branch. On GitHub the line is the one whose URL is
+        ``github.com/<pr_repo>``; on GitLab, the one of *pr_provider_id*
+        whose path is *pr_repo*.
+
+        :param int pr_provider_id: the GitLab server of a merge request,
+            or False for a GitHub pull request
         """
         self.ensure_one()
         # Server-side backstop: the method is public and therefore
@@ -2405,19 +2432,32 @@ class CloudInstance(models.Model):
                 "pr_number": pr_number,
                 "pr_repo": pr_repo,
                 "pr_head_branch": pr_head_branch,
+                "pr_provider_id": pr_provider_id or False,
+                "pr_state": "open",
             }
         staging = self.with_context(
             skip_project_repos=True,
         ).create(vals)
 
         pr_repo_norm = _normalize_url(
-            f"https://github.com/{pr_repo}" if pr_repo else ""
+            f"https://github.com/{pr_repo}"
+            if pr_repo and not pr_provider_id else ""
         )
         for repo in self.repo_ids:
             new_repo = repo.copy({"instance_id": staging.id})
-            if pr_head_branch and pr_repo_norm:
-                if _normalize_url(new_repo.url) == pr_repo_norm:
-                    new_repo.write({"branch": pr_head_branch, "commit_sha": False})
+            if not (pr_head_branch and pr_repo):
+                continue
+            if pr_provider_id:
+                follows = (
+                    new_repo.provider_id.id == pr_provider_id
+                    and new_repo.repo_path == pr_repo.lower()
+                )
+            else:
+                follows = bool(pr_repo_norm) and (
+                    _normalize_url(new_repo.url) == pr_repo_norm
+                )
+            if follows:
+                new_repo.write({"branch": pr_head_branch, "commit_sha": False})
 
         # The clone is deployed by the chain below rather than through
         # deploy(), so it enters 'deploying' here.
@@ -3289,11 +3329,12 @@ class CloudInstance(models.Model):
         )
 
     def _pr_preview_ready_body(self):
-        """Markdown of the pull request comment for a preview that is up.
+        """Markdown of the request's comment or note for a preview that is up.
 
         Lives here and not inline in the restore executor so what the
         comment promises — a link that opens the preview — can be
-        checked without running a job.
+        checked without running a job. A merge request's note ends with
+        the hidden marker the panel finds it by.
 
         :return: the comment body as :class:`str`
         """
@@ -3302,14 +3343,20 @@ class CloudInstance(models.Model):
             f'https://{self.domain}' if self.domain
             else '_(no domain configured)_'
         )
-        return (
+        request = 'merge request' if self.pr_provider_id else 'PR'
+        body = (
             f'✅ **IncubaCloud Preview** — ready!\n\n'
             f'| | |\n|---|---|\n'
             f'| **URL** | {url} |\n'
             f'| **Branch** | `{self.pr_head_branch}` |\n'
             f'| **Instance** | `{self.name}` |\n\n'
-            f'_Auto-destroys when the PR is closed._'
+            f'_Auto-destroys when the {request} is closed._'
         )
+        if self.pr_provider_id:
+            body += '\n\n' + self.env['cloud.gitlab.mr.note']._marker(
+                self.project_id.id, self.pr_number,
+            )
+        return body
 
     def _post_or_update_pr_comment(self, body):
         """Post or update the GitHub PR comment for this PR preview instance."""

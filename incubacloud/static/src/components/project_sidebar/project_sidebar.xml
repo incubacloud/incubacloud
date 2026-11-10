@@ -50,7 +50,10 @@
                                     <span class="rl-d"/>
                                 </span>
                                 <span class="rl-ctx-name" t-esc="inst.name"/>
-                                <t t-if="inst.pr_number">
+                                <t t-if="inst.pr_number and inst.pr_kind === 'gitlab'">
+                                    <span class="ic-pr-badge">MR !<t t-esc="inst.pr_number"/></span>
+                                </t>
+                                <t t-elif="inst.pr_number">
                                     <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
                                 </t>
                                 <t t-if="expiryLabel(inst)">

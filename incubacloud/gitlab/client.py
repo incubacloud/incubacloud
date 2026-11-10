@@ -16,13 +16,14 @@
   has left before the answer and before each block of its body.
 
 It reads the token's introspection (``token_self``), its user
-(``current_user``) and the webhooks of a project or group.
+(``current_user``) and the webhooks of a project or group, and writes
+the panel's note on a merge request.
 """
 import http.client
 import json
 import ssl
 import time
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from ..net.outbound import _PinnedHTTPSConnection
 
@@ -216,6 +217,55 @@ class GitLabClient:
             [_hook_kind(kind), target, "hooks", hook_id, "test", "tag_push_events"],
         )
 
+    def list_mr_notes(self, project, iid):
+        """Return the first page of a merge request's notes, oldest first.
+
+        The panel's note is written when the preview is up, early in the
+        merge request's life: oldest first, the first hundred hold it.
+
+        :param project: the project's id or path
+        :param int iid: the merge request's number in the project
+        :rtype: list
+        :raises GitLabError: when the call fails
+        """
+        return self._get(
+            ["projects", project, "merge_requests", iid, "notes"],
+            query={"sort": "asc", "order_by": "created_at", "per_page": 100},
+        )
+
+    def create_mr_note(self, project, iid, body):
+        """Write a note on a merge request (``api`` scope).
+
+        :param str body: the note's Markdown
+        :return: the note, with its ``id``
+        :rtype: dict
+        :raises GitLabError: when the call fails
+        """
+        return self._request(
+            "POST", ["projects", project, "merge_requests", iid, "notes"],
+            {"body": body},
+        )
+
+    def update_mr_note(self, project, iid, note_id, body):
+        """Rewrite a note of a merge request.
+
+        :rtype: dict
+        :raises GitLabError: when the call fails (``not_found`` included)
+        """
+        return self._request(
+            "PUT", ["projects", project, "merge_requests", iid, "notes", note_id],
+            {"body": body},
+        )
+
+    def delete_mr_note(self, project, iid, note_id):
+        """Delete a note of a merge request.
+
+        :raises GitLabError: when the call fails (``not_found`` included)
+        """
+        return self._request(
+            "DELETE", ["projects", project, "merge_requests", iid, "notes", note_id],
+        )
+
     # ── Plumbing ───────────────────────────────────────────────────────
 
     def _path(self, segments):
@@ -271,20 +321,22 @@ class GitLabClient:
             context=self._context(),
         )
 
-    def _get(self, segments):
+    def _get(self, segments, query=None):
         """GET *segments* and return the decoded JSON.
 
+        :param dict query: the query string's parameters, or None
         :rtype: dict or list
         :raises GitLabError: on any failure, with its code
         """
-        return self._request("GET", segments)
+        return self._request("GET", segments, query=query)
 
-    def _request(self, method, segments, body=None):
+    def _request(self, method, segments, body=None, query=None):
         """Send one request and return the decoded JSON answer.
 
         :param str method: the HTTP method
         :param segments: the path's segments
         :param dict body: a JSON body, or None
+        :param dict query: the query string's parameters, or None
         :rtype: dict or list
         :raises GitLabError: on any failure, with its code
         """
@@ -305,7 +357,10 @@ class GitLabClient:
                 # The handshake failed: nothing was sent.
                 raise GitLabError("tls") from exc
             sock = conn.sock
-            conn.request(method, self._path(segments), body=payload, headers=headers)
+            path = self._path(segments)
+            if query:
+                path += "?" + urlencode(query)
+            conn.request(method, path, body=payload, headers=headers)
             self._bound_wait(sock)
             response = conn.getresponse()
             return self._answer(response, sock)

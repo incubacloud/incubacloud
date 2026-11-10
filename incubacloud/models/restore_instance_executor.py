@@ -1168,7 +1168,11 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         inst = self._inst()
         inst.write({"status": "ok", **inst._running_confirmed_vals()})
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
-        if inst.pr_number:
+        if inst.pr_number and inst.pr_provider_id:
+            # A merge request's note is written by a job of its own,
+            # queued in this transaction: no call to GitLab here.
+            self.env['cloud.gitlab.mr.note']._enqueue(inst)
+        elif inst.pr_number:
             inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
 
     async def _cleanup_cross_host_handoff(self):

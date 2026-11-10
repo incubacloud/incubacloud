@@ -5975,8 +5975,12 @@ msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_repo
-msgid "Full repository name (owner/repo) of the PR."
-msgstr "Nombre completo del repositorio (owner/repo) del PR."
+msgid ""
+"Repository of the request: owner/repo on GitHub, the project's path on "
+"GitLab."
+msgstr ""
+"Repositorio de la solicitud: owner/repo en GitHub, la ruta del proyecto en "
+"GitLab."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6207,11 +6211,13 @@ msgstr "PAT de GitHub"
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_number
 msgid ""
-"GitHub PR number that created this instance. When set, this instance is a PR"
-" preview — auto-destroyed on PR close."
+"Number of the GitHub pull request, or of the GitLab merge request, that "
+"created this instance. When set, this instance is a preview — auto-destroyed"
+" when the request closes."
 msgstr ""
-"Número de PR de GitHub que creó esta instancia. Cuando está establecido, "
-"esta instancia es una preview de PR — auto-destruida al cerrar el PR."
+"Número del pull request de GitHub, o del merge request de GitLab, que creó "
+"esta instancia. Si está establecido, esta instancia es una vista previa: se "
+"elimina sola cuando la solicitud se cierra."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_pat
@@ -7217,8 +7223,12 @@ msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_comment_id
-msgid "ID of the GitHub issue comment posted on the PR."
-msgstr "ID del comentario de issue GitHub publicado en el PR."
+msgid ""
+"ID of the comment posted on the pull request, or of the note on the merge "
+"request."
+msgstr ""
+"ID del comentario publicado en el pull request, o de la nota en el merge "
+"request."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9064,12 +9074,6 @@ msgstr "Límite de memoria"
 #: code:addons/incubacloud/controllers/host_terminal.py:0
 msgid "Memory usage"
 msgstr "Uso de memoria"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-msgid "Merge request previews: coming in a next version."
-msgstr "Vistas previas de merge requests: en una próxima versión."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__message
@@ -11384,8 +11388,8 @@ msgstr "Presente"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "Preview instances for pull requests"
-msgstr "Instancias de vista previa para pull requests"
+msgid "Preview instances for pull requests and merge requests"
+msgstr "Instancias de vista previa para pull requests y merge requests"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15603,8 +15607,9 @@ msgstr "Alternar «página pública de información del sitio web»"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "Toggle pull request previews"
-msgstr "Activar o desactivar las vistas previas de pull requests"
+msgid "Toggle pull request and merge request previews"
+msgstr ""
+"Activar o desactivar las vistas previas de pull requests y merge requests"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17903,15 +17908,16 @@ msgstr "en"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
-"opening a pull request on a repository a production instance follows creates"
-" a staging on the same host, with the pull request's branch and a "
-"neutralized copy of production data. It is rebuilt on every push and deleted"
-" when the pull request closes."
+"opening a pull request (GitHub) or a merge request (GitLab) on a repository "
+"a production instance follows creates a staging on the same host, with the "
+"request's branch and a neutralized copy of production data. It is rebuilt on"
+" every push and deleted when the request closes."
 msgstr ""
-"abrir un pull request en un repositorio que sigue una instancia de "
-"producción crea un staging en el mismo host, con la rama del pull request y "
-"una copia neutralizada de los datos de producción. Se reconstruye con cada "
-"push y se elimina cuando el pull request se cierra."
+"abrir un pull request (GitHub) o un merge request (GitLab) en un repositorio"
+" que sigue una instancia de producción crea un staging en el mismo host, con"
+" la rama de la solicitud y una copia neutralizada de los datos de "
+"producción. Se reconstruye con cada push y se elimina cuando la solicitud se"
+" cierra."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19876,3 +19882,71 @@ msgid ""
 msgstr ""
 "El usuario que pidió la prueba no tiene una dirección de correo válida a la "
 "que enviarla."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_mr_note.py:0
+msgid "GitLab answered %(code)s."
+msgstr "GitLab respondió %(code)s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
+msgid "MR !"
+msgstr "MR !"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_provider_id
+msgid "Merge Request Provider"
+msgstr "Proveedor del merge request"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_event.py:0
+msgid ""
+"Merge request !%(number)s on %(repo)s asked for a preview of %(instance)s "
+"and none could be created: %(reason)s"
+msgstr ""
+"El merge request !%(number)s de %(repo)s pidió una vista previa de "
+"%(instance)s y no se pudo crear: %(reason)s"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_gitlab_mr_note
+msgid "Note of a merge request preview"
+msgstr "Nota de la vista previa de un merge request"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_state
+msgid "Request State"
+msgstr "Estado de la solicitud"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_provider_id
+msgid ""
+"The GitLab server of a merge request preview; empty for a GitHub pull "
+"request."
+msgstr ""
+"El servidor GitLab de la vista previa de un merge request; vacío para un "
+"pull request de GitHub."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_gitlab_mr_note.py:0
+msgid ""
+"The panel could not write its note on merge request !%(iid)s of %(repo)s on "
+"%(server)s: %(reason)s The preview works without it; check the credential of"
+" the repository under Settings → Git providers (it needs the api scope)."
+msgstr ""
+"El panel no pudo escribir su nota en el merge request !%(iid)s de %(repo)s "
+"en %(server)s: %(reason)s La vista previa funciona sin ella; revise la "
+"credencial del repositorio en Ajustes → Proveedores Git (necesita el scope "
+"api)."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_state
+msgid ""
+"Whether the request of a preview is still open. Written closed when it "
+"closes, before the note is taken off the merge request."
+msgstr ""
+"Si la solicitud de una vista previa sigue abierta. Se escribe cerrada cuando"
+" se cierra, antes de quitar la nota del merge request."
