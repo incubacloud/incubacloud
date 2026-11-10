@@ -15,6 +15,7 @@ from odoo.tools import clean_context
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from ._job_server_limits import (
     JOB_LIMITS_ALERT_CODE,
+    attempt_budget_seconds,
     job_server_limit_problems,
 )
 from .cloud_instance import AUTOPURGE_FINAL_DAYS, AUTOPURGE_WARN_DAYS
@@ -1151,6 +1152,13 @@ class CloudSettings(models.Model):
         problems = job_server_limit_problems(options)
         if problems is None:
             return
+        budget = attempt_budget_seconds(options)
+        _logger.info(
+            "A job's attempt runs for %s before it leaves a long step to its"
+            " server (limit_time_real %s s).",
+            f"{budget} s" if budget else "as long as it needs",
+            options.get("limit_time_real") or 0,
+        )
         for problem in problems:
             _logger.warning(problem)
         Alert = self.env["cloud.alert"].sudo()

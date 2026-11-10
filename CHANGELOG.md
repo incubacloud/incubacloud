@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.225] — 2026-11-11
+
+The groundwork for jobs that outlive the request that runs them, as on
+Odoo.sh, where a request is cut at 900 s. The update adds one empty table,
+`cloud_job_checkpoint`, and needs no data migration. No step of the
+panel's jobs runs apart from its request yet: what each job does is
+unchanged.
+
+### Added
+
+- **Where a job with a step run apart keeps its place.**
+  `cloud.job.checkpoint`, one row per job: the step that comes next, what
+  the steps before it answered, how much of the running step's log is in
+  the job log. The plan and the results are encrypted. A neutralized copy
+  of the database has none.
+- **How long an attempt of a job runs before it leaves its step to the
+  server**: 0.6 of the server's `limit_time_real` (540 s with 900), or
+  `attempt_budget_seconds` in odoo.conf's `[incubacloud]` section, for
+  tests. A step that runs in the request must last less than 0.4 of the
+  limit (360 s with 900).
+
+### Changed
+
+- **The startup warning about `limit_time_real` starts below 900 s**
+  instead of 3600 s, and says the attempt's budget and what a step in the
+  request has left. The log says the budget at every start.
+
 ## [1.0.224] — 2026-11-10
 
 Agents' actions can be auto-approved per person and credential (issue #8);

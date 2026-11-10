@@ -16,9 +16,19 @@ Only a server that runs jobs is judged: one with ``queue_job`` among its
 ``server_wide_modules``, which starts the job runner. A web-only server
 next to a dedicated runner, loaded with ``--load=web``, has nothing to
 warn about.
-"""
 
-from .transport import DEFAULT_SSH_COMMAND_TIMEOUT
+A step marked ``detached`` runs on its server apart from the request
+(``scripts/detached_step.sh``), and the attempt that follows it gives up
+its request before the limit: it runs for ``attempt_budget_seconds``, a
+share of ``limit_time_real``, and the job goes on in a later attempt. The
+limit then needs to fit the steps that still run inside the request, not
+a whole build: ``MIN_LIMIT_TIME_REAL``, the limit Odoo.sh imposes.
+"""
+import logging
+
+from .password_utils import IncubacloudCryptoError, _read_conf_section
+
+_logger = logging.getLogger(__name__)
 
 #: Odoo 19's per-worker memory defaults (``odoo/tools/config.py``).
 ODOO_DEFAULT_MEMORY_SOFT = 2048 * 1024 * 1024
@@ -26,6 +36,30 @@ ODOO_DEFAULT_MEMORY_HARD = 2560 * 1024 * 1024
 
 #: The alert the panel shows while the limits are too low.
 JOB_LIMITS_ALERT_CODE = "job_server_limits_too_low"
+
+#: The lowest ``limit_time_real`` the panel's jobs run under, in seconds
+#: (10-nov-2026): the limit of Odoo.sh, which the panel is tested with.
+#: Below it a step that is not run apart, which may start when the
+#: attempt's budget is nearly spent, has too little time left to end.
+MIN_LIMIT_TIME_REAL = 900
+
+#: The share of ``limit_time_real`` an attempt of a job runs for before it
+#: leaves its step to run on the server and the job goes on in a later
+#: attempt (10-nov-2026): 540 s with 900, measured against a rebuild's
+#: longest steps (p90 450 s, max 650 s), which then run apart.
+ATTEMPT_BUDGET_FACTOR = 0.6
+
+#: The share of ``limit_time_real`` a step that is not run apart must stay
+#: under (10-nov-2026): it may start just before the budget is spent, and
+#: budget plus step must fit in the limit. 360 s with 900; today «Initialize
+#: database» and the image build pass it, which is why they are to be run
+#: apart.
+ATTACHED_STEP_FACTOR = 0.4
+
+#: The odoo.conf option, in the ``[incubacloud]`` section, that sets the
+#: budget in seconds instead: to make a job wait for its step within a
+#: minute while it is tested.
+ATTEMPT_BUDGET_OPTION = "attempt_budget_seconds"
 
 
 def _mib(value):
@@ -54,7 +88,7 @@ def job_server_limit_problems(options):
     threaded = not options.get("workers")
     problems = []
     time_real = options.get("limit_time_real") or 0
-    if 0 < time_real < DEFAULT_SSH_COMMAND_TIMEOUT:
+    if 0 < time_real < MIN_LIMIT_TIME_REAL:
         consequence = (
             "with workers = 0 the whole server reloads, and every job "
             "running in it dies"
@@ -62,11 +96,14 @@ def job_server_limit_problems(options):
             else "its worker is killed and the job dies"
         )
         problems.append(
-            f"limit_time_real is {time_real} s, and a panel job runs for as "
-            f"long as its commands, up to {DEFAULT_SSH_COMMAND_TIMEOUT} s "
-            f"each: past the limit {consequence}. Set limit_time_real to "
-            f"{DEFAULT_SSH_COMMAND_TIMEOUT} or more on the server that "
-            f"runs the jobs."
+            f"limit_time_real is {time_real} s, below the "
+            f"{MIN_LIMIT_TIME_REAL} s the panel's jobs need: an attempt "
+            f"runs for {attempt_budget_seconds(options)} s before it "
+            f"leaves a long step to the server, and a step that runs in "
+            f"the request must end within "
+            f"{attached_step_limit_seconds(options)} s; past the limit "
+            f"{consequence}. Set limit_time_real to {MIN_LIMIT_TIME_REAL} "
+            f"or more on the server that runs the jobs."
         )
     if threaded:
         soft = options.get("limit_memory_soft") or 0
@@ -86,3 +123,67 @@ def job_server_limit_problems(options):
                 f"whole server may use."
             )
     return problems
+
+
+def _configured_budget(options):
+    """Return the budget odoo.conf sets in ``[incubacloud]``, or None.
+
+    :param options: Odoo's configuration; its ``config`` names the file
+    :return: whole seconds, or None when the option is not set or is not
+        a number of seconds (then logged)
+    :rtype: int | None
+    """
+    try:
+        section = _read_conf_section(options.get("config"))
+    except IncubacloudCryptoError:
+        return None
+    raw = (section.get(ATTEMPT_BUDGET_OPTION) or "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit():
+        _logger.warning(
+            "[incubacloud] %s = %r is not a number of seconds: ignored.",
+            ATTEMPT_BUDGET_OPTION, raw,
+        )
+        return None
+    return int(raw)
+
+
+def attempt_budget_seconds(options):
+    """Return how long an attempt of a job runs before it waits, in seconds.
+
+    ``ATTEMPT_BUDGET_FACTOR`` of the server's ``limit_time_real``, or what
+    ``[incubacloud] attempt_budget_seconds`` in odoo.conf says. 0 means an
+    attempt never stops to wait: the server has no limit.
+
+    The limit is the server process's (``odoo.tools.config`` of the server
+    that runs the jobs, which on Odoo.sh comes from its command line), not
+    the configuration file's.
+
+    :param options: Odoo's configuration, or a mapping with
+        ``limit_time_real`` and, for the file, ``config``
+    :rtype: int
+    """
+    configured = _configured_budget(options)
+    if configured is not None:
+        return configured
+    limit = options.get("limit_time_real") or 0
+    if limit <= 0:
+        return 0
+    return int(limit * ATTEMPT_BUDGET_FACTOR)
+
+
+def attached_step_limit_seconds(options):
+    """Return how long a step that is not run apart may last, in seconds.
+
+    ``ATTACHED_STEP_FACTOR`` of ``limit_time_real``; 0 when the server has
+    no limit, and then no step has one either.
+
+    :param options: Odoo's configuration, or a mapping with
+        ``limit_time_real``
+    :rtype: int
+    """
+    limit = options.get("limit_time_real") or 0
+    if limit <= 0:
+        return 0
+    return int(limit * ATTACHED_STEP_FACTOR)
