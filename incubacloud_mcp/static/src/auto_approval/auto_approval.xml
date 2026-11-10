@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud_mcp.McpAutoApproval">
+    <div class="ic-mcp-auto">
+        <div class="rl-saas-fsec">Auto-approval</div>
+        <p class="rl-tabnote">
+            An auto-approval rule lets one credential of one person act without asking until
+            a date: an API key, an OAuth client or the panel's assistant. Every other agent
+            keeps asking. Each action run this way is marked auto-approved in the audit log
+            and on its jobs.
+        </p>
+
+        <t t-if="state.loading">
+            <div class="ic-detail-loading">Loading…</div>
+        </t>
+        <t t-elif="state.loadError">
+            <div class="rl-stub" role="alert">
+                <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                <p t-esc="state.loadError"/>
+                <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                        t-on-click="() => this.load()">
+                    Retry
+                </button>
+            </div>
+        </t>
+        <t t-else="">
+            <p class="ic-mcp-notice" t-if="!state.data.allowed">
+                <i class="fa fa-pause-circle" aria-hidden="true"/>
+                On this panel the platform does not allow auto-approval now: the rules below are
+                paused, and none can be granted.
+            </p>
+            <p t-if="state.data.can_grant and state.data.allowed">
+                <button type="button" class="rl-btn rl-btn-primary rl-btn-sm ic-mcp-auto-grant"
+                        t-on-click="() => this.openGrant()">
+                    Grant auto-approval…
+                </button>
+            </p>
+
+            <p class="rl-tabnote" t-if="!state.data.rules.length">No rule has been granted.</p>
+            <ul t-else="" class="ic-mcp-auto-rules">
+                <li t-foreach="state.data.rules" t-as="rule" t-key="rule.id"
+                    t-att-class="'ic-mcp-auto-rule ic-mcp-auto-rule--' + rule.state">
+                    <div class="ic-mcp-auto-rule-main">
+                        <span class="ic-mcp-auto-who">
+                            <t t-esc="rule.user_name"/>
+                            <span class="ic-mcp-auto-muted"> · <t t-esc="rule.role_at_grant"/></span>
+                        </span>
+                        <span class="ic-mcp-auto-cred" t-esc="credentialText(rule)"/>
+                        <span t-att-class="'ic-mcp-auto-state ic-mcp-auto-state--' + rule.state"
+                              t-esc="stateLabel(rule.state)"/>
+                    </div>
+                    <dl class="ic-mcp-auto-facts">
+                        <div><dt>Granted by</dt><dd><t t-esc="rule.granted_by"/> · <t t-esc="rule.granted_at"/></dd></div>
+                        <div><dt>Until (UTC)</dt><dd t-esc="rule.expires_at"/></div>
+                        <div><dt>Last used</dt><dd t-esc="rule.last_used_at || '—'"/></div>
+                        <div><dt>Auto-approved calls</dt><dd t-esc="rule.use_count"/></div>
+                        <div t-if="rule.revoked_at">
+                            <dt>Ended</dt>
+                            <dd><t t-esc="rule.revoked_reason"/> · <t t-esc="rule.revoked_at"/><t t-if="rule.revoked_by"> · <t t-esc="rule.revoked_by"/></t></dd>
+                        </div>
+                    </dl>
+                    <div class="ic-mcp-auto-actions">
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="() => this.openActivity(rule)">
+                            Activity
+                        </button>
+                        <button t-if="canRevoke(rule)" type="button"
+                                class="rl-btn rl-btn-ghost rl-btn-sm ic-mcp-auto-revoke"
+                                t-on-click="() => this.askRevoke(rule)">
+                            Revoke
+                        </button>
+                    </div>
+                </li>
+            </ul>
+        </t>
+
+        <!-- Grant: who, which credential, how long; then the notice. -->
+        <IcModal t-if="state.grant"
+                 title.translate="Let this agent act without asking"
+                 boxClass="'ic-confirm-box ic-mcp-auto-box'"
+                 closeOnOverlay="false"
+                 onClose="() => this.closeGrant()">
+            <h3 class="ic-confirm-title">Let this agent act without asking</h3>
+            <p class="rl-tabnote" t-if="!state.grant.users.length">
+                No credential has connected yet. A rule is granted to an agent that already
+                connected to this panel: connect it first, then come back.
+            </p>
+            <t t-else="">
+                <div class="rl-fgrid ic-mcp-auto-form">
+                    <div class="rl-frow">
+                        <label for="ic_mcp_auto_user">Person</label>
+                        <select id="ic_mcp_auto_user"
+                                t-on-change="(ev) => this.chooseUser(ev.target.value)">
+                            <option value="" t-att-selected="!state.grant.form.userId">Choose a person…</option>
+                            <t t-foreach="state.grant.users" t-as="user" t-key="user.id">
+                                <option t-att-value="user.id"
+                                        t-att-selected="user.id === state.grant.form.userId"
+                                        t-esc="user.name"/>
+                            </t>
+                        </select>
+                    </div>
+                    <div class="rl-frow">
+                        <label for="ic_mcp_auto_cred">Credential</label>
+                        <select id="ic_mcp_auto_cred" t-att-disabled="!chosenUser"
+                                t-on-change="(ev) => this.setField('credential', ev.target.value)">
+                            <option value="" t-att-selected="!state.grant.form.credential">Choose a credential…</option>
+                            <t t-if="chosenUser">
+                                <t t-foreach="chosenUser.credentials" t-as="item" t-key="item.credential">
+                                    <option t-att-value="item.credential"
+                                            t-att-selected="item.credential === state.grant.form.credential"
+                                            t-esc="credentialText(item)"/>
+                                </t>
+                            </t>
+                        </select>
+                    </div>
+                    <div class="rl-frow">
+                        <label for="ic_mcp_auto_period">For</label>
+                        <select id="ic_mcp_auto_period"
+                                t-on-change="(ev) => this.setField('period', ev.target.value)">
+                            <option value="" t-att-selected="!state.grant.form.period">Choose how long…</option>
+                            <option value="1" t-att-selected="state.grant.form.period === '1'">1 day</option>
+                            <option value="7" t-att-selected="state.grant.form.period === '7'">7 days</option>
+                            <option value="30" t-att-selected="state.grant.form.period === '30'">30 days</option>
+                            <option value="90" t-att-selected="state.grant.form.period === '90'">90 days</option>
+                            <option value="date" t-att-selected="state.grant.form.period === 'date'">Until a date…</option>
+                        </select>
+                    </div>
+                    <div class="rl-frow" t-if="state.grant.form.period === 'date'">
+                        <label for="ic_mcp_auto_date">Last day</label>
+                        <input id="ic_mcp_auto_date" type="date"
+                               t-att-min="minDay" t-att-max="maxDay"
+                               t-att-value="state.grant.form.date"
+                               t-on-change="(ev) => this.setField('date', ev.target.value)"/>
+                    </div>
+                </div>
+
+                <div class="ic-mcp-auto-notice">
+                    <p t-esc="noticeLead"/>
+                    <p t-esc="noticeReach"/>
+                    <p><strong>What the panel stops protecting you from:</strong></p>
+                    <ul>
+                        <li>
+                            <strong>The model's mistakes.</strong>
+                            A wrong call runs at once. Agents treat "the panel asks first" as a
+                            safety net; with this rule there is none.
+                        </li>
+                        <li>
+                            <strong>Instructions hidden in what the agent reads:</strong>
+                            a log, a mail, a file of a repository, a command's output. If the
+                            agent follows them, they run.
+                        </li>
+                        <li>
+                            <strong>A leaked credential.</strong>
+                            <t t-esc="' ' + noticeLeak"/>
+                        </li>
+                    </ul>
+                    <p>
+                        Each action run this way is marked auto-approved in the audit log and on
+                        its jobs. You can revoke the rule at any time.
+                    </p>
+                    <label class="ic-mcp-auto-ack">
+                        <input type="checkbox" t-att-checked="state.grant.form.acknowledged"
+                               t-on-change="(ev) => this.setField('acknowledged', ev.target.checked)"/>
+                        I understand, and I take responsibility for what this agent does without
+                        asking.
+                    </label>
+                </div>
+                <p class="ic-mcp-auto-error" role="alert" t-if="state.grant.form.error"
+                   t-esc="state.grant.form.error"/>
+            </t>
+            <div class="ic-confirm-actions">
+                <button type="button" class="ic-confirm-btn-cancel"
+                        t-on-click="() => this.closeGrant()">Cancel</button>
+                <button type="button" class="ic-confirm-btn-ok ic-mcp-auto-confirm"
+                        t-att-disabled="!canConfirm"
+                        t-on-click="() => this.confirmGrant()">Grant auto-approval</button>
+            </div>
+        </IcModal>
+
+        <!-- Revoke: one confirmation. -->
+        <IcModal t-if="state.revoking"
+                 title.translate="Revoke auto-approval"
+                 boxClass="'ic-confirm-box'"
+                 onClose="() => { state.revoking = null; }">
+            <h3 class="ic-confirm-title">Revoke auto-approval</h3>
+            <p class="ic-confirm-msg">
+                The next call of <t t-esc="credentialText(state.revoking)"/> asks for approval
+                again. What already ran, or is queued, stays as it is.
+            </p>
+            <div class="ic-confirm-actions">
+                <button type="button" class="ic-confirm-btn-cancel"
+                        t-on-click="() => { state.revoking = null; }">Cancel</button>
+                <button type="button" class="ic-confirm-btn-ok ic-mcp-auto-revoke-ok"
+                        t-on-click="() => this.confirmRevoke()">Revoke</button>
+            </div>
+        </IcModal>
+
+        <!-- What a rule approved: its grant, its calls and its end. -->
+        <IcModal t-if="state.activity"
+                 title.translate="Auto-approval activity"
+                 boxClass="'ic-confirm-box ic-mcp-auto-box'"
+                 onClose="() => this.closeActivity()">
+            <h3 class="ic-confirm-title">Auto-approval activity</h3>
+            <p class="rl-tabnote">
+                <t t-esc="state.activity.rule.user_name"/> ·
+                <t t-esc="credentialText(state.activity.rule)"/>
+            </p>
+            <p class="rl-tabnote" t-if="!state.activity.entries.length">Nothing yet.</p>
+            <ul t-else="" class="ic-mcp-auto-activity">
+                <li t-foreach="state.activity.entries" t-as="entry" t-key="entry.id">
+                    <div class="ic-mcp-auto-activity-head">
+                        <span class="rl-mono" t-esc="entry.action"/>
+                        <span class="ic-mcp-auto-muted" t-esc="entry.create_date"/>
+                    </div>
+                    <div class="ic-mcp-auto-muted">
+                        <t t-esc="entry.user_name"/> · <t t-esc="targetOf(entry)"/>
+                        <t t-if="approvalText(entry)"> · <t t-esc="approvalText(entry)"/></t>
+                    </div>
+                    <div class="ic-mcp-auto-activity-detail" t-esc="entry.details || '—'"/>
+                </li>
+            </ul>
+            <div class="ic-confirm-actions">
+                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                        t-att-disabled="!state.activity.offset"
+                        t-on-click="() => this.openActivity(state.activity.rule, Math.max(0, state.activity.offset - 20))">
+                    Newer
+                </button>
+                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                        t-att-disabled="state.activity.offset + state.activity.entries.length >= state.activity.total"
+                        t-on-click="() => this.openActivity(state.activity.rule, state.activity.offset + 20)">
+                    Older
+                </button>
+                <button type="button" class="ic-confirm-btn-cancel"
+                        t-on-click="() => this.closeActivity()">Close</button>
+            </div>
+        </IcModal>
+    </div>
+</t>
+
+</templates>

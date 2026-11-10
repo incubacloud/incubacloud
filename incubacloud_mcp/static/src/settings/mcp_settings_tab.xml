@@ -46,6 +46,8 @@
                 </div>
             </div>
 
+            <McpAutoApproval/>
+
         </t>
     </div>
 </t>

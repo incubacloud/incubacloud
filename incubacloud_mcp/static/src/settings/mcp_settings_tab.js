@@ -4,10 +4,12 @@ import { Component, onMounted, onWillStart, onWillUnmount, status, useState } fr
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { changedSettings, settingsView } from "../connect_agent/connect_agent_format";
+import { McpAutoApproval } from "../auto_approval/auto_approval";
 
 /** Settings → Agents: the agents' OAuth issuer and this panel's MCP URL. */
 export class McpSettingsTab extends Component {
     static template = "incubacloud_mcp.McpSettingsTab";
+    static components = { McpAutoApproval };
     static props = {};
 
     /** Read the settings; save them with the page's Save button. */

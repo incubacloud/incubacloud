@@ -39,12 +39,16 @@
         </xpath>
     </t>
 
-    <!-- The audit says when an action came through an agent, and which. -->
+    <!-- The audit says when an action came through an agent, which, and
+         how its call was approved: by the person, or by a rule. -->
     <t t-inherit="incubacloud.InstanceDetail.tabBody" t-inherit-mode="extension">
         <xpath expr="//td[@t-esc='entry.user_name']" position="replace">
             <td>
                 <t t-esc="entry.user_name"/>
                 <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
+                <span t-if="entry.approval === 'auto'" class="ic-mcp-approval ic-mcp-approval--auto"
+                      t-attf-title="#{{entry.approval_rule_id}} · {{entry.approval_granted_by}}"> · auto-approved</span>
+                <span t-elif="entry.approval === 'person'" class="ic-mcp-approval"> · approved</span>
             </td>
         </xpath>
     </t>
@@ -53,7 +57,29 @@
             <td>
                 <t t-esc="entry.user_name"/>
                 <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
+                <span t-if="entry.approval === 'auto'" class="ic-mcp-approval ic-mcp-approval--auto"
+                      t-attf-title="#{{entry.approval_rule_id}} · {{entry.approval_granted_by}}"> · auto-approved</span>
+                <span t-elif="entry.approval === 'person'" class="ic-mcp-approval"> · approved</span>
             </td>
+        </xpath>
+    </t>
+
+    <!-- A job says the agent that queued it, and how its call was approved. -->
+    <t t-inherit="incubacloud.JobHistory" t-inherit-mode="extension">
+        <xpath expr="//td[@t-esc=&quot;job.user_name || '—'&quot;]" position="replace">
+            <td>
+                <t t-esc="job.user_name || '—'"/>
+                <div t-if="job.via_client" class="ic-mcp-via ic-mcp-via--job">
+                    via agent <t t-esc="job.via_client"/><t t-if="job.approval === 'auto'"> · auto-approved</t><t t-elif="job.approval === 'person'"> · approved</t>
+                </div>
+            </td>
+        </xpath>
+    </t>
+    <t t-inherit="incubacloud.InstanceDetail" t-inherit-mode="extension">
+        <xpath expr="//span[@t-esc='job.user_name']" position="after">
+            <span t-if="job.via_client" class="ic-mcp-via ic-mcp-via--job">
+                via agent <t t-esc="job.via_client"/><t t-if="job.approval === 'auto'"> · auto-approved</t><t t-elif="job.approval === 'person'"> · approved</t>
+            </span>
         </xpath>
     </t>
 
