@@ -15764,14 +15764,14 @@ msgstr ""
 msgid ""
 "True while the instance exists on a host — that is, in 'deployed' and also "
 "in 'deleting', whose teardown has not finished yet. Stored because search "
-"domains, the SPA and cloud.tenant's related fields read it; derived from "
-"``state`` so there is a single source of truth."
+"domains, the SPA and the related fields of modules on top read it; derived "
+"from ``state`` so there is a single source of truth."
 msgstr ""
 "Verdadero mientras la instancia existe en un host, es decir, en 'deployed' y"
 " también en 'deleting', cuyo desmontaje aún no ha terminado. Se almacena "
 "porque lo leen los dominios de búsqueda, el SPA y los campos relacionados de"
-" cloud.tenant; se deriva de ``state`` para que haya una única fuente de "
-"verdad."
+" los módulos que lo extienden; se deriva de ``state`` para que haya una "
+"única fuente de verdad."
 
 #. module: incubacloud
 #. odoo-javascript

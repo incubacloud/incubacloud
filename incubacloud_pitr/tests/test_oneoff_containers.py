@@ -3,7 +3,7 @@
 The rule, the reasons and the checker live in core
 (``incubacloud.tests.oneoff_rules``). A recovery runs for hours in a
 container of the ``db`` service: started by hand, it would be counted in
-a sleeping tenant's Sablier group and stopped when the session expired.
+a sleeping instance's Sablier group and stopped when the session expired.
 """
 from pathlib import Path
 

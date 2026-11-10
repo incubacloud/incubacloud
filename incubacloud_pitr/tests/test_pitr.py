@@ -1475,9 +1475,9 @@ class TestARestore(_PitrCase):
         ), "exit_status": 0}}
 
     def test_a_restore_that_ended_tells_the_addons_once(self):
-        """Its database was replaced, as by any restore (``pitr``): SaaS
-        hands a tenant's panel new secrets then, since a moment before
-        its last deploy holds ones the manager no longer accepts."""
+        """Its database was replaced, as by any restore (``pitr``): a
+        layer may hand the instance new secrets then, since a moment
+        before its last deploy holds ones nobody accepts any more."""
         executor = self._planned()
         with patch.object(self.Job, "enqueue", autospec=True), patch.object(
             self.Instance, "_after_restore_hook", autospec=True,

@@ -32,10 +32,12 @@ _REMOTE_FOLDER_INDEX = 'cloud_project_remote_folder_uniq'
 
 #: The directories the platform keeps in the home of every host's account:
 #: the proxy's routes and certificates, the shared egress whitelist, the
-#: warm spares, the observability agents and the central stack. A
+#: instances a module on top keeps in reserve, the observability agents
+#: and the central stack. A
 #: project's instances live in ``~/<remote folder>/<name>``: a project
 #: whose folder were one of these would deploy into, and tear down, the
-#: platform's own files. The SaaS layer refuses them as tenant slugs too.
+#: platform's own files. A layer that derives folders from names of its
+#: own refuses them there too.
 RESERVED_REMOTE_FOLDERS = frozenset({
     'traefik', 'globalwhitelist', 'incubacloud', 'observability',
     'observability-central',

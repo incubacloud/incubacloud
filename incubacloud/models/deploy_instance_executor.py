@@ -129,13 +129,13 @@ GATEKEEPER_IMAGE = (
 #: deploy pulls, so the template's tag moved with upstream: v17.0.0 became
 #: ``latest`` on 2026-11-05, and each deploy, rebuild or move after it
 #: started v17 while the instances deployed before kept what they had
-#: pulled. 16.0.1 is the release the tenant panels already run
-#: (``incubacloud_saas_manager``) and was chosen on 2026-11-08. A release
-#: tag, not a digest: upstream rebuilds it for Debian security updates
-#: (``16.0.1-rN``) without moving the release. The pin rides the override
-#: and stays out of the answers, whose hash a new value would change for
-#: the whole fleet. Moving it is a decision: read the release's breaking
-#: changes against the relay's settings in the template's ``common.yaml``.
+#: pulled. 16.0.1 is the release already proven in production and was
+#: chosen on 2026-11-08. A release tag, not a digest: upstream rebuilds
+#: it for Debian security updates (``16.0.1-rN``) without moving the
+#: release. The pin rides the override and stays out of the answers,
+#: whose hash a new value would change for the whole fleet. Moving it is
+#: a decision: read the release's breaking changes against the relay's
+#: settings in the template's ``common.yaml``.
 SMTP_RELAY_IMAGE = "ghcr.io/docker-mailserver/docker-mailserver:16.0.1"
 
 # Path to the incubacloud_connect module.  Navigate from __file__ via
@@ -785,9 +785,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """Whether the backup container should be provisioned for this deploy.
 
         Thin delegator to :meth:`cloud.instance._backup_enabled` so that
-        downstream modules (e.g. SaaS plan logic) only have to override
-        the model side and every executor that needs the answer sees
-        the same value.
+        downstream modules (e.g. one that turns backups off) only have
+        to override the model side and every executor that needs the
+        answer sees the same value.
         """
         return self._inst()._backup_enabled()
 
@@ -1382,7 +1382,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         Thin delegator to :meth:`cloud.instance.expected_services` so
         that any extension that changes which services an instance
-        actually runs (e.g. SaaS plans that disable ``backup``) is
+        actually runs (e.g. one that turns ``backup`` off) is
         honoured uniformly across deploy, rebuild and the health
         probe. The stack as this run renders it: with the template it
         is about to run.
@@ -1791,11 +1791,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         ``docker_prune`` (``docker system prune -af --filter
         "label!=…"``) never sweeps panel-managed resources. The
         invariant is "deployed by the panel, may legitimately sit
-        stopped" (a warm pool spare, a Sablier-slept free instance, a
-        manually stopped one): an unlabelled stopped container
-        *matches* the ``label!=`` filter and is deleted. Anything the
-        panel deploys is destroyed by ``delete_instance`` (``compose
-        down``), never by the prune, so the label costs nothing.
+        stopped" (an instance built in advance and kept stopped, one
+        Sablier put to sleep, a manually stopped one): an unlabelled
+        stopped container *matches* the ``label!=`` filter and is
+        deleted. Anything the panel deploys is destroyed by
+        ``delete_instance`` (``compose down``), never by the prune, so
+        the label costs nothing.
         Because the labels are unconditional this method never returns
         ``None`` anymore — every consumer already tolerates both shapes.
 
@@ -1805,7 +1806,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         network predates the label that means tearing the live stack
         down mid-command, which failed outright ("has active endpoints"
         during a rebuild's boot test, "is not connected to the network"
-        on a plain ``up``) and left tenants stopped.
+        on a plain ``up``) and left instances stopped.
 
         That used to be paired with the claim that protecting the
         containers already protects the network, because Docker keeps a
@@ -1909,9 +1910,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # announce — and the announcement arrived at fleet scale:
             # copier renders the hostname as ``smtp.<relay domain>``, so
             # every instance relaying through the same domain reports
-            # itself under one name, and a free tenant restarts on each
-            # Sablier wake, turning "once per start" into dozens of
-            # identical mails a day.
+            # itself under one name, and an instance behind Sablier
+            # restarts on each wake, turning "once per start" into dozens
+            # of identical mails a day.
             services["smtp"]["environment"] = {"ENABLE_UPDATE_CHECK": "0"}
             # The release is the panel's too: see SMTP_RELAY_IMAGE.
             services["smtp"]["image"] = SMTP_RELAY_IMAGE

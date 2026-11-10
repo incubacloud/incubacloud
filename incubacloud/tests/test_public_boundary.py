@@ -83,7 +83,6 @@ _ALLOWED_TREES = {
 _MIGRATIONS = re.compile(r"^[a-z_]+/migrations/")
 _MIGRATION_RULES = {"saas", "tenant", "warm pool"}
 
-_CANDIDATE = "in a release candidate under way; cleaned once it lands"
 _LABELS = (
     "the observability labels tenant and tenant_id, renamed with the "
     "dashboards of their own"
@@ -97,17 +96,7 @@ _LAYER_TESTS = (
 
 #: Files allowed an exact number of matches, and why.
 _ALLOWED_FILES = {
-    "docs/architecture.md": (47, _CANDIDATE),
-    "incubacloud/i18n/es.po": (9, _CANDIDATE),
-    "incubacloud/models/cloud_instance.py": (27, _CANDIDATE),
-    "incubacloud/models/cloud_instance_domain.py": (2, _CANDIDATE),
-    "incubacloud/models/cloud_project.py": (2, _CANDIDATE),
-    "incubacloud/models/cloud_repo_mixin.py": (2, _CANDIDATE),
-    "incubacloud_pitr/models/cloud_instance.py": (2, _CANDIDATE),
-    "incubacloud_pitr/tests/test_oneoff_containers.py": (1, _CANDIDATE),
-    "incubacloud_pitr/tests/test_pitr.py": (2, _CANDIDATE),
-    "incubacloud/models/deploy_instance_executor.py": (7, _CANDIDATE),
-    "incubacloud/scripts/deploy.sh": (3, _CANDIDATE),
+    "incubacloud/i18n/es.po": (7, _VISIBLE),
     "incubacloud/ansible/playbooks/host_observability.yml": (11, _LABELS),
     "incubacloud/models/observability_agents_executor.py": (7, _LABELS),
     "incubacloud/models/cloud_settings.py": (3, _VISIBLE),

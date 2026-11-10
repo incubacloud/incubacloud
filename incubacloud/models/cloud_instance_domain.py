@@ -35,8 +35,8 @@ class CloudInstanceDomain(models.Model):
     # host's Traefik already holds, false leaves the router without TLS
     # config. A closed Selection rather than a free Char: the only ACME
     # resolver the hosts define is ``letsencrypt``, and this value flows
-    # into the tenant's copier answers file, so an open domain would be
-    # both a way to break the tenant's routing and a needless injection
+    # into the instance's copier answers file, so an open domain would be
+    # both a way to break the instance's routing and a needless injection
     # surface.
     #
     # ``auto`` is the default because the right answer is a property of

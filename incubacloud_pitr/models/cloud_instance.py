@@ -716,8 +716,8 @@ class CloudInstance(models.Model):
     def _pitr_rebuild_job_type(self):
         """The rebuild that renders this instance's stack: the right one.
 
-        A layer that rebuilds its instances with its own executor (a SaaS
-        tenant) answers through ``cloud.github.event._rebuild_job_type``.
+        A layer that rebuilds its instances with its own executor answers
+        through ``cloud.github.event._rebuild_job_type``.
 
         :rtype: str
         """
