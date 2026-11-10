@@ -149,13 +149,19 @@ server keeps one tree of each commit of Odoo its instances are on, about
 - **Order a VPS** says how the panel's catalog recommends a size for a number
   of people, and offers the managed backup storage when no backup destination
   exists yet.
-- *From zero to Odoo* says the figures are a ceiling that the vCPUs lower,
-  that above about 15 users an instance's **Resources** and `workers` are to be
-  raised, and to type a passphrase of one's own on the managed backup storage
-  before the first deploy, since the generated one is never shown. *Migrate
-  from another host* says to switch off the scheduled actions and the outgoing
-  and incoming mail servers right after the test restore, before two Odoos send
-  the same mail.
+- *From zero to Odoo* says to type a passphrase of one's own on the managed
+  backup storage before the first deploy, since the generated one is never
+  shown. *Migrate from another host* says to switch off the scheduled actions
+  and the outgoing and incoming mail servers right after the test restore,
+  before two Odoos send the same mail.
+- *From zero to Odoo* sizes the server by Odoo's own formula from its
+  deployment guide: (vCPU × 2) + 1 workers at most, about 325 MB of memory
+  each after 2 GB kept for the system, the database and the proxy, and about
+  6 users at once a worker. Its table gives vCPU and RAM for the usual sizes,
+  and it says that users at once are not everyone with an account. An
+  instance's default 2 workers serve about 12 users at once, and the guide
+  says to raise its **Resources** and `workers` above that. *Order a VPS*
+  names the question **How many people will use Odoo at once?**
 
 ### Changed
 
