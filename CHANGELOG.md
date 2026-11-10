@@ -29,7 +29,9 @@ restore script with its next restore.
 - **One tree per commit on each server.** The trees are kept in
   `~/.incubacloud/git-trees` and each instance's is made of hard links to
   one, so the instances of a server at the same commit of Odoo hold a single
-  tree of it. The daily maintenance removes the trees no instance uses.
+  tree of it. The daily maintenance removes the trees no instance uses, and
+  waits for the next night while a job is linking one. Two downloads of one
+  instance never run at once: a new one stops the one an earlier job left.
 - **The step has a fixed budget**, 1 200 s, whatever the number of
   repositories, with 600 s for each and one retry while time is left. The
   seconds it took count for the build's repetition, which is now decided on
@@ -39,7 +41,10 @@ restore script with its next restore.
   8.0 to 10.0. Its next deploy or rebuild removes the downloaded trees.
 - **The git helper image is kept** under a local tag with the label the
   daily prune spares, so it is not downloaded again every day. A full setup
-  prepares it.
+  prepares it, and so does the daily maintenance on a server with an instance
+  that downloads its repositories, so no job pays its download; a job that
+  has to has its own limit of 300 s for it. When core moves to another digest,
+  the tags of the old ones are removed.
 
 ### Security
 
@@ -77,14 +82,24 @@ Upgrading is recommended.
   helper container that downloads it, as a header scoped to that
   repository's URL, and is removed with it: `repos.yaml` on the server, the
   build context, the image, its layers and the instance's container hold
-  none.
+  none. The staged list of URLs with their credentials is removed as soon as
+  the step ends. The helper container runs without capabilities or new
+  privileges.
 - **Scoped GitHub App tokens.** A server is handed a token of the App limited
   to the instance's private repositories the App reads, with read access to
   their contents only, asked for each job. The installation's own token stays
   in the panel. If GitHub refuses the scoped token, the job is refused.
 - **No token where none is needed.** A public repository gets no credential,
   and one neither the App nor the personal access token reads gets none
-  either; the job's log names it. The decision is made per repository.
+  either; the job's log names it. The decision is made per repository. Only
+  GitHub's «not found», or a refusal that is not a rate limit, means a token
+  does not read it: any other failure of its API is asked again once and then
+  refuses the job, naming the repository.
+- **Access is checked on every job.** A tree another instance of the server
+  downloaded is linked only when this instance's own credential still reads
+  the repository: a branch's head is read with it, and a pinned commit's
+  repository is asked with it first. A repository taken away from the App's
+  installation, or a rotated token, stops the deploy at once.
 - **Build records are cleared daily.** The daily maintenance removes Docker's
   record of past builds, which kept their output.
 
