@@ -309,13 +309,13 @@ class McpAutoApproval(models.Model):
 
         :rtype: res.users recordset
         """
-        users = (
+        return (
             self.env["res.users"]
             .sudo()
             .search([("share", "=", False), ("id", "!=", SUPERUSER_ID)])
-        )
-        return users.filtered(
-            lambda user: role_of(user) and not (user.login or "").startswith("__")
+            .filtered(
+                lambda user: role_of(user) and not (user.login or "").startswith("__")
+            )
         )
 
     @api.model
@@ -540,35 +540,34 @@ class McpAutoApproval(models.Model):
 
         :rtype: list[dict]
         """
-        roles = dict(ROLE_SELECTION)
-        reasons = dict(REVOKE_REASONS)
-        result = []
-        for rule in self.sudo():
-            result.append(
-                {
-                    "id": rule.id,
-                    "user_id": rule.user_id.id,
-                    "user_name": rule.user_id.name or "",
-                    "role_at_grant": roles.get(rule.role_at_grant, ""),
-                    "kind": rule.kind,
-                    "credential": rule.credential,
-                    "credential_label": rule.credential_label or rule.credential,
-                    "granted_by": rule.granted_by_id.name or "",
-                    "granted_at": fields.Datetime.to_string(rule.create_date),
-                    "expires_at": fields.Datetime.to_string(rule.expires_at),
-                    "last_used_at": fields.Datetime.to_string(rule.last_used_at)
-                    if rule.last_used_at
-                    else "",
-                    "use_count": rule.use_count,
-                    "state": rule._state(),
-                    "revoked_at": fields.Datetime.to_string(rule.revoked_at)
-                    if rule.revoked_at
-                    else "",
-                    "revoked_by": rule.revoked_by_id.name or "",
-                    "revoked_reason": reasons.get(rule.revoked_reason, ""),
-                }
-            )
-        return result
+        # The labels in the reader's language.
+        roles = dict(self._fields["role_at_grant"]._description_selection(self.env))
+        reasons = dict(self._fields["revoked_reason"]._description_selection(self.env))
+        return [
+            {
+                "id": rule.id,
+                "user_id": rule.user_id.id,
+                "user_name": rule.user_id.name or "",
+                "role_at_grant": roles.get(rule.role_at_grant, ""),
+                "kind": rule.kind,
+                "credential": rule.credential,
+                "credential_label": rule.credential_label or rule.credential,
+                "granted_by": rule.granted_by_id.name or "",
+                "granted_at": fields.Datetime.to_string(rule.create_date),
+                "expires_at": fields.Datetime.to_string(rule.expires_at),
+                "last_used_at": fields.Datetime.to_string(rule.last_used_at)
+                if rule.last_used_at
+                else "",
+                "use_count": rule.use_count,
+                "state": rule._state(),
+                "revoked_at": fields.Datetime.to_string(rule.revoked_at)
+                if rule.revoked_at
+                else "",
+                "revoked_by": rule.revoked_by_id.name or "",
+                "revoked_reason": reasons.get(rule.revoked_reason, ""),
+            }
+            for rule in self.sudo()
+        ]
 
     def _activity(self, offset=0, limit=20):
         """Return a page of the audit rows of this rule: what it approved, its

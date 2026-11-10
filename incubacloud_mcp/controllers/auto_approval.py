@@ -41,8 +41,7 @@ class McpAutoApprovalController(http.Controller):
 
         :raises AccessError: for a rule that does not exist or is another's
         """
-        Rule = self._rules()
-        rule = Rule.sudo().browse(_int(rule_id)).exists()
+        rule = self._rules().sudo().browse(_int(rule_id)).exists()
         mixin = request.env["cloud.security.mixin"]
         if not rule or (
             rule.user_id.id != request.env.uid
