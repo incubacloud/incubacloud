@@ -10,10 +10,10 @@ The relay signs in in one of two ways:
 
 - **Password**: a user and a password for your provider's SMTP server.
 - **OAuth2 – Microsoft 365**: an app registered in Microsoft Entra ID, for a
-  mailbox in Exchange Online. Microsoft turns SMTP sign-in with passwords off by
-  default for Exchange Online at the end of December 2026, so a relay through
-  `smtp.office365.com` with a password stops sending unless an administrator
-  turns it on again.
+  mailbox in Exchange Online. Microsoft is
+  [retiring SMTP sign-in with passwords](https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online)
+  in Exchange Online, so a relay through `smtp.office365.com` with a password
+  stops sending once it is off for your organisation.
 
 A staging never uses the relay: its mail is captured on the server and shown in
 its **Mails** tab.
@@ -67,11 +67,19 @@ Connect with `Connect-ExchangeOnline` as an administrator, then:
     If SMTP sign-in is off for the whole organisation, turn it on there as well
     (`Set-TransportConfig -SmtpClientAuthenticationDisabled $false`).
 
-4. Turn off Entra ID's **security defaults** (Entra admin center → Overview →
-   Properties → Manage security defaults) if they are on: while they are on,
-   Microsoft refuses SMTP sign-in with `535 5.7.139` whatever the settings
-   above say. An organisation with Conditional Access manages this through its
-   policies instead. The change can take a few minutes to apply.
+4. Check how your organisation protects sign-ins in Entra ID. Microsoft blocks
+   SMTP sign-in with `535 5.7.139` whatever the settings above say in one case:
+   while Entra ID's
+   [security defaults](https://learn.microsoft.com/en-us/entra/fundamentals/security-defaults)
+   are on.
+    - With **Conditional Access**, security defaults are already off: allow
+      SMTP for this app in your policies and nothing else changes.
+    - With **security defaults** on and no Conditional Access, they have to be
+      turned off (Entra admin center → Overview → Properties → Manage security
+      defaults). Protect sign-ins then with Conditional Access policies, such as
+      multifactor authentication for your users.
+
+    The change can take a few minutes to apply.
 
 Give the app this one mailbox only: whoever holds its secret can send as it.
 
@@ -129,5 +137,6 @@ any mail the relay delivers after the last failure the panel saw.
 | TLS fails, or the server offers no STARTTLS | Check the port and the encryption. |
 | The relay's content filter (Amavis) does not take the mail | Restart the instance; if it goes on, rebuild it. |
 
-Exchange Online accepts 30 messages a minute and 10,000 recipients a day per
-mailbox; above that it defers the mail, which the relay sends again later.
+Exchange Online limits how much one mailbox sends (see Microsoft's
+[sending limits](https://learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits#sending-limits)).
+Above them it defers the mail, which the relay sends again later.
