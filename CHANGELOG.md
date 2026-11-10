@@ -105,6 +105,8 @@ it; hosts that already do are left as they are.
 
 ### Changed
 
+- **Odoo 16.0 and 17.0 are offered again** for new projects and instances:
+  their run of the series passed on every step the panel takes.
 - **Without `sshpass`, hosts log in with a key.** Ansible needs `sshpass` to
   log in to a host with a password. On a panel whose server has none, the
   host form offers "SSH Key" only and says why, and the panel refuses a

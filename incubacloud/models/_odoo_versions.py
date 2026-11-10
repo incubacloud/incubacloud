@@ -149,9 +149,10 @@ def _card(
 # render is the series a new project, or an instance outside one, gets
 # (``default_version``); the platform's own panels name theirs.
 VERSIONS = {
-    # 7.0 to 17.0 are not offered at the launch (owner, 2-nov-2026): each
+    # 7.0 to 17.0 were not offered at the launch (owner, 2-nov-2026): each
     # opens here once its own run of the series passes on the code that
-    # will serve it. A record that holds one keeps it, and an administrator
+    # will serve it. 16.0 and 17.0 opened on 10-nov-2026, after their run
+    # passed on the production image of 9-nov-2026. A record that holds one keeps it, and an administrator
     # can still deploy one, which is how that run tests it.
     # 7.0 is retired (owner, 7-nov-2026): the click-odoo of its image can
     # neither dump, restore nor update its database, so no panel deploys it
@@ -191,8 +192,8 @@ VERSIONS = {
     "13.0": _card(False, ("12", "16", "16"), "click-odoo", None, "sql"),
     "14.0": _card(False, ("12", "16", "16"), "click-odoo", None, "sql"),
     "15.0": _card(False, ("12", "17", "17"), "click-odoo", None, "sql"),
-    "16.0": _card(False, ("14", "18", "17"), "click-odoo", None),
-    "17.0": _card(False, ("14", "18", "17"), "click-odoo", None),
+    "16.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the
