@@ -2,7 +2,7 @@
 # Tests for scripts/direct_port_check.sh.
 #
 # ``docker`` and ``ss`` are stubbed. With ``userland-proxy: false``
-# (Cloud1) a port Docker publishes has no socket at all, so the check has
+# a port Docker publishes has no socket at all, so the check has
 # to read Docker's own list as well as the host's listeners.
 
 setup() {

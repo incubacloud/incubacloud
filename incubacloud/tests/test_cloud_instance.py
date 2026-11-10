@@ -665,13 +665,13 @@ class TestAutoDomainWildcard(TransactionCase):
                 "name": "wc-host",
                 "ip_address": "10.0.0.20",
                 "user": "ubuntu",
-                "wildcard_domain": "*.18.incubacloud.io",
+                "wildcard_domain": "*.18.example.com",
             }
         )
         self.project = self.env["cloud.project"].create({"name": "WC Project"})
 
     def test_subdomain_suffix_strips_wildcard(self):
-        self.assertEqual(self.host._subdomain_suffix(), "18.incubacloud.io")
+        self.assertEqual(self.host._subdomain_suffix(), "18.example.com")
 
     def test_subdomain_suffix_plain_domain_unchanged(self):
         self.host.wildcard_domain = "plain.example.com"
@@ -688,7 +688,7 @@ class TestAutoDomainWildcard(TransactionCase):
         self.assertEqual(len(inst.domain_ids), 1)
         hostname = inst.domain_ids.hostname
         self.assertNotIn("*", hostname)
-        self.assertTrue(hostname.endswith(".18.incubacloud.io"), hostname)
+        self.assertTrue(hostname.endswith(".18.example.com"), hostname)
 
     def test_auto_domain_on_host_assign_substitutes_wildcard(self):
         inst = self.env["cloud.instance"].create(

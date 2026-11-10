@@ -34,8 +34,8 @@ below ends with hosts, panels and Grafana on it.
 - **Grafana refuses logins.** Between the panel's name going down and the account sync
   that gives Grafana the public issuer back, Grafana has no fallback. Wait for the sync
   on the central's host, or run it.
-- **429 on `/oauth/token`.** On Cloud1 every container reaches Traefik from the proxy
-  network's gateway (172.19.0.1): mail, QA, Grafana and the light probe share its rate
+- **429 on `/oauth/token`.** On a host where every container reaches Traefik from the proxy
+  network's gateway, every service there (mail, Grafana, the light probe…) shares its rate
   limits. A client failing many exchanges blocks the others for the window; the access
   log shows it.
 
@@ -54,7 +54,7 @@ dig +short A <name> @1.1.1.1; dig +short AAAA <name> @1.1.1.1
 From a container (the way agents, Grafana and the manager come):
 
 ```bash
-docker exec incubacloud-production-odoo-1 python3 -c "import requests; \
+docker exec <panel>-odoo-1 python3 -c "import requests; \
 print(requests.get('https://<name>:9443/oauth/jwks', timeout=5).status_code)"
 ```
 

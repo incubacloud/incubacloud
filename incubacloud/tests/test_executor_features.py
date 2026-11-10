@@ -628,8 +628,7 @@ class TestEveryHostnameIsCapped(BaseCase):
 
     The odoo service's hostname is the instance's domain, so a long one
     broke the deploy whatever the backup did: on 10-oct-2026 Docker
-    refused "qa-addons-privado-production.vps.qa-…-pago.incubacloud.io"
-    (68 bytes) at the first ``docker compose run``.
+    refused a domain of 68 bytes at the first ``docker compose run``.
     """
 
     def _cap(self, cmds):

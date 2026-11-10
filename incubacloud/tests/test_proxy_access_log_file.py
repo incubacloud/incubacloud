@@ -95,7 +95,7 @@ class TestAccessLogFileRetrofit(TransactionCase):
 
 
 class TestProxyProtectedFromThePrune(TransactionCase):
-    """2-nov-2026: the nightly prune deleted saas-free's stopped proxy."""
+    """2-nov-2026: the nightly prune deleted a host's stopped proxy."""
 
     _PROXY = (
         "services:\n  proxy:\n    image: traefik:v2.11\n    labels:\n"

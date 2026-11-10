@@ -212,7 +212,7 @@ class PushTrustedProxiesExecutor(
                 # written an ACME store into, so a host whose jobs run
                 # as the unprivileged operator the hardening playbook
                 # creates cannot move a file in there — measured on
-                # Tenants1, where every other step of this job
+                # a production host, where every other step of this job
                 # succeeded. Trying the plain move first keeps a host
                 # without sudo working exactly as it did. Which branch
                 # runs is decided by what this job staged.

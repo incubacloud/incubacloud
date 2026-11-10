@@ -81,13 +81,13 @@ teardown() {
 }
 
 @test "cap-hostnames cuts the odoo hostname of a long domain at a label" {
-    # The name QA's walk 6g2 deployed on 10-oct-2026: 68 bytes.
-    long="qa-addons-privado-production.vps.qa-20261010-2457-pago.incubacloud.io"
+    # A name of the shape a deploy met on 10-oct-2026: 70 bytes.
+    long="acme-addons-private-production.vps.host-20261010-2457-paid.example.com"
     printf 'services:\n  odoo:\n    hostname: "%s"\n' "$long" > "$DIR/prod.yaml"
     run bash "$SCRIPT" cap-hostnames "$DIR"
     [ "$status" -eq 0 ]
     [[ "$output" == *"capped hostname in prod.yaml"* ]]
-    grep -q '    hostname: "qa-addons-privado-production.vps.qa-20261010-2457-pago"$' \
+    grep -q '    hostname: "acme-addons-private-production.vps.host-20261010-2457-paid"$' \
         "$DIR/prod.yaml"
 }
 

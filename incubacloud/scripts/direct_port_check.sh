@@ -6,7 +6,7 @@
 #
 # A port can be taken in two places and both are read: what Docker
 # publishes, on any address, and what listens on the host. With
-# ``userland-proxy: false`` (Cloud1's daemon) a published port is a DNAT
+# ``userland-proxy: false`` (a panel's own host may run it) a published port is a DNAT
 # rule and no socket at all, so reading sockets alone would miss it, and
 # the proxy recreated onto it would not start. The proxy itself
 # publishing the port is a second Full Setup, not a conflict, and so is

@@ -39,10 +39,10 @@ describe("HostHardeningModal production gate", () => {
     beforeEach(() => patchTranslations());
 
     test("asks in one sentence, the name drawn as code", () => {
-        const sentence = prompt("saas-paid-202610082249");
+        const sentence = prompt("host-202610082249");
         expect(sentence).toBeInstanceOf(markup("").constructor);
         expect(String(sentence)).toBe(
-            'Type <code class="rl-mono">saas-paid-202610082249</code> to confirm:'
+            'Type <code class="rl-mono">host-202610082249</code> to confirm:'
         );
     });
 

@@ -67,7 +67,7 @@ case "$1" in
         # container to its PID 1 (Traefik). Not ``docker kill --signal``:
         # Docker marks any container it kills as stopped by hand, whatever
         # the signal, so the restart policy no longer brought the proxy
-        # back after a reboot. On 2 November 2026 saas-free rebooted at
+        # back after a reboot. On 2 November 2026 a host rebooted at
         # 04:00, its proxy stayed down, and the next prune deleted it.
         conf="$LOGROTATE_DIR/incubacloud-traefik"
         tmp="$(mktemp)"

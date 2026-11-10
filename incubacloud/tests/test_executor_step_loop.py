@@ -9,7 +9,7 @@ steps did not do what the job promised.
 Production, 2026-09-29: the delete forgave its purge's "already empty"
 (exit 10) in ``parse_results``, after ``stop_on_failure`` had already
 cut the teardown off. Nine deletes ended "done" with "removed from
-host" and left every warm stack running on Tenants1.
+host" and left every stack running on the host.
 """
 import asyncio
 from unittest.mock import MagicMock, patch

@@ -28,7 +28,7 @@ from .cloud_instance_whitelist import _HOSTNAME_RE
 _WL_DIR = "~/globalwhitelist"
 _WL_PROJECT = "globalwhitelist"
 _WL_FILE = f"{_WL_DIR}/docker-compose.yaml"
-# The build Cloud 1 runs (0.3.2, 27-Oct-2026). By digest: under
+# The build proven in production (0.3.2, 27-Oct-2026). By digest: under
 # ``latest`` a host set up later would proxy through whatever was
 # published since. Moving it is a release.
 _WL_IMAGE = (

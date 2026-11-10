@@ -199,7 +199,7 @@ class TestHardeningPreflight(TransactionCase):
         — one agent offering too many keys reaches that on its own — ban
         it for the full ``bantime``. The panel is the only thing that
         manages the host, so every job against it fails until the ban
-        lapses; Tenants1 was unmanageable for exactly one hour on
+        lapses; a production host was unmanageable for exactly one hour on
         2026-08-13 this way. Exempting them costs nothing: they are
         already the only addresses nftables lets near the port.
         """
@@ -1242,7 +1242,7 @@ class TestConnRateDefault(TransactionCase):
 
 
 class TestAuditRetention(TransactionCase):
-    """auditd keeps weeks, not days (13-oct-2026: Cloud 1 held 2-3 days)."""
+    """auditd keeps weeks, not days (13-oct-2026: a production host held 2-3 days)."""
 
     def _tasks(self):
         """Return the hardening playbook's tasks."""
@@ -1383,7 +1383,7 @@ class TestHardeningScreensSpacing(BaseCase):
 
 class TestRootIsDisabledUnderSocketActivation(TransactionCase):
     """2-nov-2026: on Debian 13 the reload killed sshd and the hardening of
-    Cloud1 was reported failed, «root SSH preserved», with root off."""
+    a host was reported failed, «root SSH preserved», with root off."""
 
     def test_the_socket_gets_a_restart_and_a_plain_daemon_a_reload(self):
         self.assertIn(

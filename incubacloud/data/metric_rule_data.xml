@@ -97,7 +97,7 @@
              container does: what is left is a host with no proxy, and
              with it no instance answering. The container's samples go
              stale minutes after it stops or is removed, which is when
-             its host appears here. On 2 November 2026 saas-free ran nine
+             its host appears here. On 2 November 2026 a host ran nine
              hours without its proxy and nothing said so: every check
              reached the host over SSH, never through the proxy.
              Verified on the live backend: with every proxy up this is

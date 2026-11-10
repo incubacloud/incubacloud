@@ -148,7 +148,7 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
                 self.assertTrue([e for e in errors if label in e], errors)
 
     def test_a_failed_certificate_authority_or_log_step_fails_the_job(self):
-        """1-nov-2026: the certificate failed on Tenants1 and the job
+        """1-nov-2026: the certificate failed on a production host and the job
         still ended "fully configured"."""
         executor = self._executor(FullSetupExecutor, "full_setup")
         results = self._good_results(executor)
