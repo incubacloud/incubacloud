@@ -70,7 +70,7 @@ def ca_pem(name="Test Root CA"):
     :rtype: str
     """
     key = ec.generate_private_key(ec.SECP256R1())
-    now = datetime.datetime.now(datetime.UTC)
+    now = datetime.datetime.now(datetime.timezone.utc)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
     return (
         x509.CertificateBuilder()
