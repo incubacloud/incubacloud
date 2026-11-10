@@ -21,6 +21,16 @@ update adds two tables, `incubacloud_mcp_auto_approval` and
 approval mark, which the panel does not show. `incubacloud_assistant` 1.0.4
 comes with it.
 
+A production's mail relay can sign in to Microsoft 365 with OAuth2, before
+Microsoft turns SMTP AUTH with passwords off by default at the end of
+December 2026 (issue #6). The update adds seven columns to
+`cloud_instance`: `smtp_relay_auth`, filled with `password` for every
+instance, and six empty ones (`smtp_relay_oauth_directory_id`,
+`smtp_relay_oauth_client_id`, `smtp_relay_oauth_client_secret`,
+`smtp_relay_state`, `smtp_relay_checked_at`, `smtp_relay_error`), the job
+type `relay_test_mail` and the alert policy of `smtp_relay_failing`. No
+instance shows changes to apply: a relay with a password renders as before.
+
 ### Added
 
 - **Auto-approval rules.** An Administrator lets one credential of one user
@@ -65,6 +75,41 @@ comes with it.
 - **Routes** `/cloud/mcp/auto_approval/list`, `candidates`, `grant`,
   `revoke` and `activity`, excluded from the agents' catalog; each refuses a
   request that carries an agent's mark. Spanish translation included.
+- **OAuth2 – Microsoft 365 for a production's relay.** Under *Networking*,
+  **SMTP Authentication** chooses between **Password** and **OAuth2 –
+  Microsoft 365**. With OAuth2 the relay sends through
+  `smtp.office365.com`, port 587, with STARTTLS, as the mailbox the form
+  calls **Sender mailbox**, signing in with an app registered in Entra ID:
+  its **Directory ID**, **Application (client) ID** and **Client
+  secret**. The secret is encrypted like a password, never shown again and
+  not revealed by `/cloud/get_secret`; the password kept is not used
+  meanwhile. A staging, which captures its mail, cannot choose it. The
+  deploy runs the relay image `ghcr.io/incubacloud/relay-oauth`
+  (`RELAY_OAUTH_IMAGE`, by digest, built on `SMTP_RELAY_IMAGE`'s
+  docker-mailserver), ships the credentials as `.docker/smtp-oauth.json`
+  (0600, mounted read-only) and recreates the relay when they change; a
+  deploy or rebuild without OAuth2 removes that file. Odoo does not
+  change: it keeps sending to the local relay. Spanish translation
+  included.
+- **Send test mail.** Under the relay's fields, a production with a relay
+  sends one mail to the address of the person who asks
+  (`/cloud/instance_relay_test_mail`, five an hour per instance; with MCP,
+  `send_relay_test_mail`). The job ends with `delivered` and the server's
+  answer; a mail that did not leave is removed from the queue, and one that
+  did flushes it. The button is disabled, with its reason, while the
+  instance is not deployed or has changes to apply. Spanish translation
+  included.
+- **The panel says when a relay does not deliver.** The health probe reads
+  a production relay's queue, its OAuth2 token and the last mail it
+  delivered, and raises `smtp_relay_failing`, critical, after two probes
+  in a row, with the cause and what to do: the server refusing the
+  connection or not answering, its name not resolving, TLS, credentials or
+  a token refused, SMTP AUTH disabled in Microsoft 365, a sender without
+  Send As, Entra ID refusing the secret, or mail waiting more than 30
+  minutes. A server refusing one recipient is not one. Only a delivery
+  resolves it: a mail delivered after the alert, or a test mail that went
+  out. The relay's state shows under its fields. With a password, a refusal
+  from Microsoft 365 says to switch to OAuth2. Spanish translation included.
 
 ### Changed
 

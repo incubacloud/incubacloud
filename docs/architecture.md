@@ -543,12 +543,12 @@ Sensitive fields use the custom `EncryptedChar` field type (a `fields.Char` subc
 - **Key rotation** is built in: every place accepts a comma-separated list of Fernet keys (MultiFernet). The first key encrypts new values; every listed key can decrypt. See `docs/runbooks/RB-01-rotate-secret-key.md` for the full rotation procedure.
 - Legacy plaintext values (no `enc:` prefix) pass through unchanged on read, which is what migration code relies on.
 
-**Encrypted fields (15 across 7 models, and `pitr_key` with `incubacloud_pitr`):**
+**Encrypted fields (16 across 7 models, and `pitr_key` with `incubacloud_pitr`):**
 
 | Model | Fields |
 |---|---|
 | `cloud.host` | `password`, `key_file`, `traefik_panel_password` |
-| `cloud.instance` | `odoo_admin_password`, `odoo_admin_user_password`, `postgres_password`, `smtp_relay_password`, `secret_key` |
+| `cloud.instance` | `odoo_admin_password`, `odoo_admin_user_password`, `postgres_password`, `smtp_relay_password`, `smtp_relay_oauth_client_secret`, `secret_key` |
 | `cloud.backup.backend` | `s3_secret_access_key`, `passphrase` |
 | `cloud.github.app` | `webhook_secret` |
 | `cloud.settings` | `github_pat` |
@@ -799,6 +799,17 @@ In the browser the HTML body renders in an `iframe` with an empty `sandbox`, so 
 ---
 
 ---
+
+## A production's mail relay (1.0.224, 10-nov-2026)
+
+A production with `smtp_relay_host` runs the template's `smtp` service, a docker-mailserver relay (`SMTP_RELAY_IMAGE`) Odoo sends to. `smtp_relay_auth` says how the relay signs in to its server:
+
+- **`password`** (the default): `RELAY_USER` and `RELAY_PASSWORD` from the copier answers, as always.
+- **`oauth2_microsoft`**: Microsoft 365 with the client credentials of an app in Entra ID. Production only (`_check_smtp_relay_oauth`); the server is fixed to `smtp.office365.com:587` STARTTLS (`_relay_oauth.MICROSOFT_SMTP_SERVER`, written by `_relay_server_vals`), `smtp_relay_user` is the sender mailbox, and the directory ID, the application ID and the client secret (`EncryptedChar`, Developer, in `_PASSWORD_FIELDS`, not in `_SECRET_FIELDS`) are required. The answers keep their keys: `smtp_relay_password` is the path of the token file (`/var/lib/ic-relay-oauth/token.json`), which sasl-xoauth2 reads as its "password". `_extra_env_files` writes the credentials to `.docker/smtp-oauth.json` (0600); the override runs `RELAY_OAUTH_IMAGE` (by digest, built on `SMTP_RELAY_IMAGE`'s release, `images/relay-oauth`, RB-31), mounts the file read-only at `/run/secrets/ic-relay-oauth.json` and labels the service with a fingerprint of the credentials, so `up` recreates it when they change (a bind-mounted file's content is not part of a container's configuration). Without OAuth2, deploy and rebuild remove the file (`_relay_oauth_file_step`); with it, they remove a directory Docker may have left at its path. The snapshot carries `smtp_relay_oauth` (provider, both IDs and the secret's fingerprint salted with the instance's id) only for an OAuth2 relay, so the rest of the fleet keeps its hash.
+
+**Whether it delivers.** The health probe's step `relay_delivery` reads, inside `smtp`, the renewer's state (`ic-relay-oauth status`), the deferred mail of `postqueue -j` (age and reasons, addresses removed), the time of the last `status=sent` to the relay host in `mail.log` and `maximal_queue_lifetime`. `_grade_relay` raises `smtp_relay_failing` (critical, confirmed over two probes by `cloud.alert.policy`) for a deferral `_relay_oauth.classify_reason` names (connection, DNS, TLS, credentials or token refused, SMTP AUTH disabled, Send As), a mail deferred longer than `STUCK_MINUTES` (30) for any other reason, or an OAuth2 token that is running out while the renewer fails (`token_failure`). A recipient refused (`in reply to RCPT TO command`) is not one. Only a delivery resolves it: a `status=sent` later than the alert, or the test mail. A token `ok` and an empty queue do not, since Exchange refusing a good token gives both. Changing the relay's host or authentication resolves it and resets `smtp_relay_state`.
+
+**The test mail.** `send_relay_test_mail` (route `/cloud/instance_relay_test_mail`, MCP `send_relay_test_mail`, five an hour per instance) queues `relay_test_mail` (`queue_exclusive`, `failure_holds_queue` False, no retry) to the caller's own address. `scripts/relay_test.sh` sends it with swaks on the relay's port 25, follows it by its Message-Id through Amavis (which queues it again under another ID) to the relay's verdict, removes it from the queue unless it was sent and flushes the queue when it was. The job ends `done` with `delivered` and the server's answer; a refusal for a cause of the relay's raises the alert at once and drops the probe's suspicion, so the probe updates that alert instead of confirming another.
 
 ## Alerts and notifications
 

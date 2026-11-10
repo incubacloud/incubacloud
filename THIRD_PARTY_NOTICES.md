@@ -58,6 +58,7 @@ IncubaCloud does not redistribute them.
 | egress-gatekeeper | Tecnativa | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Closes the outbound traffic of staging instances. | [Tecnativa/egress-gatekeeper](https://github.com/Tecnativa/egress-gatekeeper) |
 | postgres-autoconf | Tecnativa | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | PostgreSQL image of each instance. | [Tecnativa/docker-postgres-autoconf](https://github.com/Tecnativa/docker-postgres-autoconf) |
 | PostgreSQL | The PostgreSQL Global Development Group | [PostgreSQL](https://www.postgresql.org/about/licence/) | Database of each instance, inside the image above. | [postgresql.org](https://www.postgresql.org/) |
+| docker-mailserver | The docker-mailserver organisation | [MIT](https://opensource.org/license/mit) | The production relay of each instance that sends mail, at the release `SMTP_RELAY_IMAGE` names. | [docker-mailserver/docker-mailserver](https://github.com/docker-mailserver/docker-mailserver) |
 | docker-duplicity | Tecnativa | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Scheduled backups of instances to S3-compatible storage. | [Tecnativa/docker-duplicity](https://github.com/Tecnativa/docker-duplicity) |
 | WAL-G v3.0.9 | The WAL-G authors | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Continuous archiving for point-in-time restore. The published binary is downloaded on the host and checked against its SHA-256. | [wal-g/wal-g](https://github.com/wal-g/wal-g) |
 | rclone 1.71.1 | Nick Craig-Wood and the rclone contributors | [MIT](https://opensource.org/license/mit) | Copies point-in-time archives to storage. | [rclone/rclone](https://github.com/rclone/rclone) |
@@ -68,6 +69,16 @@ IncubaCloud does not redistribute them.
 | VictoriaMetrics, vmagent and vmauth v1.102.0 | VictoriaMetrics | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Metrics storage, collection and access control. | [VictoriaMetrics/VictoriaMetrics](https://github.com/VictoriaMetrics/VictoriaMetrics) |
 | node_exporter v1.8.2 | The Prometheus authors | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Host metrics. | [prometheus/node_exporter](https://github.com/prometheus/node_exporter) |
 | cAdvisor v0.55.1 | Google | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Container metrics. | [google/cadvisor](https://github.com/google/cadvisor) |
+
+## Image IncubaCloud builds
+
+`ghcr.io/incubacloud/relay-oauth`, the relay of an instance that signs in to
+Microsoft 365 with OAuth2, is docker-mailserver with one more component built
+in. Its full notices are in `images/relay-oauth/THIRD_PARTY_NOTICES`.
+
+| Component | Author | Licence | How IncubaCloud uses it | Project |
+|---|---|---|---|---|
+| sasl-xoauth2 | Google LLC (Tarick Bedeir) | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | The SASL plugin Postfix signs in with XOAUTH2 through, built unmodified from a release tag; its notice is in the image at `/usr/share/doc/sasl-xoauth2/COPYING`. With it, Debian's `libjsoncpp26` (MIT). | [tarickb/sasl-xoauth2](https://github.com/tarickb/sasl-xoauth2) |
 
 ## Documentation site
 
