@@ -47,7 +47,7 @@
                 <t t-esc="entry.user_name"/>
                 <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
                 <span t-if="entry.approval === 'auto'" class="ic-mcp-approval ic-mcp-approval--auto"
-                      t-attf-title="#{{entry.approval_rule_id}} · {{entry.approval_granted_by}}"> · auto-approved</span>
+                      t-att-title="'#' + entry.approval_rule_id + ' · ' + entry.approval_granted_by"> · auto-approved</span>
                 <span t-elif="entry.approval === 'person'" class="ic-mcp-approval"> · approved</span>
             </td>
         </xpath>
@@ -58,7 +58,7 @@
                 <t t-esc="entry.user_name"/>
                 <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
                 <span t-if="entry.approval === 'auto'" class="ic-mcp-approval ic-mcp-approval--auto"
-                      t-attf-title="#{{entry.approval_rule_id}} · {{entry.approval_granted_by}}"> · auto-approved</span>
+                      t-att-title="'#' + entry.approval_rule_id + ' · ' + entry.approval_granted_by"> · auto-approved</span>
                 <span t-elif="entry.approval === 'person'" class="ic-mcp-approval"> · approved</span>
             </td>
         </xpath>

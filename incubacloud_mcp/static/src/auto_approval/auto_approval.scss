@@ -120,6 +120,10 @@
     max-inline-size: calc(100vw - 32px);
     max-block-size: calc(100vh - 32px);
     overflow-y: auto;
+
+    .ic-confirm-actions {
+        margin-block-start: 16px;
+    }
 }
 
 .ic-mcp-auto-form {

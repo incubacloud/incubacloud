@@ -63,10 +63,12 @@ class AutoApprovalMixin(AutoApprovalAllowedMixin):
             "days": days,
             "acknowledged": True,
             "notice_version": NOTICE_VERSION,
-            **kwargs,
-        }
-        Rule = self.env["incubacloud.mcp.auto.approval"].with_user(admin or self.admin)
-        return Rule._grant(user.id, credential, **values)
+        } | kwargs
+        return (
+            self.env["incubacloud.mcp.auto.approval"]
+            .with_user(admin or self.admin)
+            ._grant(user.id, credential, **values)
+        )
 
 
 @tagged("post_install", "-at_install")
@@ -630,6 +632,7 @@ class TestAutoApprovalRoutes(HttpCase):
             login="aar-dev",
             groups="base.group_user,incubacloud.group_cloud_developer",
         )
+        before = self.env["incubacloud.mcp.auto.approval"].search_count([])
         self.authenticate("aar-dev", "aar-dev")
         body = {
             "jsonrpc": "2.0",
@@ -650,7 +653,9 @@ class TestAutoApprovalRoutes(HttpCase):
         refused = response.json()["result"]
         self.assertFalse(refused["ok"])
         self.assertIn("group_cloud_manager", refused["error"])
-        self.assertFalse(self.env["incubacloud.mcp.auto.approval"].search([]))
+        self.assertEqual(
+            self.env["incubacloud.mcp.auto.approval"].search_count([]), before
+        )
         listing = self.url_open(
             "/cloud/mcp/auto_approval/list",
             data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
