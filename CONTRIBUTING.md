@@ -125,9 +125,6 @@ These are enforced habits, born from real incidents in this codebase:
 - **Never assert against SQL `NOW()`** or freshly-written timestamps
   via raw SQL — the transaction clock and the write clock differ and
   the test goes flaky. Assert through the ORM.
-- **`incubacloud_tenant` tests run against their own database**
-  (`-d tenant_test`), and that database needs `-u incubacloud` too
-  whenever the core schema changed.
 
 ---
 

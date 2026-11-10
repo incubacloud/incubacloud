@@ -160,7 +160,7 @@ or whether it is reached through a CDN) and deploy.
 
 ## See also
 
-- [RB-21](RB-21-origin-certificate.md) — the certificate hosts behind the
-  CDN serve.
+- The CDN's origin certificate, the one hosts behind the CDN serve: it
+  goes in each host's default certificate store.
 - `incubacloud/net/real_ip.py` — the rule, and why each part of it is
   needed.

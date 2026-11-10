@@ -9,6 +9,9 @@ All commands assume you run them from the doodba checkout root
 
 ## Index
 
+A number missing from the list is a procedure of one particular
+deployment, kept with that deployment.
+
 | # | Runbook | Severity | When to use |
 |---|---------|----------|-------------|
 | [RB-01](RB-01-rotate-secret-key.md) | Rotate `INCUBACLOUD_SECRET_KEY` (MultiFernet) | planned | Scheduled rotation, suspected leak |
@@ -23,22 +26,14 @@ All commands assume you run them from the doodba checkout root
 | [RB-10](RB-10-github-app-rate-limited.md) | GitHub App / PAT rate-limited or revoked | critical | Webhooks silent, `403`/`401` in logs |
 | [RB-11](RB-11-metrics-backend-unreachable.md) | Metrics backend unreachable — alerting is blind | critical | `metrics_backend_unreachable` alert, empty dashboards |
 | [RB-12](RB-12-custom-domain-certificate.md) | Serve a domain with an existing certificate | planned | Wildcard or customer-supplied cert instead of Let's Encrypt |
-| [RB-13](RB-13-rollback-panel-deploy.md) | Roll back a bad panel deploy | critical | Panel broken after `deploy-update`, failed migration mid-window |
-| [RB-14](RB-14-restore-mailserver.md) | Restore the mail server | critical | Mail host lost or mail data corrupted; DKIM keys at risk |
 | [RB-15](RB-15-bump-copier-template-pin.md) | Bump the doodba template pin | planned | Adopting a newer doodba-copier-template release |
-| [RB-16](RB-16-tenant-sees-no-metrics.md) | A tenant sees no metrics | routine | Empty charts or missing Monitoring section for one tenant |
 | [RB-17](RB-17-instance-log-archive.md) | An instance's log archive is broken | warning | `instance_logs_unhealthy` alert, no days in the log viewer |
 | [RB-18](RB-18-tune-host-edge-protection.md) | Tune host edge protection | planned | Proxy 429s on an instance, enabling the host conn-rate cap, provider without anti-DDoS |
 | [RB-19](RB-19-restore-large-backup.md) | Get a large backup onto a host and restore it | planned | A dump too large for the browser, or a host nobody holds credentials for |
 | [RB-20](RB-20-neutralize-restored-copy.md) | Restore a copy of production without arming it | planned | Developing against real data, reproducing a bug, rehearsing a migration |
-| [RB-21](RB-21-origin-certificate.md) | Issue the origin certificate for the fleet | planned | Preparing hosts to be served through the CDN, replacing the certificate |
 | [RB-23](RB-23-continuous-recovery.md) | Continuous recovery: alerts, a stuck restore, a moved instance | critical | `pitr_failing`, `pitr_archive_lagging`, `pitr_base_missing`; a restore that never ended |
 | [RB-24](RB-24-direct-path.md) | Direct path: down, a host not admitted, rotate the DNS token, roll back | high | `direct_path_down`, `direct_allowlist_stale`, `direct_certificate_expiring`, `direct_path_unreachable_from_host`; Grafana refusing logins |
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
-| [RB-26](RB-26-agency-own-server.md) | Agency: its own server | planned | A tenant signs up for or changes to Agency; an Agency tenant downgrades or is deleted |
-| [RB-27](RB-27-illegal-content-notice.md) | A notice of illegal content | high | Someone reports illegal content to `support@`, or an authority writes to it as our point of contact |
-| [RB-28](RB-28-personal-data-breach.md) | A personal-data breach | critical | Personal data may have been read, copied, changed or lost by someone who should not have, or a sub-processor reports a breach |
-| [RB-29](RB-29-tenant-placement-and-moves.md) | A tenant's placement and its moves between hosts | warning | *Moves paused* on a tenant; `move_pending`, `move_postponed`, `move_slow_cut`; a dump of, or disk from, the frozen copy a move left |
 | [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 
 ## Conventions

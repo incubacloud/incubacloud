@@ -175,9 +175,9 @@ or changed: `send`, `set_model`, `retry`, `confirm`, `cancel` and `accept_notice
 an error. The owner can still list, read, delete and stop their conversations, and the
 button stays, read-only, while `status.conversations` is not zero, until the
 30-day purge (`_cron_purge`, daily, which also heals lost tasks). A task in course stops at its
-next step's check and says so. On IncubaCloud's own master the assistant is blocked:
-`incubacloud_saas_manager` sets `incubacloud_assistant.blocked`, `_assistant_available_for`
-is false and `save_settings` refuses to switch it on.
+next step's check and says so. A module that extends the panel may block the assistant
+by setting `incubacloud_assistant.blocked`: `_assistant_available_for` is then false and
+`save_settings` refuses to switch it on.
 
 ## Switching it on: the box, or section 12A
 
