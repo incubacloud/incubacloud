@@ -55,3 +55,6 @@ another of your agents (another client or API key) cannot use it.
     itself — nor from an agent that drives your browser while your panel
     is open: it can open the page and approve. Connect only clients you
     trust, and [revoke](revoke.md) any you stop trusting.
+
+An Administrator can let one credential of one person act without these
+approvals, until a date: see [Auto-approval](auto-approval.md).

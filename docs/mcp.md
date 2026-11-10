@@ -360,6 +360,7 @@ route without a policy.
 | `/cloud/github/webhook`, `/cloud/health` | Public endpoints, not an action of the user. |
 | `/cloud`, `/cloud/<path:subpath>` | The single-page application. |
 | `/cloud/mcp/approve/<token>`, `/cloud/mcp/download/<token>`, `/cloud/mcp/config` | The MCP's own pages and links. |
+| `/cloud/mcp/auto_approval/list`, `candidates`, `grant`, `revoke`, `activity` | Auto-approval rules are a person's decision in the panel: an agent never sees, grants nor revokes one. |
 | `/cloud/assistant/*` (the chat's fifteen routes, Settings → Assistant's included) | The assistant's chat and settings: the panel's own pages. See [`assistant.md`](assistant.md). |
 
 ## Approval
@@ -411,6 +412,99 @@ protect from a malicious client, which answers `confirm: true` by itself, nor
 from an agent that drives the user's browser while the panel is open. The
 defence there is to connect only trusted clients and revoke the others; the
 user guide says so.
+
+## Auto-approval
+
+An Administrator lets **one credential of one user** run without asking,
+until a date (`incubacloud.mcp.auto.approval`, issue #8). While the rule is
+active, every call of that credential that would wait for an approval runs
+at once; nothing depends on the tool, the target or what the agent read.
+Everything that is not an approval stays: the role, the routes' checks, the
+record rules, the secrets, the per-user limit, what the panel refuses before
+asking (a production to refresh) and the `<untrusted_data>` wrapping.
+
+**The rule.** `user_id`, `kind` (`api_key`, `oauth`; the assistant adds
+`assistant`), `credential` (as an approval binds it: `API key #<id>`,
+`client_id <id>`, or `assistant`), `credential_label`, `role_at_grant`,
+`expires_at`, who granted it (`granted_by_id`, `granted_ip`,
+`notice_version`, `create_date`), its end (`revoked_at`, `revoked_by_id`,
+`revoked_reason`: `manual`, `superseded`, `user archived`,
+`credential deleted`) and its use (`use_count`, `last_used_at`). One live
+rule per credential (a partial unique index on `(user_id, credential)
+WHERE revoked_at IS NULL`); granting another revokes it as `superseded`.
+Rules are never deleted. No group may create, write or delete them —
+`base.group_system` reads them — and `create`, `write` (only a
+revocation, once) and `unlink` refuse anything but the model's own private
+methods (`_grant`, `_revoke`, `_use`), which Odoo's RPC cannot reach.
+
+**When it approves**, at every call, without a cache:
+
+1. the request's user and credential are the rule's, exactly — another key
+   (even with the same name), another client, another user with the same
+   client, or the assistant, ask;
+2. it is not revoked and `expires_at` is after the database's clock;
+3. the user's panel role is not above `role_at_grant`: a role that goes up
+   pauses the rule until an Administrator grants a new one;
+4. `cloud.settings._mcp_auto_approval_allowed()` says yes (see *Extending*).
+
+The use is one `UPDATE … SET use_count = use_count + 1 … WHERE id = … AND
+revoked_at IS NULL AND expires_at > clock_timestamp() … RETURNING id`, on a
+cursor of its own at READ COMMITTED, committed before the action runs: no
+cron decides when a rule ends, an agent's parallel calls do not wait for
+each other during a long action, and the count stays if the request rolls
+back. No row comes back: the call asks, as without a rule. Archiving a user
+revokes their rules (`user archived`), so they do not come back with a
+reactivation; a deleted or expired API key authenticates no more and the
+vacuum records it (`credential deleted`). What is already queued keeps
+running after a rule ends; a retry asks again.
+
+**The gate.** `incubacloud.mcp.confirm._gate` looks for the rule after
+`_confirmation` (so every refusal of `_prepare_<tool>` and
+`_confirm_<tool>` comes first) and before any `requestState`: an approval
+asked for before the rule was granted expires by itself. One point covers
+every tool, those of the modules on top included; a test calls `_gate` for
+every installed tool with `confirm != never` and checks it runs and is
+marked. Before the action runs the server logs
+`[mcp] auto-approved <tool> uid=… via=… rule=…`, which stays if the
+transaction rolls back.
+
+**Credentials seen.** The panel keeps no list of the OAuth clients that
+connect, so `incubacloud.mcp.credential` records each credential that
+authenticates on `/mcp` (`user_id`, `client`, `label`, `client_name` as the
+client declares it, `first_seen`, `last_seen`): one indexed read per request
+and, at most once an hour per credential, one write on a cursor of its own.
+A rule is granted only to one of these (the assistant's to a user who may
+use it). The vacuum forgets those not seen for 90 days that hold no live
+rule.
+
+**Granting.** `/cloud/mcp/auto_approval/grant` (`user_id`, `credential`,
+`days` or `expires_on`, `acknowledged`, `notice_version`): an Administrator
+(`_check_can_manage_settings`) in a request without an agent's mark — the
+MCP endpoint's and the assistant's carry one — with the current notice
+accepted. `list`, `candidates`, `revoke` (an Administrator any rule, a user
+their own) and `activity` (the audit rows with the rule, newest first, 100
+at most a page) complete it; `/cloud/mcp/config` brings the user's own
+rules to Connect an agent. Granting and revoking leave a row
+(*Auto-approval rule granted* / *revoked*, with `approval_rule_id`).
+
+**What the agent is told.** With a live rule for the credential that lists,
+`tools/list` says of each tool that would ask that it runs without asking
+and until when (`ToolSpec.listed(auto_until=…)`), and the server's
+instructions say no action waits for an approval. A client caches the list
+for five minutes, so the text may lag; the gate never does.
+
+| Value | Why (10-nov-2026) |
+|---|---|
+| A rule lasts 90 days at most, and cannot be extended or changed | The usual rotation period of a credential: a forgotten rule does not outlive the key that holds it. A new rule shows the notice again. |
+| No period is chosen beforehand (1, 7, 30 or 90 days, or a date) | Whoever grants it picks one on purpose. |
+| A credential seen is recorded once an hour at most, and kept 90 days | A short list to choose from, without a write per call. |
+| `NOTICE_VERSION` | The text the Administrator accepted: a new text gets a new version, and a grant that accepted another is refused. |
+
+**Threat model.** A rule gives up, for one credential, what an approval
+protects from (D5): the model's mistakes and instructions injected into what
+the agent reads. A leaked credential with a rule acts without asking until
+the rule ends. The rule is scoped by the person's role, the credential and
+the date; nothing narrower.
 
 ## Secrets
 
@@ -487,6 +581,18 @@ queue, carry the same mark. The mark rides on the request the MCP endpoint
 serves, never on the context, which any panel user can send with an RPC. The
 panel shows it in both audit tables (*· via agent …*).
 
+`approval` and `approval_rule_id`, on both models: empty (no approval was
+needed, or the row is older), `person` (the person approved it) or `auto` (a
+rule did), with the rule. `_gate` leaves it on the request
+(`APPROVAL_REQUEST_ATTR`, beside `VIA_REQUEST_ATTR`) when it lets a call
+through, and `create` stamps it; a mark sent by anyone but the superuser is
+dropped, and `write` refuses it. A call someone approved leaves its
+`Agent: <tool>` row even when `_writes_<tool>` says it changes nothing.
+`get_audit_log`, `get_job` and `list_jobs` answer `approval`; the panel
+shows *· auto-approved* (the rule and who granted it, on hover) or
+*· approved* in the audit tables, and *via agent … · auto-approved* in the
+jobs' history and an instance's activity.
+
 ## Extending (modules on top)
 
 - **Tools.** Inherit `incubacloud.mcp.catalog`: `_tool_specs()` adds
@@ -503,6 +609,13 @@ panel shows it in both audit tables (*· via agent …*).
   calling `super()`.
 - **How the layer above runs the panel.** `cloud.settings._mcp_api_keys_allowed()`,
   `_mcp_settings_managed()` and `_mcp_agents_url()`.
+- **Auto-approval.** `cloud.settings._mcp_auto_approval_allowed()` (True
+  here) is read when a rule is granted and at every call it would approve:
+  False refuses new rules and pauses those that exist, so it is also the
+  switch that stops them all at once. `_mcp_auto_approval_charges()` (False
+  here) adds to the notice that what an agent does may be charged to the
+  account. `incubacloud.mcp.auto.approval._candidates_for(user)` adds
+  credentials of a kind of the module's own (the assistant's).
 - `auth.oauth.provider.issuer` and the JWKS cache
   (`odoo.addons.incubacloud_mcp.controllers._jwks_cache`) live here.
 - A route a tool calls runs inside a savepoint: it must not `cr.commit()`.

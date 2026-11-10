@@ -124,6 +124,21 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   answers are written by the panel's own users under their roles and do not mark.
 - The code tools read only repositories of projects or instances the user reads and
   write only to those of projects (`incubacloud.mcp.tools._authorized_repo`).
+- **Auto-approval (1.0.224).** The assistant is a third kind of credential of
+  `incubacloud.mcp.auto.approval`: `kind = assistant`, `credential = assistant`, "the
+  panel's assistant, for this person", offered for a user who may use the assistant
+  (`_candidates_for`). A rule of a key or of an OAuth client never covers the
+  assistant, nor the reverse. With an active rule, the assistant's branch of `_gate`
+  lets through everything that would show a card — the MCP's confirmations,
+  `_extra_confirmation` and the `tainted` mark — and marks the call `auto`.
+  `tainted` is still computed, kept and cleared as before; it only makes no card. The
+  tool's line in the chat says *ran without asking*, and *after reading content other
+  people can write* when the conversation was marked (`message.auto_approved`,
+  `auto_after_untrusted`); if the rule ends mid-task, the next change shows a card
+  with the notice of untrusted content, as the mark was kept. While the rule is
+  active the system prompt gets `AUTO_APPROVAL_RULE` and the tools' descriptions say
+  they run without asking. The limits that are not approvals stay: `_MIN_GROUP`, the
+  step cap and the monthly limit. `test_terms_12a.py` checks what asks without a rule.
 
 ## Jobs
 

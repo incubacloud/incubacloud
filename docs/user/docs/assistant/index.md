@@ -92,6 +92,11 @@ answer it, from your browser: the assistant cannot confirm its own actions. A ca
 lasts ten minutes, and once confirmed it is used once; writing a new message instead
 of answering it cancels it, and the assistant is told.
 
+An Administrator can grant your assistant an [auto-approval](../agents/auto-approval.md)
+rule, until a date: then none of these shows a card, including after the assistant
+read text others write, and each action says *ran without asking* in the chat. Read
+its risks first.
+
 ## Writing a module
 
 Ask for what you need, in your words: *"Add an Internal code field to contacts and

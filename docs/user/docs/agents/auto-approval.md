@@ -1,0 +1,117 @@
+# Auto-approval
+
+Auto-approval lets **one credential of one person** act without asking, until a
+date: an API key, an OAuth client (an MCP client the person signed in with), or
+the panel's [assistant](../assistant/index.md). While the rule is active, every
+action that would wait for an [approval](confirmations.md) runs at once. Every
+other agent keeps asking.
+
+It is for an agent you leave working on its own — a dedicated key for an
+automation, say — while the agents you use day to day keep asking you first. It
+is off until an Administrator grants a rule.
+
+!!! danger "What you give up"
+    An approval is the moment a person reads what an agent is about to do. With
+    a rule there is none, for **every** action the person's role allows,
+    production included. Read the risks below before you grant one.
+
+## What runs without asking
+
+Everything the [Approvals](confirmations.md) page lists, and nothing is held
+back: deleting projects, instances, servers and backup destinations; restoring
+over production; commands on production instances and on servers; security
+settings and purging the audit log; sign-in links and backup downloads; writing
+to any branch and to public repositories. For the assistant, also what it would
+show a card for, including changes after it read logs, files or mail.
+
+What stays as it is: the person's role and projects, every check the panel makes
+before it would ask (an action it refuses is still refused), secrets (they never
+reach an agent), and the limits on calls.
+
+## The risks
+
+The panel stops protecting you from three things:
+
+1. **The model's mistakes.** A wrong call — another instance, another backup —
+   runs at once. Agents treat "the panel asks first" as a safety net and call a
+   tool to *propose* an action; with a rule there is no net. Deleting, restoring
+   over production, continuous recovery and removing a frozen copy cannot be
+   undone.
+2. **Instructions hidden in what the agent reads**: a log, a captured mail, a
+   file of a repository, a command's output, the end of a job, an alert, and
+   anything it reads outside the panel, such as an issue or a web page. If the
+   agent follows them, they run, on production too, and nobody sees them
+   before. What such an instruction aims for is deleting or restoring, a
+   command on a server, or taking data out: a sign-in link, a backup download,
+   a public repository, or the notifications sent to another chat.
+3. **A leaked credential.** Whoever holds the key or the client's token acts as
+   that person, without asking, until the rule ends. Revoke the rule *and* the
+   credential.
+
+Also keep in mind:
+
+- **A rule for an Administrator** reaches everything an Administrator does:
+  security settings, trusting a server's SSH key without anyone comparing it,
+  commands on every server — the panel's own included — and purging the audit
+  log.
+- **With an OAuth client**, the rule covers every session of that person with
+  that application, on any device. Disconnecting the agent does not end the
+  rule: if the person connects the same application again, it applies again.
+  Revoke the rule too.
+- **Who answers for it.** The audit names the person whose credential acted, not
+  the Administrator who granted the rule.
+- **Revoking does not undo.** What already ran, or is queued, stays.
+- **The audit records actions, not reads.** It says what the agent did, not what
+  it had read before doing it.
+
+## Grant a rule
+
+Only an Administrator grants a rule, from the panel; an agent can never grant,
+extend or revoke one.
+
+1. Connect the agent first: a rule is granted to a credential that has already
+   connected to the panel (the assistant is offered for the people who use it).
+2. Open **Settings**, the **Agents** tab, and choose **Grant auto-approval…**.
+3. Choose the **Person**, their **Credential**, and how long: 1, 7, 30 or 90
+   days, or until a date. Nothing is chosen for you, and 90 days is the most a
+   rule lasts — the usual rotation period of a credential.
+4. Read the notice. It names the person, the credential and the date, and lists
+   the risks above. Tick **I understand, and I take responsibility for what this
+   agent does without asking** and choose **Grant auto-approval**.
+
+The panel keeps who granted it, when, from which address and which version of
+the notice. A rule cannot be extended: when it ends, grant a new one, with the
+notice again. Granting a rule to a credential that has one replaces it.
+
+## When a rule ends
+
+A rule stops approving at once, at the next call, when:
+
+- its date passes;
+- it is revoked: an Administrator revokes any rule, and a person their own,
+  from **Settings**, **Agents**, or from **Connect an agent**;
+- the person is archived: their rules end, and stay ended if the person is
+  reactivated;
+- the API key is deleted or expires.
+
+When the person's role goes **up**, the rule is **paused**: it was granted for
+what the person could do then. An Administrator grants a new one if it should
+cover the new role.
+
+## Where you see it
+
+- **Settings**, **Agents**: every rule, with its person and role, credential,
+  who granted it and when, its date, when it was last used, how many calls it
+  approved, and its state (active, paused, expired or revoked). **Activity**
+  lists what the rule approved, with its grant and its end.
+- **Connect an agent**: the person a rule covers sees *… acts without asking
+  until …*, with **Revoke**.
+- **The audit log** of instances and servers: *auto-approved* after the agent's
+  name (the rule and who granted it, on hover), and *approved* when the person
+  approved the action.
+- **The jobs**: the history and an instance's activity show *via agent … ·
+  auto-approved* under the user.
+- **The assistant's chat**: each action shows *ran without asking*, and says so
+  when the assistant had read content other people can write.
+- **The agent itself**: its list of tools says which run without asking, and
+  until when.
