@@ -32,6 +32,93 @@ _QUERY_TIMEOUT = 10
 BACKEND_UNREACHABLE_CODE = "metrics_backend_unreachable"
 
 
+def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
+    """GET ``/api/v1/<endpoint>`` on the metrics backend and return its payload.
+
+    The transport half shared by :func:`promql_query` and
+    :func:`promql_query_range`: one retry policy, one way to
+    authenticate, one check of the PromQL envelope. See
+    :func:`promql_query` for why a transport failure or a 5xx is asked
+    once more and a 4xx is not.
+
+    :param str base_url: metrics backend root.
+    :param str endpoint: ``query`` or ``query_range``.
+    :param dict params: query-string parameters.
+    :returns: the decoded JSON payload, whose ``status`` is ``success``.
+    :raises requests.RequestException: on transport or HTTP failure.
+    :raises ValueError: when the backend answers with a PromQL error.
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            response = requests.get(
+                f"{base_url.rstrip('/')}/api/v1/{endpoint}",
+                params=params,
+                timeout=timeout,
+                auth=(user, token) if (token and user) else None,
+            )
+            response.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt > retries:
+                raise
+            continue
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", 0) or 0
+            if attempt > retries or status < 500:
+                raise
+            continue
+        break
+    payload = response.json()
+    if payload.get("status") != "success":
+        raise ValueError(
+            f"PromQL query failed: {payload.get('error') or 'unknown'}"
+        )
+    return payload
+
+
+def promql_query_range(
+    base_url, expression, start, end, step, timeout=_QUERY_TIMEOUT,
+    token=None, user=None, retries=1,
+):
+    """Run a PromQL range query and return ``[(labels, points), ...]``.
+
+    ``points`` is a list of ``(unix seconds, float)`` in time order; a
+    sample the backend sends as ``NaN`` or that does not parse is left
+    out, so a gap in the data stays a gap. Same transport, retry and
+    credential rules as :func:`promql_query`.
+
+    :param str base_url: metrics backend root.
+    :param str expression: PromQL to evaluate at every step.
+    :param int start: first evaluation time, unix seconds.
+    :param int end: last evaluation time, unix seconds.
+    :param int step: seconds between evaluations.
+    :param token: password half of this panel's metrics credential.
+    :param user: user half — see :func:`promql_query`.
+    :param int retries: extra attempts after a transport failure or 5xx.
+    :rtype: list[tuple[dict, list[tuple[float, float]]]]
+    """
+    payload = _promql_get(
+        base_url, "query_range",
+        {"query": expression, "start": int(start), "end": int(end),
+         "step": int(step)},
+        timeout=timeout, token=token, user=user, retries=retries,
+    )
+    series = []
+    for item in payload.get("data", {}).get("result", []):
+        points = []
+        for raw_ts, raw_value in item.get("values") or []:
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if value != value:  # NaN
+                continue
+            points.append((float(raw_ts), value))
+        series.append((item.get("metric", {}), points))
+    return series
+
+
 def promql_query(
     base_url, expression, timeout=_QUERY_TIMEOUT, token=None, user=None,
     retries=1,
@@ -61,32 +148,10 @@ def promql_query(
         a misconfiguration fails loudly instead of reading nothing.
     :param int retries: extra attempts after a transport failure or 5xx.
     """
-    attempt = 0
-    while True:
-        attempt += 1
-        try:
-            response = requests.get(
-                f"{base_url.rstrip('/')}/api/v1/query",
-                params={"query": expression},
-                timeout=timeout,
-                auth=(user, token) if (token and user) else None,
-            )
-            response.raise_for_status()
-        except (requests.ConnectionError, requests.Timeout):
-            if attempt > retries:
-                raise
-            continue
-        except requests.HTTPError as exc:
-            status = getattr(exc.response, "status_code", 0) or 0
-            if attempt > retries or status < 500:
-                raise
-            continue
-        break
-    payload = response.json()
-    if payload.get("status") != "success":
-        raise ValueError(
-            f"PromQL query failed: {payload.get('error') or 'unknown'}"
-        )
+    payload = _promql_get(
+        base_url, "query", {"query": expression},
+        timeout=timeout, token=token, user=user, retries=retries,
+    )
     samples = []
     for item in payload.get("data", {}).get("result", []):
         value = item.get("value") or [None, None]

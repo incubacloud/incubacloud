@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.OnDemandPanel">
+        <section class="rl-card ic-od" t-att-aria-busy="state.loading ? 'true' : 'false'">
+            <div class="ic-od-head">
+                <div class="ic-od-titles">
+                    <h4 class="ic-od-title" t-esc="props.title"/>
+                    <p class="ic-od-hint" t-if="props.hint" t-esc="props.hint"/>
+                </div>
+                <div class="ic-od-actions">
+                    <span class="ic-od-ago" t-if="state.readAt and !state.loading" t-esc="readAgo"/>
+                    <t t-slot="controls"/>
+                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-att-disabled="disabled || null"
+                            t-on-click="() => this.read()">
+                        <t t-if="state.loading">Reading…</t>
+                        <t t-elif="state.data">Read again</t>
+                        <t t-else="" t-esc="props.buttonLabel"/>
+                    </button>
+                </div>
+            </div>
+            <p class="ic-od-error" role="alert" t-if="state.error" t-esc="state.error"/>
+            <t t-if="state.data">
+                <t t-slot="default" data="state.data"/>
+            </t>
+        </section>
+    </t>
+
+</templates>

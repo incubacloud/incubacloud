@@ -34,6 +34,9 @@ from . import cloud_host_whitelist
 from . import cloud_instance
 from . import cloud_instance_access_log
 from . import cloud_instance_metrics
+from . import metrics_charts
+from . import cloud_instance_slow_routes
+from . import cloud_instance_db_activity
 from . import cloud_host_metrics
 from . import cloud_host_observability
 from . import cloud_host_direct
