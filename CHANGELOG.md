@@ -45,38 +45,26 @@ restore script with its next restore.
   that downloads its repositories, so no job pays its download; a job that
   has to has its own limit of 300 s for it. When core moves to another digest,
   the tags of the old ones are removed.
+- **A refused save says why.** Creating or saving a project or an instance
+  shows the reason the server gives, such as a value it does not accept,
+  instead of only «Failed to save».
 
 ### Security
 
 Upgrading is recommended.
 
-- **An instance's mail relay fields hold what they are for.** The relay
-  host is a hostname or an IPv4 address, the port a TCP port, and the relay
-  user and the admin email one line of text without double quotes,
-  backslashes or control characters; anything else is refused when it is
-  saved. The copier answers escape the values the template writes into the
-  compose files, so a value saved before this version renders as itself.
-  Spanish translation included.
-- **A project's name is plain text, and reaches the observability agents as
-  data.** A name with a template opener (`{{`, `{%`, `{#`), a line break or
-  another control character is refused. The labels people name (the
-  project's, and any a module adds) reach the `install_observability`
-  playbook marked as not templates, and it writes them into the host's
-  scrape configuration through `to_json`. Spanish translation included.
-- **Rows stay within their writer's projects.** An instance moved to another
-  project, and a repository, domain or egress whitelist row moved to another
-  instance (or a project's repository row to another project), is checked
-  against the record rules where it lands; an instance created is checked
-  against them too, although it is created with elevated rights. A Project
-  Manager or above, whom the rules give every project, is not limited.
-- **A restore to a moment runs only the panel's commands.** The recovery's
-  database server takes every setting that runs a program or loads a
-  library from its command line, over the restored copy's
-  `postgresql.auto.conf`: the restore and archive commands are the panel's,
-  the other commands, the preload libraries, JIT and (from PostgreSQL 17)
-  event triggers none. The restore's connections to it set the same at
-  login, over a role's or a database's own settings. `incubacloud_pitr`
-  1.0.12.
+- **Project names, the SMTP relay fields and the administrator email are
+  validated** before they reach the deployment playbooks. A value saved by
+  an earlier version is written out as it was saved. The relay user may be
+  a Windows login (`DOMAIN\user`). Spanish translation included.
+- **Project membership is checked on every change.** Instances, their
+  repositories, domains and egress whitelist rows, and a project's
+  repositories, are checked against the record rules whenever they are
+  created or changed. A Project Manager or above, whom the rules give every
+  project, is not limited.
+- **Point-in-time recovery ignores server settings stored inside the
+  restored copy**, and runs only the panel's own commands.
+  `incubacloud_pitr` 1.0.12.
 - **No Git credential in the image or the instance.** For the series that
   download on the server, a repository's credential travels only to the
   helper container that downloads it, as a header scoped to that
@@ -88,13 +76,16 @@ Upgrading is recommended.
 - **Scoped GitHub App tokens.** A server is handed a token of the App limited
   to the instance's private repositories the App reads, with read access to
   their contents only, asked for each job. The installation's own token stays
-  in the panel. If GitHub refuses the scoped token, the job is refused.
+  in the panel. If GitHub refuses the scoped token, or does not issue the
+  App's own, the job is refused: the personal access token is not used
+  instead.
 - **No token where none is needed.** A public repository gets no credential,
   and one neither the App nor the personal access token reads gets none
   either; the job's log names it. The decision is made per repository. Only
   GitHub's «not found», or a refusal that is not a rate limit, means a token
   does not read it: any other failure of its API is asked again once and then
-  refuses the job, naming the repository.
+  refuses the job, naming the repository. A repository GitHub says was
+  renamed or moved refuses the job at once, asking for its new URL.
 - **Access is checked on every job.** A tree another instance of the server
   downloaded is linked only when this instance's own credential still reads
   the repository: a branch's head is read with it, and a pinned commit's
