@@ -4068,6 +4068,11 @@ msgid "Default TLS Private Key"
 msgstr "Clave privada del certificado TLS"
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_ir_default
+msgid "Default Values"
+msgstr "Valores por defecto"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
 msgid "Default backup alert threshold (%)"
 msgstr "Umbral por defecto de avisos de backup (%)"

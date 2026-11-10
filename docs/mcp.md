@@ -226,7 +226,7 @@ may connect the repository to the project).
   and when the repository is public. Opening a pull request asks in a public
   repository, and in a project that makes a preview of production for each pull
   request (it creates a staging with a copy of production).
-- **Pointing production at other code asks too (1.0.222).** The branch rule looks at
+- **Pointing production at other code asks too (1.0.223).** The branch rule looks at
   the branch at the time of the write; `update_instance` could then move a production
   onto that branch, or onto any repository, and `rebuild_instance` deploy it, with no
   approval. Now `update_instance` asks when its `repos` give a production a
@@ -234,7 +234,7 @@ may connect the repository to the project).
   lists them (`_confirm_update_instance`). The same lines in another spelling, other
   modules of the same repository, a line taken out and every change on a staging ask
   nothing.
-- **`harden_host` asks to apply (1.0.222)**, with the hardening job's own description,
+- **`harden_host` asks to apply (1.0.223)**, with the hardening job's own description,
   and adds the full setup's warning when `chain_full_setup` chains it, as
   `run_host_action` and a retry already asked for those jobs. Checking what it would
   change (`apply` false) asks nothing.

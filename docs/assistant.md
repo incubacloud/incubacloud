@@ -31,7 +31,8 @@ channel `root.assistant`, run as the conversation's owner.
 1. `conversation._post` stores the message, clears the `tainted` mark if nothing
    runs, and `_enqueue_step` queues `_assistant_step` (the state becomes `working`
    and `job_uuid` is the queue job's). What the user writes while a step runs is
-   stored as *pending* and enters the context before the next call to the model.
+   stored as *pending* and enters the context before the next call to the model;
+   it leaves the mark as it is.
 2. `engine._step` runs `_run_step`, which never raises: a failure leaves the
    conversation in `error`, with Retry.
 3. `_check` reads the settings and the key together, in one transaction, and stops
@@ -103,7 +104,7 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   instance if the user can read it, and says there is one if not. Creating instances,
   `run_command`, and changing the repositories of a project or an instance always
   ask; the card lists what is added, removed and moved.
-- **Every argument is readable before the yes (1.0.222).** A card quotes the call's
+- **Every argument is readable before the yes (1.0.223).** A card quotes the call's
   arguments up to 1,500 characters; past that it says where it cuts and how many
   characters follow, and the chat shows them all, masked, under **All arguments**
   (`message.card_arguments`, from `assistant.tools._full_arguments`): the approval
@@ -111,11 +112,17 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   it.
 - **`tainted`.** After a tool marked `untrusted` (logs, repository files, mail, command
   output), `compare_config` or the end of a job, `conversation.tainted` is set; every
-  change then asks until the person's next message enters the context — also the
-  work on the agent's own new branch and redeploying its staging. `TAINT_COVERS_OWN_WORK`
-  (`True`, decided on 28 October) is the one switch that decides whether
-  the mark covers that work. Names and notes that `search` and `get_project` answer
-  are written by the panel's own users under their roles and do not mark.
+  change then asks until the person writes a message while nothing runs — also the
+  work on the agent's own new branch and redeploying its staging. A message written
+  while a step runs leaves the mark: what the task read is still in its context.
+  `TAINT_COVERS_OWN_WORK` (`True`, decided on 28 October) is the one switch that
+  decides whether the mark covers that work. `get_project` and `list_jobs`
+  (`MEMBER_WRITTEN_READS`) mark it too when a project they answer about has a member
+  who writes in it (Consultant or above) with a lower role than the person's
+  (`assistant.tools._written_below`, 1.0.223): that member's text could ask for what
+  only the person may do. For `list_jobs` those are the projects of the instance or
+  server it names, or every project the person sees. Names and notes that `search`
+  answers are written by the panel's own users under their roles and do not mark.
 - The code tools read only repositories of projects or instances the user reads and
   write only to those of projects (`incubacloud.mcp.tools._authorized_repo`).
 

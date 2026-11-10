@@ -9,7 +9,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.223] — 2026-11-10
 
 The update deletes the personal default values saved on the panel's
-records; only an Administrator sets them from this version on.
+records; only an Administrator sets them from this version on. It adds two
+empty columns, `cloud_github_app.owner_login` and
+`incubacloud_assistant_message.card_arguments`. An App whose account is not
+kept (one set up by hand, or created before this version) has its
+installation taken by a manager's **Check installation**, never by the
+webhook. `incubacloud_assistant` 1.0.3 comes with it.
 
 ### Security
 
@@ -19,6 +24,37 @@ records; only an Administrator sets them from this version on.
 - **Below Project Manager, a repository line's URL cannot be changed**; the
   editor shows it read-only, and `/cloud/get_config` answers
   `permissions.can_change_repo_url`.
+- **A pull request preview only for the panel's own repositories.** A
+  `pull_request` event counts only when GitHub sends it for the panel's
+  installation of its App, whatever its action. A preview is cloned only
+  from a production whose own repository lines follow the repository the
+  pull request is opened on, compared in their canonical form; the
+  project's lines, a template for new instances, do not decide. A pull
+  request from a fork, or from a deleted one, gets no preview.
+- **The App's installation is the panel's only on the account that created
+  the App.** The setup keeps that account from GitHub's answer; any other
+  installation is a manager's choice: **Check installation**, on the GitHub
+  step of Settings, takes the only installation and names its account, or
+  lists them when there are several, and closes the alert a deleted or
+  suspended installation raised. Spanish translation included.
+- **Agents ask before changing the code a production deploys from.** With
+  MCP, `update_instance` asks when its `repos` give a production a
+  repository, branch or pinned commit none of its lines holds, and the
+  approval lists them; the same lines in another spelling, a line taken out
+  and any change on a staging ask nothing. `harden_host` asks before it
+  applies the hardening and the full setup it chains, with the words
+  `run_host_action` uses for those jobs; checking what it would change
+  asks nothing. Spanish translation included.
+- **An assistant card shows every argument before the yes.** A card that
+  cuts the call's arguments says where and how many characters follow, and
+  **All arguments** under it shows them whole, masked as the card is.
+  Spanish translation included.
+- **The assistant asks before every change after reading what a lower role
+  writes.** `get_project` and `list_jobs` mark the task when the project
+  has a member who writes in it (Consultant or above) with a lower role
+  than the person's. A message written while the assistant works no longer
+  lifts the mark when it enters the conversation; one written while
+  nothing runs still does.
 
 ### Fixed
 
