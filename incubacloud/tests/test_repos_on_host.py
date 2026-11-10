@@ -1,11 +1,11 @@
 """The repositories are fetched on the host, never cloned in the image.
 
-From 10-nov-2026 every series but 19.0 downloads each repository of
-``repos.yaml`` on the server, in a helper container, before the image is
-built with ``AGGREGATE=false`` (``deploy.sh fetch-repos``): the token of a
-private repository then enters neither the image nor its build nor the
-instance's container, and the ``repos.yaml`` written on the server has no
-credential. 19.0 follows in a later version. The system parameter
+Every series downloads each repository of ``repos.yaml`` on the server,
+in a helper container, before the image is built with ``AGGREGATE=false``
+(``deploy.sh fetch-repos``): all but 19.0 from core 1.0.222, 19.0 too
+from 1.0.224. The token of a private repository then enters neither the
+image nor its build nor the instance's container, and the ``repos.yaml``
+written on the server has no credential. The system parameter
 ``incubacloud.repos_in_image_series`` sends a series back to cloning in
 the image, except 8.0 to 10.0, whose image git is not safe.
 
@@ -64,13 +64,13 @@ def _render(ex):
     return text, pinned
 
 
-class TestEverySeriesButNineteenFetchesOnTheHost(BaseCase):
+class TestEverySeriesFetchesOnTheHost(BaseCase):
 
-    def test_every_card_but_19_0_fetches(self):
-        """Only 19.0 still clones in the image (phase 2 moves it)."""
+    def test_every_card_fetches(self):
+        """No series clones in the image by default, 19.0 included."""
         self.assertEqual(
             [v for v in versions.VERSIONS if not versions.prefetch_repos(v)],
-            ["19.0"],
+            [],
         )
 
     def test_only_8_0_to_10_0_may_not_go_back_to_the_image(self):
@@ -82,7 +82,7 @@ class TestEverySeriesButNineteenFetchesOnTheHost(BaseCase):
 
     def test_a_deploy_fetches_and_neither_records_heads_nor_trusts_servers(self):
         """The deploy's steps, with a fixed timeout and the build after."""
-        for version in ("11.0", "18.0", "20.0"):
+        for version in ("11.0", "18.0", "19.0", "20.0"):
             with self.subTest(version=version):
                 ex = _make_deploy_executor(odoo_version=version)
                 cmds = ex.get_commands()
@@ -111,10 +111,12 @@ class TestEverySeriesButNineteenFetchesOnTheHost(BaseCase):
 
     def test_a_rebuild_fetches_in_its_own_step_and_its_build_records_nothing(self):
         """Cached or not, the download is a step of its own before the build."""
-        for last in ("fp1", "fp0"):
-            with self.subTest(last=last):
+        for version, last in (
+            ("18.0", "fp1"), ("18.0", "fp0"), ("19.0", "fp1"), ("19.0", "fp0"),
+        ):
+            with self.subTest(version=version, last=last):
                 ex = _make_rebuild_executor(
-                    odoo_version="18.0", last_rebuild_fingerprint=last,
+                    odoo_version=version, last_rebuild_fingerprint=last,
                 )
                 cmds = ex.get_commands()
                 labels = [c[0] for c in cmds]
@@ -127,10 +129,12 @@ class TestEverySeriesButNineteenFetchesOnTheHost(BaseCase):
                 self.assertNotIn("record-heads", build)
                 self.assertIn(deploy_mod._FETCH_SECONDS_FILE, build)
 
-    def test_19_0_still_clones_in_the_image(self):
-        """19.0 keeps the steps it had until its own phase."""
+    def test_19_0_goes_back_to_the_image_with_the_parameter(self):
+        """19.0 named in the parameter keeps the steps it had before 1.0.224."""
         for ex in (_make_deploy_executor(), _make_rebuild_executor()):
             with self.subTest(ex=type(ex).__name__):
+                self.assertIn(_FETCH, [c[0] for c in ex.get_commands()])
+                ex._repos_in_image_series = lambda: frozenset({"19.0"})
                 cmds = ex.get_commands()
                 self.assertNotIn(_FETCH, [c[0] for c in cmds])
                 self.assertEqual(ex._odoo_build_override(), {})
@@ -160,13 +164,17 @@ class TestEverySeriesButNineteenFetchesOnTheHost(BaseCase):
 
 class TestTheFilesAServerGets(BaseCase):
 
-    def _uploaded(self, version):
+    def _uploaded(self, version, in_image=()):
         """Run ``_upload_copier_files`` for *version*; return what it uploads.
 
-        :return: ``(private files, plain files)``, each ``{path: text}``
+        :param tuple in_image: the series ``incubacloud.repos_in_image_series``
+            names
+        :return: ``(executor, private files, plain files)``, each
+            ``{path: text}``
         :rtype: tuple
         """
         ex = _make_deploy_executor(odoo_version=version)
+        ex._repos_in_image_series = lambda: frozenset(in_image)
         inst = ex._inst()
         inst.odoo_commit_sha = False
         inst.repo_ids = _repos()
@@ -197,26 +205,28 @@ class TestTheFilesAServerGets(BaseCase):
 
     def test_the_repos_yaml_has_no_credential_and_the_spec_carries_them(self):
         """What the host gets: credentials in the owner-only spec alone."""
-        ex, private, _plain = self._uploaded("18.0")
-        repos_yaml = private[ex._tmp("repos.yaml")]
-        for alias, entry in yaml.safe_load(repos_yaml).items():
-            for url in entry["remotes"].values():
-                with self.subTest(alias=alias):
-                    self.assertNotIn("@", url)
-        self.assertNotIn(_TOKEN, repos_yaml)
-        spec = private[ex._tmp("repo-heads.tsv")].splitlines()
-        self.assertIn(
-            f"fixed\tpin\t{_PINNED}\thttps://x-access-token:{_TOKEN}@github.com/acme/fixed",
-            spec,
-        )
-        self.assertIn(
-            f"addons\tref\tmain\thttps://x-access-token:{_TOKEN}@github.com/acme/addons",
-            spec,
-        )
+        for version in ("18.0", "19.0"):
+            with self.subTest(version=version):
+                ex, private, _plain = self._uploaded(version)
+                repos_yaml = private[ex._tmp("repos.yaml")]
+                for alias, entry in yaml.safe_load(repos_yaml).items():
+                    for url in entry["remotes"].values():
+                        with self.subTest(alias=alias):
+                            self.assertNotIn("@", url)
+                self.assertNotIn(_TOKEN, repos_yaml)
+                spec = private[ex._tmp("repo-heads.tsv")].splitlines()
+                self.assertIn(
+                    f"fixed\tpin\t{_PINNED}\thttps://x-access-token:{_TOKEN}@github.com/acme/fixed",
+                    spec,
+                )
+                self.assertIn(
+                    f"addons\tref\tmain\thttps://x-access-token:{_TOKEN}@github.com/acme/addons",
+                    spec,
+                )
 
-    def test_19_0_still_writes_the_scoped_token_in_repos_yaml(self):
-        """19.0 clones in the image, with the scoped token in its URL."""
-        ex, private, _plain = self._uploaded("19.0")
+    def test_19_0_sent_back_to_the_image_writes_the_scoped_token_in_repos_yaml(self):
+        """The way back clones in the image, with the scoped token in its URL."""
+        ex, private, _plain = self._uploaded("19.0", in_image=("19.0",))
         self.assertIn(_TOKEN, private[ex._tmp("repos.yaml")])
 
     def test_a_repos_yaml_entry_with_a_command_refuses_the_job(self):

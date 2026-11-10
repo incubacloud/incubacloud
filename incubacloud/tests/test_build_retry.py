@@ -310,11 +310,12 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
         self.assertTrue(command.startswith("cd ~/projects/test-inst && "))
 
     def test_it_builds_after_the_context_and_before_anything_starts(self):
-        # 8.0 to 10.0 fetch every repository instead of recording the
-        # heads: the build takes the fetched trees.
+        # Every series fetches every repository instead of recording the
+        # heads, 19.0 too from core 1.0.224: the build takes the fetched
+        # trees.
         for name, inst, heads in (
-            ("production", {}, "Record repository heads"),
-            ("staging", {"environment": "staging"}, "Record repository heads"),
+            ("production", {}, "Fetch the repositories"),
+            ("staging", {"environment": "staging"}, "Fetch the repositories"),
             ("8.0", {"odoo_version": "8.0"}, "Fetch the repositories"),
         ):
             with self.subTest(name):

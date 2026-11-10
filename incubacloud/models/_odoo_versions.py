@@ -71,8 +71,9 @@ Fields of a card:
     built with ``AGGREGATE=false``, instead of being cloned by the
     image's own git: the credential of a private repository then never
     enters the image, its build or the instance's container, and no
-    ``.git`` does either (10-nov-2026). Every series but 19.0, which
-    follows once the others have run with it. 8.0 to 10.0 had it first
+    ``.git`` does either (10-nov-2026). Every series: 19.0, the series
+    of most instances and of the nightly QA, from core 1.0.224, once the
+    others had run with it since 1.0.222. 8.0 to 10.0 had it first
     (8-nov-2026), see ``image_git_safe``.
 ``image_git_safe``
     Whether the series' image may clone its repositories itself again
@@ -206,12 +207,7 @@ VERSIONS = {
     "16.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
-    # 19.0 fetches its repositories on the host in a later version, once
-    # the other series have run with it: it is the series of most
-    # instances and of the nightly QA (plan of the Git tokens, phase 2).
-    "19.0": _card(
-        True, ("14", "18", "17"), "click-odoo", None, prefetch_repos=False,
-    ),
+    "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the
     # series (``qa-run -m versiones``) tests it with the rest. PostgreSQL 16
     # to 18, as the template requires; odoo db, since click-odoo-contrib
