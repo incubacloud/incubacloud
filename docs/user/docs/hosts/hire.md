@@ -33,8 +33,14 @@ In your control plane, go to `/cloud/hosts` and click **Order VPS**.
 
 The catalog (sizes, locations, live availability) comes straight from Hetzner.
 Each size shows the exact hourly and monthly price for the location you pick,
-before VAT, and that is what you will pay. Pick the size that fits your workload and a region close to your users —
+before VAT, and that is what you will pay. Pick a region close to your users —
 EU (Helsinki, Nuremberg, Falkenstein) or US (Ashburn, Hillsboro).
+
+Each size also says how many users it is **recommended for**, or that it is for
+tests only. Type the number of people in **How many people will use Odoo?**,
+and once a location is chosen the cheapest size recommended for them is picked
+for you; a smaller one says so under the list. The rule behind the figure is in
+[From zero to Odoo](../getting-started/zero-to-odoo.md#2-choose-the-server).
 
 ### 3. Choose the hostname
 
@@ -43,6 +49,13 @@ If the platform manages your DNS, the new host gets a name like
 DNS at it later for custom domains.
 
 ### 4. Confirm
+
+If the panel has no backup destination yet, **Set up managed backups next** is
+ticked under the size: a production instance cannot be deployed without one.
+Once the server is ordered, the next window offers the
+[managed backup storage](../backups/index.md#managed-backup-storage) with each
+tier's price. Ordering one makes it the panel's default destination; nothing is
+charged unless you confirm it there, and you can close it to skip it.
 
 Provisioning takes a couple of minutes end to end:
 
