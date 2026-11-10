@@ -39,10 +39,14 @@ class IrDefault(models.Model):
         """Return whether this user's own defaults on the panel's models count.
 
         The superuser's and an Administrator's (``base.group_system``)
-        do; whatever the environment, as a ``sudo`` keeps the user.
+        do; whatever the environment, as a ``sudo`` keeps the user. An
+        environment without a user (a route with ``auth='none'``) has
+        none of its own.
 
         :rtype: bool
         """
+        if not self.env.uid:
+            return False
         return self.env.uid == SUPERUSER_ID or self.env.user.has_group(
             "base.group_system",
         )
