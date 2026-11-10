@@ -320,7 +320,12 @@ class AssistantEngine(models.AbstractModel):
 
     @api.model
     def _deliver_pending(self, conv):
-        """Give what the person wrote during the last step its place in the context."""
+        """Give what the person wrote during the last step its place in the context.
+
+        The task's ``tainted`` mark stays: what the task read is still in
+        that context. Only a message written while nothing runs clears it
+        (``conversation._post``).
+        """
         pending = (
             conv.env["incubacloud.assistant.message"]
             .sudo()
@@ -332,10 +337,6 @@ class AssistantEngine(models.AbstractModel):
             message.write({"pending": False, "sequence": conv._next_sequence()})
             # The chat drops its "queued" mark.
             conv._notify({"kind": "message", "message": message._format()})
-        if pending:
-            # The person's word enters the context now: from here on, what the
-            # task read before no longer steers it alone.
-            conv.sudo().tainted = False
 
     @api.model
     def _request(self, conv, model):
@@ -803,9 +804,14 @@ class AssistantEngine(models.AbstractModel):
             "text": text,
             "is_error": is_error,
             "job_id": self._job_of(spec, text, is_error).id,
-            # Logs, files, mail, a command's output: others write them.
-            "tainted": (spec.untrusted or spec.name in THIRD_PARTY_READS)
-            and not is_error,
+            # Logs, files, mail, a command's output: others write them; and
+            # a project a member of a lower role writes in.
+            "tainted": not is_error
+            and (
+                spec.untrusted
+                or spec.name in THIRD_PARTY_READS
+                or Tools._written_below(spec, call.arguments)
+            ),
         }
 
     @api.model

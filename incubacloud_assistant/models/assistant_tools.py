@@ -14,7 +14,8 @@ reading core's public code. On top of the MCP's rules, the assistant's
 * anything that reaches a production instance, by any id of its
   arguments, asks and says so;
 * after the task read content others can write (logs, files, mail, a
-  command's output) and until the person writes again, every change asks
+  command's output, a project a member of a lower role writes in) and
+  until the person writes again with nothing running, every change asks
   (``tainted``).
 """
 
@@ -96,9 +97,16 @@ TAINT_COVERS_OWN_WORK = True
 #: Reads of the MCP that carry text from outside the panel without the
 #: ``untrusted`` mark: a configuration compared with what the repository
 #: holds. They mark the task as the untrusted ones do (task 15). The names
-#: and notes ``search`` and ``get_project`` answer are written by the panel's
-#: own users, under their roles: they do not.
+#: and notes ``search`` answers are written by the panel's own users, under
+#: their roles: they do not.
 THIRD_PARTY_READS = frozenset({"compare_config"})
+#: Reads that answer what a project's members write: its names and notes,
+#: its jobs. They mark the task when a member of a lower role than the
+#: person's may write in the project (:meth:`AssistantTools._written_below`):
+#: that member's text could ask for what only the person may do (10-nov-2026).
+MEMBER_WRITTEN_READS = frozenset({"get_project", "list_jobs"})
+#: The least role that writes in a project it is a member of.
+_WRITER = "group_cloud_consultant"
 #: Characters of the arguments a card quotes.
 _ARGUMENTS_CHARS = 1500
 
@@ -162,6 +170,18 @@ def _ids(value):
     return [
         item for item in values if isinstance(item, int) and not isinstance(item, bool)
     ]
+
+
+def _role_rank(user):
+    """Return the place of *user*'s highest panel role in the hierarchy, or -1.
+
+    :param user: a ``res.users`` record
+    :rtype: int
+    """
+    for rank in range(len(_GROUP_HIERARCHY) - 1, -1, -1):
+        if user.has_group(f"incubacloud.{_GROUP_HIERARCHY[rank]}"):
+            return rank
+    return -1
 
 
 def _repo_label(url):
@@ -237,6 +257,46 @@ class AssistantTools(models.AbstractModel):
             elif key in ("host_id", "target_host_id"):
                 found |= Instance.search([("host_id", "in", ids)])
         return found
+
+    @api.model
+    def _projects_answered(self, spec, args):
+        """Return the projects a read of *spec* with *args* answers about.
+
+        ``get_project``'s own; for ``list_jobs``, the projects of the
+        instance or the server it names, or every project the person sees
+        when it names neither. Read past the record rules.
+
+        :param spec: a :data:`MEMBER_WRITTEN_READS` tool's spec
+        :param dict args: the call's arguments
+        :rtype: cloud.project
+        """
+        Project = self.env["cloud.project"].sudo()
+        if spec.name == "get_project":
+            return Project.browse(_ids(args.get("project_id"))).exists()
+        if _ids(args.get("instance_id")) or _ids(args.get("host_id")):
+            return self._instances_named(args).project_id
+        return Project.browse(self.env["cloud.project"].search([]).ids)
+
+    @api.model
+    def _written_below(self, spec, args):
+        """Return whether *spec*'s answer may carry a lower role's text.
+
+        True for a :data:`MEMBER_WRITTEN_READS` tool when a project it
+        answers about has a member who writes in it (Consultant or above)
+        with a role lower than the person's. A member of the person's role
+        or above could do what the person does; a Stakeholder writes
+        nothing.
+
+        :param spec: the tool's spec
+        :param dict args: the call's arguments
+        :rtype: bool
+        """
+        if spec.name not in MEMBER_WRITTEN_READS:
+            return False
+        rank = _role_rank(self.env.user)
+        writer = _GROUP_HIERARCHY.index(_WRITER)
+        members = self._projects_answered(spec, args).member_ids - self.env.user
+        return any(writer <= _role_rank(member) < rank for member in members)
 
     @api.model
     def _production_target(self, args):
