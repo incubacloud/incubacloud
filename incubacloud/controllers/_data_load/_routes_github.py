@@ -913,7 +913,12 @@ class GitHubMixin:
 
     @http.route(['/cloud/fetch_odoojs_submodules'], type='json', auth='user')
     def cloud_fetch_odoojs_submodules(self, repo_url, branch='main'):
-        """Inspect submodules through the bounded GitHub API workflow."""
+        """Inspect submodules through the bounded GitHub API workflow.
+
+        A repository the user may not read with the panel's credentials
+        (:func:`may_read_with_panel_credentials`) is inspected as a
+        public one: importing it takes a Project Manager.
+        """
         self._sec()._check_cloud_group('group_cloud_consultant')
 
         try:
@@ -942,10 +947,12 @@ class GitHubMixin:
                     'GitHub preview limit reached. Try again later.'
                 ),
             }
+        if may_read_with_panel_credentials(request.env, repo_url):
+            clients = _github_import_clients(request.env)
+        else:
+            clients = [GitHubAnonymousClient()]
         try:
-            inspector = GitHubImportInspector(
-                _github_import_clients(request.env),
-            )
+            inspector = GitHubImportInspector(clients)
             result = inspector.inspect_preview(repo_url, branch)
             if result.get('sha_warning'):
                 result['sha_warning'] = _translate_inspection_warning(
@@ -1140,10 +1147,12 @@ class GitHubMixin:
         creates project with repos, then creates a production instance
         inheriting project defaults + type-specific config. A repository
         that names no series, or one the user may not choose, is refused
-        before anything is created (``import_series_refusal``).
+        before anything is created (``import_series_refusal``). It creates
+        a project, so it takes a Project Manager, checked before the
+        repository is read.
         """
 
-        self._sec()._check_can_create_instance()
+        self._sec()._check_can_create_project()
 
         try:
             parse_github_repo_url(url)

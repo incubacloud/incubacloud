@@ -509,3 +509,83 @@ class TestRepoReadsByRole(CloudSecurityBase):
                     self.assertTrue(
                         built["GitHubAppClient"] or built["GitHubPATClient"],
                     )
+
+    def _inspect(self, user, route, url):
+        """Call the import *route* as *user* for *url*, GitHub not reached.
+
+        The inspector and the import's records are stood in for: what
+        is checked is the GitHub clients the route hands the inspector.
+
+        :param str route: ``cloud_fetch_odoojs_submodules`` (the preview)
+            or ``cloud_import_project``
+        :return: the route's answer, and the clients it built, by name
+        :rtype: tuple
+        """
+        env = self.env(user=user)
+        controller = _routes_github.GitHubMixin()
+        controller._sec = lambda: env["cloud.security.mixin"]
+        fake_request = MagicMock(spec=Request)
+        fake_request.env = env
+        clients = {}
+        with ExitStack() as stack:
+            for module in (_routes_github, odoo_http):
+                stack.enter_context(
+                    patch.object(module, "request", fake_request),
+                )
+            inspector = stack.enter_context(patch.object(
+                _routes_github, "GitHubImportInspector", autospec=True,
+            )).return_value
+            # Set in ``__init__``, so the class's spec does not carry it.
+            inspector.budget = None
+            inspector.inspect_preview.return_value = {"ok": True}
+            inspector.inspect_import.return_value = {"ok": True}
+            stack.enter_context(patch.object(
+                _routes_github.GitHubMixin, "_create_bounded_github_import",
+                autospec=True, return_value={"ok": True},
+            ))
+            for name in (
+                "GitHubAppClient", "GitHubPATClient", "GitHubAnonymousClient",
+            ):
+                clients[name] = stack.enter_context(
+                    patch.object(_routes_github, name, autospec=True),
+                )
+            result = getattr(controller, route)(url, "main")
+        return result, {name: mock.called for name, mock in clients.items()}
+
+    def test_a_consultant_previews_another_repository_as_a_public_one(self):
+        result, built = self._inspect(
+            self.consultant, "cloud_fetch_odoojs_submodules", _OTHER,
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(built, {
+            "GitHubAppClient": False, "GitHubPATClient": False,
+            "GitHubAnonymousClient": True,
+        })
+
+    def test_a_consultant_previews_a_line_s_repository_with_the_panel_s(self):
+        result, built = self._inspect(
+            self.consultant, "cloud_fetch_odoojs_submodules",
+            "git@github.com:Example/mine.git",
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(built["GitHubAppClient"] and built["GitHubPATClient"])
+
+    def test_a_project_manager_previews_any_repository_with_the_panel_s(self):
+        result, built = self._inspect(
+            self.pm, "cloud_fetch_odoojs_submodules", _OTHER,
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(built["GitHubAppClient"] and built["GitHubPATClient"])
+
+    def test_a_consultant_cannot_import_and_nothing_is_read(self):
+        """Importing creates a project: from Project Manager up."""
+        for url in (_OTHER, _MINE):
+            with self.subTest(url=url), self.assertRaisesRegex(
+                AccessError, "group_cloud_project_manager",
+            ):
+                self._inspect(self.consultant, "cloud_import_project", url)
+
+    def test_a_project_manager_imports_with_the_panel_s(self):
+        result, built = self._inspect(self.pm, "cloud_import_project", _OTHER)
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(built["GitHubAppClient"] and built["GitHubPATClient"])

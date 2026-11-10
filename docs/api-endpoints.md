@@ -72,7 +72,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/save_project` | consultant | Update project; repos replaced by the `repos` array. |
 | `/cloud/delete_project` | delete project | Delete project (fails if instances exist). |
 | `/cloud/get_project_instances` | record rules | Instances in a project. |
-| `/cloud/import_project` | create instance | Import a project from a Git URL (doodba or Odoo.sh layout; SSRF host allowlist). |
+| `/cloud/import_project` | create project | Import a project from a Git URL (doodba or Odoo.sh layout; SSRF host allowlist). |
 
 ## Instances
 
@@ -208,9 +208,12 @@ App management (all gated on **manage settings**):
 | `/cloud/reset_github_app` | Clear the stored App. |
 | `/cloud/detect_github_installation` | Detect/refresh the installation id. |
 
-Repository operations (all gated on **consultant**). A repository of a Git
-provider (GitLab) is read with the panel's git and the provider's credential,
-with the same answers, and counts against `rate_limit_git_reads_per_hour`;
+Repository operations (all gated on **consultant**). Below project manager,
+the panel reads with its GitHub App or token, or a provider's credential, only
+a repository of a line the user sees; any other is read as a public one. A
+repository of a Git provider (GitLab) is read with the panel's git and the
+provider's credential, with the same answers, and counts against
+`rate_limit_git_reads_per_hour`;
 an error that a provider's setting fixes says `settings_hint: "git_providers"`,
 one of GitHub's `settings_hint: "github"`. A request that reads several
 GitLab repositories (creating a project, the module check of an instance's
