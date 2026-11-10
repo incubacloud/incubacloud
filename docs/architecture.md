@@ -695,8 +695,13 @@ IncubaCloud supports GitHub App authentication for private repository access and
 
 3. User installs app on GitHub org
    → GitHub redirects to GET /cloud/github/callback?code=...
-   → Exchanges code for (app_id, private_key, webhook_secret)
-   → Stores in cloud.github.app (singleton)
+   → Exchanges code for (app_id, private_key, webhook_secret, owner)
+   → Stores in cloud.github.app (singleton), owner_login included
+
+3b. The installation id
+   → installation.created on the App owner's account: taken from the webhook
+   → on any other account: a manager takes it with Check installation
+     (/cloud/detect_github_installation), which names the account
 
 4. On each API request needing auth:
    → Generate short-lived JWT (10 min) from private_key
@@ -715,7 +720,7 @@ All webhook events are stored in `cloud.github.event` (immutable audit log). The
 
 `pull_request` events arrive through the same receiver and are handled by `cloud.github.event._process_pull_request_event`. The head ref is checked with `is_safe_git_ref` first: it ends up in `cloud.instance.repo.branch`, so a hostile ref name is dropped here rather than at the constraint.
 
-**Only the panel's pull requests (1.0.222).** The App the manifest creates is public, so every account that installs it sends its events here, signed with the same secret: a valid signature says GitHub sent the event, not that it is about one of the panel's repositories. An event whose `installation.id` is not the panel's installation is ignored (`_is_own_pull_request`), whatever its action. A preview is cloned only from a production that follows the pull request's **base** repository (the one it is opened on), in a project that has that repository connected (`cloud.project.repo`), and never for a pull request from a fork — a head repository other than the base, or one deleted (`_pr_preview_sources`): a preview carries a copy of production's data, and a fork's branch is code written by someone without access to the repository. Before, the handler matched the head's repository, so a stranger's repository in the same fork network could name a repository production follows. Fork pull requests never had a preview: their head is the fork, which no production follows.
+**Only the panel's pull requests (1.0.222).** The App the manifest creates is public, so every account that installs it sends its events here, signed with the same secret: a valid signature says GitHub sent the event, not that it is about one of the panel's repositories. An event whose `installation.id` is not the panel's installation is ignored (`_is_own_pull_request`), whatever its action. A preview is cloned only from a production that follows the pull request's **base** repository (the one it is opened on), in a project that has that repository connected (`cloud.project.repo`), and never for a pull request from a fork — a head repository other than the base, or one deleted (`_pr_preview_sources`): a preview carries a copy of production's data, and a fork's branch is code written by someone without access to the repository. Before, the handler matched the head's repository, so a stranger's repository in the same fork network could name a repository production follows. Fork pull requests never had a preview: their head is the fork, which no production follows. The same rule binds the installation webhook: `installation.created` is taken as the panel's installation only on the account that owns the App (`cloud.github.app.owner_login`, kept by the manifest callback); any other waits for a manager's Check installation. An App set up by hand, or before 1.0.222, has no owner kept, and its installation is always the manager's to take.
 
 - **`opened` / `reopened`** — every `cloud.instance.repo` matching the base repository with an **empty `commit_sha`** (a pinned repository never takes part), on a `production`, deployed instance whose project has `pr_reviews_enabled`, yields a candidate. Each candidate is put to `_pr_preview_allowed(inst)` — yes by default; layers on top override it to keep instances they manage themselves out, the same pattern as `_rebuild_job_type`. Deduplicated on `(pr_number, pr_repo, project)`, the instance is then cloned with `clone_to_staging('pr-<n>', …)` inside a savepoint, so a clone that fails half-way leaves no row behind to be mistaken for an existing preview.
 - The clone lands on the **production's host**, follows the pull request's branch on the matching repository, gets its domain from the host's wildcard like any other instance (`create()`), and runs the chain `deploy_instance` → `backup_download` (on production; always a live dump — `latest` failed on a production with no backup yet) → `restore_instance` with `neutralize` and `reset_base_url`. The restore's success posts the "ready" comment (`cloud.instance._pr_preview_ready_body`) through the GitHub App.

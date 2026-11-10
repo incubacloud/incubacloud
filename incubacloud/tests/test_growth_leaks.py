@@ -225,7 +225,7 @@ class TestGitHubEventRetentionReach(TransactionCase):
         self.env['cloud.github.app'].search([]).unlink()
         self.env['cloud.github.app'].create({
             'app_id': '12345', 'private_key': _FAKE_PEM,
-            'installation_id': '4242',
+            'installation_id': '4242', 'owner_login': 'operator',
         })
 
     def _event(self, event_type, action='', delivery='d0'):
@@ -282,7 +282,7 @@ class TestGitHubEventRetentionReach(TransactionCase):
             {'installation': {'id': 4242}},
         )
         self._event('installation', 'created', 'leak-r2')._dispatch(
-            {'installation': {'id': 77}},
+            {'installation': {'id': 77, 'account': {'login': 'operator'}}},
         )
         self.assertFalse(self._active_revocation_alert())
 

@@ -250,3 +250,54 @@ describe("Settings — the footer shows where something can be saved", () => {
         expect(canSave("providers", [null])).toBe(true);
     });
 });
+
+describe("Settings — Check installation asks GitHub when the webhook took none", () => {
+    /**
+     * A Settings whose loading and detection only record that they ran.
+     *
+     * The webhook takes an installation by itself only on the App owner's
+     * account: any other is the manager's to take, through the detection.
+     *
+     * @param {string} afterLoad the installation id the reload finds
+     * @param {string} afterDetect the installation id the detection takes
+     * @returns {{settings: object, calls: string[]}}
+     */
+    function settingsCalling(afterLoad, afterDetect) {
+        const calls = [];
+        const settings = Object.create(Settings.prototype);
+        settings.state = { form: { installation_id: "" } };
+        settings.env = {
+            toast: {
+                success: () => calls.push("success"),
+                info: () => calls.push("info"),
+            },
+        };
+        settings.loadConfig = async () => {
+            calls.push("load");
+            settings.state.form.installation_id = afterLoad;
+        };
+        settings.detectInstallation = async () => {
+            calls.push("detect");
+            settings.state.form.installation_id = afterDetect;
+        };
+        return { settings, calls };
+    }
+
+    test("an installation the webhook did not take is detected", async () => {
+        const { settings, calls } = settingsCalling("", "5151");
+        await settings.refresh();
+        expect(calls).toEqual(["load", "detect", "success"]);
+    });
+
+    test("one the webhook took needs no detection", async () => {
+        const { settings, calls } = settingsCalling("5151", "");
+        await settings.refresh();
+        expect(calls).toEqual(["load", "success"]);
+    });
+
+    test("none anywhere is said", async () => {
+        const { settings, calls } = settingsCalling("", "");
+        await settings.refresh();
+        expect(calls).toEqual(["load", "detect", "info"]);
+    });
+});

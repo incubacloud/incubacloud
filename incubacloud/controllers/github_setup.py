@@ -293,13 +293,15 @@ class GitHubSetupController(http.Controller):
             )
 
         slug = data.get("slug", "")
-        # installation_id is not known yet; will be auto-set when the user
-        # installs the app and the installation webhook fires.
+        # installation_id is not known yet: the installation webhook sets it
+        # when the account that owns the App installs it; an installation on
+        # any other account waits for a manager to choose it.
         App.create({
             "app_id": app_id,
             "private_key": private_key,
             "webhook_secret": webhook_secret,
             "slug": slug,
+            "owner_login": (data.get("owner") or {}).get("login") or False,
             "installation_id": "",
         })
 
