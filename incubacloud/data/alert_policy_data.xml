@@ -43,6 +43,19 @@
         <field name="note">Companion containers restart with the stack; one probe is not a verdict.</field>
     </record>
 
+    <!-- The health probe (every 5 min) read the relay's queue and found
+         mail its server would not take, or a token Entra ID would not
+         renew. A message deferred once by a network glitch leaves at
+         Postfix's next try, five minutes later; two probes in a row are
+         a relay that does not deliver. The relay's test mail raises it
+         at once, on its own count: the person who asked has seen it. -->
+    <record id="alert_policy_smtp_relay_failing" model="cloud.alert.policy">
+        <field name="code">smtp_relay_failing</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">900</field>
+        <field name="note">A deferral Postfix retries in five minutes is not a stopped relay; two probes tell.</field>
+    </record>
+
     <!-- The SSH probe (every 5 min, hosts without metrics) read the
          root filesystem over the threshold. A backup dump or an image
          pull fills it for minutes; the metric rule for the same reading

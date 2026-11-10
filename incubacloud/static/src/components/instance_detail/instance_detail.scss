@@ -1767,3 +1767,26 @@
 
 // «Auto-rebuild on push» with GitLab lines whose webhook does not deliver.
 .ic-app .rl-th.ic-gitlab-hook-warn { color: var(--rl-amber-text); }
+
+// The relay's state and its test mail, under the relay's fields.
+.ic-relay-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+
+    .rl-v.error { color: var(--rl-red-text); }
+}
+.ic-relay-status-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    flex: 1 1 280px;
+    min-width: 0;
+}
+.ic-relay-status-detail {
+    font-size: 12px;
+    color: rgba(var(--rl-muted-rgb), 0.9);
+    overflow-wrap: anywhere;
+}

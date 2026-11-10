@@ -19,6 +19,7 @@ from odoo.exceptions import UserError
 from odoo.http import request
 
 from ...models._repo_requirements import canonical_repo_url, resolve_repo_ref
+from ...models.cloud_rate_limit import consume_quota
 from ...models.cloud_repo_mixin import _url_host
 from .._rate_limit import Rule, rate_gate_json
 from .._safe_error import safe_error_response
@@ -1477,6 +1478,45 @@ class OpsMixin:
         if not payload.get("ok"):
             return {"ok": False, "error": failure}
         return payload
+
+    #: Test mails one production's relay sends in an hour. Each is a real
+    #: mail through the customer's provider, which counts what the
+    #: mailbox sends (Microsoft 365: 30 a minute, 10 000 recipients a
+    #: day); five covers fixing and trying again several times.
+    RELAY_TEST_MAILS_PER_HOUR = 5
+
+    @http.route(["/cloud/instance_relay_test_mail"], type="jsonrpc", auth="user")
+    def cloud_instance_relay_test_mail(self, instance_id):
+        """Send one test mail through a production's relay, to the caller.
+
+        The recipient is the caller's own address, never one the request
+        names. The job says whether the relay's server took the mail.
+
+        :param int instance_id: the production instance
+        :returns: the job's response (``_job_response``), or
+            ``{'ok': False, 'error': …}``
+        """
+        self._sec()._check_cloud_group("group_cloud_consultant")
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists():
+            return {"ok": False, "error": _("Instance not found")}
+        refusal = inst._relay_test_refusal()
+        if refusal:
+            return {"ok": False, "error": refusal}
+        if not consume_quota(
+            request.env, f"relay_test_mail:{inst.id}",
+            max_per_window=self.RELAY_TEST_MAILS_PER_HOUR, window_seconds=3600,
+        ):
+            return {"ok": False, "error": _(
+                "This relay sent %(count)s test mails in the last hour. "
+                "Try again later.",
+                count=self.RELAY_TEST_MAILS_PER_HOUR,
+            )}
+        try:
+            job_id = inst.send_relay_test_mail()
+        except Exception as exc:
+            return safe_error_response(exc, _("Could not send the test mail"))
+        return _job_response(request.env, job_id)
 
     @http.route(["/cloud/instance_mailbox"], type="jsonrpc", auth="user")
     def cloud_instance_mailbox(self, instance_id, limit=None, start=0):

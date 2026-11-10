@@ -1693,6 +1693,8 @@ class CrudMixin:
         'pip_dependencies', 'apt_dependencies', 'tag_ids',
         'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
         'smtp_relay_user', 'smtp_relay_password',
+        'smtp_relay_auth', 'smtp_relay_oauth_directory_id',
+        'smtp_relay_oauth_client_id', 'smtp_relay_oauth_client_secret',
         'odoo_memory_limit', 'odoo_cpus', 'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus', 'smtp_memory_limit', 'smtp_cpus',
         # The form offers it for a production; who may choose it is the
@@ -2323,6 +2325,18 @@ class CrudMixin:
             'smtp_relay_user': inst.smtp_relay_user or '',
             'has_smtp_relay_password':
                 _has_encrypted(inst, 'smtp_relay_password'),
+            'smtp_relay_auth': inst.smtp_relay_auth or 'password',
+            'smtp_relay_oauth_directory_id': inst.smtp_relay_oauth_directory_id or '',
+            'smtp_relay_oauth_client_id': inst.smtp_relay_oauth_client_id or '',
+            # Whether one is saved, never the secret: unlike the
+            # password, ``/cloud/get_secret`` does not reveal it either.
+            'has_smtp_relay_oauth_client_secret':
+                _has_encrypted(inst, 'smtp_relay_oauth_client_secret'),
+            'smtp_relay_state': inst.smtp_relay_state or 'unknown',
+            'smtp_relay_checked_at': inst.smtp_relay_checked_at or None,
+            'smtp_relay_error': inst.smtp_relay_error or '',
+            # Why "Send test mail" is disabled; empty when it is not.
+            'relay_test_refusal': inst._relay_test_refusal(),
             'odoo_conf': inst.odoo_conf or '',
             'odoo_memory_limit': inst.odoo_memory_limit or '',
             'odoo_cpus': inst.odoo_cpus or 0,
@@ -2446,6 +2460,8 @@ class CrudMixin:
         'postgres_password',
         'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
         'smtp_relay_user', 'smtp_relay_password',
+        'smtp_relay_auth', 'smtp_relay_oauth_directory_id',
+        'smtp_relay_oauth_client_id', 'smtp_relay_oauth_client_secret',
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
         'backup_backend_id', 'auto_rebuild', 'auto_update', 'tag_ids',
         'autopurge_exempt',

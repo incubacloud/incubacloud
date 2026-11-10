@@ -126,7 +126,23 @@ _INSTANCE_FIELDS = (
         "smtp_relay_security": string(
             "The relay's security.", enum=("none", "starttls", "ssl")
         ),
-        "smtp_relay_user": string("The relay's user."),
+        "smtp_relay_user": string(
+            "The relay's user; with OAuth2, the sender mailbox."
+        ),
+        "smtp_relay_auth": string(
+            "How a production's relay signs in: password, or oauth2_microsoft"
+            " for Microsoft 365, which sets smtp.office365.com, 587 and"
+            " STARTTLS. With OAuth2 the client secret is set by the user in"
+            " the panel.",
+            enum=("password", "oauth2_microsoft"),
+        ),
+        "smtp_relay_oauth_directory_id": string(
+            "With OAuth2, the directory ID of the Microsoft 365 organisation:"
+            " a GUID or one of its domains."
+        ),
+        "smtp_relay_oauth_client_id": string(
+            "With OAuth2, the application (client) ID, a GUID."
+        ),
     }
     | {
         f"{service}_memory_limit": string(f"Memory limit of {service}, as 2g or 512m.")
@@ -355,6 +371,21 @@ TOOLS = (
         requires="a deployed instance on a server.",
     ),
     ToolSpec(
+        "send_relay_test_mail",
+        "Send one test mail through a production's mail relay to the user's "
+        "own address. Answers the job_id; get_job then says whether the "
+        "relay's server took it (result.delivered, result.message).",
+        _CONSULTANT,
+        obj({"instance_id": _INSTANCE}, required=("instance_id",)),
+        route="/cloud/instance_relay_test_mail",
+        enqueues=True,
+        requires=(
+            "a deployed production instance with a mail relay and no changes "
+            "left to apply (get_instance answers relay_test_refusal); five "
+            "test mails an hour per instance."
+        ),
+    ),
+    ToolSpec(
         "clone_to_staging",
         "Clone an instance into a new staging.",
         _DEVELOPER,
@@ -504,6 +535,7 @@ ROUTES = {
     "/cloud/revive_instance": "revive_instance",
     "/cloud/deploy_instance": "deploy_instance",
     "/cloud/rebuild_instance": "rebuild_instance",
+    "/cloud/instance_relay_test_mail": "send_relay_test_mail",
     "/cloud/clone_to_staging": "clone_to_staging",
     "/cloud/create_backup": "create_backup",
     "/cloud/resolve_pip_conflict": "resolve_conflict",
