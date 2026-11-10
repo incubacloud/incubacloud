@@ -14,15 +14,16 @@ import { ProjectDetail } from "@incubacloud/components/project_detail/project_de
  */
 
 /**
- * Make ``rpc`` refuse every call as Odoo does a ``ValidationError``.
+ * Make ``rpc`` refuse every call with an ``RPCError``, as Odoo does.
  *
- * @param {string} [message] the server's reason; none for a bare error
+ * @param {object} data the error's ``data``: its ``name`` is the server's
+ *     exception, such as ``odoo.exceptions.ValidationError``
  */
-function serverRefuses(message) {
+function serverRefuses(data) {
     patchWithCleanup(rpc, {
         _rpc: () => {
             const error = new RPCError("Odoo Server Error");
-            error.data = message ? { name: "odoo.exceptions.ValidationError", message } : {};
+            error.data = data;
             return Promise.reject(error);
         },
     });
@@ -104,7 +105,7 @@ describe("a refused save says why", () => {
         const what = isCreate ? "create" : "save";
 
         test(`a project's ${what} shows the server's reason`, async () => {
-            serverRefuses(REASON);
+            serverRefuses({ name: "odoo.exceptions.ValidationError", message: REASON });
             const comp = projectDetail(isCreate);
             await ProjectDetail.prototype.save.call(comp);
             expect(comp.errors).toEqual([REASON]);
@@ -112,7 +113,10 @@ describe("a refused save says why", () => {
         });
 
         test(`an instance's ${what} shows the server's reason`, async () => {
-            serverRefuses("SMTP port 70000 is invalid. Use a port from 1 to 65535.");
+            serverRefuses({
+                name: "odoo.exceptions.UserError",
+                message: "SMTP port 70000 is invalid. Use a port from 1 to 65535.",
+            });
             const comp = instanceDetail(isCreate);
             await InstanceDetail.prototype.save.call(comp);
             expect(comp.errors).toEqual(["SMTP port 70000 is invalid. Use a port from 1 to 65535."]);
@@ -120,16 +124,29 @@ describe("a refused save says why", () => {
         });
     }
 
-    test("without a reason, the generic text", async () => {
-        const failing = () => {
-            patchWithCleanup(rpc, { _rpc: () => Promise.reject({}) });
-        };
-        failing();
-        const project = projectDetail(false);
+    for (const [what, data] of [
+        ["an error that is not Odoo's refusal", { name: "builtins.KeyError", message: "'vals'" }],
+        ["an error without its exception's name", { message: "Odoo Server Error" }],
+        ["an error without data", {}],
+    ]) {
+        test(`${what} shows the generic text`, async () => {
+            serverRefuses(data);
+            const project = projectDetail(false);
+            await ProjectDetail.prototype.save.call(project);
+            expect(project.errors).toEqual(["Failed to save project."]);
+            const instance = instanceDetail(false);
+            await InstanceDetail.prototype.save.call(instance);
+            expect(instance.errors).toEqual(["Failed to save instance."]);
+        });
+    }
+
+    test("a failure that is not an RPCError shows the generic text", async () => {
+        patchWithCleanup(rpc, { _rpc: () => Promise.reject(new Error("network")) });
+        const project = projectDetail(true);
         await ProjectDetail.prototype.save.call(project);
-        expect(project.errors).toEqual(["Failed to save project."]);
-        const instance = instanceDetail(false);
+        expect(project.errors).toEqual(["Failed to create project."]);
+        const instance = instanceDetail(true);
         await InstanceDetail.prototype.save.call(instance);
-        expect(instance.errors).toEqual(["Failed to save instance."]);
+        expect(instance.errors).toEqual(["Failed to create instance."]);
     });
 });

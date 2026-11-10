@@ -618,9 +618,12 @@ export class ProjectDetail extends Component {
                 this.env.refreshAlertCount();
             }
         } catch (e) {
-            // The server's reason (a name it refuses, a rule) when it gave one.
+            // The server's reason only when Odoo refused the save on
+            // purpose (a name it refuses, a rule): any other error keeps
+            // the generic text.
+            const refused = e.data?.name?.startsWith?.("odoo.exceptions.");
             this.env.toast?.error(
-                e.data?.message || e.message ||
+                (refused && e.data.message) ||
                     (this.isCreate ? _t("Failed to create project.") : _t("Failed to save project."))
             );
         } finally {
