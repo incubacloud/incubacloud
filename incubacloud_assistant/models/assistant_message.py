@@ -83,6 +83,14 @@ class AssistantMessage(models.Model):
         readonly=True,
     )
     production = fields.Boolean(readonly=True, help="The card acts on production.")
+    auto_approved = fields.Boolean(
+        readonly=True,
+        help="An auto-approval rule ran the call without asking the person.",
+    )
+    auto_after_untrusted = fields.Boolean(
+        readonly=True,
+        help="It ran without asking after the task read content others can write.",
+    )
     card_arguments = fields.Text(
         readonly=True,
         help="The whole arguments of a card that cuts them, masked: the person "
@@ -140,6 +148,16 @@ class AssistantMessage(models.Model):
         }
         if self.role == "tool":
             data["label"] = self._label(self.tool_name)
+            if self.auto_after_untrusted:
+                data["label"] = self.env._(
+                    "%(label)s · ran without asking, after reading content other "
+                    "people can write",
+                    label=data["label"],
+                )
+            elif self.auto_approved:
+                data["label"] = self.env._(
+                    "%(label)s · ran without asking", label=data["label"]
+                )
             data["text"] = ""
         elif self.role == "job":
             data["label"] = self.env._("A job ended")

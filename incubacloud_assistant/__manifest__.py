@@ -1,6 +1,6 @@
 {
     "name": "IncubaCloud Assistant",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "summary": (
         "An AI assistant inside the panel, with the customer's own key and the "
         "user's role"
@@ -15,7 +15,8 @@ Gemini or OpenRouter), for the users the manager chooses, with each user's
 own role: the tools are the MCP's, through the same routes and checks as
 the panel. Every change but trying code on a staging, anything on
 production, and every change after reading text others write wait for
-the user's confirmation in the chat. Conversations are kept 30 days and
+the user's confirmation in the chat, unless an Administrator granted the
+user's assistant auto-approval until a date. Conversations are kept 30 days and
 only their owner reads them; every action is in the audit log.
 """,
     "category": "Tools",
