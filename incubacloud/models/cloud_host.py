@@ -32,6 +32,7 @@ from ..net.trusted_proxies import (
 from . import _config_snapshot_diff as _snapshot_diff
 from ._concurrency import read_committed_cursor
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from .cloud_security_mixin import defaults_as_sent
 from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import (
     decrypt_value,
@@ -2279,9 +2280,11 @@ class CloudHost(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_manage_hosts()
+        # The defaults the caller chose are checked as what they send.
+        self = defaults_as_sent(self, vals_list)
         # Created as the system below: what the x2many fields send can
         # only be the new host's own rows.
-        self._check_new_record_x2many(vals_list)
+        creating = self._check_new_record_x2many(vals_list)
         for vals in vals_list:
             self.browse()._check_password_login(vals)
             for field in self._PASSWORD_FIELDS:
@@ -2302,6 +2305,7 @@ class CloudHost(models.Model):
         hosts = super(CloudHost, self.sudo()).create(vals_list).sudo(
             self.env.su,
         )
+        self._check_new_record_rows(hosts, creating)
         for host in hosts:
             if not host.whitelist_ids:
                 self.env["cloud.host.whitelist"].create(

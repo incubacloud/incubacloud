@@ -16,6 +16,7 @@ from psycopg2 import OperationalError
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
+from odoo.tools import clean_context
 from odoo.tools import config as odoo_config
 
 from odoo.addons.queue_job.delay import chain as delay_chain
@@ -40,6 +41,7 @@ from .abstract_executor import (
     is_transient_connection_error,
 )
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
+from .cloud_security_mixin import defaults_as_sent
 from .registry import executor_registry
 from .res_users_ext import as_platform, telegram_markdown
 
@@ -3528,7 +3530,8 @@ class CloudJob(models.Model):
         say yes for everyone. The caller's right to create them is
         checked as the ORM checks it: the access rights before, the record
         rules on the new rows after — a consultant still creates jobs only
-        on the instances of their projects.
+        on the instances of their projects. The defaults the caller's
+        context names (``default_*``) are not applied to them.
 
         :param vals_list: a dict, or a list of them, as ``create`` takes
         :return: the new jobs, in the caller's environment
@@ -3540,7 +3543,10 @@ class CloudJob(models.Model):
             vals | {"asked_as_superuser": self.env.su} for vals in vals_list
         ]
         self.browse().check_access("create")
-        records = self.sudo().create(vals_list).with_env(self.env)
+        Jobs = self.sudo()
+        if not self.env.su:
+            Jobs = Jobs.with_context(clean_context(self.env.context))
+        records = Jobs.create(vals_list).with_env(self.env)
         records.check_access("create")
         return records
 
@@ -4594,8 +4600,10 @@ class CloudJob(models.Model):
 
         The queue's fields are refused to a caller without superuser
         rights (``_check_queue_control_vals``): a job is created through
-        ``enqueue`` and its siblings (``_create_queued``).
+        ``enqueue`` and its siblings (``_create_queued``). The defaults the
+        caller chose are checked as what they send.
         """
+        self = defaults_as_sent(self, vals_list)
         self._check_queue_control_vals(vals_list)
         records = super().create(vals_list)
         linked = self.browse([

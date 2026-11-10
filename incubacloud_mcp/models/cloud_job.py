@@ -4,6 +4,8 @@ from odoo import api, fields, models
 from odoo.exceptions import AccessError
 from odoo.tools.sql import create_index
 
+from odoo.addons.incubacloud.models.cloud_security_mixin import defaults_as_sent
+
 from .cloud_audit_log import agent_mark
 
 
@@ -36,7 +38,11 @@ class CloudJob(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Stamp the jobs an agent's request queues; drop a forged stamp."""
+        """Stamp the jobs an agent's request queues; drop a forged stamp.
+
+        A stamp among the caller's defaults is dropped too.
+        """
+        self = defaults_as_sent(self, vals_list)
         via = agent_mark(self.env)
         for vals in vals_list:
             if via:
