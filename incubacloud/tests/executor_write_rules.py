@@ -85,6 +85,8 @@ HOOK_HELPERS = {
     "_stamp_tenant_module_commit": "stamps the tenant module a run shipped",
     "_record_rehome": "warns when a moved panel kept its old host admitted",
     "_grade_reachability": "the health probe's verdict on whether Odoo is reached",
+    "_grade_relay": "the health probe's verdict on the mail relay, on the "
+                    "instance row its hook already wrote",
     "_record_state": "the state-only health probe's reading of the instance",
     "_report_cpu_clamps": "tells the operator what the render limited to the host",
 }

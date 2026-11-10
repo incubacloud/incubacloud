@@ -1793,6 +1793,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                     vals.update({
                         'smtp_relay_state': 'ok', 'smtp_relay_error': False,
                     })
+        # On the hook's cursor, which already wrote this row
+        # (``last_health_check``): a durable one would wait for its lock.
         inst.sudo().write(vals)
 
     @staticmethod
