@@ -254,9 +254,10 @@ _REPO_ANSWER_BYTES = 256 * 1024
 #: it» (10-nov-2026).
 _REPO_ACCESS_RETRY_SECONDS = 2
 
-#: GitHub's answers that send a repository's API URL elsewhere: a renamed
-#: or transferred repository. The panel's opener follows no redirect.
-_REPO_MOVED_CODES = frozenset({301, 302, 307, 308})
+#: GitHub's permanent redirects of a repository's API URL: a renamed or
+#: transferred repository. The panel's opener follows no redirect; a 302
+#: or a 307 is asked again like any other failure.
+_REPO_MOVED_CODES = frozenset({301, 308})
 
 
 _ADDONS_CONFLICT_RE = re.compile(
