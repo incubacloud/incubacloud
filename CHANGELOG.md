@@ -32,19 +32,27 @@ comes with it.
   limits stay. Granting shows a notice of what the panel stops protecting
   from, whose box must be ticked; the panel keeps who accepted which version
   of it, when and from where. A rule is granted only to a credential that
-  already connected (`incubacloud.mcp.credential`), cannot be extended or
-  changed, and ends when its date passes, when it is revoked (an
+  already connected (`incubacloud.mcp.credential`) and, for an API key,
+  still exists; the list and the notice name each one with its id and when
+  it last connected, so two keys with the same name are told apart. A rule
+  cannot be extended or changed, and ends when its date passes, when it is
+  revoked (an
   Administrator any rule, a person their own, also from Connect an agent),
   when the user is archived or the API key deleted; a role that goes up
-  pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True) pauses
-  every rule and refuses new ones when a layer says False.
+  pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True, defined
+  in `incubacloud`, so a layer that overrides it answers after it whatever
+  the order the modules load in) pauses every rule and refuses new ones when
+  a layer says False. A *Decline* or
+  *Cancel* the person answers to a question asked before the rule existed
+  still runs nothing.
 - **The approval is marked** in the audit and on the jobs: `approval` is
   `person` or `auto`, with the rule. The audit tables show
   *· auto-approved* or *· approved*; the jobs' history and an instance's
   activity show *via agent … · auto-approved*; `get_audit_log`, `get_job`
   and `list_jobs` answer it. A call someone approved is audited even when
   the tool says it changes nothing, and a rule's **Activity** lists what it
-  approved, with its grant and its end.
+  approved, with its grant and its end, also when a call another rule
+  approved ended it.
 - **What the agent is told is true.** With a rule, `tools/list` says which
   tools run without asking and until when, and the server's instructions say
   that no action waits for an approval.
@@ -52,7 +60,8 @@ comes with it.
   own: with its rule, no card is shown, also after it read content others
   write; each action's line says *ran without asking*, and its rules say
   changes run without a card. A rule of a key never covers the assistant,
-  nor the reverse.
+  nor the reverse. Uninstalling the assistant revokes its rules, which stay
+  as history.
 - **Routes** `/cloud/mcp/auto_approval/list`, `candidates`, `grant`,
   `revoke` and `activity`, excluded from the agents' catalog; each refuses a
   request that carries an agent's mark. Spanish translation included.

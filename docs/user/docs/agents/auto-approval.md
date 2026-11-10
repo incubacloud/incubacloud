@@ -52,8 +52,14 @@ Also keep in mind:
 
 - **A rule for an Administrator** reaches everything an Administrator does:
   security settings, trusting a server's SSH key without anyone comparing it,
-  commands on every server — the panel's own included — and purging the audit
-  log.
+  commands on every server — the panel's own included, from which their agent
+  can write to the panel's database, rules too — and purging the audit log.
+- **An agent that drives an Administrator's browser**, with the panel open,
+  can grant a rule, as it can approve an action: the panel refuses a
+  grant that comes through an agent's connection, but cannot tell a browser
+  an agent drives from the person.
+- **Whoever has a shell on the panel's server, or is Odoo's system
+  administrator**, has the panel's database, and with it the rules.
 - **With an OAuth client**, the rule covers every session of that person with
   that application, on any device. Disconnecting the agent does not end the
   rule: if the person connects the same application again, it applies again.
@@ -63,18 +69,25 @@ Also keep in mind:
 - **Revoking does not undo.** What already ran, or is queued, stays.
 - **The audit records actions, not reads.** It says what the agent did, not what
   it had read before doing it.
+- **The audit is not kept for ever.** Its retention (**Settings**, **Audit Log
+  Retention**), **Purge old logs now** and an agent's `purge_audit_logs` delete
+  old rows, those of what a rule approved included; the rule, its count of
+  calls and its last use stay. A rule's **Activity** may then list fewer
+  actions than it counts.
 
 ## Grant a rule
 
-Only an Administrator grants a rule, from the panel; an agent can never grant,
-extend or revoke one.
+Only an Administrator grants a rule, from the panel; no agent's connection can
+grant, extend or revoke one.
 
 1. Connect the agent first: a rule is granted to a credential that has already
    connected to the panel (the assistant is offered for the people who use it).
 2. Open **Settings**, the **Agents** tab, and choose **Grant auto-approval…**.
-3. Choose the **Person**, their **Credential**, and how long: 1, 7, 30 or 90
-   days, or until a date. Nothing is chosen for you, and 90 days is the most a
-   rule lasts — the usual rotation period of a credential.
+3. Choose the **Person**, their **Credential** (each one shows its id and when
+   it last connected, so two keys with the same name are told apart), and how
+   long: 1, 7, 30 or 90 days, or until a date. Nothing is chosen for you, and
+   90 days is the most a rule lasts — the usual rotation period of a
+   credential.
 4. Read the notice. It names the person, the credential and the date, and lists
    the risks above. Tick **I understand, and I take responsibility for what this
    agent does without asking** and choose **Grant auto-approval**.
