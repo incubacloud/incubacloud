@@ -305,13 +305,52 @@ class AssistantTools(models.AbstractModel):
         credential is not kept in a card either, and each piece of it is
         cut, so that a look-alike link reads otherwise.
         """
-        shown = self.env["incubacloud.mcp.tools"]._shown_args(spec, args)
-        arguments = json.dumps(shown, sort_keys=True, ensure_ascii=False)
+        arguments = self._shown_json(spec, args)
+        if len(arguments) > _ARGUMENTS_CHARS:
+            # Said in the panel's words, outside the quote: the arguments
+            # the approval binds are all of them, and the card hands them
+            # whole to the person (_full_arguments).
+            return self.env._(
+                "Run %(tool)s with %(arguments)s, cut: %(count)s more characters "
+                "follow. All arguments, under the card, shows them whole.",
+                tool=spec.name,
+                arguments=quoted(arguments[:_ARGUMENTS_CHARS]),
+                count=len(arguments) - _ARGUMENTS_CHARS,
+            )
         return self.env._(
             "Run %(tool)s with %(arguments)s.",
             tool=spec.name,
-            arguments=quoted(arguments[:_ARGUMENTS_CHARS]),
+            arguments=quoted(arguments),
         )
+
+    @api.model
+    def _shown_json(self, spec, args):
+        """Return the arguments as a card quotes them: JSON, keys sorted.
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the validated (and prepared) arguments
+        :rtype: str
+        """
+        shown = self.env["incubacloud.mcp.tools"]._shown_args(spec, args)
+        return json.dumps(shown, sort_keys=True, ensure_ascii=False)
+
+    @api.model
+    def _full_arguments(self, spec, args):
+        """Return the whole arguments of a call whose card cuts them, or None.
+
+        The approval covers every argument, so the person must be able to
+        read every one before confirming: the chat shows these, indented,
+        under the card (All arguments).
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the validated (and prepared) arguments
+        :return: the arguments as indented JSON, or None when the card
+            quotes them whole
+        """
+        if len(self._shown_json(spec, args)) <= _ARGUMENTS_CHARS:
+            return None
+        shown = self.env["incubacloud.mcp.tools"]._shown_args(spec, args)
+        return json.dumps(shown, sort_keys=True, ensure_ascii=False, indent=2)
 
     @api.model
     def _what_changes(self, spec, args):

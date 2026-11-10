@@ -81,6 +81,10 @@
                                 This changes production.
                             </p>
                             <p class="ic-asst-card-text" t-esc="view.text"/>
+                            <details t-if="view.arguments" class="ic-asst-card-args">
+                                <summary>All arguments</summary>
+                                <pre t-esc="view.arguments"/>
+                            </details>
                             <div t-if="view.open and !readOnly" class="ic-asst-card-actions">
                                 <button class="rl-btn rl-btn-primary rl-btn-sm ic-asst-confirm"
                                         t-on-click="() => this.answerCard(view.id, true)">Confirm</button>

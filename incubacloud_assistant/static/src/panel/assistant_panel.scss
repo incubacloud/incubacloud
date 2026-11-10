@@ -186,6 +186,23 @@
         display: flex;
         gap: 8px;
     }
+
+    // The whole arguments of a card that cuts them: read before confirming.
+    .ic-asst-card-args {
+        margin: 0 0 8px;
+
+        summary {
+            cursor: pointer;
+        }
+
+        pre {
+            max-height: 240px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin: 6px 0 0;
+        }
+    }
 }
 
 .ic-asst-state {

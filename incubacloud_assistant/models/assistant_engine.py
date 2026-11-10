@@ -751,7 +751,8 @@ class AssistantEngine(models.AbstractModel):
         Nothing of the conversation is written here.
 
         :return: ``{"gone": True}``, ``{"card": {approval_id, message,
-            production}}`` or ``{"text", "is_error", "job_id", "tainted"}``
+            arguments, production}}`` or ``{"text", "is_error", "job_id",
+            "tainted"}``
         """
         if not self._conversation_in(self.env, conversation_id):
             return {"gone": True}
@@ -788,6 +789,7 @@ class AssistantEngine(models.AbstractModel):
                 "card": {
                     "approval_id": result["assistant_confirmation"],
                     "message": result.get("message") or "",
+                    "arguments": result.get("arguments") or "",
                     "production": Tools._acts_on_production(spec, call.arguments),
                 }
             }
@@ -820,6 +822,7 @@ class AssistantEngine(models.AbstractModel):
                     {
                         "role": "card",
                         "content": card["message"],
+                        "card_arguments": card.get("arguments") or False,
                         "approval_id": card["approval_id"],
                         "card_state": "pending",
                         "tool_call_id": call.id,

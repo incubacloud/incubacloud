@@ -109,6 +109,35 @@ class TestEngineTools(EngineMixin, TransactionCase):
             audit.via_client, f"Assistant (conversation {conversation.id})"
         )
 
+    def test_a_card_keeps_the_arguments_it_cuts_for_the_person(self):
+        """The person can read every argument before confirming: the chat
+        gets them with the card, masked as its text is."""
+        self._provider(
+            answer(
+                "",
+                [
+                    (
+                        "c1",
+                        "update_instance",
+                        {
+                            "instance_id": self.staging.id,
+                            "vals": {
+                                "odoo_conf": "x" * 2000,
+                                "pip_dependencies": "hidden-req==0.0",
+                            },
+                        },
+                    )
+                ],
+            )
+        )
+        conversation = self._working(self.dev)
+        self._step(conversation)
+        card = conversation.message_ids.filtered(lambda m: m.role == "card")
+        self.assertNotIn("hidden-req", card.content)
+        shown = card._format()["card"]["arguments"]
+        self.assertIn("hidden-req==0.0", shown)
+        self.assertEqual(json.loads(shown)["vals"]["odoo_conf"], "x" * 2000)
+
     def test_a_production_deploy_asks_and_says_production(self):
         """The card is marked production."""
         self._provider(

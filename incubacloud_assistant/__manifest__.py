@@ -1,6 +1,6 @@
 {
     "name": "IncubaCloud Assistant",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "summary": (
         "An AI assistant inside the panel, with the customer's own key and the "
         "user's role"

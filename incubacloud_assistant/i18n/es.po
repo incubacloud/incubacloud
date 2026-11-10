@@ -122,6 +122,12 @@ msgid "Agent action awaiting a person's approval"
 msgstr "Acción de un agente pendiente de aprobación"
 
 #. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "All arguments"
+msgstr "Todos los argumentos"
+
+#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
 msgid "Allow only models the provider lists."
@@ -266,6 +272,11 @@ msgstr "Cancelar"
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__card_state__cancelled
 msgid "Cancelled"
 msgstr "Cancelado"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__card_arguments
+msgid "Card Arguments"
+msgstr "Argumentos de la tarjeta"
 
 #. module: incubacloud_assistant
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__card_state
@@ -1061,6 +1072,16 @@ msgstr "Rol"
 #. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Run %(tool)s with %(arguments)s, cut: %(count)s more characters follow. All "
+"arguments, under the card, shows them whole."
+msgstr ""
+"Ejecutar %(tool)s con %(arguments)s, recortado: siguen %(count)s caracteres "
+"más. Todos los argumentos, bajo la tarjeta, los muestra completos."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
 msgid "Run %(tool)s with %(arguments)s."
 msgstr "Ejecutar %(tool)s con %(arguments)s."
 
@@ -1584,6 +1605,15 @@ msgid ""
 msgstr ""
 "La versión de los Términos aceptada, tal como la registró IncubaCloud. Vacía"
 " en un panel para el que IncubaCloud no la registra."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__card_arguments
+msgid ""
+"The whole arguments of a card that cuts them, masked: the person reads them "
+"all before confirming."
+msgstr ""
+"Los argumentos completos de una tarjeta que los recorta, enmascarados: la "
+"persona los lee todos antes de confirmar."
 
 #. module: incubacloud_assistant
 #. odoo-python

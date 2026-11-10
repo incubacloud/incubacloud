@@ -103,6 +103,12 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   instance if the user can read it, and says there is one if not. Creating instances,
   `run_command`, and changing the repositories of a project or an instance always
   ask; the card lists what is added, removed and moved.
+- **Every argument is readable before the yes (1.0.222).** A card quotes the call's
+  arguments up to 1,500 characters; past that it says where it cuts and how many
+  characters follow, and the chat shows them all, masked, under **All arguments**
+  (`message.card_arguments`, from `assistant.tools._full_arguments`): the approval
+  covers every argument, and a long `odoo_conf` used to hide a pip requirement after
+  it.
 - **`tainted`.** After a tool marked `untrusted` (logs, repository files, mail, command
   output), `compare_config` or the end of a job, `conversation.tainted` is set; every
   change then asks until the person's next message enters the context — also the

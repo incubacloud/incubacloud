@@ -107,6 +107,14 @@ describe("assistant_format", () => {
                 id: 9, role: "card", text: "Deploy.", card: { state: "pending", production: true },
             });
             expect([card.kind, card.open, card.production]).toEqual(["card", true, true]);
+            expect(card.arguments).toBe("");
+        });
+        test("a card carries the whole arguments it cut", () => {
+            const card = messageView({
+                id: 9, role: "card", text: "Run update_instance with …",
+                card: { state: "pending", production: false, arguments: '{"a": 1}' },
+            });
+            expect(card.arguments).toBe('{"a": 1}');
         });
         test("links are clickable, without the dot after them", () => {
             expect(linkify("See https://docs.incubacloud.io/backups/. Then go.")).toEqual([
