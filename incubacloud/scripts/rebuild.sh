@@ -266,8 +266,8 @@ case "$op" in
         # A staging rendered before v10 has no gatekeeper until its first
         # rebuild under v10 — this one — brings the stack up: copier has
         # already rewritten the files, but the old odoo, proxy_general
-        # and odoo_net_setup are still the ones running (firma1-staging,
-        # the canary of the v10 bump in production, 2026-10-22). The test
+        # and odoo_net_setup are still the ones running (acme-staging,
+        # the first staging rebuilt under v10, 2026-10-22). The test
         # starts that one service, alone, and the trap removes it if the
         # test fails. Docker Compose will not let the boot container
         # share the namespace of a one-off gatekeeper ("container

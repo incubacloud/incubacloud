@@ -805,9 +805,9 @@ class TestTheNightlySweepOfOrphanedNetworks(TransactionCase):
 
     def test_what_was_removed_is_logged(self):
         self.executor._report_network_sweep(
-            "removed firma-firma1-staging_whitelist\nnetworks 12 1024",
+            "removed acme-acme-staging_whitelist\nnetworks 12 1024",
         )
-        self.assertTrue(any("firma-firma1-staging_whitelist" in line for line in self.logged))
+        self.assertTrue(any("acme-acme-staging_whitelist" in line for line in self.logged))
         self.assertFalse(self._alert())
 
     def test_a_host_near_its_pools_is_told_and_cleared_after(self):

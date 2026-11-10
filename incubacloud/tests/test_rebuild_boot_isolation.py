@@ -144,8 +144,8 @@ class TestRebuildBootTestIsolation(BaseCase):
 
     def test_a_staging_rendered_before_v10_gets_its_gatekeeper_for_the_test(self):
         """Its first rebuild under v10 finds the files rewritten and no
-        gatekeeper running (firma1-staging, the canary of the v10 bump in
-        production, 2026-10-22). The test starts that service alone, and
+        gatekeeper running (acme-staging, the first staging rebuilt under
+        v10, 2026-10-22). The test starts that service alone, and
         the trap removes it when the test fails, leaving the old model."""
         self.assertIn("gatekeeper_started=1", self.block)
         self.assertIn("the gatekeeper did not start", self.block)
