@@ -95,26 +95,33 @@ class GitHubAppClient:
 
     # ── Internal helpers ───────────────────────────────────────────────────────
 
-    def _installation_token(self, *, budget=None, max_bytes=None) -> str:
-        """Return a valid installation access token (from cache or freshly issued)."""
-        cached = token_cache.get_token(self._creds.installation_id)
-        if cached:
-            return cached
+    def _post_access_token(self, body=None, *, budget=None, max_bytes=None) -> dict:
+        """Ask GitHub for a new installation access token, and return its answer.
 
+        :param dict body: what limits the token (``repository_ids``,
+            ``permissions``), or None for the installation's whole grant
+        :param budget: optional shared limits of the caller
+        :param int max_bytes: optional cap on the answer's size
+        :return: GitHub's JSON answer, with ``token`` and ``expires_at``
+        :raises GitHubAPIError: when GitHub refuses it
+        """
         jwt = generate_github_app_jwt(self._creds.app_id, self._creds.private_key_pem)
         url = (
             f"{_BASE_URL}/app/installations/"
             f"{self._creds.installation_id}/access_tokens"
         )
+        headers = {
+            "Authorization": f"Bearer {jwt}",
+            "Accept": _ACCEPT_JSON,
+            "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+        }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
         req = urllib.request.Request(
             url,
             method="POST",
-            headers={
-                "Authorization": f"Bearer {jwt}",
-                "Accept": _ACCEPT_JSON,
-                "X-GitHub-Api-Version": _GITHUB_API_VERSION,
-            },
-            data=b"",
+            headers=headers,
+            data=json.dumps(body).encode() if body is not None else b"",
         )
         if budget is not None:
             budget.begin_request()
@@ -139,7 +146,15 @@ class GitHubAppClient:
             raise GitHubAPIError(
                 exc.code, raw.decode(errors="replace"),
             ) from exc
+        return data
 
+    def _installation_token(self, *, budget=None, max_bytes=None) -> str:
+        """Return a valid installation access token (from cache or freshly issued)."""
+        cached = token_cache.get_token(self._creds.installation_id)
+        if cached:
+            return cached
+
+        data = self._post_access_token(budget=budget, max_bytes=max_bytes)
         token = data["token"]
         expires_str = data.get("expires_at", "")
         try:
@@ -239,6 +254,26 @@ class GitHubAppClient:
     def get_installation_token(self) -> str:
         """Return a valid installation access token (cached)."""
         return self._installation_token()
+
+    def get_scoped_installation_token(self, repository_ids) -> str:
+        """Return a new token that reads *repository_ids* and nothing else.
+
+        The same ``POST /app/installations/{id}/access_tokens`` as the
+        installation's token, limited to those repositories and to
+        ``contents: read`` and ``metadata: read``: what a server is handed
+        to download a deploy's private repositories. Neither read from
+        nor written to ``token_cache``: the installation's token goes on
+        serving the panel's own calls and never leaves it.
+
+        :param repository_ids: GitHub's numeric ids of the repositories
+        :return: the token, valid for an hour
+        :raises GitHubAPIError: when GitHub refuses it
+        """
+        data = self._post_access_token({
+            "repository_ids": sorted({int(i) for i in repository_ids}),
+            "permissions": {"contents": "read", "metadata": "read"},
+        })
+        return data["token"]
 
     def _jwt_get(self, endpoint: str) -> dict:
         """Make a JWT-authenticated GET request (no installation token needed)."""

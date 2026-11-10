@@ -1,7 +1,12 @@
 """
 Tier 2 — ORM integration tests for cloud.github.app.
 """
-from odoo.tests.common import TransactionCase
+import http.client
+import io
+import json
+from unittest.mock import MagicMock, patch
+
+from odoo.tests.common import BaseCase, TransactionCase
 from odoo.exceptions import UserError
 
 from odoo.addons.incubacloud.models.cloud_github_event import (
@@ -138,3 +143,55 @@ class TestInstallationOfSomeoneElse(TransactionCase):
         self._dispatch('created', 5151)
         self.assertEqual(self.app.installation_id, '5151')
         self.assertFalse(self._revocation_alert())
+
+
+class TestTheScopedInstallationToken(BaseCase):
+    """``GitHubAppClient.get_scoped_installation_token`` (10-nov-2026)."""
+
+    def test_it_asks_for_the_repositories_and_reading_only_and_skips_the_cache(self):
+        """The body limits the token; the installation's cache is untouched."""
+        from odoo.addons.incubacloud.github import client as client_mod
+        from odoo.addons.incubacloud.github.credentials import GitHubAppCredentials
+
+        creds = GitHubAppCredentials(app_id="1", installation_id="77", private_key_pem="pem")
+        resp = MagicMock(spec=http.client.HTTPResponse)
+        resp.__enter__.return_value = resp
+        resp.read.return_value = json.dumps(
+            {"token": "ghs_scoped", "expires_at": "2026-11-10T10:00:00Z"},
+        ).encode()
+        with patch.object(client_mod, "generate_github_app_jwt", return_value="jwt"), \
+                patch.object(client_mod, "safe_urlopen", return_value=resp) as opened, \
+                patch.object(client_mod, "token_cache", autospec=True) as cache:
+            token = client_mod.GitHubAppClient(creds).get_scoped_installation_token(
+                [12, 11, 12],
+            )
+        self.assertEqual(token, "ghs_scoped")
+        request = opened.call_args.args[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(
+            request.full_url,
+            "https://api.github.com/app/installations/77/access_tokens",
+        )
+        self.assertEqual(json.loads(request.data), {
+            "repository_ids": [11, 12],
+            "permissions": {"contents": "read", "metadata": "read"},
+        })
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        cache.get_token.assert_not_called()
+        cache.set_token.assert_not_called()
+
+    def test_a_refusal_raises(self):
+        """GitHub's refusal reaches the caller, which refuses the job."""
+        import urllib.error
+
+        from odoo.addons.incubacloud.github import client as client_mod
+        from odoo.addons.incubacloud.github.credentials import GitHubAppCredentials
+
+        creds = GitHubAppCredentials(app_id="1", installation_id="77", private_key_pem="pem")
+        error = urllib.error.HTTPError(
+            "https://api.github.com", 422, "Unprocessable", {}, io.BytesIO(b"{}"),
+        )
+        with patch.object(client_mod, "generate_github_app_jwt", return_value="jwt"), \
+                patch.object(client_mod, "safe_urlopen", side_effect=error), \
+                self.assertRaises(client_mod.GitHubAPIError):
+            client_mod.GitHubAppClient(creds).get_scoped_installation_token([1])
