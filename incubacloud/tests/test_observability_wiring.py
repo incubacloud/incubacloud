@@ -1428,9 +1428,12 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
         values.update(variables)
         content = self._task(name)["ansible.builtin.copy"]["content"]
         # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
-        return yaml.safe_load(jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+        env = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
             trim_blocks=True, undefined=jinja2.StrictUndefined,
-        ).from_string(content).render(**values))
+        )
+        # Ansible's filter, which the labels people name go through.
+        env.filters["to_json"] = lambda value, **kw: json.dumps(value, **kw)
+        return yaml.safe_load(env.from_string(content).render(**values))
 
     def _vmagent(self, **variables):
         """Return vmagent's service in the agents' compose file."""
