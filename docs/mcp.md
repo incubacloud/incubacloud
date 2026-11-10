@@ -162,7 +162,8 @@ N+1 starts where page N ended.
 | `panel_overview`, `search`, `list_projects`, `get_project`, `list_instances`, `get_instance`, `list_hosts`, `get_job`, `list_alerts`, `get_pitr` (bridge) | stakeholder | | |
 | `instance_login_link` | stakeholder (the connect route decides per instance and user) | | for the link |
 | `compare_config`, `github_repo_info` | consultant | | |
-| `update_project`, `create_instance`, `update_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `apply_config`, `dismiss_alerts`, `freeze_repos`, `manage_tags` | consultant (a repository line's URL: project manager) | | |
+| `update_project`, `create_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `apply_config`, `dismiss_alerts`, `freeze_repos`, `manage_tags` | consultant (a repository line's URL: project manager) | | |
+| `update_instance` | consultant (a repository line's URL: project manager) | | a repository, branch or pinned commit a production does not deploy from yet |
 | `delete_instance` | consultant (production: manager) | yes | always |
 | `create_project`, `import_project` | project manager | | |
 | `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `staging_mailbox` | developer | | |
@@ -225,6 +226,14 @@ may connect the repository to the project).
   and when the repository is public. Opening a pull request asks in a public
   repository, and in a project that makes a preview of production for each pull
   request (it creates a staging with a copy of production).
+- **Pointing production at other code asks too (1.0.222).** The branch rule looks at
+  the branch at the time of the write; `update_instance` could then move a production
+  onto that branch, or onto any repository, and `rebuild_instance` deploy it, with no
+  approval. Now `update_instance` asks when its `repos` give a production a
+  repository, branch or pinned commit none of its lines holds yet, and the approval
+  lists them (`_confirm_update_instance`). The same lines in another spelling, other
+  modules of the same repository, a line taken out and every change on a staging ask
+  nothing.
 - **`harden_host` asks to apply (1.0.222)**, with the hardening job's own description,
   and adds the full setup's warning when `chain_full_setup` chains it, as
   `run_host_action` and a retry already asked for those jobs. Checking what it would
