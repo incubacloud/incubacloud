@@ -73,7 +73,8 @@ webhook. `incubacloud_assistant` 1.0.3 comes with it.
   assistant's users), always opened below it and went off the screen when
   it was at the foot of the window. It now opens upwards when it does not
   fit below and there is more room above, and a long list scrolls inside
-  it.
+  it. An open list of several choices is placed again when typing or a pick
+  changes the options it shows.
 
 ## [1.0.222] — 2026-11-10
 

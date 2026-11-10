@@ -203,4 +203,28 @@ describe("MultiSelect — menu placement", () => {
     test("a field that is not mounted gives no style", () => {
         expect(selector([])._menuStyle()).toBe("");
     });
+
+    test("typing in an open menu places it again for the rows left", () => {
+        // 78 px below the field: three rows do not fit and open upwards, one does.
+        const comp = placed(590, 630, 720, 3);
+        comp.open();
+        expect(px(comp.state.menuStyle, "bottom")).toBe(134);
+        comp.onInput({ target: { value: "Model 0" } });
+        expect(px(comp.state.menuStyle, "top")).toBe(634);
+        expect(px(comp.state.menuStyle, "bottom")).toBe(null);
+    });
+
+    test("a pick places the open menu again for the rows left", () => {
+        const comp = placed(590, 630, 720, 2);
+        comp.open();
+        expect(px(comp.state.menuStyle, "bottom")).toBe(134);
+        comp.pick(comp.props.options[0]);
+        expect(px(comp.state.menuStyle, "top")).toBe(634);
+    });
+
+    test("a closed menu is not placed", () => {
+        const comp = placed(590, 630, 720, 3);
+        comp._placeMenu();
+        expect(comp.state.menuStyle).toBe("");
+    });
 });

@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useRef, useState } from "@odoo/owl";
+import { Component, onPatched, useRef, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 
 import {
@@ -66,11 +66,11 @@ export class MultiSelect extends Component {
         this.wrapRef = useRef("wrap");
         this.inputRef = useRef("input");
         // The menu is fixed: it follows the field on scroll and resize.
-        useAnchoredMenu(() => {
-            if (this.state.open) {
-                this.state.menuStyle = this._menuStyle();
-            }
-        });
+        useAnchoredMenu(() => this._placeMenu());
+        // The parent hands the new value down after a pick, and the options
+        // or the chips may change under an open menu: place it again once
+        // the rows it shows are the ones left.
+        onPatched(() => this._placeMenu());
     }
 
     /**
@@ -144,6 +144,21 @@ export class MultiSelect extends Component {
         return `position:fixed;${side};left:${rect.left}px;width:${rect.width}px;max-block-size:${maxHeight}px`;
     }
 
+    /**
+     * Place the open menu again, for the rows it lists now: the side it fits
+     * on and its height change with them. Nothing is written when the style
+     * is the same, or while the menu is closed.
+     */
+    _placeMenu() {
+        if (!this.state.open) {
+            return;
+        }
+        const style = this._menuStyle();
+        if (style !== this.state.menuStyle) {
+            this.state.menuStyle = style;
+        }
+    }
+
     /** Open the menu beside the field, its first option active. */
     open() {
         if (this.props.disabled || this.state.open) {
@@ -176,6 +191,7 @@ export class MultiSelect extends Component {
         this.state.input = ev.target.value;
         this.state.active = 0;
         this.open();
+        this._placeMenu();
     }
 
     /**
@@ -191,6 +207,7 @@ export class MultiSelect extends Component {
         this.props.onChange([...this.props.value, option.value]);
         this.state.input = "";
         this.state.active = 0;
+        this._placeMenu();
     }
 
     /**
