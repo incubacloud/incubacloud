@@ -138,6 +138,14 @@ instance would train everyone to ignore the alert that matters.
 | VictoriaMetrics | ~0.5–1 GB RAM; disk grows with series × retention |
 | Grafana | ~300–500 MB RAM |
 
+The panel's own charts cost the central one PromQL query per panel each
+time a board is read: an instance's Metrics tab is ten (`metrics_charts.
+PANELS["instance"]`), at most four in flight from one worker, each given
+8 s, again every 45 s while the `1h` or `6h` range is open and the tab is
+visible. A reading on demand (*Queries now*, *Slow routes*) is one SSH
+command on the instance's host, only when pressed, and holds a worker of
+the panel for at most 20 s; the board lets one run at a time.
+
 Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
 drops it as it ages out.
@@ -160,6 +168,48 @@ On each host the collector reads the proxy's access log from its file
 falling back to the proxy container's output on a host not set up since
 the log moved there, and remembers its read positions on the host so a
 restart does not send the file again.
+
+## The panel's own charts
+
+Since 1.0.224 an instance's Metrics tab is drawn by the panel, not
+embedded: `/cloud/instance/resource_series` answers every panel of
+`models/metrics_charts.py`'s `PANELS["instance"]` and a diagnosis in one
+call, and the browser draws it with the Chart.js Odoo ships
+(`static/src/components/metrics/`). The browser only names a range or a
+zoom window; the server fills the PromQL from the record's ids
+(`instance_id`, and the instance's `host_id` for the server's pressure and
+its neighbours) and asks the central with the panel's own account
+credential, like the liveness cron. A panel's roles are joined in one
+query (`label_replace(…, "ic_role", …) or …`), and gauges are wrapped in
+`max_over_time` past a two-scrape step so a short peak still shows on the
+7-day range. A panel that fails is answered with its own `error` and the
+board is drawn without it.
+
+The diagnosis (`models/metrics_diagnosis.py`) is a list of fixed rules
+over the last 15 minutes of the board, each threshold with its reason and
+date in the module; the user guide lists them
+(`docs/user/docs/reference/monitoring-panels.md`). Change both together.
+
+Two readings are taken from the host only when somebody presses their
+button, with the same gate as *Recent requests* (the `developer` role and
+the record rules on the instance):
+
+- `/cloud/instance/db_activity` runs `scripts/read_pg_activity.sh`:
+  psycopg2 inside the instance's odoo container, connecting with the
+  container's own libpq environment, so no credential crosses SSH; it
+  prints one JSON line with the sessions, the totals and the tables with
+  most dead rows. Query texts can carry personal data: never stored.
+- `/cloud/instance/slow_routes` runs `scripts/read_odoo_log.sh` over the
+  last 15 or 60 minutes of the instance's Odoo log (live file and newest
+  archive, regular files only, as the health probe reads them) and prints
+  only a projection of each line; the panel adds it up
+  (`models/cloud_instance_slow_routes.py`).
+
+A reading is no job, so nothing uploads its script beforehand: the
+controller sends the script's text on stdin into a private `mktemp` file
+that the remote shell removes when it ends, and runs it with its own
+standard input closed (`OpsMixin._read_with_script`). The scripts source
+nothing for that reason.
 
 ## Moving the central to its own VPS
 
@@ -567,9 +617,12 @@ possible message is an instruction the viewer cannot act on. Concretely:
   true, and states plainly that dashboards are unavailable when it is
   false. That branch is reachable only by typing the URL, and exists so
   that doing so is honest rather than misleading.
-- The **instance Metrics tab** drops its charts block entirely when
-  `configure` is false and there is nothing to embed. Recent requests
-  stay: they need no Grafana.
+- The **instance Metrics tab** draws its own board (no embed) whenever
+  `collect` is true: it reads the central with the panel's own account
+  credential, so it needs no Grafana. With `collect` false it shows the
+  "enable observability" prompt only when `configure` is true, and no
+  board otherwise. The readings on demand (*Queries now*, *Slow routes*)
+  and *Recent requests* stay in every case: they go to the host over SSH.
 
 ### Convivencia matrix — check this before releasing an observability change
 
@@ -581,10 +634,10 @@ make sense together" is a reading, not an assertion.
 
 | Deployment | C | D | F | Nav entry | Monitoring page | Instance Metrics | Settings→Monitoring |
 |---|---|---|---|---|---|---|---|
-| Partner, observability off | ✗ | ✗ | ✓ | shown | "Enable observability in Settings" | prompt + recent requests | shown |
-| Partner, no Grafana URL | ✓ | ✗ | ✓ | shown | "Set the Grafana base URL" | prompt + recent requests | shown |
-| Partner, fully configured | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
-| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
-| Managed panel, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | no charts; recent requests | hidden |
-| Managed panel, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | charts + recent requests | hidden |
-| Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no charts; recent requests | hidden |
+| Partner, observability off | ✗ | ✗ | ✓ | shown | "Enable observability in Settings" | prompt + readings + recent requests | shown |
+| Partner, no Grafana URL | ✓ | ✗ | ✓ | shown | "Set the Grafana base URL" | board + readings + recent requests | shown |
+| Partner, fully configured | ✓ | ✓ | ✓ | shown | dashboards | board + readings + recent requests | shown |
+| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | dashboards | board + readings + recent requests | shown |
+| Managed panel, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | board + readings + recent requests | hidden |
+| Managed panel, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | board + readings + recent requests | hidden |
+| Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no board; readings + recent requests | hidden |

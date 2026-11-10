@@ -105,23 +105,115 @@ altogether: no container reporting for five minutes.
 
 ## An instance's Metrics tab
 
-Open an instance and go to **Metrics**. The two charts are the same CPU and
-memory cards above, already pinned to this instance and its host — nothing to
-select.
+Open an instance and go to **Metrics**. The tab is a diagnosis of that
+instance, already pinned to it and to its host: nothing to select. It reads
+top to bottom as the questions you ask when an instance is slow.
 
-**Recent requests.** Below the charts, read live from the host's proxy each time
-you press *Refresh*, and never stored. Three summaries — **Status codes**, **Top
-clients**, **Top paths** — over the last hundred requests, then the requests
-themselves with time, client address, method, path and status.
+### What is happening now?
 
-This is the half the charts cannot give you: metrics say an instance is busy or
+A card with a coloured edge — green, amber or red — and a few sentences about
+the last 15 minutes: which resource is short and what to do about it. The
+sentences come from fixed rules over the charts below, with these thresholds:
+
+| The card says | When |
+| --- | --- |
+| Odoo is held back by its CPU quota | Odoo was refused CPU by its quota more than 25% of the time |
+| The server is saturated and most of it goes to another instance | The server's load is above 2 per core and another instance uses more than half of the server's CPU |
+| Memory is short | The server's tasks waited for memory more than 10% of the time, or the kernel killed a process of this instance for lack of memory in the window shown |
+| The server's disk is the bottleneck | The server's tasks waited for the disk more than 20% of the time |
+| Requests take long without using CPU or the database | The proxy's p95 is above 2 seconds while Odoo and the database each use less than 30% of a core: usually a call to an outside service |
+| Odoo restarted N minutes ago | Odoo's container started inside the window |
+| No resource looks saturated | None of the above |
+
+Zoomed into the past, the card does not judge: it only reads the last 15
+minutes up to now. The buttons under it take you to **Queries now**, **Slow
+routes** and **Recent requests**.
+
+### Since when?
+
+**Request time** (p50 and p95) and **Requests** (per second, with server errors
+in red), measured at the proxy for this instance alone. Choose `1h`, `6h`, `24h`
+or `7d` (it opens on `1h`); drag across any chart, with the mouse or a finger moving sideways, to
+zoom every chart into that window, and *Reset zoom* to go back. `1h` and `6h`
+refresh every 45 seconds while the tab is open.
+
+Two marks run over the charts: a blue dot (●) where a container restarted and a
+red triangle (▲) where the kernel killed one of its processes for lack of
+memory.
+
+### Which resource?
+
+**CPU per container.** One line per container, `100%` being one core; the
+dashed line of the same colour is the container's CPU quota (*Resources*). Odoo
+doing the work while the others idle is the normal shape.
+
+**Held back by the CPU quota.** The share of time each container wanted CPU and
+its quota said no. A few percent is normal; Odoo above 25% for long means its
+requests queue behind the quota.
+
+**Memory per container.** Working set per container, with its limit dashed. A
+slow, permanent climb in the Odoo container between restarts is worth
+investigating; a database that settles on a plateau is doing its job. On the
+7-day range each point is the highest value of its interval, so short peaks
+still show.
+
+**Server: waiting for resources.** The share of time some task of the whole
+server waited for CPU, memory or the disk (the kernel's pressure figures).
+Near zero is healthy. It tells a server that is short of something apart from
+an instance that is merely busy.
+
+**Neighbours.** CPU of every instance on the same server, this one in green.
+When the server is saturated, this card says whether this instance is the cause
+or another one is.
+
+### Which process or query?
+
+A line with the Odoo workers configured and an estimate of how busy they are
+(Odoo's CPU over the last 15 minutes against one core per worker). Then two
+readings taken from the host only when you press their button; one runs at a
+time, and nothing of them is stored.
+
+**Queries now** reads the instance's database: how many connections it has
+against its maximum, how many are active, waiting on a lock or idle inside a
+transaction, the longest of each, the cache hit ratio and the size. Then its
+sessions — state, what they wait for, for how long, which program, who blocks
+whom (a blocked row is tinted) and the start of their query — and the ten
+tables with most dead rows with their last vacuum. A session *idle in a
+transaction* that blocks others is the usual culprit behind a stuck import or
+cron. Query texts can contain your users' data, which is why they are read on
+demand and only by the `developer` role or above.
+
+**Slow routes** reads Odoo's own log for the last 15 or 60 minutes: the ten
+routes that took the most time in total, with their count, mean, p95, the share
+spent in SQL and in Python and the mean number of queries; the scheduled
+actions with their longest and total run, and those still running; the workers
+stopped by a time limit with the start of their trace; and how many workers
+were recycled for memory. A route with a high SQL share points at the database;
+a high Python share at the code. Odoo before 11.0 logs no timing: its requests
+are counted, not timed.
+
+### Size
+
+The size of the instance's directory on the server, measured every 10 minutes.
+
+### Recent requests
+
+Below the board, read live from the host's proxy each time you press *Refresh*,
+and never stored. Five summaries over the requests read — **Status codes**,
+**Top clients**, **Top paths**, **Login attempts** (posts to the login page by
+client address) and **Scanners** (addresses asking for other software's files,
+such as WordPress pages, `.env` or `.git`, and getting a 404) — a bar of
+requests per minute, with the minutes that had server errors in red, then the
+requests themselves with time, client address, method, path and status.
+
+This is the half the charts cannot give you: they say an instance is busy or
 failing, only this says *what is being done to it*. During an incident, read it
 in this order:
 
 1. **Status codes** — a wall of `5xx` is the instance failing, not the load. A
    burst of server errors is alerted.
-2. **Top clients** — one address dominating is a scraper or a runaway
-   integration, not your users.
+2. **Top clients** and **Login attempts** — one address dominating is a scraper,
+   a runaway integration or somebody trying passwords, not your users.
 3. **Top paths** — the endpoint under pressure, which is usually enough to name
    the cause.
 
@@ -130,6 +222,5 @@ proxy has not been redeployed since access logging was switched on.
 
 ## What you will not find here
 
-Per-instance HTTP traffic — it lives in the host's charts, grouped by service,
-for the reason above — and database metrics such as connections, cache hit ratio
-and locks. Both are designed and deferred.
+Database figures over time (connections, locks, cache hit ratio as charts and
+alerts): today they are read on demand with **Queries now**.

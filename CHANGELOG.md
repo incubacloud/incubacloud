@@ -14,8 +14,10 @@ Microsoft turns SMTP AUTH with passwords off by default at the end of
 December 2026 (issue #6); GitLab merge requests get previews; 19.0
 downloads its repositories on the server too, as every other series has
 since 1.0.222; and the user guide takes someone who never set up a server
-to Odoo in production, or from another host. `incubacloud_assistant` 1.0.4
-comes with it.
+to Odoo in production, or from another host. An instance's **Metrics** tab
+is drawn by the panel instead of embedding a dashboard, and reads its
+database and its Odoo log when asked. `incubacloud_assistant` 1.0.4 comes
+with it.
 
 The update adds two tables, `incubacloud_mcp_auto_approval` and
 `incubacloud_mcp_credential`, and empty columns: `approval` and
@@ -32,6 +34,8 @@ password renders as before. A 19.0 instance moves to downloading at its
 next deploy or rebuild, which downloads all its repositories once; a
 server keeps one tree of each commit of Odoo its instances are on, about
 1.2 GB for 19.0.
+The Metrics tab needs no change on the hosts: its charts read the series
+the agents already send.
 
 ### Added
 
@@ -165,6 +169,26 @@ server keeps one tree of each commit of Odoo its instances are on, about
 - *From zero to Odoo*, on the mail Odoo sends, says that with Microsoft 365
   the mail relay can sign in with OAuth2 instead of a password, and links to
   how.
+- **The Metrics tab of an instance as a diagnosis.** A card says in plain
+  words which resource is short over the last 15 minutes — Odoo held back by
+  its CPU quota, a server saturated by another instance, memory or disk
+  pressure, slow requests that use neither CPU nor the database, a recent
+  restart — and what to do. Below it, request time (p50, p95) and requests
+  with server errors, CPU per container with its quota, time held back by
+  the quota, memory per container with its limit, the server's pressure
+  (CPU, memory, disk), CPU of every instance on the same server, and the
+  instance's directory size; restarts and out-of-memory kills are marked on
+  the time axis. Ranges of 1 h, 6 h, 24 h and 7 days; drag across a chart,
+  with the mouse or a finger, to zoom every chart. Dates, numbers and units
+  follow the user's language and time zone. Spanish translation included.
+- **Queries now** (`/cloud/instance/db_activity`): the instance's database
+  sessions, what they wait for, who blocks whom, connections against the
+  maximum, cache hits, size and the tables with most dead rows, read from the
+  host when the button is pressed and never stored.
+- **Slow routes** (`/cloud/instance/slow_routes`): the last 15 or 60 minutes
+  of the instance's Odoo log, added up into its slowest routes with their SQL
+  and Python share, scheduled actions with their duration, workers stopped by
+  a time limit and workers recycled for memory.
 
 ### Changed
 
@@ -182,6 +206,12 @@ server keeps one tree of each commit of Odoo its instances are on, about
   rebuild's build now removes the contexts no build is using once it ends,
   whether it built or not. The cache of layers stays, and the next build
   of each instance sends its context whole again.
+- **Recent requests** add requests per minute, posts to the login page by
+  client address and the addresses probing for other software's files.
+  `/cloud/instance/access_log` checks the record rules of the instance as
+  well as the role.
+- The instance's Metrics tab no longer embeds the Grafana instance
+  dashboard; the **Monitoring** page keeps its dashboards for now.
 
 ### Fixed
 
