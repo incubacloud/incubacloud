@@ -203,6 +203,10 @@ server keeps one tree of each commit of Odoo its instances are on, about
 - **A GitHub pull request and a GitLab merge request of the same name and
   number stay apart**: GitHub's events never rebuild nor delete a merge
   request's preview.
+- **Neutralizing a database now also clears the MCP module's signing
+  secret**, its `/mcp` URL and the agents' issuer. The copy creates a key
+  of its own on first use, takes its URL from `web.base.url`, and its
+  agents connect with API keys until an issuer is set again.
 
 ---
 
