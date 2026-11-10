@@ -647,6 +647,32 @@ class TestOnlyThePlatform(_QueueCase):
             self.Job.search_count([("instance_id", "=", self.inst.id)]), before,
         )
 
+    def test_the_queue_fields_are_not_taken_from_the_context(self):
+        """Neither a direct ``create`` nor ``enqueue`` takes them from the
+        defaults of the caller's context."""
+        consultant = self._consultant("queue-context-defaults")
+        Job = self.Job.with_user(consultant)
+        before = self.Job.search_count([("instance_id", "=", self.inst.id)])
+        with self.assertRaisesRegex(AccessError, "cannot be set directly"):
+            Job.with_context(
+                default_host_id=self.host.id,
+                default_instance_id=self.inst.id,
+                default_job_type_id=self._type("delete_instance").id,
+                default_state="queued",
+                default_asked_as_superuser=True,
+            ).create({"name": "x"})
+        self.assertEqual(
+            self.Job.search_count([("instance_id", "=", self.inst.id)]), before,
+        )
+        self._job("rebuild_instance")
+        waiting = self.Job.browse(Job.with_context(
+            default_payload={"move_rollback": True},
+            default_succeeded_before_cancel=True,
+        ).enqueue(self.host.id, self.inst.id, "restart_instance"))
+        self.assertEqual(waiting.state, "queued")
+        self.assertFalse(waiting.payload)
+        self.assertFalse(waiting.succeeded_before_cancel)
+
     def test_the_queue_fields_of_a_job_cannot_be_written_directly(self):
         """A consultant can neither reorder, change nor requeue a job by ``write``."""
         consultant = self._consultant("queue-direct-write")

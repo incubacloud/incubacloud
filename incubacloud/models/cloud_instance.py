@@ -33,6 +33,7 @@ from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
+from .cloud_security_mixin import defaults_as_sent
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password, generate_secret_key
 from .res_users_ext import as_platform
@@ -5029,6 +5030,8 @@ class CloudInstance(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_create_instance()
+        # The defaults the caller chose are checked as what they send.
+        self = defaults_as_sent(self, vals_list)
         # Below Developer the lines of ``repo_ids`` are created after the
         # instance, from what the user may send (``_create_repo_lines``):
         # the instance itself is created as the system.
@@ -5041,7 +5044,7 @@ class CloudInstance(models.Model):
         # Created as the system below: what the x2many fields send can
         # only be the new instance's own rows, and a line's Git provider
         # and path are written from its URL.
-        self._check_new_record_x2many(
+        creating = self._check_new_record_x2many(
             vals_list, panel_only={"repo_ids": _DERIVED_FROM_URL},
         )
         for vals in vals_list:
@@ -5142,6 +5145,7 @@ class CloudInstance(models.Model):
         # made: applied here, in the caller's environment, so an instance
         # is born only in a project its creator is a member of.
         records.check_access("create")
+        self._check_new_record_rows(records, creating)
         Whitelist = self.env["cloud.instance.whitelist"]
         for inst in records:
             # A staging is born with the egress list its host already

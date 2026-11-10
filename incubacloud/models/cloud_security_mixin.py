@@ -8,6 +8,7 @@ regardless of access channel (SPA, XML-RPC, JSON-RPC, shell).
 
 from odoo import _, fields, models
 from odoo.exceptions import AccessError
+from odoo.tools import clean_context
 
 _GROUP_HIERARCHY = (
     'group_cloud_user',
@@ -21,6 +22,52 @@ _GROUP_HIERARCHY = (
 _ROLE_NAMES = {
     'user': 'stakeholder',
 }
+
+
+def defaults_as_sent(model, vals_list):
+    """Write in *vals_list* the defaults its caller chose, as if sent.
+
+    The ORM fills the fields a ``create`` was not sent with their
+    defaults after the ``create`` checked its values: those of the
+    context (``default_*``, which an RPC call brings with it) and of
+    ``ir.default`` come from the caller, and a ``create`` that runs with
+    ``sudo`` applies them past the access rights and record rules too.
+    For a caller without superuser rights they are written in the values
+    here, before any check, and the model returned has a context without
+    ``default_*`` keys: the ORM does not apply them again, nor to the rows
+    the ``create`` makes itself. A field's own default stays the ORM's.
+
+    :param model: the model ``create`` was called on
+    :param list vals_list: the values of each record created, completed
+        in place
+    :return: *model*, without the ``default_*`` keys in its context; the
+        superuser's is returned as it is
+    """
+    if model.env.su:
+        return model
+    chosen = {
+        key[len("default_"):]
+        for key in model.env.context
+        if key.startswith("default_")
+    }
+    chosen.update(model.env["ir.default"]._get_model_defaults(model._name))
+    chosen.intersection_update(model._fields)
+    Command = fields.Command
+    for vals in vals_list:
+        missing = [name for name in chosen if name not in vals]
+        for name, value in model.default_get(missing).items():
+            if model._fields[name].type in ("one2many", "many2many"):
+                # ``default_get`` sends an x2many as a ``Command.SET`` of
+                # the records it names, followed by the rows it creates,
+                # or as ``Command.CLEAR``: on a new record, an empty set
+                # or a clear does nothing.
+                value = [
+                    command for command in value
+                    if command[0] not in (Command.SET, Command.CLEAR)
+                    or command[2]
+                ]
+            vals[name] = value
+    return model.with_context(clean_context(model.env.context))
 
 
 class CloudSecurityMixin(models.AbstractModel):
@@ -93,9 +140,10 @@ class CloudSecurityMixin(models.AbstractModel):
         behalf (``cloud.instance``, ``cloud.host``): there the access
         rights and record rules of the rows its x2many fields name are
         not checked. Every x2many value of *vals_list* may only create
-        rows (``Command.CREATE``) of a model the user may create; a
-        many2many may also link records the user may read
-        (``Command.LINK``, ``Command.SET``), as the forms do with tags.
+        rows (``Command.CREATE``) of a model the user may create, and so
+        may the x2many fields of those rows; a many2many may also link
+        records the user may read (``Command.LINK``, ``Command.SET``), as
+        the forms do with tags.
         Rows created lose the fields *panel_only* names, which only the
         panel writes. Nothing is checked for the superuser.
 
@@ -103,12 +151,16 @@ class CloudSecurityMixin(models.AbstractModel):
             commands of *panel_only*'s fields are replaced in place
         :param dict panel_only: an x2many field's name -> the names of
             the fields taken out of each row it creates
+        :return: the names of the fields that create rows, for
+            :meth:`_check_new_record_rows`
+        :rtype: set
         :raises AccessError: for any other command, a row of a model the
             user may not create, or a linked record the user may not read
         """
         if self.env.su:
-            return
+            return set()
         panel_only = panel_only or {}
+        creating = set()
         for vals in vals_list:
             for name, value in list(vals.items()):
                 field = self._fields.get(name)
@@ -119,6 +171,32 @@ class CloudSecurityMixin(models.AbstractModel):
                 vals[name] = self._x2many_create_commands(
                     field, value, panel_only.get(name, ()),
                 )
+                if any(
+                    command[0] == fields.Command.CREATE
+                    for command in vals[name]
+                ):
+                    creating.add(name)
+        return creating
+
+    def _check_new_record_rows(self, records, names):
+        """Check the rows *records* created with the system's rights.
+
+        After a ``create`` held by :meth:`_check_new_record_x2many`: the
+        rows its fields *names* hold are checked in the user's
+        environment, as Odoo checks a creation, with the access rights
+        and the record rules of their model. Nothing is checked for the
+        superuser.
+
+        :param records: the records just created
+        :param names: the x2many fields that created rows
+        :raises AccessError: when the user may not create one of them
+        """
+        if self.env.su:
+            return
+        for name in sorted(names):
+            records.sudo().mapped(name).with_env(self.env).check_access(
+                'create',
+            )
 
     def _x2many_create_commands(self, field, value, dropped):
         """Return *value* of *field* as commands a new record may take.
@@ -144,12 +222,21 @@ class CloudSecurityMixin(models.AbstractModel):
         for command in value:
             code = command[0] if isinstance(command, (list, tuple)) else None
             if code == Command.CREATE:
-                self.env[field.comodel_name].check_access('create')
+                comodel = self.env[field.comodel_name]
+                comodel.check_access('create')
                 row = {
                     key: val
                     for key, val in (command[2] or {}).items()
                     if key not in dropped
                 }
+                for key, val in row.items():
+                    subfield = comodel._fields.get(key)
+                    if val and subfield is not None and subfield.type in (
+                        'one2many', 'many2many',
+                    ):
+                        row[key] = self._x2many_create_commands(
+                            subfield, val, (),
+                        )
                 commands.append((Command.CREATE, command[1], row))
                 continue
             if field.type == 'many2many' and code in (
@@ -160,8 +247,8 @@ class CloudSecurityMixin(models.AbstractModel):
                 commands.append(command)
                 continue
             raise AccessError(_(
-                "A new record can only create its %(field)s: those that "
-                "already exist cannot be added to it, changed or removed.",
+                'A new record can only create new rows in "%(field)s": '
+                'existing ones cannot be added to it, changed or removed.',
                 field=field._description_string(self.env),
             ))
         return commands

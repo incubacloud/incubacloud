@@ -775,11 +775,11 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_security_mixin.py:0
 msgid ""
-"A new record can only create its %(field)s: those that already exist cannot "
+"A new record can only create new rows in \"%(field)s\": existing ones cannot "
 "be added to it, changed or removed."
 msgstr ""
-"Un registro nuevo solo puede crear sus propios %(field)s: los que ya existen "
-"no se pueden añadir a él, cambiar ni quitar."
+"Un registro nuevo solo puede crear filas nuevas en «%(field)s»: las que ya "
+"existen no se pueden añadir, cambiar ni quitar."
 
 #. module: incubacloud
 #. odoo-python

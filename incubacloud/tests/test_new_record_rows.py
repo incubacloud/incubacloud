@@ -2,7 +2,8 @@
 
 Their ``create`` runs as the system, so what their x2many fields send is
 held to the rows the new record creates; a many2many also links records
-the user reads, as the forms do with tags.
+the user reads, as the forms do with tags. The defaults of the context
+and of ``ir.default`` are held to the same rules as what is sent.
 """
 from unittest.mock import patch
 
@@ -13,6 +14,8 @@ from odoo.addons.incubacloud.tests.test_cloud_security import (
 )
 
 _URL = "https://github.com/example/mine"
+_FOREIGN_URL = "https://github.com/example/foreign"
+_OWN_ROWS = "can only create"
 
 
 class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
@@ -66,13 +69,13 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
             ("alert_ids", [(1, self.alert.id, {"message": "Changed"})]),
         )
 
-    def _create(self, env, name, **vals):
-        """Create a staging of the project in *env*.
+    def _create(self, env, name, context=None, **vals):
+        """Create a staging of the project in *env*, with *context* added.
 
         :rtype: cloud.instance
         """
         return env["cloud.instance"].with_context(
-            skip_apply_requirements=True,
+            skip_apply_requirements=True, **(context or {}),
         ).create({
             "name": name, "project_id": self.project.id,
             "environment": "staging",
@@ -87,11 +90,16 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
         )
 
     def test_a_consultant_sends_rows_that_exist(self):
-        """Refused, whatever the command."""
+        """Refused, whatever the command, and a list of ids too."""
         env = self.env(user=self.consultant)
-        for name, commands in self._commands():
-            with self.subTest(field=name, command=commands[0][0]), \
-                    self.assertRaises(AccessError), self.env.cr.savepoint():
+        for name, commands in self._commands() + (
+            ("domain_ids", [(6, 0, [self.domain.id])]),
+            ("domain_ids", [self.domain.id]),
+            ("domain_ids", [(3, self.domain.id)]),
+        ):
+            with self.subTest(field=name, value=commands), \
+                    self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                    self.env.cr.savepoint():
                 self._create(env, "refused", **{name: commands})
             self._rows_as_they_were()
         self.assertFalse(self.env["cloud.instance"].search(
@@ -135,10 +143,11 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
                 })],
             )
 
-    def test_a_developer_sends_a_line_that_exists(self):
-        """Refused; a line created takes its provider and path from the URL."""
+    def test_a_developer_changes_a_line_that_exists(self):
+        """Refused: the other instance's line keeps its instance and branch."""
         env = self.env(user=self.developer)
-        with self.assertRaises(AccessError), self.env.cr.savepoint():
+        with self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                self.env.cr.savepoint():
             self._create(
                 env, "line-refused",
                 repo_ids=[(1, self.line.id, {"branch": "19.0"})],
@@ -147,8 +156,12 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
             (self.line.instance_id, self.line.branch),
             (self.elsewhere, "main"),
         )
+
+    def test_a_line_created_with_an_instance_follows_its_url(self):
+        """Its path is the URL's, not the one sent."""
         inst = self._create(
-            env, "line-created", repo_ids=[(0, 0, {
+            self.env(user=self.developer), "line-created",
+            repo_ids=[(0, 0, {
                 "url": _URL, "branch": "19.0",
                 "repo_path": "some-group/some-repo",
             })],
@@ -163,10 +176,91 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
             "user": "ubuntu", "wildcard_domain": "own-rows.example.com",
         })
         row = other.whitelist_ids[:1]
-        with self.assertRaises(AccessError), self.env.cr.savepoint():
-            self.env["cloud.host"].with_user(self.manager).create({
-                "name": "own-rows-new", "ip_address": "192.0.2.93",
-                "user": "ubuntu", "wildcard_domain": "own-rows-new.example.com",
-                "whitelist_ids": [(4, row.id)],
-            })
+        Host = self.env["cloud.host"].with_user(self.manager)
+        new_host = {
+            "name": "own-rows-new", "ip_address": "192.0.2.93",
+            "user": "ubuntu", "wildcard_domain": "own-rows-new.example.com",
+        }
+        for chosen, vals in (
+            (Host, {"whitelist_ids": [(4, row.id)]}),
+            (Host.with_context(default_whitelist_ids=[(4, row.id)]), {}),
+        ):
+            with self.subTest(context=chosen.env.context), \
+                    self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                    self.env.cr.savepoint():
+                chosen.create(new_host | vals)
         self.assertEqual(row.host_id, other)
+
+    def test_a_row_created_with_it_takes_rows_of_its_own(self):
+        """A new host's new instance does not take another's domain."""
+        with self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                self.env.cr.savepoint():
+            self.env["cloud.host"].with_user(self.manager).create({
+                "name": "own-rows-nested", "ip_address": "192.0.2.94",
+                "user": "ubuntu",
+                "wildcard_domain": "own-rows-nested.example.com",
+                "instance_ids": [(0, 0, {
+                    "name": "nested", "project_id": self.project.id,
+                    "environment": "staging",
+                    "domain_ids": [(4, self.domain.id)],
+                })],
+            })
+        self._rows_as_they_were()
+
+    def test_a_consultant_chooses_rows_that_exist_as_defaults(self):
+        """Refused, and so is an alert or a repository of another project."""
+        env = self.env(user=self.consultant)
+        for context, error in (
+            ({"default_domain_ids": [(4, self.domain.id)]}, _OWN_ROWS),
+            ({"default_whitelist_ids": [(4, self.whitelist.id)]}, _OWN_ROWS),
+            ({"default_alert_ids": [(1, self.alert.id, {"message": "Changed"})]},
+             _OWN_ROWS),
+            ({"default_alert_ids": [(0, 0, {
+                "code": "own_rows", "message": "New", "level": "warning",
+            })]}, "not allowed"),
+            ({"default_repo_ids": [(0, 0, {"url": _FOREIGN_URL})]},
+             "Only a Project Manager"),
+            ({"default_state": "deployed"}, "past draft"),
+        ):
+            with self.subTest(context=context), \
+                    self.assertRaisesRegex(AccessError, error), \
+                    self.env.cr.savepoint():
+                self._create(env, "refused", context=context)
+            self._rows_as_they_were()
+        self.assertFalse(self.env["cloud.instance"].search(
+            [("name", "=", "refused")],
+        ))
+        self.assertFalse(self.env["cloud.instance.repo"].search(
+            [("url", "=", _FOREIGN_URL)],
+        ))
+
+    def test_a_consultant_keeps_rows_that_exist_as_their_own_default(self):
+        """A default of their own in ``ir.default`` is refused as well."""
+        self.env["ir.default"].with_user(self.consultant).set(
+            "cloud.instance", "domain_ids", [(4, self.domain.id)],
+            user_id=True,
+        )
+        with self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+                self.env.cr.savepoint():
+            self._create(self.env(user=self.consultant), "refused")
+        self._rows_as_they_were()
+
+    def test_the_system_chooses_them(self):
+        """As before."""
+        inst = self._create(self.env, "system-defaults", context={
+            "default_domain_ids": [(4, self.domain.id)],
+            "default_repo_ids": [(0, 0, {"url": _FOREIGN_URL})],
+            "default_state": "deployed",
+        })
+        self.assertEqual(
+            (self.domain.instance_id, inst.state),
+            (inst, "deployed"),
+        )
+        self.assertIn(_FOREIGN_URL, inst.repo_ids.mapped("url"))
+
+    def test_a_consultant_creates_an_instance_with_a_default_project(self):
+        """As an action opened on a project does."""
+        inst = self.env["cloud.instance"].with_user(self.consultant).with_context(
+            skip_apply_requirements=True, default_project_id=self.project.id,
+        ).create({"name": "by-default", "environment": "staging"})
+        self.assertEqual(inst.project_id, self.project)
