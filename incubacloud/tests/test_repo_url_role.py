@@ -558,6 +558,15 @@ class TestRepoReadsByRole(CloudSecurityBase):
              "credential cannot see it."),
         )
 
+    def test_a_private_repository_does_not_send_to_the_credentials(self):
+        """The panel has credentials the user may not use for it."""
+        result, _built = self._read(
+            self.consultant, "cloud_get_repo_branches", _OTHER,
+            GitHubAPIError(404, "Not Found"),
+        )
+        self.assertNotIn("settings_hint", result)
+        self.assertNotIn("credentials configured", result["error"])
+
     def test_a_consultant_reads_a_line_s_repository_with_the_panel_s(self):
         """In any spelling of it."""
         for route, kwargs, answer in self._ROUTES:
