@@ -219,7 +219,7 @@ keep working as they were. Nothing else changes in the database.
   failing.** A rebuild updates a panel's database with `click-odoo-update` in
   a container of the new image while the old server keeps serving, and
   restarts it only afterwards. The update to 1.0.214 queued `push_edge_guard`,
-  and on a tenant's panel the old server's runner took it within the second
+  and on a panel updated so the old server's runner took it within the second
   and failed it for good with `No executor registered for 'push_edge_guard'`:
   nothing queued it again, the host stayed without the edge guard and the
   `job_failed` alert stayed open. `cloud.job.execute` now puts such a job back
@@ -315,7 +315,7 @@ keep working as they were. Nothing else changes in the database.
 The update creates the `cloud_job_no_return` table and, with `incubacloud_pitr`
 1.0.11, turns `failure_holds_queue` off for `pitr_enable`; nothing else changes
 in the database. No instance shows changes to apply for the SMTP relay's pin:
-each takes it at its next deploy, rebuild, move or plan change.
+each takes it at its next deploy, rebuild or move.
 
 ### Added
 
@@ -338,19 +338,20 @@ each takes it at its next deploy, rebuild, move or plan change.
 
 - **An instance's CPUs fit the server it is deployed on.** Docker refuses a
   container whose `cpus` is above the daemon's count of CPUs, and by then
-  `docker compose up -d` had recreated `db`: a plan of 2.5 CPUs applied on a
-  server of 2 left the database `Created`, never started, and the panel down.
-  Every deploy, rebuild and warm claim now writes each service's `cpus` as at
-  most the host's CPUs, read from `docker info` when the job uploads its files
-  (15 s at most), with the host's measured `cpu_cores` as the fallback and no
-  limit when neither is known. The instance's fields, the host's accounting and
-  the configuration's hash keep the value set; each limit is a line in the
-  job's log, and the end hooks hand it to `_report_cpu_clamps` for a layer to
-  tell its operator. A rebuild whose failure a layer put back as it was can
-  say so (`_failure_leaves_error`) and leave the instance's status alone, and
-  a layer can give the refusal to stop a job of its own type its own reason
-  (`cloud.job._no_return_refusal`). See *CPUs an instance is deployed with* in
-  `docs/architecture.md`.
+  `docker compose up -d` had recreated `db`: a limit of 2.5 CPUs applied on
+  a server of 2 left the database `Created`, never started, and the panel
+  down. Every deploy and rebuild, and a layer's own deploys, now write each
+  service's `cpus` as at most the host's CPUs, read from `docker info` when
+  the job uploads its files (15 s at most), with the host's measured
+  `cpu_cores` as the fallback and no limit when neither is known. The
+  instance's fields, the host's accounting and the configuration's hash keep
+  the value set; each limit is a line in the job's log, and the end hooks
+  hand it to `_report_cpu_clamps` for a layer to tell its operator. A
+  rebuild whose failure a layer put back as it was can say so
+  (`_failure_leaves_error`) and leave the instance's status alone, and a
+  layer can give the refusal to stop a job of its own type its own reason
+  (`cloud.job._no_return_refusal`). See *CPUs an instance is deployed with*
+  in `docs/architecture.md`.
 - **Cancelling a running job stops what it runs on the server.** The stop
   cancelled the job's task and closed the connection, which signals nothing: the
   step in progress went on on the host until it next wrote to its output, or to
@@ -360,7 +361,7 @@ each takes it at its next deploy, rebuild, move or plan change.
   what the trap writes still reaching the job's log, and stops the job. OpenSSH
   delivers the signal to the session's whole process group, so a script and its
   foreground children end together, with or without a trap; `docker compose run`
-  passes it on to its container. Measured on a pool-like host on 8-nov-2026.
+  passes it on to its container. Measured on a test host on 8-nov-2026.
   Not covered: what a `docker exec` runs inside a container, which ends on its
   own; root sessions on OpenSSH 8.9 and servers older than 7.9, which ignore the
   signal; and a worker that dies.
@@ -397,8 +398,8 @@ each takes it at its next deploy, rebuild, move or plan change.
   fails; a failed build waits 60 s and runs once more, as the rebuild's has
   since 1-nov-2026. A first attempt that ran 900 s or more is not repeated, in
   the deploy or the rebuild: the job runner kills a job at 3600 s, and that
-  kill leaves the job orphaned and the instance in `deploying`. Tenants',
-  warm spares', staging and moves' deploys get the step too.
+  kill leaves the job orphaned and the instance in `deploying`. Staging and
+  moves' deploys, and those a layer runs, get the step too.
 - **An addon conflict is named once in its alert,** where a build repeated
   once printed it, and the alert listed it, twice.
 - **An agent's parallel calls no longer fail on their quota.** The counters
@@ -467,9 +468,9 @@ each takes it at its next deploy, rebuild, move or plan change.
   and every deploy pulls, so since docker-mailserver v17.0.0 became `latest`
   on 2026-11-05 each deploy, rebuild or move started v17 while the instances
   deployed before kept the release they had pulled. The deploy override now
-  names `ghcr.io/docker-mailserver/docker-mailserver:16.0.1`, the release the
-  tenant panels already run, next to `ENABLE_UPDATE_CHECK=0`. The answers are
-  unchanged, so the configuration hash of the fleet is too. A staging's mail
+  names `ghcr.io/docker-mailserver/docker-mailserver:16.0.1`, a release already
+  proven in production, next to `ENABLE_UPDATE_CHECK=0`. The answers are
+  unchanged, so the configuration hash of every instance is too. A staging's mail
   catcher keeps its image. v17's breaking changes (LDAP, Rspamd's Redis to
   Valkey, Dovecot's Xapian) do not reach a relay with `SMTP_ONLY=1`, and its
   relay script is the same as 16.0.1's: an instance already on v17 goes back
@@ -478,8 +479,7 @@ each takes it at its next deploy, rebuild, move or plan change.
 ## [1.0.217] — 2026-11-08
 
 The update creates the `cloud_job_outcome` table; nothing else changes in the
-database. `incubacloud_saas_manager`'s tests import the new harness, so its CI
-needs this core.
+database.
 
 ### Fixed
 
@@ -529,14 +529,14 @@ The update needs no migration.
 
 ## [1.0.215] — 2026-11-07
 
-The update needs no migration: no instance of production runs 7.0 or
-PostgreSQL 9.6, which the panel no longer knows, nor any series from 8.0 to
-15.0, which no longer run below PostgreSQL 12. `incubacloud_connect` 1.0.3
-reaches an existing instance with its next rebuild.
+The update needs no migration, and has none for an instance on 7.0 or
+PostgreSQL 9.6, which the panel no longer knows, nor for a series from 8.0 to
+15.0 on a PostgreSQL below 12, where they no longer run.
+`incubacloud_connect` 1.0.3 reaches an existing instance with its next
+rebuild.
 
-Publish this core with the `incubacloud_saas_manager` and
-`incubacloud_tenant` that read a host's `key_file` elevated in their VPS
-provisioning, in the same deployment.
+A module that extends the panel and reads a host's `key_file` must read it
+elevated from this version on.
 
 ### Added
 
@@ -612,9 +612,7 @@ provisioning, in the same deployment.
   them elevated where it connects (`_get_ssh_private_key_bytes`,
   `_get_ssh_password`), `ssh_connect_kwargs` is no longer callable over RPC,
   and `create`/`write` store them elevated once the manager check passed. The
-  host page's button that reveals the SSH password is unchanged. Publish with
-  the `incubacloud_saas_manager` and `incubacloud_tenant` that read `key_file`
-  elevated in their VPS provisioning.
+  host page's button that reveals the SSH password is unchanged.
 - **A host's default certificate key is for system administrators only.**
   `cloud.host.tls_default_key` carried no group, so every role down to a
   Stakeholder read the private key of the certificate the host's proxy serves
@@ -652,11 +650,9 @@ provisioning, in the same deployment.
 
 ## [1.0.214] — 2026-11-07
 
-Publish this core and `incubacloud_saas_manager` in the same deployment: the
-update's `end-migrate` asks the saas module's `_edge_guard_leaves_alone()` hook
-which hosts to skip, and a core deployed alone would also queue the guard on
-the master panel's own host. The update queues `push_edge_guard` once per
-active host whose proxy the panel set up; it runs no Full Setup.
+The update queues `push_edge_guard` once per active host whose proxy the
+panel set up, except those the `_edge_guard_leaves_alone()` hook names, which
+a module that extends the panel can override; it runs no Full Setup.
 
 ### Added
 
@@ -674,10 +670,9 @@ active host whose proxy the panel set up; it runs no Full Setup.
 
 ## [1.0.201] — 2026-10-28
 
-For the direct path, publish this core before `incubacloud_saas_manager` and before
-`incubacloud_tenant`: both call what it adds. Nothing changes until a host is
-given a direct port and the central a direct name; the update re-applies no agent and
-marks no host pending.
+Nothing changes for the direct path until a host is given a direct port and
+the central a direct name; the update re-applies no agent and marks no host
+pending.
 
 ### Added
 
@@ -709,12 +704,13 @@ marks no host pending.
 - **`incubacloud_mcp_pitr` 1.0.0**: the continuous recovery tools
   (`get_pitr`, `configure_pitr`, `pitr_restore`), installed where both modules
   are.
-- **A direct entrypoint per host** (`cloud.host.direct_port`, applied by Full Setup): a
-  port of its own for the platform's traffic, with a Let's Encrypt certificate by DNS-01
-  (`acme_dns_cloudflare_token`, a root-only file on the host), no trust in forwarded
-  headers, a per-source rate limit and an allowlist in nftables (`ic_direct_v4`) and in
-  Traefik (`direct-peers`). Full Setup checks the port is free first and never leaves
-  the proxy down.
+- **A direct entrypoint per host** (`cloud.host.direct_port`, applied by
+  Full Setup): a port of its own for the panel's own traffic, with a Let's
+  Encrypt certificate by DNS-01 (`acme_dns_cloudflare_token`, a root-only
+  file on the host), no trust in forwarded headers, a per-source rate limit
+  and an allowlist in nftables (`ic_direct_v4`) and in Traefik
+  (`direct-peers`). Full Setup checks the port is free first and never
+  leaves the proxy down.
 - **`sync_direct_path`**: applies the list without restarting Traefik, reads it back,
   and probes the direct names the host publishes; queued when a host comes or goes and
   at least hourly. Its button shows only on a host that publishes a direct port
@@ -826,22 +822,17 @@ marks no host pending.
 
 ## [1.0.200] — 2026-10-27
 
-Ships with `incubacloud_saas_manager` 1.178, as always: its Settings
-tabs are drawn into the template changed here (`openedTabs`), and its
-template anchors on it — this core with saas 1.177, whose anchor is the
-old `t-if`, breaks Settings. Build the master's image only once both
-repositories are pushed, this core and saas 1.178 together. And
-`incubacloud_tenant`'s stylesheets now use `$state-warning-text`, which
-exists only from this version on: a saas newer than this core fails to
-build its styles. Neither the image nor a tenant may get the new saas
-with an older core — publish this core first.
+A module that draws its own Settings tabs into the panel's template must
+anchor on `openedTabs` from this version on: an anchor on the old `t-if`
+breaks Settings. `$state-warning-text`, which a module's stylesheets may
+use, exists only from this version on.
 
 ### Added
 
 - **A host said to refuse direct traffic is checked, hourly, and so is
   its hardening.** `block_direct_access` closes the proxy at the next
   Full Setup or proxy push, but the firewall only at the next hardening
-  run, which nothing starts by itself: a host that joined a pool after
+  run, which nothing starts by itself: a host whose posture changed after
   its hardening, or whose box was ticked by hand, said "closed" while
   its origin answered anybody, and no host had taken the hardening
   changes made since 15 October. `cron_check_host_posture`
@@ -864,9 +855,9 @@ with an older core — publish this core first.
   `cloud.alert._silent_alert_codes()` names the codes that reach nobody
   — not the mail, not the external channels, not the daily digest — and
   still show in the Alerts list, the bell and the host's card. Core
-  silences nothing; the tenant module lists `host_hardening_outdated`
-  that way. `cloud.alert.for_provider` is declared in core, which never
-  sets it: the tenant module's record rule on it is in the database
+  silences nothing; a module that extends the panel lists its own codes
+  there. `cloud.alert.for_provider` is declared in core, which never
+  sets it: a module's record rule on it can be in the database
   while core loads alone (its tests, a migration), and a rule on a field
   the model lacks fails every read of every alert.
 
@@ -886,15 +877,15 @@ with an older core — publish this core first.
 ### Fixed
 
 - **What is typed on a Settings tab survives a visit to another tab,
-  and Save sends it from any tab.** The Rates tab (and saas's SaaS and
-  Providers) is a component with its own form and a save handler it
+  and Save sends it from any tab.** The Rates tab (and any tab a module
+  adds) is a component with its own form and a save handler it
   registers with Settings; drawn with `t-if`, it was unmounted on
   leaving, so its edits were lost — back on it the stored values
   showed — and its save handler went with it: Save pressed on another
   tab never sent them. Such a tab now stays mounted once opened, hidden
   while another one shows (`openedTabs`).
-- **An unsaved edit on the Rates, SaaS or Providers tab is an unsaved
-  change.** Settings compared only its own form, so these tabs showed
+- **An unsaved edit on the Rates tab, or on a tab a module adds, is an
+  unsaved change.** Settings compared only its own form, so these tabs showed
   no "Unsaved changes" in the footer, and leaving Settings, or the
   page, did not ask. A tab now registers its state
   (`registerSettingsSave(key, save, state, writeOnly)`), and Settings
@@ -907,17 +898,17 @@ with an older core — publish this core first.
   once a retry loads it, it registers.
 - **Save sends only the tabs that changed, and what it sent is what is
   saved.** It called the save of every registered tab, so an untouched
-  form — the whole SaaS form — went back to the server, which can act
+  form — a module's whole tab — went back to the server, which can act
   on it. A tab is now sent only while its form differs from what was
   loaded or last saved; a tab that registers no state is sent every
   time, as before. The reference copy, of a tab as of Settings' own
   form, is what was sent, taken before the request, with the
   write-only fields the tab empties once saved (`writeOnly`, the
   secrets) empty: an edit made while the request is out stays unsaved. A
-  Hetzner token of spaces alone is no token: it is emptied on save like
-  one, instead of staying a change.
+  token of spaces alone is no token: it is emptied on save like one,
+  instead of staying a change.
 - **Amber text reaches WCAG AA in the light theme.** Amber was both a
-  mark and the colour of some thirty text rules — pills, tenant badges,
+  mark and the colour of some thirty text rules — pills, badges,
   warnings, the staging label, the job history's active chips, the
   warning toast — which measured 2.8 to 4.0:1 in `#b7791f` and
   `#9a6614`. Text in amber now uses `--rl-amber-ink` (`$state-warning-text`):
@@ -928,9 +919,9 @@ with an older core — publish this core first.
   2.9–3.0:1 on its own tint and on the gauge's track), with
   `--rl-amber-rgb` and `--rl-amber-soft` following it. Text on solid
   amber is dark, `--rl-amber-fg` `#1c1408` (white reaches 3.9:1 on it),
-  which the tenant panel's "Invited" filter chip now uses. The dark
-  theme's colours are unchanged except that chip's label, near-black in
-  both (`#06140d` → `#1c1408`).
+  for a module's filter chips to use; a near-black label on amber goes
+  from `#06140d` to `#1c1408`. The dark theme's colours are otherwise
+  unchanged.
 - **A move whose removal of the old copy fails no longer holds the
   instance's queue.** `move_cleanup_source` runs after the cutover, on
   the source host, when the instance already lives on the destination;
@@ -948,47 +939,44 @@ with an older core — publish this core first.
   behind, so the retry of a restore from a URL that needs a login
   downloaded without it. The retry now takes it too, encrypted at rest
   and out of the payload as on the original, so neither the lists nor
-  the log show it. `incubacloud_saas_manager` copied it in its own
-  `retry_job`; that copy is now redundant.
-- **A restore to a moment tells the addons, as every other restore
-  does.** `PitrRestoreExecutor` recorded the new timeline and queued its
-  base copy, but never called `_after_restore_hook`: an addon that acts
-  on a replaced database did not hear of it. The SaaS layer hands a
-  tenant's panel new secrets after a restore; a panel brought back to a
-  moment before its last deploy kept an OIDC secret the manager no
-  longer accepts. The hook is now called with a new `kind`, `pitr`,
-  once the restore has ended with the database restored — also when
-  its files were not, which the job reports as a failure — and not
-  while the next job still follows it on the host. `incubacloud_pitr`'s
-  own hook does nothing for `pitr`: the restore's job already took the
-  full base copy of its new timeline, and the hook's would have run
-  beside it. A restore that outlived the jobs following it was recorded
-  by the watch (`pitr_status`), which took no base copy of it and told
-  nobody: whichever records a restore first, its job or the watch, now
+  the log show it. A module that copied it in its own `retry_job` no
+  longer needs to.
+- **A restore to a moment tells the addons, as every other restore does.**
+  `PitrRestoreExecutor` recorded the new timeline and queued its base copy,
+  but never called `_after_restore_hook`: an addon that acts on a replaced
+  database did not hear of it. A module that hands an instance new secrets
+  after a restore left one brought back to a moment before its last deploy
+  with a secret that module no longer accepted. The hook is now called with
+  a new `kind`, `pitr`, once the restore has ended with the database
+  restored — also when its files were not, which the job reports as a
+  failure — and not while the next job still follows it on the host.
+  `incubacloud_pitr`'s own hook does nothing for `pitr`: the restore's job
+  already took the full base copy of its new timeline, and the hook's would
+  have run beside it. A restore that outlived the jobs following it was
+  recorded by the watch (`pitr_status`), which took no base copy of it and
+  told nobody: whichever records a restore first, its job or the watch, now
   takes that copy and calls the hook, and the other repeats neither
-  (`_pitr_record_restore` says whether it recorded it). A restore whose
-  new timeline `pitr.sh` could not read after the promotion cannot be
-  recorded; its job still takes the copy and calls the hook, and the
-  watch does neither. `incubacloud_pitr` 1.0.8.
-- **A rebuild no longer fails because continuous recovery wrote its
-  spool.** `pitr.sh install` puts wal-g, the host's libraries it runs
-  with and the pitr agent's spool in `.walg/`, inside the copier
-  project directory, which is a git repository, and nothing kept it
-  out: `rebuild.sh commit-dirty` committed it — wal-g and libc on the
-  first rebuild, the marks that changed on every one since — while the
-  agent keeps writing it: a mark per uploaded segment, its removal an
-  hour later, `spool/fs-ok` after each filestore copy. One of those
-  landing between the commit and `copier update`'s own check made
-  copier refuse the tree ("Destination repository is dirty"): the
-  rebuild ran its other steps and failed at the end, and a job type
-  that holds the queue held the instance's queue with it (a plan
-  change, QA run 7016). `commit-dirty` now keeps `.walg/` out as it
-  keeps `logs/` out, before it stages anything, so the same rebuild is
-  clean: `ic_git_exclude`, which `ic_git_exclude_logs` now calls,
-  writes `/.walg/` to `.git/info/exclude` and untracks what earlier
-  rebuilds committed, leaving every file on disk. Every `copier update`
-  goes through it — rebuilds, plan changes, warm claims, template
-  upgrades.
+  (`_pitr_record_restore` says whether it recorded it). A restore whose new
+  timeline `pitr.sh` could not read after the promotion cannot be recorded;
+  its job still takes the copy and calls the hook, and the watch does
+  neither. `incubacloud_pitr` 1.0.8.
+- **A rebuild no longer fails because continuous recovery wrote its spool.**
+  `pitr.sh install` puts wal-g, the host's libraries it runs with and the
+  pitr agent's spool in `.walg/`, inside the copier project directory, which
+  is a git repository, and nothing kept it out: `rebuild.sh commit-dirty`
+  committed it — wal-g and libc on the first rebuild, the marks that changed
+  on every one since — while the agent keeps writing it: a mark per uploaded
+  segment, its removal an hour later, `spool/fs-ok` after each filestore
+  copy. One of those landing between the commit and `copier update`'s own
+  check made copier refuse the tree ("Destination repository is dirty"): the
+  rebuild ran its other steps and failed at the end, and a job type that
+  holds the queue held the instance's queue with it (seen in QA).
+  `commit-dirty` now keeps `.walg/` out as it keeps `logs/` out, before it
+  stages anything, so the same rebuild is clean: `ic_git_exclude`, which
+  `ic_git_exclude_logs` now calls, writes `/.walg/` to `.git/info/exclude`
+  and untracks what earlier rebuilds committed, leaving every file on disk.
+  Every `copier update` goes through it — rebuilds, template upgrades and
+  those a layer runs.
 - **A change made to the project after the rebuild's commit is named.**
   copier only says the tree is dirty. `rebuild.sh copier-update` now
   looks first and stops with the paths that changed (up to ten): what
@@ -1017,9 +1005,9 @@ with an older core — publish this core first.
   1.0.198 the queue sends a lone job, when its turn comes, to the host
   its instance lives on, so that a move made while it waited is followed
   (`_entry_verdict`). The cleanup was such a job, and the instance still
-  lived on its source: on 28 October it ran there and removed the live
-  stack, its database volume and its directory (instance 2807, restored
-  from its backup of 27 October). A job aimed at a host on purpose now
+  lived on its source: it ran there and removed the live stack, its
+  database volume and its directory, and the instance had to be restored
+  from its backup. A job aimed at a host on purpose now
   says so (`_pinned_to_host`) and keeps that host, in its retries too:
   the rollback's cleanup, the cutover, the removal of the old copy after
   a move, and the upload keys' jobs. Before it connects, the cleanup
@@ -1123,51 +1111,49 @@ with an older core — publish this core first.
 
 - **The visitor's address behind the CDN is the visitor's.**
   `CF-Connecting-IP` was believed only on a connection from Cloudflare,
-  which never happens with Traefik in between, so the master and every
-  tenant panel recorded Cloudflare's edges (sessions, device log, login
-  lock-out). It is now believed when the connection to Odoo is Traefik's
-  — named by the new `x_real_ip_proxy` option, which a panel's deploy
-  writes (`inverseproxy-proxy-1.`) and the master's configuration
-  carries — and Traefik was reached from a public address in the CDN's
-  ranges; any other caller has its `X-Forwarded-For` replaced by its own
-  address, so nothing else on Odoo's network can choose the address it
+  which never happens with Traefik in between, so a panel behind the CDN
+  recorded Cloudflare's edges (sessions, device log, login lock-out). It is
+  now believed when the connection to Odoo is Traefik's — named by the new
+  `x_real_ip_proxy` option, which the panel's deploy writes into an
+  instance's configuration (`inverseproxy-proxy-1.`) and a self-hosted panel
+  sets in its own — and Traefik was reached from a public address in the
+  CDN's ranges; any other caller has its `X-Forwarded-For` replaced by its
+  own address, so nothing else on Odoo's network can choose the address it
   is recorded as. Private ranges in the CDN's list are ignored. If the
-  proxy's name stops resolving, its last address is kept for five
-  minutes; a name that never resolved, or past that, falls back to
-  taking any private address for the proxy rather than recording every
-  visitor as the proxy, and is asked again every five seconds. Not
-  resolving is a warning at start-up — the job runner, off Traefik's
-  network, logs only that — and an error when proxied traffic finds the
-  fallback in use (RB-25). The master needs its image and its
-  configuration together, then odoo and its job runner restarted; a
-  tenant's panel gets the option with its next deploy, rebuild or plan
-  change.
+  proxy's name stops resolving, its last address is kept for five minutes; a
+  name that never resolved, or past that, falls back to taking any private
+  address for the proxy rather than recording every visitor as the proxy,
+  and is asked again every five seconds. Not resolving is a warning at
+  start-up — the job runner, off Traefik's network, logs only that — and an
+  error when proxied traffic finds the fallback in use (RB-25). A
+  self-hosted panel needs its image and its configuration together, then
+  odoo and its job runner restarted; an instance the panel deploys gets the
+  option with its next deploy or rebuild.
 
 - **A failed hardening is one alert.** It left `hardening_failed`
   (critical, "check the job log") and `job_failed` (what failed) side by
-  side for the same run (host 2412, 27 October). `hardening_failed` now
+  side for the same run. `hardening_failed` now
   says what failed, and `job_failed` is not raised while it is open: an
   executor names its own failure alert (`_failure_alert_code`), honoured
   by `_create_job_failed_alert` for a job type whose failure does not
   hold its queue, as it already was for a critical conflict alert.
 
-- **Hardening takes an SSH allowlist with an IPv6 address in it.** The
-  play put the whole list in one IPv4 set (`ic_ssh_allow`), and nft
-  refuses an IPv6 address there: host 2412, whose `allowed_ssh_ips` the
-  operator's browser had filled with its IPv6 address, stopped at the
-  ruleset check on 27 October (nothing applied; its firewall stayed as
-  it was). The list is now split by family: IPv6 goes to
-  `ic_ssh_allow6`, with its own `ip6 saddr` rule; a family with no
-  address keeps its set, empty; and the catch-all the panel sends when
-  it knows no operator address (`0.0.0.0/0`) opens IPv6 too (`::/0`).
-  `ssh_allowlist.sh` takes IPv6 addresses and splits the list the same
-  way; on a host hardened before this version, its first change adds the
-  IPv6 set and rule, live and in `/etc/nftables.conf`. `allowed_ssh_ips`
-  refuses an entry that is no address or network, and keeps each one in
-  a single form (an address compressed, alone also when written as a
-  network of one; an IPv4-mapped address as its IPv4), since the script
-  compares entries as text. The firewall CI job parses an IPv6 list and
-  a mixed one with every supported OS's nft.
+- **Hardening takes an SSH allowlist with an IPv6 address in it.** The play
+  put the whole list in one IPv4 set (`ic_ssh_allow`), and nft refuses an
+  IPv6 address there: a host whose `allowed_ssh_ips` held the IPv6 address
+  of the operator's browser stopped at the ruleset check (nothing applied;
+  its firewall stayed as it was). The list is now split by family: IPv6 goes
+  to `ic_ssh_allow6`, with its own `ip6 saddr` rule; a family with no
+  address keeps its set, empty; and the catch-all the panel sends when it
+  knows no operator address (`0.0.0.0/0`) opens IPv6 too (`::/0`).
+  `ssh_allowlist.sh` takes IPv6 addresses and splits the list the same way;
+  on a host hardened before this version, its first change adds the IPv6 set
+  and rule, live and in `/etc/nftables.conf`. `allowed_ssh_ips` refuses an
+  entry that is no address or network, and keeps each one in a single form
+  (an address compressed, alone also when written as a network of one; an
+  IPv4-mapped address as its IPv4), since the script compares entries as
+  text. The firewall CI job parses an IPv6 list and a mixed one with every
+  supported OS's nft.
 
 - **The hardening dialog no longer runs a count into the words after
   it** ("interrupt 2running instances", "This host runs 2production
@@ -1277,18 +1263,16 @@ with an older core — publish this core first.
   instance any more.
 
 - **An instance's environment is chosen when it is created, and nobody
-  changes it afterwards.** `environment` had no guard, and it decides
-  who may delete an instance, whether its egress is filtered and, on a
-  customer's panel, whether it takes a seat of the plan: a consultant
-  relabelled a production as staging and deleted it, or a staging
-  holding a copy of production as production to lift its egress filter,
-  and a panel's owner relabelled a production as staging to free its
-  seat while it went on serving. A change is now refused to everyone but
-  the platform, administrators included
-  (`cloud.instance._check_guarded_vals`), and `/cloud/save_instance` —
-  which the panel's form and the MCP's `update_instance` call — says why
-  instead of dropping it. Creating a staging or a production is
-  unchanged.
+  changes it afterwards.** `environment` had no guard, and it decides who
+  may delete an instance, whether its egress is filtered and whether a
+  module that counts productions counts it: a consultant relabelled a
+  production as staging and deleted it, or a staging holding a copy of
+  production as production to lift its egress filter, and a production
+  relabelled as staging went on serving uncounted. A change is now refused
+  to everyone but the platform, administrators included
+  (`cloud.instance._check_guarded_vals`), and `/cloud/save_instance` — which
+  the panel's form and the MCP's `update_instance` call — says why instead
+  of dropping it. Creating a staging or a production is unchanged.
 
 - **No project lives in a directory the platform keeps on every host.**
   A project named "Traefik" had the folder `traefik`, so an instance of
@@ -1297,8 +1281,7 @@ with an older core — publish this core first.
   A project's remote folder — given, or derived from its name — may no
   longer be `traefik`, `globalwhitelist`, `incubacloud`, `observability`
   or `observability-central`, for anyone, the platform included
-  (`RESERVED_REMOTE_FOLDERS`); the SaaS layer refuses those names as
-  tenant slugs at sign-up.
+  (`RESERVED_REMOTE_FOLDERS`).
 
 - **A remote folder is one project's.** Nothing made it unique, and two
   projects with one folder removed, overwrote or moved onto each other's
@@ -1310,7 +1293,7 @@ with an older core — publish this core first.
   no folder chooses one, checked as choosing it. The 1.0.200 pre-migrate
   stops the upgrade, naming them, if two projects already share a folder
   whatever its case: Odoo would only log a warning and leave the index
-  out. Production has none.
+  out.
 
 - **Only an administrator deletes an archived instance, and only a
   developer revives one.** `cloud.instance.delete_archived` is public,
@@ -1375,7 +1358,7 @@ with an older core — publish this core first.
   command was `rrsync -wo`: one session could store a link to any
   directory of the account, and the next write through it —
   `authorized_keys` among them, a shell as the account the panel
-  connects as (root on the platform's hosts). It is now `rrsync -wo
+  connects as (often root). It is now `rrsync -wo
   -munge -no-del`: a link arrives munged and leads nowhere, and nothing
   sent can be deleted by a later session. Only the rrsync of rsync 3.2.4
   and later knows both options, so the key is installed only where that
@@ -1437,7 +1420,7 @@ with an older core — publish this core first.
   rewrite their compose file.** The compose file `setup_whitelist` and
   Full Setup write named `ghcr.io/tecnativa/docker-whitelist` with no
   tag, so each host ran whatever `latest` was when it was set up. It is
-  now 0.3.2 by digest (`_WL_IMAGE`), the build Cloud 1 runs; a host's
+  now 0.3.2 by digest (`_WL_IMAGE`); a host's
   next whitelist setup recreates its proxies on it. Each of the host's
   entries becomes a service and a quoted alias in that file, and nothing
   checked them: a quote or a line break in one rewrote it. An entry must
@@ -1464,15 +1447,16 @@ with an older core — publish this core first.
   project `inverseproxy`, the service `proxy` and the network `public`.
 
 - **Nothing joins a host's SSH allowlist by itself, and the hardening
-  dialog says who will be able to open SSH.** The SaaS manager filled an
-  empty `allowed_ssh_ips` with the address of the browser that asked for
-  the hardening, unannounced (`_before_host_hardening`, now gone from
-  core and saas): an IPv6 a host reached over IPv4 could not use (host
-  2412, 27 October), and on Tenants1 an address of Cloudflare's.
+  dialog says who will be able to open SSH.** An empty `allowed_ssh_ips`
+  could be filled with the address of the browser that asked for the
+  hardening, unannounced (the `_before_host_hardening` hook, now gone):
+  an IPv6 a host reached over IPv4 could not use, or, behind a CDN, an
+  address of the CDN's.
   `/cloud/preflight_host_hardening` now returns `ssh_access`
   (`cloud.host._ssh_access_preview`) — open to any address, only this
   panel's server, this panel's server and the list, or closed by an edge
-  this panel does not govern (a tenant's VPS bought from IncubaCloud) —
+  this panel does not govern (a provider's firewall another panel
+  manages) —
   and the dialog says it in every mode. It offers the asker's own
   address with an unticked "Also allow my IP" only when that address is
   public (or of the host's LAN), not a proxy this panel believes
@@ -1481,7 +1465,7 @@ with an older core — publish this core first.
   `allow_ip`, checks it against the address it sees itself and adds it
   in the savepoint that queues the jobs; without it the list is left
   alone. The panel's own address is `cloud.host._hardening_panel_ip()`
-  (none in core), which the SaaS layers' executors read.
+  (none in core), which a module that extends the panel can give.
 
 ## [1.0.199] — 2026-10-27
 
@@ -1546,10 +1530,8 @@ with an older core — publish this core first.
   cancelled while it waits, every step goes. `cloud.job.state` is the
   job's own field (it mirrored `queue_job_id.state`), with `queued`;
   `queue_job_ext` mirrors every transition the runner writes through
-  the ORM. The 29 production jobs left with an empty state when their
-  queue.job was deleted end `cancelled` with a note. A payment seven
-  seconds after a sign-up's value push no longer loses its plan (QA,
-  22-oct-2026); the move of 15-oct-2026 was the same refusal.
+  the ORM. Jobs left with an empty state when their queue.job was
+  deleted end `cancelled` with a note.
 - **What a job type does in the queue is the type's to say.**
   `cloud.job.type` gains `queue_collapse` (asked for again while an
   identical one waits, the waiting one is returned — payload and secret
@@ -1576,7 +1558,7 @@ with an older core — publish this core first.
   no longer exists: `_runs_on_archived_instance` on the executor), and
   its executor's `on_cancelled_queued` puts back what was written when
   it was asked for: a deploy's instance to 'draft', a move's markers
-  cleared and the tenant told. A `delete_instance` cancels everything
+  cleared and a layer above told. A `delete_instance` cancels everything
   waiting on the instance first and waits only for the job running;
   `/cloud/delete_instance` no longer refuses while jobs are active. A
   waiting job's instance moved to another host starts on the new one.
@@ -1606,7 +1588,7 @@ with an older core — publish this core first.
   until 1.0.197, when `enqueue` handed queue_job the caller's own
   environment: a consultant's job runs under their record rules, and
   what the platform's code asks for with `sudo` (an executor's
-  follow-ups, the website's flows, a cron that elevates) runs as the
+  follow-ups, a layer's flows, a cron that elevates) runs as the
   superuser. A job waiting for an alert runs as its creator too, with
   the rights (superuser or not) of whoever sets it going, where until
   1.0.197 it ran as them. The upgrade adds the column, true for every
@@ -1718,7 +1700,7 @@ with an older core — publish this core first.
   daily base copy when it is due (`_pitr_base_due`), in place of the
   reading; the hourly *Continuous recovery: daily base copies* cron
   followed the same rule and always found the copy already queued
-  (production, 22–25 October: every copy queued at a watch's tick). A
+  (every copy was queued at a watch's tick). A
   copy that failed is still tried again an hour later, now at the first
   watch after that hour. The upgrade deletes the cron.
   `incubacloud_pitr` 1.0.6.
@@ -1749,10 +1731,7 @@ with an older core — publish this core first.
   creator cannot read fails the restore with an `AccessError`.
 - **Cancelling a job needs write access to it, in every state.** A job
   waiting in its queue, or dispatched and not started, was cancelled by
-  anyone who could read it and ask for its type. The SaaS manager's
-  restart of a failed provisioning checks it too, and stops a job
-  dispatched and not started through its queue job, as `cancel_job`
-  does: marked `cancelled` alone, the runner would have started it.
+  anyone who could read it and ask for its type.
 - **A job's name is text in its mail.** The job notification put the
   job's name, which whoever may write the job writes, and the host's and
   instance's names into the mail's HTML as they were, so a link forged
@@ -1875,59 +1854,56 @@ with an older core — publish this core first.
   instance.** Two requests of one new visitor at once (bots, mostly)
   race on its `website_visitor` row, and Odoo logs the loser's insert as
   a `bad query` that could not serialize: Odoo's own race, which nobody
-  running the instance can act on (alert 3195, four nights out of thirty
-  on the platform's production). The health probe leaves that record
+  running the instance can act on (four nights out of thirty on one
+  production). The health probe leaves that record
   out (`_error_block_is_expected`); a serialization failure on any other
   table is still an error. A layer that overrides the hook asks super
   first.
-- **The health probe no longer reports what a job that stops the
-  database leaves in the log.** A rebuild, a restore or switching
-  continuous recovery cuts every connection Odoo holds, and Odoo logs
-  each one as an ERROR: the job runner retrying, the cron worker
-  exiting, the server refused while `db` shuts down. The probe skipped
-  its pass while the job ran, but the first pass after it read from the
-  previous check, less five minutes of clock-skew grace, and raised
-  `instance_error_logs` on those lines (alerts 3193, 3194, 3202 and
-  3203, October 2026). Its error window, and the fallback's `--since`,
-  now open no earlier than one minute after the `date_done` of the last
-  such job that ended done; a failed one moves nothing. New hook
+- **The health probe no longer reports what a job that stops the database
+  leaves in the log.** A rebuild, a restore or switching continuous recovery
+  cuts every connection Odoo holds, and Odoo logs each one as an ERROR: the
+  job runner retrying, the cron worker exiting, the server refused while
+  `db` shuts down. The probe skipped its pass while the job ran, but the
+  first pass after it read from the previous check, less five minutes of
+  clock-skew grace, and raised `instance_error_logs` on those lines. Its
+  error window, and the fallback's `--since`, now open no earlier than one
+  minute after the `date_done` of the last such job that ended done; a
+  failed one moves nothing. New hook
   `cloud.job._get_health_blocking_host_job_types()` (none in core): host
-  jobs that stop the instances of their host. While one runs, the
-  probes of those instances skip their pass, and its end moves their
-  window too. The SaaS layer lists the free hosts' daily backup (alert
-  3201). A pass skipped for such a host job alone leaves the streaks and
-  the alerts as they were: the job changes nothing in the instance, and
-  an open `instance_unresponsive` it closed was raised again, with a new
-  notice, 10 to 15 minutes later; a job of the instance's own resets
-  them as before. `cloud.job.job_type_id` is indexed: the probe of every
-  instance filters on it twice a cycle.
+  jobs that stop the instances of their host. While one runs, the probes of
+  those instances skip their pass, and its end moves their window too: a
+  layer lists there, for instance, a host-wide backup that stops them. A
+  pass skipped for such a host job alone leaves the streaks and the alerts
+  as they were: the job changes nothing in the instance, and an open
+  `instance_unresponsive` it closed was raised again, with a new notice, 10
+  to 15 minutes later; a job of the instance's own resets them as before.
+  `cloud.job.job_type_id` is indexed: the probe of every instance filters on
+  it twice a cycle.
 
-- **A backup no longer recreates the services of a running stack.** The
-  live dump (`backup_download.sh live-dump`: non-production backups and
-  downloads, a staging's copy of production, a move's dump of its
-  source, the free hosts' daily backup) and the archive taken before a
-  delete (`backup_archive.sh`) start their one-off with `--no-deps` when
-  the instance's database runs. Without it Compose recreates every
-  dependency whose definition changed since the stack started: on
-  22-oct-2026 a host's backup recreated acme-staging's live `db`
-  under its workers and started a `gatekeeper` its running `odoo` was
-  not on (template v10, job 352272). A stopped database is still started
-  with what it depends on, as before (a move's source asleep under
-  Sablier, a stopped instance's backup); the archive also goes without
-  `--no-deps` when what runs could not be read, so a failed read cannot
-  block the delete. With `--no-deps` the live dump replaces doodba's
-  wait for Postgres, which has no deadline, with one of 60 seconds
-  (`WAIT_DB=false`, `UNACCENT=false`, as in the rebuild's boot test): a
-  database that runs but does not answer fails the dump with "the
-  running database did not answer within 60s" instead of holding it
-  until the SSH timeout. A stack whose compose declares a `gatekeeper`
-  that is not running (files rewritten by template v10, not rebuilt) is
-  refused before the dump with its own message rather than docker's.
-  `live-dump` takes an optional `running`, which the free host backup
-  passes: a stopped database is then refused with a clear error and exit
-  code 25 instead of started; the free host backup fails that instance's
-  step on it like on any other exit, for now. `ic_compose_run` is
-  unchanged: most of its callers need what the service depends on.
+- **A backup no longer recreates the services of a running stack.** The live
+  dump (`backup_download.sh live-dump`: non-production backups and
+  downloads, a staging's copy of production, a move's dump of its source, a
+  layer's host-wide backup) and the archive taken before a delete
+  (`backup_archive.sh`) start their one-off with `--no-deps` when the
+  instance's database runs. Without it Compose recreates every dependency
+  whose definition changed since the stack started: a host's backup
+  recreated a staging's live `db` under its workers and started a
+  `gatekeeper` its running `odoo` was not on (template v10). A stopped
+  database is still started with what it depends on, as before (a move's
+  source a layer keeps asleep, a stopped instance's backup); the archive
+  also goes without `--no-deps` when what runs could not be read, so a
+  failed read cannot block the delete. With `--no-deps` the live dump
+  replaces doodba's wait for Postgres, which has no deadline, with one of 60
+  seconds (`WAIT_DB=false`, `UNACCENT=false`, as in the rebuild's boot
+  test): a database that runs but does not answer fails the dump with "the
+  running database did not answer within 60s" instead of holding it until
+  the SSH timeout. A stack whose compose declares a `gatekeeper` that is not
+  running (files rewritten by template v10, not rebuilt) is refused before
+  the dump with its own message rather than docker's. `live-dump` takes an
+  optional `running`, which a layer's host-wide backup may pass: a stopped
+  database is then refused with a clear error and exit code 25 instead of
+  started. `ic_compose_run` is unchanged: most of its callers need what the
+  service depends on.
 
 ---
 
@@ -1952,14 +1928,14 @@ with an older core — publish this core first.
   The live backup of a non-production instance runs the same
   script as the download's live dump. Nothing changes for the series
   offered today, which keep click-odoo and PostgreSQL 14 to 18; the
-  table is the ground the next series stands on (plan Odoo 20, phase 2).
+  table is the ground the next series stands on.
 
 ### Added
 
 - **Odoo 20.0 has its card, not offered yet.** PostgreSQL 16 to 18, `odoo
   db` (click-odoo-contrib 1.24 refuses its database commands on 20) and
-  doodba template v10.0.3 or newer, so production's v9.7.0 pin refuses a
-  20.0 deploy before copier runs. A series that is not offered is chosen
+  doodba template v10.0.3 or newer, so a panel pinned to v9.7.0 refuses
+  a 20.0 deploy before copier runs. A series that is not offered is chosen
   by an Odoo administrator only (`may_choose`): the pickers hide it, RPC
   cannot reach it, and QA can deploy it before customers. Every dump and
   load of the scripts was run on a real Odoo 20 instance with `odoo db`;
@@ -1972,8 +1948,8 @@ with an older core — publish this core first.
   (every ten minutes) and the base copy cron (hourly) run in the same
   tick, the watch first; the status reading it queued counted as a job
   of the module in flight, and the cron skipped every instance, so no
-  base copy was ever queued after the one switching on takes (production,
-  22 October: "Base copy missing" on the three archiving instances).
+  base copy was ever queued after the one switching on takes ("Base copy
+  missing" on every archiving instance).
   When a base copy is due the watch now queues it in place of the
   reading, and both follow one rule (`_pitr_base_due`); a copy that
   failed is tried again an hour later, not at every watch.
@@ -1988,27 +1964,26 @@ with an older core — publish this core first.
   definition the template changed, restarting the live database in the
   middle of the test.
 - **A one-off container no longer passes for its service.** A `docker
-  compose run` container inherits its service's labels. Sablier counted
-  it in a sleeping tenant's group and answered the customer with its
-  waiting page for as long as it ran: the settings push that follows a
-  new tenant's metrics sync, an `odoo shell` of a few seconds, met the
-  customer opening the panel for the first time and left it on "Oops!"
-  (QA, 22 October). The same group stopped a long one-off — a PITR
-  recovery, a module update — when its session expired or Sablier
+  compose run` container inherits its service's labels. A scale-to-zero
+  proxy that groups a stack by its labels (Sablier) counted it in a sleeping
+  instance's group and answered visitors with its waiting page for as long
+  as it ran: an `odoo shell` of a few seconds met a visitor opening the
+  instance and left it on "Oops!". The same group stopped a long one-off — a
+  PITR recovery, a module update — when its session expired or Sablier
   restarted, and Traefik could route visitors to a container that serves
-  nothing. And from compose 2.29 on (the hosts run 5.x) `docker compose
-  ps --services --status running` names a one-off after its service, so
-  the scripts that asked whether `odoo` ran — to park a stack again,
-  drain a panel, restart the egress sidecar or put services back after
-  a boot test — took an `odoo shell` for the panel, and the health probe
-  took it for a running odoo, or an unhealthy one. Every one-off now
-  starts through `ic_compose_run` (scripts) or `COMPOSE_RUN` (executors),
-  labelled out of Traefik and Sablier; `ic_running_services` reads the
-  running services by the `com.docker.compose.oneoff` label, the only
-  thing every compose version agrees on; the health probe and the free
-  host's cold copies read the stack's own containers the same way. A
-  test in core, `incubacloud_pitr` and the SaaS manager fails on the raw
-  commands (`tests/oneoff_rules.py`).
+  nothing. And from compose 2.29 on (the hosts run 5.x) `docker compose ps
+  --services --status running` names a one-off after its service, so the
+  scripts that asked whether `odoo` ran — to park a stack again, drain a
+  panel, restart the egress sidecar or put services back after a boot test —
+  took an `odoo shell` for the panel, and the health probe took it for a
+  running odoo, or an unhealthy one. Every one-off now starts through
+  `ic_compose_run` (scripts) or `COMPOSE_RUN` (executors), labelled out of
+  Traefik and Sablier; `ic_running_services` reads the running services by
+  the `com.docker.compose.oneoff` label, the only thing every compose
+  version agrees on; the health probe reads the stack's own containers the
+  same way. A test in core and `incubacloud_pitr` fails on the raw commands
+  (`tests/oneoff_rules.py`), which a module that extends the panel can run
+  too.
 
 ## [1.0.196] — 2026-10-22
 
@@ -2020,8 +1995,8 @@ with an older core — publish this core first.
   `cloud.settings._metrics_accounts_shipped()` right after recording it.
   Core has nothing to do there; it is the hook a layer that hands
   accounts out uses to act at once instead of at its next
-  reconciliation (a new tenant's panel showed no dashboards for up to
-  half an hour, QA of 21-oct-2026).
+  reconciliation (a new account could show no dashboards for up to half
+  an hour).
 
 ## [1.0.195] — 2026-10-21
 
@@ -2040,7 +2015,7 @@ with an older core — publish this core first.
 
 - **The tests of a staging's stack say which template they render.** They
   relied on the code's default pin, which only a fresh database takes:
-  in devel and production the stored v9.7.0 hid that seventeen of them
+  in a database that stored v9.7.0 the pin hid that seventeen of them
   failed under v10.0.8, the default the CI's database got. They now pin
   the template they test (`tests/_template.py`), and template v10's own
   test checks what they checked for the old model: the routers'
@@ -2072,8 +2047,8 @@ with an older core — publish this core first.
 - **Doodba template v10.0.8 is the default pin** (was v9.6.1), the
   first that supports Odoo 20. It is the default of a new panel's
   setting only: a running panel keeps the version stored in **Settings →
-  Doodba template version** (v9.7.0 in production) until it is changed
-  there, the canary of RB-15. Production stacks are rendered the same; a staging
+  Doodba template version** until it is changed there, the canary of
+  RB-15. Production stacks are rendered the same; a staging
   with an allowlist closes its egress with the template's `gatekeeper`,
   which owns odoo's network namespace and filters with nftables, instead
   of the `proxy_general` + `odoo_net_setup` pair. Each stack keeps the
@@ -2120,23 +2095,23 @@ with an older core — publish this core first.
   Odoo start (about 7 s) on every move and rebuild of an instance that
   has it. A new hook, `_move_cut_steps`, lets a layer run steps as the
   cut starts, once the source is stopped and before its data is taken:
-  the SaaS layer re-points the panel's name there, so its propagation
-  runs during the restore instead of after the cutover.
+  a layer can re-point a name there, so its propagation runs during the
+  restore instead of after the cutover.
 
-- **Tenants see the dashboards of a published central.** A central the
-  panel publishes under a name of its own let only the panel frame its
-  Grafana, so every tenant's panel showed a blank frame, and nothing
-  said so: a refused frame loads all the same (QA, 20-oct-2026). The
-  list now comes from `cloud.settings._grafana_frame_ancestors`, which
-  the SaaS layer widens with its tenants' domain, the rule the
-  hand-written gateway already serves production with.
+- **Other panels can frame the dashboards of a published central.** A
+  central the panel publishes under a name of its own let only the panel
+  frame its Grafana, so a panel on another domain showed a blank frame,
+  and nothing said so: a refused frame loads all the same (QA,
+  20-oct-2026). The list now comes from
+  `cloud.settings._grafana_frame_ancestors`, which a layer can widen
+  with the domains of the panels it serves.
 
 - **A page reloads when a job says something, not on every line it
   writes.** A running job notifies its watchers every half second it
   wrote output, and every page answered each one with a full refetch:
   the host page reloaded its data and its job list twice a second
   through a deploy of an instance it does not even list, the hosts
-  dashboard and the tenant list on any job in the fleet (QA,
+  dashboard and a layer's lists on any job in the fleet (QA,
   20-oct-2026). The event now says what it is (`kind`: created,
   progress, state) and whether a progress carries a message of the
   job's own (`system`); the pages refetch on those and drop the rest.
@@ -2216,8 +2191,8 @@ with an older core — publish this core first.
   off and closes the consoles left open. The file's header names the
   commands that really run it.
 - **A neutralized copy keeps its crons off through its next update.** Odoo's
-  neutralization switches every cron off, and 36 of ours (32 in
-  `incubacloud`, 2 in `incubacloud_pitr`, 2 in the manager) declared
+  neutralization switches every cron off, and 34 of the panel's (32 in
+  `incubacloud`, 2 in `incubacloud_pitr`) declared
   `active` in updatable data, so the copy's first module update switched
   them back on. They no longer declare it: a new cron is still born
   active, and a cron someone paused stays paused through an update.
@@ -2242,12 +2217,13 @@ with an older core — publish this core first.
 
 ### Fixed
 
-- **A panel that moves no longer fails to let its new host into a server
-  over a busy row.** Before it moves, the panel lets its new host into each
-  of its customer's servers, then keeps the list the server now allows on
-  the server's record. It kept it in the transaction that changed the
-  firewall, a long one, while other work wrote that record: the write failed
-  as a serialization conflict and the move did not start (QA, 20-oct-2026).
+- **A host's SSH allowlist is kept over a busy row.** After a change to a
+  host's SSH allowlist the panel keeps the list the server now allows on
+  the host's record. It kept it in the transaction that changed the
+  firewall, which can be long (a caller that changes several servers in
+  one shell), while other work wrote that record: the write failed as a
+  serialization conflict and the caller's work did not go on (QA,
+  20-oct-2026).
   The list is now kept at once on a cursor of its own at READ COMMITTED,
   which waits for the other write instead.
 
@@ -2275,10 +2251,10 @@ with an older core — publish this core first.
   neutralization, Odoo's own included. That column is now cleared on its
   own and skipped where the copy predates it.
 - **Switching continuous recovery on no longer restarts the instance just
-  announced ready.** A plan with continuous recovery switched it on as soon
-  as a new instance was deployed, which restarted its database with Odoo
-  stopped: a customer opening the panel from the mail that said it was ready
-  met an error and a page that never loaded. A stack with continuous
+  announced ready.** Switching it on as soon as a new instance was
+  deployed, as a layer may, restarted its database with Odoo stopped: a
+  customer opening the instance from the mail that said it was ready met
+  an error and a page that never loaded. A stack with continuous
   recovery now starts its database archiving, and switching on is a reload;
   switching off lets the segments go until the rebuild that follows, instead
   of a restart. `incubacloud_pitr` 1.0.1.
@@ -2316,10 +2292,10 @@ with an older core — publish this core first.
   this module encrypts its secrets with the key in its
   `.docker/incubacloud.env`, which existed on its host only: a move or a new
   host generated another and the restored database could read none of its
-  secrets (two panels, 18-oct-2026). `cloud.instance.secret_key` is now born
-  with the instance, merged with what the host holds and written back on
-  every deploy, rebuild and warm claim (no key is ever dropped), read on the
-  origin during a move, taken from production by a refresh left live (a
+  secrets (seen on two panels). `cloud.instance.secret_key` is now born with
+  the instance, merged with what the host holds and written back on every
+  deploy and rebuild, and a layer's own (no key is ever dropped), read on
+  the origin during a move, taken from production by a refresh left live (a
   neutralized copy keeps its own), and captured once a day for instances
   deployed before (`capture_secret_key`, `secret_key_not_escrowed`).
 - **An alert on a secret that will not decrypt closes itself** once the
@@ -2352,10 +2328,10 @@ with an older core — publish this core first.
 - **A deploy that cannot start waits on its alert instead of failing,
   and the instance is not stranded in 'deploying'.** The addon
   pre-flight raised: the customer got the conflict alert, then a
-  `job_failed` for the same news, and support@ a third mail from
-  queue_job's chatter; `on_failure` only follows steps that ran, so the
+  `job_failed` for the same news, and the support mailbox a third mail
+  from queue_job's chatter; `on_failure` only follows steps that ran, so the
   instance stayed in 'deploying' and could be neither deployed again nor
-  deleted (aitrax, 16-oct-2026). The pre-flight now runs as the
+  deleted. The pre-flight now runs as the
   executor's `blocking_alert`: the job ends blocked on one
   `addon_conflict` alert, the instance goes back to 'draft', and
   resolving the alert dispatches the job again — on the host the
@@ -2441,24 +2417,23 @@ with an older core — publish this core first.
 ### Tests
 
 - **The pinning tests for a panel without GitHub credentials remove the
-  App too.** They cleared the PAT only, so on production's clone, which
-  the deploy runs the suite on, the branch head came through
-  production's own App and the anonymous path they test was never
-  reached: the deploy stopped there.
+  App too.** They cleared the PAT only, so on a copy of a panel that has
+  a GitHub App, where a deploy may run the suite, the branch head came
+  through that App and the anonymous path they test was never reached:
+  the deploy stopped there.
 
 ## [1.0.186] — 2026-10-16
 
 ### Fixed
 
-- **A free plan's instance can move to another host.** The move took a
-  duplicity snapshot through the instance's own ``backup`` container
-  before carrying it over, and a free plan's instance has none (it is
-  left out to save memory): QA's walk of a free customer paying for a
-  plan stopped at "service backup is not running" and the move was
-  undone. With ``odoo`` stopped on the source the database is quiet, so
-  the move now carries a live dump of it with its filestore
-  (``backup_download`` with ``time='live'``), handed to the restore
-  through the panel's disk as before. It needs neither the backup
+- **An instance without a backup container can move to another host.** The
+  move took a duplicity snapshot through the instance's own ``backup``
+  container before carrying it over, and an instance may have none (a layer
+  can leave it out to save memory): such a move stopped at "service backup
+  is not running" and was undone. With ``odoo`` stopped on the source the
+  database is quiet, so the move now carries a live dump of it with its
+  filestore (``backup_download`` with ``time='live'``), handed to the
+  restore through the panel's disk as before. It needs neither the backup
   container nor a bucket, so ``move_to_host`` no longer asks for a backup
   backend, and the data skips the round trip through the bucket.
 - **A one-off dump container stays out of Traefik.** The live dump and a
@@ -2479,8 +2454,7 @@ with an older core — publish this core first.
   with "Unexpected error"; it now reads public repositories anonymously,
   like the branch list, and otherwise answers the same message as the
   branch list, with the link to the settings. A branch that is not in a
-  repository GitHub does show is named as the problem. Seen on a
-  customer's panel on 2026-10-15.
+  repository GitHub does show is named as the problem.
 
 ## [1.0.184] — 2026-10-15
 
@@ -2490,8 +2464,8 @@ with an older core — publish this core first.
   instance on its target while it is still live on its source, so it is
   already `deployed`; the deploy's success hook still asked the state
   machine for `deployed` -> `deployed`, which it refuses. Every move failed
-  at its first step from 1.0.20 (the state machine, 2026-07-30) until a
-  customer's upgrade to a paid plan hit it on 2026-10-15. The deploy now
+  at its first step from 1.0.20 (the state machine, 2026-07-30) until it
+  was found on 2026-10-15. The deploy now
   leaves the state alone during a move; the cutover is what moves it. A
   new test closes every job of a move in order on the same instance,
   through the executors the job runner picks, which is what none of the
@@ -2503,8 +2477,7 @@ with an older core — publish this core first.
   fires once a rollback has cleared the move markers -- after the target
   is cleaned, or when the watchdog gives up cleaning it -- with the
   instance running on its source again. Core does nothing with it; an
-  inheriting layer can give back what the move took (SaaS puts the tenant
-  back in `active`).
+  inheriting layer can give back what the move took.
 
 ## [1.0.183] — 2026-10-14
 
@@ -2558,8 +2531,9 @@ with an older core — publish this core first.
   applies on their next hardening run. Behind a CDN no cap is rendered,
   whether or not the host also refuses direct traffic: every visitor
   arrives from the same handful of edge addresses there, and a host still
-  open at the origin -- the state a pool host is in between moving its
-  names and closing its firewall -- would have throttled the CDN itself.
+  open at the origin -- the state a host is in between moving its names
+  behind the CDN and closing its firewall -- would have throttled the CDN
+  itself.
 - **The proxy's access log has its own file, kept 30 days.** It went to
   stdout, where Docker kept 30 MB in all -- hours of history on a busy
   host -- under a path that changed with every recreate of the container.
@@ -2606,24 +2580,23 @@ with an older core — publish this core first.
 ### Added
 
 - **A notification level for failures and warnings.** The level was one
-  setting for jobs and alerts alike, and "Failures only", the default,
-  let through critical alerts and nothing else: a warning reached no
-  email, Telegram, webhook or digest, only the panel, and most close on
-  their own before anyone opens it. Production raised them unseen — a
-  declined subscription payment, an instance's database container down,
-  disabled crons, a failed backup archive. The new level, between "All"
-  and "Failures only", sends failed jobs and every alert, critical and
-  warning, and the daily digest follows it. Existing users keep their
-  level and "Failures only" stays the default. The selector names what
-  each level covers, and its labels are now translated: they sat inside
-  a template expression, where no string is.
+  setting for jobs and alerts alike, and "Failures only", the default, let
+  through critical alerts and nothing else: a warning reached no email,
+  Telegram, webhook or digest, only the panel, and most close on their own
+  before anyone opens it. They went unseen — an instance's database
+  container down, disabled crons, a failed backup archive. The new level,
+  between "All" and "Failures only", sends failed jobs and every alert,
+  critical and warning, and the daily digest follows it. Existing users keep
+  their level and "Failures only" stays the default. The selector names what
+  each level covers, and its labels are now translated: they sat inside a
+  template expression, where no string is.
 
 ### Fixed
 
 - **A warning that turns critical while open is announced again.**
   Notifications went out when an alert was created, so an open warning
-  refreshed as critical — a paying tenant joining the queue for a host,
-  or a metric rule raised to critical — reached nobody whose level had
+  refreshed as critical — a metric rule raised to critical, say —
+  reached nobody whose level had
   filtered out the warning. Refreshing at the same level, or stepping
   down, still sends nothing.
 - **A resolution notice reaches whoever was paged.** An alert that turned
@@ -2656,7 +2629,7 @@ with an older core — publish this core first.
 ### Changed
 
 - **A stopped container is an outage on the second probe, not the first.**
-  A deploy, a rebuild or a tenant waking up restarts odoo for seconds,
+  A deploy, a rebuild or an instance waking up restarts odoo for seconds,
   and a health probe landing inside that window mailed the customer a
   critical "Container 'odoo' is not running" that the next probe
   resolved. The same for the companion containers and for the SSH disk
@@ -2710,17 +2683,16 @@ with an older core — publish this core first.
 
 ### Changed
 
-- **One slow answer from the metrics central is not an outage.** A
-  tenant panel reaches its central through a CDN, and on 13 October one
-  edge delivered a query 9 s late while the origin answered in
-  milliseconds: the 10 s read timeout fired, the panel raised the
-  critical "metrics backend unreachable" alert on that single failure
-  and its customer was paged by email, five minutes before the next
-  tick resolved it. `promql_query` now asks once more on a fresh
-  connection after a transport failure or a 5xx (never after a 4xx or
-  a PromQL error, which would answer the same twice), for the rule,
-  liveness and specs crons alike, and the backend alert needs two
-  failed evaluations in a row, about ten minutes.
+- **One slow answer from the metrics central is not an outage.** A panel
+  that reaches its central through a CDN saw one edge deliver a query 9 s
+  late while the origin answered in milliseconds: the 10 s read timeout
+  fired, the panel raised the critical "metrics backend unreachable" alert
+  on that single failure and its operator was paged by email, five minutes
+  before the next tick resolved it. `promql_query` now asks once more on a
+  fresh connection after a transport failure or a 5xx (never after a 4xx or
+  a PromQL error, which would answer the same twice), for the rule, liveness
+  and specs crons alike, and the backend alert needs two failed evaluations
+  in a row, about ten minutes.
 - **Alert mails say which panel sent them.** Every panel of a fleet
   mails the same operator mailbox with an identical subject and a
   relative log link that opens nothing. The subject now carries the
@@ -2728,8 +2700,8 @@ with an older core — publish this core first.
   …`), the body names it, and the log links are absolute, as the
   Telegram and webhook ones already were.
 - **Alert mails show the message and the names as text.** The body
-  interpolated them raw; now that a provider alert crosses from a
-  customer's panel to the master carrying names the customer chose, a
+  interpolated them raw; now that a provider alert can cross from one
+  panel to another carrying names someone else chose, a
   link forged into an instance name would have been live in an
   operator's mail. Escaped, for local producers too.
 
@@ -2843,9 +2815,8 @@ with an older core — publish this core first.
   ``cloud.host._shipped_inverseproxy_yaml`` joins
   ``_shipped_traefik_yml``: Full Setup uploads what the host renders, so
   a module that adds to either file extends the method instead of
-  rewriting the uploaded file after core. That rewrite is how the SaaS
-  layer's Full Setup dropped the CDN's trusted ranges from every host it
-  set up behind the CDN.
+  rewriting the uploaded file after core. Such a rewrite after core had
+  dropped the CDN's trusted ranges from hosts set up behind the CDN.
 
 ## [1.0.171] — 2026-10-11
 
@@ -2873,7 +2844,7 @@ with an older core — publish this core first.
   logs) stayed lit for ever. Its host's own alerts are left alone.
 - **An archived instance no longer shows its last health check.** Its
   services and status are dropped when it is archived: nothing checks
-  it any more, so a deleted tenant's instance showed its database and
+  it any more, so a deleted instance showed its database and
   mail relay in green, and "error", after its containers had been
   removed. A migration clears the instances archived before.
 
@@ -2899,8 +2870,9 @@ with an older core — publish this core first.
 
 - **An instance under a long domain deploys.** doodba names the odoo
   container after the instance's domain, and Docker refuses a hostname
-  over 64 bytes, so a production on a customer's own server
-  (`<instance>.vps.<tenant>.<zone>`) stopped at "Initialize database".
+  over 64 bytes, so a production under a long domain
+  (`<instance>.<subdomain>.<customer>.example.com`) stopped at
+  "Initialize database".
   Only the backup container's name was shortened. Every container
   hostname over 64 bytes is now cut at a label boundary, keeping its
   leftmost labels, on deploy and on rebuild, in every environment.
@@ -2987,7 +2959,7 @@ with an older core — publish this core first.
 
 - **No host to pick: a button, not a sentence.** The new-instance form now
   shows a short note and an "Add a host" button that opens Hosts, where a
-  server is added or a VPS ordered. A customer asked how to pick a host
+  server is added. A customer asked how to pick a host
   with the sentence pointing there in front of them.
 
 ## [1.0.162] — 2026-10-09
@@ -2996,8 +2968,8 @@ with an older core — publish this core first.
 
 - **A host still being set up is not enrolled in monitoring.** The
   reconciliation cron took a host as ready for the agents once the panel
-  had its SSH key, which a host bought on demand has a minute after the
-  purchase, long before Full Setup installs Docker. It queued the agents
+  had its SSH key, which a new host can have minutes after it is added,
+  long before Full Setup installs Docker. It queued the agents
   beside the hardening, and they failed on a missing `docker`. The cron
   now waits for Full Setup to have run, which itself queues the agents as
   it ends.
@@ -3087,7 +3059,7 @@ with an older core — publish this core first.
 - **The host shell and the container shell start outside devel.** Their
   pages load xterm.js from `static/lib/xterm`, and `.gitignore` ignored
   every `lib/` directory: the library was never committed, so every image
-  built from GitHub (production's manager, every customer's panel) served
+  built from GitHub (every panel deployed from it) served
   a 404 for it and the terminal stayed at "Establishing SSH connection…"
   with `Terminal is not defined`. The three vendored files (xterm 5.3.0,
   xterm-addon-fit 0.8.0, byte-identical to the published packages) are
@@ -3096,7 +3068,7 @@ with an older core — publish this core first.
 
 - **The import dialog lists a public repository's branches without
   credentials.** `/cloud/get_repo_branches` tried the GitHub App and the
-  PAT only, so a panel with neither (every new customer's) answered "No
+  PAT only, so a panel with neither (every new one) answered "No
   GitHub credentials configured ... to access private repositories" for a
   public repository, while the import itself reads public repositories
   anonymously. It now tries GitHub's anonymous API last; a private
@@ -3134,8 +3106,8 @@ with an older core — publish this core first.
   own live region, an error as an alert that a screen reader announces
   at once, everything else as a status.
 - **A failed job's notice says on what and why, and opens its jobs.**
-  "Provision VPS failed — check the job log" becomes "Provision VPS on
-  vps-01 failed: no stock for cx23 in hel1", with the same one-line
+  "Full Setup failed — check the job log" becomes "Full Setup on host-01
+  failed: port 443 is already in use", with the same one-line
   excerpt the failed-job alert shows, and a **View** button that opens
   the job history of that instance or host. `/cloud/get_job_brief`
   returns the target and the excerpt for it; who gets an answer at all
@@ -3165,7 +3137,7 @@ with an older core — publish this core first.
   answers, the panel and every new agent are pointed at the name, and the
   Grafana base URL too if it was empty. With the name empty, a central
   next to its panel, the compose file and the URLs written are exactly
-  as before: production's central and its hand-written gateway do not
+  as before: a central already running next to its panel does not
   change. `docs/observability-operations.md` describes moving a central
   this way.
 
@@ -3203,8 +3175,8 @@ with an older core — publish this core first.
   declares the same middlewares on Odoo, with the template's names and
   values, so the routes come back while the mail catcher stays off
   Traefik. Production declares them on Odoo already and is unchanged.
-  Verified against Traefik v2.11 with the labels of the first staging
-  in production: 404 before, routed to Odoo after, and `/smtpfake/`
+  Verified against Traefik v2.11 with the labels of a real staging:
+  404 before, routed to Odoo after, and `/smtpfake/`
   still does not reach the mailbox.
 
 ## [1.0.150] — 2026-10-03
@@ -3216,8 +3188,8 @@ with an older core — publish this core first.
   published on the gateway of the project's network, which a staging
   cannot reach: its compose file makes that network `internal`, and
   Docker drops what leaves an internal bridge. Doodba then waits for
-  its database with no deadline, so the first staging rebuild in
-  production hung for good instead of failing. The throwaway database
+  its database with no deadline, so a staging rebuild hung for good
+  instead of failing. The throwaway database
   now runs on a network of its own, which the boot container joins —
   the same path for every instance, production included, and still
   never an endpoint on the project's network (2026-08-13). Verified end
@@ -3249,7 +3221,7 @@ with an older core — publish this core first.
   transaction, after the job's hooks had already written and committed
   that same row on cursors of their own, so the job lost a
   serialization race at the very end and queue_job ran it again from
-  the start. The first staging created in production hit it: the
+  the start. A new staging hit it: the
   deploy succeeded, ran a second time — tearing the fresh staging down
   and rebuilding it — and then failed on `deployed → deployed`, which
   cancelled the restore of production's data. A rebuild or a restore
@@ -3282,7 +3254,7 @@ with an older core — publish this core first.
   that host — so the decision is visible without reading code. A domain
   set to *Existing certificate* on a host that holds none — no default
   certificate and none declared by hand in its `config.yml` — stops the
-  deploy, rebuild or warm claim before anything reaches the host; a
+  deploy or rebuild before anything reaches the host; a
   default certificate that does not cover the name is warned about.
   RB-12 is rewritten around the Traefik tab.
 
@@ -3312,12 +3284,12 @@ with an older core — publish this core first.
   form-row style that sizes a row's field
   to 100% reached every control nested inside the row and outweighed
   their own rules. It now styles only the row's own caption and field,
-  so controls that belong to a component keep their own look: the
-  warm-pool target stepper no longer stretches, a long SearchSelect
+  so controls that belong to a component keep their own look: a number
+  stepper no longer stretches, a long SearchSelect
   value no longer runs under its arrow, the tag selector's input no
   longer draws a box inside its box, a stored password shows its green
-  "value set" field again, and the announcement's tenant-state
-  checkboxes read as normal text instead of uppercase captions.
+  "value set" field again, and a group of checkboxes reads as normal
+  text instead of uppercase captions.
 
 ## [1.0.146] — 2026-10-01
 
@@ -3325,8 +3297,8 @@ with an older core — publish this core first.
 
 - **The Fleet tab counts instances in two ways, next to each other.**
   Its only instance card, *Instances observed*, counted instances with
-  any container up. Since 1.0.145 a Free tenant asleep stops all its
-  containers, so the card dropped to the few instances awake and read
+  any container up. An instance put to sleep, as a layer can do, stops
+  all its containers, so the card dropped to the few instances awake and read
   as if the rest had vanished. It is replaced by *Instances deployed*
   (every instance installed on your hosts, awake or asleep, from the
   disk usage each host reports per instance) and *Instances running*
@@ -3337,17 +3309,15 @@ with an older core — publish this core first.
 
 ### Fixed
 
-- **Deleting an instance with no backups really removes it from the
-  host.** The delete clears the instance's backups first and stops if
-  that fails, so the backups are never stranded. "Nothing to clear"
-  (exit 10) was meant to let the teardown go on, but it was only
-  forgiven after the step had already stopped the run: the containers,
-  volumes and directory stayed on the host while the job ended `done`,
-  said "removed from host" and dropped the record. The purge started
-  `db` and `smtp` for its own run, so they stayed up too — production
-  had nine such stacks from the warm spares recycled on 2026-09-29,
-  using ~1 GB of memory nobody could see. "Nothing to clear" no longer
-  stops the run.
+- **Deleting an instance with no backups really removes it from the host.**
+  The delete clears the instance's backups first and stops if that fails, so
+  the backups are never stranded. "Nothing to clear" (exit 10) was meant to
+  let the teardown go on, but it was only forgiven after the step had
+  already stopped the run: the containers, volumes and directory stayed on
+  the host while the job ended `done`, said "removed from host" and dropped
+  the record. The purge started `db` and `smtp` for its own run, so they
+  stayed up too — one host was left with nine such stacks using ~1 GB of
+  memory nobody could see. "Nothing to clear" no longer stops the run.
 - **A job that skipped steps can no longer report success.** Whatever
   an executor's `parse_results` forgives, a run in which a step cut the
   remaining ones off now fails and says which steps never ran. Retries
@@ -3358,7 +3328,7 @@ with an older core — publish this core first.
 ### Changed
 
 - **The Monitoring picker says which instance it is.** It showed each
-  instance by its compose name — `ic-tenant-034a549f`, or a dozen
+  instance by its compose name — `acme-034a549f`, or a dozen
   `production` — which is what Grafana filters on and meant nothing on
   its own. It now shows `project / instance` (a layer above can name its
   instances better), followed by `— Asleep` or `— Stopped` when the
@@ -3392,11 +3362,11 @@ with an older core — publish this core first.
 - **Finished queue jobs are cleaned up again, and cloud jobs keep their
   outcome when they are.** queue_job's autovacuum only deletes jobs on
   channels that have a record, and `root.user` and `root.bg` — where
-  cloud jobs run — had none: production had kept 184,516 finished jobs
+  cloud jobs run — had none: a panel had kept 184,516 finished jobs
   since June. Both channels now ship as data. Cleaning them up would
   have wiped history: `cloud.job.state` and `date_done` are stored
   related fields on the queue job, and deleting it recomputed them empty
-  (26 production jobs already showed that). Deleting a queue job now
+  (some jobs already showed that). Deleting a queue job now
   cuts the link first, so a cloud job keeps the last state it reached
   for the whole 180-day timeline. `cloud_job.queue_job_id` is indexed:
   each deletion nulled it with a full scan of `cloud_job` (200 deletions
@@ -3428,15 +3398,14 @@ with an older core — publish this core first.
   `cryptography` 48.0.1 or later while `requirements.txt` still pinned
   46.0.7: pip
   could not resolve the file and every new instance that took it failed
-  its image build. The pool of spare tenant instances could not refill
-  from then on, which went unnoticed until the first signup in two
-  weeks consumed a spare. `cryptography` is now 50.0.1, with
+  its image build. `cryptography` is now 50.0.1, with
   `pyOpenSSL` 26.4.0 alongside: the release the base image ships
   crashes Odoo's `base` import against `cryptography` 49 and later. It
   is the pair the panel image already runs. Instances whose repository
   is pinned keep the dependencies they were built with.
-- **The wait for an instance's public URL gets past the CDN.** Tenant
-  hostnames answer every `GET` from a non-browser with a challenge page,
+- **The wait for an instance's public URL gets past the CDN.** A
+  hostname behind a CDN that challenges bots answers every `GET` from a
+  non-browser with a challenge page,
   so `wait_public_url.sh` never saw the instance behind its
   `/web/health` probe and always timed out. It now asks Odoo over a
   `POST` JSON-RPC call to `/web/webclient/version_info`, which the CDN
@@ -3546,8 +3515,8 @@ with an older core — publish this core first.
   credential, the operator's and Grafana's admin password in the job's
   asynchronous phase, whose writes the runner drops (`cloud.job.execute`
   ends with `env.clear()`). Measured in devel: all three were generated,
-  handed to the playbook and lost. Production already had them, so
-  nothing bit there; on a new install the panel's own account would
+  handed to the playbook and lost. A panel whose central already had them
+  saw nothing; on a new install the panel's own account would
   never have been saved (no host enrolled, and a critical
   `metrics_backend_unreachable` with a healthy central), purges would
   never have been enabled, and Grafana's password would have rotated on
@@ -3641,12 +3610,11 @@ with an older core — publish this core first.
   agents' directory, which held this panel's metrics credential in
   clear. Before, a BYOH server removed from the panel kept pushing for
   ever and would have recreated every series deleted for it.
-- **Grafana organisations of accounts that no longer exist are
-  deleted.** They were created and never removed — seven were deleted by
-  hand on 2026-09-20. The central deployment and the account sync now
-  converge against the whole account list; only organisations named like
-  an account are candidates, never the default one, and an empty list
-  deletes nothing.
+- **Grafana organisations of accounts that no longer exist are deleted.**
+  They were created and never removed. The central deployment and the
+  account sync now converge against the whole account list; only
+  organisations named like an account are candidates, never the default one,
+  and an empty list deletes nothing.
 
 ### Fixed
 
@@ -3720,8 +3688,8 @@ with an older core — publish this core first.
   container and Docker hands it a fresh netns with the default NAT
   route: the injection is gone, the staging has free egress, and the
   sidecar stays `Up` because its last line is `tail -f /dev/null`. Every
-  light green. That is the 2026-08-06 incident on this panel — three and
-  a half hours sending Telegram to the live channel — which is why
+  light green. A staging once spent three and a half hours sending
+  Telegram messages to a live channel that way, which is why
   `devel.yaml` has carried a route check ever since. The override now
   ships the same check to every staging, and `expected_services()` names
   both sidecars so the health probe grades them, the daily prune cannot
@@ -3804,13 +3772,12 @@ with an older core — publish this core first.
 
 ### Fixed
 
-- **Fields are as wide as their form again.** The same screen used to
-  show a select at 575px, a number at 120px and a textarea at 100%, and
-  none of them was the width of the form. It reads as carelessness and
-  it is the first thing a partner sees. Four rules were fighting, and
-  all four are gone: the 460px cap every `.rl-frow` carried, the
-  hand-set `width:120px` on 32 number and text fields across core and
-  the SaaS manager, seven `.rl-fgrid` two-column grids that held a
+- **Fields are as wide as their form again.** The same screen used to show a
+  select at 575px, a number at 120px and a textarea at 100%, and none of
+  them was the width of the form. It reads as carelessness and it is the
+  first thing a partner sees. Four rules were fighting, and all four are
+  gone: the 460px cap every `.rl-frow` carried, the hand-set `width:120px`
+  on number and text fields, seven `.rl-fgrid` two-column grids that held a
   single field and pinned it to the left half, and a `width:100%` that
   reached the checkboxes too.
 
@@ -3822,8 +3789,9 @@ with an older core — publish this core first.
 
 ### Added
 
-- A structural guard over every SPA template in core, the SaaS manager
-  and the tenant panel: no form control may carry an inline width, and
+- A structural guard over every SPA template in core, which a module
+  that extends the panel can run too: no form control may carry an
+  inline width, and
   no two-column grid may wrap a single field. Layout regressions that
   need a screenshot to notice are layout regressions nobody notices.
 
@@ -3831,9 +3799,6 @@ with an older core — publish this core first.
 
 - `.rl-frow-inline` replaces the ad-hoc flex style on the one row that
   pairs a field with a button ("Purge old logs now").
-- Seven `style="max-width:none"` overrides in the SaaS manager existed
-  only to defeat the 460px cap. With the cap gone they said nothing, so
-  they went with it.
 - No cap was put back at the form level. If the Rates tab reads badly
   with fifteen numbers across 1170px, the answer is one
   `max-inline-size` on the form — never per field, which is how the
@@ -3846,9 +3811,8 @@ with an older core — publish this core first.
 ### Added
 
 - **A staging nobody uses is deleted, after two warnings and never
-  without them.** Stagings stopped counting against the plan allowance
-  in the previous release, which removed the only thing that ever
-  pushed anyone to delete one. They are not free: they sit on the
+  without them.** Nothing pushed anyone to delete a staging, and they
+  are not free: they sit on the
   customer's own host, they generate probes and series, and each one
   holds a copy of production data nobody remembers is there. A staging
   with no activity for `staging_autopurge_days` (default 90, `0`
@@ -4047,21 +4011,19 @@ stay dirty on purpose — their compose genuinely changed.
   --services` straight into `grep` with stderr to `/dev/null`, so a read
   that failed looked exactly like a list without a `backup` service: exit
   20, the `backup_purge_service_missing` alert, and "rebuild the instance,
-  then delete it again" as advice. Production, 2026-09-19: "Recycle all"
-  on an auto-provisioned host fired one `delete_instance` per warm in the
-  same millisecond; one of them saw the read die in under 110 ms (its
+  then delete it again" as advice. Several deletes started in the same
+  millisecond on one host; one of them saw the read die in under 110 ms (its
   sibling's took ~500 ms and succeeded) and was reported as drift — for a
-  compose the same command had listed correctly nine hours earlier and
-  listed correctly again eleven minutes later, when the recycle cron
-  retried. The read now goes through `ic_compose_services` in
-  `lib/common.sh`: it retries once after two seconds and says so in the
-  job log, and when both attempts fail the scripts exit **23** with
-  docker's own error in the log — the new
+  compose the same command had listed correctly hours earlier and listed
+  correctly again minutes later, when the delete was retried. The read now
+  goes through `ic_compose_services` in `lib/common.sh`: it retries once
+  after two seconds and says so in the job log, and when both attempts fail
+  the scripts exit **23** with docker's own error in the log — the new
   `backup_purge_compose_unreadable` / `backup_archive_compose_unreadable`
-  alerts, whose advice is "try again", not "rebuild". Exit 20 now means
-  what it says: the command answered, and the answer had no `backup`
-  service. The retry covers the read only; a transient during the purge
-  itself still lands as 22 and needs its own retry.
+  alerts, whose advice is "try again", not "rebuild". Exit 20 now means what
+  it says: the command answered, and the answer had no `backup` service. The
+  retry covers the read only; a transient during the purge itself still
+  lands as 22 and needs its own retry.
 
 - **Every successful `delete_instance` ran twice, and the second run
   queued a second `install_observability`.** The teardown's `on_success`
@@ -4099,40 +4061,37 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Changed
 
-- **The webhook source allowlist goes back to the SaaS layer, and the
-  panel-route settings go with it.** What the allowlist protects is
-  decided by walking a host's deployed instances and treating each one as
-  a panel that answers `/cloud/github/webhook`. That is true of the
-  platform, where every instance a host serves *is* a panel, and of
-  nothing else: a plain installation serves its customers' Odoo projects,
-  which never answer that path, and its own panel sits behind a proxy
-  core neither deploys nor describes. The four settings 1.0.104 added to
-  work around that — host, hostname, backend URL, wildcard — fit one
-  topology only, were shown to tenant panels where they could protect
-  nothing, and on the platform itself were shadowed by the instance walk
-  (the manager is one of its catch-all's instances, so the route built
-  from the fields was rendered and then overwritten by the same
-  hostname's instance route). Core keeps what every installation uses:
-  the trusted-proxy ranges, the record of what each host's Traefik was
-  last given, and the alert when deliveries go quiet. The SaaS module's
-  migration re-homes the job type, the cron and the stored ranges before
-  the orphan cleanup at the end of the upgrade would delete them, and
-  the rendered documents are unchanged, so no host is republished.
+- **The webhook source allowlist leaves core, and the panel-route
+  settings go with it.** What the allowlist protects is decided by
+  walking a host's deployed instances and treating each one as a panel
+  that answers `/cloud/github/webhook`. That holds only where every
+  instance a host serves *is* a panel: a plain installation serves its
+  customers' Odoo projects, which never answer that path, and its own
+  panel sits behind a proxy core neither deploys nor describes. The four
+  settings 1.0.104 added to work around that — host, hostname, backend
+  URL, wildcard — fit one topology only, and where the instance walk
+  applied they were shadowed by it (a panel that is one of a host's
+  instances had the route built from the fields rendered and then
+  overwritten by the same hostname's instance route). Core keeps what
+  every installation uses: the trusted-proxy ranges, the record of what
+  each host's Traefik was last given, and the alert when deliveries go
+  quiet. A module that still needs the allowlist re-homes the job type,
+  the cron and the stored ranges in its own migration, before the orphan
+  cleanup at the end of the upgrade would delete them.
 
 ### Removed
 
 - `cloud.settings.github_webhook_allowlist`, `panel_host_id`,
   `panel_hostname`, `panel_service_url`, `panel_tls_domain`;
-  `cloud.host.github_webhook_edge_hash`; the `push_github_webhook_edge`
-  job type; the *GitHub: Refresh the Webhook Source Allowlist* cron; the
-  *Webhook Source Allowlist* section of Settings → GitHub. The upgrade
-  drops their columns by itself; where the SaaS module is installed it
-  declares the switch and the digest again, so those two keep their
-  values there. The job type is the exception: `cloud.job.job_type_id`
-  restricts deletes, so on a database holding any job of that type the
-  end-of-upgrade cleanup would abort the whole upgrade. A pre-migrate
-  flags its identifier `noupdate` while jobs still use it, which keeps
-  it out of the cleanup; unused, it is deleted as before.
+  `cloud.host.github_webhook_edge_hash`; the `push_github_webhook_edge` job
+  type; the *GitHub: Refresh the Webhook Source Allowlist* cron; the
+  *Webhook Source Allowlist* section of Settings → GitHub. The upgrade drops
+  their columns by itself; where a module declares the switch and the digest
+  again, those two keep their values. The job type is the exception:
+  `cloud.job.job_type_id` restricts deletes, so on a database holding any
+  job of that type the end-of-upgrade cleanup would abort the whole upgrade.
+  A pre-migrate flags its identifier `noupdate` while jobs still use it,
+  which keeps it out of the cleanup; unused, it is deleted as before.
 
 ## [1.0.124] — 2026-09-15
 
@@ -4140,10 +4099,10 @@ stay dirty on purpose — their compose genuinely changed.
 
 - **1.0.123 could not be deployed: its new test errored in the boot test.**
   `tests/test_metrics_gateway_frameguard.py` reads the metrics gateway
-  fragment from the repository's `docs/`, and the production image has no
-  `docs/`: the build keeps only this repository's addons. Devel and CI both
-  use the full checkout, so neither saw it; the deploy's boot test did, and
-  refused the release before the downtime window with production untouched.
+  fragment from the repository's `docs/`, and an image built from the
+  addons alone has no `docs/`. Devel and CI both use the full checkout, so
+  neither saw it; a deploy's boot test on such an image did, and refused
+  the release before anything was touched.
   The tests now skip when `docs/` is absent and still fail when `docs/` is
   there but the fragment is not.
 
@@ -4151,34 +4110,35 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **Tenant panels can show their dashboards again.** Since 8-sep every
-  tenant's Monitoring page and instance Metrics tab showed "refused to
-  connect" where the charts belong. Cloud 1 had gained a
-  `frame-ancestors` list through `cloud.host.frame_ancestors`, and that
-  field is an https-entrypoint default: it reaches every router on the
-  host, Grafana included. The list named the operator's panel only, and a
-  tenant panel frames Grafana from its own origin. Nothing reported it,
-  because a frame blocked by CSP still fires `load`.
+- **Panels on other origins can show their dashboards again.** A host's
+  `cloud.host.frame_ancestors` is an https-entrypoint default: it reaches
+  every router on the host, Grafana included. On the host of a published
+  central, a list that named the operator's panel only left every panel
+  that frames Grafana from its own origin with "refused to connect"
+  where the charts of its Monitoring page and instance Metrics tab
+  belong. Nothing reported it, because a frame blocked by CSP still
+  fires `load`.
 
   Measured on Traefik v2.11 before choosing the fix: an entrypoint header
   overrides whatever a router or the application sets. So no single list
-  on the entrypoint could keep the panel strict and let tenants in. The
-  host field goes back to empty on Cloud 1 and each router carries its
+  on the entrypoint can keep the panel strict and let other panels in.
+  The host field stays empty on such a host and each router carries its
   own policy. The metrics gateway fragment gives Grafana's router
-  `frame-ancestors 'self' https://*.incubacloud.io`, so a tenant created
-  tomorrow works without re-shipping anything. The panel's own routers,
-  in the panel's deployment rather than here, keep `'self'` and gain
+  `frame-ancestors 'self'` and the origins of the panels that frame it —
+  a wildcard over their zone (`https://*.example.com`) lets a new one in
+  without re-shipping anything. The panel's own routers, in the panel's
+  deployment rather than here, keep `'self'` and gain
   `X-Frame-Options: SAMEORIGIN`.
 
-  The price of the wildcard is written next to it: any site in the zone,
-  a tenant's own included, can frame Grafana signed in as whoever views
-  it. Tenant users are Viewers there. Listing tenants one by one would
-  not avoid it, since each would be on the list.
+  The price of the wildcard is written next to it: any site in the zone
+  can frame Grafana signed in as whoever views it. The users of those
+  panels are Viewers there. Listing the panels one by one would not
+  avoid it, since each would be on the list.
 
   `tests/test_metrics_gateway_frameguard.py` pins the fragment, the
-  help of `frame_ancestors` now says when to leave it empty, and RB-16
-  gains the step that would have found this in a minute: look at the
-  frame, not at the page holding it.
+  help of `frame_ancestors` now says when to leave it empty, and the
+  runbook for missing dashboards gains the step that would have found
+  this in a minute: look at the frame, not at the page holding it.
 
 ## [1.0.122] — 2026-09-10
 
@@ -4205,12 +4165,12 @@ stay dirty on purpose — their compose genuinely changed.
 
   The guard reuses Odoo's own `VERSION_RE`, `adapt_version` and
   `parse_version`; only `convert_version` is reproduced, because it is
-  a closure inside `migrate_module`. `incubacloud_saas_manager` carries
-  its own copy so each repository guards its modules without its CI
-  depending on the other.
+  a closure inside `migrate_module`. A repository of modules that extend
+  the panel can carry its own copy, so its CI does not depend on this
+  one.
 
-  All 28 folders here and all 57 in saas pass today, so this is a
-  ratchet rather than a fix.
+  All 28 folders here pass today, so this is a ratchet rather than a
+  fix.
 
 ---
 
@@ -4275,7 +4235,7 @@ stay dirty on purpose — their compose genuinely changed.
   middleware and referenced from the https entrypoint, which is the only place
   a response header can be added once and reach every copier-generated router.
 
-  **Empty by default, and that is the point.** A tenant's own site may
+  **Empty by default, and that is the point.** An instance's own site may
   legitimately be embedded by its customers, and this control reaches every
   router on the host, so the capability ships here and the policy belongs to
   whoever runs the host.
@@ -4319,64 +4279,59 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **Every instance's mail container announced its own updates, under the same
-  name.** docker-mailserver ships an `update-check` service that asks GitHub
-  for the latest release and mails postmaster once per container start. Which
-  tag an instance runs is the panel's call (`smtp_relay_version`), so the
-  announcement is advice the container cannot act on — and it arrived at fleet
-  scale: copier renders the hostname as `smtp.<relay domain>`, so all twelve
-  instances relaying through one domain reported themselves as the same host,
-  and a free tenant restarts on every Sablier wake, turning "once per start"
-  into dozens of identical mails a day at the postmaster address. The compose
-  override the panel writes now sets `ENABLE_UPDATE_CHECK=0` on the `smtp`
-  service. It goes there rather than in `.docker/smtp.env` or the compose
-  files because `copier update` regenerates all three on every rebuild, which
-  would drop it. The switch lands on each instance at its next deploy or
-  rebuild.
+- **Every instance's mail container announced its own updates, under the
+  same name.** docker-mailserver ships an `update-check` service that asks
+  GitHub for the latest release and mails postmaster once per container
+  start. Which tag an instance runs is the panel's call
+  (`smtp_relay_version`), so the announcement is advice the container cannot
+  act on — and it arrived at fleet scale: copier renders the hostname as
+  `smtp.<relay domain>`, so all twelve instances relaying through one domain
+  reported themselves as the same host, and an instance put to sleep
+  restarts on every wake, turning "once per start" into dozens of identical
+  mails a day at the postmaster address. The compose override the panel
+  writes now sets `ENABLE_UPDATE_CHECK=0` on the `smtp` service. It goes
+  there rather than in `.docker/smtp.env` or the compose files because
+  `copier update` regenerates all three on every rebuild, which would drop
+  it. The switch lands on each instance at its next deploy or rebuild.
 
 ## [1.0.116] — 2026-09-07
 
 ### Fixed
 
-- **A brand-new tenant opened on months of somebody else's history.** A warm
-  spare keeps its `cloud.instance` record when a tenant claims it, so the job
-  list of a one-hour-old tenant began with the weeks of pool rebuilds and
-  health checks logged before the handover — 107 foreign rows ahead of its own
-  9, with nothing marking the boundary. `cloud.instance._job_history_floor()`
-  is a new hook (`False` in core: an instance normally owns its whole history)
-  that `cloud.job` now honours in both the instance timeline and the history
-  page. Jobs older than the floor are hidden, counted, and one click away —
-  they stay in the database, because the machine is the same machine and those
-  failures still explain today's.
-- **The warm spare built during a signup was stamped with the customer.** The
-  pool refills eagerly from inside the signup request so the next customer does
-  not wait for the cron, and `sudo()` raises privileges without changing
-  `env.uid` — so the project, instance and build job of the *next* customer's
-  spare all carried the current one's user. Four weeks later that spare was
-  handed to somebody else, who found a stranger listed as its author. Warm
-  builds now run as the platform's own bot, the same user the pool crons
-  already use. `res.users._get_cron_bot()` exposes it (XML-id first, login
-  fallback, empty rather than raising).
-- **The same bug, twice more, found by auditing every platform table in
-  production.** `sudo()` raises privileges but leaves `env.uid` alone, so
-  any work the platform does inside somebody else's request is authored by
-  them — and that author reaches `queue_job.user_id`, meaning the executor
-  *runs* as them and every row it writes inherits it.
-  - The **GitHub webhook** is `auth="public"`, so a push to core produced
-    348 fleet-rebuild jobs, 357 `queue_job` rows and 192,523 log chunks all
-    authored by the public user. Elevated in the controller and again in
+- **An instance handed over opened on months of somebody else's history.** A
+  pre-built instance a layer hands to someone keeps its `cloud.instance`
+  record, so the job list of an instance an hour old began with weeks of
+  rebuilds and health checks logged before the handover — 107 foreign rows
+  ahead of its own 9, with nothing marking the boundary.
+  `cloud.instance._job_history_floor()` is a new hook (`False` in core: an
+  instance normally owns its whole history) that `cloud.job` now honours in
+  both the instance timeline and the history page. Jobs older than the floor
+  are hidden, counted, and one click away — they stay in the database,
+  because the machine is the same machine and those failures still explain
+  today's.
+- **Work a layer does for the platform inside a user's request is not that
+  user's.** `sudo()` raises privileges without changing `env.uid`, so an
+  instance a layer builds ahead of time from inside one user's request
+  carried that user on its project, instance and build job, and whoever
+  later received it found a stranger listed as its author. Such work runs
+  as the platform's own bot, the same user the crons use:
+  `res.users._get_cron_bot()` exposes it (XML-id first, login fallback,
+  empty rather than raising).
+- **The same bug, twice more, found by auditing every platform table.**
+  `sudo()` raises privileges but leaves `env.uid` alone, so any work the
+  platform does inside somebody else's request is authored by them — and
+  that author reaches `queue_job.user_id`, meaning the executor *runs* as
+  them and every row it writes inherits it.
+  - The **GitHub webhook** is `auth="public"`, so a push that rebuilt many
+    instances produced hundreds of rebuild jobs and `queue_job` rows and
+    tens of thousands of log chunks, all authored by the public user.
+    Elevated in the controller and again in
     `cloud.github.event._dispatch`, so a replay or a shell reprocessing a
     stuck event is covered too.
   - **Alerts** inherited whichever producer tripped them: 16 `job_failed`
     from the public user, and a customer listed as the author of a
     `metrics_acl_sync_failed` on infrastructure they never saw. Elevating
     inside `raise_alert`/`resolve_alert` covers all 19 call sites at once.
-  - The **tenant→master API** (`/saas/*`, token-authenticated so `env.uid`
-    is the public user) now elevates in `_resolve_tenant`; its create sites
-    go through `tenant.env`. The tenant is still named by `tenant_id` on
-    every row — what changes is who *acted*.
-  - The **tenant OIDC client**, a platform credential, was authored by the
-    tenant it authenticates (14 rows).
   `as_platform()` is the single helper for all of this: elevate once at the
   entry point and the whole chain below inherits it. A structural test
   (`test_platform_actor_invariant`) now fails the build if an
@@ -4418,20 +4373,19 @@ stay dirty on purpose — their compose genuinely changed.
 
 - **The job that retires stored certificates did not check that it had.** The write reports the exit status of a shell redirection, which succeeds over a store that ends up truncated and says nothing about whether the proxy came back — so the job could report success while the host went on serving exactly the certificates it was told to stop serving, which is the silence the retirement exists to end. It now reads the store back once the proxy is up and fails the job if a retired name is still there, if the document does not parse, or if it cannot be read at all. Reading it through the container also answers a question nothing asked before: a container that is not running cannot be read from, so a restart that did not take is now a failure rather than a green step.
 
-- **The scheduled-action watchdog cried wolf on every deploy.** It measured how long a cron had been stopped from `lastcall` — when it last *ran* — so a cron that runs once a day was six hours stale while working perfectly, and the deploy pipeline pausing it for a few minutes was enough to report it. Measured on 6 September: one alert naming twenty-nine scheduled actions, raised mid-window, with the fleet healthy. Noise on this particular alert is expensive, because it is the only thing that notices work silently not happening. It now measures against `nextcall` — when the cron was due to run next — which a pause leaves untouched: a daily cron paused during a deploy window is still hours from due and says nothing, while one left switched off falls behind and speaks up. Crons that have never run stay excluded, as before.
+- **The scheduled-action watchdog cried wolf on every deploy.** It measured how long a cron had been stopped from `lastcall` — when it last *ran* — so a cron that runs once a day was six hours stale while working perfectly, and the deploy pipeline pausing it for a few minutes was enough to report it. Measured: one alert naming twenty-nine scheduled actions, raised mid-window, with the fleet healthy. Noise on this particular alert is expensive, because it is the only thing that notices work silently not happening. It now measures against `nextcall` — when the cron was due to run next — which a pause leaves untouched: a daily cron paused during a deploy window is still hours from due and says nothing, while one left switched off falls behind and speaks up. Crons that have never run stay excluded, as before.
 
 
 ### Removed
 
 - **The hourly watchdog for switched-off scheduled actions, and its
   `crons_disabled` alert.** It existed to notice the one thing a killed
-  `deploy-update` could leave behind: our crons paused, and nobody left to
-  switch them back on. That failure is now impossible rather than detected:
-  before pausing anything, the pipeline arms a timer on the host itself, and
-  the host switches them back on if the run never gets to. A detector for a
-  hazard our own tooling created belonged in the tooling — not in every
-  database this module is installed in, where it ran every hour on each
-  tenant watching thirty crons that nothing ever pauses. The alert history
+  deploy could leave behind: the panel's crons paused, and nobody left to
+  switch them back on. That is the deploy tooling's to prevent — it can arm
+  a timer on the host before pausing anything, so the host switches them
+  back on if the run never gets to — not a detector in every database this
+  module is installed in, where it ran every hour watching thirty crons that
+  nothing ever pauses. The alert history
   keeps the rows it raised; nothing raises that code any more.
 
 ---
@@ -4440,7 +4394,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **The watchdog's own tests read the manager's history as their own.** `cloud.alert` rows for `crons_disabled` survive in any database the check has run on, and what a leftover does depends on its state: an *active* one is reused rather than added, so "it raised an alert" finds a row the test never caused; a *dismissed* one is not reused, so a second row appears and "exactly one alert" counts two. Development databases carry the first, the manager's own carried the second, and between them every assertion in the suite was resting on whichever the database happened to hold. Caught by the deploy's boot test against a clone of production, where four of them failed at once. The tests now clear those rows in `setUp` rather than filtering around them — the reuse means a leftover changes what the code under test *does*, not merely what the assertions can see.
+- **The watchdog's own tests read a panel's history as their own.** `cloud.alert` rows for `crons_disabled` survive in any database the check has run on, and what a leftover does depends on its state: an *active* one is reused rather than added, so "it raised an alert" finds a row the test never caused; a *dismissed* one is not reused, so a second row appears and "exactly one alert" counts two. Development databases carry the first, a production panel's carried the second, and between them every assertion in the suite was resting on whichever the database happened to hold. Caught by the deploy's boot test against a clone of production, where four of them failed at once. The tests now clear those rows in `setUp` rather than filtering around them — the reuse means a leftover changes what the code under test *does*, not merely what the assertions can see.
 
 ---
 
@@ -4448,7 +4402,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **Handing a host a certificate did not stop it serving the old ones.** Traefik publishes everything in its own ACME store under the default TLS store when it starts, and the handshake picks by server name before any router is consulted — so a name whose router was changed to serve the host's certificate went on being answered with the stored one, indefinitely. Measured on 2.11: an entry in the store wins even when its only router asks for the default, and even when it has no router at all. Six tenants moved behind a CDN were still presenting certificates they can no longer renew, with correct routers, correct labels and nothing in the logs to say so. The two jobs that install the certificate and restart the proxy now retire the entries the host has started serving itself, immediately before the restart. An entry is only retired when *every* name on it is one this host covers and a CDN answers for — a certificate covering a mixture is left alone, because retiring it would take the names still reached directly down to a throwaway. A store that cannot be read, or cannot be parsed, is left exactly as it is: the names on it cannot obtain another certificate from behind a CDN, so losing one is not recoverable.
+- **Handing a host a certificate did not stop it serving the old ones.** Traefik publishes everything in its own ACME store under the default TLS store when it starts, and the handshake picks by server name before any router is consulted — so a name whose router was changed to serve the host's certificate went on being answered with the stored one, indefinitely. Measured on 2.11: an entry in the store wins even when its only router asks for the default, and even when it has no router at all. Six instances moved behind a CDN were still presenting certificates they can no longer renew, with correct routers, correct labels and nothing in the logs to say so. The two jobs that install the certificate and restart the proxy now retire the entries the host has started serving itself, immediately before the restart. An entry is only retired when *every* name on it is one this host covers and a CDN answers for — a certificate covering a mixture is left alone, because retiring it would take the names still reached directly down to a throwaway. A store that cannot be read, or cannot be parsed, is left exactly as it is: the names on it cannot obtain another certificate from behind a CDN, so losing one is not recoverable.
 
 ---
 
@@ -4456,7 +4410,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **A sleeping instance read as running, and everything behind that flag stopped happening.** `running` was derived from "has any container of this instance been seen recently", and an instance put to sleep keeps its database and backup containers up — so the answer was yes all night and the flag never fell. It now asks about the `odoo` container specifically, which is what `running` has always meant and what the SSH probe measures. Measured against production: five free tenants, four of them asleep, all six reported running. Downstream, none of them was ever marked sleeping, and the activity clock behind the 14-day auto-suspend was being refreshed as though somebody had visited. Three fail-safes, not two: a fleet that reports containers but not one `odoo` among them is a broken query far more plausibly than every instance stopping at once, and changes nothing.
+- **A sleeping instance read as running, and everything behind that flag stopped happening.** `running` was derived from "has any container of this instance been seen recently", and an instance put to sleep keeps its database and backup containers up — so the answer was yes all night and the flag never fell. It now asks about the `odoo` container specifically, which is what `running` has always meant and what the SSH probe measures. Measured on six instances, four of them asleep: all six reported running. Downstream, none of them was ever marked sleeping, and a layer's activity clock was being refreshed as though somebody had visited. Three fail-safes, not two: a fleet that reports containers but not one `odoo` among them is a broken query far more plausibly than every instance stopping at once, and changes nothing.
 
 - **The instance card showed one reading printed once per service.** Every service dot was drawn from the single `running` flag, so `db` and `odoo` could never disagree and a stopped companion was invisible. The health probe has always computed the state of each container and threw it away after alerting on it; it is now kept in `service_states` and the card draws each dot from its own reading, falling back to the old behaviour until the first probe lands.
 
@@ -4464,7 +4418,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 - **"Asleep" is now a thing the panel can say.** Being down on purpose and being down are not the same thing to show an operator, and until now both read as "Stopped". Instances answer `_stop_is_expected` — always False here, since base knows of no legitimate reason for a deployed instance to be stopped — and the layer that schedules sleep overrides it.
 
-- **An alert when one of our scheduled actions is switched off and stays off.** A cron that is off raises nothing and queues nothing; the work simply never happens. A deploy pauses these for the length of its window and a run that was killed rather than aborted never resumed them: twenty-three of the manager's twenty-four scheduled actions stayed off for five days, the nightly backup of the free pool's host among them, with nothing to report it. The rule is "has run before, is off now, and has been for longer than a deploy window" — no list of what should be running, which would drift away from what the modules declare.
+- **An alert when one of the panel's scheduled actions is switched off and stays off.** A cron that is off raises nothing and queues nothing; the work simply never happens. A deploy pauses these for the length of its window and a run that was killed rather than aborted never resumed them: twenty-three of a panel's twenty-four scheduled actions stayed off for five days, its nightly backups among them, with nothing to report it. The rule is "has run before, is off now, and has been for longer than a deploy window" — no list of what should be running, which would drift away from what the modules declare.
 
 ---
 
@@ -4496,8 +4450,8 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **Neutralization was aborting, so restored copies stayed armed.** A copy of production restored for development holds the SSH keys that open every host and the tokens that create and destroy servers, and `odoo neutralize` is what removes them. It runs as a single transaction, and this one named `cloud_settings.vps_restore_public_key` — a column removed some time ago. Postgres rejected the statement, the whole script rolled back including Odoo's own half, and the log line saying so scrolled past. Copies believed to be neutralized were fully capable of reaching production, and one did.
-- **Six secrets survived neutralization even when it succeeded.** The list of what to clear is written by hand, so it drifted behind the fields: the host's default TLS key, a job's secret payload, the metrics and Grafana credentials, the OVH API keys, the origin certificate, a tenant's metrics token, the backup request credential buffer, and the host terminal sessions. Restore upload grants are now dropped as well, since they name hosts that the copy must not reach.
+- **Neutralization was aborting, so restored copies stayed armed.** A copy of production restored for development holds the SSH keys that open every host and the tokens of the services the panel uses, and `odoo neutralize` is what removes them. It runs as a single transaction, and this one named `cloud_settings.vps_restore_public_key` — a column removed some time ago. Postgres rejected the statement, the whole script rolled back including Odoo's own half, and the log line saying so scrolled past. Copies believed to be neutralized were fully capable of reaching production, and one did.
+- **Secrets survived neutralization even when it succeeded.** The list of what to clear is written by hand, so it drifted behind the fields: the host's default TLS key, a job's secret payload, the metrics and Grafana credentials, the backup request credential buffer, and the host terminal sessions, among others. Restore upload grants are now dropped as well, since they name hosts that the copy must not reach.
 
 ### Added
 
@@ -4519,7 +4473,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Fixed
 
-- **The proxy ranges reached a host that has no proxy in front of it.** The SaaS policy treated every host the platform operates as one the CDN answers for. That is true of the panel host and false of the hosts serving tenants, whose DNS records are created unproxied on purpose — a fact this repository's own host-protection plan measured in August and this one's changelog stated in the same release that shipped `ipStrategy`. The policy now turns on the host's own flag.
+- **The proxy ranges reached a host that has no proxy in front of it.** A layer's policy treated every host it operates as one the CDN answers for, which is false of a host whose DNS records are created unproxied on purpose — as this changelog stated in the same release that shipped `ipStrategy`. The policy now turns on the host's own flag.
 
 ## [1.0.106] — 2026-09-03
 
@@ -4542,13 +4496,13 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Added
 
-- **The panel can protect its own webhook endpoint.** The allowlist walked a host's deployed instances, which for an installation that is not this platform means it protected the customers' instances — which do not serve the endpoint — and left unprotected the one thing that does: the panel itself, which is not a `cloud.instance` and so was invisible to anything looking for one. Four settings now describe it (host, hostname, backend URL, optional wildcard) and only the named host publishes the router. A layer that already knows the answer fills them in instead of making an operator type them, which is the difference between core being usable alone and core being a component of something else.
+- **The panel can protect its own webhook endpoint.** The allowlist walked a host's deployed instances, which on a plain installation means it protected the customers' instances — which do not serve the endpoint — and left unprotected the one thing that does: the panel itself, which is not a `cloud.instance` and so was invisible to anything looking for one. Four settings now describe it (host, hostname, backend URL, optional wildcard) and only the named host publishes the router. A layer that already knows the answer fills them in instead of making an operator type them, which is the difference between core being usable alone and core being a component of something else.
 - **The host form shows the ranges actually applied, not just the override.** The box on the form is an override; on a host where a policy supplies the list, it is empty by design and said nothing about what was in force. It now sits above a read-only line naming the effective ranges and where they come from, and warns when the host's Traefik is still running the previous list. The direct-access note was reasoning about the box rather than the applied list, which is exactly backwards for the one control that can lock an origin out of its own visitors.
 - **`push_trusted_proxies` is a button on the host.** Applying a proxy change otherwise needed a full setup run, which reinstalls tooling this has nothing to do with. The job also re-anchors the config-drift indicator, but only when the proxy fields are the sole difference — it ships two documents where a full setup ships five, so claiming more would hide a real pending change.
 
 ### Fixed
 
-- **A mistyped range is refused instead of silently dropped.** The read path skips entries it cannot parse, which is right on a request path but meant a typo narrowed who we believe with nothing said about it — the same silent narrowing this whole mechanism exists to prevent. Both the host field and the settings field now reject the write, naming the entries at fault. The docstring claiming the UI already validated has been corrected; it never did.
+- **A mistyped range is refused instead of silently dropped.** The read path skips entries it cannot parse, which is right on a request path but meant a typo narrowed who the panel believes with nothing said about it — the same silent narrowing this whole mechanism exists to prevent. Both the host field and the settings field now reject the write, naming the entries at fault. The docstring claiming the UI already validated has been corrected; it never did.
 
 ## [1.0.103] — 2026-09-03
 
@@ -4560,7 +4514,7 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Added
 
-- **Hosts can declare the proxies in front of them, and core acts on it.** A host now carries `trusted_proxy_ranges`, and a full setup renders them into `entryPoints.forwardedHeaders.trustedIPs` on both entrypoints. That one setting is what separates an `X-Forwarded-For` a client wrote from one our own edge appended: Traefik discards the header on every connection that is not from a declared range. Everything that keys on client identity rests on it — measured against Traefik v2.11, an allowlist reading the forwarded chain without it matches nothing and rejects 100% of traffic. Empty by default, which leaves a host behaving exactly as before.
+- **Hosts can declare the proxies in front of them, and core acts on it.** A host now carries `trusted_proxy_ranges`, and a full setup renders them into `entryPoints.forwardedHeaders.trustedIPs` on both entrypoints. That one setting is what separates an `X-Forwarded-For` a client wrote from one the installation's own edge appended: Traefik discards the header on every connection that is not from a declared range. Everything that keys on client identity rests on it — measured against Traefik v2.11, an allowlist reading the forwarded chain without it matches nothing and rejects 100% of traffic. Empty by default, which leaves a host behaving exactly as before.
 - **The per-source rate limit keys on the visitor, not the edge.** With trusted ranges declared, `ratelimit` gains `sourceCriterion.ipStrategy.depth: 1`, so a CDN edge stops being one bucket shared by everyone behind it. Deliberately not applied without them: measured, a forwarded-chain strategy on a host that answers its visitors directly reads an absent header and Traefik keys every visitor under the same empty value — one bucket for the whole internet, worse than the address-keyed limit it replaced.
 - **`block_direct_access` — refuse traffic that skipped the edge.** Prepends an allowlist middleware to the https entrypoint chain, so a request that did not arrive through a trusted proxy is refused before HSTS, rate-limit accounting or a backend lookup. Off by default, and ignored while no trusted range is set, where it would lock out every visitor the host has. The http entrypoint is left alone: it only redirects, and a redirect leaks nothing.
 - **`push_trusted_proxies` — apply that without a full setup run.** `trustedIPs` is static configuration: Traefik reads it once at start-up, so a change needs the proxy restarted rather than a file drop. The job ships both documents together because they are interlocked — a host whose entrypoint names a middleware its file provider does not define answers 500 on every router it serves.
@@ -4569,14 +4523,14 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Changed
 
-- **The webhook allowlist moved from the SaaS layer into core.** It is a capability of any installation that receives GitHub deliveries, not a property of this platform, so core owns the ranges, the refresh and the executor, and the SaaS layer keeps only the policy: which of *our* hosts get it and what sits in front of them. The migration re-points the external identifiers rather than letting core insert a second `cloud.job.type` with a code the SaaS copy already holds — the unique index would have refused it, and core updates first.
+- **The webhook allowlist is in core.** It is a capability of any installation that receives GitHub deliveries, so core owns the ranges, the refresh and the executor, and a layer on top keeps only the policy: which of its hosts get it and what sits in front of them. The migration re-points the external identifiers of a module that shipped them before, rather than letting core insert a second `cloud.job.type` with a code that module already holds — the unique index would have refused it, and core updates first.
 - **The refresh republishes a host whose routes moved, not only one whose ranges did.** Each host's rendered document is compared against a digest of what it last received, so a host that gained or lost an instance is republished on the next daily run.
 
 ## [1.0.101] — 2026-09-02
 
 ### Added
 
-- **An alert for GitHub webhook deliveries going quiet.** The webhook endpoint is about to sit behind a source-address allowlist at the edge, and that allowlist has a failure mode nothing else in the system can see: a range GitHub adds and we never mirror stops deliveries with no error anywhere — pushes simply stop triggering rebuilds. An hourly cron now raises `github_webhook_silent` when no delivery has been recorded for `github_webhook_silence_hours` (default 48) while a GitHub App is configured, and resolves it as soon as traffic returns. Silence is measured against the newest event of any kind, so a run of processing failures still counts as "the edge is letting GitHub through" — those have their own alert. An install that never wired GitHub up stays quiet, matching `resolve_webhook_secret`, which returns before hashing anything when no App exists.
+- **An alert for GitHub webhook deliveries going quiet.** The webhook endpoint is about to sit behind a source-address allowlist at the edge, and that allowlist has a failure mode nothing else in the system can see: a range GitHub adds and the panel never mirrors stops deliveries with no error anywhere — pushes simply stop triggering rebuilds. An hourly cron now raises `github_webhook_silent` when no delivery has been recorded for `github_webhook_silence_hours` (default 48) while a GitHub App is configured, and resolves it as soon as traffic returns. Silence is measured against the newest event of any kind, so a run of processing failures still counts as "the edge is letting GitHub through" — those have their own alert. An install that never wired GitHub up stays quiet, matching `resolve_webhook_secret`, which returns before hashing anything when no App exists.
 - **`github/meta.py` — the published webhook source ranges, read defensively.** `fetch_hook_ranges()` reads the `hooks` key of `api.github.com/meta` through the existing no-redirect opener, bounded to 1 MiB, and refuses the whole document unless every entry parses as a network and the list is a plausible length. Half-understanding that document would mean building an allowlist that silently drops deliveries, so partial trust is not an option: it either fully parses or it raises.
 
 ## [1.0.100] — 2026-09-01
@@ -4588,8 +4542,8 @@ stay dirty on purpose — their compose genuinely changed.
 
 ### Added
 
-- **Configurable hourly quotas for the two GitHub operations.** `cloud.settings` gains `rate_limit_github_previews_per_hour` (default 10) and `rate_limit_github_imports_per_hour` (default 5), both editable from the Rates tab and validated as positive. Preview and import share a single non-blocking global advisory lock so only one costly GitHub operation runs per manager at a time; that limit stays fixed because raising it changes worker capacity directly. The quota hit is committed in a short independent cursor *after* the lock is granted, so an admitted attempt still counts even if the request later rolls back, and the row is never held during the remote access.
-- **`try_advisory_xact_lock` in `models/_concurrency.py`.** A transaction-scoped, non-blocking advisory lock whose key is hashed together with the current database OID, since PostgreSQL advisory locks are cluster-global rather than database-local. Used here for the import lock and consumed by `incubacloud_website` to serialise Free signups per user.
+- **Configurable hourly quotas for the two GitHub operations.** `cloud.settings` gains `rate_limit_github_previews_per_hour` (default 10) and `rate_limit_github_imports_per_hour` (default 5), both editable from the Rates tab and validated as positive. Preview and import share a single non-blocking global advisory lock so only one costly GitHub operation runs per panel at a time; that limit stays fixed because raising it changes worker capacity directly. The quota hit is committed in a short independent cursor *after* the lock is granted, so an admitted attempt still counts even if the request later rolls back, and the row is never held during the remote access.
+- **`try_advisory_xact_lock` in `models/_concurrency.py`.** A transaction-scoped, non-blocking advisory lock whose key is hashed together with the current database OID, since PostgreSQL advisory locks are cluster-global rather than database-local. Used here for the import lock, and available to other modules.
 
 ## [1.0.99] — 2026-08-31
 
@@ -4598,7 +4552,7 @@ stay dirty on purpose — their compose genuinely changed.
 - **The preferences modal was an id-to-name oracle over every project on the platform.** `/cloud/save_user_preferences` sanitised the personal mute list with `cloud.project.sudo().browse(ids).exists()` — sudo skips ACLs *and* record rules, so any id that existed anywhere was accepted — and `/cloud/get_user_preferences` then read the list back and returned each project's `name`. Write anything, read the name. The docstring's reasoning ("muting only restricts the caller's own notifications, so no visibility check is needed beyond existence") holds for the *effect* of a mute and fails for what the read side hands back. Reach was every internal user: `/cloud` renders on `_is_internal()` alone with no cloud role required, and because the whole path went through sudo it worked even for someone with no `ir.model.access` on `cloud.project` at all. Both ends now go through `_filtered_access('read')`, which returns the permitted subset instead of raising, so an id beyond the caller's record rules is dropped silently and a caller with no cloud role still saves the rest of the form. The read side also stops reading the m2m off `env.user`, which is sudoed by construction (`Environment.user` returns `self(su=True)`) — the explicit `.sudo()` there had been a no-op sitting on top of an implicit one.
 - **`_capped_search` counted with sudo what it listed without it.** `total` came from `Model.sudo().search_count(dom)` while `records` came from a plain `search`, so `/cloud/get_projects` — which has no role gate — told a stakeholder scoped by `rule_project_member` to a single project how many projects exist on the whole platform, and computed `truncated` from that same number, firing the truncation banner on a list that was never clipped. The count now honours record rules, matching `cloud_get_config` and `cloud_get_dashboard`, which already did the same counts correctly a few dozen lines away. No behaviour change for the other three call sites: the backup-backend routes are manager-gated and `cloud.host` carries no `ir.rule`.
 
-Metadata disclosure only — no record, credential or job was ever reachable through either path. Audit point BUG-004; its third bullet (the portal's global tenant count) died with the portal team pages in `incubacloud_website` 19.0.1.24.0.
+Metadata disclosure only — no record, credential or job was ever reachable through either path. Audit point BUG-004.
 
 ---
 
@@ -4611,18 +4565,18 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Changed
 
 - The rule-code uniqueness is now a partial unique index over **active** rules. Only active rules are evaluated, so only among them can two rules fight over an alert; a plain `UNIQUE (code)` would also reserve an archived rule's code for ever, which nobody asked for. Same shape as `cloud_alert_active_target_uidx`
-- Migration `1.0.98` **archives** — never deletes — any active rule whose code another active rule already holds, keeping the one that carries an xmlid (or the oldest). The rows are operator configuration: they stay visible and reversible, and re-enabling one without fixing its code now hits the constraint and is told why. Our own databases are clean (devel and production: 6 rules, 6 codes); the migration is there for the tenant databases that cannot be surveyed from here
+- Migration `1.0.98` **archives** — never deletes — any active rule whose code another active rule already holds, keeping the one that carries an xmlid (or the oldest). The rows are operator configuration: they stay visible and reversible, and re-enabling one without fixing its code now hits the constraint and is told why. The migration is there for the databases that cannot be surveyed before they upgrade
 
 ## [1.0.97] — 2026-08-30
 
 ### Fixed
 
 - **A hostname could stop a host setup halfway through, with no attacker involved.** `_build_inverseproxy` splices `wildcard_domain` into the Traefik router rule through the *replacement* argument of `re.sub`, where Python interprets backslashes: a domain carrying `\1` spliced in a capture group and one carrying `\d` raised `re.error: bad escape`, killing `full_setup` mid-run. A backtick closed the rule early and turned the dashboard router into a catch-all. Both substitutions now pass a function, whose return value is used verbatim
-- **`cloud.host.wildcard_domain` was `required=True` and nothing else** — no shape, no length, no character set — even though the value is read back by everything the platform generates for that machine. A constraint now refuses anything that is not an RFC 1123 hostname. Shape only, deliberately: that table also holds hosts an operator named, where `h.local` on an internal network is a fair name. Comparison is case-insensitive and the stored value is never rewritten, so the production row recorded as `Tenants1.incubacloud.io` stays writable and nobody's typing is silently canonicalised
+- **`cloud.host.wildcard_domain` was `required=True` and nothing else** — no shape, no length, no character set — even though the value is read back by everything the platform generates for that machine. A constraint now refuses anything that is not an RFC 1123 hostname. Shape only, deliberately: that table also holds hosts an operator named, where `h.local` on an internal network is a fair name. Comparison is case-insensitive and the stored value is never rewritten, so a row recorded as `Pool1.example.com` stays writable and nobody's typing is silently canonicalised
 
 ### Changed
 
-- Wildcard-domain rules move to `incubacloud/net/hostname.py` and are now the single source for every door that accepts one. The internal-address blocklist and the platform-reserved list are opt-in flags there, applied only where the value means "a public DNS name a tenant chose"
+- Wildcard-domain rules move to `incubacloud/net/hostname.py` and are now the single source for every door that accepts one. The internal-address blocklist and the platform-reserved list are opt-in flags there, applied only where the value means "a public DNS name a user chose"
 
 ## [1.0.96] — 2026-08-30
 
@@ -4634,16 +4588,16 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **One broken thing produced one alert per attempt.** `job_failed` alerts were created outright, skipping the dedup rule every other producer goes through, so a cron job that kept failing stacked a row *and* a mail/Telegram/webhook per attempt — fourteen identical criticals in six and a half hours on 2026-08-24, burying everything else in the panel. A repeat now refreshes the open alert and counts on it (`occurrences`), keyed by job type and target through a domain shared with the dismissal path so raising and clearing cannot drift apart. Failures of *different* job types on one host stay separate incidents
+- **One broken thing produced one alert per attempt.** `job_failed` alerts were created outright, skipping the dedup rule every other producer goes through, so a cron job that kept failing stacked a row *and* a mail/Telegram/webhook per attempt — fourteen identical criticals in six and a half hours, burying everything else in the panel. A repeat now refreshes the open alert and counts on it (`occurrences`), keyed by job type and target through a domain shared with the dismissal path so raising and clearing cannot drift apart. Failures of *different* job types on one host stay separate incidents
 - **The same alert could be filed twice.** `raise_alert` searched and then created, and Odoo cursors are REPEATABLE READ: two producers firing together each read a snapshot without the other's row and both inserted — the host-metrics and instance-health probes did exactly that 142 ms apart on 2026-08-29. A partial unique index on `(code, host, instance) WHERE state='active'` now decides it, since a lock cannot: under snapshot isolation the loser still cannot see the winner's row. Losing that race is treated as success, inside a savepoint, so the job that lost it does not roll back over an alert that already exists
 - The health probe's `_inst_alert`/`_resolve_inst_alert` were a second copy of that rule and the one that had drifted; both now delegate to the model. Resolutions of instance-scoped alerts consequently reach Telegram and webhooks too, which the hand-rolled dismissal never did
-- **`instance_unresponsive` fired on instances that were merely starting, and outlived the container.** A running container whose Odoo is not listening yet is what every boot looks like from outside (`curl` exits 7 or 56), and Free tenants boot several times a day. It now needs the same two consecutive failures CPU and memory already required. It is also resolved on every branch where the container is not running — asleep, down, missing or skipped — because a stopped container cannot be failing to answer: an alert raised just before a tenant went back to sleep used to stay critical for as long as the tenant slept, measured at ten hours and forty minutes
-- **`host_unreachable` fired on jobs that then succeeded.** `execute` judged from the retry counter which attempt was the last and alerted there, but the runner can hand a job one more attempt than the budget — so every such alert on 2026-08-29 was followed by the same job connecting and finishing `done`. Deciding when to stop retrying is now queue_job's alone; the alert hangs off the terminal state, where "it gave up" is a fact
-- **A lost row race became a failed job and an alert.** The SSH probe stamps `last_health_check` on `cloud_instance` while the metrics cron stamps `metrics_last_seen` on the same rows, and under snapshot isolation the second one was aborted outright even though the columns are disjoint. Both writers now run on their own READ COMMITTED cursor — the liveness cron's stamp, and the private cursor every executor's `on_success`/`on_failure` already used — so the loser waits for the row instead of losing it. The same hazard could have failed a deploy *after* it had succeeded, if the cron stamped the row while the deploy's outcome hook was open. Retrying would not have been enough: PostgreSQL's error reaches Odoo's SQL layer, which logs `bad query` at ERROR before any Python can catch it, and the tenant log scraper reported those lines straight back as an `instance_error_logs` alert. Serialisation failures that still escape are handed to queue_job, which already retries them, instead of being wrapped as permanent failures
+- **`instance_unresponsive` fired on instances that were merely starting, and outlived the container.** A running container whose Odoo is not listening yet is what every boot looks like from outside (`curl` exits 7 or 56), and an instance a layer puts to sleep boots several times a day. It now needs the same two consecutive failures CPU and memory already required. It is also resolved on every branch where the container is not running — asleep, down, missing or skipped — because a stopped container cannot be failing to answer: an alert raised just before an instance went back to sleep used to stay critical for as long as it slept, measured at ten hours and forty minutes
+- **`host_unreachable` fired on jobs that then succeeded.** `execute` judged from the retry counter which attempt was the last and alerted there, but the runner can hand a job one more attempt than the budget — so every such alert in a day was followed by the same job connecting and finishing `done`. Deciding when to stop retrying is now queue_job's alone; the alert hangs off the terminal state, where "it gave up" is a fact
+- **A lost row race became a failed job and an alert.** The SSH probe stamps `last_health_check` on `cloud_instance` while the metrics cron stamps `metrics_last_seen` on the same rows, and under snapshot isolation the second one was aborted outright even though the columns are disjoint. Both writers now run on their own READ COMMITTED cursor — the liveness cron's stamp, and the private cursor every executor's `on_success`/`on_failure` already used — so the loser waits for the row instead of losing it. The same hazard could have failed a deploy *after* it had succeeded, if the cron stamped the row while the deploy's outcome hook was open. Retrying would not have been enough: PostgreSQL's error reaches Odoo's SQL layer, which logs `bad query` at ERROR before any Python can catch it, and the instance log scraper reported those lines straight back as an `instance_error_logs` alert. Serialisation failures that still escape are handed to queue_job, which already retries them, instead of being wrapped as permanent failures
 
 ### Changed
 
-- Connection-retry budget for the monitoring probes raised from 3 attempts to 10 (~90 s to ~10 min). Three was shorter than the routine maintenance of the hosts being probed: `unattended-upgrades` reboots them inside its 04:00 window, which took Tenants1 out for two minutes, and a network blip on the same day took it out for four — both paged. A host that is genuinely gone is still critical ten minutes later, and `metrics_host_absent` covers the same ground meanwhile
+- Connection-retry budget for the monitoring probes raised from 3 attempts to 10 (~90 s to ~10 min). Three was shorter than the routine maintenance of the hosts being probed: `unattended-upgrades` reboots them inside its 04:00 window, which took a production host out for two minutes, and a network blip on the same day took it out for four — both paged. A host that is genuinely gone is still critical ten minutes later, and `metrics_host_absent` covers the same ground meanwhile
 - `docs/architecture.md` documents the 04:00 UTC host maintenance window and how the monitoring is sized around it
 
 ## [1.0.94] — 2026-08-28
@@ -4658,7 +4612,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Added
 
-- **"Keep in panel" now means archived, not abandoned.** It takes a fresh full backup at that moment and prunes everything older, so exactly one restorable copy survives instead of a chain nobody maintains — the retention prune ran inside the very container the teardown removes, so what used to be left behind aged forever. The copy's location is frozen onto the record (`custom_backup_dst`) because the computed path is derived from the project and the name, either of which can move afterwards: a tenant deletion detaches the project and the computed path silently falls back to a shared `.../default/` prefix. Everything that touches the copy from then on — verification, revival, deletion — reads the frozen value
+- **"Keep in panel" now means archived, not abandoned.** It takes a fresh full backup at that moment and prunes everything older, so exactly one restorable copy survives instead of a chain nobody maintains — the retention prune ran inside the very container the teardown removes, so what used to be left behind aged forever. The copy's location is frozen onto the record (`custom_backup_dst`) because the computed path is derived from the project and the name, either of which can move afterwards: a project a layer detaches from its owner has its computed path silently fall back to a shared `.../default/` prefix. Everything that touches the copy from then on — verification, revival, deletion — reads the frozen value
 - **An Archived tab on the project, with what each copy costs.** It appears only when the project has archived instances, and shows for each one where its copy is, how big it was at the last check and how long ago that check happened. The state comes from a nightly cron and never from the render: listing a bucket prefix per row would put a network call behind every page view, so the panel reports what it last saw and says how old that reading is rather than presenting a week-old check as current
 - **Reviving an archived instance.** It deploys again on any host — the original may be gone, full, or have been the reason for archiving — and restores the frozen copy into it. The copy is re-checked live at that moment, not read from the cron's stamp: a deploy that succeeds followed by a restore that finds nothing leaves an empty instance where the operator expected their data
 - **Deleting an archived instance takes its chain with it**, through a container created for that one command and thrown away. Reviving in order to delete would be a full deploy — domains, Traefik, minutes of host resources — with all of its own failure modes, to destroy something. The record is unlinked only once the prefix is verified empty, so an interruption leaves a record whose chain is gone (deletable again) rather than a chain with no record, which nothing could ever find. It asks for the instance name in writing, and refuses outright when there is no host left to run the container on
@@ -4666,7 +4620,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Changed
 
-- **Where an archived copy lives is manager-only.** The frozen destination and the backend's name are the same bucket metadata every other endpoint has been gated on since SEC-009, and in SaaS that storage is ours rather than the tenant's. Everyone who can see the project still sees that a copy exists, how big it is and when it was last verified — none of which says where it is
+- **Where an archived copy lives is manager-only.** The frozen destination and the backend's name are the same bucket metadata every other endpoint has been gated on since SEC-009, and on a hosted panel that storage may be the host's rather than the user's. Everyone who can see the project still sees that a copy exists, how big it is and when it was last verified — none of which says where it is
 - **An archived instance's name stays reserved in its project.** Creating a new instance with that name is refused with a message that names the archived one — otherwise the new instance would compute the same backup path and write into the copy the archived record was keeping
 - The purge program that empties a prefix now lives in one place (`scripts/lib/purge_prefix.sh`), shared by the deletion purge and the archived purge. Two copies would have been two chances to fix a bug in one and not the other, and the drift would only ever show up as objects surviving a deletion
 
@@ -4677,7 +4631,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 - **Deleting an instance now clears its backups first, or does not happen.** Nothing pruned them afterwards — the retention job runs inside the very container the teardown destroys — so every completely-deleted instance left a chain behind that no instance owned, and on a managed destination it kept consuming a quota the customer cannot reach from the panel. `Delete completely` now empties the instance's prefix before the containers come down, through the instance's own `backup` container: the only thing that holds the credentials, the endpoint and the destination, and the only moment anything can still reach the storage
 - **If the purge fails the instance is not deleted.** Tearing down first would strand the objects with nothing left able to delete them, so the step carries `stop_on_failure` and there is deliberately no "delete anyway". The failure raises an alert that names its own fix — `backup_purge_service_missing`, `backup_purge_unauthorized` or `backup_purge_failed` — classified from the script's exit code, never by matching duplicity's or boto's wording, which would silently downgrade every diagnosis to the catch-all the day either changes phrasing. An already-empty prefix answers 10 and is not a failure: the invariant already holds
 - **`Delete completely` asks for the instance name.** It is now irreversible in a way it was not, and the expensive mistake it guards against is deleting the wrong instance, not deleting by accident — so it asks for the name rather than a fixed word, matched exactly, with the name deliberately not selectable inside the dialog
-- The purge is gated on `_owns_instance_lifecycle`, so the two move cleanups that reuse these teardown commands against a host the instance has left never reach it — their instance is alive elsewhere and those backups are still its own. Free tenants are excluded by `_backup_enabled()`, the same gate that decides whether the container is deployed at all, with no branch naming them
+- The purge is gated on `_owns_instance_lifecycle`, so the two move cleanups that reuse these teardown commands against a host the instance has left never reach it — their instance is alive elsewhere and those backups are still its own. Instances without backups are excluded by `_backup_enabled()`, the same gate that decides whether the container is deployed at all
 
 ## [1.0.91] — 2026-08-27
 
@@ -4723,7 +4677,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **The metrics account sync verified itself with a password it was never given.** `MetricsAclSyncExecutor` overrides `get_extra_vars` without calling `super()` — deliberately, because the parent announces "Deploying the metrics central", which a sync must not claim — and the one thing that fell out of the child's dict was `ic_operator_plain`. The playbook's boundary probe then authenticated as `operator` with no password at all, vmauth answered **401**, and the job failed *after* having already written and reloaded the access-control list. Two consequences, both silent: `on_success` never ran, so the granted list was never recorded, so the cron saw drift forever and re-enqueued every 30 minutes; and the play died before provisioning the new account's Grafana organisation and rewriting `orgMapping`, leaving that tenant's user landing in the default organisation. The sync only runs when there is an account to grant, so the bug shipped on 14 Aug and lay dormant until the next customer signed up
+- **The metrics account sync verified itself with a password it was never given.** `MetricsAclSyncExecutor` overrides `get_extra_vars` without calling `super()` — deliberately, because the parent announces "Deploying the metrics central", which a sync must not claim — and the one thing that fell out of the child's dict was `ic_operator_plain`. The playbook's boundary probe then authenticated as `operator` with no password at all, vmauth answered **401**, and the job failed *after* having already written and reloaded the access-control list. Two consequences, both silent: `on_success` never ran, so the granted list was never recorded, so the cron saw drift forever and re-enqueued every 30 minutes; and the play died before provisioning the new account's Grafana organisation and rewriting `orgMapping`, leaving that account's user landing in the default organisation. The sync only runs when there is an account to grant, so the bug shipped on 14 Aug and lay dormant until the next account was added
 - `tasks/vmauth_acl_apply.yml` no longer defaults the operator password to `omit`. That hedge is what turned a missing variable into a 401 indistinguishable from the frontier itself having broken; undefined now fails as undefined
 - A structural test walks each observability playbook (following `include_tasks`), collects every `ic_*` name it reads and never defines, and asserts the executor's own `get_extra_vars` supplies it — so an override that drops a variable fails in CI rather than at a customer's gateway
 
@@ -4752,7 +4706,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Security
 
-- **ACLs granted read to the lowest cloud role without any record rule to scope it (SEC-009).** Every role inherits the Stakeholder (`group_cloud_user`) read grant, so a model whose only rule targeted a higher group left the low roles with unrestricted read: a stakeholder or consultant could `search([])` over the whole system by raw RPC and read infrastructure they were never meant to see — host SSH endpoints, backup-backend buckets/endpoints, GitHub webhook payloads (pusher identities, commit messages, contributor emails), and — on the SaaS side — VPS requests/reservations (provider VM and firewall IDs) and backup reservations. Latent today (only Administrators exist) but the lower roles are part of the product
+- **ACLs granted read to the lowest cloud role without any record rule to scope it (SEC-009).** Every role inherits the Stakeholder (`group_cloud_user`) read grant, so a model whose only rule targeted a higher group left the low roles with unrestricted read: a stakeholder or consultant could `search([])` over the whole system by raw RPC and read infrastructure they were never meant to see — host SSH endpoints, backup-backend buckets/endpoints, GitHub webhook payloads (pusher identities, commit messages, contributor emails). Latent today (only Administrators exist) but the lower roles are part of the product
 - `cloud.github.event` and `cloud.host.whitelist` lose the Stakeholder read ACL — both are now Administrator-only, closing the raw-RPC leak. The former's record rule only named the Project-Manager group, so it never restricted the lower roles it was written to protect; it is removed as dead
 - `cloud.instance.pending.push` keeps the ACL (its "pending pushes" panel is legitimately read by a project member) but gains a member-scoped record rule + a PM+ all rule, mirroring the other instance-child models: a stakeholder now sees pending pushes only for instances of projects they belong to, not every project's commit metadata
 - The host SSH endpoint (`ip_address`, `user`, `port`) is now field-gated at the ORM layer to **Developer** — the same gate the host credential (`password`/`key_file`) already carries, and the lowest role that opens SSH jobs: jobs run under the user who enqueued them, so a stricter gate would have failed every Developer-triggered deploy/rebuild/backup inside the executor. Roles below Developer get neither the endpoint nor the credential, by raw RPC or otherwise. `allowed_ssh_ips` (hardening configuration) and the backup-backend `s3_access_key_id` are gated to Administrator, like the S3 secret already was. The instance serializers (`get_instance`, `get_project_full`, `get_host_instances`, `get_project_instances`) redact the SSH endpoint below Developer (so a Developer's restore dialog still builds a working rsync command) and the bucket path below Administrator, as `get_hosts` already did
@@ -4764,7 +4718,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Added
 
-- **The nftables connection-rate cap is now settable per host.** A new `http_conn_rate` field on the host (default 0 = off) is handed to the hardening playbook as `ic_http_conn_rate`, so the forward-hook meter added in 1.0.83 can be turned on for a single host from the panel (Host → Settings) and pushed with the next hardening run. It stays off until a real value is set; enable it only after rehearsing the change on a throwaway VPS (RB-18), since an unrehearsed drop on that hook can break Docker's published ports. The SaaS hardening executor inherits the wiring unchanged
+- **The nftables connection-rate cap is now settable per host.** A new `http_conn_rate` field on the host (default 0 = off) is handed to the hardening playbook as `ic_http_conn_rate`, so the forward-hook meter added in 1.0.83 can be turned on for a single host from the panel (Host → Settings) and pushed with the next hardening run. It stays off until a real value is set; enable it only after rehearsing the change on a throwaway VPS (RB-18), since an unrehearsed drop on that hook can break Docker's published ports. A layer's own hardening executor inherits the wiring unchanged
 
 ---
 
@@ -4772,11 +4726,11 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Security
 
-- **Nothing throttled HTTP traffic to the instances.** Tenant domains resolve straight to their host, not through a CDN, so a login flood reached Odoo's pbkdf2 hasher directly — the same asymmetric CPU-DoS as SEC-008 on the panel, but against the tenant sites, and unbounded: a single source could saturate a host's workers
-- Traefik now carries a per-source-IP `rateLimit` middleware, attached as a default of the `https` entrypoint so it reaches every copier-generated tenant router without editing a single generated compose file — the same mechanism the HSTS header already uses. Requests are throttled by client IP before they can reach a worker (default 300/min, burst 100 per IP: generous for a human, a wall for a flood)
+- **Nothing throttled HTTP traffic to the instances.** An instance domain that resolves straight to its host, not through a CDN, let a login flood reach Odoo's pbkdf2 hasher directly — the same asymmetric CPU-DoS as SEC-008 on the panel, but against the instances' sites, and unbounded: a single source could saturate a host's workers
+- Traefik now carries a per-source-IP `rateLimit` middleware, attached as a default of the `https` entrypoint so it reaches every copier-generated instance router without editing a single generated compose file — the same mechanism the HSTS header already uses. Requests are throttled by client IP before they can reach a worker (default 300/min, burst 100 per IP: generous for a human, a wall for a flood)
 - The threshold lives in the host's watched `config.yml`, so it is tunable live with no image rebuild. Existing hosts are retrofitted in place by `init_traefik_templates`: the middleware is added to the dynamic config and referenced on the entrypoint as an interlocked pair that fails closed, exactly like the HSTS retrofit — a reference to a middleware the file provider does not define would 500 the whole host, so the reference is only written once the middleware is, and only onto the entrypoint chain this project manages (the one HSTS marks), never an operator's own
-- Direct traffic only by design: `sourceCriterion` defaults to the real remote IP, correct when a host is reached directly. A host placed behind a trusted CDN (the panel behind Cloudflare, or a tenant fronting their own domain) must set `sourceCriterion.ipStrategy` so the limit keys on the real client and not a handful of edge IPs
-- **Defence in depth at the host layer**: the hardening ruleset gained an optional per-source new-connection cap on 80/443, on the nftables **forward** hook — the path tenant traffic actually takes, since it is DNAT'd to the Traefik container and never crosses the input chain. It ships **off** (`ic_http_conn_rate` unset renders the current byte-for-byte ruleset) and is enabled per host only after a throwaway-VPS rehearsal: an unrehearsed drop on that hook is what took the fleet down on 2026-08-14. Both rendered states validate under `nft -c`, keep balanced braces and never use `flush ruleset`
+- Direct traffic only by design: `sourceCriterion` defaults to the real remote IP, correct when a host is reached directly. A host placed behind a trusted CDN (the panel behind Cloudflare, or a customer fronting their own domain) must set `sourceCriterion.ipStrategy` so the limit keys on the real client and not a handful of edge IPs
+- **Defence in depth at the host layer**: the hardening ruleset gained an optional per-source new-connection cap on 80/443, on the nftables **forward** hook — the path instance traffic actually takes, since it is DNAT'd to the Traefik container and never crosses the input chain. It ships **off** (`ic_http_conn_rate` unset renders the current byte-for-byte ruleset) and is enabled per host only after a throwaway-VPS rehearsal: an unrehearsed drop on that hook is what once took a whole fleet down. Both rendered states validate under `nft -c`, keep balanced braces and never use `flush ruleset`
 - The layered model — provider L3/L4 anti-DDoS (assumed, e.g. Hetzner/OVH), host conn-rate, Traefik per-IP, app counters — is documented in `docs/architecture.md`, and the ops actions (tuning the Traefik limit live, the behind-CDN `ipStrategy`, rehearsing and enabling the nftables cap, the provider-without-anti-DDoS gap) in the new runbook RB-18
 
 ---
@@ -4797,7 +4751,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Security
 
 - **Notification webhooks are the one outbound URL a user chooses, and they were guarded by a `startswith('https://')` check at save time.** The senders then handed the URL to a bare `urllib.request.urlopen`, which follows redirects by default and permits the https → http downgrade, so a single 302 left the checked destination. Nothing ever looked at where the hostname resolved, and a check at save time says nothing about where the name points minutes later when the notification is sent
-- Measured from the production manager container on 2026-08-22, with only a TCP connect and no request sent: `169.254.169.254:80` (cloud metadata), `127.0.0.1:8069` (its own Odoo) and `db:5432` (the internal Postgres) all answer. There is no egress filter behind the application check — the manager host has never been through the hardening playbook
+- Measured from a panel's container, with only a TCP connect and no request sent: `169.254.169.254:80` (cloud metadata), `127.0.0.1:8069` (its own Odoo) and `db:5432` (the internal Postgres) all answer. On a panel host that has not been through the hardening playbook there is no egress filter behind the application check
 - Outbound webhook delivery now goes through a single guarded client (`net/outbound.py`): https only, no credentials in the URL, port 443, and every address the hostname resolves to must be public — loopback, RFC1918, link-local (which is where the metadata service lives), reserved, multicast, CGNAT and their IPv6 equivalents including IPv4-mapped forms are refused, and a name answering with a mix of public and private addresses is refused whole
 - **The socket is pinned to the address that passed validation.** Resolving, approving and then letting the stack resolve again is a TOCTOU, and DNS rebinding exists to exploit exactly that window; the hostname is kept for SNI, the `Host` header and certificate validation, so pinning does not weaken TLS
 - Redirects are refused outright rather than re-validated, matching what this codebase already did for its GitHub calls. The response is read up to a bound and discarded, so the channel stays blind: no body, no status, no error detail that could turn a webhook into a probe of the internal network
@@ -4811,9 +4765,9 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **The daily prune stopped deleting the warm pool's networks.** `docker system prune` also prunes networks, and a project's network is the one resource here that can be neither protected nor safely swept. Labelling it changes its definition, so `docker compose` recreates it and tears a live stack down mid-command — that was tried and it left tenants stopped. Leaving it unlabelled was justified by the claim that protecting the containers already protects the network, "because Docker keeps a network alive while any container, running or stopped, holds an endpoint on it". **That claim is false.** Stopping a container tears its sandbox down and releases the endpoint, so a stopped stack's network counts as unused and goes, however well its containers are labelled
-- Measured in production on 2026-08-20: the prune deleted `ic-tenant-d51130c9_default` and `ic-tenant-85b154fe_default`, the networks of the only two warm spares in `ready` — the ones handed to the next customer who signs up. Their containers survived, so the post-prune check reported `✓ All managed stacks intact` while neither stack could start. It surfaced five hours later as a failed free-pool backup, on the one instance whose backup path has to wake the stack
-- The failure is not obvious from the outside because compose *recreates* containers whose definition changed and merely *starts* the rest — and a started container keeps the network id it was created with. `db` is precisely such a container in both the claim and the backup flows, so the daemon answers `network <id> not found` and the whole `up` fails
+- **The daily prune no longer deletes the networks of stopped stacks.** `docker system prune` also prunes networks, and a project's network is the one resource here that can be neither protected nor safely swept. Labelling it changes its definition, so `docker compose` recreates it and tears a live stack down mid-command — that was tried and it left instances stopped. Leaving it unlabelled was justified by the claim that protecting the containers already protects the network, "because Docker keeps a network alive while any container, running or stopped, holds an endpoint on it". **That claim is false.** Stopping a container tears its sandbox down and releases the endpoint, so a stopped stack's network counts as unused and goes, however well its containers are labelled
+- Measured: the prune deleted the `<project>_default` networks of two stacks kept stopped on purpose. Their containers survived, so the post-prune check reported `✓ All managed stacks intact` while neither stack could start. It surfaced hours later as a failed backup, on an instance whose backup path has to wake the stack
+- The failure is not obvious from the outside because compose *recreates* containers whose definition changed and merely *starts* the rest — and a started container keeps the network id it was created with. `db` is precisely such a container when a stopped stack is woken, so the daemon answers `network <id> not found` and the whole `up` fails
 - The play now runs `docker container prune`, `docker image prune` and `docker builder prune` instead of `docker system prune`. Networks occupy no disk, so never touching them reclaims exactly as much as before — the 12.86 GB of the run that caused this were images and build cache
 - **The post-prune verification covers networks now.** It only ever inventoried containers, which is why it certified two broken stacks as intact. It checks `<project>_default` for every deployed instance, exempting those with an active job for the same reason the container check does: a rebuild's `compose down` legitimately takes the network with it
 - The reclaimed-space line is a sum now. Three prunes print three totals, and reading the output backwards would have reported whatever the build cache freed and called it the total
@@ -4824,9 +4778,9 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Two image builds on one host no longer collide.** Jobs serialise per *instance* — deliberately, so one tenant's deploy does not block another's — but every build on a host runs `docker compose build` against the same daemon, and upstream doodba's Dockerfile mounts the apt cache with a BuildKit id shared across the machine. Two builds reaching `apt-get install` together produce `Could not get lock /var/cache/apt/archives/lock` and one of them dies. Measured in production: the release rollout enqueued two rebuilds in the same second on the same host, one built for 456 s and the other failed 75 s in. `RebuildInstanceExecutor` now carries a per-host advisory lock, so at most one build runs per host and the loser is **deferred 30 s, not failed**
-- The distinction matters more than the collision. A failed rebuild is what the rollout's guard reads as "this release is not safe to spread", so a single unlucky pair of builds latched the whole fleet — core and tenant module alike — until an operator re-ran the job by hand. A deferral costs thirty seconds and the rollout never notices
-- The lock sits on `RebuildInstanceExecutor` because that is the only class in the codebase that issues `docker compose build`; every rebuild variant (manual, tenant, warm, apply-plan) subclasses it, so one placement covers all of them. It shares its namespace with the warm-pool lock that solved this for warm builds first — two lock families each holding their own would still collide — and `WarmHostLockMixin` is now an alias of it
+- **Two image builds on one host no longer collide.** Jobs serialise per *instance* — deliberately, so one instance's deploy does not block another's — but every build on a host runs `docker compose build` against the same daemon, and upstream doodba's Dockerfile mounts the apt cache with a BuildKit id shared across the machine. Two builds reaching `apt-get install` together produce `Could not get lock /var/cache/apt/archives/lock` and one of them dies. Measured in production: the release rollout enqueued two rebuilds in the same second on the same host, one built for 456 s and the other failed 75 s in. `RebuildInstanceExecutor` now carries a per-host advisory lock, so at most one build runs per host and the loser is **deferred 30 s, not failed**
+- The distinction matters more than the collision. A failed rebuild is what the rollout's guard reads as "this release is not safe to spread", so a single unlucky pair of builds latched the whole fleet until an operator re-ran the job by hand. A deferral costs thirty seconds and the rollout never notices
+- The lock sits on `RebuildInstanceExecutor` because that is the only class in the codebase that issues `docker compose build`; every rebuild variant, a layer's included, subclasses it, so one placement covers all of them. It shares its namespace with the build lock a layer may already hold — two lock families each holding their own would still collide
 
 ---
 
@@ -4835,8 +4789,8 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Security
 
 - **The session cookie now carries `Secure` and `SameSite=Lax`.** Odoo emits it with `HttpOnly` and nothing else, which left two ways for it to escape: a user who types the bare domain makes one cleartext request before the redirect to HTTPS, and that request carries the cookie; and the cookie travels on cross-site requests. `Secure` is added only when the request itself is secure (`X-Forwarded-Proto` under `proxy_mode`), so a development instance over plain HTTP is untouched and keeps working. `SameSite=Lax` is added only to `session_id` — the livechat and website visitor cookies may legitimately need cross-site delivery, and `Lax` is safe for the OIDC flows here because the authorization endpoint is reached by a top-level GET navigation. Both wrappers only ever tighten: a caller that already asked for a value keeps it
-- **Traefik actually sends `Strict-Transport-Security` now.** It did not, anywhere — not on the panel and not on a single tenant. The `secure` middleware that carries the header is defined on every host, complete and correct, and referenced by no router: it hangs off the `doodba` chain, and the routers copier generates reference only their own per-project middlewares. Meanwhile the middleware that *is* applied to the panel set `forceSTSHeader` with `stsSeconds` at zero, and Traefik writes no header at all when the max-age is zero. Fixed in the only two places that reach everything: `stsSeconds` on the panel's own middleware, and a new minimal `hsts` middleware wired as the default middleware of the `https` entrypoint, which covers every router on a host — tenants, the catch-all, the metrics gateway — without editing a single generated compose file
-- **`secure` is deliberately *not* what the entrypoint defaults to.** It sets `frameDeny`, which would blank out the panel's two Grafana iframes and break Odoo's own website editor, and `stsIncludeSubdomains`/`stsPreload`, which would make an expired tenant certificate unreachable with no click-through. The `hsts` middleware carries a one-year max-age and nothing else; the remaining headers are a separate decision, taken one at a time
+- **Traefik actually sends `Strict-Transport-Security` now.** It did not, anywhere — not on the panel and not on a single instance. The `secure` middleware that carries the header is defined on every host, complete and correct, and referenced by no router: it hangs off the `doodba` chain, and the routers copier generates reference only their own per-project middlewares. Meanwhile the middleware that *is* applied to the panel set `forceSTSHeader` with `stsSeconds` at zero, and Traefik writes no header at all when the max-age is zero. Fixed in the only two places that reach everything: `stsSeconds` on the panel's own middleware, and a new minimal `hsts` middleware wired as the default middleware of the `https` entrypoint, which covers every router on a host — instances, the catch-all, the metrics gateway — without editing a single generated compose file
+- **`secure` is deliberately *not* what the entrypoint defaults to.** It sets `frameDeny`, which would blank out the panel's two Grafana iframes and break Odoo's own website editor, and `stsIncludeSubdomains`/`stsPreload`, which would make an expired instance certificate unreachable with no click-through. The `hsts` middleware carries a one-year max-age and nothing else; the remaining headers are a separate decision, taken one at a time
 - Both Traefik edits ship as idempotent retrofits on the stored per-host templates, in the same conservative style as the metrics and access-log ones: they add what is missing, they leave a hand-edited file alone, and they are a no-op on a shape they do not recognise. The two are **interlocked and fail closed**: the entrypoint reference is only written when the dynamic config actually defines the middleware, because a `hsts@file` that does not resolve is not a missing header — Traefik answers 500 on every router of that entrypoint, which is the whole host. The reverse order (a middleware nobody references) is harmless. `traefik_yml` is part of the config-drift snapshot, so touching it marks every host as needing a `full_setup` — which is accurate, because a static Traefik change only takes effect when the proxy restarts
 
 ---
@@ -4868,7 +4822,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 - **Every service in the compose override now carries a `json-file` log limit** (`max-size` × `max-file`, `10m` × 3 by default). doodba's Odoo logs to stdout, the copier template sets no logging driver, and Docker's default json-file log grows until something stops it — on a host set up by `full_setup` alone nothing does, since only `host_hardening` writes a `daemon.json` with `log-opts`. Left alone, a busy production instance fills its host's disk within months and takes Postgres and every other instance on the host down with it, silently. The override that deploy and rebuild already write for resource limits and the protect label is where the guarantee belongs: per service, so it holds on any host regardless of how it was set up; on hardened hosts it merely restates the daemon default. Existing instances pick it up on their next rebuild, which recreates the containers anyway — no retrofit job, no manual step
 - **`cloud.settings.container_log_max_size` / `container_log_max_file`**, exposed on Settings → General as "Container Log Rotation". Read at render time and deliberately kept out of the per-instance config snapshot: bumping the retention must not light the fleet's "Changes not deployed" pill (that has happened twice for other renders), it simply lands on each instance's next rebuild. The size is validated against Docker's grammar in one canonical lower-case spelling so a typo fails at save time instead of at every stack's next `docker compose up`
-- **A registry sweep in the tests asserts the limit on every deploy flavour**, in core and in the SaaS module — the same class of guard that the protect-label incident earned: a flavour whose override stops calling `super()` would ship stacks without the limit and nobody would notice until a disk filled
+- **A registry sweep in the tests asserts the limit on every deploy flavour**, in core and in any module that adds one — the same class of guard that the protect-label incident earned: a flavour whose override stops calling `super()` would ship stacks without the limit and nobody would notice until a disk filled
 
 ## [1.0.75] — 2026-08-18
 
@@ -4888,7 +4842,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Grafana's default organisation held a datasource with no account filter**, and the default organisation is where Grafana drops a login whose `groups` claim matches no entry in `orgMapping`. File provisioning carries no orgId, so the datasource the central deployment provisioned from a file could only ever land there — pointed at vmauth's operator path, which spans every account. The fallback was therefore the most privileged view in the system, reachable by a tenant whose account exists but is not yet in the map. The deployment now provisions none and deletes the one an earlier deployment left behind; the operator loses nothing, since OIDC puts them in their own account's organisation, filtered like everyone else's. A cross-account view, if ever wanted, belongs in that organisation as a datasource named for what it is
+- **Grafana's default organisation held a datasource with no account filter**, and the default organisation is where Grafana drops a login whose `groups` claim matches no entry in `orgMapping`. File provisioning carries no orgId, so the datasource the central deployment provisioned from a file could only ever land there — pointed at vmauth's operator path, which spans every account. The fallback was therefore the most privileged view in the system, reachable by a user whose account exists but is not yet in the map. The deployment now provisions none and deletes the one an earlier deployment left behind; the operator loses nothing, since OIDC puts them in their own account's organisation, filtered like everyone else's. A cross-account view, if ever wanted, belongs in that organisation as a datasource named for what it is
 - **The account sync skipped the organisation map whenever it had no new accounts to grant** — the common case, and the one that mattered. The organisations are the only part that needs a new account; `orgMapping` names every one of them and is rewritten whole, so gating it left an account minted and unmapped until the next full deployment of the central, with its user landing in the default organisation for the entire window. A revocation-only sync also left the map naming an account that no longer existed. The include is no longer gated: every loop inside it is over the new-account list and does nothing when it is empty, so the cost of running it anyway is one request
 
 ## [1.0.72] — 2026-08-17
@@ -4912,7 +4866,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- The SaaS layer had been carrying **copies** of both cron bodies to add a single filter, and the copies stopped receiving the guards added here afterwards. The one that mattered was "only instances whose compose file declares a `backup` service": a free-plan tenant declares none, so this side skipped it and the copy did not, and every free tenant got a daily `backup_list` shelling into a container that does not exist. `docker compose exec` answers `service "backup" is not running` for a service that is stopped **and** for one that was never declared — so it read as a sleeping stack rather than a missing service, and the diagnosis went the wrong way for a while. A failed job and a warning alert per free tenant per day, and the alert never resolved, since a clean run is what clears it
+- A layer that carried **copies** of both cron bodies to add a single filter stopped receiving the guards added here afterwards. The one that mattered was "only instances whose compose file declares a `backup` service": an instance without backups declares none, so this side skipped it and the copy did not, and each such instance got a daily `backup_list` shelling into a container that does not exist. `docker compose exec` answers `service "backup" is not running` for a service that is stopped **and** for one that was never declared — so it read as a sleeping stack rather than a missing service, and the diagnosis went the wrong way for a while. A failed job and a warning alert per instance per day, and the alert never resolved, since a clean run is what clears it
 - The docstring of `cron_refresh_backup_list` now says which of the two `exec` answers it is guarding against, because they are indistinguishable from the message alone
 
 ## [1.0.69] — 2026-08-16
@@ -4942,26 +4896,26 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Instance liveness was querying the metrics central with no credentials at all.** `promql_query` attaches auth only when handed both halves — `auth=(user, token) if (token and user) else None` — so the liveness cron, which unpacked `user, token` and then forwarded only `token=`, queried anonymously. The central answered 401, the caller logged a warning and returned, and `running` silently stopped being refreshed from metrics: every instance kept whatever it last had, which feeds `sleeping`, then `last_activity_at`, then the auto-suspend clock. One of three call sites; the other two always passed both. Beyond the fix, a structural test now reads the source and refuses any `promql_query` call missing either keyword, because a behavioural test would have to be written once per call site — which is exactly what had not happened, for any of them
+- **Instance liveness was querying the metrics central with no credentials at all.** `promql_query` attaches auth only when handed both halves — `auth=(user, token) if (token and user) else None` — so the liveness cron, which unpacked `user, token` and then forwarded only `token=`, queried anonymously. The central answered 401, the caller logged a warning and returned, and `running` silently stopped being refreshed from metrics: every instance kept whatever it last had, which feeds whatever a layer derives from it, such as an activity clock. One of three call sites; the other two always passed both. Beyond the fix, a structural test now reads the source and refuses any `promql_query` call missing either keyword, because a behavioural test would have to be written once per call site — which is exactly what had not happened, for any of them
 
 ## [1.0.65] — 2026-08-15
 
 ### Fixed
 
-- **The backup listing no longer shells into stacks that are stopped.** `cron_refresh_backup_list` already skipped instances whose compose stack defines no `backup` service, but "defined" and "running" are not the same precondition: `docker compose exec` needs the container up, and a stopped stack answers `service "backup" is not running` with status 1 — a failed job and an alert, every day, for as long as the stack stays down. Warm spares are what surfaced it: they ship stopped by design and hold no customer data at all, yet their own rebuild writes `backup` into `compose_services`, so the moment a spare was refreshed it became a permanent daily failure that listing its backups could never have made succeed. The cron now requires the instance to be running, which is the same condition the executor depends on and also covers a tenant asleep behind its wake gate
+- **The backup listing no longer shells into stacks that are stopped.** `cron_refresh_backup_list` already skipped instances whose compose stack defines no `backup` service, but "defined" and "running" are not the same precondition: `docker compose exec` needs the container up, and a stopped stack answers `service "backup" is not running` with status 1 — a failed job and an alert, every day, for as long as the stack stays down. Instances a layer keeps stopped by design surfaced it: their own rebuild writes `backup` into `compose_services`, so the moment one was refreshed it became a permanent daily failure that listing its backups could never have made succeed. The cron now requires the instance to be running, which is the same condition the executor depends on and also covers an instance asleep behind a wake gate
 
 ## [1.0.64] — 2026-08-15
 
 ### Changed
 
-- **Grafana's identity configuration left the compose file, so adding an account no longer recreates it.** The organisation map names every account, so it changed with every tenant — and it lived in the container's environment, which means `up -d` recreated Grafana and dropped every open session for a change that concerned one account. That cost is what made automating the grant look unacceptable in the first place. Measured in a lab against Grafana 11.2.0: the SSO settings API writes to Grafana's own database, **overrides** the `GF_AUTH_GENERIC_OAUTH_*` environment (the provider's `source` flips from `system` to `database`), and applies live — the login page served the new configuration with the container's restart count still at zero. The deployment and the account sync now both push the provider through that API, and the compose file carries none of it: since the database wins, a copy in the environment would be a second source that silently loses. The PUT replaces the whole provider block rather than patching a field, so the complete configuration travels — including `orgAttributePath`, whose absence silently sends every login to the default organisation while the token carries the right claim, which this codebase has already paid for once
-- `_grafana_oidc()` and `_grafana_org_mapping()` join the account list on `cloud.settings`. With that, neither central job needs a SaaS subclass at all: the tenant-aware behaviour follows the data instead of being re-declared on each job, and `observability_central_ext` has nothing left to declare
+- **Grafana's identity configuration left the compose file, so adding an account no longer recreates it.** The organisation map names every account, so it changed with every account added — and it lived in the container's environment, which means `up -d` recreated Grafana and dropped every open session for a change that concerned one account. That cost is what made automating the grant look unacceptable in the first place. Measured in a lab against Grafana 11.2.0: the SSO settings API writes to Grafana's own database, **overrides** the `GF_AUTH_GENERIC_OAUTH_*` environment (the provider's `source` flips from `system` to `database`), and applies live — the login page served the new configuration with the container's restart count still at zero. The deployment and the account sync now both push the provider through that API, and the compose file carries none of it: since the database wins, a copy in the environment would be a second source that silently loses. The PUT replaces the whole provider block rather than patching a field, so the complete configuration travels — including `orgAttributePath`, whose absence silently sends every login to the default organisation while the token carries the right claim, which this codebase has already paid for once
+- `_grafana_oidc()` and `_grafana_org_mapping()` join the account list on `cloud.settings`. With that, neither central job needs a subclass in a layer: behaviour that depends on the accounts follows the data instead of being re-declared on each job
 
 ## [1.0.63] — 2026-08-14
 
 ### Changed
 
-- **The access-control list is assembled by the settings model, not by the job that writes it.** Reconciliation has to compare the same set without being an executor, and two places assembling "who should have access" is exactly how the gateway and the database drifted apart in the first place. `cloud.settings._desired_metrics_accounts()` is now the single source; the deployment and the sync both read it. A layer that adds accounts — the SaaS manager adds one per tenant — extends the model instead of overriding every job that touches the list, so the tenant-aware behaviour follows the data rather than having to be re-declared each time
+- **The access-control list is assembled by the settings model, not by the job that writes it.** Reconciliation has to compare the same set without being an executor, and two places assembling "who should have access" is exactly how the gateway and the database drifted apart in the first place. `cloud.settings._desired_metrics_accounts()` is now the single source; the deployment and the sync both read it. A layer that adds accounts — one per panel it hosts, say — extends the model instead of overriding every job that touches the list, so behaviour that depends on the accounts follows the data rather than having to be re-declared each time
 
 ## [1.0.62] — 2026-08-14
 
@@ -4978,26 +4932,26 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Hardening no longer takes Docker's packet rules down with it.** The nftables ruleset opened with `flush ruleset`, which deletes *every* nft table on the host — including the filter/nat chains Docker programs through iptables-nft. The daemon does not notice and never re-adds them, so every published port silently loses its DNAT: containers stay up and answer on localhost while the outside world gets nothing, and the host still passes an ICMP and SSH check. Re-running hardening on a live host therefore took an entire tenant fleet offline, and it had never surfaced before because hardening only ever ran on fresh hosts, ahead of `full_setup` installing Docker — the flush had nothing to destroy yet. The ruleset now replaces only its own table (`table inet filter` / `delete table inet filter`, the idiom that also works on a first run when the table does not exist), leaving every other table untouched. Verified against a live `nft`: a foreign table created between two passes survives the second one
+- **Hardening no longer takes Docker's packet rules down with it.** The nftables ruleset opened with `flush ruleset`, which deletes *every* nft table on the host — including the filter/nat chains Docker programs through iptables-nft. The daemon does not notice and never re-adds them, so every published port silently loses its DNAT: containers stay up and answer on localhost while the outside world gets nothing, and the host still passes an ICMP and SSH check. Re-running hardening on a live host therefore took every instance on it offline, and it had never surfaced before because hardening only ever ran on fresh hosts, ahead of `full_setup` installing Docker — the flush had nothing to destroy yet. The ruleset now replaces only its own table (`table inet filter` / `delete table inet filter`, the idiom that also works on a first run when the table does not exist), leaving every other table untouched. Verified against a live `nft`: a foreign table created between two passes survives the second one
 
 ## [1.0.60] — 2026-08-13
 
 ### Security
 
-- **The fail2ban exemption list no longer inherits the firewall's catch-all.** 1.0.59 gave the sshd jail an `ignoreip` built straight from the SSH allowlist, on the reasoning that those addresses are already the only ones the firewall lets near the port. That reasoning only holds while the allowlist names addresses. It degrades to `0.0.0.0/0` whenever no operator IP is known — deliberately, since locking every operator out is worse than a reachable port — and both production hosts sit in exactly that state, so the jail would have been written exempting every source on the internet. fail2ban would have stopped banning anyone while the config still read like a hardened one: no error, no log line, nothing to notice. The list is now built in its own fact that drops catch-alls and keeps named addresses, and the test asserts the filter rather than the mere presence of `ignoreip` — the weaker assertion is what let the flaw through in the first place
+- **The fail2ban exemption list no longer inherits the firewall's catch-all.** 1.0.59 gave the sshd jail an `ignoreip` built straight from the SSH allowlist, on the reasoning that those addresses are already the only ones the firewall lets near the port. That reasoning only holds while the allowlist names addresses. It degrades to `0.0.0.0/0` whenever no operator IP is known — deliberately, since locking every operator out is worse than a reachable port — and a production host can sit in exactly that state, so the jail would have been written exempting every source on the internet. fail2ban would have stopped banning anyone while the config still read like a hardened one: no error, no log line, nothing to notice. The list is now built in its own fact that drops catch-alls and keeps named addresses, and the test asserts the filter rather than the mere presence of `ignoreip` — the weaker assertion is what let the flaw through in the first place
 
 ## [1.0.59] — 2026-08-13
 
 ### Fixed
 
-- **The rebuild's boot test can no longer take the tenant down with it.** Its throwaway Postgres was started *on* the project's compose network, so it held an endpoint there for the length of the test. Any reconciliation `docker compose` decided to do in that window could not remove the network to recreate it, the step died with `has active endpoints`, and `stop_on_failure` aborted the job with `db` and `smtp` already stopped under a live `odoo` — twice on 13 August, every tenant on the host serving 502 until the containers were recreated by hand. The throwaway Postgres is now published on the project network's *gateway* instead of joining it: reachable from every container on that bridge, invisible to compose, which stays free to reconcile whatever it likes. If the gateway cannot be resolved the step fails outright rather than falling back to the old behaviour, so the rebuild stops with the instance still running its previous image
+- **The rebuild's boot test can no longer take the instance down with it.** Its throwaway Postgres was started *on* the project's compose network, so it held an endpoint there for the length of the test. Any reconciliation `docker compose` decided to do in that window could not remove the network to recreate it, the step died with `has active endpoints`, and `stop_on_failure` aborted the job with `db` and `smtp` already stopped under a live `odoo` — twice in one day, every instance on the host serving 502 until the containers were recreated by hand. The throwaway Postgres is now published on the project network's *gateway* instead of joining it: reachable from every container on that bridge, invisible to compose, which stays free to reconcile whatever it likes. If the gateway cannot be resolved the step fails outright rather than falling back to the old behaviour, so the rebuild stops with the instance still running its previous image
 - **A failed boot test now puts the stack back.** The cleanup ran from the tail of the script, which `set -e` skips the moment anything upstream fails — precisely when the stack most needs restoring. It moved to an `EXIT` trap that restarts whatever was running before the test. Deliberately `docker compose start` and not `up`: `up` would re-evaluate the image and deploy the very build the boot test just rejected, and would reconcile networks, so the restore could trip over the same drift as the failure it is cleaning up after
 - **Metric alerts stop chasing hosts that were decommissioned on purpose.** Retiring a host does not remove its series from the central, so `metrics_host_absent` kept measuring the silence of a machine the operator had destroyed and re-raising a critical alert that could never resolve. Host-scoped rules now skip archived hosts entirely — nothing measured on a machine that left the fleet is worth an alert — and archiving a host closes whatever it still had open, through `resolve_alert` so the external channels see the closure rather than an incident that stays open forever
 - **Deleting several instances from one host no longer queues one observability install per deletion.** Five removals queued five identical playbook runs, and that stampede is what fed the serialization race of 13 August: the losing transactions were rolled back and re-run by queue_job, which then reported failures for teardowns that had already finished. A refresh now collapses onto an install that is queued but not yet started. Nothing is lost, because the playbook renders its label map when it runs rather than when it was queued; a job already `started` is deliberately not matched, since it rendered its map at launch and a change arriving mid-flight does need its own run
 
 ### Security
 
-- **fail2ban no longer bans the panel.** The sshd jail shipped without `ignoreip`, so three failed authentications from the panel — one agent offering too many keys reaches that on its own — banned it for the full `bantime`. The panel is the only thing that manages a host, so every job against the banned host failed with `ConnectionRefusedError` for a solid hour, as happened to a tenant host on 13 August. Customers were unaffected throughout (80/443 are never involved); management and monitoring were not. The jail now exempts the same allowlist nftables enforces, the control IP included. Those addresses are already the only ones the firewall lets near the SSH port, so fail2ban was adding nothing against them while being able to lock us out
+- **fail2ban no longer bans the panel.** The sshd jail shipped without `ignoreip`, so three failed authentications from the panel — one agent offering too many keys reaches that on its own — banned it for the full `bantime`. The panel is the only thing that manages a host, so every job against the banned host failed with `ConnectionRefusedError` for a solid hour, as happened to one host. Customers were unaffected throughout (80/443 are never involved); management and monitoring were not. The jail now exempts the same allowlist nftables enforces, the control IP included. Those addresses are already the only ones the firewall lets near the SSH port, so fail2ban was adding nothing against them while being able to lock the panel out
 
 ## [1.0.58] — 2026-08-13
 
@@ -5009,13 +4963,13 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **The override no longer labels the project's default network, which was tearing live stacks down.** 1.0.56 stamped the protect label on the network as well as on the services. Adding a label changes the network's definition, and `docker compose` answers that by *recreating* it — so on any instance whose network predates the label, the next compose command stopped the running containers to rebuild the network underneath them. It then failed either way: a rebuild's boot test died with `has active endpoints` (its temporary Postgres was still attached) and a plain `up` with `is not connected to the network`, leaving three tenants stopped instead of started. Labelling the network was never necessary: Docker keeps a network alive while any container — running or stopped — still holds an endpoint on it, so containers that survive the prune keep their network alive with them. It only disappeared before because the containers disappeared first
+- **The override no longer labels the project's default network, which was tearing live stacks down.** 1.0.56 stamped the protect label on the network as well as on the services. Adding a label changes the network's definition, and `docker compose` answers that by *recreating* it — so on any instance whose network predates the label, the next compose command stopped the running containers to rebuild the network underneath them. It then failed either way: a rebuild's boot test died with `has active endpoints` (its temporary Postgres was still attached) and a plain `up` with `is not connected to the network`, leaving three instances stopped instead of started. Labelling the network was never necessary: Docker keeps a network alive while any container — running or stopped — still holds an endpoint on it, so containers that survive the prune keep their network alive with them. It only disappeared before because the containers disappeared first
 
 ## [1.0.56] — 2026-08-12
 
 ### Fixed
 
-- **The prune protection now covers everything the panel deploys, on every path.** The `incubacloud.protect=1` label was stamped only by the SaaS warm-pool *deploy* executor, and a warm *rebuild* resolves to core's rebuild — a class that never passed through it. Every rebuild therefore rewrote `docker-compose.override.yml` without the label and handed the stopped stack back to the next nightly prune, which is why the free-host backups kept failing after 1.0.35 supposedly fixed them: measured on the live host, not one container or network carried the label. The label is now stamped by core's deploy override on every service and on the project's default network, unconditionally, so it cannot depend on which subclass rendered the file. The invariant is "the panel deployed it and it may legitimately sit stopped" — a warm spare, a Sablier-slept free instance, a manually stopped one — and what the panel deploys is destroyed by `delete_instance`, never by the prune
+- **The prune protection now covers everything the panel deploys, on every path.** The `incubacloud.protect=1` label was stamped only by a layer's own *deploy* executor, and that layer's *rebuild* resolved to core's rebuild — a class that never passed through it. Every rebuild therefore rewrote `docker-compose.override.yml` without the label and handed the stopped stack back to the next nightly prune, which is why the backups that wake those stacks kept failing after 1.0.35 supposedly fixed them: measured on the live host, not one container or network carried the label. The label is now stamped by core's deploy override on every service and on the project's default network, unconditionally, so it cannot depend on which subclass rendered the file. The invariant is "the panel deployed it and it may legitimately sit stopped" — one a layer keeps stopped or asleep, one stopped by hand — and what the panel deploys is destroyed by `delete_instance`, never by the prune
 - **A stopped `odoo` container and a missing one are no longer the same thing to the health probe.** It listed only running containers, so a pruned stack and a sleeping one both read as "not running" and got the same generic `instance_down`. The probe now lists stopped containers too and says which case it found; a *missing* container always alerts, while a merely stopped one can be declared expected by a layered module through the new `_odoo_stop_is_expected` hook (core has no notion of scheduled sleep and keeps treating it as an incident). Companion services are still graded while an instance sleeps, since only `odoo` is put to sleep
 
 ### Added
@@ -5075,7 +5029,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Grafana's OIDC login now actually completes.** The central's `oidc.client` requires PKCE by default, but the playbook never told Grafana to send a `code_challenge` — the provider's `/oauth/authorize` would have rejected every login attempt with a 400. It also never told Grafana where the account claim lives, so the per-account `org_mapping` had nothing to match against and everyone would have landed in Grafana's default organisation. Both are now wired into the OIDC branch: `GF_AUTH_GENERIC_OAUTH_USE_PKCE` and `GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH`. The claim itself, the corrected `/oauth/*` endpoints and the account-keyed org mapping live in the SaaS layer, which is the only one that knows tenants — and their accounts — exist
+- **Grafana's OIDC login now actually completes.** The central's `oidc.client` requires PKCE by default, but the playbook never told Grafana to send a `code_challenge` — the provider's `/oauth/authorize` would have rejected every login attempt with a 400. It also never told Grafana where the account claim lives, so the per-account `org_mapping` had nothing to match against and everyone would have landed in Grafana's default organisation. Both are now wired into the OIDC branch: `GF_AUTH_GENERIC_OAUTH_USE_PKCE` and `GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH`. The claim itself, the `/oauth/*` endpoints and the account-keyed org mapping come from the layer that hands the accounts out
 
 ## [1.0.49] — 2026-08-09
 
@@ -5083,12 +5037,12 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Every deploy flavour now stamps the prune-protect label — in the base executor, unconditionally.** The label that keeps `docker system prune -af --filter "label!=…"` away from panel-managed stacks lived in one SaaS subclass, so any rebuild whose class chain skipped it rewrote the compose override *without* the label — and the nightly prune then swept the stopped stack. Measured in production: zero labelled containers, zero labelled networks, the warm pool deleted daily, two days of failed free-host backups. The invariant is "deployed by the panel, may legitimately sit stopped" (a warm spare, a plan-slept instance, a manual stop), so the base deploy executor now labels every service and the default network for every flavour, and a structural test sweeps the executor registry so a future flavour cannot lose it again
+- **Every deploy flavour now stamps the prune-protect label — in the base executor, unconditionally.** The label that keeps `docker system prune -af --filter "label!=…"` away from panel-managed stacks lived in one subclass in a layer, so any rebuild whose class chain skipped it rewrote the compose override *without* the label — and the nightly prune then swept the stopped stack. Measured on a live host: zero labelled containers, zero labelled networks, stopped stacks deleted daily, two days of failed backups. The invariant is "deployed by the panel, may legitimately sit stopped" (one a layer keeps stopped or asleep, a manual stop), so the base deploy executor now labels every service and the default network for every flavour, and a structural test sweeps the executor registry so a future flavour cannot lose it again
 
 ### Added
 
 - **The prune now proves what it did.** The maintenance playbook inventories the surviving containers after pruning, and the job compares that against the `odoo`/`db` containers every deployed instance must have — a swept managed stack raises a critical alert the minute it happens, instead of surfacing days later as a failed backup. The job log also gains a per-kind summary of what was deleted (networks by name — containers are printed by ID, which explains nothing once they are gone)
-- **The health probe now tells "stopped" apart from "gone".** `docker compose ps` without `-a` shows neither, so a slept instance and a pruned one produced the same generic alert. The probe now sees stopped containers, says "missing (pruned, or never created)" when there is no container at all, and asks a hook whether a stopped-but-present `odoo` was scheduled — core always answers no; the SaaS layer answers from the tenant's plan, so a sleeping Free instance reads healthy while its companion containers are still graded
+- **The health probe now tells "stopped" apart from "gone".** `docker compose ps` without `-a` shows neither, so a slept instance and a pruned one produced the same generic alert. The probe now sees stopped containers, says "missing (pruned, or never created)" when there is no container at all, and asks a hook whether a stopped-but-present `odoo` was scheduled — core always answers no; a layer that puts instances to sleep answers for them, so a sleeping instance reads healthy while its companion containers are still graded
 
 ## [1.0.48] — 2026-08-09
 
@@ -5096,7 +5050,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 - **Documentation caught up with the system it describes.** The operations guide still showed a stack with no gateway, told operators to press a per-host button that no longer exists and to deploy a central via a job name that is now one setting away; the user reference still said metrics were manager-only and listed configuration steps that are now done for you. Both were rewritten, including the account boundary and *why* it rejects rather than sanitises — that rule came from measurement, and a reader who does not know it will eventually "simplify" it back into a hole
 - The metrics-backend runbook now diagnoses through the gateway (the only published port), tells the two credentials apart, and explains what a 400 on a query that used to work actually means
-- **New runbook: a tenant sees no metrics.** Five links in a chain, each failing differently, and only one of them the tenant's problem — with the explicit note that "ask them to enable something" is never the answer, because enrolment converges on its own
+- **New runbook: a panel sees no metrics.** Five links in a chain, each failing differently, and only one of them that panel's problem — with the explicit note that "ask them to enable something" is never the answer, because enrolment converges on its own
 - Spanish translations complete: 1564 entries, none untranslated, none fuzzy
 
 ## [1.0.47] — 2026-08-09
@@ -5111,7 +5065,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Added
 
 - **Alerts can now describe an instance, not just the host it happens to sit on.** Every seeded rule was host-scoped, so "this instance is broken" had no way of being said and landed, at best, as a symptom on its host's page. Rules gained a scope: instance-scoped ones resolve through the label the agents attach and raise against the instance itself. Two ship with it — an instance that stopped reporting containers, and an instance returning sustained server errors. The second only became expressible now that HTTP samples are attributed per instance, and it catches what no container metric can: an Odoo that is up and failing looks perfectly healthy to cAdvisor
-- **A suppression hook so sleeping instances do not page anybody.** An instance a plan puts to sleep stops every container on purpose; cAdvisor goes quiet, and a naive rule concludes it is down. Every Free instance would then raise a critical alert nightly, and operators would learn to ignore the one that matters. Core has no notion of sleeping — that is a SaaS feature — so it asks the instance and the SaaS layer answers. Going to sleep also clears an alert already raised, rather than freezing it on screen
+- **A suppression hook so sleeping instances do not page anybody.** An instance a layer puts to sleep stops every container on purpose; cAdvisor goes quiet, and a naive rule concludes it is down. Every such instance would then raise a critical alert nightly, and operators would learn to ignore the one that matters. Core has no notion of sleeping, so it asks the instance and the layer that puts it to sleep answers. Going to sleep also clears an alert already raised, rather than freezing it on screen
 
 ### Changed
 
@@ -5122,7 +5076,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Added
 
 - **Access logs are collected centrally, with the same account boundary as metrics.** Reading them live over SSH answers "who is hitting this instance right now"; it cannot answer "was this happening yesterday", "which instances are seeing a spike in 401s", or alert on any of it. A collector on each host now ships the proxy's access lines to a log store beside VictoriaMetrics. The account is imposed exactly as it is for metrics — set from the authenticated user, never taken from what the sender claims — which was measured in a throwaway stack before being relied on: a collector pushing with a forged account header lands under its own account, and a reader forging the header still sees only its own lines
-- Retention is **14 days and deliberate**: these lines carry the IP addresses of our tenants' end users, so the store keeps what an incident needs and no more
+- Retention is **14 days and deliberate**: these lines carry the IP addresses of the instances' end users, so the store keeps what an incident needs and no more
 
 ### Changed
 
@@ -5143,7 +5097,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Changed
 
-- **Observability settings can be hidden by the layer above.** A new `can_configure_observability` feature flag gates the Monitoring tab in Settings. Core leaves it on, so a self-hosted operator configures their own stack as before; SaaS tenant panels turn it off, because there the account, credential and endpoints are injected at deploy time and re-pushed afterwards. Showing an editable copy would let a tenant point their agents elsewhere, or simply drift from what was pushed and then look broken to both sides
+- **Observability settings can be hidden by the layer above.** A new `can_configure_observability` feature flag gates the Monitoring tab in Settings. Core leaves it on, so a self-hosted operator configures their own stack as before; a layer that injects the account, credential and endpoints at deploy time and re-pushes them afterwards turns it off. Showing an editable copy there would let the panel's operator point their agents elsewhere, or simply drift from what was pushed and then look broken to both sides
 
 ## [1.0.42] — 2026-08-09
 
@@ -5188,7 +5142,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Changed
 
-- **The Traefik scrape job no longer claims its samples cannot be attributed to an instance.** The note there stated there was no sound join key between a Traefik service name and a `cloud.instance`, and concluded that per-instance HTTP had to wait for a later observability phase. That conclusion came from surveying doodba projects scaffolded by hand, where `project_name` is whatever their author typed — it does not describe instances the panel deploys, which is all of them: `cloud_instance._render_copier_answers()` passes `project_name = doodba_project_name`, the very string the deploy forces into `COMPOSE_PROJECT_NAME`, and nothing overrides that method in any of the three modes. Service and router names are therefore derived rather than guessed (`<doodba_project_name>-<version, dots as dashes>-prod-<main|longpolling>@docker`), as confirmed against a running proxy. The comment now records the real rule, why the old survey misled, and the one extra path SaaS adds — tenant panels sit behind a Sablier router and report under `<tenant.slug>-svc@file`, a mapping that belongs to the manager layer. No behaviour changes; the relabelling itself is still unwired. The point is that the next person to read it will not re-derive the wrong answer and shelve the feature again
+- **The Traefik scrape job no longer claims its samples cannot be attributed to an instance.** The note there stated there was no sound join key between a Traefik service name and a `cloud.instance`, and concluded that per-instance HTTP had to wait for a later observability phase. That conclusion came from surveying doodba projects scaffolded by hand, where `project_name` is whatever their author typed — it does not describe instances the panel deploys, which is all of them: `cloud_instance._render_copier_answers()` passes `project_name = doodba_project_name`, the very string the deploy forces into `COMPOSE_PROJECT_NAME`, and nothing overrides that method. Service and router names are therefore derived rather than guessed (`<doodba_project_name>-<version, dots as dashes>-prod-<main|longpolling>@docker`), as confirmed against a running proxy. The comment now records the real rule and why the old survey misled; an instance a layer routes through a router of its own reports under that router's name, a mapping that belongs to that layer. No behaviour changes; the relabelling itself is still unwired. The point is that the next person to read it will not re-derive the wrong answer and shelve the feature again
 
 ## [1.0.38] — 2026-08-08
 
@@ -5201,34 +5155,34 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 ### Fixed
 
-- **Ansible-backed jobs no longer die with an empty log on images that lack ansible-runner.** A tenant ordering an on-demand VPS watched `host_hardening` fail with a blank log page: since the Phase 3 migration to Ansible, every host-state executor (hardening, probe, prune, delete, whitelist, observability) needs `ansible-core`/`ansible-runner` at runtime, but this repo's `requirements.txt` — the file whose contents deployments merge into their pip dependencies — never declared them, so any image built from it ran without them. The executor's early guard then raised before the first log line, the only failure path in the whole pipeline that leaves no trace in the job log (the reason surfaced only in `queue_job.exc_message` and the alert excerpt). Both halves are fixed: `requirements.txt` now pins `ansible-core==2.21.2` and `ansible-runner==2.4.3` (matching the panel image), and the two early guards — missing ansible-runner, undefined playbook — write their reason into the job log before raising, so a job that cannot even start still says why on its own log page
+- **Ansible-backed jobs no longer die with an empty log on images that lack ansible-runner.** A new host's `host_hardening` failed with a blank log page: since the Phase 3 migration to Ansible, every host-state executor (hardening, probe, prune, delete, whitelist, observability) needs `ansible-core`/`ansible-runner` at runtime, but this repo's `requirements.txt` — the file whose contents deployments merge into their pip dependencies — never declared them, so any image built from it ran without them. The executor's early guard then raised before the first log line, the only failure path in the whole pipeline that leaves no trace in the job log (the reason surfaced only in `queue_job.exc_message` and the alert excerpt). Both halves are fixed: `requirements.txt` now pins `ansible-core==2.21.2` and `ansible-runner==2.4.3` (matching the panel image), and the two early guards — missing ansible-runner, undefined playbook — write their reason into the job log before raising, so a job that cannot even start still says why on its own log page
 
 ## [1.0.36] — 2026-08-07
 
 ### Fixed
 
-- **Standalone dialogs now follow the light theme.** The shared modal chrome (`.ic-modal`, `.ic-frow`, `.ic-btn`, `.ic-alert`) painted itself with literal dark hex values, a leftover from when the `--rl-*` tokens did not resolve outside `.ic-app` — relay.scss has since defined them on `:root` for exactly that case, and both files ship in the same /cloud bundle. Under `data-ic-theme="light"` every dialog built on that chrome (nine across core, saas manager and tenant — the tenant's "Order new VPS" among them) rendered as a hybrid: dark panel and header, paper-white theme-following inputs inside it, and a Cancel button whose ink-coloured label sat invisible on the dark footer. The chrome now uses the tokens, so it matches the active theme at any mount point; the overlay scrim and drop shadows stay literal darks in both themes, same convention as the slide-over scrim
-- **The light theme now reaches every corner of the SPA.** A sweep of all stylesheets found the same disease the modal chrome had, in more places: the import-dialog styled with the pre-redesign dark palette in literal hex; the instance and host detail screens building elevation from white-alpha glazes (invisible over paper) and two custom properties that no longer exist anywhere (`--text-muted`, `--text-primary` — their dark fallbacks always won); toasts and code/log panels frozen dark by literal SCSS constants; Tailwind-era accent colors (`#ef4444`, `#34d399`, `#F87171`…) instead of the Relay state tokens; and light-pastel status pills and banners doing the reverse damage to the dark theme. 118 literals across 20 files now resolve through `--rl-*` tokens — toast and code-panel tints via `color-mix()` over the themed surface so they stay opaque — and the "info" hue, which existed as five slightly different literal cyans, is now a proper token family (`--rl-cyan` + dim/soft/fg/text, with a light variant) alongside a new `--rl-red-fg`. One real dark-theme bug fell out of the sweep: primary buttons in the saas screens used white-on-green at 1.9:1 contrast; they now use `--rl-green-fg` like every other green control
-- **SearchSelect placeholders can finally be translated.** Every dropdown passed its placeholder as a quoted OWL expression (`placeholder="'Type to search hosts…'"`), a form the i18n extractor never sees — the strings were absent from the .pot, so no .po could ever cover them and Spanish tenants met English placeholders in an otherwise translated dialog. All 34 such props across core, saas manager and tenant now use the `.translate` attribute suffix (the standard the web client's own dialogs use), the component's built-in "Search…" / "— select —" defaults go through `_t()`, and two plain inputs in the header that had borrowed the quoted-expression syntax — rendering the quotes into the visible placeholder — lost their stray quotes. The regenerated .pot picked up 19 new terms, all translated in `es.po`
+- **Standalone dialogs now follow the light theme.** The shared modal chrome (`.ic-modal`, `.ic-frow`, `.ic-btn`, `.ic-alert`) painted itself with literal dark hex values, a leftover from when the `--rl-*` tokens did not resolve outside `.ic-app` — relay.scss has since defined them on `:root` for exactly that case, and both files ship in the same /cloud bundle. Under `data-ic-theme="light"` every dialog built on that chrome (nine of them) rendered as a hybrid: dark panel and header, paper-white theme-following inputs inside it, and a Cancel button whose ink-coloured label sat invisible on the dark footer. The chrome now uses the tokens, so it matches the active theme at any mount point; the overlay scrim and drop shadows stay literal darks in both themes, same convention as the slide-over scrim
+- **The light theme now reaches every corner of the SPA.** A sweep of all stylesheets found the same disease the modal chrome had, in more places: the import-dialog styled with the pre-redesign dark palette in literal hex; the instance and host detail screens building elevation from white-alpha glazes (invisible over paper) and two custom properties that no longer exist anywhere (`--text-muted`, `--text-primary` — their dark fallbacks always won); toasts and code/log panels frozen dark by literal SCSS constants; Tailwind-era accent colors (`#ef4444`, `#34d399`, `#F87171`…) instead of the Relay state tokens; and light-pastel status pills and banners doing the reverse damage to the dark theme. 118 literals across 20 files now resolve through `--rl-*` tokens — toast and code-panel tints via `color-mix()` over the themed surface so they stay opaque — and the "info" hue, which existed as five slightly different literal cyans, is now a proper token family (`--rl-cyan` + dim/soft/fg/text, with a light variant) alongside a new `--rl-red-fg`. One real dark-theme bug fell out of the sweep: primary buttons in some screens used white-on-green at 1.9:1 contrast; they now use `--rl-green-fg` like every other green control
+- **SearchSelect placeholders can finally be translated.** Every dropdown passed its placeholder as a quoted OWL expression (`placeholder="'Type to search hosts…'"`), a form the i18n extractor never sees — the strings were absent from the .pot, so no .po could ever cover them and Spanish users met English placeholders in an otherwise translated dialog. All such props now use the `.translate` attribute suffix (the standard the web client's own dialogs use), the component's built-in "Search…" / "— select —" defaults go through `_t()`, and two plain inputs in the header that had borrowed the quoted-expression syntax — rendering the quotes into the visible placeholder — lost their stray quotes. The regenerated .pot picked up 19 new terms, all translated in `es.po`
 
 ## [1.0.35] — 2026-08-07
 
 ### Fixed
 
-- **The nightly Docker prune no longer wipes containers that are stopped on purpose.** `docker system prune -af` removes every stopped container, and the exclusion filter meant to spare them (`--filter "label!=incubacloud.protect=1"`) lived in a dependent module as a patch of `get_commands` — a method this executor stopped calling the day it moved to Ansible. Nothing failed, so the loss went unnoticed until a prune landed between a warm instance's rebuild and that night's backup and took the instance's containers with it, failing the backup for the whole host. The filter now belongs to the playbook itself, fed the label from the executor so Python and playbook cannot drift apart, and a structural test pins that the prune command carries it
+- **The nightly Docker prune no longer wipes containers that are stopped on purpose.** `docker system prune -af` removes every stopped container, and the exclusion filter meant to spare them (`--filter "label!=incubacloud.protect=1"`) lived in a dependent module as a patch of `get_commands` — a method this executor stopped calling the day it moved to Ansible. Nothing failed, so the loss went unnoticed until a prune landed between the rebuild of an instance kept stopped and that night's backup and took the instance's containers with it, failing the backup for the whole host. The filter now belongs to the playbook itself, fed the label from the executor so Python and playbook cannot drift apart, and a structural test pins that the prune command carries it
 
 ## [1.0.34] — 2026-08-07
 
 ### Fixed
 
-- **Every confirmation dialog outside the instance page works again.** Extracting the shared `confirmVia` helper rewired all five components to call it but added the import to only one of them, so the host, project, settings and backup-backend panels each reached for an undefined global: ten confirmations — "Delete Host" and the SaaS "Open Host Shell" among them — died with `ReferenceError: confirmVia is not defined` the moment the button was pressed. Nothing caught it because the bundle parses fine and the reference is only resolved on the click
+- **Every confirmation dialog outside the instance page works again.** Extracting the shared `confirmVia` helper rewired all five components to call it but added the import to only one of them, so the host, project, settings and backup-backend panels each reached for an undefined global: ten confirmations — "Delete Host" among them — died with `ReferenceError: confirmVia is not defined` the moment the button was pressed. Nothing caught it because the bundle parses fine and the reference is only resolved on the click
 - A structural test now refuses any SPA file that calls a `utils/` export it never imported. This is the check a JavaScript `no-undef` would make, done in the Python suite so the pipeline needs no linter to catch the next omitted import
 
 ## [1.0.33] — 2026-08-06
 
 ### Fixed
 
-- **A new template question no longer writes a placeholder secret into `backup.env`.** The doodba template v9.7.0 adds `backup_backend_password`, whose default is the literal string `example-backup-backend-password`; since deploys run copier with `--defaults`, any question we leave unanswered takes its default. The answers file now sets it empty, which keeps the line out of the rendered file entirely. Only password-capable duplicity backends read it — ours authenticate with AWS keys — so nothing was broken, but a fake credential in a live env file is not something to ship
+- **A new template question no longer writes a placeholder secret into `backup.env`.** The doodba template v9.7.0 adds `backup_backend_password`, whose default is the literal string `example-backup-backend-password`; since deploys run copier with `--defaults`, any question we leave unanswered takes its default. The answers file now sets it empty, which keeps the line out of the rendered file entirely. Only password-capable duplicity backends read it — the panel's authenticate with AWS keys — so nothing was broken, but a fake credential in a live env file is not something to ship
 
 - **The host list no longer flickers while a job runs.** Every background refresh replaced the rendered fleet with the loading skeleton for about 120 ms, so a running job — which notifies watchers twice a second — turned the page into a strobe. The skeleton now belongs to the first paint and to the Retry button; bus events and tab refocus take a silent path that leaves the cards in place. A failed background refresh no longer replaces good data with the error stub either
 
@@ -5236,7 +5190,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 - **Executors notify on output, not on the clock.** The run loop published a bus event every half-second for the whole life of a job, whether or not anything had been written. A job sitting in a silent multi-minute `docker compose build` therefore cost every open panel a full refetch twice a second for nothing. The tick now publishes only when it actually persisted log rows; the final drain still publishes unconditionally so watchers settle on the last state, and the standalone log page keeps its own fallback poll
 - **Job events reach only the users allowed to read the job**, resolved through the same visibility helper the email and external notifiers use. A stakeholder no longer receives traffic for the projects they are not a member of
-- **Job events now name their target** (`host_id`, `instance_id`, `project_id`), so a panel can ignore an event that does not concern it without asking the server what the event was about. The instance page used to spend one `load_jobs` call per event — for every job in the fleet, not just its own — purely to learn that. Naming the target is safe because the audience is ACL-filtered first; the host page and the tenant page regain filters that had been dropped for costing an extra round-trip
+- **Job events now name their target** (`host_id`, `instance_id`, `project_id`), so a panel can ignore an event that does not concern it without asking the server what the event was about. The instance page used to spend one `load_jobs` call per event — for every job in the fleet, not just its own — purely to learn that. Naming the target is safe because the audience is ACL-filtered first; the host page and a layer's pages regain filters that had been dropped for costing an extra round-trip
 - Refreshed collections are merged by id instead of replaced wholesale, so a refresh only re-renders the rows that changed. This also fixes an active host search being cleared by a background refresh whenever every host happened to match the query
 
 ## [1.0.32] — 2026-08-06
@@ -5244,7 +5198,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 ### Added
 
 - Revoking a host's trusted SSH key on an endpoint change now raises a critical alert (`host_key_revoked`) through every notification channel, and re-running "Trust SSH Key" resolves it. The revocation used to leave only an audit row, so a host could sit unreachable — excluded from every cron, refusing to build SSH connections — with nothing telling the operator to re-verify the key
-- **Machine-identity check on re-trust.** A revocation now records the fingerprint of the key it dropped, and the next capture is compared against it: an identical fingerprint proves the machine did not change and the endpoint edit was administrative, while a different one raises a critical `host_key_changed` alert naming both fingerprints. The verdict reaches the operator who clicked (toast), the panel (alert) and the audit log. This is the verification actually available to us — our provider exposes no console output or metadata carrying host keys — so the alert text no longer asks for an out-of-band check the platform cannot support. Unlike the revocation alert, a change alert is not auto-resolved: it records a past event and waits for a human to dismiss it
+- **Machine-identity check on re-trust.** A revocation now records the fingerprint of the key it dropped, and the next capture is compared against it: an identical fingerprint proves the machine did not change and the endpoint edit was administrative, while a different one raises a critical `host_key_changed` alert naming both fingerprints. The verdict reaches the operator who clicked (toast), the panel (alert) and the audit log. This is the verification actually available — most providers expose no console output or metadata carrying host keys — so the alert text no longer asks for an out-of-band check the panel cannot support. Unlike the revocation alert, a change alert is not auto-resolved: it records a past event and waits for a human to dismiss it
 - Host key fingerprints are visible in the panel (host overview, `SHA256:…` in the same form `ssh-keygen -lf` prints), alongside the fingerprint of a pending revocation
 
 ### Fixed
@@ -5309,7 +5263,7 @@ Metadata disclosure only — no record, credential or job was ever reachable thr
 
 - Server-side pagination for backups, audit logs and alert history
 - Light theme and Relay UI redesign
-- Host pools-aware placement hook and cross-host instance move
+- Placement hook a layer can narrow, and cross-host instance move
 - Webhook auto-rebuild can be declined per instance; auto-rebuild guards for archived instances/hosts
 
 ### Fixed
