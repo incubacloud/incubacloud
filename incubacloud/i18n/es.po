@@ -19849,3 +19849,9 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_relay.js:0
 msgid "checked %s"
 msgstr "comprobado %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Paste the Value of a client secret from Entra ID."
+msgstr "Pegue el Valor de un secreto de cliente de Entra ID."
