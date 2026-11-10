@@ -53,6 +53,9 @@ TOOLS = (
             required=("host_id",),
         ),
         handler="_tool_harden_host",
+        # Applying queues host_hardening, and full_setup when chained: both
+        # ask through run_host_action and retry_job (_confirm_harden_host).
+        confirm="conditional",
         requires=(
             "a server the panel reaches by SSH with a trusted key "
             "(trust_host_key); apply after a preflight that found nothing "
@@ -199,6 +202,30 @@ class McpToolsManager(models.AbstractModel):
             old=current,
             new=new,
         )
+
+    @api.model
+    def _confirm_harden_host(self, args):
+        """Ask before the hardening is applied, and the full setup it chains.
+
+        The jobs are the ones run_host_action asks for, with its words: the
+        hardening moves SSH to another port and turns off root's login,
+        and the full setup may leave every instance unreachable for a
+        while. Checking what the hardening would change asks nothing.
+
+        :param dict args: the validated arguments
+        :return: what the user approves, or None
+        """
+        if not args.get("apply"):
+            return None
+        host_id = args["host_id"]
+        text = self._confirm_run_host_action(
+            {"code": "host_hardening", "host_id": host_id}
+        )
+        if args.get("chain_full_setup"):
+            text += " " + self._confirm_run_host_action(
+                {"code": "full_setup", "host_id": host_id}
+            )
+        return text
 
     @api.model
     def _tool_harden_host(self, args):
