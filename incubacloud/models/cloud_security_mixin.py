@@ -226,7 +226,7 @@ class CloudSecurityMixin(models.AbstractModel):
         """Return *value* of *field* as commands a new record may take.
 
         See :meth:`_check_new_record_x2many`. A value that is not a list
-        of commands (ids, a tuple, a recordset) means ``Command.SET``.
+        or a tuple of commands (ids, a recordset) means ``Command.SET``.
 
         :param field: the x2many field of this model
         :param value: what ``create`` received for it
@@ -238,7 +238,7 @@ class CloudSecurityMixin(models.AbstractModel):
         Command = fields.Command
         if isinstance(value, models.BaseModel):
             value = [Command.set(value.ids)]
-        elif not isinstance(value, list) or not isinstance(
+        elif not isinstance(value, (list, tuple)) or not isinstance(
             value[0], (list, tuple),
         ):
             value = [Command.set(tuple(value))]
