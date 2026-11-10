@@ -12,28 +12,11 @@ The update needs no data migration.
 
 ### Security
 
-- **Only a Project Manager or higher changes a repository line's URL**, on a
-  project or on an instance. A Consultant still changes a line's branch and
-  the Python dependencies, and a save that sends a line's own URL again, in
-  any spelling of the same repository, goes through. The rule is the model's,
-  so the panel's forms, the MCP, the assistant and RPC all follow it; the
-  editor shows a saved line's URL read-only below Project Manager, and
-  `/cloud/get_config` answers `permissions.can_change_repo_url`.
-- **Below Project Manager, the panel reads a repository's branches, modules
-  and requirements with its own GitHub credentials, or a Git provider's, only
-  when a line the user sees names that repository.** Any other is read as a
-  public repository: a public one still answers, a private one is not found.
-  From Project Manager up, any repository; with a Git provider's credential
-  this took a Developer before.
-- **A repository line's Git provider and path always follow its URL.**
-- **The MCP's `github_repo_info` reads with the same rule.** Importing a
-  repository creates a project, so the import and its preview take a Project
-  Manager or higher, as creating one does, and a Consultant is refused before
-  the repository is read; the MCP's `import_project` tool asks for the same
-  role.
-- **Creating an instance only creates its own domains, whitelist rows, alerts
-  and repositories**, and creating a host only its own rows; tags are still
-  chosen among those the user sees.
+- **Stricter permission checks** on repository reads, the import and its
+  preview, and on creating instances, hosts and jobs.
+- **Below Project Manager, a repository line's URL cannot be changed**; the
+  editor shows it read-only, and `/cloud/get_config` answers
+  `permissions.can_change_repo_url`.
 
 ### Fixed
 
