@@ -2336,6 +2336,24 @@ class CloudHost(models.Model):
             ("apply_to", "=", "host"),
         ], order="action_order, id")
 
+    def _infra_compose_projects(self):
+        """Return the Compose projects that are this host's own.
+
+        Stacks the platform runs on a host for itself, never an
+        instance's: the proxy, the stagings' whitelist proxies, the
+        observability agent, and the panel's own install. The daily prune
+        never removes their networks, whatever their state
+        (``docker_prune_executor.network_sweep``). A layer that runs more
+        stacks of its own on a host adds their projects here.
+
+        :return: Compose project names
+        :rtype: tuple
+        """
+        return (
+            "inverseproxy", "globalwhitelist", "incubacloud-observability",
+            "traefik", "incubacloud",
+        )
+
     # ── Deletion guard ─────────────────────────────────────────────────────
 
     def _check_no_instances(self):

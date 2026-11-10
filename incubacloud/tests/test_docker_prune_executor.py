@@ -785,8 +785,32 @@ class TestTheNightlySweepOfOrphanedNetworks(TransactionCase):
         owned = script.split("OWNED = set(", 1)[1].split(".split()", 1)[0]
         self.assertIn(self.live.doodba_project_name, owned)
         self.assertIn(self.archived.doodba_project_name, owned)
-        for infra in ("inverseproxy", "incubacloud-production", "incubacloud-qa"):
-            self.assertIn(infra, script.split("INFRA = set(", 1)[1].split(".split()", 1)[0])
+
+    def _infra(self):
+        """Return the projects the sweep's ``INFRA`` set is built from."""
+        script = self._script()
+        return script.split("INFRA = set(", 1)[1].split(".split()", 1)[0].strip("'\"").split()
+
+    def test_the_host_own_stacks_are_spared(self):
+        """The core's own stacks are spared; a layer installed alongside
+        may add more, so this is a subset."""
+        self.assertLessEqual(
+            {"globalwhitelist", "incubacloud", "incubacloud-observability",
+             "inverseproxy", "traefik"},
+            set(self._infra()),
+        )
+
+    def test_a_layer_adds_its_own_stacks_through_the_host(self):
+        """The sweep asks the host for its own stacks, so a layer's
+        override of the hook reaches the script."""
+        host_class = type(self.env["cloud.host"])
+        with patch.object(
+            host_class, "_infra_compose_projects",
+            autospec=True, return_value=("inverseproxy", "layer-stack"),
+        ) as projects:
+            infra = self._infra()
+        projects.assert_called_once_with(self.host)
+        self.assertEqual(infra, ["inverseproxy", "layer-stack"])
 
     def test_the_script_is_python_ansible_leaves_alone(self):
         script = self._script()

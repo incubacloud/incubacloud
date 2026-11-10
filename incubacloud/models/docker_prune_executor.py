@@ -124,22 +124,15 @@ NETWORKS_HIGH_ALERT_CODE = "docker_networks_high"
 #: Share of the host's networks in use at which the alert is raised.
 NETWORKS_HIGH_RATIO = 0.8
 
-#: Compose projects that are the host's own, never an instance's: their
-#: networks stay whatever their state. The panel's own stacks (the
-#: master's, the QA copy's) run on the master host.
-INFRA_PROJECTS = (
-    "inverseproxy", "globalwhitelist", "incubacloud-observability", "traefik",
-    "incubacloud", "incubacloud-production", "incubacloud-qa",
-)
-
 #: Run on the host as the panel's account. Removes the networks a deleted
 #: instance left behind, and reports how many networks are in use against
 #: how many the address pools allow. A network goes only when all of
 #: this holds: it is an instance's kind (``<project>_default`` or
 #: ``<project>_whitelist``), it carries a compose project, that project is
 #: neither an instance the panel knows on this host (active or archived)
-#: nor one of the host's own stacks, and no container uses it, running or
-#: stopped. Never ``docker network prune``: on 2026-08-20 that took the
+#: nor one of the host's own stacks (``cloud.host._infra_compose_projects``),
+#: and no container uses it, running or stopped. Never ``docker network
+#: prune``: on 2026-08-20 that took the
 #: networks of stopped warm spares, whose containers then could not start.
 #: Written without double braces, so Ansible leaves it as it is.
 _NETWORK_SWEEP = r"""python3 - <<'PY'
@@ -179,7 +172,7 @@ PY"""
 
 
 def network_sweep(env, host):
-    """The orphaned-network sweep for *host*, with its instances named.
+    """The orphaned-network sweep for *host*, its instances and stacks named.
 
     :param env: an Odoo environment
     :param host: the ``cloud.host`` the sweep runs on
@@ -191,7 +184,7 @@ def network_sweep(env, host):
     ).mapped("doodba_project_name")
     return _NETWORK_SWEEP % {
         "owned": " ".join(sorted(p for p in projects if p)),
-        "infra": " ".join(INFRA_PROJECTS),
+        "infra": " ".join(host._infra_compose_projects()),
     }
 
 
