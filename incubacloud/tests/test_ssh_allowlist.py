@@ -31,7 +31,7 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         })
         self.host.hardened = True
 
-    def _change(self, op, ips, answer='IC_SSH_ALLOW 203.0.113.7, 77.42.42.201',
+    def _change(self, op, ips, answer='IC_SSH_ALLOW 203.0.113.7, 203.0.113.201',
                 status=0):
         transport = MagicMock(spec=SSHTransport)
         script = CommandResult(f'[incubacloud] ok\n{answer}', status)
@@ -49,10 +49,10 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         return result, transport
 
     def test_an_address_is_let_in_and_remembered(self):
-        result, transport = self._change('add', ['77.42.42.201'])
-        self.assertEqual(result, '203.0.113.7, 77.42.42.201')
+        result, transport = self._change('add', ['203.0.113.201'])
+        self.assertEqual(result, '203.0.113.7, 203.0.113.201')
         self.assertEqual(
-            self.host.allowed_ssh_ips, '203.0.113.7, 77.42.42.201',
+            self.host.allowed_ssh_ips, '203.0.113.7, 203.0.113.201',
         )
         files = transport.upload_text_files.await_args.args[0]
         self.assertEqual(
@@ -61,7 +61,7 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         )
         commands = [c.args[0] for c in transport.run.await_args_list]
         run = next(c for c in commands if 'ssh_allowlist.sh' in c)
-        self.assertIn(' add 77.42.42.201', run)
+        self.assertIn(' add 203.0.113.201', run)
         self.assertTrue(commands[-1].startswith('rm -rf /tmp/.incubacloud-'))
 
     def test_the_list_is_kept_on_a_cursor_of_its_own(self):
@@ -71,23 +71,23 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         with patch.object(
             cloud_host, 'read_committed_cursor', wraps=cloud_host.read_committed_cursor,
         ) as durable:
-            self._change('add', ['77.42.42.201'])
+            self._change('add', ['203.0.113.201'])
         durable.assert_called_once_with(self.env.registry)
-        self.assertEqual(self.host.allowed_ssh_ips, '203.0.113.7, 77.42.42.201')
+        self.assertEqual(self.host.allowed_ssh_ips, '203.0.113.7, 203.0.113.201')
 
     def test_an_address_taken_out_is_forgotten_too(self):
-        self.host.allowed_ssh_ips = '203.0.113.7, 77.42.42.201'
-        self._change('remove', ['77.42.42.201'],
+        self.host.allowed_ssh_ips = '203.0.113.7, 203.0.113.201'
+        self._change('remove', ['203.0.113.201'],
                      answer='IC_SSH_ALLOW 203.0.113.7')
         self.assertEqual(self.host.allowed_ssh_ips, '203.0.113.7')
 
     def test_the_field_keeps_what_the_host_allows_not_what_it_held(self):
         # The field lacked the control address the hardening run added:
         # the host's own list is what a later run must rebuild.
-        self._change('add', ['77.42.42.201'],
-                     answer='IC_SSH_ALLOW 198.51.100.9, 203.0.113.7, 77.42.42.201')
+        self._change('add', ['203.0.113.201'],
+                     answer='IC_SSH_ALLOW 198.51.100.9, 203.0.113.7, 203.0.113.201')
         self.assertEqual(
-            self.host.allowed_ssh_ips, '198.51.100.9, 203.0.113.7, 77.42.42.201',
+            self.host.allowed_ssh_ips, '198.51.100.9, 203.0.113.7, 203.0.113.201',
         )
 
     def test_a_refusal_changes_nothing_here(self):
@@ -99,29 +99,29 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
 
     def test_an_answer_without_the_marker_is_a_failure(self):
         with self.assertRaises(UserError):
-            self._change('add', ['77.42.42.201'], answer='')
+            self._change('add', ['203.0.113.201'], answer='')
 
     def test_a_host_never_hardened_has_nothing_to_change(self):
         self.host.hardened = False
         with patch.object(type(self.host), 'get_transport') as opened:
             self.assertIsNone(
-                self.host._ssh_allowlist_change('add', ['77.42.42.201']),
+                self.host._ssh_allowlist_change('add', ['203.0.113.201']),
             )
         opened.assert_not_called()
 
     def test_only_add_and_remove(self):
         with self.assertRaises(UserError):
-            self.host._ssh_allowlist_change('set', ['77.42.42.201'])
+            self.host._ssh_allowlist_change('set', ['203.0.113.201'])
         with self.assertRaises(UserError):
             self.host._ssh_allowlist_change('add', [])
 
     def test_the_address_reaches_the_script_quoted(self):
-        _result, transport = self._change('add', ['77.42.42.201; reboot'])
+        _result, transport = self._change('add', ['203.0.113.201; reboot'])
         run = next(
             c.args[0] for c in transport.run.await_args_list
             if 'ssh_allowlist.sh' in c.args[0]
         )
-        self.assertIn("'77.42.42.201; reboot'", run)
+        self.assertIn("'203.0.113.201; reboot'", run)
 
 
 class TestTheAllowlistHoldsAddresses(TransactionCase):
@@ -247,6 +247,6 @@ class TestTheAllowlistHoldsAddresses(TransactionCase):
         """The script prints the list as the host's file holds it; the
         field keeps it in the panel's form."""
         self._script_command(
-            'add', ['77.42.42.201'], '2001:0db8::7, 77.42.42.201',
+            'add', ['203.0.113.201'], '2001:0db8::7, 203.0.113.201',
         )
-        self.assertEqual(self.host.allowed_ssh_ips, '2001:db8::7, 77.42.42.201')
+        self.assertEqual(self.host.allowed_ssh_ips, '2001:db8::7, 203.0.113.201')

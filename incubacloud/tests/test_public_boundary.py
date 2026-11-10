@@ -16,6 +16,7 @@ fewer, so a cleaned file loses its entry instead of keeping a door open.
 A file the walk does not find (an image keeps only the modules) is not
 checked.
 """
+import hashlib
 import pathlib
 import re
 
@@ -34,7 +35,18 @@ _RULES = {
     "subdomain": re.compile(
         r"(?<![\w.-])((?:[a-z0-9-]+\.)+)incubacloud\.io", re.IGNORECASE,
     ),
+    # Any IPv4 address; only those of ``_SERVER_ADDRESSES`` count.
+    "server address": re.compile(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?!\d|\.\d)"),
 }
+
+#: The SHA-256 of the addresses of particular servers that tests used to
+#: name: kept as digests, so this file does not name them either. Tests
+#: use the documentation ranges (203.0.113.0/24, 198.51.100.0/24).
+_SERVER_ADDRESSES = frozenset({
+    "a2dec802e70c3b0c69095356448894a7b8583003128f28593bf85f855c396ea6",
+    "652c3aa11de86d3fb0ab7d7332fe5a56d1756e89c2c85d5cde91818a6a02a187",
+    "32f1bd0438ef86f410b14e8635e361cdba9652a6120b5f844d31cea565cac711",
+})
 
 #: The project's public names: its documentation, its site, its status page.
 _PUBLIC_SUBDOMAINS = frozenset({"docs.", "www.", "status."})
@@ -64,10 +76,6 @@ _ALLOWED_TREES = {
             "service offers, never how it is run"
         ),
     ),
-    "incubacloud_pitr/": (
-        set(_RULES),
-        "in a release candidate under way; cleaned once it lands",
-    ),
 }
 
 #: Released migrations: they ran once and are history. 1.0.102 reads a
@@ -95,6 +103,9 @@ _ALLOWED_FILES = {
     "incubacloud/models/cloud_instance_domain.py": (2, _CANDIDATE),
     "incubacloud/models/cloud_project.py": (2, _CANDIDATE),
     "incubacloud/models/cloud_repo_mixin.py": (2, _CANDIDATE),
+    "incubacloud_pitr/models/cloud_instance.py": (2, _CANDIDATE),
+    "incubacloud_pitr/tests/test_oneoff_containers.py": (1, _CANDIDATE),
+    "incubacloud_pitr/tests/test_pitr.py": (2, _CANDIDATE),
     "incubacloud/models/deploy_instance_executor.py": (7, _CANDIDATE),
     "incubacloud/scripts/deploy.sh": (3, _CANDIDATE),
     "incubacloud/ansible/playbooks/host_observability.yml": (11, _LABELS),
@@ -156,10 +167,12 @@ def _text_files():
         yield relative.as_posix(), text
 
 
-def _matches(text):
+def _matches(text, addresses=_SERVER_ADDRESSES):
     """Return ``[(rule, line number, line)]`` for every match in *text*.
 
     :param str text: a file's content.
+    :param addresses: the SHA-256 digests of the server addresses that
+        count as a match; ``_SERVER_ADDRESSES`` by default.
     :rtype: list[tuple[str, int, str]]
     """
     found = []
@@ -171,6 +184,10 @@ def _matches(text):
                 if rule == "subdomain" and (
                     match.group(1).lower() in _PUBLIC_SUBDOMAINS
                 ):
+                    continue
+                if rule == "server address" and hashlib.sha256(
+                    match.group(0).encode(),
+                ).hexdigest() not in addresses:
                     continue
                 found.append((rule, number, line.strip()))
     return found
@@ -260,3 +277,15 @@ class TestCoreNamesNoDeployment(BaseCase):
             "status.incubacloud.io incubacloud 1.0.11 rl-saas-fsec"
         )
         self.assertEqual(_matches(public), [])
+
+    def test_a_listed_server_address_is_caught_and_no_other(self):
+        """An address counts by its digest; documentation ones do not."""
+        self.assertEqual(len(_SERVER_ADDRESSES), 3)
+        example = "ssh root@203.0.113.5 or 203.0.113.50."
+        listed = {hashlib.sha256(b"203.0.113.5").hexdigest()}
+        self.assertEqual(
+            [m[0] for m in _matches(example, addresses=listed)],
+            ["server address"],
+        )
+        self.assertEqual(_matches(example), [])
+        self.assertEqual(_matches("version 1.0.222.1", addresses=listed), [])

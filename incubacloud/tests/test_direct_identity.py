@@ -15,7 +15,7 @@ class TestTheConnectingHostIsTheClient(BaseCase):
 
     def test_a_forged_chain_from_a_platform_host_is_ignored(self):
         self.assertEqual(
-            client_ip("37.27.0.82", "6.6.6.6, 173.245.48.1", _CDN), "37.27.0.82",
+            client_ip("198.51.100.82", "6.6.6.6, 173.245.48.1", _CDN), "198.51.100.82",
         )
 
     def test_from_the_proxy_gateway_it_is_the_gateway(self):

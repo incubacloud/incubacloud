@@ -125,14 +125,14 @@ set_block() {
 
 @test "a legacy host is converted to the named set, live and on disk" {
     legacy_conf
-    run bash "$SCRIPT" add 77.42.42.201
+    run bash "$SCRIPT" add 203.0.113.201
     [ "$status" -eq 0 ]
-    [[ "$output" == *"IC_SSH_ALLOW 203.0.113.7, 198.51.100.4, 77.42.42.201"* ]]
+    [[ "$output" == *"IC_SSH_ALLOW 203.0.113.7, 198.51.100.4, 203.0.113.201"* ]]
     grep -q "add set inet filter ic_ssh_allow { type ipv4_addr; flags interval; auto-merge; }" "$APPLIED"
-    grep -q "add element inet filter ic_ssh_allow { 203.0.113.7, 198.51.100.4, 77.42.42.201 }" "$APPLIED"
+    grep -q "add element inet filter ic_ssh_allow { 203.0.113.7, 198.51.100.4, 203.0.113.201 }" "$APPLIED"
     grep -q "replace rule inet filter input handle 7 tcp dport 22222 ip saddr @ic_ssh_allow accept" "$APPLIED"
     grep -q "tcp dport 22222 ip saddr @ic_ssh_allow accept" "$IC_NFT_CONF"
-    grep -q "elements = { 203.0.113.7, 198.51.100.4, 77.42.42.201 }" "$IC_NFT_CONF"
+    grep -q "elements = { 203.0.113.7, 198.51.100.4, 203.0.113.201 }" "$IC_NFT_CONF"
     [ -f "$IC_NFT_CONF.ic-prev" ]
     # The IPv6 set comes with it, empty, its rule beside the IPv4 one.
     grep -q "add set inet filter ic_ssh_allow6 { type ipv6_addr; flags interval; auto-merge; }" "$APPLIED"
@@ -156,10 +156,10 @@ table inet filter {
 }
 EOF
     export STUB_LIVE_RULE="tcp dport 22222 ip saddr 203.0.113.7 accept # handle 2"
-    run bash "$SCRIPT" add 77.42.42.201
+    run bash "$SCRIPT" add 203.0.113.201
     [ "$status" -eq 0 ]
     grep -q "replace rule inet filter input handle 2 tcp dport 22222 ip saddr @ic_ssh_allow accept" "$APPLIED"
-    grep -q "add element inet filter ic_ssh_allow { 203.0.113.7, 77.42.42.201 }" "$APPLIED"
+    grep -q "add element inet filter ic_ssh_allow { 203.0.113.7, 203.0.113.201 }" "$APPLIED"
 }
 
 @test "a named set is replaced whole, and only its own line changes" {
@@ -284,7 +284,7 @@ add element inet filter ic_ssh_allow6 { 2001:db8::7 }" ]
     named_conf
     cp "$IC_NFT_CONF" "$TMP/before"
     export STUB_CHECK_STATUS=1
-    run bash "$SCRIPT" add 77.42.42.201
+    run bash "$SCRIPT" add 203.0.113.201
     [ "$status" -ne 0 ]
     [ ! -f "$APPLIED" ]
     cmp -s "$TMP/before" "$IC_NFT_CONF"
@@ -294,7 +294,7 @@ add element inet filter ic_ssh_allow6 { 2001:db8::7 }" ]
     named_conf
     cp "$IC_NFT_CONF" "$TMP/before"
     export STUB_LIVE_SET=0 STUB_APPLY_STATUS=1
-    run bash "$SCRIPT" add 77.42.42.201
+    run bash "$SCRIPT" add 203.0.113.201
     [ "$status" -ne 0 ]
     cmp -s "$TMP/before" "$IC_NFT_CONF"
 }
@@ -305,7 +305,7 @@ table inet filter {
     chain input { tcp dport 22 accept }
 }
 EOF
-    run bash "$SCRIPT" add 77.42.42.201
+    run bash "$SCRIPT" add 203.0.113.201
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot find the SSH allowlist"* ]]
 }

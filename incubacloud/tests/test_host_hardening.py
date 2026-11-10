@@ -677,12 +677,12 @@ class TestHardeningPreflight(TransactionCase):
     def test_the_run_reports_what_each_family_allows(self):
         """With no operator address the log says IPv6 is open to anyone
         too, rather than leave ``::/0`` to the ruleset alone."""
-        facts = self._allowlist_facts("0.0.0.0/0", connection="95.217.1.126")
+        facts = self._allowlist_facts("0.0.0.0/0", connection="198.51.100.126")
         message = self._task_template(
             "Report the effective allowlist", ("ansible.builtin.debug", "msg"),
             ssh_allowlist="0.0.0.0/0", **facts,
         )
-        self.assertIn("IPv4 0.0.0.0/0, 95.217.1.126", message)
+        self.assertIn("IPv4 0.0.0.0/0, 198.51.100.126", message)
         self.assertIn("IPv6 ::/0", message)
         facts = self._allowlist_facts("203.0.113.7")
         message = self._task_template(
@@ -694,13 +694,13 @@ class TestHardeningPreflight(TransactionCase):
     def test_the_panel_is_handed_what_the_firewall_allows(self):
         """``set_stats`` exports both families, the IPv6 catch-all
         included."""
-        facts = self._allowlist_facts("0.0.0.0/0", connection="95.217.1.126")
+        facts = self._allowlist_facts("0.0.0.0/0", connection="198.51.100.126")
         exported = self._task_template(
             "Export the hardening facts",
             ("ansible.builtin.set_stats", "data", "ic_effective_allowlist"),
             **facts,
         )
-        self.assertEqual(exported, "0.0.0.0/0, 95.217.1.126, ::/0")
+        self.assertEqual(exported, "0.0.0.0/0, 198.51.100.126, ::/0")
         # A family with no address adds nothing, not "None".
         exported = self._task_template(
             "Export the hardening facts",
