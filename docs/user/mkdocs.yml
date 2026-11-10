@@ -130,6 +130,7 @@ nav:
     - agents/index.md
     - Connect an agent: agents/connect.md
     - Approvals: agents/confirmations.md
+    - Auto-approval: agents/auto-approval.md
     - Secrets: agents/secrets.md
     - Revoke an agent: agents/revoke.md
     - Limits: agents/limits.md

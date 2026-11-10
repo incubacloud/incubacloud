@@ -14,6 +14,49 @@ moves at its next deploy or rebuild, which downloads all its repositories
 once. A server keeps one tree of each commit of Odoo its instances are
 on, about 1.2 GB for 19.0.
 
+Auto-approval of agents' actions, per person and credential (issue #8). The
+update adds two tables, `incubacloud_mcp_auto_approval` and
+`incubacloud_mcp_credential`, and two empty columns on `cloud_audit_log` and
+`cloud_job` (`approval`, `approval_rule_id`); rows written before it have no
+approval mark, which the panel does not show. `incubacloud_assistant` 1.0.4
+comes with it.
+
+### Added
+
+- **Auto-approval rules.** An Administrator lets one credential of one user
+  — an API key, an OAuth client, or the panel's assistant — run without
+  asking until a date, at most 90 days ahead (Settings → Agents, **Grant
+  auto-approval…**). While the rule is active, every call of that credential
+  that would wait for an approval runs at once, production included; every
+  other agent keeps asking. The role, the routes' checks, the secrets and the
+  limits stay. Granting shows a notice of what the panel stops protecting
+  from, whose box must be ticked; the panel keeps who accepted which version
+  of it, when and from where. A rule is granted only to a credential that
+  already connected (`incubacloud.mcp.credential`), cannot be extended or
+  changed, and ends when its date passes, when it is revoked (an
+  Administrator any rule, a person their own, also from Connect an agent),
+  when the user is archived or the API key deleted; a role that goes up
+  pauses it. `cloud.settings._mcp_auto_approval_allowed()` (True) pauses
+  every rule and refuses new ones when a layer says False.
+- **The approval is marked** in the audit and on the jobs: `approval` is
+  `person` or `auto`, with the rule. The audit tables show
+  *· auto-approved* or *· approved*; the jobs' history and an instance's
+  activity show *via agent … · auto-approved*; `get_audit_log`, `get_job`
+  and `list_jobs` answer it. A call someone approved is audited even when
+  the tool says it changes nothing, and a rule's **Activity** lists what it
+  approved, with its grant and its end.
+- **What the agent is told is true.** With a rule, `tools/list` says which
+  tools run without asking and until when, and the server's instructions say
+  that no action waits for an approval.
+- **The assistant (`incubacloud_assistant` 1.0.4)** is a credential of its
+  own: with its rule, no card is shown, also after it read content others
+  write; each action's line says *ran without asking*, and its rules say
+  changes run without a card. A rule of a key never covers the assistant,
+  nor the reverse.
+- **Routes** `/cloud/mcp/auto_approval/list`, `candidates`, `grant`,
+  `revoke` and `activity`, excluded from the agents' catalog; each refuses a
+  request that carries an agent's mark. Spanish translation included.
+
 ### Changed
 
 - **19.0 downloads its repositories on the server.** Its deploys and
@@ -31,13 +74,6 @@ on, about 1.2 GB for 19.0.
   whether it built or not. The cache of layers stays, and the next build
   of each instance sends its context whole again.
 
-### Security
-
-- **No Git credential in a 19.0 image either.** A 19.0 instance deployed
-  or rebuilt with this version holds no token in its image, its build, its
-  container or the `repos.yaml` on its server. One not rebuilt yet keeps the
-  token it was built with until then.
-
 ### Fixed
 
 - **A repository with several merges whose head moves while it downloads
@@ -45,6 +81,15 @@ on, about 1.2 GB for 19.0.
   tree stays the instance's own and the next deploy or rebuild fetches it
   again, instead of being kept on the server under the commits read before
   the download for other instances to take.
+
+### Security
+
+- **No Git credential in a 19.0 image either.** A 19.0 instance deployed
+  or rebuilt with this version holds no token in its image, its build, its
+  container or the `repos.yaml` on its server. One not rebuilt yet keeps the
+  token it was built with until then.
+
+---
 
 ## [1.0.223] — 2026-11-10
 

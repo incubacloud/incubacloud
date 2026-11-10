@@ -280,8 +280,16 @@ Agents' endpoint and the MCP's own pages; see [`mcp.md`](mcp.md).
 | GET | `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-protected-resource` | **public** | RFC 9728 document of `/mcp`; 404 without an issuer. |
 | GET, POST | `/cloud/mcp/approve/<token>` | user (the one whose agent asked; others 403) | Approval page of an agent's action. GET shows; POST (CSRF) approves or cancels. Never framed or cached. |
 | GET | `/cloud/mcp/download/<token>` | **public** (single-use token) | The backup an approved `download_backup` link names: once, 15 minutes; the user's role and access checked again; another user's session 404, `HEAD` 405, a file gone 410. |
-| JSON | `/cloud/mcp/config` | cloud user | What *Connect an agent* shows: the MCP address, the issuer, whether API keys are accepted, the links. |
+| JSON | `/cloud/mcp/config` | cloud user | What *Connect an agent* shows: the MCP address, the issuer, whether API keys are accepted, the links, and the user's own auto-approval rules that still count. |
 | JSON | `/cloud/mcp/get_settings`, `/cloud/mcp/save_settings` | manage settings | The agents' issuer, the MCP address and the agents' limit; read-only where the platform sets them. |
+| JSON | `/cloud/mcp/auto_approval/list` | cloud user | Auto-approval rules: every rule for an Administrator, the user's own otherwise; whether the panel allows them, the notice's version and the periods. |
+| JSON | `/cloud/mcp/auto_approval/candidates` | manage settings | The users a rule may be granted to, with their credentials that connected (and the assistant). |
+| JSON | `/cloud/mcp/auto_approval/grant` | manage settings | Grant a rule (`user_id`, `credential`, `days` or `expires_on`, `acknowledged`, `notice_version`); 90 days at most. `{ok, rule}` or `{ok: false, error}`. |
+| JSON | `/cloud/mcp/auto_approval/revoke` | manage settings, or the rule's user | End a rule now (`rule_id`). |
+| JSON | `/cloud/mcp/auto_approval/activity` | manage settings, or the rule's user | A page of the audit rows of a rule (`rule_id`, `offset`, `limit` ≤ 100), newest first. |
+
+Every `/cloud/mcp/auto_approval/*` route refuses a request that carries an
+agent's mark (the MCP endpoint's or the assistant's), and no tool calls them.
 
 ## Assistant (`incubacloud_assistant`)
 
