@@ -5,14 +5,14 @@
 garbage after a bad migration.
 **Who runs it:** ops lead (requires off-site backup credentials).
 
-The master database holds every `cloud.host`, `cloud.project`,
+The panel's database holds every `cloud.host`, `cloud.project`,
 `cloud.instance`, `cloud.job`, `cloud.alert` and encrypted secret.
-Losing it means losing the inventory used to reach every tenant —
-tenants keep running, but we can no longer drive them from the UI.
+Losing it means losing the inventory used to reach every server and
+instance — they keep running, but the panel can no longer drive them.
 
-The doodba production stack has duplicity writing full + incremental
-backups to the off-site S3 bucket every night. This runbook restores
-from that bucket.
+A doodba production stack with its `backup` service has duplicity
+writing full + incremental backups to an off-site S3 bucket every
+night. This runbook restores from that bucket.
 
 ## Symptoms / triggers
 
@@ -97,7 +97,8 @@ is gone. Verify it once by pinging the URL by hand and watching the
 check go green, then by stopping the container for a cycle.
 
 Related: the restore procedure itself should be rehearsed, not assumed —
-see the restore drill in the deployment repo (`drill-restore/`).
+restore into a separate stack now and then and run the checks of step 5
+there.
 
 ## Resolution
 
