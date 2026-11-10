@@ -12,8 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 has since 1.0.222. The update needs no data migration: a 19.0 instance
 moves at its next deploy or rebuild, which downloads all its repositories
 once. A server keeps one tree of each commit of Odoo its instances are
-on, about 1.2 GB for 19.0, and Docker's build cache keeps each instance's
-build context, of the same size, until the daily maintenance.
+on, about 1.2 GB for 19.0.
 
 ### Changed
 
@@ -24,6 +23,13 @@ build context, of the same size, until the daily maintenance.
   parameter `incubacloud.repos_in_image_series` still sends it back to
   cloning in the image; its next deploy or rebuild then removes the
   downloaded trees.
+- **A build leaves no copy of the repositories in Docker's build cache.**
+  Docker kept the last build context of each instance, the trees included,
+  until the daily maintenance: some 1.2 GB for each 19.0 instance built
+  that day. On every series that downloads on the server, a deploy's and a
+  rebuild's build now removes the contexts no build is using once it ends,
+  whether it built or not. The cache of layers stays, and the next build
+  of each instance sends its context whole again.
 
 ### Security
 

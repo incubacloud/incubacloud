@@ -95,13 +95,16 @@ account would share the trees, as they already share Docker.
   instances are on; each instance's links add only its directories, about
   35 MB.
 - **The build contexts.** Docker's build cache keeps the last context of
-  each instance it built, the trees included, until the daily maintenance
-  empties it; a deploy or rebuild empties it first when the disk is under
-  the host's threshold («Free the build cache if the disk is low»). After a
-  night that rebuilt many instances it is their number times their trees:
+  each instance it built, the trees included. From 1.0.224 a deploy's and
+  a rebuild's build removes the contexts no build is using once it ends
+  (`docker builder prune -af --filter type=source.local`, in «Build Odoo
+  image» and «Rebuild Odoo image»), so only those of builds still running
+  remain; the layers stay. A context that stays means a build running, or
+  a core before 1.0.224. To see them, and to remove them by hand:
 
   ```bash
   $ docker buildx du --filter type=source.local | tail -3
+  $ docker builder prune -af --filter type=source.local
   ```
 
 - **What the daily maintenance removes:** a tree no instance links any more
