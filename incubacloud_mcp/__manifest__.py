@@ -12,7 +12,8 @@ Agents (Claude Code, claude.ai, Claude Desktop, Cursor, VS Code, Codex…)
 connect to POST /mcp and act with the role and project rules of the user
 they sign in as: OAuth tokens of the configured issuer, or the panel's own
 API keys. Destructive and security-sensitive actions wait for that user's
-approval. Secrets never go in or out.
+approval, unless an Administrator granted that credential auto-approval until
+a date. Secrets never go in or out.
 """,
     "category": "Tools",
     "website": "https://www.incubacloud.io",

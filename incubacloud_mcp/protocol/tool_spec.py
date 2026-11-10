@@ -71,9 +71,12 @@ class ToolSpec:
         if self.destructive and self.confirm == "never":
             raise ValueError(f"{self.name}: a destructive tool asks for approval")
 
-    def listed(self):
+    def listed(self, auto_until=""):
         """Return this tool's ``tools/list`` entry.
 
+        :param str auto_until: when an auto-approval rule of the credential
+            that lists ends (UTC); the tools that would ask then say they
+            run without asking
         :rtype: dict
         """
         description = self.description
@@ -82,7 +85,12 @@ class ToolSpec:
         description += f" Minimum role: {ROLE_LABELS[self.min_group]}."
         if self.destructive:
             description += " Destructive."
-        if self.confirm == "always":
+        if auto_until and self.confirm != "never":
+            description += (
+                " An auto-approval rule lets this credential run it without asking "
+                f"the user, until {auto_until} UTC."
+            )
+        elif self.confirm == "always":
             description += " The panel asks the user to approve it before it runs."
         elif self.confirm == "conditional":
             description += (

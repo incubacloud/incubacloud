@@ -42,3 +42,4 @@ from . import test_tools_code
 from . import test_tools_code_gitlab
 from . import test_tools_truthful
 from . import test_quota_concurrency
+from . import test_auto_approval
