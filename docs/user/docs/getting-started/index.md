@@ -1,5 +1,11 @@
 # Get started
 
+!!! tip "Never set up a server or a domain?"
+    [From zero to Odoo in production](zero-to-odoo.md) goes step by step, from
+    nothing to an Odoo your team signs in to: the server, the domain and its
+    DNS, the backups, the first deploy and the mail. It explains each word as it
+    comes up.
+
 Three short guides that take you from zero to a running Odoo instance:
 
 1. [Create your account](signup.md) — sign up, pick a plan, log in.
@@ -25,4 +31,5 @@ Most users move on to:
 
 - [Setting up backups](../backups/index.md) so your data is safe.
 - [Connecting your own VPS](../hosts/connect.md) if you bring your own infra.
-- [Migrating from Odoo.sh](../migrations/from-odoosh.md) if you're moving in.
+- [Migrating from Odoo.sh](../migrations/from-odoosh.md) or
+  [from another host](../migrations/from-another-host.md) if you're moving in.

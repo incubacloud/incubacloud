@@ -137,6 +137,18 @@ server keeps one tree of each commit of Odoo its instances are on, about
   its note), and a note GitLab did not take is tried again for about 20
   minutes before an alert, which the next note that goes through, or closing
   the merge request, resolves. Spanish translation included.
+- **User guide: From zero to Odoo in production** (Get started), for someone
+  who has never set up a server, a domain or a mail account for an
+  application: the words it uses, which server for how many people, the
+  backups, the project and the first deploy, the company's own domain and its
+  DNS record, and the mail Odoo sends with its SPF and DKIM records.
+- **User guide: Migrate from another host** (Migrations): what to check first
+  (version, edition, own modules, size), the three ways to bring the project
+  (a doodba project on a server, a Git repository, or none), the data, a test
+  in a staging while the old Odoo keeps working, and the switch.
+- **Order a VPS** says how the panel's catalog recommends a size for a number
+  of people, and offers the managed backup storage when no backup destination
+  exists yet.
 
 ### Changed
 

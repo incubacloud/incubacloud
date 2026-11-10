@@ -1,13 +1,19 @@
 # Migrations
 
 Move an existing Odoo into IncubaCloud without rebuilding from scratch.
-Three paths, depending on where your data lives today:
+Every move follows the same plan: bring the project, bring the data, try it
+while the old Odoo keeps working, and switch over at a quiet moment.
 
 ## Pick your starting point
 
 - :material-source-branch:{ .lg .middle } **Coming from Odoo.sh** — your project lives in a Git repo on Odoo.sh
   and you can download backups from the dashboard.
   [:octicons-arrow-right-24: Walkthrough](from-odoosh.md)
+
+- :material-server-network:{ .lg .middle } **Coming from another host** — your own server, a hosting
+  provider, Docker or a package install: what to check first, the three ways
+  to bring the project, the data, a test, and the switch.
+  [:octicons-arrow-right-24: Walkthrough](from-another-host.md)
 
 - :material-server:{ .lg .middle } **Importing an instance already running on a VPS** — doodba already deployed
   on a host you can SSH into, and you want to bring it under IncubaCloud's

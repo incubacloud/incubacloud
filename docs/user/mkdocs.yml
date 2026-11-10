@@ -106,6 +106,7 @@ nav:
   - Home: index.md
   - Get started:
     - getting-started/index.md
+    - From zero to Odoo in production: getting-started/zero-to-odoo.md
     - Create your account: getting-started/signup.md
     - Create your first project: getting-started/first-project.md
     - Deploy your first instance: getting-started/first-deploy.md
@@ -143,6 +144,7 @@ nav:
   - Migrations:
     - migrations/index.md
     - From Odoo.sh: migrations/from-odoosh.md
+    - From another host: migrations/from-another-host.md
   - Reference:
     - reference/index.md
     - Notifications: reference/notifications.md
