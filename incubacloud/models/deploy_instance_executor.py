@@ -254,6 +254,10 @@ _REPO_ANSWER_BYTES = 256 * 1024
 #: it» (10-nov-2026).
 _REPO_ACCESS_RETRY_SECONDS = 2
 
+#: GitHub's answers that send a repository's API URL elsewhere: a renamed
+#: or transferred repository. The panel's opener follows no redirect.
+_REPO_MOVED_CODES = frozenset({301, 302, 307, 308})
+
 
 _ADDONS_CONFLICT_RE = re.compile(
     r"AddonsConfigError: Addon (\w+) defined in several repos \{([^}]+)\}"
@@ -561,13 +565,23 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         The App's is the installation's own token, for the panel's calls
         to GitHub's API: what a server is handed for a download is the
         scoped one (:meth:`_scoped_github_token`).
+
+        :raises JobRefused: when the panel has a GitHub App and GitHub did
+            not issue its token: the PAT is not used in its place
         """
         svc = self.env["cloud.github.credential.service"]
         app_token = None
         client = self._github_app_client()
         if client is not None:
-            with suppress(Exception):
+            try:
                 app_token = client.get_installation_token()
+            except Exception as exc:
+                raise JobRefused(
+                    "Refused: the GitHub App is configured but GitHub did "
+                    f"not issue its installation token ({exc}). Check the "
+                    "App in Settings, then run the job again; the personal "
+                    "access token is not used instead."
+                ) from exc
         pat = None
         with suppress(Exception):
             pat = svc.get_pat()
@@ -633,7 +647,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         :param pat: the PAT, or None
         :param dict cache: ``{"owner/repo": answer}``, filled here
         :rtype: tuple
-        :raises JobRefused: when GitHub's API failed twice for a token
+        :raises JobRefused: when GitHub's API failed twice for a token, or
+            at once when it says the repository was renamed or moved
+            (:meth:`_refuse_a_moved_repo`)
         """
         url = canonical_repo_url((repo_url or "").strip())
         if not is_safe_repo_url(url):
@@ -649,7 +665,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 continue
             try:
                 data = self._ask_github_repo(api, token)
-            except Exception:  # noqa: BLE001 — asked again; the second says why
+            except Exception as first:  # noqa: BLE001 — asked again; the second says why
+                self._refuse_a_moved_repo(first, owner, repo)
                 time.sleep(_REPO_ACCESS_RETRY_SECONDS)
                 try:
                     data = self._ask_github_repo(api, token)
@@ -666,6 +683,27 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             break
         cache[key] = answer
         return answer
+
+    @staticmethod
+    def _refuse_a_moved_repo(exc, owner, repo):
+        """Refuse the job when GitHub sent the repository's URL elsewhere.
+
+        GitHub answers a renamed or transferred repository with a redirect,
+        which the panel does not follow: asking again would get the same
+        answer, so the job stops at once and says what to change.
+
+        :param Exception exc: what asking GitHub raised
+        :param str owner: the repository's owner, as the line names it
+        :param str repo: the repository's name, as the line names it
+        :raises JobRefused: when *exc* is one of those redirects
+        """
+        if (isinstance(exc, urllib.error.HTTPError)
+                and exc.code in _REPO_MOVED_CODES):
+            raise JobRefused(
+                f"Refused: GitHub says {owner}/{repo} was renamed or moved. "
+                "Update the repository's URL to its new place, then run "
+                "the job again."
+            ) from exc
 
     def _get_token_for_repo(self, repo_url, app_token, pat, cache):
         """Return the token that reads *repo_url*, the App's first, or None.
