@@ -316,6 +316,72 @@ class TestGetTokenForRepo(BaseCase):
             "app_tok",
         )
 
+    def test_a_renamed_or_moved_repository_refuses_the_job_at_once(self):
+        """GitHub answers a renamed or transferred repository with a
+        redirect, which the panel does not follow: the job is refused
+        naming the repository, without asking again and without the
+        token."""
+        import urllib.error
+
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        moved = {"Location": "https://api.github.com/repositories/101"}
+        for code in (301, 302, 307, 308):
+            with self.subTest(code=code):
+                outcome, mock_urlopen = self._ask([
+                    urllib.error.HTTPError(None, code, "Moved", moved, None),
+                    _answer(),
+                ])
+                self.assertIsInstance(outcome, JobRefused)
+                self.assertIn("acme/secret", str(outcome))
+                self.assertIn("renamed or moved", str(outcome))
+                self.assertNotIn("app_tok", str(outcome))
+                self.assertEqual(mock_urlopen.call_count, 1)
+
+
+class TestAnAppThatIssuesNoToken(TransactionCase):
+    """A panel with a GitHub App whose token GitHub does not issue."""
+
+    def _tokens(self, client):
+        """Call ``_get_github_tokens`` with *client* as the panel's App.
+
+        :param client: the App's client, or None for a panel without one
+        :return: the tokens, or the exception raised
+        """
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+
+        executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
+        executor.env = self.env
+        executor._github_app_client = lambda: client
+        self.env["cloud.settings"]._get_system().github_pat = "pat_tok"
+        try:
+            return executor._get_github_tokens()
+        except Exception as exc:  # noqa: BLE001 — the outcome under test
+            return exc
+
+    def test_the_job_is_refused_instead_of_falling_back_to_the_pat(self):
+        """The App's failure is the job's reason; the PAT is not tried."""
+        from odoo.addons.incubacloud.github.client import (
+            GitHubAPIError,
+            GitHubAppClient,
+        )
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        client = MagicMock(spec=GitHubAppClient)
+        client.get_installation_token.side_effect = GitHubAPIError(
+            401, "Bad credentials",
+        )
+        outcome = self._tokens(client)
+        self.assertIsInstance(outcome, JobRefused)
+        self.assertIn("GitHub App", str(outcome))
+        self.assertNotIn("pat_tok", str(outcome))
+
+    def test_a_panel_without_an_app_uses_the_pat(self):
+        """No App configured is not a failure."""
+        self.assertEqual(self._tokens(None), (None, "pat_tok"))
+
 
 class TestTheTokenEachLineGets(BaseCase):
     """What a server is handed for each GitHub line (10-nov-2026).
