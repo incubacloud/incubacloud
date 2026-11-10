@@ -51,9 +51,17 @@ _logger = logging.getLogger(__name__)
 #: The module's versioned host scripts.
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
 
-#: Seconds an on-demand reading of a host may take: the worker that
-#: serves it waits, and so does the person who pressed the button.
+#: Seconds an on-demand reading of a host may take, the SSH connection
+#: and login included: the worker that serves it waits, and so does the
+#: person who pressed the button.
 _READ_TIMEOUT = 20
+
+#: Boards of an instance's Metrics tab one user may ask for in a minute.
+#: The board refreshes itself every 45 s and a person changing the range
+#: or zooming asks a few times a minute; each board is about ten queries
+#: to the central, so this bounds what one user, or one script with a
+#: session, costs it (10-nov-2026).
+_BOARD_READS_PER_MIN = 20
 
 #: The user and token of an https remote (``https://oauth2:<token>@host/…``),
 #: dropped before the URL is stored.
@@ -297,12 +305,18 @@ class OpsMixin:
         :param host: the ``cloud.host`` to run it on.
         :param str name: the script's name under ``scripts/``.
         :param args: its arguments, in order.
-        :param int timeout: seconds the reading may take; a worker of the
-            panel waits on it.
+        :param int timeout: seconds the whole reading may take, the
+            connection and the login included; a worker of the panel
+            waits on it.
         :returns: ``(stdout, stderr, exit status)``.
         :raises TimeoutError: when the host does not answer in time.
         """
         script = (_SCRIPTS_DIR / name).read_text()
+        # The connection and the login share the reading's own deadline
+        # instead of the 30 s each that jobs get from the host.
+        connect = host.ssh_connect_kwargs() | {
+            "connect_timeout": timeout, "login_timeout": timeout,
+        }
         quoted = " ".join(
             _quote_remote_path(a) if str(a).startswith("~") else shlex.quote(str(a))
             for a in args
@@ -313,13 +327,11 @@ class OpsMixin:
         )
 
         async def _run():
-            async with asyncssh.connect(**host.ssh_connect_kwargs()) as conn:
-                result = await asyncio.wait_for(
-                    conn.run(command, input=script, check=False), timeout,
-                )
+            async with asyncssh.connect(**connect) as conn:
+                result = await conn.run(command, input=script, check=False)
                 return result.stdout or "", result.stderr or "", result.exit_status
 
-        return run_async(_run())
+        return run_async(asyncio.wait_for(_run(), timeout))
 
     @http.route(["/cloud/instance/access_log"], type="jsonrpc", auth="user")
     def cloud_instance_access_log(self, instance_id, tail=None):
@@ -381,6 +393,14 @@ class OpsMixin:
         instance = self._metrics_instance(instance_id)
         if not instance:
             return {"ok": False, "error": _("Instance not found")}
+        limited = rate_gate_json(Rule(
+            f"metrics_board_user:{request.env.uid}",
+            _("Too many chart reads recently. Try again in a minute."),
+            max_per_window=_BOARD_READS_PER_MIN,
+            log_tag=f"metrics board user={request.env.uid}",
+        ))
+        if limited:
+            return limited
         try:
             result = instance._metrics_board(range_key, start, end)
         except UserError as exc:
@@ -405,6 +425,12 @@ class OpsMixin:
         instance = self._metrics_instance(instance_id)
         if not instance:
             return {"ok": False, "error": _("Instance not found")}
+        limited = rate_gate_json(self._log_read_rule(
+            "db_activity",
+            _("Too many database reads recently. Try again in a minute."),
+        ))
+        if limited:
+            return limited
         try:
             host = instance._require_deployed_host()
             stdout, stderr, status = self._read_with_script(
@@ -447,6 +473,9 @@ class OpsMixin:
         instance = self._metrics_instance(instance_id)
         if not instance:
             return {"ok": False, "error": _("Instance not found")}
+        limited = rate_gate_json(self._log_read_rule("slow_routes"))
+        if limited:
+            return limited
         try:
             host = instance._require_deployed_host()
             cutoff, minutes = instance._slow_routes_args(minutes)
@@ -1389,7 +1418,7 @@ class OpsMixin:
                 "error": _("An internal error occurred. Check server logs."),
             }
 
-    def _log_read_rule(self, kind):
+    def _log_read_rule(self, kind, message=None):
         """Per-user, per-endpoint cap for a plain read of an instance's logs.
 
         One bucket per endpoint family rather than one shared bucket:
@@ -1398,13 +1427,17 @@ class OpsMixin:
         for the same row on every open — Postgres answers that with a
         serialization failure, Odoo retries the request, and the user
         sees nothing but the server log fills with it. Same cap for
-        all three, since they are the same kind of act.
+        all of them, since they are the same kind of act: the Metrics
+        tab's readings on demand of the log and of the database too.
 
-        :param str kind: endpoint family (``tail``, ``list``, ``day``)
+        :param str kind: endpoint family (``tail``, ``list``, ``day``,
+            ``slow_routes``, ``db_activity``)
+        :param str message: what the refusal says, when it is not a read
+            of the log.
         """
         return Rule(
             f"logs_{kind}_user:{request.env.uid}",
-            _("Too many log reads recently. Try again in a minute."),
+            message or _("Too many log reads recently. Try again in a minute."),
             cap_key="rate_limit_logs_per_min",
             log_tag=f"logs {kind} user={request.env.uid}",
         )

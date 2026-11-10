@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { click, waitFor } from "@odoo/hoot-dom";
-import { animationFrame } from "@odoo/hoot-mock";
+import { advanceTime, animationFrame } from "@odoo/hoot-mock";
 import { Component, useState, xml } from "@odoo/owl";
 import {
     allowTranslations,
@@ -23,6 +23,7 @@ import {
     formatValue,
 } from "@incubacloud/components/metrics/formatters";
 import { relayIcon } from "@incubacloud/utils/icons";
+import { useSafePoll } from "@incubacloud/utils/use_safe_poll";
 
 /**
  * The instance's Metrics tab, drawn by the panel (no Grafana frame).
@@ -150,6 +151,37 @@ describe("MetricsBoard", () => {
         expect(comp.workersText).toInclude("98\u00a0%");
         expect(boardWith({ panels: {}, workers: { configured: 0 } }).workersText)
             .toInclude("threaded mode");
+    });
+
+    test("clicks do not stack refreshes: one chain of 45 s at a time", async () => {
+        let asked = 0;
+        patchWithCleanup(rpc, {
+            _rpc() {
+                asked += 1;
+                return Promise.resolve({ ok: true, panels: {}, timing: {} });
+            },
+        });
+        let unmount;
+        const comp = boardWith(null);
+        comp.poll = useSafePoll({ unmountHook: (fn) => { unmount = fn; } });
+        comp.timer = null;
+        // Three clicks, each answered before the next.
+        comp.setRange("1h");
+        await animationFrame();
+        comp.setRange("6h");
+        await animationFrame();
+        comp.zoomTo(1000, 2000);
+        await animationFrame();
+        comp.resetZoom();
+        await animationFrame();
+        expect(asked).toBe(4);
+        await advanceTime(REFRESH_MS);
+        expect(asked).toBe(5);
+        await advanceTime(REFRESH_MS);
+        expect(asked).toBe(6);
+        unmount();
+        await advanceTime(REFRESH_MS);
+        expect(asked).toBe(6);
     });
 
     test("the database line and who blocks whom", () => {

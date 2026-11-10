@@ -115,7 +115,10 @@ def instance_facts(board, instance_id, workers):
             if share is not None and (neighbour is None or share > neighbour[1]):
                 neighbour = (series["name"], share)
     odoo_cpu = _recent_mean(board, "cpu", since, "use", "odoo")
-    events = board["panels"].get("events", {}).get("markers") or []
+    # The moments of the last 15 minutes only, as the rest: an
+    # out-of-memory kill of yesterday on the 7-day range is history.
+    events = [m for m in board["panels"].get("events", {}).get("markers") or ()
+              if m["ts"] >= since]
     restarts = [m["ts"] for m in events
                 if m["role"] == "restart" and m["name"] == "odoo"]
     quota = _last(board, "cpu", "limit", "odoo")

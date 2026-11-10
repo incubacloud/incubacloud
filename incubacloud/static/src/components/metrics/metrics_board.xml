@@ -262,11 +262,13 @@
                                 </t>
                                 <t t-if="scope.data.kills.length">
                                     <h5 class="ic-mb-h5">Workers stopped by a time limit</h5>
+                                    <p class="ic-mb-empty" t-if="scope.data.kills.some((k) => !k.trace.length)">With workers, Odoo stops a worker past its time limit without logging where it was. Only an Odoo without workers logs the stack of the request it stops.</p>
                                     <t t-foreach="scope.data.kills" t-as="k" t-key="k_index">
-                                        <details class="ic-mb-kill">
+                                        <details class="ic-mb-kill" t-if="k.trace.length">
                                             <summary><t t-esc="fmtAt(k.at)"/> · <t t-esc="k.message"/></summary>
-                                            <pre t-if="k.trace.length" class="ic-mb-trace" t-esc="k.trace.join('\n')"/>
+                                            <pre class="ic-mb-trace" t-esc="k.trace.join('\n')"/>
                                         </details>
+                                        <p class="ic-mb-kill" t-else=""><t t-esc="fmtAt(k.at)"/> · <t t-esc="k.message"/></p>
                                     </t>
                                 </t>
                             </t>

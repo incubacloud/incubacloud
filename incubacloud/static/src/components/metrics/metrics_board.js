@@ -66,6 +66,8 @@ export class MetricsBoard extends Component {
     this.slowWindows = SLOW_WINDOWS;
     this.markerStyles = MARKER_STYLES;
     this.poll = useSafePoll();
+    /** The refresh waiting to run (``setTimeout``'s handle), if any. */
+    this.timer = null;
     this.state = useState({
       range: "1h",
       zoom: null,
@@ -115,10 +117,28 @@ export class MetricsBoard extends Component {
   }
 
   /**
+   * Drop the refresh waiting to run, if any: a click that loads the
+   * board starts the only chain of refreshes there is.
+   */
+  cancelRefresh() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Refresh in one period, in place of any refresh already waiting. */
+  scheduleRefresh() {
+    this.cancelRefresh();
+    this.timer = this.poll.schedule(() => this.tick(), REFRESH_MS);
+  }
+
+  /**
    * Fetch the board and schedule the next refresh when the range is a
    * short one shown unzoomed.
    */
   async load() {
+    this.cancelRefresh();
     const seq = (this.seq = (this.seq || 0) + 1);
     this.state.loading = true;
     const params = {instance_id: this.props.instanceId, range_key: this.state.range};
@@ -147,14 +167,14 @@ export class MetricsBoard extends Component {
       this.state.board = null;
     }
     if (LIVE_RANGES.has(this.state.range) && !this.state.zoom && this.state.reason !== "disabled") {
-      this.poll.schedule(() => this.tick(), REFRESH_MS);
+      this.scheduleRefresh();
     }
   }
 
   /** Refresh, or wait another period without asking while the tab is hidden. */
   tick() {
     if (document.hidden) {
-      this.poll.schedule(() => this.tick(), REFRESH_MS);
+      this.scheduleRefresh();
       return;
     }
     return this.load();

@@ -10,8 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from odoo.exceptions import UserError
 from odoo.tests.common import BaseCase, HttpCase, tagged
 
+from ..models.cloud_rate_limit import CloudRateLimit
 from ..models.metrics_charts import (
     CHART_MAX_POINTS,
     CHART_RANGES,
@@ -157,10 +159,40 @@ class TestResourceSeries(HttpCase):
     def test_a_central_that_fails_says_so(self):
         self.authenticate("charts-dev", "charts-dev")
         with patch(f"{_MODULE}.requests.get",
-                   side_effect=requests.ConnectionError("down")):
+                   side_effect=requests.ConnectionError("down")) as get:
             res = self._call(instance_id=self.instance.id)["result"]
         self.assertEqual(res["ok"], False)
         self.assertEqual(res["reason"], "central")
+        # Each panel is asked once: a retry would double the wait on a
+        # central that is already failing.
+        self.assertEqual(get.call_count, len(PANELS["instance"]))
+
+    def test_boards_are_limited_per_user(self):
+        self.authenticate("charts-dev", "charts-dev")
+        uid = self.env["res.users"].search([("login", "=", "charts-dev")]).id
+        with patch.object(CloudRateLimit, "hit", autospec=True,
+                          return_value=False) as hit, \
+                patch(f"{_MODULE}.requests.get") as get:
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertEqual(res, {"ok": False, "error": (
+            "Too many chart reads recently. Try again in a minute."
+        )})
+        self.assertEqual(hit.call_args.args[1], f"metrics_board_user:{uid}")
+        self.assertEqual(hit.call_args.kwargs, {"max_per_window": 20})
+        get.assert_not_called()
+
+    def test_a_window_out_of_range_is_refused_in_words(self):
+        self.authenticate("charts-dev", "charts-dev")
+        payload = ('{"jsonrpc": "2.0", "method": "call", "id": 1, "params": '
+                   '{"instance_id": %d, "start": 1e400, "end": 1800000000}}'
+                   % self.instance.id)
+        with patch(f"{_MODULE}.requests.get") as get:
+            res = self.url_open(
+                "/cloud/instance/resource_series", data=payload,
+                headers={"Content-Type": "application/json"},
+            ).json()["result"]
+        self.assertEqual(res, {"ok": False, "error": "The chart window is not valid."})
+        get.assert_not_called()
 
     def test_observability_off_is_said_without_asking(self):
         self.env["cloud.settings"].sudo()._get_system().metrics_enabled = False
@@ -198,6 +230,10 @@ class TestChartWindow(BaseCase):
         start, end, step = chart_window(start=1_799_999_990, end=1_800_000_000,
                                         now=1_800_000_000)
         self.assertGreaterEqual(end - start, 300)
+
+    def test_a_window_that_overflows_is_not_valid(self):
+        with self.assertRaisesRegex(UserError, "not valid"):
+            chart_window(start=float("inf"), end=1_800_000_000, now=1_800_000_000)
 
 
 class TestPanels(BaseCase):

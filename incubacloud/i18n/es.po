@@ -15848,6 +15848,16 @@ msgstr ""
 "proxy que leer."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance_slow_routes.py:0
+msgid ""
+"This instance is not placed on a host yet, so there is nothing to read on "
+"it."
+msgstr ""
+"Esta instancia aún no está ubicada en un host, así que no hay nada que leer "
+"en ella."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
@@ -16267,6 +16277,14 @@ msgstr "Identificador"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Too many chart reads recently. Try again in a minute."
+msgstr ""
+"Demasiadas lecturas de gráficos recientemente. Inténtelo de nuevo en un "
+"minuto."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/connect.py:0
 msgid ""
 "Too many connect-as requests against this instance. Try again in a minute."
@@ -16280,6 +16298,14 @@ msgstr ""
 msgid "Too many connect-as requests recently. Try again in a minute."
 msgstr ""
 "Demasiadas solicitudes de conexión-como recientemente. Inténtelo de nuevo en"
+" un minuto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Too many database reads recently. Try again in a minute."
+msgstr ""
+"Demasiadas lecturas de la base de datos recientemente. Inténtelo de nuevo en"
 " un minuto."
 
 #. module: incubacloud
@@ -17865,6 +17891,17 @@ msgstr ""
 "Con la lista vacía, este staging recurre a la lista blanca compartida de su "
 "host, que es como funcionaban todas las instancias antes de que existiera "
 "esta pestaña."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid ""
+"With workers, Odoo stops a worker past its time limit without logging where "
+"it was. Only an Odoo without workers logs the stack of the request it stops."
+msgstr ""
+"Con workers, Odoo detiene un worker que supera su límite de tiempo sin "
+"registrar dónde estaba. Solo un Odoo sin workers registra la pila de la "
+"petición que detiene."
 
 #. module: incubacloud
 #. odoo-javascript
