@@ -179,7 +179,8 @@ N+1 starts where page N ended.
 | `grant_restore_upload` | developer | | always |
 | `check_restore_upload`, `revoke_restore_upload` | developer | | |
 | `get_host`, `get_audit_log`, `get_settings`, `browse_host_dir` | manager | | |
-| `harden_host`, `import_host_instance`, `deploy_monitoring`, `configure_pitr` (bridge) | manager | | |
+| `import_host_instance`, `deploy_monitoring`, `configure_pitr` (bridge) | manager | | |
+| `harden_host` | manager | | applying it (`apply`), and the full setup it chains |
 | `manage_host` | manager | | a change of the server's trusted proxy ranges |
 | `update_settings` | manager | | security settings |
 | `trust_host_key`, `run_host_command` | manager | | always |
@@ -224,6 +225,10 @@ may connect the repository to the project).
   and when the repository is public. Opening a pull request asks in a public
   repository, and in a project that makes a preview of production for each pull
   request (it creates a staging with a copy of production).
+- **`harden_host` asks to apply (1.0.222)**, with the hardening job's own description,
+  and adds the full setup's warning when `chain_full_setup` chains it, as
+  `run_host_action` and a retry already asked for those jobs. Checking what it would
+  change (`apply` false) asks nothing.
 - **What a commit may hold.** Never a path under `.git/` or `.github/` in any case (a
   workflow runs with the repository's secrets), never a file with a panel secret in it
   (`git+ssh://git@` is not one), at most 50 files and 180,000 characters in all (they

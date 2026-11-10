@@ -183,6 +183,31 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
             )
             self.assertIn("Traefik will restart", message)
 
+    def test_hardening_a_server_asks_as_its_job_does(self):
+        """Applying the hardening asks with what the job changes on the
+        server; checking what it would change asks nothing."""
+        _args, message = self._ask(
+            self.manager, "harden_host", {"host_id": self.host.id}
+        )
+        self.assertIsNone(message)
+        _args, message = self._ask(
+            self.manager, "harden_host", {"host_id": self.host.id, "apply": True}
+        )
+        self.assertIn('"Harden Host" on the server "mcp-host" (10.0.0.90)', message)
+        self.assertIn("disables root SSH", message)
+        self.assertNotIn("full setup", message)
+
+    def test_a_full_setup_after_the_hardening_is_in_its_approval(self):
+        """The full setup it chains asks as run_host_action's does."""
+        _args, message = self._ask(
+            self.manager,
+            "harden_host",
+            {"host_id": self.host.id, "apply": True, "chain_full_setup": True},
+        )
+        self.assertIn('"Harden Host" on the server "mcp-host"', message)
+        self.assertIn('full setup of the server "mcp-host" (10.0.0.90)', message)
+        self.assertIn("unreachable for a while", message)
+
     def test_a_server_action_is_a_manager_s(self):
         """Below manager, refused before anything is asked."""
         with self.assertRaises(AccessError):
