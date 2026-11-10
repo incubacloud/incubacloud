@@ -618,7 +618,11 @@ export class ProjectDetail extends Component {
                 this.env.refreshAlertCount();
             }
         } catch (e) {
-            this.env.toast?.error(this.isCreate ? _t("Failed to create project.") : _t("Failed to save project."));
+            // The server's reason (a name it refuses, a rule) when it gave one.
+            this.env.toast?.error(
+                e.data?.message || e.message ||
+                    (this.isCreate ? _t("Failed to create project.") : _t("Failed to save project."))
+            );
         } finally {
             this.state.saving = false;
         }

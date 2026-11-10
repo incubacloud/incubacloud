@@ -1336,9 +1336,11 @@ export class InstanceDetail extends JobsMixin(
       }
     } catch (e) {
       this.env.toast?.error(
-        this.isCreate
-          ? e.data?.message || e.message || _t("Failed to create instance.")
-          : _t("Failed to save instance.")
+        e.data?.message ||
+          e.message ||
+          (this.isCreate
+            ? _t("Failed to create instance.")
+            : _t("Failed to save instance."))
       );
     } finally {
       this.state.saving = false;
