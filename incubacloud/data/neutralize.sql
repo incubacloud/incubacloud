@@ -34,6 +34,14 @@ DO $$ BEGIN
     UPDATE cloud_instance SET secret_key = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+-- The relay's OAuth2 client secret (1.0.224), in a block of its own so a
+-- copy that lacks it still loses secret_key. Its directory and client ids
+-- stay: they name the application at Microsoft and sign in to nothing
+-- without the secret.
+DO $$ BEGIN
+    UPDATE cloud_instance SET smtp_relay_oauth_client_secret = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;
