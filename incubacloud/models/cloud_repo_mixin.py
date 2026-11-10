@@ -34,7 +34,7 @@ def _with_canonical_url(env, vals):
     """Return *vals* with its ``url``, if any, canonical, and its provider.
 
     Every way a repository line is written (panel routes, MCP, the
-    assistant, imports, the SaaS layer) ends in ``create`` or
+    assistant, imports, a module on top) ends in ``create`` or
     ``write``, so a github.com repository spelled otherwise is stored
     as ``https://github.com/<owner>/<repo>`` before the constraint
     checks it (5-nov-2026). A repository of a configured Git provider
@@ -262,7 +262,7 @@ class CloudRepoMixin(models.AbstractModel):
         another spelling (``github.com/o/r``, ``http://``, ``www.``, a
         final slash, ``git@github.com:o/r.git``). The constraint checks
         the URL whenever the branch or the pin is written, so pinning,
-        unpinning, a pull request's branch or the SaaS layer's core pin
+        unpinning, a pull request's branch or a module on top pinning core
         would fail on such a line although nobody touched its URL. Each
         line whose URL :func:`canonical_repo_url` rewrites into a safe
         one is written with that URL too, on its own; the rest go in

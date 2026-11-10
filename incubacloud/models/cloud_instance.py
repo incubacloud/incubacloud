@@ -353,8 +353,8 @@ class CloudInstance(models.Model):
         help="True while the instance exists on a host — that is, in "
         "'deployed' and also in 'deleting', whose teardown has not "
         "finished yet. Stored because search domains, the SPA and "
-        "cloud.tenant's related fields read it; derived from ``state`` "
-        "so there is a single source of truth.",
+        "the related fields of modules on top read it; derived from "
+        "``state`` so there is a single source of truth.",
     )
     running = fields.Boolean(string="Running", default=False)
     service_states = fields.Json(
@@ -850,7 +850,7 @@ class CloudInstance(models.Model):
             # Always emitted, never left to the template default: the
             # copier copy runs against a moving upstream ref, and a
             # default that changes between template releases would
-            # silently change every tenant's TLS on the next rebuild.
+            # silently change every instance's TLS on the next rebuild.
             entry["cert_resolver"] = d._cert_resolver_answer()
             entries.append(entry)
 
@@ -1317,7 +1317,8 @@ class CloudInstance(models.Model):
 
         Default: any instance with a usable backup backend (one that
         resolves a ``backup_dst``) is backup-enabled. Modules layered
-        on top (e.g. SaaS plan logic) may override to opt out.
+        on top (e.g. one that turns backups off for some instances) may
+        override to opt out.
         """
         self.ensure_one()
         bb = self.effective_backup_backend
@@ -1597,13 +1598,14 @@ class CloudInstance(models.Model):
         draw and this returns ``False``.
 
         The hook exists for layers that *recycle* an instance record —
-        the SaaS warm pool hands a pre-built instance to a tenant that
-        had nothing to do with the months of pool maintenance already
-        logged against it. Those jobs are still true of the machine and
-        worth keeping, but showing them unannounced makes a brand-new
-        tenant look like it has a long and foreign past. Returning a
-        cutoff here makes the job history default to what happened
-        after the handover, with the earlier jobs one click away.
+        one that keeps instances built in advance hands one to a new
+        owner who had nothing to do with the months of maintenance
+        already logged against it. Those jobs are still true of the
+        machine and worth keeping, but showing them unannounced makes a
+        brand-new instance look like it has a long and foreign past.
+        Returning a cutoff here makes the job history default to what
+        happened after the handover, with the earlier jobs one click
+        away.
 
         :return: a ``fields.Datetime`` value, or ``False`` for no cutoff.
         """
@@ -2299,9 +2301,10 @@ class CloudInstance(models.Model):
         """Job type that (re)builds the stack on the destination host
         during a move.
 
-        Core deploys the bare instance; SaaS overrides this to
-        ``tenant_deploy_instance`` so the tenant module is staged on the
-        new host (the restored DB references it).
+        Core deploys the bare instance; a layer that stages modules of
+        its own on the instance overrides this with its own deploy job,
+        so those modules are on the new host (the restored DB references
+        them).
         """
         return "deploy_instance"
 
@@ -2327,7 +2330,7 @@ class CloudInstance(models.Model):
         quiet check found the instance free to stop, right before the
         source's stop: done earlier, they changed the source for the ten
         minutes the destination's deploy takes. Core: none. Inheriting
-        layers (SaaS) add host-specific quiescing — e.g. removing the
+        layers add host-specific quiescing — e.g. removing the
         Sablier wake-gate so traffic cannot restart the source and
         produce writes that the dump (taken right after the source is
         stopped) would miss.
@@ -2354,8 +2357,8 @@ class CloudInstance(models.Model):
 
         They run once the destination holds the source's data and before
         the cutover hands it the traffic. Core: none. Inheriting layers
-        (SaaS) re-apply there what the restore brought back from the
-        source in a state that no longer holds, such as the plan the
+        re-apply there what the restore brought back from the
+        source in a state that no longer holds, such as settings the
         panel's database still describes.
 
         :param target_host: the ``cloud.host`` the instance moves to
@@ -2367,8 +2370,8 @@ class CloudInstance(models.Model):
         """Return extra chain steps to run on the old host once it is frozen.
 
         They run last, after ``move_freeze_source`` stopped the old copy
-        and recorded it as frozen. Core: none. Inheriting layers (SaaS)
-        take away there what still routes to the old copy, such as the
+        and recorded it as frozen. Core: none. Inheriting layers take
+        away there what still routes to the old copy, such as the
         proxy's file for the panel.
 
         :param origin_host: the ``cloud.host`` the instance moved from
@@ -2380,9 +2383,9 @@ class CloudInstance(models.Model):
         """Return extra steps of the removal of the copy a move froze.
 
         Run by ``move_cleanup_source`` on the old host, after the copy's
-        teardown. Core: none. Inheriting layers (SaaS) take away there
-        what a move's freeze left for that copy, such as the proxy's file
-        for the panel.
+        teardown. Core: none. Inheriting layers take away there what a
+        move's freeze left for that copy, such as the proxy's file for
+        the panel.
 
         :return: ``(label, command[, opts])`` tuples
         :rtype: list
@@ -2396,8 +2399,8 @@ class CloudInstance(models.Model):
         Run by ``move_quiet_check`` in the instance's own database, on its
         source host, right before the move would stop it: a count above
         zero postpones the move. Core: none — what runs inside a bare
-        instance is not the platform's to read. SaaS counts the jobs of a
-        tenant's panel.
+        instance is not the platform's to read. A layer that knows the
+        application inside counts its jobs.
 
         :return: one statement answering one integer, or ''
         :rtype: str
@@ -2410,7 +2413,7 @@ class CloudInstance(models.Model):
         Asked by ``move_quiet_check`` after the jobs were counted, with
         what started the move (``move_options['trigger']``). Core: None —
         it has no reading of an instance's traffic. A layer that has one
-        (SaaS) answers for the triggers that depend on it.
+        answers for the triggers that depend on it.
 
         :param str trigger: ``idle``, ``window``, ``now`` or ``manual``
         :return: ``(reason, detail)`` to postpone, or None to go on
@@ -2437,8 +2440,9 @@ class CloudInstance(models.Model):
         has flipped to the destination.
 
         Core: no-op (DNS is the operator's concern on a bare core
-        install). SaaS overrides this to re-point the managed DNS
-        A-record at the new host IP and finalize the tenant.
+        install). A layer that manages the instance's DNS overrides this
+        to re-point its A-record at the new host IP and finish the move
+        on its own records.
 
         :param origin_host: the ``cloud.host`` the instance moved from
         :param cut_seconds: how long the instance was unavailable, from
@@ -2450,8 +2454,8 @@ class CloudInstance(models.Model):
         """Hook fired once a move that did not happen is undone.
 
         By then the move markers are cleared and the instance is running
-        on its source host again. Core: no-op. SaaS overrides this to give
-        the tenant back the state the move had taken from it.
+        on its source host again. Core: no-op. A layer overrides this to
+        give back the state the move had taken from its own records.
 
         :param target_host: the ``cloud.host`` the move was going to, read
             before the markers were cleared (None when unknown)
@@ -3405,10 +3409,10 @@ class CloudInstance(models.Model):
         The computed path is derived from the project's remote folder and
         the instance name, so it is only true while those stay put. Once
         the instance is archived it stops being maintained and the
-        derivation can quietly become false — a tenant deletion detaches
-        the project and the computed path falls back to ``.../default/``,
-        which is both wrong and shared with everything else that lost its
-        project.
+        derivation can quietly become false — a layer that deletes its
+        own records may detach the project and the computed path falls
+        back to ``.../default/``, which is both wrong and shared with
+        everything else that lost its project.
 
         Everything that touches the copy afterwards — pruning, expiry,
         restoring it back — reads the frozen value, never the computed
@@ -3800,8 +3804,8 @@ class CloudInstance(models.Model):
 
         The extension point for layers that deploy instances the daily
         crons have no business touching. Core deploys none, so it adds
-        nothing; a SaaS layer with a pool of stopped spares excludes
-        them here, once, instead of reimplementing each cron.
+        nothing; a layer that keeps stopped instances in reserve
+        excludes them here, once, instead of reimplementing each cron.
 
         That reimplementing is what this exists to stop. A layer that
         copies a cron body to add one filter owns a copy that stops
@@ -3821,17 +3825,17 @@ class CloudInstance(models.Model):
         """Queue a backup_list job for every production instance.
 
         Skips instances whose compose stack has no ``backup`` service
-        (e.g. free-tier tenants): the executor shells into the backup
-        container via ``docker compose exec -T backup``, which answers
-        ``service "backup" is not running`` with status 1 for a service
-        that is stopped *and* for one the compose file never declared.
-        Either way it is a failed job and an alert, every day, forever —
-        and one that never resolves, since a successful run is what
-        clears it.
+        (e.g. those a module on top deploys without it): the executor
+        shells into the backup container via ``docker compose exec -T
+        backup``, which answers ``service "backup" is not running`` with
+        status 1 for a service that is stopped *and* for one the compose
+        file never declared. Either way it is a failed job and an alert,
+        every day, forever — and one that never resolves, since a
+        successful run is what clears it.
 
-        Stopped stacks are skipped for the same reason. Warm spares are
-        what forced that one: they ship stopped by design and hold no
-        customer data at all.
+        Stopped stacks are skipped for the same reason. Instances built in
+        advance forced that one: they ship stopped by design and hold no
+        data at all.
         """
         instances = self.search(
             [
@@ -4852,9 +4856,9 @@ class CloudInstance(models.Model):
         #
         # ``ic_archive_instance`` says which of the two meanings of
         # ``active = False`` this is. In core it only ever meant "hidden
-        # from the lists", but the SaaS layer reads it as "the tenant is
-        # gone" and cleans up on it: it deletes the Cloudflare record and
-        # unlinks the tenant and project. Archiving promises the exact
+        # from the lists", but a layer on top may read it as "the
+        # instance is gone" and clean up on it: delete its DNS record and
+        # unlink the records that own it. Archiving promises the exact
         # opposite — the copy is kept and the instance can come back —
         # so without this flag the new feature would quietly call the
         # destructive path. Marked here, on the one archive route, rather

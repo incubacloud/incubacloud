@@ -14,7 +14,7 @@
 #   deploy.sh debian-archive     <dir>
 #
 # The executor keeps each deploy step as its own labelled command (so
-# tenant/warm subclasses can still splice by label); this script only
+# subclasses of other modules can still splice by label); this script only
 # carries the steps whose bodies were real shell logic. The trivial
 # mv/rm/ln steps stay inline in the executor.
 set -euo pipefail
@@ -46,7 +46,7 @@ HEADS_CONTAINER_TIMEOUT=40
 # starting up" about once in 65 recreations and failed a job whose change
 # was already on the host (QA, 7-nov-2026). A recreated database answers
 # within seconds; 60 is the bound every other wait on ``db`` uses
-# (move_steps.sh, the tenant rebuild's parked database).
+# (move_steps.sh and the parked database of a layer's own rebuild).
 # IC_DB_WAIT_SECONDS overrides it, so a test need not wait a minute.
 DB_WAIT_SECONDS="${IC_DB_WAIT_SECONDS:-60}"
 
@@ -824,7 +824,7 @@ case "$op" in
         # Read-first guard: full_setup seeds init.defaultBranch once per
         # host, but legacy hosts may still need it. Writing unconditionally
         # takes the ~/.gitconfig lock and races with sibling deploys on the
-        # same host (the warm-pool cron enqueues N builds in one tick).
+        # same host (a cron may enqueue N builds in one tick).
         git config --global --get init.defaultBranch >/dev/null 2>&1 \
             || git config --global init.defaultBranch master
         # Record the template revision every deploy was built from. Without
