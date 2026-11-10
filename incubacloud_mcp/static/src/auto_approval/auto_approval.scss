@@ -1,0 +1,229 @@
+// Auto-approval: the rules in Settings → Agents, their dialogs, the notice
+// on Connect an agent and the audit's mark. Painted with the panel's --rl-*
+// tokens only, so both themes hold; cards, not a table, so a phone shows
+// every fact without scrolling sideways.
+
+.ic-mcp-auto {
+    margin-block-start: 24px;
+
+    .ic-mcp-notice {
+        margin-block: 4px 16px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.6;
+        color: var(--rl-amber-text);
+        background: var(--rl-amber-soft);
+        border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
+        border-radius: var(--rl-rsm);
+
+        .fa {
+            margin-inline-end: 6px;
+        }
+    }
+}
+
+.ic-mcp-auto-rules,
+.ic-mcp-auto-activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ic-mcp-auto-rule {
+    padding: 12px 14px;
+    background: var(--rl-surf);
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
+
+    &--expired,
+    &--revoked {
+        opacity: 0.75;
+    }
+}
+
+.ic-mcp-auto-rule-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    font-size: 13px;
+    color: var(--rl-fg);
+}
+
+.ic-mcp-auto-who {
+    font-weight: 600;
+}
+
+.ic-mcp-auto-cred {
+    font-family: var(--rl-fm);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.ic-mcp-auto-muted {
+    color: var(--rl-muted);
+    font-weight: 400;
+}
+
+.ic-mcp-auto-state {
+    margin-inline-start: auto;
+    padding: 1px 8px;
+    font-size: 11.5px;
+    border-radius: 999px;
+    color: var(--rl-fg2);
+    background: var(--rl-surf2);
+
+    &--active {
+        color: var(--rl-amber-text);
+        background: var(--rl-amber-soft);
+    }
+
+    &--paused_role,
+    &--paused_platform {
+        color: var(--rl-cyan-text);
+        background: var(--rl-cyan-soft);
+    }
+}
+
+.ic-mcp-auto-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 6px 16px;
+    margin: 10px 0 0;
+    font-size: 12px;
+
+    dt {
+        color: var(--rl-muted);
+        font-weight: 400;
+    }
+
+    dd {
+        margin: 0;
+        color: var(--rl-fg2);
+        overflow-wrap: anywhere;
+    }
+}
+
+.ic-mcp-auto-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-block-start: 10px;
+}
+
+.ic-mcp-auto-box {
+    inline-size: 640px;
+    max-inline-size: calc(100vw - 32px);
+    max-block-size: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+.ic-mcp-auto-form {
+    margin-block-end: 12px;
+
+    select,
+    input {
+        max-inline-size: 100%;
+    }
+}
+
+.ic-mcp-auto-notice {
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--rl-fg2);
+    background: var(--rl-amber-soft);
+    border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
+    border-radius: var(--rl-rsm);
+
+    p {
+        margin: 0 0 8px;
+    }
+
+    ul {
+        margin: 0 0 8px;
+        padding-inline-start: 18px;
+    }
+
+    strong {
+        color: var(--rl-fg);
+    }
+}
+
+.ic-mcp-auto-ack {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-block-start: 6px;
+    font-weight: 600;
+    color: var(--rl-fg);
+    cursor: pointer;
+
+    input {
+        margin-block-start: 4px;
+        flex: none;
+    }
+}
+
+.ic-mcp-auto-error {
+    margin-block: 10px 0;
+    font-size: 12.5px;
+    color: var(--rl-red-text);
+}
+
+.ic-mcp-auto-activity {
+    margin-block-end: 12px;
+    font-size: 12px;
+
+    li {
+        padding-block-end: 8px;
+        border-block-end: 1px solid var(--rl-line);
+    }
+}
+
+.ic-mcp-auto-activity-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    color: var(--rl-fg);
+}
+
+.ic-mcp-auto-activity-detail {
+    color: var(--rl-fg2);
+    overflow-wrap: anywhere;
+}
+
+// Connect an agent: the person's own rule, with Revoke beside it.
+.ic-mcp-connect .ic-mcp-auto-own {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+}
+
+// The audit's and the jobs' mark of how an agent's call was approved.
+.ic-mcp-approval {
+    color: var(--rl-muted);
+    font-size: 0.85em;
+
+    &--auto {
+        color: var(--rl-amber-text);
+        font-weight: 600;
+    }
+}
+
+.ic-mcp-via--job {
+    display: block;
+    font-size: 11.5px;
+}
+
+.rl-who .ic-mcp-via--job {
+    display: inline;
+    margin-inline-start: 6px;
+}

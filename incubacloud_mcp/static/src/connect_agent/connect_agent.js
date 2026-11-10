@@ -4,6 +4,7 @@ import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { API_KEY_ENV, API_KEY_PLACEHOLDER, connectView } from "./connect_agent_format";
+import { ownRuleText } from "../auto_approval/auto_approval";
 
 /** How long a Copy button says it copied. */
 const COPIED_MS = 2000;
@@ -70,6 +71,37 @@ export class ConnectAgent extends Component {
     /** Everything the template shows (see `connectView`). */
     get view() {
         return connectView(this.state.config || {});
+    }
+
+    /** The person's own auto-approval rules that still count. */
+    get ownRules() {
+        return this.state.config?.auto_approvals || [];
+    }
+
+    /**
+     * What the notice of one of the person's rules says.
+     *
+     * @param {object} rule the rule
+     * @returns {string} the notice's text
+     */
+    ruleText(rule) {
+        return ownRuleText(rule);
+    }
+
+    /**
+     * Revoke one of the person's own rules: the next call of that
+     * credential asks again.
+     *
+     * @param {object} rule the rule
+     */
+    async revokeOwn(rule) {
+        try {
+            await rpc("/cloud/mcp/auto_approval/revoke", { rule_id: rule.id });
+            this.env.toast?.success(_t("Auto-approval revoked."));
+        } catch {
+            this.env.toast?.error(_t("The rule could not be revoked."));
+        }
+        await this.load();
     }
 
     /**

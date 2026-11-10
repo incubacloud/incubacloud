@@ -39,6 +39,16 @@
                     Destructive actions wait for your approval, and secrets never reach them.
                 </p>
 
+                <div t-foreach="ownRules" t-as="rule" t-key="rule.id"
+                     class="ic-mcp-notice ic-mcp-auto-own" role="status">
+                    <span>
+                        <i class="fa fa-bolt" aria-hidden="true"/>
+                        <t t-esc="ruleText(rule)"/>
+                    </span>
+                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-on-click="() => this.revokeOwn(rule)">Revoke</button>
+                </div>
+
                 <div class="rl-saas-fsec">This panel's MCP address</div>
                 <CopyBlock t-if="!view.urlProblem" text="view.url" inline="true"
                            label.translate="Copy this panel's MCP address"/>
