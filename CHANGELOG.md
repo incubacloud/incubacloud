@@ -187,8 +187,15 @@ the agents already send.
   host when the button is pressed and never stored.
 - **Slow routes** (`/cloud/instance/slow_routes`): the last 15 or 60 minutes
   of the instance's Odoo log, added up into its slowest routes with their SQL
-  and Python share, scheduled actions with their duration, workers stopped by
-  a time limit and workers recycled for memory.
+  and Python share, scheduled actions with their duration, requests stopped
+  by a time limit and workers recycled for memory. An Odoo without workers
+  logs the stack of a request it stops, and the reading shows its thread's
+  URL and innermost frames; with workers, Odoo kills the worker without
+  logging where it was, and the reading says so.
+- The board and both readings are limited per user: 20 boards a minute,
+  and the readings count with the log reads (*Log reads (per user)*). A
+  reading takes 20 s at most, the SSH connection included; each chart is
+  asked of the central once, within 8 s.
 
 ### Changed
 
