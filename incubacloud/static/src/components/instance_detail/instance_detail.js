@@ -1335,9 +1335,11 @@ export class InstanceDetail extends JobsMixin(
         this._savedForm = JSON.stringify(this.state.form);
       }
     } catch (e) {
+      // The server's reason only when Odoo refused the save on purpose
+      // (a UserError, a ValidationError, an AccessError).
+      const refused = e.data?.name?.startsWith?.("odoo.exceptions.");
       this.env.toast?.error(
-        e.data?.message ||
-          e.message ||
+        (refused && e.data.message) ||
           (this.isCreate
             ? _t("Failed to create instance.")
             : _t("Failed to save instance."))
