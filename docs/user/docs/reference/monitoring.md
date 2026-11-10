@@ -10,9 +10,15 @@ until it succeeds.
 **Per host** — CPU, memory, disk usage and free space, load, and whether
 the host is reporting at all.
 
-**Per instance** — CPU and memory of each container, disk used by the
-instance's directory, and its HTTP traffic: requests per second, status
-codes and latency.
+**Per instance** — CPU and memory of each container with their limits,
+how often the CPU quota held it back, restarts and processes killed for
+lack of memory, disk used by the instance's directory, and its HTTP
+traffic: requests per second, server errors and latency.
+
+**On demand** — when you ask, from the instance's **Metrics** tab: what its
+database is doing (sessions, locks, connections) and where Odoo's time went
+(slowest routes, scheduled actions, workers stopped by a limit), read from
+the host and never stored.
 
 **Per request** — the proxy also records who asked for what. That is what
 the *Recent requests* panel on an instance shows: client IP, method, path
@@ -22,9 +28,10 @@ tell you what is being done to it.
 ## Where to look
 
 **One instance in trouble** → open it and go to the **Metrics** tab. This
-is the right place during an incident: charts for that instance, and
-underneath, the requests hitting it right now, with a breakdown by status
-code and the client addresses sending the most.
+is the right place during an incident: it says in plain words which
+resource is short, shows since when, compares the instance with its
+neighbours on the same server, reads on demand what its database and its
+Odoo log are doing, and underneath lists the requests hitting it right now.
 
 **The whole fleet** → the **Monitoring** entry in the sidebar, next to
 Hosts. It appears only when observability is enabled.
@@ -77,6 +84,8 @@ hosts then push to it without a CDN in between, on a port only they may open.
 
 ## What is not here yet
 
-Database metrics per instance (connections, cache hit ratio, locks) and
-synthetic probes from outside. Both are designed and deferred; nothing
-already collected changes when they land.
+Database figures per instance over time (connections, cache hit ratio,
+locks as charts and alerts) and synthetic probes from outside. Both are
+designed and deferred; nothing already collected changes when they land.
+Until then, **Queries now** on the Metrics tab reads the database when you
+ask.
