@@ -31,10 +31,14 @@ class TestAutoApprovalInSettings(
 
     def test_the_box_enables_the_grant_and_the_rule_can_be_revoked(self):
         """Disabled until everything is chosen and the box ticked; then
-        granted, listed, and revoked."""
+        granted, listed, and revoked. The credential reads with its id and
+        when it last connected, in the list and in the notice."""
         dev = self._cloud_user("aau-dev")
+        key = self._api_key(dev, name="ui")
+        _user, _name, key_id = self.env["incubacloud.mcp.auth"]._user_for_api_key(key)
+        credential = f"API key #{key_id}"
         self.env["incubacloud.mcp.credential"]._seen(
-            Principal(uid=dev.id, credential="API key ui", client="API key #8801"),
+            Principal(uid=dev.id, credential="API key ui", client=credential),
             "test-agent",
         )
         self._in_settings(
@@ -54,8 +58,18 @@ class TestAutoApprovalInSettings(
             pick('ic_mcp_auto_user', '{dev.id}');
             await until('the credentials', () =>
                 !document.getElementById('ic_mcp_auto_cred').disabled);
-            pick('ic_mcp_auto_cred', 'API key #8801');
+            const option = document.querySelector(
+                '#ic_mcp_auto_cred option[value="{credential}"]');
+            const text = option.textContent.trim();
+            if (!text.startsWith('API key ui (test-agent) [{credential}, last connected ')
+                    || !text.endsWith(' UTC]')) {{
+                throw new Error(`the option reads "${{text}}"`);
+            }}
+            pick('ic_mcp_auto_cred', '{credential}');
             pick('ic_mcp_auto_period', '7');
+            await until('the notice to name the credential', () => document
+                .querySelector('.ic-mcp-auto-notice')
+                ?.textContent.includes('[{credential}, last connected '));
             await pause(200);
             if (!confirm.disabled) throw new Error('enabled before the box');
             const box = document.querySelector('.ic-mcp-auto-ack input');
@@ -80,7 +94,7 @@ class TestAutoApprovalInSettings(
         self.assertEqual(len(rule), 1)
         self.assertEqual(
             (rule.credential, rule.revoked_reason, rule.granted_by_id.login),
-            ("API key #8801", "manual", "settings-tabs-admin"),
+            (credential, "manual", "settings-tabs-admin"),
         )
 
 

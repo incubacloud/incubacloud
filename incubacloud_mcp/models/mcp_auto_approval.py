@@ -279,8 +279,9 @@ class McpAutoApproval(models.Model):
     def _candidates_for(self, user):
         """Return the credentials of *user* a rule may be granted to.
 
-        Those that connected to ``/mcp`` (``incubacloud.mcp.credential``);
-        a module adds its own (the assistant).
+        Those that connected to ``/mcp`` (``incubacloud.mcp.credential``),
+        but an API key that no longer exists: it authenticates no more, and
+        another key may have its name; a module adds its own (the assistant).
 
         :param user: a ``res.users`` record
         :return: ``[{credential, kind, label, client_name, last_seen}]``
@@ -291,6 +292,7 @@ class McpAutoApproval(models.Model):
             .sudo()
             .search([("user_id", "=", user.id)], order="last_seen desc")
         )
+        existing = self._existing_api_keys()
         return [
             {
                 "credential": row.client,
@@ -301,7 +303,18 @@ class McpAutoApproval(models.Model):
             }
             for row in seen
             if credential_kind(row.client)
+            and (credential_kind(row.client) != "api_key" or row.client in existing)
         ]
+
+    @api.model
+    def _existing_api_keys(self):
+        """Return the credential keys of the API keys that exist now.
+
+        :return: ``{"API key #<id>", ...}``
+        :rtype: set[str]
+        """
+        self.env.cr.execute("SELECT id FROM res_users_apikeys")
+        return {f"API key #{row[0]}" for row in self.env.cr.fetchall()}
 
     @api.model
     def _grantable_users(self):
@@ -606,8 +619,7 @@ class McpAutoApproval(models.Model):
         )
         if not live:
             return
-        self.env.cr.execute("SELECT id FROM res_users_apikeys")
-        existing = {f"API key #{row[0]}" for row in self.env.cr.fetchall()}
+        existing = self._existing_api_keys()
         live.filtered(lambda rule: rule.credential not in existing)._revoke(
             "credential deleted"
         )

@@ -66,7 +66,10 @@ def stamp(env, vals_list):
     """Write the agent's and the approval's marks in *vals_list*, in place.
 
     What the request says wins; without a mark, one sent by anyone but
-    the superuser is dropped: neither can be forged through an RPC.
+    the superuser is dropped: neither can be forged through an RPC. The
+    rule the superuser names stays: a rule's own row of its grant or its
+    revocation (``_audit``) is about that rule, even when the call that
+    wrote it was approved by another one.
 
     :param env: the environment of the ``create``
     :param list vals_list: the values of each record created
@@ -80,7 +83,8 @@ def stamp(env, vals_list):
             vals.pop("via_client", None)
         if mark:
             vals["approval"] = mark["approval"]
-            vals["approval_rule_id"] = mark.get("rule") or False
+            if not (env.su and vals.get("approval_rule_id")):
+                vals["approval_rule_id"] = mark.get("rule") or False
         elif not env.su:
             for name in APPROVAL_FIELDS:
                 vals.pop(name, None)

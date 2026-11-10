@@ -16,6 +16,7 @@ from odoo.tests.common import HttpCase, TransactionCase, new_test_user
 
 from odoo.addons.incubacloud_mcp.models import mcp_confirm
 from odoo.addons.incubacloud_mcp.models.mcp_auto_approval import (
+    _INTERNAL,
     MAX_DAYS,
     NOTICE_VERSION,
     SEEN_EVERY,
@@ -56,6 +57,12 @@ class AutoApprovalMixin(AutoApprovalAllowedMixin):
         """Return the id of the API key *key*, as a rule names it."""
         _user, _name, key_id = self.env["incubacloud.mcp.auth"]._user_for_api_key(key)
         return f"API key #{key_id}"
+
+    def _delete_key(self, credential):
+        """Delete the API key named *credential* (``API key #<id>``), as
+        Odoo's own removal does."""
+        key_id = int(credential.removeprefix("API key #"))
+        self.env.cr.execute("DELETE FROM res_users_apikeys WHERE id = %s", (key_id,))
 
     def _grant(self, user, credential, days=7, admin=None, **kwargs):
         """Grant a rule to *credential* of *user* as *admin* (the test's)."""
@@ -144,6 +151,33 @@ class TestAutoApprovalCalls(
         self.assertFalse(result["isError"], result)
         row = self._row(project)
         self.assertEqual((row.approval, row.approval_rule_id.id), ("person", False))
+
+    def test_declining_a_question_asked_before_the_rule_runs_nothing(self):
+        """Asked before the rule, the person's "Decline" stands once it exists:
+        the approval is withdrawn, nothing runs and the rule counts no use."""
+        project = self._project()
+        args = {"project_id": project.id}
+        first = self._call_tool(self.key, "delete_project", args, FORM_CAPABILITIES)
+        self.assertEqual(first.get("resultType"), "input_required", first)
+        rule = self._grant(self.manager, self.credential)
+        for action in ("decline", "cancel"):
+            with self.subTest(action=action):
+                result = self._call_tool(
+                    self.key,
+                    "delete_project",
+                    args,
+                    FORM_CAPABILITIES,
+                    requestState=first["requestState"],
+                    inputResponses={"confirm": {"action": action}},
+                )
+                self.assertTrue(result["isError"], result)
+                self.assertTrue(project.exists())
+        rule.invalidate_recordset()
+        self.assertEqual(rule.use_count, 0)
+        approval = self.env["incubacloud.mcp.approval"].search(
+            [("tool", "=", "delete_project"), ("user_id", "=", self.manager.id)]
+        )
+        self.assertEqual(approval.mapped("state"), ["cancelled"])
 
     def test_another_key_of_the_same_person_still_asks(self):
         """A second key, even with the same name, is not the one granted."""
@@ -293,7 +327,7 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self.admin = self._cloud_user("ar-admin", group="group_cloud_manager")
         self.dev = self._cloud_user("ar-dev", group="group_cloud_developer")
         self.other = self._cloud_user("ar-other", group="group_cloud_developer")
-        self.credential = "API key #9001"
+        self.credential = self._key_id(self._api_key(self.dev, name="ci"))
         self._seen(self.dev, self.credential, "API key ci")
         self.Rule = self.env["incubacloud.mcp.auto.approval"]
 
@@ -334,8 +368,10 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self._grant(self.dev, self.credential)
         self.assertTrue(self.Rule._active_for(self.dev.id, self.credential))
         self.assertFalse(self.Rule._active_for(self.other.id, self.credential))
-        self.assertFalse(self.Rule._active_for(self.dev.id, "API key #9002"))
-        self.assertFalse(self.Rule._active_for(self.dev.id, "client_id API key #9001"))
+        self.assertFalse(self.Rule._active_for(self.dev.id, "API key #-9002"))
+        self.assertFalse(
+            self.Rule._active_for(self.dev.id, f"client_id {self.credential}")
+        )
         self.assertFalse(self.Rule._active_for(self.dev.id, "assistant"))
 
     def test_only_an_administrator_grants_and_never_through_an_agent(self):
@@ -489,6 +525,9 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         """The vacuum ends the rules of keys that no longer exist."""
         rule = self._grant(self.dev, self.credential)
         self.Rule._gc_deleted_credentials()
+        self.assertFalse(rule.revoked_reason)
+        self._delete_key(self.credential)
+        self.Rule._gc_deleted_credentials()
         self.assertEqual(rule.revoked_reason, "credential deleted")
 
     def test_the_gate_lets_every_tool_through_with_a_rule(self):
@@ -542,6 +581,68 @@ class TestAutoApprovalMarks(McpUsersMixin, TransactionCase):
         self.assertEqual(marked.approval, "person")
         self.assertEqual(marked._format()[0]["approval"], "person")
 
+    def test_the_switch_is_defined_below_every_layer(self):
+        """``_mcp_auto_approval_allowed`` is defined in ``incubacloud`` and in
+        no other module of core: a layer that depends on ``incubacloud``
+        alone answers after it, whatever the order the MCP loads in."""
+        core = {
+            "incubacloud",
+            "incubacloud_connect",
+            "incubacloud_pitr",
+            "incubacloud_mcp",
+            "incubacloud_mcp_pitr",
+            "incubacloud_assistant",
+        }
+        defining = [
+            klass._module
+            for klass in type(self.env["cloud.settings"]).__mro__
+            if "_mcp_auto_approval_allowed" in vars(klass)
+            and getattr(klass, "_module", None) in core
+        ]
+        self.assertEqual(defining, ["incubacloud"])
+
+    def test_a_rule_s_own_row_keeps_its_rule_under_another_s_mark(self):
+        """The row of a grant or a revocation names its rule, also while the
+        call that writes it was approved by another rule or by the person;
+        a rule named by a user is still dropped."""
+        manager = self._cloud_user("am-rules", group="group_cloud_manager")
+        Rule = self.env["incubacloud.mcp.auto.approval"].with_context(
+            **{_INTERNAL: True}
+        )
+        approving, revoked = Rule.sudo().create(
+            [
+                {
+                    "user_id": manager.id,
+                    "kind": "api_key",
+                    "credential": f"API key #-{number}",
+                    "role_at_grant": "manager",
+                    "expires_at": "2099-01-01 00:00:00",
+                }
+                for number in (1, 2)
+            ]
+        )
+        for mark in (
+            {"approval": "auto", "rule": approving.id},
+            {"approval": "person", "rule": 0},
+        ):
+            with self.subTest(mark=mark["approval"]):
+                Log = self.env["cloud.audit.log"].with_context(
+                    **{APPROVAL_CONTEXT_KEY: mark}
+                )
+                own = Log.sudo().create(
+                    {
+                        "action": "Auto-approval rule revoked",
+                        "approval_rule_id": revoked.id,
+                    }
+                )
+                self.assertEqual(
+                    (own.approval, own.approval_rule_id), (mark["approval"], revoked)
+                )
+                forged = Log.with_user(manager).create(
+                    {"action": "Config changed", "approval_rule_id": revoked.id}
+                )
+                self.assertEqual(forged.approval_rule_id.id, mark["rule"] or False)
+
 
 @tagged("post_install", "-at_install")
 class TestCredentialsSeen(AutoApprovalMixin, McpUsersMixin, TransactionCase):
@@ -585,8 +686,9 @@ class TestCredentialsSeen(AutoApprovalMixin, McpUsersMixin, TransactionCase):
 
     def test_each_user_gets_only_their_own(self):
         """The candidates of a user are theirs, and never the assistant's key."""
-        self._seen(self.dev, "API key #1", "API key a")
-        self._seen(self.other, "API key #2", "API key b")
+        key = self._key_id(self._api_key(self.dev, name="a"))
+        self._seen(self.dev, key, "API key a")
+        self._seen(self.other, self._key_id(self._api_key(self.other)), "API key b")
         self._seen(self.dev, "assistant:7", "Assistant (conversation 7)")
         Rule = self.env["incubacloud.mcp.auto.approval"]
         mine = [
@@ -594,22 +696,40 @@ class TestCredentialsSeen(AutoApprovalMixin, McpUsersMixin, TransactionCase):
             for item in Rule._candidates_for(self.dev)
             if item["kind"] != "assistant"
         ]
-        self.assertEqual(mine, ["API key #1"])
+        self.assertEqual(mine, [key])
+
+    def test_a_deleted_key_is_not_offered(self):
+        """Of two keys with the same name, once one is deleted, only the
+        other is offered: the deleted one authenticates no more."""
+        kept = self._key_id(self._api_key(self.dev, name="ci"))
+        gone = self._key_id(self._api_key(self.dev, name="ci"))
+        self._seen(self.dev, kept, "API key ci")
+        self._seen(self.dev, gone, "API key ci")
+        self._delete_key(gone)
+        Rule = self.env["incubacloud.mcp.auto.approval"]
+        offered = [item["credential"] for item in Rule._candidates_for(self.dev)]
+        self.assertIn(kept, offered)
+        self.assertNotIn(gone, offered)
+        admin = self._cloud_user("cs-admin-gone", group="group_cloud_manager")
+        with self.assertRaises(UserError):
+            self._grant(self.dev, gone, admin=admin)
 
     def test_old_credentials_are_forgotten_unless_a_rule_holds_them(self):
         """Not seen for 90 days and without a live rule: removed."""
         admin = self._cloud_user("cs-admin", group="group_cloud_manager")
-        self._seen(self.dev, "API key #11", "API key old")
-        self._seen(self.dev, "API key #12", "API key kept")
-        self._grant(self.dev, "API key #12", admin=admin)
+        old = self._key_id(self._api_key(self.dev, name="old"))
+        kept = self._key_id(self._api_key(self.dev, name="kept"))
+        self._seen(self.dev, old, "API key old")
+        self._seen(self.dev, kept, "API key kept")
+        self._grant(self.dev, kept, admin=admin)
         self.env.cr.execute(
             "UPDATE incubacloud_mcp_credential SET last_seen = %s WHERE user_id = %s",
             (fields.Datetime.now() - SEEN_KEPT - timedelta(days=1), self.dev.id),
         )
         self.env.invalidate_all()
         self.Seen._gc_unseen()
-        self.assertFalse(self._row(self.dev, "API key #11"))
-        self.assertTrue(self._row(self.dev, "API key #12"))
+        self.assertFalse(self._row(self.dev, old))
+        self.assertTrue(self._row(self.dev, kept))
 
 
 @tagged("post_install", "-at_install")

@@ -61,6 +61,18 @@ def elicitation_modes(capabilities):
     return ("form" in elicitation or not elicitation), "url" in elicitation
 
 
+def answered_action(params):
+    """Return the ``action`` the client answered the question with, or None.
+
+    :param dict params: the ``tools/call`` params (attacker-controlled)
+    :return: ``accept``, ``decline``, ``cancel``, anything else the client
+        sent, or None without an answer
+    """
+    responses = params.get("inputResponses")
+    answer = responses.get(INPUT_KEY) if isinstance(responses, dict) else None
+    return answer.get("action") if isinstance(answer, dict) else None
+
+
 class McpConfirm(models.AbstractModel):
     """Whether a call may run now, or waits for the user's approval."""
 
@@ -87,12 +99,17 @@ class McpConfirm(models.AbstractModel):
         message = self.env["incubacloud.mcp.tools"]._confirmation(spec, args)
         if not message:
             return None
+        digest = fingerprint(spec.name, args)
+        resuming = ctx.modern and params.get("requestState")
+        # The person's "no" to a question asked before the rule was granted
+        # stands: it withdraws that approval and runs nothing.
+        if resuming and answered_action(params) in ("decline", "cancel"):
+            return self._resume(spec, digest, ctx, params)
         # Before any approval of the person: one asked for before the rule
         # was granted expires by itself.
         if self._auto_approved(spec, ctx, ctx.principal.client):
             return None
-        digest = fingerprint(spec.name, args)
-        if ctx.modern and params.get("requestState"):
+        if resuming:
             stop = self._resume(spec, digest, ctx, params)
             if stop is None:
                 self._mark_person()
@@ -318,7 +335,7 @@ class McpConfirm(models.AbstractModel):
             )
         responses = params.get("inputResponses")
         answer = responses.get(INPUT_KEY) if isinstance(responses, dict) else None
-        action = answer.get("action") if isinstance(answer, dict) else None
+        action = answered_action(params)
         if action in ("decline", "cancel"):
             approval._withdraw()
             return server._error_result(ctx, self.env._("Operation cancelled."))

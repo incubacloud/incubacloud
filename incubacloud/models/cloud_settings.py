@@ -1053,6 +1053,23 @@ class CloudSettings(models.Model):
         """
         return parse_ranges(self._get_system().trusted_proxy_ranges)
 
+    # ── Agents' auto-approval switch (incubacloud_mcp) ────────────────────
+
+    @api.model
+    def _mcp_auto_approval_allowed(self):
+        """Whether an Administrator may let an agent's credential act without
+        asking (``incubacloud.mcp.auto.approval``, in ``incubacloud_mcp``).
+
+        True here. Read when a rule is granted and at every call it would
+        approve: a panel that answers False leaves the rules it has paused,
+        so this is also the switch that stops them all at once.
+
+        Defined in this module and nowhere else in core, so a layer that
+        answers False needs only this module below it: its answer comes
+        after this one whatever the order the MCP and the layer load in.
+        """
+        return True
+
     # ── Startup check: the encryption key ─────────────────────────────────
 
     def _register_hook(self):

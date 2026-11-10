@@ -109,7 +109,7 @@
                                 <t t-foreach="chosenUser.credentials" t-as="item" t-key="item.credential">
                                     <option t-att-value="item.credential"
                                             t-att-selected="item.credential === state.grant.form.credential"
-                                            t-esc="credentialText(item)"/>
+                                            t-esc="credentialChoiceText(item)"/>
                                 </t>
                             </t>
                         </select>

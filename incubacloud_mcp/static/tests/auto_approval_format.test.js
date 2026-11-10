@@ -2,6 +2,7 @@ import { describe, expect, test } from "@odoo/hoot";
 import {
     approvalNote,
     canRevoke,
+    credentialDetail,
     credentialText,
     grantPayload,
     grantReady,
@@ -113,6 +114,30 @@ describe("Auto-approval — the rules", () => {
         expect(credentialText({ label: "client_id x", client_name: "Claude Code" })).toBe(
             "client_id x (Claude Code)"
         );
+    });
+
+    test("two keys with the same name are told apart by their id and last connection", () => {
+        const first = {
+            credential: "API key #12",
+            label: "API key ci",
+            last_seen: "2026-11-10 14:03:27",
+        };
+        const second = { ...first, credential: "API key #13", last_seen: "2026-11-09 08:15:00" };
+        expect(credentialText(first)).toBe(credentialText(second));
+        expect(credentialDetail(first)).toEqual({
+            key: "API key #12",
+            lastSeen: "2026-11-10 14:03",
+        });
+        expect(credentialDetail(second)).toEqual({
+            key: "API key #13",
+            lastSeen: "2026-11-09 08:15",
+        });
+    });
+
+    test("the panel's assistant, never connected, has no detail", () => {
+        expect(
+            credentialDetail({ credential: "assistant", label: "Panel assistant", last_seen: "" })
+        ).toBe(null);
     });
 
     test("Connect an agent says whether the rule acts now", () => {
