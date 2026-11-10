@@ -119,10 +119,10 @@ sentences come from fixed rules over the charts below, with these thresholds:
 | --- | --- |
 | Odoo is held back by its CPU quota | Odoo was refused CPU by its quota more than 25% of the time |
 | The server is saturated and most of it goes to another instance | The server's load is above 2 per core and another instance uses more than half of the server's CPU |
-| Memory is short | The server's tasks waited for memory more than 10% of the time, or the kernel killed a process of this instance for lack of memory in the window shown |
+| Memory is short | The server's tasks waited for memory more than 10% of the time, or the kernel killed a process of this instance for lack of memory, in the last 15 minutes |
 | The server's disk is the bottleneck | The server's tasks waited for the disk more than 20% of the time |
 | Requests take long without using CPU or the database | The proxy's p95 is above 2 seconds while Odoo and the database each use less than 30% of a core: usually a call to an outside service |
-| Odoo restarted N minutes ago | Odoo's container started inside the window |
+| Odoo restarted N minutes ago | Odoo's container started in the last 15 minutes |
 | No resource looks saturated | None of the above |
 
 Zoomed into the past, the card does not judge: it only reads the last 15
@@ -186,9 +186,12 @@ demand and only by the `developer` role or above.
 **Slow routes** reads Odoo's own log for the last 15 or 60 minutes: the ten
 routes that took the most time in total, with their count, mean, p95, the share
 spent in SQL and in Python and the mean number of queries; the scheduled
-actions with their longest and total run, and those still running; the workers
-stopped by a time limit with the start of their trace; and how many workers
-were recycled for memory. A route with a high SQL share points at the database;
+actions with their longest and total run, and those still running; the requests
+stopped by a time limit; and how many workers were recycled for memory. Where a
+stopped request was depends on how Odoo runs: without workers, Odoo logs its
+stack, and the reading shows the URL it served and its innermost calls; with
+workers, Odoo kills the worker without logging where it was, so there is only
+the time and the limit. A route with a high SQL share points at the database;
 a high Python share at the code. Odoo before 11.0 logs no timing: its requests
 are counted, not timed.
 

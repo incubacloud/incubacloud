@@ -141,10 +141,18 @@ instance would train everyone to ignore the alert that matters.
 The panel's own charts cost the central one PromQL query per panel each
 time a board is read: an instance's Metrics tab is ten (`metrics_charts.
 PANELS["instance"]`), at most four in flight from one worker, each given
-8 s, again every 45 s while the `1h` or `6h` range is open and the tab is
-visible. A reading on demand (*Queries now*, *Slow routes*) is one SSH
-command on the instance's host, only when pressed, and holds a worker of
-the panel for at most 20 s; the board lets one run at a time.
+8 s and asked once (no retry: a retry would double the wait on a central
+that is already slow), again every 45 s while the `1h` or `6h` range is
+open and the tab is visible; a click on a range or a zoom replaces the
+pending refresh instead of starting another. One user may read 20 boards
+a minute (`_BOARD_READS_PER_MIN` in `controllers/_data_load/_routes_ops.py`).
+A reading on demand (*Queries now*, *Slow routes*) is one SSH command on
+the instance's host, only when pressed, and holds a worker of the panel
+for at most 20 s, the SSH connection and login included (`_READ_TIMEOUT`;
+jobs keep the host's 30 s for each); the board lets one run at a time, and
+each reading counts against the user's log reads per minute
+(`rate_limit_logs_per_min`). The central has no limit per account of its
+own yet: a cap of concurrent queries per account in vmauth is planned.
 
 Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
@@ -203,7 +211,14 @@ the record rules on the instance):
   last 15 or 60 minutes of the instance's Odoo log (live file and newest
   archive, regular files only, as the health probe reads them) and prints
   only a projection of each line; the panel adds it up
-  (`models/cloud_instance_slow_routes.py`).
+  (`models/cloud_instance_slow_routes.py`). A request stopped by a time
+  limit carries a trace only without workers: Odoo then logs "Dumping
+  stacktrace of limit exceeding threads before reloading" and, on its next
+  line (`odoo.tools.misc`), each thread's stack, of which the script keeps
+  the `# Thread:` header (database, user, URL, timings) and the last nine
+  lines, the innermost frames. With workers, the master logs
+  `WorkerHTTP (<pid>) timeout after <n>s` and kills the worker with
+  SIGKILL: there is no stack to read, and the board says so.
 
 A reading is no job, so nothing uploads its script beforehand: the
 controller sends the script's text on stdin into a private `mktemp` file
