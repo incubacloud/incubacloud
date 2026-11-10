@@ -8,8 +8,11 @@ request is written by a job queued in the delivery's transaction, which
 reconciles the note with what is true when it runs.
 """
 import asyncio
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from psycopg2 import errors as pg_errors
 
 from odoo.exceptions import UserError
 
@@ -31,12 +34,19 @@ PROJECT_ID = 101
 FORK_ID = 202
 
 
+class _LostRace(pg_errors.SerializationFailure):
+    """A serialization failure as PostgreSQL raises it, with its code."""
+
+    pgcode = "40001"
+
+
 def mr_body(action="open", iid=12, branch="feature-x", path="acme/web",
-            source=PROJECT_ID, target=PROJECT_ID, oldrev=None):
+            source=PROJECT_ID, target=PROJECT_ID, oldrev=None, updated_at=None):
     """Return a GitLab «Merge Request Hook» body.
 
     :param int source: the project the branch comes from
     :param int target: the project the merge request is opened on
+    :param str updated_at: the merge request's ``updated_at``, or None
     :rtype: dict
     """
     attrs = {
@@ -47,6 +57,8 @@ def mr_body(action="open", iid=12, branch="feature-x", path="acme/web",
     }
     if oldrev:
         attrs["oldrev"] = oldrev
+    if updated_at:
+        attrs["updated_at"] = updated_at
     return {
         "object_kind": "merge_request",
         "user": {"username": "dev", "email": "dev@example.com"},
@@ -73,14 +85,23 @@ class _MergeRequestCase(GitLabHookCase):
             "url": f"https://gitlab.com/{cls.PATH}.git", "branch": "main",
         })
 
-    def _mr(self, key="mr-1", **body):
+    def _mr(self, key="mr-1", hook=None, **body):
         """Record and dispatch a merge request delivery.
 
         :rtype: cloud.gitlab.event
         """
-        event = self._event(mr_body(**body), "Merge Request Hook", key=key)
+        event = self._event(mr_body(**body), "Merge Request Hook", key=key, hook=hook)
         event._dispatch_safely()
         return event
+
+    def _jobs(self, inst, code):
+        """Return the panel's jobs of *code* on *inst*.
+
+        :rtype: cloud.job
+        """
+        return self.env["cloud.job"].sudo().search([
+            ("instance_id", "=", inst.id), ("job_type_id.code", "=", code),
+        ])
 
     def _clone_patch(self, **kwargs):
         """Patch ``clone_to_staging`` on the model class."""
@@ -234,7 +255,76 @@ class TestOpen(_MergeRequestCase):
         self.assertFalse(line.commit_sha)
         body = staging._pr_preview_ready_body()
         self.assertIn("merge request", body)
-        self.assertIn(f"<!-- incubacloud:preview:{self.project.id}:12 -->", body)
+        self.assertIn(
+            self.env["cloud.gitlab.mr.note"]._marker(self.project.id, 12), body,
+        )
+
+    def test_two_deliveries_at_once_leave_one_preview_and_no_alert(self):
+        """The loser of the unique name finds the winner's preview and says nothing."""
+        self.registry_enter_test_mode()
+        self._preview(state="deploying")
+        Event = type(self.Event)
+        with patch.object(
+            Event, "_mr_previews", return_value=self.env["cloud.instance"],
+        ), patch.object(
+            Event, "_mr_preview_name", return_value="mr-12", create=True,
+        ), patch.object(
+            type(self.env["cloud.job"]), "enqueue_chain", return_value=[1, 2, 3],
+        ):
+            event = self._mr(key="mr-twin")
+        self.assertTrue(event.processed)
+        self.assertFalse(event.error)
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("code", "=", PR_PREVIEW_FAILED_CODE), ("state", "=", "active"),
+        ]))
+        self.assertFalse(self._note_jobs())
+
+    def test_a_unique_violation_without_a_preview_is_still_a_failure(self):
+        with self._clone_patch(side_effect=pg_errors.UniqueViolation("dup")):
+            event = self._mr()
+        self.assertTrue(event.processed)
+        alert = self.env["cloud.alert"].search([
+            ("code", "=", PR_PREVIEW_FAILED_CODE), ("state", "=", "active"),
+        ])
+        self.assertIn("internal error", alert.message)
+
+    def test_a_group_s_delivery_is_dropped_for_a_project_with_its_own_webhook(self):
+        group = self.Hook.create({
+            "provider_id": self.provider.id, "scope": "group", "path": "acme",
+            "state": "active",
+        })
+        self.hook.state = "active"
+        with self._clone_patch(return_value={}) as clone:
+            event = self._mr(key="mr-group", hook=group)
+        self.assertTrue(event.processed)
+        clone.assert_not_called()
+        self.hook.state = "pending"
+        with self._clone_patch(return_value={}) as clone:
+            self._mr(key="mr-group-2", hook=group)
+        clone.assert_called_once()
+
+    def test_an_open_dispatched_after_the_close_brings_nothing_back(self):
+        """The cron's second try of an open, or a resend, after the merge request closed."""
+        opening = self._event(
+            mr_body(updated_at="2026-11-10 10:00:00 UTC"), "Merge Request Hook", key="o1",
+        )
+        self._mr(action="close", key="c1", updated_at="2026-11-10 10:05:00 UTC")
+        with self._clone_patch(return_value={}) as clone:
+            opening._dispatch_safely()
+        clone.assert_not_called()
+        self.assertTrue(opening.processed)
+        with self._clone_patch(return_value={}) as clone:
+            self._mr(action="reopen", key="r1", updated_at="2026-11-10 10:09:00 UTC")
+        clone.assert_called_once()
+
+    def test_closed_and_reopened_at_once_it_gets_a_new_preview(self):
+        """The closed preview still being deleted keeps its name; the new one takes another."""
+        old = self._preview(state="deploying", pr_state="closed")
+        with self._clone_patch(return_value={}) as clone:
+            self._mr(action="reopen")
+        clone.assert_called_once()
+        self.assertEqual(clone.call_args.args, ("mr-12-2",))
+        self.assertTrue(old.exists())
 
 
 class TestUpdateAndClose(_MergeRequestCase):
@@ -283,6 +373,118 @@ class TestUpdateAndClose(_MergeRequestCase):
         self._mr(action="close")
         self.assertFalse(preview.exists())
         self.assertEqual(len(self._note_jobs()), 1)
+
+    def test_a_close_while_the_clone_deploys_deletes_it_once_its_chain_ends(self):
+        """The real clone's chain: the delete waits, what waits in the queue is cancelled.
+
+        The chain's dump and restore wait on queue_job's dependencies, not
+        in the preview's queue, and the chain holds the preview until its
+        last step: the delete runs after the restore, which neither
+        announces the preview nor queues a second delete.
+        """
+        self._mr()
+        staging = self.env["cloud.instance"].search([
+            ("pr_provider_id", "=", self.provider.id), ("pr_number", "=", 12),
+        ])
+        self.assertEqual(staging.state, "deploying")
+        deploy = self._jobs(staging, "deploy_instance")
+        restore = self._jobs(staging, "restore_instance")
+        dump = self._jobs(self.prod, "backup_download")
+        self.assertTrue(deploy and restore and dump)
+        waiting = self.env["cloud.job"].sudo().create({
+            "name": "restart", "host_id": self.host.id, "instance_id": staging.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restart_instance")], limit=1,
+            ).id,
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'started' WHERE id = %s", (deploy.id,),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'queued' WHERE id = %s", (waiting.id,),
+        )
+        self.env.invalidate_all()
+        event = self._mr(action="close", key="mr-close")
+        self.assertTrue(event.processed)
+        self.assertFalse(event.error)
+        self.assertTrue(staging.exists())
+        self.assertEqual(staging.pr_state, "closed")
+        self.assertEqual(staging.state, "deploying")
+        delete = self._jobs(staging, "delete_instance")
+        self.assertEqual(len(delete), 1)
+        self.assertEqual(delete.state, "queued", "it waits for the chain")
+        self.assertEqual(deploy.state, "started")
+        self.assertEqual(waiting.state, "cancelled")
+        self.assertNotEqual(restore.state, "cancelled")
+        self.assertNotEqual(dump.state, "cancelled")
+        closing = self._note_jobs().filtered(lambda j: j.kwargs["kind"] == "closed")
+        self.assertEqual(len(closing), 1)
+        # The deploy ends; the restore comes up on a closed preview.
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'done' WHERE id = %s", (deploy.id,),
+        )
+        self.env.invalidate_all()
+        staging._transition("deployed")
+        executor = RestoreInstanceExecutor(restore, self.host)
+        with patch.object(
+            RestoreInstanceExecutor, "_cleanup_cross_host_handoff", new=AsyncMock(),
+        ):
+            asyncio.run(executor.on_success({}))
+        self.assertEqual(self._jobs(staging, "delete_instance"), delete)
+        self.assertEqual(self._note_jobs(), closing)
+
+    def test_a_delete_that_cannot_be_queued_fails_the_event(self):
+        preview = self._preview()
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue",
+            side_effect=UserError("The queue is full."),
+        ):
+            event = self._mr(action="close")
+        self.assertFalse(event.processed)
+        self.assertIn("The queue is full.", event.error)
+        event._dispatch_safely()
+        self.assertTrue(event.processed)
+        self.assertEqual(preview.pr_state, "closed")
+        self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+
+    def test_a_lost_race_reaches_odoo_s_retry(self):
+        self._preview()
+        event = self._event(mr_body(action="close"), "Merge Request Hook", key="race")
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", side_effect=_LostRace("lost"),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            event._dispatch_safely()
+
+    def test_a_rebuild_that_cannot_be_queued_fails_the_event(self):
+        self._preview()
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue",
+            side_effect=UserError("The queue is full."),
+        ):
+            event = self._mr(action="update", oldrev=BEFORE)
+        self.assertFalse(event.processed)
+        self.assertIn("The queue is full.", event.error)
+
+    def test_the_close_has_a_job_of_its_own(self):
+        """Not collapsed into a waiting one, whose arguments it would run with."""
+        preview = self._preview()
+        self.env["cloud.gitlab.mr.note"]._enqueue(preview)
+        self._mr(action="close")
+        self.assertEqual(
+            sorted(self._note_jobs().mapped(lambda j: j.kwargs["kind"])),
+            ["closed", "preview"],
+        )
+
+    def test_the_close_resolves_the_alert_of_the_merge_request_s_note(self):
+        Note = self.env["cloud.gitlab.mr.note"]
+        self.env["cloud.alert"].sudo().raise_alert(
+            PR_PREVIEW_NOTE_FAILED_CODE, "x", level="warning",
+            key=Note._request_key(self.provider, self.PATH, 12),
+        )
+        self._mr(action="close")
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("code", "=", PR_PREVIEW_NOTE_FAILED_CODE), ("state", "=", "active"),
+        ]))
 
     def test_a_github_pull_request_and_a_merge_request_of_one_number_stay_apart(self):
         """GitHub's events never reach a GitLab preview of the same name and number."""
@@ -339,7 +541,7 @@ class TestNoteJob(_MergeRequestCase):
 
     def _marker(self, iid=12):
         """Return the marker of the project's note on *iid*."""
-        return f"<!-- incubacloud:preview:{self.project.id}:{iid} -->"
+        return self.Note._marker(self.project.id, iid)
 
     def _note_alert(self):
         """Return the open alerts about notes."""
@@ -400,6 +602,22 @@ class TestNoteJob(_MergeRequestCase):
         self._run(iid=30, comment_id=88)
         self.assertFalse(self._note_alert())
 
+    def test_a_note_that_cannot_be_deleted_only_goes_to_the_log(self):
+        """Nothing would ever resolve the alert of a merge request that is closed."""
+        self._preview(pr_comment_id=77, pr_state="closed")
+        self.api.delete_mr_note.side_effect = GitLabError("forbidden", 403)
+        with self.assertLogs(cloud_gitlab_mr_note._logger.name, "WARNING"):
+            self._run()
+        self.assertFalse(self._note_alert())
+
+    def test_a_closed_preview_with_no_delete_gets_one(self):
+        """The note's job is the last guard of a closed preview."""
+        preview = self._preview(pr_state="closed")
+        self._run()
+        self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+        self._run()
+        self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+
     def test_a_failure_and_a_fork_say_why_there_is_no_preview(self):
         self._run(iid=40, kind="failed", reason="No room.", prod_id=self.prod.id)
         body = self.api.create_mr_note.call_args.args[2]
@@ -409,7 +627,53 @@ class TestNoteJob(_MergeRequestCase):
         self._run(iid=41, project_id=0, kind="fork")
         body = self.api.create_mr_note.call_args.args[2]
         self.assertIn("not for merge requests from a fork", body)
-        self.assertIn("<!-- incubacloud:preview:0:41 -->", body)
+        self.assertIn(self.Note._marker(0, 41), body)
+
+    def test_the_marker_names_the_panel(self):
+        """Two panels on one merge request never take each other's note."""
+        tag = self.Note._panel_tag()
+        self.assertRegex(tag, r"^[0-9a-f]{12}$")
+        self.assertEqual(
+            self._marker(), f"<!-- incubacloud:preview:{tag}:{self.project.id}:12 -->",
+        )
+
+    def test_the_project_s_name_cannot_start_a_quick_action(self):
+        self.project.name = "Acme `x`  web"
+        self._run(iid=40, kind="failed", reason="No\n/merge `room`.", prod_id=self.prod.id)
+        body = self.api.create_mr_note.call_args.args[2]
+        self.assertIn("| **Project** | `Acme x web` |", body)
+        self.assertIn("| **Reason** | No /merge room. |", body)
+        self.assertFalse([line for line in body.splitlines() if line.startswith("/")])
+
+    def test_the_notes_are_read_page_after_page(self):
+        self._preview(pr_comment_id=0)
+        other = [{"id": n, "body": "x", "author": {"username": "panel-bot"}}
+                 for n in range(100)]
+        self.api.list_mr_notes.side_effect = [
+            other, [{"id": 700, "body": self._marker(), "author": {"username": "panel-bot"}}],
+        ]
+        self._run()
+        self.api.create_mr_note.assert_not_called()
+        self.assertEqual(self.api.update_mr_note.call_args.args[2], 700)
+        self.assertEqual(
+            [c.kwargs.get("page") for c in self.api.list_mr_notes.call_args_list], [1, 2],
+        )
+
+    def test_the_client_has_a_budget(self):
+        self._preview()
+        self._run()
+        self.assertIsNotNone(cloud_gitlab_mr_note.GitLabClient.call_args.kwargs["deadline"])
+
+    def test_a_failure_s_note_after_the_close_is_deleted_not_written(self):
+        """Waiting for its retry when the merge request closed."""
+        opening = self._event(mr_body(), "Merge Request Hook", key="o1")
+        closing = self._event(mr_body(action="close"), "Merge Request Hook", key="c1")
+        closing.sudo().write({"processed": True})
+        self._run(iid=12, kind="failed", reason="No room.", prod_id=self.prod.id,
+                  comment_id=91, event_id=opening.id)
+        self.api.create_mr_note.assert_not_called()
+        self.api.update_mr_note.assert_not_called()
+        self.api.delete_mr_note.assert_called_once_with("acme/web", 12, 91)
 
     def test_gitlab_down_is_retried_and_the_last_attempt_alerts(self):
         preview = self._preview()
@@ -433,12 +697,41 @@ class TestNoteJob(_MergeRequestCase):
             self._run()
         self.assertIn("403", self._note_alert().message)
 
-    def test_no_credential_with_api_alerts(self):
+    def test_a_400_or_a_422_is_not_retried_and_a_5xx_is(self):
+        self._preview()
+        for status in (400, 422):
+            with self.subTest(status=status):
+                self._note_alert().write({"state": "dismissed"})
+                self.api.create_mr_note.side_effect = GitLabError("http", status)
+                with patch.object(type(self.Note), "_last_attempt", return_value=False):
+                    self._run()
+                self.assertIn(str(status), self._note_alert().message)
+        self.api.create_mr_note.side_effect = GitLabError("http", 502)
+        with patch.object(type(self.Note), "_last_attempt", return_value=False), \
+                self.assertRaises(RetryableJobError):
+            self._run()
+
+    def test_no_credential_with_api_only_goes_to_the_log(self):
+        """The repository shows no_notes: no alert for each merge request."""
         self.cred.sudo().write({"scopes": "read_repository"})
         self._preview()
-        self._run()
-        self.assertIn("api", self._note_alert().message)
+        with patch.object(
+            cloud_gitlab_mr_note, "_logger", MagicMock(spec=logging.Logger),
+        ) as log:
+            self._run()
+        log.info.assert_called_once()
+        self.assertFalse(self._note_alert())
         self.api.create_mr_note.assert_not_called()
+
+    def test_a_note_that_goes_through_resolves_every_alert_of_the_merge_request(self):
+        preview = self._preview()
+        Alert = self.env["cloud.alert"].sudo()
+        for target in ({"instance": self.prod}, {"instance": preview},
+                       {"key": self.Note._request_key(self.provider, self.PATH, 12)}):
+            Alert.raise_alert(PR_PREVIEW_NOTE_FAILED_CODE, "x", level="warning", **target)
+        self.assertEqual(len(self._note_alert()), 3)
+        self._run(prod_id=self.prod.id)
+        self.assertFalse(self._note_alert())
 
     def test_the_retries_wait_longer_each_time(self):
         job = SimpleNamespace(retry=0, max_retries=4)
@@ -479,3 +772,43 @@ class TestRestoreQueuesTheNote(_MergeRequestCase):
             asyncio.run(executor.on_success({}))
         github.assert_not_called()
         self.assertEqual(len(self._note_jobs()), 1)
+
+    def _restore(self, preview):
+        """Run the restore's ``on_success`` on *preview*, its handoff left alone."""
+        job = self.env["cloud.job"].sudo().create({
+            "name": "restore", "host_id": self.host.id,
+            "instance_id": preview.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            ).id,
+        })
+        executor = RestoreInstanceExecutor(job, self.host)
+        with patch.object(
+            RestoreInstanceExecutor, "_cleanup_cross_host_handoff", new=AsyncMock(),
+        ):
+            asyncio.run(executor.on_success({}))
+
+    def test_a_note_that_cannot_be_queued_does_not_fail_the_restore(self):
+        preview = self._preview()
+        with patch.object(
+            type(self.env["cloud.gitlab.mr.note"]), "_enqueue",
+            side_effect=UserError("no"),
+        ):
+            self._restore(preview)
+        self.assertEqual(preview.status, "ok")
+
+    def test_the_restore_of_a_closed_preview_deletes_it(self):
+        """Closed while it was built, and its delete cancelled: the restore queues it."""
+        for provider in (self.provider, self.env["cloud.git.provider"]):
+            with self.subTest(gitlab=bool(provider)):
+                preview = self._preview(
+                    iid=60 + len(provider), pr_state="closed",
+                    pr_provider_id=provider.id,
+                )
+                with patch.object(
+                    type(self.env["cloud.instance"]), "_post_or_update_pr_comment",
+                ) as github:
+                    self._restore(preview)
+                github.assert_not_called()
+                self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+        self.assertFalse(self._note_jobs())
