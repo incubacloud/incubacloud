@@ -1,13 +1,16 @@
 import asyncio
+import base64
 import contextlib
 import errno
 import hashlib
 import hmac
+import json
 import logging
 import re
 import secrets
 import shlex
 import socket
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -15,6 +18,7 @@ import asyncssh
 from psycopg2 import OperationalError
 from psycopg2.errors import LockNotAvailable
 
+from odoo import fields
 from odoo.exceptions import AccessError, MissingError, UserError
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.sql_db import Cursor
@@ -26,6 +30,11 @@ from ._concurrency import read_committed_cursor
 from ._repo_requirements import has_pip_conflicts
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .registry import executor_registry
+from .transport import (
+    CANCEL_TERM_WAIT_S,
+    DEFAULT_SSH_COMMAND_TIMEOUT,
+    CommandResult,
+)
 
 # Delay before queue_job re-runs a job that failed to connect to its host.
 # Short enough that a momentary blip recovers quickly, long enough that we
@@ -327,6 +336,132 @@ def handoff_sweep(env, host, root="/tmp"):
     )
 
 
+#: Prefix of the directory a step marked ``detached`` runs in on its
+#: server (:func:`detached_dir`, ``scripts/detached_step.sh``).
+DETACHED_PREFIX = "/tmp/.incubacloud-detached-"
+
+#: How often a running step apart is read, in seconds (10-nov-2026): its
+#: lines reach the job log about as soon as an attached step's (0.5 s), at
+#: the cost of one ``exec`` a second on the connection already open.
+DETACHED_POLL_S = 1
+
+#: The most one read of a step apart returns, in bytes (10-nov-2026): a
+#: build does not write that much in a second; a read that hits it is
+#: followed by another at once.
+DETACHED_READ_MAX_BYTES = 1024 * 1024
+
+#: What a step apart keeps of its stdout for its result, in bytes
+#: (10-nov-2026): a ``parse_results`` that reads a long step's stdout sees
+#: its last 256 KiB.
+DETACHED_STDOUT_TAIL = 256 * 1024
+
+#: How long past its cap a step apart may run before the panel stops it
+#: and fails the job, in seconds (10-nov-2026): ``timeout`` on the server
+#: sends TERM at the cap and KILL 60 s later; 120 s is that and room.
+DETACHED_OVERDUE_GRACE_S = 120
+
+#: How long a step apart waits for its trap once it is sent TERM when the
+#: job is stopped, in seconds: what the transport gives a stopped command
+#: (``CANCEL_TERM_WAIT_S``).
+DETACHED_STOP_WAIT_S = CANCEL_TERM_WAIT_S
+
+#: ``detached_step.sh start``: a step of another job still runs for the
+#: same instance or host. The job waits and tries again
+#: (``DETACHED_BUSY_RETRY_S``); the other step ends on its own, or the
+#: reconciliation stops it.
+DETACHED_EXIT_BUSY = 73
+#: ``detached_step.sh start``: the step's path is held by something that is
+#: not this account's directory.
+DETACHED_EXIT_TAKEN = 74
+#: ``detached_step.sh clean``: the step still runs, and its directory stays.
+DETACHED_EXIT_RUNNING = 75
+#: ``detached_step.sh start``: the server kills this account's processes
+#: when its SSH session ends (logind's ``KillUserProcesses``); the step runs
+#: attached to the request instead.
+DETACHED_EXIT_KILLED_AT_LOGOUT = 78
+
+#: How long a job whose step found another job's step running for the same
+#: target waits before it tries again, in seconds (10-nov-2026): as long as
+#: a job that waits for its host's build lock.
+DETACHED_BUSY_RETRY_S = 30
+
+#: The header ``detached_step.sh read`` answers with: state, exit status,
+#: whether the cap cut the step, and the offset the bytes after it end at.
+_DETACHED_HEADER_RE = re.compile(
+    r"^ic-detached v1 state=(running|done|lost|none)"
+    r" exit=(-|\d+) timedout=([01]) off=(\d+)$"
+)
+
+#: The ``source`` of a ``_log_buffer`` entry that is not a line but the
+#: offset in a step's log the lines before it end at (``_flush_logs``).
+_LOG_OFFSET = "detached_offset"
+
+
+def detached_dir(env, job_id, index):
+    """Return the directory step *index* of job *job_id* runs apart in.
+
+    Named with the panel's ``database.secret``, as a handoff
+    (:func:`handoff_dir`): any later attempt of the job, or the
+    reconciliation, recomputes it from the job and the step alone, and no
+    account on the server can tell it in advance and create it first. One
+    per step: a job may run several long steps one after the other.
+
+    :param env: an environment to read the secret with
+    :param int job_id: id of the ``cloud.job``
+    :param int index: position of the step in the job's plan
+    :return: absolute path on the job's host
+    :raise RuntimeError: when the database has no secret to name it with
+    """
+    secret = env["ir.config_parameter"].sudo().get_param("database.secret")
+    if not secret:
+        raise RuntimeError(
+            "database.secret is not set: cannot name a step's directory."
+        )
+    digest = hmac.new(
+        secret.encode(), f"detached:{int(job_id)}:{int(index)}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{DETACHED_PREFIX}{digest[:16]}"
+
+
+def _detached_ctl(directory, order, *args):
+    """Return the command that runs *order* of the step in *directory*.
+
+    Through the step's own copy of the script (``ctl.sh``), and only when
+    *directory* is this account's directory and not a link: what another
+    account put at that path is never run. Without it, the answer of a
+    step that is not there: ``none`` for ``read``, nothing for the rest.
+
+    :param str directory: :func:`detached_dir`
+    :param str order: ``read``, ``result``, ``stop`` or ``clean``
+    :param args: the order's arguments after the directory
+    :rtype: str
+    """
+    quoted = shlex.quote(directory)
+    absent = (
+        f"printf 'ic-detached v1 state=none exit=- timedout=0 off=%s\\n'"
+        f" {shlex.quote(str(args[0]))}" if order == "read" else "true"
+    )
+    return (
+        f"if [ -d {quoted} ] && [ ! -L {quoted} ] && [ -O {quoted} ]"
+        f" && [ -f {quoted}/ctl.sh ]; then"
+        f" bash {quoted}/ctl.sh {shlex.join([order, directory, *map(str, args)])};"
+        f" else {absent}; fi"
+    )
+
+
+def _stdout_lines(data):
+    """Return *data*'s lines as a step's ``stdout`` is kept: trimmed, none empty.
+
+    The same as ``SSHTransport.execute`` keeps a command's: each line
+    without its trailing blanks, empty lines dropped.
+
+    :param str data: text
+    :rtype: list[str]
+    """
+    return [line.rstrip() for line in data.split("\n") if line.rstrip()]
+
+
 def sql_escape_literal(s):
     """Escape a Python string for embedding in a PostgreSQL single-quoted
     SQL literal (``'...'``).
@@ -572,6 +707,24 @@ class AbstractExecutor(ABC):
     # for ends the job there; otherwise the job is marked, and a stop
     # asked for later is refused (``cloud.job.no.return``).
     _no_return_from = None
+
+    # Set once the plan has a step marked ``detached`` and the job's
+    # ``cloud.job.checkpoint`` row was written (``_open_checkpoint``); unset
+    # once the row is gone. A plan without such a step writes no row.
+    _checkpoint = False
+    # The row's ``data`` as this run knows it (plan, results, staging).
+    _checkpoint_data = None
+    # The directory of the step apart that runs now, until it is removed.
+    _detached_running = None
+    # Bytes of that step's log already read.
+    _detached_offset = 0
+    # Something of a step apart was not stopped or removed: the server
+    # could not be reached, or a process outlived its KILL. The row stays,
+    # for whoever reaches the server next.
+    _detached_left_alive = False
+    # A step marked ``detached`` ran attached to the request: the server
+    # kills processes at logout (``DETACHED_EXIT_KILLED_AT_LOGOUT``).
+    _detached_attached = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -828,6 +981,10 @@ class AbstractExecutor(ABC):
                 self._sys(f"✗ {type(e).__name__}: {e}")
             if aborting:
                 await self._dispatch_abort(e)
+            elif retrying:
+                # Run again from the start: the next attempt does not take
+                # up this one's place (a busy cron must run its step again).
+                self._forget_checkpoint()
             raise
 
     def _will_be_retried(self, exc):
@@ -865,6 +1022,12 @@ class AbstractExecutor(ABC):
 
         :param transport: open transport the commands run through.
         :param list commands: the materialised ``get_commands()`` output.
+        The option ``detached`` runs the step on the server apart from the
+        connection (``_run_detached``), within the same ``timeout``: it
+        outlives the request, and answers as ``transport.execute`` would.
+        A plan with such a step keeps its place in ``cloud.job.checkpoint``
+        from before its first step to its end.
+
         :return: ``(results, skipped)``. ``results`` maps each label that
             ran to ``{'stdout': str, 'exit_status': int}``; ``skipped``
             lists, in order, the labels a ``stop_on_failure`` step cut
@@ -874,6 +1037,8 @@ class AbstractExecutor(ABC):
         # Shared with ``_step_results``: a cancellation halfway hands
         # ``on_failure`` what had run.
         results = self._step_results = {}
+        if any(len(item) == 3 and item[2].get("detached") for item in commands):
+            await self._open_checkpoint(transport, commands)
         for index, item in enumerate(commands):
             label, command = item[0], item[1]
             opts = item[2] if len(item) == 3 else {}
@@ -885,11 +1050,18 @@ class AbstractExecutor(ABC):
             # ``timeout``: a step that needs longer than the transport's
             # default per command (``fetch-repos``).
             extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
-            result = await transport.execute(
-                command, self.on_stdout, self.on_stderr, **extra,
-            )
+            if opts.get("detached"):
+                result = await self._run_detached(
+                    transport, index, label, command, opts,
+                )
+            else:
+                result = await transport.execute(
+                    command, self.on_stdout, self.on_stderr, **extra,
+                )
             status = result.exit_status
             results[label] = {'stdout': result.stdout, 'exit_status': status}
+            if self._checkpoint:
+                self._save_checkpoint_step(index + 1)
             if status == 0:
                 continue
             if status in opts.get('continue_on', ()):
@@ -1053,12 +1225,17 @@ class AbstractExecutor(ABC):
         ``_durable_env`` for why the wait is capped. The executor's
         ``job``/``env`` are restored afterwards.
 
+        Whichever hook it is, it closes the job: the job's checkpoint goes
+        in the same transaction, unless something of a step apart was left
+        on the server (``_detached_left_alive``).
+
         :param hook: coroutine function to await
         :param args: positional arguments for *hook*
         :param bool record_outcome: leave the job's outcome mark, as the
             hook's last statement and on its cursor
             (``_outcome_mark_vals``): for ``on_success`` only
         """
+        forget = self._checkpoint and not self._detached_left_alive
         with self._as_durable() as env:
             await hook(*args)
             if record_outcome and self.job.queue_job_uuid:
@@ -1066,6 +1243,14 @@ class AbstractExecutor(ABC):
                 env["cloud.job.outcome"].sudo().create(
                     self._outcome_mark_vals(),
                 ).flush_recordset()
+            if forget:
+                env.flush_all()
+                env.cr.execute(
+                    "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                    (self.job.id,),
+                )
+        if forget:
+            self._checkpoint = False
 
     def _outcome_mark_vals(self):
         """Return the outcome mark of a run whose ``on_success`` returned.
@@ -1156,6 +1341,8 @@ class AbstractExecutor(ABC):
                     "[_dispatch_abort] on_abort failed for job %s",
                     getattr(getattr(self, "job", None), "id", None),
                 )
+        # The job ends here, with or without a hook to take the row along.
+        self._forget_checkpoint()
         self._refresh_host_disk()
 
     async def _dispatch_cancel(self, exc):
@@ -1191,6 +1378,8 @@ class AbstractExecutor(ABC):
             )
         finally:
             self.job, self.env = orig_job, orig_job.env
+        # The job ends here, even when its hook raised.
+        self._forget_checkpoint()
         self._refresh_host_disk()
 
     def _unlink_after_job_commit(self, inst, sudo=False):
@@ -1463,19 +1652,38 @@ class AbstractExecutor(ABC):
         ``on_stdout`` / ``on_stderr``: several tests rebind those to
         ``_log_buffer.append``, which would bypass a flag set there.
 
+        The offset a step apart's lines end at (an entry ``_LOG_OFFSET``,
+        put after them by ``_read_detached``) is written on the same
+        cursor as the lines: a run that dies loses none of them, and the
+        next read of the step does not repeat them.
+
         :returns: number of ``cloud.job.log.chunk`` rows created.
         """
         if not self._log_buffer:
             return 0
-        entries = list(self._log_buffer)
+        entries = []
+        offset = None
+        for line, source in self._log_buffer:
+            if source == _LOG_OFFSET:
+                offset = line
+            else:
+                entries.append((line, source))
         self._log_buffer.clear()
         # If we already emitted the cap marker, drop everything past
         # this point silently. The job keeps running but stops bloating
         # the logs table.
-        if self._cap_marker_emitted:
+        if self._cap_marker_emitted and offset is None:
             return 0
         written = 0
         with self._durable_env() as env:
+            if offset is not None:
+                env.cr.execute(
+                    "UPDATE cloud_job_checkpoint SET log_offset = %s"
+                    " WHERE job_id = %s",
+                    (offset, self.job.id),
+                )
+            if self._cap_marker_emitted:
+                entries = []
             Log = env['cloud.job.log.chunk'].sudo()
             for line, source in entries:
                 if source == 'system':
@@ -1600,6 +1808,376 @@ class AbstractExecutor(ABC):
             job = env['cloud.job'].browse(self.job.id)
             if job.state == 'cancelled':
                 raise JobCancelled(CANCELLED_WHILE_RUNNING)
+
+    # ===============================
+    # STEPS APART ON THE SERVER
+    # ===============================
+
+    def _write_checkpoint(self, vals):
+        """Write *vals* on this job's ``cloud.job.checkpoint``, creating it.
+
+        On a durable cursor of its own, committed at once: the job's
+        transaction is rolled back by a retry, and holds the job's row.
+
+        :param dict vals: ``cloud.job.checkpoint`` values
+        """
+        with self._durable_env() as env:
+            Checkpoint = env["cloud.job.checkpoint"].sudo()
+            row = Checkpoint.search([("job_id", "=", self.job.id)], limit=1)
+            if row:
+                row.write(vals)
+            else:
+                Checkpoint.create({"job_id": self.job.id, **vals})
+
+    def _forget_checkpoint(self):
+        """Delete this job's checkpoint, unless a step apart was left alive.
+
+        For a job that ends without a hook to take the row along, and for
+        an attempt that ends in a retry from the start. Never raises: the
+        row left behind is the reconciliation's, and the job's end stands.
+        """
+        if not self._checkpoint or self._detached_left_alive:
+            return
+        try:
+            with self._durable_env() as env:
+                env.cr.execute(
+                    "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                    (self.job.id,),
+                )
+            self._checkpoint = False
+        except Exception as exc:  # noqa: BLE001 — logged, never fatal
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not delete its checkpoint: %s", self.job.id, exc,
+            )
+
+    async def _open_checkpoint(self, transport, commands):
+        """Write the job's checkpoint before the first step of its plan.
+
+        For a plan with a step marked ``detached``: the plan as it was
+        materialised, no result yet, the job's working directory and the
+        secrets it staged. The script that runs the steps apart goes with
+        the job's other scripts, uploaded now if none was asked for.
+
+        :param transport: the job's open transport
+        :param list commands: the materialised ``get_commands()`` output
+        """
+        # Asked for, so the overlay it is part of is uploaded.
+        self.run_script("detached_step.sh")
+        await self._upload_scripts(transport)
+        self._checkpoint_data = {
+            "plan": [
+                [item[0], item[1], json.loads(json.dumps(
+                    item[2] if len(item) == 3 else {}, default=sorted,
+                ))]
+                for item in commands
+            ],
+            "results": {},
+            "job_dir": self._job_dir() if self._job_dir_created else None,
+            "private_uploads": list(self._private_uploads),
+        }
+        self._write_checkpoint({
+            "queue_job_uuid": self.job.queue_job_uuid or False,
+            "host_id": self._host().id,
+            "next_index": 0,
+            "detached_started": False,
+            "step_started_at": False,
+            "log_offset": 0,
+            "parked": False,
+            "parked_until": False,
+            "first_started_at": fields.Datetime.now(),
+            "attempts": 1,
+            "data": json.dumps(self._checkpoint_data),
+        })
+        self._checkpoint = True
+
+    def _save_checkpoint_step(self, next_index):
+        """Record in the checkpoint that the steps before *next_index* ended.
+
+        The lines buffered so far are written first, with the offset of
+        the step apart they come from: the step's end is recorded after
+        all of its log.
+
+        :param int next_index: the first step of the plan not run yet
+        """
+        if self._flush_logs():
+            self._publish_bus()
+        self._checkpoint_data["results"] = dict(self._step_results or {})
+        self._write_checkpoint({
+            "next_index": next_index,
+            "detached_started": False,
+            "step_started_at": False,
+            "log_offset": 0,
+            "data": json.dumps(self._checkpoint_data),
+        })
+
+    def _detached_scope(self):
+        """Return what a step apart of this job holds on its server.
+
+        One step at a time per instance, or per host for a job of the
+        host: ``detached_step.sh start`` refuses a second one.
+
+        :rtype: str
+        """
+        inst = self.job.instance_id
+        return f"instance:{inst.id}" if inst else "host"
+
+    @staticmethod
+    def _script_message(output):
+        """Return the last line a script printed, without its prefix.
+
+        :param str output: what the script printed
+        :rtype: str
+        """
+        lines = [line for line in (output or "").splitlines() if line.strip()]
+        last = lines[-1] if lines else ""
+        return re.sub(r"^\[incubacloud\] (ERROR: )?", "", last.strip())
+
+    async def _run_detached(self, transport, index, label, command, opts):
+        """Run step *index* on the server apart from the connection.
+
+        ``detached_step.sh start`` runs it in a session of its own, capped
+        by the step's ``timeout`` (``DEFAULT_SSH_COMMAND_TIMEOUT`` without
+        one); then it is read every ``DETACHED_POLL_S`` until it ends, its
+        lines going to the job log as an attached step's do. Its result is
+        what ``transport.execute`` would return: the exit status, and its
+        stdout's lines (the last ``DETACHED_STDOUT_TAIL`` bytes of it).
+
+        A server that kills processes at logout runs the step attached
+        instead. A step of another job still running for the same target
+        makes the job try again in ``DETACHED_BUSY_RETRY_S``. A step the cap
+        cut raises ``asyncio.TimeoutError``, as an attached one does; one
+        whose process died, or whose server lost it, fails the job. Ended
+        by anything but its own end — a cancellation, an error — the step
+        is stopped and its directory removed before the error goes on
+        (``_stop_detached``).
+
+        :param transport: the job's open transport
+        :param int index: position of the step in the plan
+        :param str label: the step's label
+        :param str command: the step's command
+        :param dict opts: the step's options
+        :return: the step's ``CommandResult``
+        """
+        directory = detached_dir(self.env, self.job.id, index)
+        cap = int(opts.get("timeout") or DEFAULT_SSH_COMMAND_TIMEOUT)
+        # From before the start: a stop that comes while it runs finds a
+        # step it may have launched already.
+        self._detached_running = directory
+        self._detached_offset = 0
+        try:
+            start = await transport.run(self.run_script("detached_step.sh", [
+                "start", directory, cap, self._detached_scope(), self.job.id,
+                label, command,
+            ]) + " 2>&1")
+            status = start.exit_status
+            if status != 0:
+                # Nothing of this step was started, and a path taken by
+                # someone else is not this job's to stop or remove.
+                self._detached_running = None
+            if status == DETACHED_EXIT_KILLED_AT_LOGOUT:
+                self._detached_attached = True
+                self._sys(
+                    f"⚠ {self._script_message(start.stdout)}. '{label}' runs"
+                    " attached to this connection."
+                )
+                extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
+                return await transport.execute(
+                    command, self.on_stdout, self.on_stderr, **extra,
+                )
+            if status == DETACHED_EXIT_BUSY:
+                self._sys(
+                    f"'{label}' waits: {self._script_message(start.stdout)}."
+                    f" The job tries again in {DETACHED_BUSY_RETRY_S} s."
+                )
+                raise RetryableJobError(
+                    f"'{label}' waits for another job's step on the server.",
+                    seconds=DETACHED_BUSY_RETRY_S, ignore_retry=True,
+                )
+            if status != 0:
+                raise RuntimeError(
+                    f"Could not start '{label}' on the server (exit {status}):"
+                    f" {self._script_message(start.stdout)}"
+                )
+            self._write_checkpoint({
+                "detached_started": True,
+                "step_started_at": fields.Datetime.now(),
+                "log_offset": 0,
+            })
+            deadline = time.monotonic() + cap + DETACHED_OVERDUE_GRACE_S
+            return await self._follow_detached(
+                transport, directory, label, cap, deadline,
+            )
+        finally:
+            if self._detached_running:
+                await self._stop_detached(transport, directory)
+
+    async def _follow_detached(self, transport, directory, label, cap, deadline):
+        """Read the step apart in *directory* until it ends; return its result.
+
+        :param transport: the job's open transport
+        :param str directory: :func:`detached_dir`
+        :param str label: the step's label
+        :param int cap: the step's cap, in seconds
+        :param float deadline: ``time.monotonic()`` past which a step still
+            running is stopped and fails the job
+        :return: the step's ``CommandResult``
+        :raise asyncio.TimeoutError: when its cap cut it, or it ran past
+            the cap and the grace
+        :raise RuntimeError: when its process died, or the server lost it
+        """
+        while True:
+            state, exit_status, timedout, more = await self._read_detached(
+                transport, directory,
+            )
+            if state == "running":
+                if time.monotonic() > deadline:
+                    await self.on_stderr(
+                        f"⚠ '{label}' still ran on the server past its"
+                        f" {cap}s cap — stopped."
+                    )
+                    raise asyncio.TimeoutError()
+                if not more:
+                    await asyncio.sleep(DETACHED_POLL_S)
+                continue
+            if state == "done":
+                if timedout:
+                    # What ``SSHTransport.execute`` writes for its timeout.
+                    await self.on_stderr(
+                        f"⚠ Command exceeded {cap}s timeout — killed."
+                    )
+                    raise asyncio.TimeoutError()
+                stdout = await self._detached_stdout(transport, directory)
+                await self._clean_detached(transport, directory)
+                return CommandResult(stdout=stdout, exit_status=exit_status)
+            raise RuntimeError(
+                f"'{label}' neither ended nor runs on the server: the server"
+                " restarted, or the step's process died while it ran."
+            )
+
+    async def _read_detached(self, transport, directory):
+        """Read what the step apart wrote since the last read, and its state.
+
+        Its lines go to the job log, followed by the offset they end at
+        (``_LOG_OFFSET``), which ``_flush_logs`` writes with them. The
+        bytes travel in base64: the offset counts bytes, and output that
+        is not UTF-8 must neither stop the read nor shift it.
+
+        :param transport: the job's open transport
+        :param str directory: :func:`detached_dir`
+        :return: ``(state, exit_status, timedout, more)``: the state the
+            script says (``running``, ``done``, ``lost`` or ``none``), the
+            exit status once ``done`` (else None), whether the cap cut it,
+            and whether the read was likely cut short by
+            ``DETACHED_READ_MAX_BYTES``, so another should follow at once
+        :raise RuntimeError: when the answer is not the script's
+        """
+        before = self._detached_offset
+        result = await transport.run(
+            _detached_ctl(directory, "read", before, DETACHED_READ_MAX_BYTES)
+            + " | base64 -w0"
+        )
+        raw = base64.b64decode(result.stdout or "")
+        header, _sep, data = raw.partition(b"\n")
+        match = _DETACHED_HEADER_RE.match(header.decode("ascii", "replace"))
+        if not match:
+            raise RuntimeError(
+                "The server did not answer as detached_step.sh does: "
+                f"{header[:200].decode('utf-8', 'replace')!r}"
+            )
+        state, exit_status, timedout, offset = match.groups()
+        for line in _stdout_lines(data.decode("utf-8", "replace")):
+            await self.on_stdout(line)
+        self._detached_offset = int(offset)
+        if self._detached_offset != before:
+            self._log_buffer.append((self._detached_offset, _LOG_OFFSET))
+        return (
+            state,
+            None if exit_status == "-" else int(exit_status),
+            timedout == "1",
+            (self._detached_offset - before) * 2 > DETACHED_READ_MAX_BYTES,
+        )
+
+    async def _detached_stdout(self, transport, directory):
+        """Return the stdout of the step apart, as ``execute`` returns it.
+
+        Its last ``DETACHED_STDOUT_TAIL`` bytes, without the line they cut.
+
+        :param transport: the job's open transport
+        :param str directory: :func:`detached_dir`
+        :rtype: str
+        """
+        result = await transport.run(
+            _detached_ctl(directory, "result") + " | base64 -w0"
+        )
+        raw = base64.b64decode(result.stdout or "")
+        if len(raw) >= DETACHED_STDOUT_TAIL:
+            raw = raw.partition(b"\n")[2]
+        return "\n".join(_stdout_lines(raw.decode("utf-8", "replace")))
+
+    async def _clean_detached(self, transport, directory):
+        """Remove the directory of a step apart that ended.
+
+        One that cannot be removed — a process the step left behind still
+        runs in its session — is left, with its checkpoint, to whoever
+        reaches the server next; the step's result stands.
+
+        :param transport: the job's open transport
+        :param str directory: :func:`detached_dir`
+        :return: whether the directory is gone
+        :rtype: bool
+        """
+        self._detached_running = None
+        result = await transport.run(_detached_ctl(directory, "clean") + " 2>&1")
+        if result.exit_status == 0:
+            return True
+        self._detached_left_alive = True
+        self._sys(
+            f"⚠ The step's directory {directory} stays on the server"
+            f" (exit {result.exit_status}):"
+            f" {self._script_message(result.stdout)}"
+        )
+        return False
+
+    async def _stop_detached(self, transport, directory):
+        """Stop the step apart in *directory*, keep its last lines, remove it.
+
+        For a step ended by anything but its own end: a cancellation, a
+        cap, an error. TERM to its whole session, ``DETACHED_STOP_WAIT_S``
+        for its trap, KILL to what is left; what it wrote meanwhile goes
+        to the job log. Never raises: the error on its way up is the one
+        to report. What could not be stopped or removed is left, with the
+        job's checkpoint, to whoever reaches the server next
+        (``_detached_left_alive``).
+
+        :param transport: the job's open transport
+        :param str directory: :func:`detached_dir`
+        """
+        self._detached_running = None
+        try:
+            stop = await transport.run(
+                _detached_ctl(directory, "stop", DETACHED_STOP_WAIT_S) + " 2>&1",
+                timeout=DETACHED_STOP_WAIT_S + 60,
+            )
+            for line in _stdout_lines(stop.stdout or ""):
+                await self.on_stderr(line)
+            for _read in range(8):
+                state, _exit, _cut, more = await self._read_detached(
+                    transport, directory,
+                )
+                if state != "running" or not more:
+                    break
+            stopped = stop.exit_status == 0
+            if not stopped:
+                self._detached_left_alive = True
+            await self._clean_detached(transport, directory)
+        except BaseException as exc:
+            self._detached_left_alive = True
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not stop its step in %s: %s: %s",
+                self.job.id, directory, type(exc).__name__, exc,
+            )
+            if not isinstance(exc, Exception):
+                raise
 
     # ===============================
     # STREAM HANDLERS (OVERRIDABLE)

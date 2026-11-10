@@ -16,6 +16,16 @@ unchanged.
 
 ### Added
 
+- **A step of a job can run apart on its server.** A step marked
+  `detached` runs in a session of its own (`scripts/detached_step.sh`),
+  capped on the server by its timeout, and is read every second: its lines
+  reach the job log as an attached step's do, and its exit status and
+  stdout (the last 256 KiB) are what the job gets. Cancelled, it is sent
+  TERM, given 60 s for its trap and killed; its last lines still reach the
+  log. One step at a time per instance, or per host: a job that finds
+  another job's step still running there tries again 30 s later. A
+  server that kills an account's processes when its SSH session ends
+  (logind's `KillUserProcesses`) runs the step attached, as before.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in
