@@ -89,10 +89,12 @@ class TestTheSeriesCards(BaseCase):
             **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("12", "16", "16"), "sql")),
             "15.0": card(("12", "17", "17"), "sql"),
-            **dict.fromkeys(("16.0", "17.0"), card(("14", "18", "17"))),
-            # What the launch offers (owner, 2-nov-2026); the rest open one by
-            # one as their run of the series passes.
-            **dict.fromkeys(("18.0", "19.0"), card(("14", "18", "17"), offered=True)),
+            # What the launch offered (owner, 2-nov-2026), and 16.0 and 17.0
+            # since their run of the series passed (10-nov-2026); the rest
+            # open one by one as theirs passes.
+            **dict.fromkeys(
+                ("16.0", "17.0", "18.0", "19.0"), card(("14", "18", "17"), offered=True),
+            ),
             # Offered since core 1.0.198: PostgreSQL 16 to 18, odoo db,
             # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
             "20.0": card(
