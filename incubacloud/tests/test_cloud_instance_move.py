@@ -216,8 +216,8 @@ class TestInstanceMove(TransactionCase):
                 self.inst.move_to_host(self.target)
 
     def test_a_move_needs_no_backup_backend(self):
-        """A free plan's instance has no backup container and may have no
-        backend: the move used to stop at "service backup is not
+        """An instance without a backup container may have no backend
+        either: the move used to stop at "service backup is not
         running" (QA, 2026-10-15). It carries a live dump instead."""
         self.inst.backup_backend_id = False
         self.env['ir.config_parameter'].sudo().set_param(

@@ -3036,8 +3036,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # on its source: it is 'deployed' already and stays so, and the
         # cutover is what moves it. Transitioning here refused 'deployed'
         # -> 'deployed' and failed every move at its first step, from the
-        # state machine (2026-07-30) until a customer's upgrade hit it
-        # (2026-10-15).
+        # state machine (2026-07-30) until one was tried (2026-10-15).
         if not inst.move_origin_host_id:
             inst._transition("deployed")
         # The host's metric label map is a snapshot of its instance list;
