@@ -6,7 +6,7 @@ controllers call the same methods, so the rules are enforced identically
 regardless of access channel (SPA, XML-RPC, JSON-RPC, shell).
 """
 
-from odoo import _, models
+from odoo import _, fields, models
 from odoo.exceptions import AccessError
 
 _GROUP_HIERARCHY = (
@@ -85,6 +85,86 @@ class CloudSecurityMixin(models.AbstractModel):
 
     def _check_can_manage_hosts(self):
         self._check_cloud_group('group_cloud_manager')
+
+    def _check_new_record_x2many(self, vals_list, panel_only=None):
+        """Keep a record ``create`` writes as the system to rows of its own.
+
+        For a model whose ``create`` runs with ``sudo`` on the user's
+        behalf (``cloud.instance``, ``cloud.host``): there the access
+        rights and record rules of the rows its x2many fields name are
+        not checked. Every x2many value of *vals_list* may only create
+        rows (``Command.CREATE``) of a model the user may create; a
+        many2many may also link records the user may read
+        (``Command.LINK``, ``Command.SET``), as the forms do with tags.
+        Rows created lose the fields *panel_only* names, which only the
+        panel writes. Nothing is checked for the superuser.
+
+        :param list vals_list: the values of each record created; the
+            commands of *panel_only*'s fields are replaced in place
+        :param dict panel_only: an x2many field's name -> the names of
+            the fields taken out of each row it creates
+        :raises AccessError: for any other command, a row of a model the
+            user may not create, or a linked record the user may not read
+        """
+        if self.env.su:
+            return
+        panel_only = panel_only or {}
+        for vals in vals_list:
+            for name, value in list(vals.items()):
+                field = self._fields.get(name)
+                if not value or field is None or field.type not in (
+                    'one2many', 'many2many',
+                ):
+                    continue
+                vals[name] = self._x2many_create_commands(
+                    field, value, panel_only.get(name, ()),
+                )
+
+    def _x2many_create_commands(self, field, value, dropped):
+        """Return *value* of *field* as commands a new record may take.
+
+        See :meth:`_check_new_record_x2many`. A value that is not a list
+        of commands (ids, a tuple, a recordset) means ``Command.SET``.
+
+        :param field: the x2many field of this model
+        :param value: what ``create`` received for it
+        :param dropped: names of the fields taken out of each row created
+        :return: the commands, the rows created without *dropped*
+        :rtype: list
+        :raises AccessError: as :meth:`_check_new_record_x2many`
+        """
+        Command = fields.Command
+        if isinstance(value, models.BaseModel):
+            value = [Command.set(value.ids)]
+        elif not isinstance(value, list) or not isinstance(
+            value[0], (list, tuple),
+        ):
+            value = [Command.set(tuple(value))]
+        commands = []
+        for command in value:
+            code = command[0] if isinstance(command, (list, tuple)) else None
+            if code == Command.CREATE:
+                self.env[field.comodel_name].check_access('create')
+                row = {
+                    key: val
+                    for key, val in (command[2] or {}).items()
+                    if key not in dropped
+                }
+                commands.append((Command.CREATE, command[1], row))
+                continue
+            if field.type == 'many2many' and code in (
+                Command.LINK, Command.SET,
+            ):
+                ids = [command[1]] if code == Command.LINK else command[2]
+                self.env[field.comodel_name].browse(ids).check_access('read')
+                commands.append(command)
+                continue
+            raise AccessError(_(
+                "A new record can only create its %(field)s: those that "
+                "already exist cannot be added to it, changed or removed.",
+                field=field._description_string(self.env),
+            ))
+        return commands
 
     def _check_can_view_metrics(self):
         """Guard the metrics views and the proxy access log."""

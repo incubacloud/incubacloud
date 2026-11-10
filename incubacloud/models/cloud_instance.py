@@ -32,7 +32,7 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
-from .cloud_repo_mixin import repo_url_key
+from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password, generate_secret_key
 from .res_users_ext import as_platform
@@ -5034,6 +5034,12 @@ class CloudInstance(models.Model):
                 self._repo_line_commands_to_vals(vals.pop("repo_ids", None))
                 for vals in vals_list
             ]
+        # Created as the system below: what the x2many fields send can
+        # only be the new instance's own rows, and a line's Git provider
+        # and path are written from its URL.
+        self._check_new_record_x2many(
+            vals_list, panel_only={"repo_ids": _DERIVED_FROM_URL},
+        )
         for vals in vals_list:
             # Checked as a creation whatever ``create`` was called on: a
             # clone calls it on its production, whose environment the

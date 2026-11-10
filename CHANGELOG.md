@@ -33,6 +33,9 @@ The update needs no data migration.
   project, so it takes a Project Manager or higher, as creating one does, and
   a Consultant is refused before the repository is read; the MCP's
   `import_project` tool asks for the same role.
+- **Creating an instance only creates its own domains, whitelist rows, alerts
+  and repositories**, and creating a host only its own rows; tags are still
+  chosen among those the user sees.
 
 ### Fixed
 
