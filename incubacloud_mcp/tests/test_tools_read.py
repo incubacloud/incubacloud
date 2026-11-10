@@ -578,7 +578,9 @@ class TestRepoInfoByRole(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCas
         self.project.member_ids = [(4, self.consultant.id), (4, self.pm.id)]
         Service = type(self.env["cloud.github.credential.service"])
         for name, value in (("get_credentials", {}), ("get_pat", "ghp_test")):
-            self.startPatcher(patch.object(Service, name, return_value=value))
+            self.startPatcher(
+                patch.object(Service, name, autospec=True, return_value=value)
+            )
 
     def _branches(self, user, url):
         """Ask github_repo_info for *url*'s branches as *user*'s agent.

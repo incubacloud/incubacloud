@@ -915,11 +915,11 @@ class GitHubMixin:
     def cloud_fetch_odoojs_submodules(self, repo_url, branch='main'):
         """Inspect submodules through the bounded GitHub API workflow.
 
-        A repository the user may not read with the panel's credentials
-        (:func:`may_read_with_panel_credentials`) is inspected as a
-        public one: importing it takes a Project Manager.
+        The preview of an import, which creates a project: it takes a
+        Project Manager, as the import does, checked before anything is
+        read.
         """
-        self._sec()._check_cloud_group('group_cloud_consultant')
+        self._sec()._check_can_create_project()
 
         try:
             parse_github_repo_url(repo_url)
@@ -947,12 +947,10 @@ class GitHubMixin:
                     'GitHub preview limit reached. Try again later.'
                 ),
             }
-        if may_read_with_panel_credentials(request.env, repo_url):
-            clients = _github_import_clients(request.env)
-        else:
-            clients = [GitHubAnonymousClient()]
         try:
-            inspector = GitHubImportInspector(clients)
+            inspector = GitHubImportInspector(
+                _github_import_clients(request.env),
+            )
             result = inspector.inspect_preview(repo_url, branch)
             if result.get('sha_warning'):
                 result['sha_warning'] = _translate_inspection_warning(
