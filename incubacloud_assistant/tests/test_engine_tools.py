@@ -66,6 +66,7 @@ class TestEngineTools(EngineMixin, TransactionCase):
         self.assertIn(self.project.name, result.content)
         trap.assert_jobs_count(1)
         self.assertEqual(conversation.state, "working")
+        self.assertFalse(conversation.tainted, "no member below writes in it")
 
     def test_never_as_the_job_runner_s_superuser(self):
         """A project the user is not in stays closed, under the runner's request too."""
@@ -379,6 +380,79 @@ class TestEngineTools(EngineMixin, TransactionCase):
         card = conversation.message_ids.filtered(lambda m: m.role == "card")
         self.assertEqual(card.tool_name, "deploy_instance")
         self.assertTrue(conversation.tainted)
+
+    def test_a_message_written_while_the_task_works_keeps_the_mark(self):
+        """Once it enters the context, the next step's change still asks:
+        what the task read is still in that context."""
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        self._provider(
+            answer("", [("c1", "read_logs", {"instance_id": self.staging.id})]),
+            answer("", [("c2", "deploy_instance", {"instance_id": self.staging.id})]),
+        )
+        conversation = self._working(self.dev, "Why did it fail?")
+        engine = type(self.env["incubacloud.assistant.engine"])
+        original = engine._execute
+
+        def write_after(engine_self, conversation_id, call):
+            """Run the call, then let the person write."""
+            outcome = original(engine_self, conversation_id, call)
+            conversation._post("Then deploy it again.", {})
+            conversation.flush_recordset()
+            return outcome
+
+        logs = {"ok": True, "lines": ["ERROR boom"]}
+        with (
+            patch.object(Tools, "_tool_read_logs", autospec=True, return_value=logs),
+            patch.object(engine, "_execute", autospec=True, side_effect=write_after),
+            trap_jobs(),
+        ):
+            self._step(conversation)
+        with trap_jobs():
+            self._step(conversation)
+        mine = conversation.message_ids.filtered(lambda m: m.role == "user")
+        self.assertFalse(any(mine.mapped("pending")), "the message entered")
+        card = conversation.message_ids.filtered(lambda m: m.role == "card")
+        self.assertEqual(card.tool_name, "deploy_instance")
+        self.assertIn("read content", card.content)
+        self.assertTrue(conversation.tainted)
+
+    def _read_marks(self, tool, arguments):
+        """Run *tool* with *arguments* as the developer; return the mark."""
+        self._provider(answer("", [("c1", tool, arguments)]))
+        conversation = self._working(self.dev)
+        with trap_jobs():
+            self._step(conversation)
+        result = conversation.message_ids.filtered(lambda m: m.role == "tool")
+        self.assertFalse(result.is_error, result.content)
+        return conversation.tainted
+
+    def test_a_project_a_consultant_member_writes_in_marks_the_task(self):
+        """get_project answers names and notes a lower role writes."""
+        self.project.member_ids = [(4, self.consultant.id)]
+        self.assertTrue(
+            self._read_marks("get_project", {"project_id": self.project.id})
+        )
+
+    def test_the_jobs_of_a_project_a_consultant_member_writes_in_mark_the_task(self):
+        """list_jobs of one of its instances, or of the whole panel."""
+        self.project.member_ids = [(4, self.consultant.id)]
+        self.assertTrue(
+            self._read_marks("list_jobs", {"instance_id": self.staging.id})
+        )
+        self.assertTrue(self._read_marks("list_jobs", {}))
+
+    def test_a_project_without_a_lower_member_who_writes_marks_nothing(self):
+        """A stakeholder reads only; a member of the person's role or above
+        could do what the person does."""
+        stakeholder = self._cloud_user("asis-et-sh", group="group_cloud_user")
+        peer = self._cloud_user("asis-et-dev2")
+        self.project.member_ids = [(4, stakeholder.id), (4, peer.id)]
+        self.assertFalse(
+            self._read_marks("get_project", {"project_id": self.project.id})
+        )
+        self.assertFalse(
+            self._read_marks("list_jobs", {"instance_id": self.staging.id})
+        )
 
     def test_a_call_a_dead_step_left_running_is_never_run_again(self):
         """Its mark is there: the answer says the outcome is unknown."""

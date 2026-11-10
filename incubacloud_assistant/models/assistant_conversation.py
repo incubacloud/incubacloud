@@ -337,9 +337,9 @@ class AssistantConversation(models.Model):
             self.sudo().name = " ".join(text.split())[:TITLE_CHARS]
         if not busy:
             # The person spoke and nothing runs: what the task read before no
-            # longer steers it. While a step runs, the mark stays until the
-            # message enters the context (the engine's ``_deliver_pending``):
-            # the calls that step decided keep asking.
+            # longer steers it. While a step runs, the mark stays, also once
+            # the message enters the context: what the task read is still
+            # there, and the calls decided next keep asking.
             self.sudo().tainted = False
             self.sudo().write({"step_count": 0, "stop_requested": False})
             self._enqueue_step()
