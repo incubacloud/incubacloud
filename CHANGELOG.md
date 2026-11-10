@@ -162,6 +162,9 @@ server keeps one tree of each commit of Odoo its instances are on, about
   instance's default 2 workers serve about 12 users at once, and the guide
   says to raise its **Resources** and `workers` above that. *Order a VPS*
   names the question **How many people will use Odoo at once?**
+- *From zero to Odoo*, on the mail Odoo sends, says that with Microsoft 365
+  the mail relay can sign in with OAuth2 instead of a password, and links to
+  how.
 
 ### Changed
 

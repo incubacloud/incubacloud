@@ -192,7 +192,9 @@ fields **SMTP Host**, **SMTP Port**, **SMTP Encryption**, **SMTP User** and
 1. **Get the values from your mail provider.** Its help pages give the SMTP
    server, the port (usually 587, with STARTTLS) and how to sign in. Many
    providers ask for an *app password* or a sending account instead of your
-   own password.
+   own password. With Microsoft 365, the mail relay can sign in with OAuth2
+   instead of a password: see
+   [OAuth2 with Microsoft 365](../instances/mail-relay.md#oauth2-with-microsoft-365).
 2. **Fill in the fields** and **Deploy** again.
 3. **Add the records your provider gives you** to your domain's DNS, as in
    step 6: usually an **SPF** record (TXT) and a **DKIM** record (TXT or
