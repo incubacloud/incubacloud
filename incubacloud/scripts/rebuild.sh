@@ -58,7 +58,8 @@ case "$op" in
         done
         # And the repository trees fetched before the build (deploy.sh
         # fetch-repos, every series that does: 8.0 to 10.0 since
-        # 8-nov-2026, all but 19.0 since 10-nov-2026): every directory of
+        # 8-nov-2026, all but 19.0 since 10-nov-2026, 19.0 too from core
+        # 1.0.224): every directory of
         # odoo/custom/src but private, their temporary trees and the
         # build's Dockerfile.dockerignore. fetch-repos excludes them
         # itself before fetching; this is the second lock: hundreds of MB

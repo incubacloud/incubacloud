@@ -671,6 +671,9 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
     minute, every layer CACHED, the old code still running. The heads
     file ``deploy.sh record-heads`` writes into the context is what
     changes now; its own behaviour is covered by ``tests/shell/deploy.bats``.
+    Every series downloads its repositories on the host from core 1.0.224:
+    the image clones them only for a series the parameter
+    ``incubacloud.repos_in_image_series`` sends back, 19.0 here.
     """
 
     _TOKEN = "ghs_secretTokenOfTheHour"
@@ -694,6 +697,16 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
             "  target: pinned main\n"
         )
 
+    @staticmethod
+    def _in_image(ex):
+        """Send *ex*'s series, 19.0, back to cloning in the image, as the
+        parameter ``incubacloud.repos_in_image_series`` does.
+
+        :return: *ex*
+        """
+        ex._repos_in_image_series = lambda: frozenset({"19.0"})
+        return ex
+
     def _argv(self, command):
         """The words of the ``record-heads`` call at the start of *command*."""
         words = shlex.split(command.split(" && ", 1)[0])
@@ -703,7 +716,9 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
     def test_a_rebuild_records_the_heads_before_it_builds(self):
         """Cached or not, the lookup runs in the build's own step."""
         for last in ("fp1", "fp0"):
-            ex = _make_rebuild_executor(last_rebuild_fingerprint=last)
+            ex = self._in_image(
+                _make_rebuild_executor(last_rebuild_fingerprint=last),
+            )
             build = _find_cmd(ex.get_commands(), "Rebuild Odoo image")[1]
             self.assertEqual(
                 self._argv(build),
@@ -717,8 +732,8 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
     def test_a_deploy_records_them_before_the_image_is_built(self):
         """The first ``docker compose run`` builds it; a move's ``up``."""
         for moving in (False, True):
-            cmds = _make_deploy_executor(
-                move_origin_host_id=moving,
+            cmds = self._in_image(
+                _make_deploy_executor(move_origin_host_id=moving),
             ).get_commands()
             labels = [c[0] for c in cmds]
             self.assertIn("Record repository heads", labels, moving)
@@ -734,7 +749,7 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
     def test_the_spec_asks_branches_and_takes_pins_as_they_are(self):
         """A branch travels with its URL; a pin, the build's own
         expansion of ``$ODOO_VERSION`` aside, carries none."""
-        spec = _make_deploy_executor()._repo_heads_spec(
+        spec = self._in_image(_make_deploy_executor())._repo_heads_spec(
             self._repos_yaml(), {"pinned"},
         )
         auth = f"https://x-access-token:{self._TOKEN}@github.com/acme"
@@ -751,7 +766,7 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
         yaml_text = self._repos_yaml().replace(
             "  - odoo $ODOO_VERSION", f"  - odoo {self._PINNED}",
         )
-        spec = _make_deploy_executor()._repo_heads_spec(
+        spec = self._in_image(_make_deploy_executor())._repo_heads_spec(
             yaml_text, {"odoo", "pinned"},
         )
         self.assertEqual(spec.splitlines()[0], f"odoo\tpin\t{self._PINNED}\t")
@@ -817,7 +832,7 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
             url="https://github.com/acme/core.git",
             branch="19.0", commit_sha=False,
         )
-        ex = _make_deploy_executor()
+        ex = self._in_image(_make_deploy_executor())
         with mock.patch.object(
             ex, "_repo_merge_ref", return_value=self._PINNED,
         ):

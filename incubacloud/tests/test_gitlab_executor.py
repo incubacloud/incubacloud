@@ -3,12 +3,13 @@
 - ``repos.yaml`` carries each server's own credential and never another's;
 - the heads spec has seven columns for a GitLab line (``cred_authority``
   always filled, so ``git-trust`` tells it from GitHub);
-- 19.0, which still clones in the image, trusts the server in the build
-  (``git-trust``) and, under the ``public`` policy, pins its address with
+- every series fetches every repository before the build (``fetch-repos``,
+  with a fixed step timeout), writes ``repos.yaml`` without credentials
+  and builds with ``AGGREGATE=false``: 19.0 too from core 1.0.224;
+- a series ``incubacloud.repos_in_image_series`` sends back to cloning in
+  the image (19.0 here) trusts the server in the build (``git-trust``)
+  and, under the ``public`` policy, pins its address with
   ``build.extra_hosts``;
-- every other series fetches every repository before the build
-  (``fetch-repos``, with a fixed step timeout), writes ``repos.yaml``
-  without credentials and builds with ``AGGREGATE=false``;
 - the pinned address is resolved once per job and never makes the
   instance look changed;
 - J5: a GitLab the panel cannot reach is tolerated only when its
@@ -42,6 +43,16 @@ _GH_TOKEN = "ghs_githubtoken123"
 _GL_USER = "gitlab+deploy-token-7"
 _GL_TOKEN = "gldt-abcdefgh12"
 _PIN = "203.0.113.7"
+
+
+def _in_image(ex):
+    """Send *ex*'s series, 19.0, back to cloning in the image, as the
+    parameter ``incubacloud.repos_in_image_series`` does.
+
+    :return: *ex*
+    """
+    ex._repos_in_image_series = lambda: frozenset({"19.0"})
+    return ex
 
 
 class _GitLabExecutorCase(TransactionCase):
@@ -152,7 +163,7 @@ class TestReposYamlAndSpec(_GitLabExecutorCase):
 
     def test_the_public_policy_pins_once_in_the_spec_and_the_build(self):
         resolved = self._public()
-        ex = _make_deploy_executor()
+        ex = _in_image(_make_deploy_executor())
         text, pinned = self._ready(ex)
         spec = ex._repo_heads_spec(text, pinned).splitlines()
         self.assertEqual(spec[2].split("\t")[6], _PIN)
@@ -166,7 +177,7 @@ class TestReposYamlAndSpec(_GitLabExecutorCase):
 
     def test_without_gitlab_nothing_is_pinned_and_the_override_has_no_build(self):
         self._public()
-        ex = _make_deploy_executor()
+        ex = _in_image(_make_deploy_executor())
         inst = ex._inst()
         inst.odoo_commit_sha = False
         inst.repo_ids = self._repos()[:1]
@@ -182,9 +193,9 @@ class TestReposYamlAndSpec(_GitLabExecutorCase):
 
 class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
 
-    def test_every_series_but_19_0_fetches_every_repository_before_the_build(self):
+    def test_every_series_fetches_every_repository_before_the_build(self):
         """The fetch step, its arguments and timeout, and the build override."""
-        for version in ("8.0", "9.0", "10.0", "11.0", "15.0", "18.0", "20.0"):
+        for version in ("8.0", "9.0", "10.0", "11.0", "15.0", "18.0", "19.0", "20.0"):
             with self.subTest(version=version):
                 ex = _make_deploy_executor(odoo_version=version)
                 text, _unused = self._ready(ex, version)
@@ -218,8 +229,8 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertEqual(spec[2].split("\t")[1], "pin")
         self.assertTrue(spec[2].split("\t")[3].endswith("gitlab.com/acme/addons.git"))
 
-    def test_19_0_trusts_the_servers_and_records_the_heads(self):
-        ex = _make_deploy_executor()
+    def test_a_series_back_in_the_image_trusts_the_servers_and_records_the_heads(self):
+        ex = _in_image(_make_deploy_executor())
         self._ready(ex)
         cmds = ex.get_commands()
         labels = [c[0] for c in cmds]
@@ -263,8 +274,8 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertNotIn("record-heads", build[1])
         self.assertEqual(build[2], {"stop_on_failure": True})
 
-    def test_a_rebuild_of_19_0_records_the_heads_in_its_build_step(self):
-        ex = _make_rebuild_executor()
+    def test_a_rebuild_back_in_the_image_records_the_heads_in_its_build_step(self):
+        ex = _in_image(_make_rebuild_executor())
         self._ready(ex)
         cmds = ex.get_commands()
         self.assertNotIn("Fetch the repositories", [c[0] for c in cmds])
@@ -310,6 +321,12 @@ class TestThePinNeverChangesTheInstance(_GitLabExecutorCase):
             "instance_id": self.instance.id,
             "url": "https://gitlab.com/acme/addons", "branch": "19.0",
         })
+        # The build pins the address only when the image clones (here
+        # 19.0, sent back by the parameter); a download on the host pins
+        # it in the helper container.
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.repos_in_image_series", "19.0",
+        )
 
     def _override(self):
         """Render the instance's repos.yaml and override; return the odoo service.

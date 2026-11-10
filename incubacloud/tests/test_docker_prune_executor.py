@@ -172,8 +172,8 @@ class TestDockerPruneProtectFilter(TransactionCase):
     def test_the_helper_image_is_prepared_where_an_instance_fetches(self):
         """The night before, not the first job (10-nov-2026):
         a host with an instance of a series that fetches its repositories
-        on the host gets the helper image's name; one with 19.0 only, not
-        while 19.0 clones in the image."""
+        on the host, every series from core 1.0.224 (19.0 too), gets the
+        helper image's name; one without instances, not."""
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             GIT_HELPER_IMAGE,
         )
@@ -188,14 +188,13 @@ class TestDockerPruneProtectFilter(TransactionCase):
         })
         project = self.env["cloud.project"].create(
             {"name": "Helper", "remote_folder": "helper"})
-        inst = self.env["cloud.instance"].create({
+        executor = DockerPruneExecutor(job, host)
+        self.assertEqual(executor.get_extra_vars()["ic_git_helper_image"], "")
+        self.env["cloud.instance"].create({
             "name": "nineteen", "project_id": project.id,
             "environment": "production", "host_id": host.id,
             "odoo_version": "19.0",
         })
-        executor = DockerPruneExecutor(job, host)
-        self.assertEqual(executor.get_extra_vars()["ic_git_helper_image"], "")
-        inst.odoo_version = "18.0"
         self.assertEqual(
             executor.get_extra_vars()["ic_git_helper_image"], GIT_HELPER_IMAGE,
         )

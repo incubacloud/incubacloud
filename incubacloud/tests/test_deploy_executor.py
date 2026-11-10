@@ -666,7 +666,9 @@ class TestTheTokenEachLineGets(BaseCase):
 class TestThePatWhereTheAppGivesNoToken(TransactionCase):
     """Where the App gives no token, the PAT stands in only on a series that
     downloads on the server, where it does not stay in the image
-    (10-nov-2026). 18.0 downloads on the server; 19.0 clones into the image.
+    (10-nov-2026). 18.0 downloads on the server; 19.0, which downloads
+    there too from core 1.0.224, clones into the image here, sent back by
+    ``incubacloud.repos_in_image_series``.
     """
 
     _GENERAL = "ghs_installationToken"
@@ -679,7 +681,8 @@ class TestThePatWhereTheAppGivesNoToken(TransactionCase):
     def _render(self, version, access, *, app=None, scoped=None, pat_access=None):
         """Render repos.yaml of a *version* instance with GitHub answering *access*.
 
-        :param str version: the instance's series
+        :param str version: the instance's series; 19.0 is sent back to
+            cloning in the image
         :param dict access: ``{url: (repo_id, private, by)}``, GitHub's
             answer when the App's token is at hand
         :param app: what the App's token request raises, or None when GitHub
@@ -704,6 +707,8 @@ class TestThePatWhereTheAppGivesNoToken(TransactionCase):
                       for u in access],
         )
         ex.env = self.env
+        if version == "19.0":
+            ex._repos_in_image_series = lambda: frozenset({"19.0"})
         client = MagicMock(spec=GitHubAppClient)
         client.get_installation_token.side_effect = [app, app] if app else [self._GENERAL]
         client.get_scoped_installation_token.side_effect = [scoped or self._SCOPED]
