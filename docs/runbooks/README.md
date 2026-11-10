@@ -32,7 +32,6 @@ All commands assume you run them from the doodba checkout root
 | [RB-19](RB-19-restore-large-backup.md) | Get a large backup onto a host and restore it | planned | A dump too large for the browser, or a host nobody holds credentials for |
 | [RB-20](RB-20-neutralize-restored-copy.md) | Restore a copy of production without arming it | planned | Developing against real data, reproducing a bug, rehearsing a migration |
 | [RB-21](RB-21-origin-certificate.md) | Issue the origin certificate for the fleet | planned | Preparing hosts to be served through the CDN, replacing the certificate |
-| [RB-22](RB-22-rotate-smtp-relay-credential.md) | Rotate the SMTP relay credential | critical | The shared `notifications@` password leaked, or scheduled rotation |
 | [RB-23](RB-23-continuous-recovery.md) | Continuous recovery: alerts, a stuck restore, a moved instance | critical | `pitr_failing`, `pitr_archive_lagging`, `pitr_base_missing`; a restore that never ended |
 | [RB-24](RB-24-direct-path.md) | Direct path: down, a host not admitted, rotate the DNS token, roll back | high | `direct_path_down`, `direct_allowlist_stale`, `direct_certificate_expiring`, `direct_path_unreachable_from_host`; Grafana refusing logins |
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
@@ -40,7 +39,6 @@ All commands assume you run them from the doodba checkout root
 | [RB-27](RB-27-illegal-content-notice.md) | A notice of illegal content | high | Someone reports illegal content to `support@`, or an authority writes to it as our point of contact |
 | [RB-28](RB-28-personal-data-breach.md) | A personal-data breach | critical | Personal data may have been read, copied, changed or lost by someone who should not have, or a sub-processor reports a breach |
 | [RB-29](RB-29-tenant-placement-and-moves.md) | A tenant's placement and its moves between hosts | warning | *Moves paused* on a tenant; `move_pending`, `move_postponed`, `move_slow_cut`; a dump of, or disk from, the frozen copy a move left |
-| [RB-30](RB-30-roll-back-a-release.md) | Roll back a release in place, keeping the data | critical | A deployed release must be left for `prod-prev` after customers wrote to it; from release C to B |
 | [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 
 ## Conventions
