@@ -116,6 +116,7 @@ nav:
     - instances/index.md
     - Logs: instances/logs.md
     - Memory and resources: instances/resources.md
+    - Mail relay: instances/mail-relay.md
   - Hosts:
     - hosts/index.md
     - Connect your own VPS: hosts/connect.md

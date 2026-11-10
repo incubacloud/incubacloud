@@ -163,6 +163,7 @@ N+1 starts where page N ended.
 | `instance_login_link` | stakeholder (the connect route decides per instance and user) | | for the link |
 | `compare_config`, `github_repo_info` | consultant | | |
 | `update_project`, `create_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `dismiss_alerts`, `manage_tags` | consultant (a repository line's URL: project manager) | | |
+| `send_relay_test_mail` | consultant (one mail to the user's own address, five an hour per instance) | | |
 | `update_instance` | consultant (a repository line's URL: project manager) | | a repository, branch or pinned commit a production does not deploy from yet |
 | `apply_config` | consultant | | a repository, branch or pinned commit of the project's that a production does not deploy from yet |
 | `freeze_repos` | consultant | | pinning or releasing the commit of a production's line |

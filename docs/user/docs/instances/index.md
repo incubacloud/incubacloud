@@ -324,7 +324,8 @@ what this button sends" readable.
 
 Production is the opposite: its email is real and leaves the server. There is no
 Mails tab there, and the SMTP relay you configure under *Networking* is the one
-that will actually deliver.
+that will actually deliver: see [Mail relay](mail-relay.md), which covers
+Microsoft 365 with OAuth2 and **Send test mail**.
 
 ## What a staging can reach on the internet
 
