@@ -45,6 +45,13 @@ restore script with its next restore.
   that downloads its repositories, so no job pays its download; a job that
   has to has its own limit of 300 s for it. When core moves to another digest,
   the tags of the old ones are removed.
+- **The GitHub App is asked for its token only when a job needs it.** An
+  instance with no repository on github.com besides Odoo's deploys and
+  rebuilds without it, and an App not installed yet counts as no App: the
+  personal access token is used, as before. When GitHub fails to issue the
+  App's token for a reason other than refusing it, such as a server error
+  or a timeout, it is asked again once before the job is refused; the
+  message says whether to check the App in Settings or to run the job again.
 - **A refused save says why.** Creating or saving a project or an instance
   shows the reason the server gives, such as a value it does not accept,
   instead of only «Failed to save».

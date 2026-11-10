@@ -546,16 +546,20 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     def _github_app_client(self):
         """Return the panel's GitHub App client, or None when it has none.
 
-        Built once per job run.
+        Built once per job run. An App with no ``installation_id``, not
+        installed yet (its first installation webhook fills it), counts
+        as none.
 
         :rtype: GitHubAppClient or None
         """
         if "_gh_app_client" not in self.__dict__:
             client = None
             with suppress(Exception):
-                client = GitHubAppClient(
-                    self.env["cloud.github.credential.service"].get_credentials()
-                )
+                credentials = self.env[
+                    "cloud.github.credential.service"
+                ].get_credentials()
+                if credentials.installation_id:
+                    client = GitHubAppClient(credentials)
             self.__dict__["_gh_app_client"] = client
         return self.__dict__["_gh_app_client"]
 
@@ -566,26 +570,58 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         to GitHub's API: what a server is handed for a download is the
         scoped one (:meth:`_scoped_github_token`).
 
-        :raises JobRefused: when the panel has a GitHub App and GitHub did
-            not issue its token: the PAT is not used in its place
+        :raises JobRefused: when the panel has an installed GitHub App and
+            GitHub did not issue its token
+            (:meth:`_issue_installation_token`): the PAT is not used in
+            its place
         """
         svc = self.env["cloud.github.credential.service"]
         app_token = None
         client = self._github_app_client()
         if client is not None:
-            try:
-                app_token = client.get_installation_token()
-            except Exception as exc:
-                raise JobRefused(
-                    "Refused: the GitHub App is configured but GitHub did "
-                    f"not issue its installation token ({exc}). Check the "
-                    "App in Settings, then run the job again; the personal "
-                    "access token is not used instead."
-                ) from exc
+            app_token = self._issue_installation_token(client)
         pat = None
         with suppress(Exception):
             pat = svc.get_pat()
         return app_token, pat
+
+    @staticmethod
+    def _issue_installation_token(client):
+        """Return the App installation's token, asking GitHub twice at most.
+
+        A 4xx is GitHub refusing the App and is not asked again; any other
+        failure (a 5xx, a timeout, the network) is asked again once after
+        ``_REPO_ACCESS_RETRY_SECONDS``, as :meth:`_github_repo_access` does.
+
+        :param GitHubAppClient client: the panel's App
+        :rtype: str
+        :raises JobRefused: when GitHub refused the App (check it in
+            Settings), or failed twice (run the job again)
+        """
+        failure, refused = None, False
+        for attempt in (1, 2):
+            try:
+                return client.get_installation_token()
+            except Exception as exc:  # noqa: BLE001 — classified below
+                failure = exc
+                status = getattr(exc, "status_code", None)
+                refused = isinstance(status, int) and 400 <= status < 500
+                if refused:
+                    break
+                if attempt == 1:
+                    time.sleep(_REPO_ACCESS_RETRY_SECONDS)
+        if refused:
+            raise JobRefused(
+                "Refused: GitHub refused the GitHub App's installation "
+                f"token ({failure}). Check the App in Settings, then run "
+                "the job again; the personal access token is not used "
+                "instead."
+            ) from failure
+        raise JobRefused(
+            "Refused: GitHub did not issue the GitHub App's installation "
+            f"token ({failure}), also when asked again. Run the job again; "
+            "the personal access token is not used instead."
+        ) from failure
 
     @staticmethod
     def _ask_github_repo(api, token):
@@ -900,6 +936,21 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """
         return repo.commit_sha or branch
 
+    @staticmethod
+    def _is_github_line(repo):
+        """Return whether *repo* is a github.com line read with GitHub's credentials.
+
+        A line with a ``provider_id`` (GitLab or another provider) uses
+        its provider's credential instead.
+
+        :param repo: a ``cloud.instance.repo`` row
+        :rtype: bool
+        """
+        raw_url = (repo.url or "").strip()
+        if not raw_url or getattr(repo, "provider_id", False):
+            return False
+        return bool(is_safe_repo_url(canonical_repo_url(raw_url)))
+
     def _github_line_tokens(self, repos, app_token, pat):
         """Return ``{line URL: token}`` for the GitHub lines that need one.
 
@@ -920,11 +971,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         cache = {}
         access = {}
         for repo in repos:
-            raw_url = (repo.url or "").strip()
-            if not raw_url or getattr(repo, "provider_id", False):
+            if not self._is_github_line(repo):
                 continue
-            if not is_safe_repo_url(canonical_repo_url(raw_url)):
-                continue
+            raw_url = repo.url.strip()
             access[raw_url] = self._github_repo_access(raw_url, app_token, pat, cache)
             if access[raw_url][2] is None:
                 self._sys(
@@ -949,7 +998,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """Build repos.yaml: odoo first, then the instance's git repos.
 
         Each GitHub line gets the credential :meth:`_github_line_tokens`
-        decides for it, and a GitLab line its provider's.
+        decides for it, and a GitLab line its provider's. GitHub's tokens
+        are asked only when the instance has a GitHub line
+        (:meth:`_is_github_line`): Odoo's own needs none.
 
         :param set pinned: when given, receives the alias of every
             repository whose merge is a commit the panel pinned
@@ -961,7 +1012,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         """
         inst = self._inst()
         data = {}
-        app_token, pat = self._get_github_tokens()
+        app_token = pat = None
+        if any(self._is_github_line(repo) for repo in inst.repo_ids):
+            app_token, pat = self._get_github_tokens()
         if pinned is None:
             pinned = set()
         tokens = self._github_line_tokens(inst.repo_ids, app_token, pat)

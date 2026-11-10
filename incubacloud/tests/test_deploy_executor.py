@@ -340,47 +340,187 @@ class TestGetTokenForRepo(BaseCase):
 
 
 class TestAnAppThatIssuesNoToken(TransactionCase):
-    """A panel with a GitHub App whose token GitHub does not issue."""
+    """When the panel asks GitHub for its App's token, and what it does
+    when GitHub does not issue it (10-nov-2026)."""
+
+    def setUp(self):
+        super().setUp()
+        self.env["cloud.settings"]._get_system().github_pat = "pat_tok"
 
     def _tokens(self, client):
         """Call ``_get_github_tokens`` with *client* as the panel's App.
 
         :param client: the App's client, or None for a panel without one
-        :return: the tokens, or the exception raised
+        :return: the tokens, or the exception raised, and how often the
+            App's token was asked
+        :rtype: tuple
         """
+        from odoo.addons.incubacloud.models import deploy_instance_executor as mod
+
+        executor = mod.DeployInstanceExecutor.__new__(mod.DeployInstanceExecutor)
+        executor.env = self.env
+        with patch.object(
+            mod.DeployInstanceExecutor, "_github_app_client", autospec=True,
+            return_value=client,
+        ), patch.object(mod, "_REPO_ACCESS_RETRY_SECONDS", 0):
+            try:
+                outcome = executor._get_github_tokens()
+            except Exception as exc:  # noqa: BLE001 — the outcome under test
+                outcome = exc
+        asked = client.get_installation_token.call_count if client else 0
+        return outcome, asked
+
+    @staticmethod
+    def _client(*answers):
+        """An App client whose token requests answer *answers* in turn."""
+        from odoo.addons.incubacloud.github.client import GitHubAppClient
+
+        client = MagicMock(spec=GitHubAppClient)
+        client.get_installation_token.side_effect = list(answers)
+        return client
+
+    def test_a_refusal_of_github_refuses_the_job_at_once(self):
+        """A 4xx is the App's to fix in Settings; the PAT is not tried."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        for code in (401, 404, 422):
+            with self.subTest(code=code):
+                outcome, asked = self._tokens(
+                    self._client(GitHubAPIError(code, "No"), "app_tok"),
+                )
+                self.assertIsInstance(outcome, JobRefused)
+                self.assertIn("Check the App in Settings", str(outcome))
+                self.assertNotIn("pat_tok", str(outcome))
+                self.assertEqual(asked, 1)
+
+    def test_a_passing_failure_is_asked_again_once(self):
+        """A 5xx, a timeout or the network, then the token: the job goes on."""
+        import urllib.error
+
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+
+        for name, failure in (
+            ("502", GitHubAPIError(502, "Bad Gateway")),
+            ("timeout", TimeoutError("timed out")),
+            ("network", urllib.error.URLError("unreachable")),
+        ):
+            with self.subTest(failure=name):
+                outcome, asked = self._tokens(self._client(failure, "app_tok"))
+                self.assertEqual(outcome, ("app_tok", "pat_tok"))
+                self.assertEqual(asked, 2)
+
+    def test_a_failure_twice_refuses_the_job_to_be_run_again(self):
+        """Twice a failure of GitHub: the job is refused, and the message
+        says GitHub did not issue the token, not to check the App."""
+        from odoo.addons.incubacloud.github.client import GitHubAPIError
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+
+        outcome, asked = self._tokens(self._client(
+            GitHubAPIError(503, "Unavailable"), TimeoutError("timed out"),
+        ))
+        self.assertIsInstance(outcome, JobRefused)
+        self.assertIn("GitHub did not issue", str(outcome))
+        self.assertIn("Run the job again", str(outcome))
+        self.assertNotIn("Settings", str(outcome))
+        self.assertNotIn("pat_tok", str(outcome))
+        self.assertEqual(asked, 2)
+
+    def test_a_panel_without_an_app_uses_the_pat(self):
+        """No App configured is not a failure."""
+        self.assertEqual(self._tokens(None), ((None, "pat_tok"), 0))
+
+    def test_an_app_not_installed_yet_counts_as_none(self):
+        """An App with no installation id yet: the PAT, as with no App."""
+        from odoo.addons.incubacloud.github.client import (
+            GitHubAPIError,
+            GitHubAppClient,
+        )
+        from odoo.addons.incubacloud.github.credentials import GitHubAppCredentials
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             DeployInstanceExecutor,
         )
 
         executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
         executor.env = self.env
-        executor._github_app_client = lambda: client
-        self.env["cloud.settings"]._get_system().github_pat = "pat_tok"
-        try:
-            return executor._get_github_tokens()
-        except Exception as exc:  # noqa: BLE001 — the outcome under test
-            return exc
-
-    def test_the_job_is_refused_instead_of_falling_back_to_the_pat(self):
-        """The App's failure is the job's reason; the PAT is not tried."""
-        from odoo.addons.incubacloud.github.client import (
-            GitHubAPIError,
-            GitHubAppClient,
+        service = type(self.env["cloud.github.credential.service"])
+        credentials = GitHubAppCredentials(
+            app_id="1", installation_id="", private_key_pem="",
         )
+        with patch.object(
+            service, "get_credentials", autospec=True, return_value=credentials,
+        ), patch.object(
+            GitHubAppClient, "get_installation_token", autospec=True,
+            side_effect=GitHubAPIError(404, "Not Found"),
+        ) as issue:
+            outcome = executor._get_github_tokens()
+        self.assertEqual(outcome, (None, "pat_tok"))
+        issue.assert_not_called()
+
+
+class TestTheTokensAreAskedOnlyForGitHubLines(BaseCase):
+    """An instance with no line of its own on github.com does not depend on
+    the GitHub App: Odoo's is public, and a line of another provider uses
+    its provider's credential (10-nov-2026)."""
+
+    def _render(self, repos):
+        """Render repos.yaml for *repos* with GitHub's tokens refused.
+
+        :param list repos: the instance's lines
+        :return: the rendered text, or the exception raised, and the mock
+            of ``_get_github_tokens``
+        :rtype: tuple
+        """
+        from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+
+        from .test_executor_features import _make_deploy_executor
+
+        ex = _make_deploy_executor(
+            odoo_version="18.0", odoo_commit_sha=False, repo_ids=repos,
+        )
+        with patch.object(
+            DeployInstanceExecutor, "_get_github_tokens", autospec=True,
+            side_effect=JobRefused("Refused: no App token"),
+        ) as tokens, patch.object(
+            DeployInstanceExecutor, "_gitlab_clone_url", autospec=True,
+            side_effect=lambda _self, url, _provider: url,
+        ):
+            try:
+                outcome = ex._repos_yaml_content(set())
+            except Exception as exc:  # noqa: BLE001 — the outcome under test
+                outcome = exc
+        return outcome, tokens
+
+    def test_only_odoo_asks_no_token(self):
+        """Odoo's line alone renders without GitHub's tokens."""
+        outcome, tokens = self._render([])
+        self.assertIn("odoo", yaml.safe_load(outcome))
+        tokens.assert_not_called()
+
+    def test_a_line_of_another_provider_asks_no_github_token(self):
+        """A GitLab line renders with its provider's URL, no GitHub token."""
+        line = SimpleNamespace(
+            url="https://gitlab.example.com/acme/addons.git", branch="main",
+            commit_sha=False, provider_id=SimpleNamespace(id=3),
+        )
+        outcome, tokens = self._render([line])
+        self.assertIn("addons", yaml.safe_load(outcome))
+        tokens.assert_not_called()
+
+    def test_a_github_line_still_needs_the_tokens(self):
+        """A line of github.com asks them, and their refusal stops the job."""
         from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 
-        client = MagicMock(spec=GitHubAppClient)
-        client.get_installation_token.side_effect = GitHubAPIError(
-            401, "Bad credentials",
+        line = SimpleNamespace(
+            url="https://github.com/acme/addons.git", branch="main",
+            commit_sha=False, provider_id=False,
         )
-        outcome = self._tokens(client)
+        outcome, tokens = self._render([line])
         self.assertIsInstance(outcome, JobRefused)
-        self.assertIn("GitHub App", str(outcome))
-        self.assertNotIn("pat_tok", str(outcome))
-
-    def test_a_panel_without_an_app_uses_the_pat(self):
-        """No App configured is not a failure."""
-        self.assertEqual(self._tokens(None), (None, "pat_tok"))
+        tokens.assert_called_once()
 
 
 class TestTheTokenEachLineGets(BaseCase):
