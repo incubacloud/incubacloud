@@ -11,6 +11,8 @@
                        class="rl-repo-url"
                        placeholder="https:// URL of a GitHub or GitLab repository"
                        t-att-value="props.repo.url"
+                       t-att-readonly="urlLocked"
+                       t-att-title="urlLocked ? urlLockedTitle : false"
                        t-on-input="onUrlInput"
                        t-on-blur="onUrlBlur"/>
                 <span t-if="state.loadingBranches" class="ic-repo-spinner" title="Fetching branches…">⟳</span>

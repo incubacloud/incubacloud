@@ -11,10 +11,11 @@ import logging
 from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 from ._repo_requirements import (
     RESERVED_REPO_ALIASES,
+    _normalize_url,
     _repo_alias,
     apply_requirements_content,
     canonical_repo_url,
@@ -323,9 +324,33 @@ class CloudRepoMixin(models.AbstractModel):
         records._apply_requirements()
         return records
 
+    def _check_url_unchanged(self, url):
+        """Refuse *url* on these lines unless the user may change it.
+
+        A user below Project Manager may send the URL a line already has,
+        in any spelling of the same repository, as the forms do on every
+        save; another repository is refused. Superuser writes (the system,
+        migrations, the crons, modules on top) are not checked.
+
+        :param url: the URL being written, already canonical
+        :raises AccessError: when a line would name another repository
+        """
+        if self.env['cloud.security.mixin']._can_change_repo_url():
+            return
+        wanted = _normalize_url(url)
+        for repo in self:
+            current = _with_canonical_url(self.env, {'url': repo.url})['url']
+            if _normalize_url(current) != wanted:
+                raise AccessError(_(
+                    "Only a Project Manager or higher can change the URL "
+                    "of the repository %s; you can still change its "
+                    "branch.",
+                ) % repo.url)
+
     def write(self, vals):
         vals = _with_canonical_url(self.env, vals)
         if 'url' in vals:
+            self._check_url_unchanged(vals['url'])
             result = super().write(vals)
         else:
             result = self._write_with_legacy_urls_canonical(vals)

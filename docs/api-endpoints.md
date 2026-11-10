@@ -18,6 +18,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | deploy / create instance | `group_cloud_consultant` |
 | terminal / view logs / manage backups / clone to staging / export | `group_cloud_developer` |
 | create project | `group_cloud_project_manager` |
+| change a repository line's URL (project or instance) | `group_cloud_project_manager`; below it, a save may send the line's own URL again |
 | delete project | `group_cloud_manager` |
 | delete instance | manager if production, consultant otherwise |
 | connect as user | `group_cloud_user` |
