@@ -42,7 +42,7 @@ class BackendsMixin:
     # NOTE: ``managed_reservation_id`` and ``archived_until`` are NOT in the
     # allowlist. They are written exclusively by server-side flows
     # (provisioning + delete intercept) and must never be settable from the
-    # SPA — a tenant who could clear ``archived_until`` would skip
+    # SPA — a user who could clear ``archived_until`` would skip
     # retention; one who could set ``managed_reservation_id`` could orphan
     # a real bucket. Keep them out of the mass-assignment surface.
 

@@ -104,13 +104,13 @@ class CloudSecurityMixin(models.AbstractModel):
         Staging (and runbot) keeps the historical floor: Stakeholder+,
         so a client watching their own staging can still impersonate.
         Production is stricter, mirroring Odoo.sh: a normal target user
-        requires Developer, and the tenant's own admin requires Manager.
+        requires Developer, and the instance's own admin requires Manager.
 
         :param instance: the ``cloud.instance`` being connected to.
             ``None`` keeps the legacy Stakeholder+ behaviour so callers
             that do not resolve an instance are unaffected.
         :param target_is_admin: True when the impersonated user is an
-            administrator of the tenant database.
+            administrator of the instance's database.
         :raises AccessError: when the caller lacks the required role.
         """
         # Per-instance scoping is enforced separately by record rules on

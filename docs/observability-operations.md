@@ -61,15 +61,15 @@ does not proxy them. Each does the one thing only it can.
 
 **vmauth and Grafana are published; VictoriaMetrics and Loki are not.**
 The two backends have no host port at all — anything able to reach them
-directly would bypass the boundary, including a tenant's own container on
+directly would bypass the boundary, including another panel's container on
 a shared host. Grafana having a bridge port is safe where theirs is not:
 Grafana authenticates every request itself (OIDC); VM and Loki
 authenticate nothing.
 
 ### The account boundary
 
-The central is shared: in SaaS every tenant panel writes to and reads
-from it. Neither VictoriaMetrics nor Loki has a notion of accounts, so
+The central can be shared: every panel given an account writes to and
+reads from it. Neither VictoriaMetrics nor Loki has a notion of accounts, so
 the boundary is imposed in front by **vmauth** — VictoriaMetrics' own
 auth proxy, which forces the account per route from the authenticated
 user:
@@ -149,7 +149,8 @@ hosts' security logs (`log_type="security"`: SSH and sudo from the
 journal, auditd, fail2ban), because an incident is often found weeks
 after it began. Security logs are collected only where the panel turns on
 *Send hosts' security logs* (`metrics_ship_security_logs`) and the agents
-are reinstalled; the SaaS manager turns it on for its own hosts. A host's
+are reinstalled; a module that extends the panel may turn it on for its
+own hosts. A host's
 credential reaches only the push and read routes above — Loki's delete
 API is not routed — so a host that is compromised cannot erase what it
 already sent.
@@ -196,15 +197,16 @@ What the deployment publishes under the name is what the hand-written
 gateway publishes (next section), with one difference: Traefik drops
 any `X-WEBAUTH-USER` header on its way to Grafana. Grafana's
 `frame-ancestors` is the list `cloud.settings._grafana_frame_ancestors`
-returns, written again at every deployment: the panel's origin, and in
-the SaaS build `https://*.<dns_base_domain>`, where the tenants' panels
-frame the dashboards from, as the gateway file has it. A list widened by
+returns, written again at every deployment: the panel's origin, plus
+whatever origins a module that extends the panel adds, such as other
+panels that frame the dashboards. A list widened by
 hand on the host would not survive the next run; widen it there instead.
 
 ## Labels
 
 Every sample carries `host`, `host_id`, and — for container metrics —
-`instance`, `instance_id`, `project` (plus `tenant` in the SaaS build).
+`instance`, `instance_id`, `project` (plus the account label a module
+that extends the panel may fill).
 This is not cosmetic: labels cannot be added to series that were already
 written, so anything not labelled at ingest is unattributable forever.
 The panel generates the label map (only it knows which compose project
@@ -220,13 +222,13 @@ re-renders it; every operation that changes what a host holds is expected
 to end with it, and one that forgets is invisible until somebody asks a
 question the missing label was the answer to.
 
-Measured on 2026-09-22: three tenants born from the warm pool had no
-`instance_id` on their sleep-proxy series, because a warm is deployed
-before it has a slug and the claim that gives it one did not re-render
-the map. The panel's activity cron filters `instance_id!=""`, so all
+Measured on 2026-09-22: three instances deployed ahead of being handed
+to their owners had no `instance_id` on their sleep-proxy series,
+because they were deployed before they had a name and the hand-over that
+gave them one did not re-render the map. The panel's activity cron filters `instance_id!=""`, so all
 three were invisible to it — one with 195 requests over seven days and
 two days left before an inactivity auto-suspend would have taken it
-down. The fix is in the claim; the lesson is that a stale label map fails
+down. The fix is in the hand-over; the lesson is that a stale label map fails
 silently and looks exactly like disuse.
 
 To check a host by hand: `grep -c svc@file ~/observability/scrape.yml`
@@ -243,7 +245,7 @@ until the retention dropped them.
 | --- | --- | --- |
 | an instance | its record is unlinked (every removal path ends there) | `{ic_account, instance_id}` |
 | a host | it is retired (archived — hosts are never unlinked by the teardown) | `{ic_account, host_id, instance_id=""}` |
-| a tenant's whole account (SaaS) | the tenant is deleted, after its account is revoked | `{ic_account}` |
+| a whole account | the account is revoked, through a module that extends the panel | `{ic_account}` |
 
 **The selector always names the account.** `instance_id` and `host_id`
 are row ids of the panel that owns them, so `instance_id="5"` exists in
@@ -261,10 +263,10 @@ rolled-back removal deletes nothing.
 **Only the panel that owns the central deletes.** It holds the operator
 credential; the gateway adds VictoriaMetrics' `-deleteAuthKey` on the
 operator's `/admin-d/` route, the way it swaps in Grafana's password, so
-the panel never sends the key and no account can delete at all. A tenant
-names what it removed through `/saas/metrics_purge` and core deletes it
-under the account core holds for that tenant — never one the request
-names. Until the central is redeployed with 1.0.135 there is no key and
+the panel never sends the key and no account can delete at all. Another
+panel with an account names what it removed through a route a module
+that extends this panel provides, and core deletes it under the account
+core holds for that panel — never one the request names. Until the central is redeployed with 1.0.135 there is no key and
 every deletion is skipped.
 
 **Failure is a warning, not an error.** `metrics_purge_failed` means some
@@ -352,7 +354,7 @@ the proxy down. Its shape:
   `/debug/pprof/` and `/-/reload` to anyone, and until 2026-09-27 a POST
   to them from outside got 200.
 
-Then set the tenant-facing URLs in Settings to
+Then set the URLs the agents on other hosts use in Settings to
 `https://metrics.<domain>/w/api/v1/write` and
 `https://metrics.<domain>/r`.
 
@@ -525,7 +527,7 @@ check. Its error-log scraping now has a better source in the access logs.
   service, and the service name is a copier-time literal from each
   customer's own `prod.yaml`; across eight real doodba projects it bore
   no relation to `COMPOSE_PROJECT_NAME`, the key every other rule joins
-  on. Guessing a mapping would attribute one tenant's traffic to another,
+  on. Guessing a mapping would attribute one customer's traffic to another,
   so the Traefik panels live on the **host** dashboard, grouped by
   service. Per-instance HTTP arrives with the blackbox probes of v2.
 - **`running` comes from cAdvisor**, not from HTTP traffic. An idle but
@@ -550,10 +552,10 @@ rather than reading fields. They are:
 | `configure` | this panel's operator edits those settings | core says `True`; a layer above says otherwise |
 
 Core publishes `configure: True` because it has no notion of a panel
-whose settings arrive from elsewhere. `incubacloud_tenant` sets it to
-`False` — that single line is the whole of its observability override,
-and everything else a tenant panel shows follows from the settings the
-manager pushed it.
+whose settings arrive from elsewhere. A module that extends the panel
+and pushes those settings from another panel sets it to `False`, and
+everything else such a managed panel shows follows from the settings it
+was pushed.
 
 **The rule every surface follows:** never offer something whose only
 possible message is an instruction the viewer cannot act on. Concretely:
@@ -571,7 +573,7 @@ possible message is an instruction the viewer cannot act on. Concretely:
 
 ### Convivencia matrix — check this before releasing an observability change
 
-Six deployments, five surfaces. Run this by hand when the descriptor or
+Seven deployments, five surfaces. Run this by hand when the descriptor or
 any of its consumers change; the axes themselves are pinned by
 `test_observability_wiring.TestObservabilityCapabilities` and the nav
 gate by `TestNavGateConsultsEveryAxis`, but "does the whole thing still
@@ -582,7 +584,7 @@ make sense together" is a reading, not an assertion.
 | Partner, observability off | ✗ | ✗ | ✓ | shown | "Enable observability in Settings" | prompt + recent requests | shown |
 | Partner, no Grafana URL | ✓ | ✗ | ✓ | shown | "Set the Grafana base URL" | prompt + recent requests | shown |
 | Partner, fully configured | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
-| Manager (our own panel) | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
-| Tenant, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | no charts; recent requests | hidden |
-| Tenant, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | charts + recent requests | hidden |
-| Tenant, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no charts; recent requests | hidden |
+| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
+| Managed panel, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | no charts; recent requests | hidden |
+| Managed panel, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | charts + recent requests | hidden |
+| Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no charts; recent requests | hidden |

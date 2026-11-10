@@ -78,21 +78,21 @@ class TestScriptOverlay(BaseCase):
         self.assertEqual(self.executor._addon_chain(), ["incubacloud"])
 
     def test_addons_are_ordered_most_derived_first(self):
-        """A saas subclass must see its own scripts before core's.
+        """A layered subclass must see its own scripts before core's.
 
         That ordering is what lets ``_script_overlay`` shadow a core
         script with a same-named one shipped by the subclass's addon.
         """
 
-        class _SaasExecutor(_ScriptExecutor):
+        class _LayerExecutor(_ScriptExecutor):
             pass
 
-        _SaasExecutor.__module__ = (
-            "odoo.addons.incubacloud_saas_manager.models.tenant_deploy_executor"
+        _LayerExecutor.__module__ = (
+            "odoo.addons.acme_layer.models.layer_deploy_executor"
         )
         self.assertEqual(
-            _SaasExecutor._addon_chain(),
-            ["incubacloud_saas_manager", "incubacloud"],
+            _LayerExecutor._addon_chain(),
+            ["acme_layer", "incubacloud"],
         )
 
 

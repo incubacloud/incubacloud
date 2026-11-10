@@ -64,10 +64,10 @@
 
 // The Delete button in the detail footer uses .ic-btn-danger. Kept here
 // (and not in settings.scss, which scopes it under .ic-settings) so the
-// rule applies in any tenant DB where saas_manager is not installed —
-// core must not depend on saas SCSS. The button also carries rl-btn
+// rule applies in any database where no module on top is installed —
+// core must not depend on their SCSS. The button also carries rl-btn
 // rl-btn-danger for the Relay look; this rule is a defensive fallback and
-// the hook the tenant managed-backup patch targets.
+// the hook a layer's managed-backup patch targets.
 .ic-btn-danger {
     border-radius: 6px;
     padding: 7px 16px;

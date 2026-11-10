@@ -210,7 +210,7 @@ class CloudSettings(models.Model):
     # unpinned, each deploy silently picks up whatever is on the
     # template's default branch at that moment, so two instances created
     # a week apart can be built from different upstream revisions and a
-    # breaking change upstream lands on the next tenant deploy with no
+    # breaking change upstream lands on the next instance deploy with no
     # signal here. Pinning a tag makes template upgrades a decision.
 
     copier_template_url = fields.Char(
@@ -498,8 +498,9 @@ class CloudSettings(models.Model):
         """Return ``[(user, token), ...]`` that should exist on the central.
 
         The single source of the access-control list. Core knows exactly
-        one account: this panel's own. The SaaS layer overrides this to
-        append one entry per tenant, because only it knows tenants exist.
+        one account: this panel's own. A layer that serves other panels
+        overrides this to append one entry per panel, because only it
+        knows they exist.
 
         Deliberately on the model rather than on the executor that writes
         the list: the reconciliation has to compare the same set without
@@ -516,8 +517,8 @@ class CloudSettings(models.Model):
         Called by the central's deployment and by the account sync right
         after they record ``metrics_accounts_deployed``, on the job's
         durable cursor. Core's one account is handed out by that same
-        deployment, so core has nothing left to do here. The SaaS layer
-        overrides it to give the panels whose accounts were granted just
+        deployment, so core has nothing left to do here. A layer that
+        serves other panels overrides it to give the panels whose accounts were granted just
         now their settings, rather than leaving them to its next
         reconciliation.
         """
@@ -527,7 +528,7 @@ class CloudSettings(models.Model):
 
         Called by the central's deployment and by the account sync with
         what they handed Grafana (``_grafana_oidc``), on the job's durable
-        cursor. Core has nothing to keep; the SaaS layer records the token
+        cursor. Core has nothing to keep; a layer may record the token
         URL in force, so its reconciliation sees when Grafana is behind.
 
         :param oidc: the settings sent, ``{}`` or None when none were.
@@ -538,8 +539,8 @@ class CloudSettings(models.Model):
 
         Empty here: core ships to partners, who have no identity provider
         of ours, so the playbook wires ``auth.proxy`` instead and trusts
-        a header set by the panel's own reverse proxy. The SaaS manager
-        overrides this.
+        a header set by the panel's own reverse proxy. A layer with an
+        identity provider of its own overrides this.
 
         On the model rather than on the executor for the same reason the
         account list is: both the deployment and the account sync need
@@ -559,8 +560,8 @@ class CloudSettings(models.Model):
         ``frame-ancestors``, and a browser refuses any frame this list
         does not name, silently: the frame still fires ``load``. Core
         frames Grafana from the panel alone, so the list is the panel's
-        origin, read from ``web.base.url``. The SaaS manager overrides
-        this to add its tenants' panels.
+        origin, read from ``web.base.url``. A layer overrides this
+        to add the other panels that frame it.
 
         On the model rather than on the executor, like ``_grafana_oidc``:
         who frames Grafana is the layer's knowledge, not the job's.
@@ -1035,8 +1036,8 @@ class CloudSettings(models.Model):
         """Return the CIDR ranges whose ``X-Forwarded-For`` is believed.
 
         Reads the operator-entered field. Modules that know the proxy in
-        front of this installation — the SaaS manager knows the platform
-        answers behind a CDN — override this and supply the ranges
+        front of this installation — for instance, one that knows the
+        panel answers behind a CDN — override this and supply the ranges
         themselves, so operators never have to keep a moving list of
         somebody else's addresses up to date by hand.
 

@@ -29,8 +29,8 @@ change of the key whatever lock came before, or none: the older
 transaction fails all the same (measured on 8-nov-2026: ``FOR NO KEY
 UPDATE`` + another column passes, ``FOR NO KEY UPDATE`` + ``project_id``
 fails, no lock + ``project_id`` fails). There the lock decides nothing,
-and ``FOR UPDATE`` is as good: the claim of a ready warm, which moves
-the instance to its tenant's project, is such a write.
+and ``FOR UPDATE`` is as good: a layer's hand-over of a ready instance,
+which moves it to its owner's project, is such a write.
 
 A strong lock that is really needed carries the comment
 ``# lock: key-update needed — <why>`` on the line before its statement

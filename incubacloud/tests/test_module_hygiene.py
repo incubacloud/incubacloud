@@ -21,8 +21,8 @@ The three, in the order they bite:
   starts with ``pre-``, ``post-`` or ``end-`` are collected; a folder of
   helpers alone contributes nothing.
 
-Deliberately duplicated in ``incubacloud_saas_manager``'s own hygiene
-suite rather than imported from here: each repository then guards its
+Deliberately duplicated in the hygiene suite of a repository layered
+on top rather than imported from here: each repository then guards its
 own modules without its CI depending on the other one being present.
 """
 import ast

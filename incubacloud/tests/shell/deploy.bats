@@ -128,7 +128,7 @@ teardown() {
 
 @test "copier-deploy reads the git default branch before writing it" {
     # Read-first guard: an unconditional write takes the ~/.gitconfig lock
-    # and races sibling deploys on the same host (warm-pool cron). Here git
+    # and races sibling deploys on the same host (a layer's cron). Here git
     # reports the value is already set, so no write must follow.
     cat > "$TMP/bin/git" <<'STUB'
 #!/usr/bin/env bash

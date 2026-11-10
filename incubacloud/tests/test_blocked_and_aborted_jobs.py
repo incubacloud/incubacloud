@@ -554,8 +554,8 @@ class TestAbortBeforeTheRun(_DeployJobCase):
         self.run.assert_not_called()
 
     def test_a_defect_before_the_run_is_logged_with_its_traceback(self):
-        """On a tenant's panel the probe leaves queue_job's tracebacks of
-        a ``cloud.job`` out: this line is the one IncubaCloud reads."""
+        """On a managed panel the probe leaves queue_job's tracebacks of
+        a ``cloud.job`` out: this line is the one whoever manages it reads."""
         with patch.object(
             DeployInstanceExecutor, "blocking_alert", autospec=True,
             side_effect=KeyError("repo"),

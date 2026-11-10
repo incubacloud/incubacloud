@@ -318,8 +318,8 @@ class TestProcessPushEventGuards(_GitHubEventBase):
     # ── Falsy job type → skip (generic seam) ───────────────────────────────
     #
     # A subclass may decline a rebuild by returning a falsy job type from
-    # ``_rebuild_job_type`` (the SaaS manager does this for warm-pool
-    # instances condemned to recycling). The handler must skip the
+    # ``_rebuild_job_type`` (a layer may do this for instances it
+    # is about to recycle). The handler must skip the
     # instance entirely — no enqueue.
 
     def test_falsy_job_type_skips_enqueue(self):

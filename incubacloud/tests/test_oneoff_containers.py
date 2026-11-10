@@ -1,7 +1,7 @@
 """Core's scripts and executors follow the one-off container rule.
 
 The rule, the reasons and the checker live in ``oneoff_rules``; pitr and
-saas run the same check over their own files.
+any repository layered on top run the same check over their own files.
 """
 import tempfile
 from pathlib import Path

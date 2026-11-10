@@ -3,7 +3,7 @@
 The DNS token the direct certificates are asked for with, the central's
 direct name and the state of its probe. The state moves by the rules of
 ``_direct_probe``; it is written on a cursor of its own, because the job
-and (in the SaaS build) a probe every three minutes both write it.
+and (where a layer adds one) a probe every three minutes both write it.
 
 The time of the last probe is the exception: it moves at every probe, so
 it is not a column of the settings row but a system parameter, and the
@@ -108,8 +108,8 @@ class CloudSettings(models.Model):
         cached ``get_param`` would not see those writes. Nothing else
         reads these keys.
 
-        :param str prefix: ``metrics_central_direct`` (or
-            ``saas_backchannel`` in the SaaS build).
+        :param str prefix: ``metrics_central_direct`` (or the prefix of
+            a direct name a layer adds).
         :return: a naive UTC datetime, or False before the first probe.
         :rtype: datetime | bool
         """
@@ -228,8 +228,8 @@ class CloudSettings(models.Model):
     def _direct_path_in_force(self):
         """Whether this panel's hosts may be offered the central's direct name.
 
-        Core: its own name works. A tenant's panel has no name of its own
-        and answers from what its manager sends it.
+        Core: its own name works. A panel whose settings another panel
+        pushes has no name of its own and answers from what it is sent.
 
         :rtype: bool
         """
@@ -241,11 +241,11 @@ class CloudSettings(models.Model):
         A host's own try of a name in force that fails is the host's
         fault (``cloud.host._record_direct_reach``). Core: the name's
         probe says ``ok``. A layer whose panel does not probe the name
-        (a tenant's, offered the central's name by its manager) answers
+        (one offered the central's name by the panel that manages it) answers
         from what it is sent instead.
 
-        :param str prefix: ``metrics_central_direct`` (or
-            ``saas_backchannel`` in the SaaS build).
+        :param str prefix: ``metrics_central_direct`` (or the prefix of
+            a direct name a layer adds).
         :rtype: bool
         """
         return self._get_system()[f"{prefix}_state"] == "ok"
@@ -287,8 +287,8 @@ class CloudSettings(models.Model):
         and in a steady state that is all of the settings row: only the
         time of the probe moves, in its system parameter.
 
-        :param str prefix: ``metrics_central_direct`` (or
-            ``saas_backchannel`` in the SaaS build).
+        :param str prefix: ``metrics_central_direct`` (or the prefix of
+            a direct name a layer adds).
         :param dict outcome: as ``_direct_probe.parse_probe`` returns it.
         :return: ``(previous state, new state)``.
         :rtype: tuple

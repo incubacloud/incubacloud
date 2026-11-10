@@ -574,9 +574,9 @@ class TestTheWholeAccountListTravels(ObservabilityExecutorCase):
 class TestTheListInForceIsAnnounced(ObservabilityExecutorCase):
     """Whoever hands accounts out hears when the gateway accepts them.
 
-    Until then a granted account sat unused: the SaaS layer only learned
+    Until then a granted account sat unused: a layer only learned
     of it at its next reconciliation, half an hour later, so a new
-    tenant's panel showed no dashboards in the meantime.
+    panel showed no dashboards in the meantime.
     """
 
     def _record(self, cls):

@@ -10,8 +10,8 @@ Why, in short (``AbstractExecutor._durable_env`` has the long version):
 not flushed yet; queue_job rolls the transaction back when the job fails
 and forbids committing it midway; and a flushed write holds its row
 until the job ends, so a hook writing that row waits forever. Core
-1.0.135 lost the metrics deletion key that way, and a tenant claim left
-an active OIDC client behind on every tenant.
+1.0.135 lost the metrics deletion key that way, and a layer's hand-over of
+an instance left an active OIDC client behind on every one.
 
 This module is importable, not a test: each repository with executors
 runs :func:`check` over its own model files from a test of its own, so
@@ -211,7 +211,7 @@ def check_sources(sources, context=None, helpers=None):
 
     :param dict sources: ``{filename: source}`` to check
     :param dict context: ``{filename: source}`` read only to resolve
-        base classes, e.g. core's executors when checking saas
+        base classes, e.g. core's executors when checking a layer on top
     :param dict helpers: the checked code's own hook helpers, added to
         ``HOOK_HELPERS`` (name → what it writes)
     :return: a sorted list of ``"file:line Class.method: message"``

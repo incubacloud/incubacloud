@@ -61,7 +61,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     ``HostBuildLockMixin`` is first in the bases so its
     ``pre_run_checks`` runs and chains: every rebuild variant inherits
     from this class, so putting the per-host build lock here covers
-    manual, tenant and warm rebuilds at once. Core's deploy, which builds
+    manual rebuilds and every layer's at once. Core's deploy, which builds
     in «Build Odoo image», takes none: the lock, transactional, would
     serialise whole deploys (see ``docker_prune_executor.BUILD_CACHE_KEEP``).
     """

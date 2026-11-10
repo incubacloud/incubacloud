@@ -36,7 +36,7 @@ export const AccessMixin = (Base) =>
 
     /**
      * Whether a specific target user may be impersonated. Only the
-     * combination "tenant admin + production instance" is restricted,
+     * combination "instance admin + production instance" is restricted,
      * and it requires Manager.
      *
      * @param {{is_admin?: boolean}} user entry from /cloud/get_instance_users
@@ -45,7 +45,7 @@ export const AccessMixin = (Base) =>
 
     /**
      * Whether a specific target user may be impersonated. Only the
-     * combination "tenant admin + production instance" is restricted,
+     * combination "instance admin + production instance" is restricted,
      * and it requires Manager.
      *
      * @param {{is_admin?: boolean}} user entry from /cloud/get_instance_users

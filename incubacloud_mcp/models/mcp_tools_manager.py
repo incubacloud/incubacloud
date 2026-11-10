@@ -153,8 +153,8 @@ class McpToolsManager(models.AbstractModel):
 
         The routes keep the fields they know and drop the rest without a
         word, so a misspelt field answered ok and changed nothing. What
-        they know is read from the controller that serves them, saas's
-        additions included; ``whitelist`` is written by a save only.
+        they know is read from the controller that serves them, layered
+        modules' additions included; ``whitelist`` is written by a save only.
 
         :raises UserError: naming the unknown fields and the accepted ones
         """

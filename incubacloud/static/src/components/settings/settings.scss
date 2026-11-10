@@ -10,7 +10,7 @@
 
         // Each in-tab section is a clearly delimited block: a prominent heading
         // with a divider above it, so it's obvious which fields belong to which
-        // section. Scoped to settings so the saas screens that reuse
+        // section. Scoped to settings so the screens of modules on top that reuse
         // .rl-saas-fsec keep their compact label style.
         .rl-saas-fsec {
             font-family: $font-display;

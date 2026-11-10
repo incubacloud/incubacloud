@@ -114,7 +114,7 @@ class ReadLastLoginExecutor(AbstractSSHExecutor):
         except ValueError:
             _logger.warning("read_last_login: unparseable answer %r", raw)
             return False
-        # Odoo stores naive UTC. A tenant whose column happens to carry a
+        # Odoo stores naive UTC. An instance whose column happens to carry a
         # timezone would otherwise produce an offset-aware value that
         # cannot be compared with anything already on the record.
         if parsed.tzinfo is not None:

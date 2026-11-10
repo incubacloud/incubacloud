@@ -2,9 +2,10 @@
 
 ``docker system prune -af --filter "label!=incubacloud.protect=1"``
 deletes any *unlabelled* stopped resource, and panel-managed stacks sit
-stopped on purpose (warm spares, Sablier-slept tenants, manual stops).
+stopped on purpose (spares deployed ahead of time, Sablier-slept instances, manual
+stops).
 The label therefore has to be stamped by the **base** deploy executor,
-unconditionally — the first design put it in a SaaS subclass and every
+unconditionally — the first design put it in a layer's subclass and every
 rebuild whose MRO skipped that subclass silently unlabelled the stack,
 which the nightly prune then swept (2026-08 incident).
 """

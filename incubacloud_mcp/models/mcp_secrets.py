@@ -30,8 +30,8 @@ SECRET_PARAMS = (SECRET_PARAM, "database.secret")
 
 #: The encrypted fields that store a JSON document or a PEM key, whose
 #: pieces are secrets too: a job's credentials, the GitHub App's key, a
-#: server's TLS and SSH keys — and those of the modules on top (saas: a
-#: backup request's credentials, the origin's key, the issuer's signing
+#: server's TLS and SSH keys — and those of the modules on top (such as a
+#: backup request's credentials, an origin's key, an issuer's signing
 #: keys). Any other field's value is one secret, whatever it looks like.
 STRUCTURED_SECRET_FIELDS = frozenset(
     {
@@ -156,7 +156,7 @@ class McpSecrets(models.AbstractModel):
         """Return the secrets kept outside encrypted fields.
 
         Here the system parameters of :data:`SECRET_PARAMS`; a module on
-        top adds its own (the tenant, its OIDC client secret).
+        top adds its own (an OIDC client secret, say).
 
         :rtype: set[str]
         """

@@ -152,7 +152,7 @@ class TestArchivingClosesItsAlerts(_ArchivedBase):
         self.assertEqual((down | logs).mapped("resolution"), ["auto", "auto"])
 
     def test_the_last_health_check_goes_with_it(self):
-        """Its services in green and "error" stayed on a deleted tenant's
+        """Its services in green and "error" stayed on a deleted customer's
         instance whose containers were gone (11-oct-2026)."""
         self.instance.write({
             "service_states": {"db": "running", "smtp": "running", "odoo": "exited"},
@@ -481,8 +481,8 @@ class TestArchivedRoutePayload(_ArchivedBase):
         self.assertEqual(row["host_name"], self.host.name)
 
     def test_below_manager_the_row_does_not_name_the_bucket(self):
-        """SEC-009's rule, and the reason for it: in SaaS that storage is
-        ours, not the tenant's. A stakeholder still sees that a copy
+        """SEC-009's rule, and the reason for it: where a layer provides
+        that storage it is the layer's, not the user's. A stakeholder still sees that a copy
         exists and what it costs — just not where it is."""
         self._archive()
         with patch.object(

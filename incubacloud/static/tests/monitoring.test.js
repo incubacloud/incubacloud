@@ -79,7 +79,7 @@ describe("Monitoring — who may configure it", () => {
     });
 
     test("a panel whose settings are injected may not", () => {
-        // The tenant case: pointing them at a Settings tab their panel
+        // The managed-panel case: pointing them at a Settings tab their panel
         // hides is the dead end this replaces.
         expect(withEnv({ observability: { configure: false } }).canConfigure)
             .toBe(false);
@@ -115,7 +115,7 @@ describe("Monitoring — instance picker", () => {
 describe("Monitoring — a fleet with no server", () => {
     /**
      * With no server nothing can report, and every chart read "No data"
-     * as if the page were broken (2-nov-2026, a tenant without a VPS).
+     * as if the page were broken (2-nov-2026, a managed panel without a server).
      * The page says why instead of embedding empty dashboards.
      */
     const withHosts = (hosts) => {

@@ -77,7 +77,7 @@ describe("Connect an agent — what it shows", () => {
         expect(connectView().url).toBe("");
     });
 
-    test("on a tenant, the issuer and the URL are read-only", () => {
+    test("on a managed panel, the issuer and the URL are read-only", () => {
         expect(settingsView({ managed: true }).readonly).toBe(true);
         expect(settingsView({ managed: false }).readonly).toBe(false);
         expect(settingsView({ managed: 1 }).readonly).toBe(true);

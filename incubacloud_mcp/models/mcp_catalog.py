@@ -1,7 +1,7 @@
 """The registry: every tool, and what becomes of every action of the panel.
 
-Each module adds its own: this one core's, the PITR bridge PITR's, the
-tenant panel its routes. ``_route_policies`` maps each rule of the routing
+Each module adds its own: this one core's, the PITR bridge PITR's, a
+module that extends the panel its routes. ``_route_policies`` maps each rule of the routing
 map (its string, as ``ir.http.routing_map()`` holds it) to
 ``("tool", <name>)`` or ``("excluded", <reason>)``; the inventory test
 fails on a ``/cloud/*`` route nobody classified.
@@ -191,8 +191,8 @@ class McpCatalog(models.AbstractModel):
     @api.model
     def _call_wrappers(self):
         """Return ``{function: route prefix}``: helpers that call ``rpc`` for a
-        route named by their first argument (a module's, such as the
-        tenant's ``_bff``)."""
+        route named by their first argument (a module's, such as a
+        relay of its own)."""
         return {}
 
     @api.model

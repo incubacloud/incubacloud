@@ -77,7 +77,7 @@ class TestTheEdgeGuardDocument(TransactionCase):
         ))
         self.assertEqual(yaml.safe_load(self.document), _EXPECTED)
 
-    def test_it_lives_where_no_tenant_slug_can_reach(self):
+    def test_it_lives_where_no_instance_slug_can_reach(self):
         """Sablier writes ``{slug}.yml`` beside it; a slug has no ``_``."""
         self.assertEqual(EDGE_GUARD_FILE, "~/traefik/dynamic/ic_guard.yml")
 

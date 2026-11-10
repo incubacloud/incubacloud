@@ -1,13 +1,13 @@
 http:
   middlewares:
     # Per-source-IP rate limit, added as the https entrypoint default
-    # so it reaches every copier-generated tenant router without editing
+    # so it reaches every copier-generated instance router without editing
     # a single generated compose file — the same mechanism as `hsts`.
     # Throttles by client IP before a request can reach Odoo's pbkdf2
     # login, so a flood from one source cannot burn the host CPU.
     #
     # Direct traffic only: sourceCriterion defaults to the real remote
-    # IP, correct when tenant domains resolve straight to the host. A
+    # IP, correct when instance domains resolve straight to the host. A
     # host placed behind a trusted CDN/proxy must set
     # sourceCriterion.ipStrategy so the limit keys on the real client
     # and not on a handful of edge IPs. Values are generous on purpose
@@ -55,7 +55,7 @@ http:
     # panel's Grafana iframes and break Odoo's own website editor, and it
     # sets stsIncludeSubdomains/stsPreload, which must not be turned on
     # until every subdomain is known to hold a valid certificate: with
-    # includeSubDomains, an expired tenant cert becomes unreachable with
+    # includeSubDomains, an expired instance cert becomes unreachable with
     # no click-through.
     #
     # forceSTSHeader alone emits nothing — Traefik only writes the header

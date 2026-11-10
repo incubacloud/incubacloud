@@ -48,7 +48,7 @@ $toast-warning-bg:     color-mix(in srgb, var(--rl-amber) 14%, var(--rl-surf2));
 $toast-warning-border: color-mix(in srgb, var(--rl-amber) 40%, var(--rl-surf2));
 $toast-warning-text:   var(--rl-amber-text);
 
-// Info toast: teal, NOT a SaaS blue.
+// Info toast: teal, NOT a generic web-app blue.
 $toast-info-bg:        color-mix(in srgb, var(--rl-cyan) 14%, var(--rl-surf2));
 $toast-info-border:    color-mix(in srgb, var(--rl-cyan) 40%, var(--rl-surf2));
 $toast-info-text:      var(--rl-cyan-text);

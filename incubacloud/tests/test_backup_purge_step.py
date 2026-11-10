@@ -17,7 +17,7 @@ What these pin, in order of how badly each would hurt:
     cleanups reuse these very commands against a host the instance has
     left, while it is alive and using those backups elsewhere;
   * it runs before the teardown, and stops it on failure;
-  * Free tenants are excluded by the same gate that decides whether the
+  * instances without that service are excluded by the same gate that decides whether the
     container is deployed at all, not by a branch naming them;
   * each exit code produces the alert that names its own fix, and a
     clean run clears them.
@@ -414,7 +414,7 @@ class TestPurgeAlerts(_PurgeBase):
         self._closes_on_success(PURGE_LABEL, PURGE_ALERT_BY_EXIT, {})
 
     def test_a_clean_archive_closes_the_archive_alert(self):
-        """Production, 11-oct-2026: the deleted tenant's archive alert
+        """Production, 11-oct-2026: a deleted instance's archive alert
         stayed lit after the retry archived it."""
         self._closes_on_success(
             ARCHIVE_LABEL, ARCHIVE_ALERT_BY_EXIT, {"keep_in_panel": True},
@@ -492,7 +492,7 @@ class TestFrozenBackupPath(_PurgeBase):
 
     The computed path derives from the project's remote folder and the
     instance name; once archived, that derivation can quietly become
-    false — deleting a tenant detaches its project and the computed path
+    false — deleting a customer account may detach its project and the computed path
     falls back to a shared ``.../default/`` prefix. Everything that
     touches the copy afterwards must read the frozen value.
     """

@@ -211,7 +211,7 @@ class TestEarlyGuardsLogBeforeRaising(AnsibleExecutorCase):
 
     These two guards fire before any other output; a bare raise here was
     the one failure path in the pipeline that produced a failed job with
-    an empty log page (seen live when a tenant image lacked
+    an empty log page (seen live when a panel image lacked
     ansible-runner — the reason only reached ``queue_job.exc_message``).
     """
 

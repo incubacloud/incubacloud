@@ -164,7 +164,7 @@ class TestStopAgainstThePointOfNoReturn(TransactionCase):
 
     def test_every_write_of_the_flag_is_refused_past_the_step(self):
         """Not only ``cancel_job``: a plain write of the flag on a started
-        job (a tenant's provisioning started again) meets the same lock."""
+        job (a layer's provisioning started again) meets the same lock."""
         self._executor()._pass_no_return(_STEP)
         with self.registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})

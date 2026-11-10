@@ -131,9 +131,9 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         *staging* instance resolves a backup destination whenever a
         global default exists, yet only production renders the
         container. Gating on the flag alone would make every staging
-        instance impossible to delete. It is also what keeps Free tenants
-        out without a branch naming them — their plan disables the
-        container, so it is absent here for the same reason it is absent
+        instance impossible to delete. It is also what keeps instances
+        without that service out without a branch naming them — their
+        settings disable the container, so it is absent here for the same reason it is absent
         on the host.
         """
         if not self._owns_instance_lifecycle:

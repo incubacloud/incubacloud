@@ -7,7 +7,7 @@
 # Included by both the full central deployment (which passes every
 # account) and the account sync (which passes only the ones missing from
 # the deployed access-control list). Every task here is idempotent, so
-# the difference is cost, not behaviour: at a thousand tenants the sync
+# the difference is cost, not behaviour: at a thousand accounts the sync
 # does one org, the deployment does a thousand.
 #
 # That is true of the ORGANISATIONS. It is not true of ``orgMapping``
@@ -29,7 +29,7 @@
     method: POST
     body_format: json
     body: {name: "{{ item.user }}"}
-    # 409 = already there. Re-running is the normal way to add a tenant,
+    # 409 = already there. Re-running is the normal way to add an account,
     # so "exists" is the common case, not an error.
     status_code: [200, 409]
   loop: "{{ ic_accounts }}"
@@ -83,7 +83,7 @@
   # config with the container's restart count still at zero.
   #
   # That is what lets an account be added without recreating Grafana.
-  # The mapping used to live in the compose file, so every new tenant
+  # The mapping used to live in the compose file, so every new account
   # changed the container definition and ``up -d`` recreated it —
   # dropping every open session for a change that concerns one account.
   #
@@ -156,7 +156,7 @@
     label: "{{ item.0.user }}"
 
 # ── Organisations of accounts that no longer exist ────────────────────
-# Organisations used to be created and never deleted: a tenant that left
+# Organisations used to be created and never deleted: an account that left
 # kept its organisation, datasource and dashboards for ever (seven were
 # removed by hand on 2026-09-20). Removal converges here instead, against
 # the FULL account list — ``ic_account_names``, not ``ic_accounts``,
@@ -219,7 +219,7 @@
 # Deleting an account's organisation left its user behind, tied to a
 # panel login that no longer exists. Whoever came back with the same
 # e-mail then got "User sync failed": Grafana tried to create them again
-# and the login was taken (2-nov-2026, a tenant closed and re-created).
+# and the login was taken (2-nov-2026, an account closed and re-created).
 # A Grafana user holds no data of its own — dashboards and datasources
 # belong to the organisation — and is created again at its next login.
 # Only users who came in through the panel's sign-in are candidates, and

@@ -298,7 +298,7 @@ class TestCloudDeleteHostRoute(TransactionCase):
     accumulates a job before Traefik is deployed.
 
     Concrete trigger that motivated the branch: on-demand VPS chain
-    (``tenant_vps_provision → host_hardening → full_setup``) — the
+    (a layer's server provisioning → ``host_hardening`` → ``full_setup``) — the
     provision job succeeds and lands on ``cloud.job`` but the chain
     breaks before Traefik is deployed, so ``host.traefik_deployed`` is
     still False while ``cloud_job_count >= 1``. The old ``unlink``
@@ -399,7 +399,7 @@ class TestCloudDeleteHostRoute(TransactionCase):
         unlinked) so the FK stays valid and the job history survives.
 
         This is the regression for the on-demand VPS path where
-        ``tenant_vps_provision`` succeeded but ``host_hardening`` +
+        a layer's server provisioning succeeded but ``host_hardening`` +
         ``full_setup`` never ran.
         """
         job_type = self.env["cloud.job.type"].sudo().search([], limit=1)
@@ -1523,7 +1523,7 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
     #
     # The dialog says it, and the asker's own address enters the list only
     # through its checkbox.
-    # Until 27-oct-2026 the SaaS manager filled an empty list with the
+    # Until 27-oct-2026 a layer filled an empty list with the
     # asker's address before every hardening, unannounced: an IPv6 a host
     # reached over IPv4 could not use, and on a production host an address
     # of the CDN.
@@ -1542,8 +1542,7 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
         """Set the host's SSH list and address, and the proxies believed.
 
         The panel's own address is left out: a layer installed beside
-        core may know it (the SaaS manager's ``core_public_ip``, a tenant
-        panel's ``tenant_public_ip``), and these cases are core's, which
+        core may know it, and these cases are core's, which
         knows none (``test_core_knows_no_panel_address``).
 
         :param str allowed: ``allowed_ssh_ips``

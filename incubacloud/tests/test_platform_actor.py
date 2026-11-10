@@ -6,8 +6,8 @@ author is not cosmetic: it lands on ``queue_job.user_id``, so the
 executor *runs* as them, and on every row that executor writes.
 
 These tests pin the elevation itself and its two core consumers — the
-alert model and the GitHub webhook event. The SaaS side (warm pool, OIDC
-client) is pinned in ``incubacloud_saas_manager``.
+alert model and the GitHub webhook event. A layer on top pins its own
+consumers.
 """
 from unittest.mock import patch
 

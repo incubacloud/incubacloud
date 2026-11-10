@@ -527,8 +527,8 @@ class CloudHost(models.Model):
     def _direct_excluded(self):
         """Whether this active host's address must stay out of the list.
 
-        Core knows no such case beyond the absence above; the SaaS layer
-        leaves out a host bought on demand whose server is gone.
+        Core knows no such case beyond the absence above; a layer may
+        leave out a host bought on demand whose server is gone.
 
         :rtype: bool
         """
@@ -562,8 +562,8 @@ class CloudHost(models.Model):
     def _direct_extra_peers(self):
         """Return what a layer above admits on the direct port besides hosts.
 
-        Core admits nothing more; the SaaS layer adds the servers its
-        customers rent while their reservation lives.
+        Core admits nothing more; a layer may add servers it rents out
+        while their reservation lives.
 
         :return: CIDR strings.
         :rtype: list
@@ -678,7 +678,7 @@ class CloudHost(models.Model):
     def _asks_wildcard_by_dns(self):
         """Whether this host asks for a wildcard certificate by DNS challenge.
 
-        Never in core. The SaaS layer answers for its catch-all host.
+        Never in core. A layer may answer for a catch-all host of its own.
 
         :rtype: bool
         """
@@ -707,7 +707,7 @@ class CloudHost(models.Model):
     def _direct_convergence_crons(self):
         """Return the crons that converge on a change of the direct path.
 
-        Core: the agents' reconciliation. The SaaS layer adds its tenants'.
+        Core: the agents' reconciliation. A layer adds its own.
 
         :return: XML ids.
         :rtype: list
@@ -733,7 +733,7 @@ class CloudHost(models.Model):
     def _direct_published_names(self):
         """Return the direct names this host serves, and how to check each.
 
-        Core: the central's, on the central's host. The SaaS layer adds
+        Core: the central's, on the central's host. A layer may add
         the panel's own name on the host whose address is the panel's.
 
         :return: ``[{"prefix", "name", "checks"}]``, checks as
@@ -799,8 +799,8 @@ class CloudHost(models.Model):
     def _direct_reach_probes(self, write_url):
         """Return what the host tries before taking the direct path.
 
-        Core: the write URL answers 401 without a credential (vmauth). The
-        SaaS layer adds the panel's direct name, which the panels on this
+        Core: the write URL answers 401 without a credential (vmauth). A
+        layer may add the panel's direct name, which the panels on this
         host would call.
 
         :param str write_url: the direct URL on offer.
@@ -816,8 +816,8 @@ class CloudHost(models.Model):
     def _offered_actions(self):
         """Offer Sync Direct Path only on a host that publishes a direct port.
 
-        Elsewhere the job has nothing to apply and refuses to run: a
-        tenant panel's hosts, and a self-hosted panel's until a direct
+        Elsewhere the job has nothing to apply and refuses to run: the
+        hosts of a panel whose settings another panel pushes, and a self-hosted panel's until a direct
         port is applied.
 
         :return: ``cloud.job.type`` records.

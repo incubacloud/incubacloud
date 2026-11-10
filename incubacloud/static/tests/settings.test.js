@@ -238,7 +238,7 @@ describe("Settings — the footer shows where something can be saved", () => {
         // Neither registers: a failed load shows Retry, a read-only tab
         // has nothing to send.
         expect(canSave("agents", [])).toBe(false);
-        expect(canSave("saas", ["rates", "agents"])).toBe(false);
+        expect(canSave("billing", ["rates", "agents"])).toBe(false);
     });
 
     test("a tab offers Save once one of its sections registered", () => {

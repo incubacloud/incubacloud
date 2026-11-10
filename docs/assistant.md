@@ -187,19 +187,18 @@ the same save: a box asked each time it is switched on. A new provider puts it o
 same save as the provider. Three hooks of `cloud.settings` make the box what the
 panel has to accept:
 
-| Hook | Core alone (self-hosted) | Tenant panel (`incubacloud_tenant`) |
+| Hook | Core alone (self-hosted) | A module that extends the panel |
 | --- | --- | --- |
-| `_assistant_terms_label()` | «I understand that what the assistant reads is sent to my AI provider, and that it can make mistakes» | «I accept section 12A (AI features) of the Terms of Service» |
-| `_assistant_terms_url()` | `""`: no link | The platform's Terms |
-| `_assistant_record_terms_acceptance(acceptance)` | Kept in the panel, version empty | IncubaCloud records it on the customer's contact first and answers the version |
+| `_assistant_terms_label()` | «I understand that what the assistant reads is sent to my AI provider, and that it can make mistakes» | Its own label, such as the acceptance of a section of its Terms |
+| `_assistant_terms_url()` | `""`: no link | The address of its Terms |
+| `_assistant_record_terms_acceptance(acceptance)` | Kept in the panel, version empty | Records it where it keeps its contracts first and answers the version |
 
 `get_settings` answers `terms_label` and `terms_url`; the tab shows the link only when
 there is an address, and the refusal without the box quotes the label. The record is
 four system-only fields (date, version, user, address). The tab's line under the form
-names section 12A and the version when there is one, and otherwise says only when,
-who and from where. A self-hosted panel has no contract with IncubaCloud: it never
-links or names its Terms. `_assistant_available_for` requires that an acceptance
-exists.
+names the Terms and the version when there is one, and otherwise says only when,
+who and from where. Core alone has no Terms of its own: it never links or names any.
+`_assistant_available_for` requires that an acceptance exists.
 
 The assistant's settings fields are written only by the routes (`save_settings`,
 the model refresh), never through the ORM by a manager.
@@ -213,13 +212,13 @@ the model refresh), never through the ORM by a manager.
   is not checked before it; a model without a known price counts as zero, which is why
   it cannot be used under a limit; the cache OpenRouter does not separate is counted as
   full input.
-- On a tenant panel of 2 workers (`root:1`), the channel `root.assistant:1` adds no
+- On a panel of 2 workers (`root:1`), the channel `root.assistant:1` adds no
   capacity: a step and a deploy wait for each other. Production sets
   `root.assistant:3`. Without a line for the channel in `[queue_job] channels`, its jobs
   share root's.
 - A new branch or a pull request starts the workflows the repository already runs on
   them; the assistant cannot write under `.github/`.
-- A free tenant whose panel falls asleep can lose a running task; the user retries it
+- A panel that is put to sleep when idle can lose a running task; the user retries it
   when it wakes.
 
 ## Sources
@@ -227,14 +226,14 @@ the model refresh), never through the ORM by a manager.
 `sources.py` serves `search_docs`, `search_code` and `read_code`. The documentation is
 `docs/user/docs/**/*.md` of core's repository, searched by keywords (in English), by
 section, answering the page's link and anchor. A built image has no `docs` folder
-(Doodba's `400-clean` keeps only the modules of each repository), so on the master and
-on the tenant panels the same search runs on the index mkdocs publishes with the site
+(Doodba's `400-clean` keeps only the modules of each repository), so on a panel run
+from an image the same search runs on the index mkdocs publishes with the site
 (`search/search_index.json`), read at most once an hour; when the site cannot be read
 the copy last read serves, and with none the tool answers where the documentation is.
 What the assistant finds is therefore the published guide, not the image's. The code is
 a **closed list** of top-level entries of core's repository (`PUBLIC_ENTRIES`), found
-from the real path of the `incubacloud` module: on the master and on tenant panels the
-private code of saas is installed beside it, and nothing else on the disk is read.
+from the real path of the `incubacloud` module: the modules of other repositories
+installed beside it are not read, and nothing else on the disk is read.
 `AGENTS.md`, the repository's tooling and notes (`NOT_READ`) stay out. Only text files
 of known extensions, no hidden folder, `static/lib`, `site` or caches, 256 KB a file, 5
 s a search; a path with `..`, a link out of the folder or a binary file is refused. A

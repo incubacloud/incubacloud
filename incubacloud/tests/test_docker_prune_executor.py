@@ -1,11 +1,11 @@
 """Tests for the docker_prune executor's protect-label filter.
 
 The filter is what keeps ``docker system prune -af`` from sweeping
-containers that are stopped on purpose (the SaaS warm pool). It was
-already designed once and silently lost: a SaaS-side monkey-patch of
+containers that are stopped on purpose (spares deployed ahead of time). It
+was already designed once and silently lost: a layer's monkey-patch of
 ``get_commands`` implemented it, and the method stopped being called the
 day this executor moved to ``AnsibleExecutor`` — nothing failed, the
-prune just went back to unfiltered and wiped a warm instance's
+prune just went back to unfiltered and wiped a spare instance's
 containers between its rebuild and that night's backup.
 
 So these assertions pin the *mechanism* (Python and playbook agreeing on
@@ -443,7 +443,7 @@ class TestTheDailySweepOfTmp(TransactionCase):
                 ".incubacloud-shop-backup.env",
                 ".incubacloud-shop-incubacloud.env",
                 # The deploy's other files, the proxy's keys and the ACME
-                # store, the whitelist, the SaaS layer's (I4, 28-oct-2026).
+                # store, the whitelist, a layer's (I4, 28-oct-2026).
                 ".incubacloud-shop-addons.yaml", ".incubacloud-shop-odoo.conf",
                 ".incubacloud-shop-pip.txt", ".incubacloud-shop-apt.txt",
                 ".incubacloud-shop-override.yml",
@@ -520,7 +520,7 @@ class TestPruneSummary(TransactionCase):
         executor = self._executor()
         executor._summarize_prune_output(
             "Deleted Containers:\nabc123\ndef456\n\n"
-            "Deleted Networks:\nic-tenant-x_default\n\n"
+            "Deleted Networks:\nic-acme-x_default\n\n"
             "Deleted Images:\nuntagged: foo\ndeleted: sha256:bar\n\n"
             "Total reclaimed space: 5.9GB"
         )
@@ -528,7 +528,7 @@ class TestPruneSummary(TransactionCase):
         self.assertIn("2 containers", logged)
         self.assertIn("1 networks", logged)
         self.assertIn("2 images", logged)
-        self.assertIn("ic-tenant-x_default", logged)
+        self.assertIn("ic-acme-x_default", logged)
 
     def test_empty_output_logs_nothing(self):
         executor = self._executor()
@@ -698,7 +698,7 @@ class TestPostPruneGuard(TransactionCase):
     def test_missing_managed_container_raises_critical(self):
         project = self.instance.doodba_project_name
         # db survived (running while asleep), odoo was swept — the
-        # exact shape of a pruned Sablier-slept tenant.
+        # exact shape of a pruned Sablier-slept instance.
         self.executor._check_managed_containers(
             self._survivors(f"{project}-db-1"),
         )

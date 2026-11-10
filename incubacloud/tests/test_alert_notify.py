@@ -88,7 +88,7 @@ class TestAlertNotifyEmail(TransactionCase):
         return self.env["mail.mail"].sudo().search(domain)
 
     # ── the mail says which panel it comes from ───────────────────
-    # Every tenant panel mails the same support mailbox, and until
+    # Every managed panel may mail the same support mailbox, and until
     # 2026-10-13 nothing in the mail said which one was talking: the
     # subject was identical and the log link was relative.
 
@@ -418,11 +418,11 @@ class TestProviderAudience(TestAlertNotifyEmail):
         ]))
 
     # ── for_provider: core's field, a relaying layer's to set ─────
-    # The tenant module hides what it relays with a global record rule
-    # on ``for_provider``. That rule is in a tenant panel's database
+    # A layer may hide what it relays with a global record rule
+    # on ``for_provider``. That rule is in such a panel's database
     # while core loads alone -- its at_install tests, a migration or a
     # ``<function>`` of core or pitr -- and until 27-oct-2026 only the
-    # tenant declared the field: every alert raised there failed with
+    # layer declared the field: every alert raised there failed with
     # "Invalid field cloud.alert.for_provider".
 
     def test_core_never_marks_an_alert_for_the_provider(self):
@@ -435,7 +435,7 @@ class TestProviderAudience(TestAlertNotifyEmail):
         self.assertFalse(alert.for_provider)
 
     def test_a_rule_on_the_mark_holds_with_core_alone(self):
-        """The tenant's rule, against core's model: valid, and an alert
+        """A layer's rule, against core's model: valid, and an alert
         raised under it reaches the operator it reached before."""
         self.env["ir.rule"].create({
             "name": "Alert: provider alerts belong to the provider",
@@ -454,7 +454,7 @@ class TestSilentAlerts(TransactionCase):
 
     Core announces every alert: ``_silent_alert_codes`` answers an empty
     set. A layer whose panel lists an alert without announcing it adds
-    its code there (the tenant module, for an outdated hardening), and
+    its code there (for instance, an outdated hardening), and
     every way out of the panel asks: the mail and the external channels,
     at the alert's opening, its turning critical and its resolution,
     and the daily digest (``TestAlertNotifyDigest``).

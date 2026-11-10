@@ -48,7 +48,7 @@ _LONG_TRACEBACK = [
     ],
     "    record._check_field_access(self, 'read')",
     "odoo.exceptions.AccessError: You do not have enough rights to "
-    'access the field "core_saas_url" on IncubaCloud Settings.',
+    'access the field "remote_panel_url" on IncubaCloud Settings.',
 ]
 
 #: What ``grep -A`` prints once the traceback is over: the next log
@@ -169,7 +169,7 @@ class TestErrorLogContext(TransactionCase):
         """Trimming a long traceback must eat the middle, not the end.
 
         The alert that hid BUG-008 for a week stored twenty-five lines
-        and stopped one frame short of ``AccessError: … core_saas_url``.
+        and stopped one frame short of ``AccessError: … remote_panel_url``.
         Everything it did keep — ``ir_cron``, ``ir_actions``,
         ``safe_eval`` — is identical in every cron failure there is.
         """

@@ -6,7 +6,7 @@ airtight — there is one account, minted by that same deployment, so
 minting and granting are the same act and cannot drift.
 
 A shared central breaks the equivalence. Accounts are minted whenever a
-tenant appears, while the list stays a snapshot of whoever existed the
+panel is given one, while the list stays a snapshot of whoever existed the
 last time somebody deployed. Everyone minted after it holds a credential
 the gateway has never heard of, and their agents retry against a 401
 forever — indistinguishable, from their side, from our software being
@@ -49,7 +49,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         The document is complete because it replaces the file: a partial
         list would revoke everyone missing from it. The account list is
         the delta because it only drives Grafana provisioning, which is
-        idempotent — so the difference is cost, and at a thousand tenants
+        idempotent — so the difference is cost, and at a thousand accounts
         the difference is the whole point.
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
@@ -86,7 +86,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             ),
             "ic_accounts": new,
             # The whole list, not the delta: the organisations of accounts
-            # missing from it are deleted, which is how a tenant that left
+            # missing from it are deleted, which is how an account that left
             # stops leaving one behind.
             "ic_account_names": [user for user, _password in accounts],
             # The boundary probe and every Grafana call authenticate AS

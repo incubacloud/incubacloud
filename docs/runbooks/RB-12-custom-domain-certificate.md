@@ -6,7 +6,7 @@ instead of the per-domain Let's Encrypt certificate the panel issues by
 default.
 
 **What it means:** on the instance's domain row you set **Certificate**
-to *Existing certificate*. That tells the tenant's router to enable TLS
+to *Existing certificate*. That tells the instance's router to enable TLS
 **without naming an ACME resolver**, so Traefik serves a certificate its
 own store already holds for that hostname — the host's default
 certificate, or one loaded by hand.
@@ -109,7 +109,7 @@ changes are picked up without a restart.
    *Existing certificate*.
 2. **Save.**
 3. **Rebuild the instance.** Editing a domain does not regenerate the
-   tenant's compose files on its own — the labels are written by
+   instance's compose files on its own — the labels are written by
    `copier`, which only runs on deploy/rebuild.
 4. Read the job log. Each domain gets one line:
    - `TLS for <domain>: host's certificate` — 2A, and it covers the name.
@@ -144,7 +144,7 @@ site on the box. A "No TLS" domain therefore still lands on port 443 and
 gets the self-signed default. It is faithful to doodba's semantics, but
 under our edge it behaves as "self-signed", not as "plain HTTP". Do not
 change the host-wide redirect to work around this — it affects every
-tenant on that host.
+instance on that host.
 
 ## 6. Renewal
 

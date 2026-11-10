@@ -524,10 +524,10 @@ class TestGitConfigIdempotentGuard(BaseCase):
     """Pin the read-first guard on ``init.defaultBranch``.
 
     An unconditional ``git config --global init.defaultBranch master``
-    takes the ``~/.gitconfig`` lock on every deploy/rebuild/warm-claim.
-    When two jobs hit the same host in the same tick (warm pool cron
-    enqueues N builds against one host, the dedicated ``root.warm``
-    channel runs them in parallel), the second one fails with
+    takes the ``~/.gitconfig`` lock on every deploy and rebuild.
+    When two jobs hit the same host in the same tick (a cron enqueues
+    N builds against one host and a dedicated channel runs them in
+    parallel), the second one fails with
     ``error: could not lock config file ~/.gitconfig: File exists``
     and the whole deploy unravels.
 
@@ -806,7 +806,7 @@ class TestTheBuildFollowsTheBranchHeads(BaseCase):
 
     def test_a_layers_release_pin_is_a_pin(self):
         """A subclass answering ``_repo_merge_ref`` with a commit the row
-        does not hold (the tenant's release pointer) pins it too."""
+        does not hold (a layer's release pointer) pins it too."""
         repo = SimpleNamespace(
             url="https://github.com/acme/core.git",
             branch="19.0", commit_sha=False,

@@ -27,7 +27,7 @@
   --rl-green-btn:var(--rl-green); --rl-green-btn-hover:var(--rl-green-dim);
   --rl-amber:#efa53e; --rl-amber-soft:rgba(239,165,62,.14); --rl-amber-fg:#1c1408;
   --rl-red:#ff6063; --rl-red-soft:rgba(255,96,99,.15); --rl-red-fg:#2a0808;
-  // Info accent (cyan, NOT a SaaS blue — and dusty enough to never read as the
+  // Info accent (cyan, NOT a generic web-app blue — and dusty enough to never read as the
   // brand green): toasts, announcement severity "info", password level "good".
   --rl-cyan:#4fb6c6; --rl-cyan-dim:#43a3b2; --rl-cyan-soft:rgba(79,182,198,.14);
   --rl-cyan-fg:#06222a; --rl-cyan-text:#9fd6e2;
@@ -235,7 +235,7 @@
   .rl-pill--job.running { color:var(--rl-cyan-text); }
   .rl-pill--job.running .rl-d { background:var(--rl-cyan); box-shadow:0 0 0 3px var(--rl-cyan-soft); animation:rl-pulse 1.2s infinite; }
 
-  // ── State badge (tenants / users / generic) ──────────────────────────────
+  // ── State badge (accounts / users / generic) ─────────────────────────────
   .rl-sb {
     display:inline-flex; align-items:center; gap:6px; font-family:var(--rl-fm); font-size:10.5px;
     padding:3px 9px 3px 7px; border-radius:999px; border:1px solid var(--rl-line2); color:var(--rl-muted);
@@ -395,7 +395,7 @@
   // The row styles its OWN caption and field: a direct child, or a
   // class-less control in a plain wrapper (language picker, rl-frow-inline).
   // A control that carries a class inside a wrapper belongs to a component
-  // (domain row, TagSelector, PasswordInput, SearchSelect, warm-pool
+  // (domain row, TagSelector, PasswordInput, SearchSelect, a
   // stepper, checkbox labels) and keeps that component's CSS. Reaching them
   // too painted every one over — the input selector outweighs any
   // single-class rule — and broke the domain row outright: its certificate

@@ -389,7 +389,7 @@ class AcmePruneCase(EdgeExecutorCase):
     publishes its whole ACME store under the default TLS store at
     start-up and picks by server name before consulting a router, so
     until an entry is gone from the store it keeps winning — which is
-    how six tenants went on presenting certificates they can no longer
+    how six instances went on presenting certificates they can no longer
     renew, with correct routers and nothing in the logs.
     """
 

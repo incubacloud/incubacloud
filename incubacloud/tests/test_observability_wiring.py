@@ -178,7 +178,7 @@ class TestDashboardsMatchTheSpa(BaseCase):
     def test_running_means_what_the_panel_means_by_running(self):
         """The panel decides ``running`` from the ``odoo`` container
         alone (``_ODOO_EXPRESSION``). Counting "any container", as the
-        card used to, made a Free tenant asleep with ``db`` up count as
+        card used to, made an instance asleep with ``db`` up count as
         running — and since 1.0.145 a sleeping one counts as nothing."""
         expression = self._fleet_panel("Instances running")["targets"][0]["expr"]
         self.assertIn(
@@ -880,10 +880,10 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
 
 
 class TestGrafanaIdentityIsNotInTheComposeFile(BaseCase):
-    """Why adding a tenant stopped recreating Grafana.
+    """Why adding an account stopped recreating Grafana.
 
     The organisation map names every account, so it changed with every
-    tenant — and it lived in the compose file, whose every change makes
+    account — and it lived in the compose file, whose every change makes
     ``up -d`` recreate the container. One new account dropped every open
     session in the fleet, which is what made automating the grant look
     unacceptable in the first place.
@@ -961,7 +961,7 @@ class TestObservabilityCapabilities(TransactionCase):
     Grafana URL, the Settings tab read who owns the settings, and the
     instance Metrics tab read none of them. Four definitions is four ways
     to contradict each other, and the contradiction that shipped was a
-    tenant panel offering a Monitoring entry whose only possible message
+    managed panel offering a Monitoring entry whose only possible message
     was an instruction to open the Settings tab it hides.
     """
 
@@ -1029,7 +1029,7 @@ class TestObservabilityCapabilities(TransactionCase):
         """``configure`` is core's answer for its own operator, and core
         has no notion of a panel whose settings arrive from elsewhere.
         The layer that injects them says so; core saying it would mean
-        core knowing about tenants."""
+        core knowing about other panels."""
         for enabled in (True, False):
             self.settings.metrics_enabled = enabled
             self.assertTrue(self._caps()["configure"])
@@ -1052,7 +1052,7 @@ class TestNavGateConsultsEveryAxis(BaseCase):
     attribute, and the bug it guards against is precisely the one that
     reads *plausible*: ``observability`` alone looks like it means "is
     observability on", and that reading is what put a dead-end entry in
-    every tenant's sidebar.
+    every managed panel's sidebar.
     """
 
     def _nav_gate(self):
@@ -1079,7 +1079,7 @@ class TestNavGateConsultsEveryAxis(BaseCase):
 
     def test_it_offers_dashboards_or_a_way_to_set_them_up(self):
         """Either there is something to look at, or this operator is the
-        one who could set it up. A tenant is neither, and that is the
+        one who could set it up. A managed panel is neither, and that is the
         case the old single flag could not express."""
         gate = self._nav_gate()
         self.assertIn("observability?.dashboards or", gate)
@@ -1097,7 +1097,7 @@ class TestTheDefaultOrganisationIsNotAPrivilegedFallback(BaseCase):
     path: no account filter, the whole fleet.
 
     Structural because the failure is silent from every angle. The
-    tenant sees a dashboard that works, the operator sees an org nobody
+    other panel sees a dashboard that works, the operator sees an org nobody
     uses, and the only difference between the two readings is which
     session rendered the iframe.
     """
@@ -1300,7 +1300,7 @@ class TestTeardownStopsTheAgents(BaseCase):
 
 
 class TestStaleOrganisationsAreDeleted(BaseCase):
-    """A tenant that leaves stops leaving its Grafana organisation behind.
+    """An account that leaves stops leaving its Grafana organisation behind.
 
     Organisations were created and never deleted — seven were removed by
     hand on 2026-09-20. The task file now converges against the whole
@@ -1376,7 +1376,7 @@ class TestStaleOrganisationsAreDeleted(BaseCase):
 
 
 class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
-    """The host's tenants share ``inverseproxy_shared``; the agents must not.
+    """The host's instances share ``inverseproxy_shared``; the agents must not.
 
     That network is flat: every instance's Odoo, the warm spares and the
     proxy see each other on it. vmagent used to join it to scrape
@@ -1505,7 +1505,7 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
 
 
 class TestUsersOfGoneAccountsAreRemoved(BaseCase):
-    """2-nov-2026: a tenant re-created with the same e-mail got "User sync
+    """2-nov-2026: an account re-created with the same e-mail got "User sync
     failed" in Grafana, because the user of its old login was still there."""
 
     _TASKS = _ROOT / "ansible" / "playbooks" / "tasks" / "grafana_orgs.yml"
@@ -1544,7 +1544,7 @@ class TestUsersOfGoneAccountsAreRemoved(BaseCase):
 
 
 class TestMonitoringExplainsAnEmptyFleet(BaseCase):
-    """2-nov-2026: a tenant without a server saw every chart read "No data"."""
+    """2-nov-2026: a panel without a server saw every chart read "No data"."""
 
     _TEMPLATE = _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.xml"
 

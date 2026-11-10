@@ -18,8 +18,8 @@ class CloudInstanceMove(models.Model):
 
         False on a bare core install: the A-record belongs to whoever
         runs the panel, so after a cutover the instance answers on a
-        different IP and stays unreachable until a human updates it. The
-        SaaS layer overrides this for tenants whose DNS it manages.
+        different IP and stays unreachable until a human updates it. A
+        layer overrides this for the instances whose DNS it manages.
         """
         self.ensure_one()
         return False

@@ -4,8 +4,8 @@ Two jobs live here, and they answer different questions.
 
 **Labels.** vmagent's scrape config carries one relabelling block per
 instance on the host — that is what turns a raw cAdvisor container sample
-into something attributable to a ``cloud.instance``, a project and a
-tenant. The block is rendered from the instance list at the moment the
+into something attributable to a ``cloud.instance``, a project and an
+account. The block is rendered from the instance list at the moment the
 agents are installed, so it is a snapshot, and every instance deployed,
 moved or removed afterwards left it stale. The playbook is idempotent, so
 the fix is to re-run it whenever the set changes.

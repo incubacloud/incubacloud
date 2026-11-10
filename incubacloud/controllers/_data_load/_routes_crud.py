@@ -126,13 +126,13 @@ class CrudMixin:
                 # observability — collect / dashboards / configure. One
                 # descriptor rather than a flag per screen: the two flat
                 # booleans this replaces were read by four surfaces that
-                # each picked a different one, and a tenant panel ended
+                # each picked a different one, and a managed panel ended
                 # up offering a Monitoring entry whose only message was
                 # "configure it in Settings" — the one tab it hides.
                 # See cloud.settings._observability_capabilities.
                 'observability': Settings._observability_capabilities(),
                 # Where this panel may reach a Git provider: 'any' in the
-                # core, 'public' in a tenant's panel.
+                # core, 'public' where a layer says so.
                 'git_providers': {
                     'network': request.env[
                         'cloud.git.provider'
@@ -278,8 +278,8 @@ class CrudMixin:
                 # The field's default: the newest series this panel's
                 # pin renders (``_odoo_versions.new_record_default``).
                 'odoo_version': defaults.get('odoo_version', ''),
-                # The fields' defaults, which a layer may set (a tenant
-                # panel names the tenant and imposes no licence).
+                # The fields' defaults, which a layer may set (its own
+                # author, no licence).
                 'project_author': defaults.get('project_author', ''),
                 'project_license': defaults.get('project_license', ''),
             }
@@ -1031,7 +1031,7 @@ class CrudMixin:
             #     ``unlink`` is safe and keeps the table clean.
             #
             #   * The host already accumulated jobs (e.g. on-demand VPS
-            #     where ``tenant_vps_provision`` succeeded but the
+            #     where a layer's server provisioning succeeded but the
             #     chained ``host_hardening`` + ``full_setup`` never ran,
             #     so Traefik is not deployed yet but provision history
             #     exists): ``unlink`` would violate the
@@ -1040,7 +1040,7 @@ class CrudMixin:
             #     ``delete_host`` executor uses on the deployed branch,
             #     preserves the job history, and ``write({'active':
             #     False})`` still fires ``_release_external_resources``
-            #     so downstream modules (tenant on-demand VPS release,
+            #     so downstream modules (an on-demand server's release,
             #     DNS, etc.) clean up provider-side state.
             #
             # A host shell leaves no job but the same kind of history: its
@@ -1583,8 +1583,8 @@ class CrudMixin:
         Where the copy lives is manager-only, the same rule SEC-009 set
         for every other endpoint that could name a bucket: the frozen
         destination and the backend's name are exactly the metadata the
-        backends list is gated on, and in SaaS that storage is ours, not
-        the tenant's. Everyone who can see the project still sees that
+        backends list is gated on, and where a layer provides that storage
+        it is the layer's, not the user's. Everyone who can see the project still sees that
         there is a copy, how big it is and when it was last checked —
         none of which says where it is.
         """

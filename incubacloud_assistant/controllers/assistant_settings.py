@@ -81,7 +81,8 @@ class AssistantSettingsRoutes(http.Controller):
 
         The platform's own users are left out
         (``cloud.settings._assistant_is_platform_user``): the cron bot and
-        Odoo's, and on a tenant panel IncubaCloud's support user. The manager
+        Odoo's, and whatever support user a module that extends the panel
+        adds. The manager
         sees, and may choose, the people of the panel only.
         """
         Settings = request.env["cloud.settings"]
@@ -426,10 +427,10 @@ class AssistantSettingsRoutes(http.Controller):
     def _terms_accepted(vals):
         """Record the manager's ticked box; return its fields.
 
-        The box (``accept_ai_terms``) must be ``True`` itself: section 12A
-        of the Terms on a tenant panel, an acknowledgement on core alone
-        (``cloud.settings._assistant_terms_label``). The hook records it (on
-        a tenant panel, IncubaCloud first, which answers the version); a
+        The box (``accept_ai_terms``) must be ``True`` itself: a section
+        of the Terms where a layer has them, an acknowledgement on core alone
+        (``cloud.settings._assistant_terms_label``). The hook records it (where
+        a layer has Terms, there first, which answers the version); a
         refusal of the hook is the save's.
 
         :raises _Refusal: without the box, or when it could not be recorded

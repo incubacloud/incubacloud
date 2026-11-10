@@ -12,8 +12,8 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
     destination never becomes healthy the job FAILS, which breaks the
     move chain so the source is never frozen and the instance stays
     recoverable. On success it flips ``host_id`` to the destination,
-    clears the in-flight marker and fires ``_on_move_cutover`` (SaaS
-    re-points the managed DNS record).
+    clears the in-flight marker and fires ``_on_move_cutover`` (a layer
+    may re-point a DNS record it manages).
     """
 
     _job_type = "move_cutover"
@@ -118,8 +118,8 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
                 )
             else:
                 Alert.resolve_alert("move_slow_cut", instance=inst)
-        # Hook: SaaS re-points DNS at the new host IP and finalizes the
-        # tenant. Core is a no-op.
+        # Hook: a layer may re-point DNS at the new host IP and finish
+        # what it owns. Core is a no-op.
         inst._on_move_cutover(origin, cut_seconds=cut_seconds)
         self._call_addon_hook(inst, "_after_restore_hook", "move")
         # Nothing re-pointed DNS: say so loudly. The move succeeded but
@@ -155,7 +155,7 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         ``move_to_host`` sets the markers (origin, target, chain) before
         queueing; the chain cancelled whole in the queue, nothing on any
         host changed, so the markers go and whoever inherits the record
-        (the SaaS tenant) is told the move was undone. The markers of a
+        (a layer's record) is told the move was undone. The markers of a
         move whose rollback is under way are the rollback's to clear.
         """
         inst = self._inst()

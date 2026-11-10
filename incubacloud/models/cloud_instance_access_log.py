@@ -107,9 +107,9 @@ class CloudInstance(models.Model):
     def _access_log_names(self):
         """Return the Traefik name prefixes this instance answers under.
 
-        Core knows the one derived from the copier project name. The SaaS
-        layer overrides this to add the router it puts in front for
-        sleep/wake, because only it knows that router exists.
+        Core knows the one derived from the copier project name. A layer
+        that puts a router in front for sleep/wake overrides this to add
+        it, because only it knows that router exists.
         """
         self.ensure_one()
         name = self.doodba_project_name or self.name or ""

@@ -483,7 +483,7 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
     A rebuild updates a panel's database in a container of the new image
     while the old server keeps serving: its runner took a job the update
     queued, of a type its code did not know, and the job failed for good
-    (``push_edge_guard`` on a tenant's panel, 7-nov-2026).
+    (``push_edge_guard`` on a managed panel, 7-nov-2026).
     """
 
     def setUp(self):
@@ -1530,7 +1530,7 @@ class TestDuplicityFilenameParser(TransactionCase):
 
     def test_prefixed_names_from_the_backup_image(self):
         """Names as the image writes them, with the per-host file prefixes."""
-        host = 'backup.tenant.example.io'
+        host = 'backup.acme.example.io'
         self.assertEqual(self._iso(
             f'archive-{host}-duplicity-full.20261025T010009Z.vol1.difftar.gpg',
         ), '20261025T010009Z')
@@ -1783,7 +1783,7 @@ class TestConnectionRetryAndNotify(TransactionCase):
 
         queue_job already postpones and retries serialisation failures.
         Wrapping one in ``JobError`` made it terminal *and* printed a
-        traceback that the tenant log scraper reported back as an
+        traceback that the instance log scraper reported back as an
         ``instance_error_logs`` alert — an outage report for two crons
         stamping the same row.
         """

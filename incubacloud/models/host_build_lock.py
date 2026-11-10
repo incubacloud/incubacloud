@@ -26,16 +26,16 @@ The lock is transactional, so it is released when the worker commits at
 job end — and also on rollback or a crashed worker, which is why nothing
 can leave it held.
 
-The namespace is shared with the warm-pool build lock (originally
-``WarmHostLockMixin``, which solved this for warm builds only). One
+The namespace is shared with the build lock a layer may take for
+builds of its own (the first one solved this for its builds only). One
 namespace is what makes "at most one build per host" true across all of
 them: two families each holding their own lock would still collide.
 """
 from odoo.addons.queue_job.exception import RetryableJobError
 
 # Single namespace for every per-host lock, whatever enqueued the work:
-# manual rebuild, tenant rebuild, warm deploy, warm rebuild, and the
-# instance teardowns. Distinct from ``_JOB_LOCK_NAMESPACE`` in
+# manual rebuild, a layer's deploys and rebuilds, and the instance
+# teardowns. Distinct from ``_JOB_LOCK_NAMESPACE`` in
 # ``cloud.job`` so the two lock families never collide. Released on
 # COMMIT/ROLLBACK automatically.
 _HOST_BUILD_LOCK_NS = 0x0C70BB1D

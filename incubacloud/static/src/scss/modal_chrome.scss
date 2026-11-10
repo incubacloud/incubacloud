@@ -2,7 +2,7 @@
 //  Shared modal chrome — `.ic-modal-overlay`, `.ic-modal`, `.ic-frow`,
 //  `.ic-btn`, `.ic-alert`.
 //  Used by every Relay-styled standalone dialog (import modal, remote file
-//  browser, and the saas/tenant order dialogs). Styled with the `--rl-*`
+//  browser, and the dialogs of modules on top). Styled with the `--rl-*`
 //  tokens: relay.scss defines them on :root precisely so they resolve in
 //  dialogs that mount OUTSIDE `.ic-app`, and both files ship in the same
 //  /cloud bundle — so the chrome follows the active light/dark theme at any

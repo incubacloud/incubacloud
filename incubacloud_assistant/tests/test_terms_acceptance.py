@@ -1,8 +1,7 @@
 """Switching the assistant on needs a box ticked, each time (28-oct).
 
-On a tenant panel the box is «I accept section 12A (AI features) of the
-Terms of Service», with a link to them, and IncubaCloud records it first
-(incubacloud_tenant, task 24). On a self-hosted core there are no Terms of
+Where a module that extends the panel has Terms, the box accepts a section
+of them, with a link, and that module records it first. On a self-hosted core there are no Terms of
 IncubaCloud's: the box is a plain acknowledgement, without a link. Without
 it the assistant stays off. The acceptance (date, version, address, user) is
 kept on the settings and shown in the tab.
@@ -223,13 +222,10 @@ class TestCoreKeepsItOnThePanel(AssistantMixin, TransactionCase):
     """Core alone: no Terms of IncubaCloud's; the acceptance stays here, no version."""
 
     def setUp(self):
-        """Core alone only: a tenant panel overrides the hooks (incubacloud_tenant)."""
+        """Core alone only: a layer with Terms of its own overrides the hooks."""
         super().setUp()
-        tenant = self.env["ir.module.module"].search(
-            [("name", "=", "incubacloud_tenant"), ("state", "=", "installed")]
-        )
-        if tenant:
-            self.skipTest("a tenant panel has IncubaCloud's Terms (incubacloud_tenant)")
+        if self.env["cloud.settings"]._assistant_terms_url():
+            self.skipTest("a layer installed here has Terms of its own")
 
     def test_the_box_names_no_terms_and_links_nowhere(self):
         """A self-hosted panel has no contract with IncubaCloud to accept."""

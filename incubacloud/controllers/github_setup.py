@@ -95,16 +95,16 @@ class GitHubSetupController(http.Controller):
 
     @staticmethod
     def _github_app_name(base_url, fallback=""):
-        """Derive a fleet-unique GitHub App name from the tenant's host.
+        """Derive a fleet-unique GitHub App name from the panel's host.
 
         GitHub App names must be globally unique and at most 34 chars.
-        Tenants share the same company name, so we use the host
-        *subdomain* (unique across the IncubaCloud fleet) rather than the
+        Panels may share the same company name, so we use the host
+        *subdomain* (unique among panels under one domain) rather than the
         company name: take the first DNS label, sanitise non-alphanumerics
         to hyphens, and cap the result at 34 chars. Falls back to ``app``
         when no usable label is present.
 
-        :param base_url: the tenant's base URL (e.g. ``https://x.foo.io``).
+        :param base_url: the panel's base URL (e.g. ``https://x.foo.io``).
         :param fallback: hostname to use when ``base_url`` has none.
         """
         host_label = urllib.parse.urlparse(base_url).hostname or fallback or ""

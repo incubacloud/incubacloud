@@ -89,10 +89,12 @@ deliberately cannot write most of them.
 
 ```python
 env['res.users']._incubacloud_ensure_cron_bot()
-for module in ('incubacloud',
-               'incubacloud_saas_manager',
-               'incubacloud_oidc_provider',
-               'incubacloud_tenant'):
+modules = env['ir.module.module'].search([
+    ('state', '=', 'installed'),
+    '|', ('name', '=', 'incubacloud'),
+    ('dependencies_id.name', '=', 'incubacloud'),
+])
+for module in modules.mapped('name'):
     env['res.users']._incubacloud_assign_cron_user_id(
         module_name=module,
     )

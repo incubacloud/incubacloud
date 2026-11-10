@@ -70,7 +70,7 @@ class TestTheCompanyLayout(TransactionCase):
         without ``web.base.url`` must not fail there. Links become
         absolute when ``mail.mail`` sends."""
         # The ORM refuses to delete the parameter; a database can still
-        # lack it, as a freshly created tenant test database does.
+        # lack it, as a freshly created test database does.
         self.env.cr.execute(
             "DELETE FROM ir_config_parameter WHERE key = 'web.base.url'",
         )

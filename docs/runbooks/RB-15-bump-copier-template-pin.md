@@ -1,12 +1,12 @@
 # RB-15 — Bump the doodba template pin
 
 **Severity:** planned maintenance · **When:** you decide to adopt a
-newer `doodba-copier-template` release for tenant deploys.
+newer `doodba-copier-template` release for the instances' deploys.
 
 Every instance deploy runs `copier copy` against the template pinned by
 **Settings → Doodba template version** (`copier_template_ref`,
 currently `v10.0.8`). Pinning means upstream improvements arrive when
-*you* run this runbook — never as a surprise inside a tenant deploy.
+*you* run this runbook — never as a surprise inside an instance's deploy.
 
 > **Also re-check the odoo service's `command`.** The compose override
 > replaces it to add `--logfile`, so it repeats whatever the template

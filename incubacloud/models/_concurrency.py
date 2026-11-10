@@ -14,7 +14,7 @@ metrics cron stamps ``metrics_last_seen`` on the same rows, on their own
 schedules. They collided every couple of days. The loser did not simply
 retry quietly either — PostgreSQL's error reached Odoo's own SQL layer,
 which logs ``bad query`` at ERROR before anything can catch it, and the
-tenant log scraper then reported those lines back to the panel as an
+instance log scraper then reported those lines back to the panel as an
 ``instance_error_logs`` alert. A savepoint-and-retry would have fixed
 the failure and kept the log noise, so the fix has to be to not lose
 the race in the first place.

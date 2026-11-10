@@ -519,7 +519,7 @@ class CloudJob(models.Model):
         push merges into the rebuild of a push already waiting, whatever
         its repository (``RebuildInstanceExecutor._merge_queued_payload``).
         The type is the one the caller finally uses, so a layer that
-        routes a code to another type (the SaaS manager's tenant rebuild)
+        routes a code to another type (a rebuild of its own, say)
         is judged by the routed one.
 
         ``bypass_running_check`` means "I am part of the job running
@@ -928,8 +928,8 @@ class CloudJob(models.Model):
         ``blocking_alert`` fail before it, and a deploy's instance stayed
         in 'deploying' for good. The log and the job log get the lines
         ``_async_entry`` would have written: a refusal is a warning, and
-        anything else a defect of ours with its traceback — on a tenant's
-        panel, the only record of it IncubaCloud reads, since the probe
+        anything else a defect of ours with its traceback — on a managed
+        panel, the only record of it whoever manages it reads, since the probe
         leaves queue_job's tracebacks of a ``cloud.job`` out.
 
         Never raises: the caller raises *exc*'s ``JobError`` next.
@@ -1050,7 +1050,7 @@ class CloudJob(models.Model):
         server only afterwards. A job of a type that server's code does not
         know, queued by the update (a migration's ``push_edge_guard``), was
         taken by its runner within the second and failed for good with
-        ``No executor registered`` (a tenant's panel, 7-nov-2026): nothing
+        ``No executor registered`` (a managed panel, 7-nov-2026): nothing
         queued it again, and the host never got its edge guard.
 
         Such a job is put back in the queue, without spending its
@@ -1560,8 +1560,8 @@ class CloudJob(models.Model):
         """Job types whose enqueue cancels everything waiting on the instance.
 
         What waited would have run on an instance about to be removed.
-        Override in child modules and call super() to extend (the SaaS
-        manager adds its tenant delete).
+        Override in child modules and call super() to extend (a layer
+        adds a delete of its own).
 
         :return: job type codes
         :rtype: set
@@ -1900,7 +1900,7 @@ class CloudJob(models.Model):
 
         Two jobs of a collapsing type with the same identity are one.
         Core compares the payload alone; a layer that keeps part of the
-        load apart (the SaaS manager moves credentials to
+        load apart (one that moves credentials to
         ``secret_payload`` when the job is created) overrides this to
         split *payload* the same way, so two pushes with the same payload
         and different secrets stay two jobs.
@@ -2404,7 +2404,7 @@ class CloudJob(models.Model):
         mirror writes with ``ic_skip_state_hook``: that stores a stop
         already taken. Nor with ``ic_stop_past_no_return``: the key of a
         caller that is about to discard the instance the job works on,
-        whose database no longer matters (a tenant's provisioning started
+        whose database no longer matters (a layer's provisioning started
         again archives its instances right after). Only code sets it:
         what a person asks for goes through ``cancel_job``, which refuses
         whatever context it is called with.
@@ -2603,8 +2603,8 @@ class CloudJob(models.Model):
 
         Core refreshes the state of the instance a job that changes it
         has just acted on (``_refresh_instance_state``). A layer overrides
-        it to react to how a job ended (the SaaS manager reverts a tenant
-        whose deploy failed or was cancelled before it started); call
+        it to react to how a job ended (say, undoing what it set up for
+        a deploy that failed or was cancelled before it started); call
         super(). Runs in the
         transaction that recorded the end — except a job the runner
         stored ``done``, whose hooks run once that commits, on a cursor of
@@ -3342,8 +3342,8 @@ class CloudJob(models.Model):
     def _get_job_type_min_group(self):
         """Return the job type -> minimum cloud group map for the enqueue gate.
 
-        Override in child modules and call super() to extend, e.g. the
-        SaaS manager adds its provisioning/tenant types::
+        Override in child modules and call super() to extend, e.g. a
+        layer adds its provisioning types::
 
             def _get_job_type_min_group(self):
                 return super()._get_job_type_min_group() | {

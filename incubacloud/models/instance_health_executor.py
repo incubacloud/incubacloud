@@ -152,7 +152,7 @@ _BLOCKING_JOB_TYPES = (
     'full_setup',
     'restore_instance',
     # It stops Odoo while the database is replaced. Graded in that window,
-    # the instance goes to ``error``, and a tenant being revived back to
+    # the instance goes to ``error``, and an instance being revived back to
     # draft with its restore still running.
     'backup_restore',
 )
@@ -277,8 +277,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     _retry_on_connection_loss = True
 
     # Class attribute so layered modules can extend the blocking set
-    # with their own intrusive job types (e.g. the SaaS tenant/warm
-    # deploy and rebuild flows) without touching this module.
+    # with their own intrusive job types (e.g. their own deploy and
+    # rebuild flows) without touching this module.
     _blocking_job_types = _BLOCKING_JOB_TYPES
 
     # While the check runs (``run``) its log is held in memory, until it
@@ -643,7 +643,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         commands = [
             # 1. Container state. ``-a`` includes stopped containers so
-            #    a present-but-exited service (a Sablier-slept tenant)
+            #    a present-but-exited service (a Sablier-slept instance)
             #    can be told apart from a *missing* one (pruned or never
             #    created) — the two demand opposite reactions. The third
             #    column carries the healthcheck's verdict
@@ -1008,7 +1008,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         Called once the whole blob is parsed, so the tail is known. The
         alert that hid a fleet-wide cron failure for a week stored the
         first twenty-five lines of its traceback and stopped one frame
-        short of ``AccessError: … "core_saas_url"`` — every line it did
+        short of the ``AccessError`` that named the field — every line it did
         keep was boilerplate shared by every cron failure there is.
 
         Both budgets (lines and characters) are spent from the middle
@@ -1227,10 +1227,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 self._resolve_inst_alert('instance_down')
                 # A stopped container cannot be "not answering on 8069":
                 # the HTTP track only means anything while odoo is up.
-                # Without this the probe that caught a tenant mid-wake
+                # Without this the probe that caught an instance mid-wake
                 # left a *critical* alert standing for as long as the
-                # tenant then slept — measured at ten hours on a Free
-                # tenant that was behaving exactly as designed.
+                # instance then slept — measured at ten hours on an
+                # instance that was behaving exactly as designed.
                 self._resolve_inst_alert('instance_unresponsive')
                 issues = []
                 self._check_other_services(inst, issues)
@@ -1443,8 +1443,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             return
         # With hysteresis, exactly like CPU and memory. A container that
         # is up but not yet listening is what every single boot looks
-        # like from out here (curl exits 7 or 56), and Free tenants boot
-        # several times a day: Sablier wakes them, and a core release
+        # like from out here (curl exits 7 or 56), and an instance put to sleep
+        # boots several times a day: Sablier wakes them, and a core release
         # rebuilds them. Alerting on the first failed probe made "Odoo
         # is starting" indistinguishable from "Odoo is down", at critical
         # severity. A restart caught midway, likewise, leaves odoo outside
@@ -1633,7 +1633,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         cycle dismissed, notifying on-call twice about something nobody
         could act on in between, and leaving the panel — which filters
         to active by default — showing nothing at all. That is how a
-        cron stayed broken across the whole tenant fleet for a week.
+        cron stayed broken across a whole fleet of panels for a week.
 
         ``create_date`` is the fallback for rows written before
         ``last_raised_at`` existed; without it every alert open at

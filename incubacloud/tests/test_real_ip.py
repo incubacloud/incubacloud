@@ -55,8 +55,8 @@ NEIGHBOUR = "172.18.0.9"
 OUTSIDER = "198.51.100.7"
 #: The address a caller would like to be recorded as.
 FORGED = "192.0.2.66"
-#: A tenant panel's server, calling the master.
-TENANT_HOST = "37.27.0.82"
+#: Another panel's server, calling the master.
+OTHER_PANEL_HOST = "203.0.113.82"
 #: The option naming our proxy, spelled out so a test that predates it
 #: fails on what it asserts rather than on a missing name.
 PROXY_OPTION = "x_real_ip_proxy"
@@ -865,22 +865,22 @@ class TestEachMode(_DockerAnswers, _OnTheUncorrectedProxyFix, BaseCase):
         after = self._master()
         self.assertEqual(self._resolved(after, self.RANGES), VISITOR)
 
-    def test_master_still_sees_the_tenant_host_that_calls_it(self):
+    def test_master_still_sees_the_panel_host_that_calls_it(self):
         """``requester_ip`` of a VPS order: the provider's firewall is
-        opened to it, so it must stay the tenant's server."""
-        chain = f"{TENANT_HOST}, {EDGE}"
+        opened to it, so it must stay that panel's server."""
+        chain = f"{OTHER_PANEL_HOST}, {EDGE}"
         before = self._record(installed=False, chain=chain,
-                              claimed=TENANT_HOST)
-        self.assertEqual(self._resolved(before, self.RANGES), TENANT_HOST)
-        after = self._master(chain=chain, claimed=TENANT_HOST)
-        self.assertEqual(after.remote_addr, TENANT_HOST)
-        self.assertEqual(self._resolved(after, self.RANGES), TENANT_HOST)
+                              claimed=OTHER_PANEL_HOST)
+        self.assertEqual(self._resolved(before, self.RANGES), OTHER_PANEL_HOST)
+        after = self._master(chain=chain, claimed=OTHER_PANEL_HOST)
+        self.assertEqual(after.remote_addr, OTHER_PANEL_HOST)
+        self.assertEqual(self._resolved(after, self.RANGES), OTHER_PANEL_HOST)
 
     def test_master_reached_by_a_host_off_the_cdn(self):
         """A platform host calling the master straight, not through the
         CDN: the host's own address, whatever header it carries."""
-        request = self._master(chain=TENANT_HOST, claimed=FORGED)
-        self.assertEqual(request.remote_addr, TENANT_HOST)
+        request = self._master(chain=OTHER_PANEL_HOST, claimed=FORGED)
+        self.assertEqual(request.remote_addr, OTHER_PANEL_HOST)
 
     def test_master_a_neighbour_with_the_header_cannot_choose(self):
         """A QA container, or any other on the shared network, calling
@@ -898,7 +898,7 @@ class TestEachMode(_DockerAnswers, _OnTheUncorrectedProxyFix, BaseCase):
 
     def test_master_with_its_proxy_unresolvable_is_as_if_unnamed(self):
         """Not one address for everybody: ``client_ip()`` would key the
-        sign-up, OIDC and ``/saas/*`` limits — and Odoo its sign-in
+        sign-up, OIDC and a layer's own limits — and Odoo its sign-in
         lock-out — on the proxy alone, so one caller could lock everyone
         out. The weaker guarantee instead, and the log says so."""
         resolver = self._docker_answers()
@@ -920,16 +920,16 @@ class TestEachMode(_DockerAnswers, _OnTheUncorrectedProxyFix, BaseCase):
                                    claimed=None)
         self.assertEqual(request.remote_addr, VISITOR)
 
-    # A tenant's panel: the same posture, rendered by the deploy (see
+    # A managed panel: the same posture, rendered by the deploy (see
     # the instance tests below), and Settings that declare no proxy, so
     # ``client_ip()`` is whatever Odoo recorded.
 
-    def test_tenant_panel_client_ip_is_the_visitor(self):
+    def test_managed_panel_client_ip_is_the_visitor(self):
         request = self._master()
         self.assertEqual(request.remote_addr, VISITOR)
         self.assertEqual(self._resolved(request, []), VISITOR)
 
-    def test_tenant_panel_a_neighbouring_panel_cannot_choose(self):
+    def test_managed_panel_a_neighbouring_panel_cannot_choose(self):
         request = self._master(remote=NEIGHBOUR, chain=FORGED, claimed=None)
         self.assertEqual(self._resolved(request, []), NEIGHBOUR)
 

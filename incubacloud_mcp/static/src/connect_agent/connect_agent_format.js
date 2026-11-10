@@ -120,7 +120,7 @@ export function codexConfig(url, { apiKey = false } = {}) {
  * gives way to its `mcp.json` entry. With neither an issuer nor API keys,
  * no agent can sign in yet. Without a URL, or with one a shell could
  * read, no command at all: `urlProblem` says which. Where the platform
- * sets the URL (`managed`, a tenant's), Settings shows it read-only, so
+ * sets the URL (`managed`, pushed from another panel), Settings shows it read-only, so
  * its notice sends to support.
  *
  * @param {Object} [config] the answer of `/cloud/mcp/config`

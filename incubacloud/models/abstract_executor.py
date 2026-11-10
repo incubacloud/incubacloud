@@ -43,7 +43,7 @@ CONNECTION_RETRY_MARKER = "Transient connection error on attempt"
 #: ``docker compose run`` for an instance's stack, out of Traefik and
 #: Sablier. A one-off container inherits its service's labels: Traefik
 #: would route visitors to it and Sablier would count it in a sleeping
-#: tenant's group, holding the panel behind its waiting page and stopping
+#: instance's group, holding the panel behind its waiting page and stopping
 #: the one-off when the session expires. The same labels as
 #: ``IC_ONEOFF_LABELS`` in ``scripts/lib/common.sh``, which the scripts
 #: use; a test keeps the two equal and every command on one of them.
@@ -1831,7 +1831,7 @@ class AbstractExecutor(ABC):
         Both the ``scripts/`` overlay and the ``ansible/`` tree resolve
         through this chain: an executor sees the assets of its own addon
         *and* those of the addons its base classes come from, which is
-        how a saas subclass reuses (or shadows) a core script.
+        how a subclass in another module reuses (or shadows) a core script.
         """
         addons = []
         for klass in cls.__mro__:

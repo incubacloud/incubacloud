@@ -256,7 +256,7 @@ class TestRepoUrlHost(TransactionCase):
         line.invalidate_recordset(["url"])
 
     def test_an_old_spelling_is_stored_canonical_when_its_pin_or_branch_is_written(self):
-        """Pinning, unpinning, a pull request's branch and the SaaS core
+        """Pinning, unpinning, a pull request's branch and a layer's core
         pin write ``commit_sha`` or ``branch`` alone, and the constraint
         checks the URL then: a row's old spelling of a github.com
         repository is stored canonical, and the write goes through."""

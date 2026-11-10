@@ -8,8 +8,8 @@ second one "just in case" after a refusal.
 
 Where the panel may connect is one decision, :meth:`_network_policy`:
 ``'any'`` here, in the core, where a self-hosted panel reaches any
-GitLab its owner adds, private or public; ``'public'`` in a tenant's
-panel (``incubacloud_tenant`` overrides it), whose GitLab must have only
+GitLab its owner adds, private or public; ``'public'`` where a
+module that extends the panel overrides it, so that its GitLab must have only
 public addresses, pinned at the moment they are checked.
 """
 import hashlib
@@ -195,7 +195,7 @@ class CloudGitProvider(models.Model):
         """Return where this panel may connect to a Git provider.
 
         ``'any'`` in the core: a self-hosted panel reaches any GitLab its
-        manager adds, private addresses included (8-nov-2026). ``incubacloud_tenant`` answers ``'public'``.
+        manager adds, private addresses included (8-nov-2026). A layer may answer ``'public'``.
 
         :rtype: str
         """

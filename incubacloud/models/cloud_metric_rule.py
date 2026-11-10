@@ -44,7 +44,7 @@ def promql_query(
     an exception as "unknown", never as "healthy".
 
     A transport failure (no connection, timeout) or a 5xx is asked once
-    more on a fresh connection before it counts: a tenant panel reaches
+    more on a fresh connection before it counts: a panel may reach
     its central through a CDN, and on 2026-10-13 one edge delivered a
     request 9 s late while the next connection, through another edge,
     was answered in milliseconds. A 4xx or a PromQL error is not
@@ -330,7 +330,7 @@ class CloudMetricRule(models.Model):
                 # sleeps it on idle stops every container, so cAdvisor
                 # stops reporting and "down" is exactly what a naive
                 # rule would conclude. Core has no notion of sleeping,
-                # so it asks the instance and the SaaS layer answers.
+                # so it asks the instance and a layer that has it answers.
                 if target._metric_alerts_suppressed():
                     Alert.resolve_alert(self.code, instance=target)
                     continue

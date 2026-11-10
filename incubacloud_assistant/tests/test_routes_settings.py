@@ -341,7 +341,7 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
     def _terms_hook(self):
         """Patch the hook that records the box; return its mock.
 
-        A tenant panel has IncubaCloud record it: the tests answer for it.
+        A layer may record it elsewhere first: the tests answer for it.
         """
         Settings = type(self.env["cloud.settings"])
         patcher = patch.object(

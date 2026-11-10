@@ -4,7 +4,7 @@ Cover the wiring that moved to core: the port/user/allowlist resolution,
 the extra-vars handed to the playbook, the fact-based ``parse_results``
 gate that refuses to disable root unless the new SSH port came up, and
 the registry replacement + layer-1/layer-2 split (core carries no edge
-firewall; the SaaS subclass overrides the hook).
+firewall; a layer's subclass overrides the hook).
 
 SSH-dependent finalize (``_finalize_disable_root``) is proven live on a
 real VPS, not here — it opens a real asyncssh connection.
@@ -213,7 +213,7 @@ class TestHardeningPreflight(TransactionCase):
         }
         # The sshd jail, and since 1.0.183 the web-login one: a ban on
         # 80/443 of the panel's address would cut its health checks and
-        # every tenant it serves from there.
+        # every instance it serves from there.
         self.assertEqual(set(jails), {
             "/etc/fail2ban/jail.d/sshd-incubacloud.local",
             "/etc/fail2ban/jail.d/incubacloud-weblogin.local",
@@ -880,7 +880,7 @@ class TestHardeningPreflight(TransactionCase):
     def test_conn_rate_meter_targets_the_forward_hook_when_enabled(self):
         """Set a rate and both families gain a per-source cap on 80/443.
 
-        Tenant traffic is DNAT'd to the Traefik container, so it crosses
+        Instance traffic is DNAT'd to the Traefik container, so it crosses
         the forward hook, not input — the meter has to live in the forward
         chain or it never sees an instance request.
         """
@@ -1139,8 +1139,8 @@ class TestHardeningExecutorWiring(TransactionCase):
     def test_registry_binding_is_hardening_executor(self):
         """'host_hardening' resolves to the core executor or a subclass.
 
-        In this devel DB (core + saas_manager) the SaaS subclass wins and
-        overrides the edge-firewall hook; either way it IS-A core executor.
+        With a layer installed, its subclass wins and overrides the
+        edge-firewall hook; either way it IS-A core executor.
         """
         bound = executor_registry.get("host_hardening")
         self.assertIsNotNone(bound)
@@ -1149,8 +1149,8 @@ class TestHardeningExecutorWiring(TransactionCase):
     def test_overriding_an_override_is_reported(self):
         """Two peer modules claiming one job type must not do so quietly.
 
-        ``incubacloud_saas_manager`` and ``incubacloud_tenant`` each ship
-        a ``host_hardening`` variant for their own deployment, and both
+        Two layered modules each shipped a ``host_hardening`` variant
+        for their own deployment, and both
         used to write straight into the registry's private dict: the
         second import silently won, with load order decided by the
         dependency graph. They are meant for different databases, but

@@ -7,7 +7,7 @@
 
 Why: a ``docker compose run`` container inherits its service's labels.
 Traefik routes visitors to it, and Sablier counts it in a sleeping
-tenant's group, so the customer gets the waiting page while it lives
+instance's group, so the customer gets the waiting page while it lives
 and Sablier stops it when the session expires (QA, 2026-10-22). And
 from compose 2.29 on, ``docker compose ps --services --status running``
 names a one-off after its service, so a script asking whether ``odoo``

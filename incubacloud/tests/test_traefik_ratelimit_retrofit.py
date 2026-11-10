@@ -1,10 +1,10 @@
 """Tests for the Traefik per-source-IP rate-limit retrofit (P1 / SEC-008).
 
-Tenant domains resolve straight to their host, not through a CDN, so a
+Instance domains resolve straight to their host, not through a CDN, so a
 login flood reaches Odoo's pbkdf2 hasher directly — the asymmetric CPU
-DoS of SEC-008, but against the tenant sites and unbounded. The defence
+DoS of SEC-008, but against the instances' sites and unbounded. The defence
 is a ``rateLimit`` middleware attached as an https-entrypoint default, so
-it reaches every copier-generated tenant router without touching a single
+it reaches every copier-generated instance router without touching a single
 generated compose file, exactly like the HSTS header.
 
 The Traefik templates are stored **per host** and only filled when empty,

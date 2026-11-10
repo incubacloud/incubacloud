@@ -10,8 +10,8 @@ from .host_probe_executor import MIN_DISK_GB
 # Docker label that opts a resource out of the prune. Stamped by
 # ``DeployInstanceExecutor._resource_override_content`` on every
 # panel-deployed service, because any of them may legitimately sit
-# stopped (a warm pool spare, a Sablier-slept free instance, a
-# manually stopped one) and an unlabelled stopped container *matches*
+# stopped (one deployed ahead of being handed over, a
+# Sablier-slept instance, a manually stopped one) and an unlabelled stopped container *matches*
 # the ``label!=`` filter below. Defined here because the playbook this
 # executor drives is what acts on it.
 #
@@ -99,7 +99,7 @@ def build_cache_prune_if_low(min_free_gb=BUILD_CACHE_MIN_FREE_GB):
 # panel manages is gone. With every managed resource labelled this
 # should never fire; it exists precisely because it once did (2026-08:
 # rebuilds rewrote override.yml without the label and the nightly prune
-# swept the warm pool and failed the free-host backups for two days).
+# swept stopped instances and failed a host's backups for two days).
 SWEPT_ALERT_CODE = "prune_swept_managed"
 
 # Services whose container must exist (any state) for every deployed
@@ -192,7 +192,7 @@ def network_sweep(env, host):
 #: built and the directories it worked in: archives of customers'
 #: databases, a deploy's copier answers, configuration and secrets, a
 #: purge's bucket keys, the proxy's private keys and certificate store,
-#: the scripts a job ran, and the SaaS layer's tenant dumps and files.
+#: the scripts a job ran, and the dumps and files of a layer's jobs.
 #: Created 0644 and left there by a job that ended early.
 _LEGACY_TMP_NAMES = (
     ".incubacloud-handoff-*.zip",
@@ -416,7 +416,7 @@ class DockerPruneExecutor(AnsibleExecutor):
         post-mortems, so they are logged as counts; networks are listed
         by *name*, which is exactly what an operator needs to see, so
         those are spelled out. The presence check below is what turns
-        "a network named like a tenant got deleted" into an alert.
+        "a network named like an instance got deleted" into an alert.
         """
         section = None
         counts = {}

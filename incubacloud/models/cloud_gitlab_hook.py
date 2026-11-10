@@ -47,7 +47,7 @@ def new_hook_key():
 
     Hexadecimal on purpose: a ``token_urlsafe`` key could start with
     ``wp`` or ``vendor`` and fall into the ``-block`` router of a
-    tenant's panel.
+    panel that blocks those paths.
 
     :rtype: str
     """

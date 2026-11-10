@@ -56,7 +56,7 @@ teardown() {
 
 @test "copier-update reads the git default branch before writing it" {
     # Read-first guard: an unconditional write races the ~/.gitconfig lock
-    # when sibling jobs (warm pool) target the same host. Already set here,
+    # when sibling jobs target the same host. Already set here,
     # so no write must follow.
     cat > "$TMP/bin/git" <<'STUB'
 #!/usr/bin/env bash
@@ -128,7 +128,7 @@ YAML
 }
 
 @test "boot-test keeps the throwaway PG off the project network" {
-    # The regression that took every tenant on a host down, twice: a
+    # The regression that took every instance on a host down, twice: a
     # container holding an endpoint on the project network stops docker
     # compose from recreating that network, so the step dies with 'has
     # active endpoints' and leaves the stack half stopped.

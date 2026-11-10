@@ -23,8 +23,8 @@ export class Settings extends Component {
     setup() {
         this.state = useState({
             tab: this.props.initialTab || "general",
-            // Tabs drawn by a component of their own (Rates; saas adds
-            // SaaS and Providers) keep their form in it, and register
+            // Tabs drawn by a component of their own (Rates, and those
+            // a module on top adds) keep their form in it, and register
             // its save below. They stay mounted once opened, hidden while
             // another tab shows: unmounting one dropped what was typed
             // in it, and its save handler with it.

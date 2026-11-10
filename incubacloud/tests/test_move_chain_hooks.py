@@ -100,7 +100,7 @@ class TestAMoveClosesEveryStep(TransactionCase):
 
     def test_an_undone_move_says_so_to_whoever_inherits_the_record(self):
         """A rollback leaves the instance on its source; the layer above
-        (SaaS: the tenant the move put in 'provisioning') must hear it."""
+        (say, a record the move put in 'provisioning') must hear it."""
         self._chain()
         cleanup_id = self.inst._do_rollback_move(kind="manual")
         cleanup = self.env["cloud.job"].browse(cleanup_id)

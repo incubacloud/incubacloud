@@ -648,7 +648,7 @@ export class HostDetail extends Component {
      * list as stored replaces the form's, and the saved baseline's too:
      * the page shows it without reading as unsaved, and a later save of
      * any other field writes it back as it is. Only where the form holds
-     * the list (the SaaS manager's Security tab); the bus-driven refresh
+     * the list (a layer's Security tab); the bus-driven refresh
      * never touches the form.
      *
      * @param {number[]} [jobIds] the jobs queued

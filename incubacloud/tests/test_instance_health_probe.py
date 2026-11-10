@@ -246,16 +246,16 @@ class TestUnresponsiveHysteresis(TransactionCase):
 
     A running container whose Odoo is not listening yet is what every
     single boot looks like from the probe's side (``curl`` exits 7 or
-    56). Free tenants boot several times a day — Sablier wakes them, a
+    56). Instances put to sleep boot several times a day — Sablier wakes them, a
     core release rebuilds them — so alerting on the first failed probe,
     at *critical*, made "starting" indistinguishable from "down".
 
     The second half matters more. The alert used to survive the
     instance going back to sleep, because the sleep branch returned
-    early after resolving only ``instance_down``. A tenant caught
+    early after resolving only ``instance_down``. An instance caught
     mid-wake and then slept for the night kept a critical alert open
-    the whole time: ten hours and forty minutes, measured on a Free
-    tenant that behaved exactly as designed.
+    the whole time: ten hours and forty minutes, measured on an
+    instance that behaved exactly as designed.
     """
 
     def setUp(self):

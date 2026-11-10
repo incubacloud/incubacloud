@@ -9,6 +9,6 @@ class AuthOauthProvider(models.Model):
     issuer = fields.Char(
         help="Issuer (``iss``) of the tokens this provider signs. The MCP "
         "endpoint finds the provider of an agent's token by it, then the "
-        "user by the token's ``sub``; a tenant panel also checks its "
-        "single sign-on id_token against it.",
+        "user by the token's ``sub``; a panel entered through single "
+        "sign-on may also check its id_token against it.",
     )

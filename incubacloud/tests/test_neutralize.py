@@ -21,7 +21,7 @@ and nothing named has gone missing.
 Scope is every installed module at once, which is how neutralization
 actually runs. A module absent from the database contributes neither
 fields nor a script, so a core-only install is checked against core
-alone without pretending saas columns exist.
+alone without pretending other modules' columns exist.
 
 Secrets are not all a copy must lose. A field that makes it reach
 outside — a user's webhook — and a cron that the copy's next module

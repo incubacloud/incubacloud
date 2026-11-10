@@ -23,10 +23,10 @@ _logger = logging.getLogger(__name__)
 
 # ── Python scripts executed inside the Odoo container via docker exec ─────────
 
-# Flags a target user as an administrator of the tenant database: uid 2
+# Flags a target user as an administrator of the instance's database: uid 2
 # (Odoo's built-in admin) or explicit membership of base.group_system /
 # base.group_erp_manager. The relation table and the ir_model_data rows
-# are stable across Odoo 7 → 20, so the same SQL works on every tenant
+# are stable across Odoo 7 → 20, so the same SQL works on every instance
 # version we support. Over-flagging is harmless: it only raises the
 # required panel role to Manager.
 # It is kept on a single line because it is interpolated inside a
@@ -165,7 +165,7 @@ class InstanceConnectController(http.Controller):
 
         Two tumbling windows: one per panel user (a compromised account
         minting tokens in bulk) and one per instance (several operators
-        hammering the same tenant). Returns ``None`` when allowed.
+        hammering the same instance). Returns ``None`` when allowed.
         """
         uid = request.env.user.id
         return rate_gate_json(
@@ -217,7 +217,7 @@ class InstanceConnectController(http.Controller):
 
     @http.route(['/cloud/get_instance_users'], type='jsonrpc', auth='user')
     def get_instance_users(self, instance_id):
-        """List the tenant's internal users, flagging its administrators.
+        """List the instance's internal users, flagging its administrators.
 
         The instance is resolved before the permission check because the
         required role depends on its environment: listing the users of a
@@ -286,8 +286,8 @@ class InstanceConnectController(http.Controller):
         sets the session cookie from the instance's own domain, avoiding
         cross-domain cookie restrictions entirely.
 
-        Whether the target user is an administrator of the tenant is
-        decided inside the tenant database, not by the caller: the panel
+        Whether the target user is an administrator of the instance is
+        decided inside the instance's database, not by the caller: the panel
         passes ``allow_admin`` and the script refuses to mint a token for
         an admin when it is False. A client that lies about ``user_name``
         (a display label only) therefore cannot widen its own access.
@@ -301,7 +301,7 @@ class InstanceConnectController(http.Controller):
         if err:
             return err
         # Floor check for this environment: connecting as a *normal* user.
-        # The admin case is enforced below, once the tenant tells us
+        # The admin case is enforced below, once the instance tells us
         # whether the target is one.
         sec._check_can_connect_as_user(instance=inst)
         limited = self._connect_rate_limited(instance_id)

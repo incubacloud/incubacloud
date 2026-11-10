@@ -218,7 +218,7 @@ class TestCloudInstanceHealthCron(TransactionCase):
         """Patch cloud.job.enqueue with the given side_effect callable.
 
         ``delattr`` on the class after the test restores MRO lookup so
-        downstream modules (SaaS) see the correct override instead of a
+        downstream modules see the correct override instead of a
         stale own-attribute.
         """
         Model = self.env["cloud.job"]
@@ -485,7 +485,7 @@ class TestDefaultBackupBackendSetting(TransactionCase):
 
 class TestCronRefreshBackupList(TransactionCase):
     """``cron_refresh_backup_list`` must skip instances whose compose
-    stack has no ``backup`` service (e.g. free-tier tenants that inherit
+    stack has no ``backup`` service (e.g. instances whose settings inherit
     the global backup backend but never ship a backup container)."""
 
     def setUp(self):
@@ -628,7 +628,7 @@ class TestCronRefreshBackupList(TransactionCase):
         ``compose_services`` by its own rebuild — the only gate at the
         time — and the cron started shelling into it daily. One failed
         job and one alert per spare, for as long as it sat unclaimed.
-        (Warm fields live in the SaaS layer, so the property is pinned
+        (The fields of such spares live in a layer, so the property is pinned
         here through the state every stopped stack shares.)
         """
         inst = self._create_instance(

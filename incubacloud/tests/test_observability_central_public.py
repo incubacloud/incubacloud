@@ -327,7 +327,7 @@ class TestTheDeployment(ObservabilityExecutorCase):
 
     def test_the_panel_may_frame_the_grafana_it_publishes(self):
         """The list comes from the settings, where a layer can add to it:
-        built here, it named the panel alone, and every tenant's panel
+        built here, it named the panel alone, and every other panel
         got a blank frame (QA, 20-oct-2026)."""
         self.env["ir.config_parameter"].sudo().set_param(
             "web.base.url", "https://panel.example.test",

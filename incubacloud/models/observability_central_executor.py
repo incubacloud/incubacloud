@@ -96,10 +96,10 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
     def _metrics_accounts(self, settings=None):
         """Return ``[(user, password), ...]`` allowed to write and read.
 
-        Core knows exactly one account: this panel's own. The SaaS
-        manager overrides this to append one entry per tenant, because
-        only it knows tenants exist — core ships to partners and must
-        stay ignorant of them.
+        Core knows exactly one account: this panel's own. A layer
+        that serves other panels overrides this to append one entry per
+        panel, because only it knows they exist — core ships to partners
+        and must stay ignorant of them.
 
         The list becomes vmauth's user list, and the authenticated user
         *is* the label the central forces on every series. So adding an
@@ -107,8 +107,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         write, and removing it is the single act that revokes it.
 
         :param settings: the ``cloud.settings`` record to resolve the
-            list through. Listing mints a credential for every tenant
-            that lacks one, so the caller's environment decides whether
+            list through. Listing may mint a credential for every
+            account that lacks one, so the caller's environment decides whether
             those survive; defaults to this executor's, for callers that
             only read.
         """
@@ -152,8 +152,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         deployment wrote an empty account file: a central that came up
         healthy and accepted no writes at all.
 
-        The list is built in the same environment, because the SaaS layer
-        mints tenant credentials while listing and those have to survive
+        The list is built in the same environment, because a layer may
+        mint credentials while listing and those have to survive
         too.
 
         :param bool mint_delete_key: whether to mint the deletion key
@@ -394,7 +394,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             f"admin:{admin_password}".encode()
         ).decode()
         public = self._public_endpoint(settings)
-        # What Grafana is told here is what the SaaS layer records as in
+        # What Grafana is told here is what a layer may record as in
         # force (``_grafana_oidc_shipped``) once the run succeeds.
         self._shipped_grafana_oidc = settings._grafana_oidc(accounts)
         return {
@@ -442,8 +442,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 settings.metrics_central_direct_host or ""
             ).strip().lower(),
             "ic_grafana_frame_ancestors": public["frame_ancestors"] if public else "",
-            # Filled by the SaaS layer once Grafana is registered as an
-            # OIDC client (see the manager's override). Empty here means
+            # Filled by a layer once Grafana is registered as an
+            # OIDC client (see ``_grafana_oidc``). Empty here means
             # "no identity provider available", which is the self-hosted
             # case: the playbook falls back to trusting a header set by
             # the panel's own reverse proxy.
@@ -476,8 +476,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # (the panel's public address once it runs elsewhere).
             "operator_sources": ["127.0.0.1/32"]
             + parse_ranges(settings.metrics_central_operator_sources),
-            # Whoever embeds the dashboards: the panel, and in the SaaS
-            # build its tenants' panels too.
+            # Whoever embeds the dashboards: the panel, and the other
+            # panels a layer adds.
             "frame_ancestors": " ".join(settings._grafana_frame_ancestors()),
             "read": f"{base}/r",
             "write": f"{base}/w/api/v1/write",

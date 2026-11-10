@@ -180,9 +180,9 @@ class CloudBackupBackend(models.Model):
         }
 
     # ── Usage tracking + quota alerts ──────────────────────────────────────
-    # Universal feature: applies to every backend, BYO or managed. The
-    # tenant-side Odoo also gets it (the ``incubacloud`` core ships inside
-    # tenant instances), so any backend the tenant has configured benefits.
+    # Universal feature: applies to every backend, BYO or managed. Any
+    # panel built on this module gets it, so any backend configured there
+    # benefits.
 
     quota_gb = fields.Float(
         string="Quota (GB)",

@@ -56,7 +56,7 @@ _LIVENESS_HANDOVER_SECONDS = 900
 
 #: The compose service whose container decides whether an instance is up.
 #: Every other container of the stack can be running while this one is
-#: not — that is exactly what a sleeping tenant looks like.
+#: not — that is exactly what a sleeping instance looks like.
 _ODOO_SERVICE = "odoo"
 
 #: The names of containers that run a service of the stack without being

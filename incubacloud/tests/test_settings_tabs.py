@@ -1,6 +1,6 @@
 """What is typed on a Settings tab stays there until it is saved.
 
-The Rates tab — and saas's SaaS and Providers — is a component of its
+The Rates tab — and those a module on top adds — is a component of its
 own: its own form, and a save handler it registers with Settings. The
 tabs were drawn with ``t-if``, so leaving one unmounted it: its edits
 went, and its save handler with them. Back on the tab the stored values
@@ -128,7 +128,7 @@ const expectSent = (url, expected) => {
 class SettingsInBrowser(ChromeStartRetry):
     """Drive the panel's Settings screen in a headless browser.
 
-    A mixin, not a test case, so saas checks its own tabs the same way
+    A mixin, not a test case, so a module on top checks its own tabs the same way
     without collecting these tests twice. Mixed into an ``HttpCase``.
     """
 

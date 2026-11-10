@@ -27,8 +27,8 @@ cookies — may legitimately need cross-site delivery, and tightening them is
 not what this is for.
 
 ``Lax`` is safe for the OIDC flows this platform runs on: the authorization
-endpoint is reached by a top-level GET navigation, and the panel and its
-tenants share a registrable domain, so the browser treats them as same-site
+endpoint is reached by a top-level GET navigation, and a panel and the
+panels it serves share a registrable domain, so the browser treats them as same-site
 anyway. Back-channel logout is server-to-server and carries no cookies.
 """
 

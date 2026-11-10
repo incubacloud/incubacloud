@@ -216,7 +216,7 @@ class TestSourcesOnThisPanel(TransactionCase):
         )
 
     def test_no_installed_module_out_of_the_list_is_read(self):
-        """Saas's modules on the master or a tenant panel, or any other, stay out."""
+        """Modules of other repositories installed beside core stay out."""
         root = sources.core_root()
         installed = self.env["ir.module.module"].search([("state", "=", "installed")])
         for module in installed.mapped("name"):

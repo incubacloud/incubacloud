@@ -36,7 +36,7 @@ _VERSION_INFO='{"jsonrpc": "2.0", "id": null, "result": {"server_version": "19.0
 
 @test "succeeds as soon as Odoo's version_info answers" {
     _stub_curl "$_VERSION_INFO"
-    run bash "$SCRIPT" https://tenant.example.com 3 1
+    run bash "$SCRIPT" https://acme.example.com 3 1
     [ "$status" -eq 0 ]
     [[ "$output" == *"public URL is live"* ]]
 }
@@ -45,28 +45,28 @@ _VERSION_INFO='{"jsonrpc": "2.0", "id": null, "result": {"server_version": "19.0
     # A GET from the host gets the CDN's 403 challenge page, never the
     # instance: every claim timed out on it from 2026-09-22 on.
     _stub_curl "$_VERSION_INFO"
-    run bash "$SCRIPT" https://tenant.example.com 1 1
+    run bash "$SCRIPT" https://acme.example.com 1 1
     [ "$status" -eq 0 ]
     run cat "${STUB_DIR}/args"
     [[ "$output" == *$'-X\nPOST'* ]]
-    [[ "$output" == *"https://tenant.example.com/web/webclient/version_info"* ]]
+    [[ "$output" == *"https://acme.example.com/web/webclient/version_info"* ]]
 }
 
 @test "rejects the catch-all 'being prepared' page and times out" {
     # The catch-all answers 200 with HTML — never a status payload.
     _stub_curl '<html><body>Your instance is being prepared</body></html>'
-    run bash "$SCRIPT" https://tenant.example.com 2 1
+    run bash "$SCRIPT" https://acme.example.com 2 1
     [ "$status" -ne 0 ]
     [[ "$output" == *"did not answer"* ]]
 }
 
 @test "keeps polling while curl fails outright" {
     _stub_curl '' 7
-    run bash "$SCRIPT" https://tenant.example.com 2 1
+    run bash "$SCRIPT" https://acme.example.com 2 1
     [ "$status" -ne 0 ]
 }
 
 @test "requires its three arguments" {
-    run bash "$SCRIPT" https://tenant.example.com
+    run bash "$SCRIPT" https://acme.example.com
     [ "$status" -ne 0 ]
 }

@@ -1,9 +1,8 @@
 """Pure-Python unit tests for GitHubSetupController._github_app_name.
 
-GitHub App names must be globally unique (across the whole IncubaCloud
-fleet) and at most 34 chars. The name is derived from the tenant's host
-subdomain, so two tenants sharing a company name still get distinct app
-names.
+GitHub App names must be globally unique (across every panel) and at
+most 34 chars. The name is derived from the panel's host subdomain, so
+two panels sharing a company name still get distinct app names.
 """
 from odoo.tests.common import BaseCase
 
@@ -23,7 +22,7 @@ class TestGitHubAppName(BaseCase):
             "IncubaCloud-acme",
         )
 
-    def test_distinct_per_tenant_subdomain(self):
+    def test_distinct_per_panel_subdomain(self):
         # Same base domain, different subdomain → different app names.
         a = self._name("https://t1.example.com")
         b = self._name("https://t2.example.com")
@@ -33,8 +32,8 @@ class TestGitHubAppName(BaseCase):
 
     def test_sanitises_non_alphanumerics(self):
         self.assertEqual(
-            self._name("https://my_tenant--x.example.com"),
-            "IncubaCloud-my-tenant-x",
+            self._name("https://my_panel--x.example.com"),
+            "IncubaCloud-my-panel-x",
         )
 
     def test_caps_at_34_chars(self):

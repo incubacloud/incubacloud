@@ -108,7 +108,7 @@ class TestHostBuildLock(_HostLockBase):
     def test_every_rebuild_variant_inherits_the_lock(self):
         """The lock must sit on the class that issues the build.
 
-        Every rebuild — tenant, warm, apply-plan — subclasses
+        Every rebuild, a layer's included, subclasses
         ``RebuildInstanceExecutor``; core's deploy takes no lock. Asserting it here is what makes
         "one build per host" true for all of them rather than for the one
         that happened to be wired.

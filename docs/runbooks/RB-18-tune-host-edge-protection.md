@@ -6,8 +6,8 @@ proxy; a host is being flooded and you want the connection-rate cap on;
 or you are onboarding a provider without L3/L4 anti-DDoS.
 **Who runs it:** ops.
 
-A host serving tenant instances has historically been reached
-**directly** — tenant domains resolve straight to the host, not through
+A host serving customer instances has historically been reached
+**directly** — their domains resolve straight to the host, not through
 a CDN — so it is protected by **rate**, on the box itself, in layers.
 Whether that is still true of a given host is written on the host
 itself (`behind_cdn`), and it changes two of the layers below: read
@@ -36,7 +36,7 @@ full model. This runbook is how you tune each layer.
 
 The proxy throttles every instance on the host by client IP before a
 request can reach Odoo's pbkdf2 login. It is the principal control for
-the SEC-008 login-DoS applied to the tenant sites.
+the SEC-008 login-DoS applied to the instances' sites.
 
 ### Tune it live
 
@@ -72,11 +72,11 @@ The running `config.yml` is a copy of `cloud.host.traefik_config_yml`.
 Update the host record (Hosts → the host → Traefik config) with the same
 values, or re-apply the live edit after any re-provision.
 
-### Host behind a CDN (the panel, or a tenant's own CDN)
+### Host behind a CDN (the panel, or a customer's own CDN)
 
 `sourceCriterion` defaults to the real remote IP — correct for direct
 traffic. If a host sits behind a **trusted** CDN (the panel behind
-Cloudflare, or a tenant fronting their own domain), Traefik sees a
+Cloudflare, or a customer fronting their own domain), Traefik sees a
 handful of edge IPs and would bucket every visitor together. Set an
 `ipStrategy` so the limit keys on the real client:
 
@@ -100,7 +100,7 @@ this.
 ## Layer 2 — the nftables connection-rate cap
 
 A per-source new-connection limit on 80/443, in the hardening ruleset.
-It sits on the **forward** hook, because tenant traffic is DNAT'd to the
+It sits on the **forward** hook, because instance traffic is DNAT'd to the
 Traefik container and never crosses the input chain. **On by default
 since 1.0.183** at 50 per second (`cloud.host.http_conn_rate`; hosts at 0
 were moved to 50), applied on each host's next hardening run. It shipped

@@ -584,7 +584,7 @@
                   meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } counter drop
                   {% elif (ic_http_conn_rate | default(0) | int) > 0 %}
                   # Per-source new-connection cap on the instances' 80/443.
-                  # Tenant traffic is DNAT'd to the Traefik container, so it
+                  # Instance traffic is DNAT'd to the Traefik container, so it
                   # crosses the forward hook, not input — a limit in the
                   # input chain above never sees it. Inert unless
                   # ``ic_http_conn_rate`` is set (> 0); the host's own rate

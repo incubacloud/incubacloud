@@ -181,7 +181,7 @@ case "$op" in
         # ``set -e`` any unexpected failure in between (a cp that breaks,
         # a container that will not start) would jump straight past a
         # cleanup written at the end and leave the stack down. That is
-        # how a failed boot test used to take the tenant with it.
+        # how a failed boot test used to take the instance with it.
         #
         # ``start`` and not ``up``, deliberately, twice over: it neither
         # recreates containers nor re-evaluates the image, so a failed
@@ -237,7 +237,7 @@ case "$op" in
         # network blocks any reconciliation docker compose decides to do
         # mid-test: compose cannot remove the network to recreate it, so
         # the step dies with 'has active endpoints' and leaves the stack
-        # half stopped — twice on 2026-08-13, taking every tenant on the
+        # half stopped — twice on 2026-08-13, taking every instance on the
         # host down with it.
         #
         # It used to be published on the project network's gateway

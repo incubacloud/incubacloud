@@ -1,7 +1,7 @@
 """What the webhook events of GitHub and GitLab share.
 
 ``cloud.github.event`` and ``cloud.gitlab.event`` inherit from this
-mixin, and modules layered on top (the saas manager) override it here,
+mixin, and modules layered on top override it here,
 so their routing of rebuilds and their exclusion from previews hold for
 both providers. The concrete models never redefine
 :meth:`_rebuild_job_type` nor :meth:`_pr_preview_allowed`: doing so
@@ -22,9 +22,8 @@ class CloudRepoEventMixin(models.AbstractModel):
         """Job code used by webhook-driven auto-rebuild.
 
         Default: the core ``rebuild_instance``. Modules layered on top
-        (e.g. the SaaS manager) override this to route tenant-bearing
-        instances to the tenant-aware executor, which carries plan and
-        tenant-module sync that the core executor lacks.
+        override this to route some instances to an executor of their
+        own, which carries what the core executor lacks.
 
         A subclass may return a falsy value to decline the auto-rebuild
         entirely; the webhook handler then skips the instance without
