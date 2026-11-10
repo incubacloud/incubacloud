@@ -1431,7 +1431,7 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
         env = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
             trim_blocks=True, undefined=jinja2.StrictUndefined,
         )
-        # Ansible's filter, which the labels people name go through.
+        # Ansible's filter, which the playbook uses.
         env.filters["to_json"] = lambda value, **kw: json.dumps(value, **kw)
         return yaml.safe_load(env.from_string(content).render(**values))
 

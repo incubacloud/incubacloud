@@ -2,9 +2,7 @@
 
 The record rules on instances, their repository, domain and whitelist
 rows and the project's repository rows hold a Stakeholder or Consultant
-to their member projects. A write is checked against the row as it was,
-so the new parent is checked too: a row moved, or an instance created,
-under a project of someone else's is refused.
+to their member projects, on create and on write.
 """
 from odoo.exceptions import AccessError
 
@@ -87,8 +85,7 @@ class TestParentMemberRule(CloudSecurityBase):
         self.assertEqual(self.inst_mine.project_id, self.mine)
 
     def test_an_instance_cannot_be_created_in_a_foreign_project(self):
-        """The create runs as superuser for the encrypted fields; the
-        caller's rule is applied to what it created all the same."""
+        """The caller's rules apply to what it creates."""
         with self.assertRaises(AccessError):
             self.env["cloud.instance"].with_user(
                 self.consultant,

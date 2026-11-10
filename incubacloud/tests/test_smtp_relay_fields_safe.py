@@ -1,10 +1,7 @@
 """An instance's mail relay fields hold a host, a port and a user, nothing else.
 
-The copier template renders the relay host, the relay user and the
-default sender (the relay user, or the admin email) inside
-double-quoted YAML scalars of the compose files. The model keeps those
-fields to their grammar, and the answers escape what the template
-renders, so a row stored before the check renders as the same text.
+The model keeps the relay host, port and user and the admin email to
+their grammar, and the copier answers render each as its own text.
 """
 import yaml
 
@@ -88,8 +85,7 @@ class TestSmtpRelayFieldsSafe(TransactionCase):
                 self.assertEqual(doc, {"K": login})
 
     def test_answers_escape_a_value_stored_before_the_check(self):
-        """A legacy row renders, inside the template's double quotes, as
-        its own text: one scalar, no other key."""
+        """A row saved before the check renders as its own text."""
         legacy = 'a@b.c"\nx: "y'
         self.env.cr.execute(
             "UPDATE cloud_instance SET smtp_relay_user = %s,"

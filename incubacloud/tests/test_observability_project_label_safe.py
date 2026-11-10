@@ -1,9 +1,7 @@
-"""A project's name reaches the observability playbook as data.
+"""A project's name labels its instances' metrics as written.
 
 The host's scrape configuration labels each instance with its project's
-name. The name is kept to one line of text without template delimiters,
-travels to Ansible marked as not a template, and the playbook writes it
-into the YAML file through ``to_json``, so it reads back as itself.
+name; the label reads back as the name itself.
 """
 import json
 import re
@@ -30,7 +28,7 @@ _PLAYBOOK = (
 class TestProjectNameIsData(ObservabilityExecutorCase):
 
     def test_names_with_template_or_line_syntax_are_refused(self):
-        """Template openers, line breaks and control characters."""
+        """Names the check refuses."""
         project = self.env["cloud.project"].create({"name": "Fine"})
         for value in (
             "a {{ b }}",
@@ -47,8 +45,7 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
                 self.env["cloud.project"].create({"name": value})
 
     def test_ordinary_names_are_kept(self):
-        """Accents, quotes, a backslash and a single brace pass: the
-        playbook writes them through ``to_json``."""
+        """Accents, quotes, a backslash and a single brace pass."""
         name = 'Año (beta) — O\'Brien "B" a\\b {x} #1: ok'
         project = self.env["cloud.project"].create({"name": name})
         self.assertEqual(project.name, name)
@@ -65,7 +62,7 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
         return instance
 
     def test_extra_vars_mark_the_project_label_as_not_a_template(self):
-        """The label travels as Ansible's unsafe marker, the rest plain."""
+        """The project's label is marked, the rest plain."""
         project = self.env["cloud.project"].create({"name": "Labels"})
         instance = self._labelled_instance(project)
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
@@ -77,8 +74,7 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
         self.assertEqual(label["instance"], "labelled")
 
     def test_the_scrape_file_holds_the_label_as_one_scalar(self):
-        """Rendered with ``to_json``, a value with YAML syntax stays one
-        string of the file: it reads back as itself."""
+        """Every label reads back from the file as its value."""
         tasks = yaml.safe_load(_PLAYBOOK.read_text())[0]["tasks"]
         content = next(
             t["ansible.builtin.copy"]["content"] for t in tasks
@@ -91,8 +87,6 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
         )
         env.filters["to_json"] = lambda v, **kw: json.dumps(v, **kw)
         odd = 'x"\ny: [z]: #'
-        # Every label the file writes through ``to_json`` holds the odd
-        # value: the project's, and any other a module fills in.
         free = set(re.findall(r"inst\.(\w+) \| to_json", content))
         self.assertIn("project", free)
         instance = dict.fromkeys(re.findall(r"inst\.(\w+)", content), "")

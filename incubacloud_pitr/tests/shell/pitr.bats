@@ -463,7 +463,7 @@ STUB
     [ "$(grep -cE "exec-(start|killed|end)" <<<"$after")" -eq 0 ]
 }
 
-@test "the recovery's server runs only the panel's commands and libraries, whatever the restored copy's settings say" {
+@test "the recovery's server is started with the panel's settings" {
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
@@ -479,8 +479,7 @@ STUB
     run bash "$SCRIPT" restore-run "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
         '2026-10-18 22:30:48+00' 2026-10-18 3>&-
     echo "$output"
-    # The server's own command line, which the restored
-    # postgresql.auto.conf cannot override.
+    # The server's own command line.
     start="$(awk '/--name pitr-recovery-9 /,/exec \/autoconf-entrypoint/' "$CALLS")"
     [ -n "$start" ]
     for setting in "restore_command=/opt/walg/run wal-fetch %f %p" \
@@ -492,8 +491,7 @@ STUB
     done
     grep -qF 'archive_library=' <<<"$start"
     grep -qF 'event_triggers=off' <<<"$start"
-    # Each connection to it sets what a role or database setting could
-    # otherwise load or run at login.
+    # Each connection to it sets the same.
     execs="$(grep "^docker exec .*pitr-recovery-9 psql" "$CALLS")"
     [ -n "$execs" ]
     if grep -v -- "-e PGOPTIONS=-c search_path=pg_catalog .*-c event_triggers=off" <<<"$execs"; then false; fi

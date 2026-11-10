@@ -249,9 +249,7 @@ assert_as_before() {
     [[ "$(services)" == *"db "*"odoo "* ]]
 }
 
-@test "commands the restored copy's own settings name do not run in the recovery" {
-    # Settings written into the base copy's postgresql.auto.conf: each
-    # would leave a mark if the recovery's server ran it.
+@test "the recovery ignores server settings stored inside the restored copy" {
     sql_admin "ALTER SYSTEM SET recovery_end_command = 'touch /marks/ran-recovery-end'"
     sql_admin "ALTER SYSTEM SET archive_cleanup_command = 'touch /marks/ran-archive-cleanup'"
     sql_admin "SELECT pg_reload_conf()" >/dev/null
