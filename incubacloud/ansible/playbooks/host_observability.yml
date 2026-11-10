@@ -164,9 +164,9 @@
       # extra router in front of an instance; when it does, mapping that
       # name is the job of the layer that created it, not of this playbook.
       #
-      # The project and tenant labels are text people write: they are
-      # written through ``to_json``, a JSON string being a YAML scalar, so
-      # whatever they hold stays one value of the file.
+      # The labels people name (a project's, and any a module fills in)
+      # are written through ``to_json``, a JSON string being a YAML scalar,
+      # so whatever they hold stays one value of the file.
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/scrape.yml"
         mode: "0644"

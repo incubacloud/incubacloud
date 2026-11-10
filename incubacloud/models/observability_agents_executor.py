@@ -65,10 +65,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "traefik_extra": [],
         }
 
-    #: The labels people name freely: a project's name, and the tenant an
-    #: upper layer fills in. Ansible templates the extra vars it is handed
-    #: (``-e @file``); these reach it marked as not templates.
-    _FREE_TEXT_LABELS = ("project", "tenant")
+    #: The labels people name freely: a project's name here, and a module
+    #: that fills in another such label adds it. Ansible templates the
+    #: extra vars it is handed (``-e @file``); these reach it marked as not
+    #: templates.
+    _FREE_TEXT_LABELS = ("project",)
 
     def _labels_as_data(self, labels):
         """Mark the free-text values of *labels* as data for Ansible.
