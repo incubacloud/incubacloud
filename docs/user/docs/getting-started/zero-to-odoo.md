@@ -45,34 +45,45 @@ and open `/cloud`.
 
 ## 2. Choose the server
 
-The size of the server depends on how many people will use Odoo. This is the
-rule the panel recommends with, for one production with room for a staging on
-the same server:
+The size of the server depends on how many people will use Odoo at the same
+time. Odoo's own [deployment
+guide](https://www.odoo.com/documentation/19.0/administration/on_premise/deploy.html#worker-number-calculation)
+sizes a server by its *workers*, the processes that answer people's clicks:
 
-| RAM | Recommended for up to |
-|---|---|
-| Under 4 GB | Tests only |
-| 4 GB | 5 users, and a staging only while you try something |
-| 8 GB | 15 users |
-| 16 GB | 40 users |
-| 32 GB | 90 users |
+- at most two workers for each vCPU, plus one: (vCPU × 2) + 1;
+- about 325 MB of memory each, on average: Odoo counts 80% of light requests
+  at about 150 MB and 20% of heavy ones at about 1 GB;
+- about 6 users at once for each worker.
 
-The rule behind it: 2 GB stay for the system, the proxy and the database, each
-further GB serves about 3 users, and a vCPU at most 8. The figures are a
-ceiling: a size with fewer vCPUs for its memory, as those with dedicated vCPUs
-often are, is recommended for fewer, such as 30 users with 4 vCPU and 16 GB, or
-60 with 8 vCPU and 32 GB. The panel shows each size's own figure. It is a
-starting point: heavy reports, large imports or many websites ask for more. You
-can move an instance to a bigger server later, with **Move to host** on the
-instance.
+A server runs as many workers as both its vCPUs and its memory allow, after
+2 GB kept for the system, the database and the proxy. For the usual sizes:
+
+| vCPU | RAM | Recommended for up to |
+|---|---|---|
+| Any | Under 4 GB | Tests only |
+| 2 | 4 GB | 30 users at once |
+| 2 | 8 GB | 30 users at once |
+| 4 | 8 GB | 54 users at once |
+| 4 | 16 GB | 54 users at once |
+| 8 | 16 GB | 102 users at once |
+| 8 | 32 GB | 102 users at once |
+| 16 | 32 GB | 198 users at once |
+| 16 | 64 GB | 198 users at once |
+
+Users at once are the people working in Odoo at the same moment, not everyone
+with an account: a team of 40 where about a dozen work in Odoo at the same
+time needs a server for 12. A staging on the same server shares those
+workers. It is a starting point: heavy reports, large imports or many websites
+ask for more. You can move an instance to a bigger server later, with **Move
+to host** on the instance.
 
 !!! info "IncubaCloud SaaS: order it from the panel"
     Go to **Hosts** and press **Order new VPS**. In **How many people will use
-    Odoo?** type how many of you there will be, then choose the **Location**:
-    the size recommended for you is picked, and every size says how many users
-    it is recommended for and its price. The DNS is done for you: the platform
-    creates the server's record under its own domain, and you do not need a
-    domain to start. While the panel has no backup destination, the order of
+    Odoo at once?** type how many of you will work at the same time, then
+    choose the **Location**: the size recommended for you is picked, and every
+    size says how many users at once it is recommended for and its price. The
+    DNS is done for you: the platform creates the server's record under its
+    own domain, and you do not need a domain to start. While the panel has no backup destination, the order of
     the managed backup storage opens once the server is ordered: step 3
     explains it. See [Order a VPS](../hosts/hire.md).
 
@@ -129,10 +140,10 @@ domain, opens Odoo's sign-in page. Details in
 [Deploy your first instance](first-deploy.md).
 
 Every instance starts with the limits of a small team: Odoo with 2 workers,
-2 GB of memory and 2 CPUs, and its database with 1 GB. Above about 15 users,
-raise them: on the instance's **Resources** tab, the **Memory Limit** and
-**CPUs** of Odoo and of the database, and on its **Config** tab, `workers`
-(Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
+2 GB of memory and 2 CPUs, and its database with 1 GB. Two workers serve about
+12 users at once. Above that, raise them: on the instance's **Resources** tab,
+the **Memory Limit** and **CPUs** of Odoo and of the database, and on its
+**Config** tab, `workers` (Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
 **Deploy**. See [Memory and resources](../instances/resources.md).
 
 ## 6. Your own domain

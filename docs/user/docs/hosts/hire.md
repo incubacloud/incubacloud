@@ -36,10 +36,11 @@ Each size shows the exact hourly and monthly price for the location you pick,
 before VAT, and that is what you will pay. Pick a region close to your users —
 EU (Helsinki, Nuremberg, Falkenstein) or US (Ashburn, Hillsboro).
 
-Each size also says how many users it is **recommended for**, or that it is for
-tests only. Type the number of people in **How many people will use Odoo?**,
-and once a location is chosen the cheapest size recommended for them is picked
-for you; a smaller one says so under the list. The rule behind the figure is in
+Each size also says how many users at once it is **recommended for**, or that
+it is for tests only. Type the number of people who will work in Odoo at the
+same time in **How many people will use Odoo at once?**, and once a location is
+chosen the cheapest size recommended for them is picked for you; a smaller one
+says so under the list. The figure follows Odoo's own formula, explained in
 [From zero to Odoo](../getting-started/zero-to-odoo.md#2-choose-the-server).
 
 ### 3. Choose the hostname
