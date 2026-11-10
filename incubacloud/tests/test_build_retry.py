@@ -35,13 +35,16 @@ from ..models.deploy_instance_executor import (
     _FETCH_SECONDS_FILE,
     DeployInstanceExecutor,
     _build_retried_once,
+    _then_context_prune,
 )
 from ..models.transport import CommandResult, SSHTransport
 from .test_blocked_and_aborted_jobs import _DeployJobCase
-from .test_executor_features import _make_deploy_executor
+from .test_executor_features import _make_deploy_executor, _make_rebuild_executor
 
 _BUILD = "Build Odoo image"
 _COMPOSE_BUILD = "docker compose build odoo"
+#: The removal of the build contexts no build is using (``build_context_prune``).
+_CONTEXT_PRUNE = "docker builder prune -af --filter type=source.local"
 #: The real ``sleep``, for the stand-ins that have to hang until the TERM.
 _REAL_SLEEP = shutil.which("sleep")
 
@@ -291,6 +294,64 @@ class TestTheDownloadCountsForTheRepetition(BaseCase):
                 self.assertEqual(calls, [_COMPOSE_BUILD] * 2)
 
 
+class TestTheBuildContextsGoAfterTheBuild(BaseCase):
+    """A series that fetches on the host removes the build contexts after
+    its build, built or not, keeping the build's status (10-nov-2026).
+
+    Its context holds the repositories' trees, about 1.2 GB for 19.0, and
+    Docker kept one per instance until the daily prune: a night that
+    rebuilt Tenants1's 25 panels would have taken some 30 GB.
+    """
+
+    def _run(self, statuses, shell="sh"):
+        """Run the wrapped build with ``docker`` exiting *statuses*.
+
+        :return: the exit status and the ``docker`` calls
+        :rtype: tuple
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            host = _FakeHost(tmp, statuses)
+            status, _out = host.run(
+                _then_context_prune(
+                    f"cd {tmp} && "
+                    + _build_retried_once(_COMPOSE_BUILD, fetched=True),
+                ),
+                shell,
+            )
+            return status, [c for c in host.calls() if c.startswith("docker")]
+
+    def test_after_a_build_that_goes_through(self):
+        for shell in ("bash", "sh"):
+            with self.subTest(shell=shell):
+                status, calls = self._run([0], shell)
+                self.assertEqual(status, 0)
+                self.assertEqual(calls, [_COMPOSE_BUILD, _CONTEXT_PRUNE])
+
+    def test_after_a_build_that_fails_with_the_build_s_status(self):
+        status, calls = self._run([3, 4])
+        self.assertEqual(status, 4)
+        self.assertEqual(calls, [_COMPOSE_BUILD, _COMPOSE_BUILD, _CONTEXT_PRUNE])
+
+    def test_a_removal_that_fails_does_not_fail_the_build(self):
+        status, calls = self._run([0, 1])
+        self.assertEqual(status, 0)
+        self.assertEqual(calls, [_COMPOSE_BUILD, _CONTEXT_PRUNE])
+
+    def test_only_a_series_that_fetches_removes_them(self):
+        """A deploy's and a rebuild's build, with 19.0 on the host and sent
+        back to the image by ``incubacloud.repos_in_image_series``."""
+        for make, label in (
+            (_make_deploy_executor, _BUILD),
+            (_make_rebuild_executor, "Rebuild Odoo image"),
+        ):
+            for in_image in ((), ("19.0",)):
+                with self.subTest(label=label, in_image=in_image):
+                    ex = make()
+                    ex._repos_in_image_series = lambda v=in_image: frozenset(v)
+                    command = {c[0]: c for c in ex.get_commands()}[label][1]
+                    self.assertEqual(_CONTEXT_PRUNE in command, not in_image)
+
+
 class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
     """«Build Odoo image» comes between «Pull images» and «Start database»."""
 
@@ -307,7 +368,7 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
         # The build of today's first ``compose run``: cached, no pull.
         self.assertNotIn("--pull", command)
         self.assertNotIn("--no-cache", command)
-        self.assertTrue(command.startswith("cd ~/projects/test-inst && "))
+        self.assertTrue(command.startswith("{ cd ~/projects/test-inst && "))
 
     def test_it_builds_after_the_context_and_before_anything_starts(self):
         # Every series fetches every repository instead of recording the

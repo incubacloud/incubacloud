@@ -269,7 +269,8 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         build = _find_cmd(cmds, "Rebuild Odoo image")
         self.assertEqual(labels.index("Fetch the repositories") + 1,
                          labels.index("Rebuild Odoo image"))
-        self.assertTrue(build[1].startswith(f"cd {ex._inst_dir(ex._inst())} && "))
+        self.assertTrue(build[1].startswith(f"{{ cd {ex._inst_dir(ex._inst())} && "))
+        self.assertIn("docker builder prune -af --filter type=source.local", build[1])
         self.assertNotIn("fetch-repos", build[1])
         self.assertNotIn("record-heads", build[1])
         self.assertEqual(build[2], {"stop_on_failure": True})

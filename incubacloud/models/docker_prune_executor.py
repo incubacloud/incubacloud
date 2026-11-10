@@ -53,6 +53,31 @@ _CACHE_PRUNE = (
 )
 
 
+#: What a build that took its repositories from the host leaves in Docker's
+#: build cache besides its layers: its context, the trees included, which
+#: BuildKit copies and keeps per directory until the daily prune (about
+#: 1.2 GB per 19.0 instance; Tenants1's 25 panels rebuilt in one night
+#: would take some 30 GB, measured 10-nov-2026). Only the contexts no build
+#: is using; the layers stay, their cache keyed by content, and the next
+#: build of each instance sends its context whole again, a local copy.
+#: ``--all`` only because the filter already keeps everything but the
+#: contexts out of it.
+_CONTEXT_PRUNE = "docker builder prune -af --filter type=source.local"
+
+
+def build_context_prune():
+    """The command that removes the build contexts Docker keeps unused.
+
+    For the end of a build whose context holds the repositories' trees
+    (``deploy.sh fetch-repos``). It never fails, for the reason
+    ``build_cache_prune`` gives.
+
+    :return: the shell command, which always exits 0
+    :rtype: str
+    """
+    return f"{{ {_CONTEXT_PRUNE}; }} 2>&1 || true"
+
+
 def build_cache_prune():
     """The command that empties Docker's build cache and unused images.
 
