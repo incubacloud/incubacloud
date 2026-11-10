@@ -162,8 +162,10 @@ N+1 starts where page N ended.
 | `panel_overview`, `search`, `list_projects`, `get_project`, `list_instances`, `get_instance`, `list_hosts`, `get_job`, `list_alerts`, `get_pitr` (bridge) | stakeholder | | |
 | `instance_login_link` | stakeholder (the connect route decides per instance and user) | | for the link |
 | `compare_config`, `github_repo_info` | consultant | | |
-| `update_project`, `create_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `apply_config`, `dismiss_alerts`, `freeze_repos`, `manage_tags` | consultant (a repository line's URL: project manager) | | |
+| `update_project`, `create_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `dismiss_alerts`, `manage_tags` | consultant (a repository line's URL: project manager) | | |
 | `update_instance` | consultant (a repository line's URL: project manager) | | a repository, branch or pinned commit a production does not deploy from yet |
+| `apply_config` | consultant | | a repository, branch or pinned commit of the project's that a production does not deploy from yet |
+| `freeze_repos` | consultant | | pinning or releasing the commit of a production's line |
 | `delete_instance` | consultant (production: manager) | yes | always |
 | `create_project`, `import_project` | project manager | | |
 | `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `staging_mailbox` | developer | | |
@@ -226,14 +228,17 @@ may connect the repository to the project).
   and when the repository is public. Opening a pull request asks in a public
   repository, and in a project that makes a preview of production for each pull
   request (it creates a staging with a copy of production).
-- **Pointing production at other code asks too (1.0.223).** The branch rule looks at
-  the branch at the time of the write; `update_instance` could then move a production
-  onto that branch, or onto any repository, and `rebuild_instance` deploy it, with no
-  approval. Now `update_instance` asks when its `repos` give a production a
-  repository, branch or pinned commit none of its lines holds yet, and the approval
-  lists them (`_confirm_update_instance`). The same lines in another spelling, other
-  modules of the same repository, a line taken out and every change on a staging ask
-  nothing.
+- **Pointing production at other code asks too (1.0.223).** `update_instance` asks
+  when its `repos` give a production a repository, branch or pinned commit none of its
+  lines holds yet, and the approval lists them (`_confirm_update_instance`).
+  `apply_config` asks the same when the actions take a repository from the project
+  (`pull`) or let the project's line win a conflict, giving a production the project's
+  branch and pinned commit (`_confirm_apply_config`). `freeze_repos` asks before it
+  pins the commit of a production's line, listed as its branch's current commit, or
+  releases one that was pinned (`_confirm_freeze_repos`). The same lines in another
+  spelling, other modules of the same repository, a line taken out, the dependencies,
+  the instance's side of `apply_config`, a project's lines and every change on a
+  staging ask nothing.
 - **`harden_host` asks to apply (1.0.223)**, with the hardening job's own description,
   and adds the full setup's warning when `chain_full_setup` chains it, as
   `run_host_action` and a retry already asked for those jobs. Checking what it would

@@ -2442,3 +2442,9 @@ msgstr ""
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid "Git read limit reached. Try again later."
 msgstr "Se alcanzó el límite de lecturas Git. Vuelva a intentarlo más tarde."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_operate.py:0
+msgid "%(repo)s, branch %(branch)s, pinned at its current commit"
+msgstr "%(repo)s, rama %(branch)s, fijado en su commit actual"

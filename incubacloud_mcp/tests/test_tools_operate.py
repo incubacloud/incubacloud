@@ -544,3 +544,148 @@ class TestProductionCodeAsks(PanelFixtureMixin, McpUsersMixin, TransactionCase):
                 },
             )
         )
+
+
+@tagged("post_install", "-at_install")
+class TestProductionConfigAndFreezeAsk(
+    PanelFixtureMixin, McpUsersMixin, TransactionCase
+):
+    """apply_config and freeze_repos ask as update_instance does when they
+    change the code a production deploys from."""
+
+    def setUp(self):
+        """A consultant member of the project; a repository on each instance,
+        and the project's: production's on another branch, and one production
+        does not have."""
+        super().setUp()
+        self._panel_fixture()
+        self.consultant = self._cloud_user(
+            "mcp-config-consultant", group="group_cloud_consultant"
+        )
+        self.project.member_ids = [(4, self.consultant.id)]
+        Line = self.env["cloud.instance.repo"].with_context(
+            skip_apply_requirements=True
+        )
+        self.line = Line.create(
+            {
+                "instance_id": self.production.id,
+                "url": "https://github.com/acme/x",
+                "branch": "main",
+            }
+        )
+        Line.create(
+            {
+                "instance_id": self.staging.id,
+                "url": "https://github.com/acme/x",
+                "branch": "main",
+            }
+        )
+        Line = self.env["cloud.project.repo"].with_context(
+            skip_apply_requirements=True
+        )
+        self.project_line = Line.create(
+            {
+                "project_id": self.project.id,
+                "url": "https://github.com/acme/x",
+                "branch": "19.0",
+            }
+        )
+        Line.create(
+            {
+                "project_id": self.project.id,
+                "url": "https://github.com/acme/z",
+                "branch": "main",
+                "commit_sha": "b" * 40,
+            }
+        )
+
+    def _ask_tool(self, tool, args):
+        """Return what the consultant is asked to call *tool* with *args*."""
+        spec = self.env["incubacloud.mcp.catalog"]._spec(tool)
+        return (
+            self.env["incubacloud.mcp.tools"]
+            .with_user(self.consultant)
+            ._confirmation(spec, args)
+        )
+
+    def _apply(self, instance, repos):
+        """Return what applying *repos* to *instance* asks."""
+        return self._ask_tool(
+            "apply_config",
+            {"instance_id": instance.id, "actions": {"repos": repos}},
+        )
+
+    def test_the_project_s_branch_on_production_asks(self):
+        message = self._apply(
+            self.production, {"conflicts": {"https://github.com/acme/x": "project"}}
+        )
+        self.assertIn('"mcp-acme-prod"', message)
+        self.assertIn('"acme/x", branch "19.0"', message)
+
+    def test_a_repository_pulled_into_production_asks(self):
+        message = self._apply(
+            self.production, {"pull": ["https://github.com/acme/z"]}
+        )
+        self.assertIn('"acme/z", branch "main", commit "' + "b" * 40 + '"', message)
+
+    def test_production_s_own_side_and_staging_ask_nothing(self):
+        self.assertIsNone(
+            self._apply(
+                self.production,
+                {
+                    "conflicts": {"https://github.com/acme/x": "instance"},
+                    "push": ["https://github.com/acme/x"],
+                },
+            )
+        )
+        self.assertIsNone(
+            self._ask_tool(
+                "apply_config",
+                {"instance_id": self.production.id, "actions": {"pip": {}}},
+            )
+        )
+        self.assertIsNone(
+            self._apply(
+                self.staging,
+                {
+                    "conflicts": {"https://github.com/acme/x": "project"},
+                    "pull": ["https://github.com/acme/z"],
+                },
+            )
+        )
+
+    def _freeze(self, model, lines, freeze=True):
+        """Return what freezing or unfreezing *lines* of *model* asks."""
+        return self._ask_tool(
+            "freeze_repos",
+            {"model": model, "repo_ids": lines.ids, "freeze": freeze},
+        )
+
+    def test_freezing_production_asks(self):
+        for lines in (self.line, self.line | self.staging.repo_ids):
+            with self.subTest(count=len(lines)):
+                message = self._freeze("cloud.instance.repo", lines)
+                self.assertIn('"mcp-acme-prod"', message)
+                self.assertIn(
+                    '"acme/x", branch "main", pinned at its current commit',
+                    message,
+                )
+
+    def test_unfreezing_production_asks(self):
+        self.line.commit_sha = "c" * 40
+        message = self._freeze("cloud.instance.repo", self.line, freeze=False)
+        self.assertIn('"acme/x", branch "main"', message)
+        self.assertNotIn("c" * 40, message)
+
+    def test_what_changes_no_production_code_asks_nothing(self):
+        """Unfreezing a line that is not pinned, several pinned ones frozen
+        again, a staging's lines and a project's."""
+        self.assertIsNone(
+            self._freeze("cloud.instance.repo", self.line, freeze=False)
+        )
+        self.line.commit_sha = "c" * 40
+        self.assertIsNone(
+            self._freeze("cloud.instance.repo", self.line | self.staging.repo_ids)
+        )
+        self.assertIsNone(self._freeze("cloud.instance.repo", self.staging.repo_ids))
+        self.assertIsNone(self._freeze("cloud.project.repo", self.project_line))
