@@ -25,15 +25,12 @@ The update needs no data migration.
   public repository: a public one still answers, a private one is not found.
   From Project Manager up, any repository; with a Git provider's credential
   this took a Developer before.
-- **A repository line's Git provider and path are set by the panel alone**,
-  from the line's URL; a value sent for them by a form, the MCP or RPC is
-  ignored.
-- **The import preview and the MCP's `github_repo_info` read with the same
-  rule.** Below Project Manager, the preview of a repository no line the user
-  sees names is read as a public repository. Importing a repository creates a
-  project, so it takes a Project Manager or higher, as creating one does, and
-  a Consultant is refused before the repository is read; the MCP's
-  `import_project` tool asks for the same role.
+- **A repository line's Git provider and path always follow its URL.**
+- **The MCP's `github_repo_info` reads with the same rule.** Importing a
+  repository creates a project, so the import and its preview take a Project
+  Manager or higher, as creating one does, and a Consultant is refused before
+  the repository is read; the MCP's `import_project` tool asks for the same
+  role.
 - **Creating an instance only creates its own domains, whitelist rows, alerts
   and repositories**, and creating a host only its own rows; tags are still
   chosen among those the user sees.

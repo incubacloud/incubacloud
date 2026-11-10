@@ -208,7 +208,8 @@ App management (all gated on **manage settings**):
 | `/cloud/reset_github_app` | Clear the stored App. |
 | `/cloud/detect_github_installation` | Detect/refresh the installation id. |
 
-Repository operations (all gated on **consultant**). Below project manager,
+Repository operations (all gated on **consultant**, but the import preview,
+gated on **create project** as the import is). Below project manager,
 the panel reads with its GitHub App or token, or a provider's credential, only
 a repository of a line the user sees; any other is read as a public one. A
 repository of a Git provider (GitLab) is read with the panel's git and the
@@ -227,7 +228,7 @@ and the deploy reads without them:
 | `/cloud/get_branch_head` | Head commit of a branch. |
 | `/cloud/get_repo_modules` | Odoo addon names in a repository. |
 | `/cloud/get_repo_requirements` | `requirements.txt` content. |
-| `/cloud/fetch_odoojs_submodules` | `.gitmodules` for the Odoo.sh import wizard (SSRF host allowlist). |
+| `/cloud/fetch_odoojs_submodules` | `.gitmodules` for the Odoo.sh import wizard (create project; SSRF host allowlist). |
 | `/cloud/freeze_repo` / `/cloud/unfreeze_repo` | Toggle auto-rebuild freeze on one repo. |
 | `/cloud/freeze_all_repos` / `/cloud/unfreeze_all_repos` | Bulk freeze/unfreeze (record-rule scoped). |
 
