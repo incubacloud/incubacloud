@@ -502,9 +502,18 @@ class GitHubMixin:
         :return: ``(value, None)``, or ``(None, error)`` with *error* the
             response to give: ``ok``, ``error`` and ``settings_hint``.
         """
-        if not may_read_with_panel_credentials(request.env, url):
-            return self._github_read_public(fetch, tag)
         svc = request.env['cloud.github.credential.service'].sudo()
+        if not may_read_with_panel_credentials(request.env, url):
+            value, error = self._github_read_public(fetch, tag)
+            if error and not self._has_github_credentials(svc):
+                # Nothing to hide: the panel has none to read it with.
+                error = {
+                    'ok': False,
+                    'error': self._build_github_error(
+                        'not_configured', 'not_configured', False),
+                    'settings_hint': 'github',
+                }
+            return value, error
         app_status = 'not_configured'  # not_configured | no_access | error
         pat_status = 'not_configured'
 
@@ -544,6 +553,17 @@ class GitHubMixin:
 
         msg = self._build_github_error(app_status, pat_status, bool(pat))
         return None, {'ok': False, 'error': msg, 'settings_hint': 'github'}
+
+    @staticmethod
+    def _has_github_credentials(svc):
+        """Return whether the panel has a GitHub App or a PAT.
+
+        :param svc: the ``cloud.github.credential.service`` model, sudo
+        :rtype: bool
+        """
+        return bool(
+            svc.get_pat() or svc.env['cloud.github.app'].sudo().search_count([])
+        )
 
     @staticmethod
     def _github_read_public(fetch, tag):
