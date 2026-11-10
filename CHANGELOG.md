@@ -81,8 +81,9 @@ instance shows changes to apply: a relay with a password renders as before.
   `smtp.office365.com`, port 587, with STARTTLS, as the mailbox the form
   calls **Sender mailbox**, signing in with an app registered in Entra ID:
   its **Directory ID**, **Application (client) ID** and **Client
-  secret**. The secret is encrypted like a password, never shown again and
-  not revealed by `/cloud/get_secret`; the password kept is not used
+  secret**. The secret is encrypted like a password, saved by a Developer,
+  never shown again, readable only by the system, as a host's password,
+  and not revealed by `/cloud/get_secret`; the password kept is not used
   meanwhile. A staging, which captures its mail, cannot choose it. The
   deploy runs the relay image `ghcr.io/incubacloud/relay-oauth`
   (`RELAY_OAUTH_IMAGE`, by digest, built on `SMTP_RELAY_IMAGE`'s
@@ -92,23 +93,30 @@ instance shows changes to apply: a relay with a password renders as before.
   change: it keeps sending to the local relay. Spanish translation
   included.
 - **Send test mail.** Under the relay's fields, a production with a relay
-  sends one mail to the address of the person who asks
-  (`/cloud/instance_relay_test_mail`, five an hour per instance; with MCP,
-  `send_relay_test_mail`). The job ends with `delivered` and the server's
-  answer; a mail that did not leave is removed from the queue, and one that
-  did flushes it. The button is disabled, with its reason, while the
-  instance is not deployed or has changes to apply. Spanish translation
-  included.
+  sends one mail to the address of the person who asks, or of the manager
+  who retries it (`/cloud/instance_relay_test_mail` and
+  `cloud.instance.send_relay_test_mail`, five an hour per instance; with
+  MCP, `send_relay_test_mail`); the job type itself is a manager's. The
+  job ends with `delivered` and the server's answer; a temporary answer of
+  no known cause leaves the verdict to the health probe. A mail that did
+  not leave is removed from the queue, also when the job is cancelled
+  while it waits, and one that did flushes it. The button is disabled,
+  with its reason, while the instance is not deployed, is stopped or
+  asleep, or has changes to apply; a test refused so does not count
+  towards the five. Spanish translation included.
 - **The panel says when a relay does not deliver.** The health probe reads
   a production relay's queue, its OAuth2 token and the last mail it
   delivered, and raises `smtp_relay_failing`, critical, after two probes
   in a row, with the cause and what to do: the server refusing the
   connection or not answering, its name not resolving, TLS, credentials or
   a token refused, SMTP AUTH disabled in Microsoft 365, a sender without
-  Send As, Entra ID refusing the secret, or mail waiting more than 30
-  minutes. A server refusing one recipient is not one. Only a delivery
-  resolves it: a mail delivered after the alert, or a test mail that went
-  out. The relay's state shows under its fields. With a password, a refusal
+  Send As, Entra ID refusing the secret, the relay's Amavis not taking the
+  mail, or mail waiting more than 30 minutes. A deferred mail counts once
+  Postfix has tried it again (11 minutes), so a single passing deferral
+  raises nothing. A server refusing one recipient is not one, and mail it
+  refused does not hide the relay's own failures. Only a delivery resolves
+  it: a mail delivered after the last failure the probe saw, or a test
+  mail that went out. The relay's state shows under its fields. With a password, a refusal
   from Microsoft 365 says to switch to OAuth2. Spanish translation included.
 
 ### Changed

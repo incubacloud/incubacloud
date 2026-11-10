@@ -46,14 +46,18 @@
     <!-- The health probe (every 5 min) read the relay's queue and found
          mail its server would not take, or a token Entra ID would not
          renew. A message deferred once by a network glitch leaves at
-         Postfix's next try, five minutes later; two probes in a row are
-         a relay that does not deliver. The relay's test mail raises it
-         at once, on its own count: the person who asked has seen it. -->
+         Postfix's next try, up to ten minutes later, so two probes can
+         both see that one deferral: the probe counts a message only
+         once Postfix has tried it again and failed again
+         (_relay_oauth.RETRIED_SECONDS, 660 s). Two probes in a row
+         reading that are a relay that does not deliver. The relay's test
+         mail raises it at once, on its own count: the person who asked
+         has seen it. -->
     <record id="alert_policy_smtp_relay_failing" model="cloud.alert.policy">
         <field name="code">smtp_relay_failing</field>
         <field name="confirm_after">2</field>
         <field name="confirm_window">900</field>
-        <field name="note">A deferral Postfix retries in five minutes is not a stopped relay; two probes tell.</field>
+        <field name="note">Only mail Postfix tried again counts, and two probes in a row tell: one deferral is not a stopped relay.</field>
     </record>
 
     <!-- The SSH probe (every 5 min, hosts without metrics) read the

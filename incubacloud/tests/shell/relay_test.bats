@@ -151,3 +151,20 @@ run_test() {
     [[ "$output" == *"invalid tag"* ]]
     ! grep -q swaks "$CALLS"
 }
+
+@test "a test cancelled while it waits removes its mail under both IDs" {
+    log_mail t10 AAAAAA1 BBBBBB2 ""
+    export IC_RELAY_TEST_POLL=1
+    bash "$SCRIPT" "$TMP/inst" relay@example.com me@example.org t10 0 60 &
+    pid=$!
+    for _ in $(seq 100); do
+        grep -q '^grep -aE' "$CALLS" && break
+        sleep 0.1
+    done
+    kill -TERM "$pid"
+    rc=0
+    wait "$pid" || rc=$?
+    [ "$rc" -eq 143 ]
+    grep -q '^postsuper -d AAAAAA1$' "$CALLS"
+    grep -q '^postsuper -d BBBBBB2$' "$CALLS"
+}

@@ -16,7 +16,7 @@ import yaml
 
 from odoo import http
 from odoo.exceptions import AccessError, ValidationError
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 from odoo.addons.incubacloud.models import _relay_oauth
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
@@ -371,3 +371,62 @@ class TestRelayOAuthRoutes(_RelayOAuthCase):
             record_id=self.inst.id, field="smtp_relay_oauth_client_secret",
         )
         self.assertEqual(answer, {"ok": False, "error": "Field not allowed"})
+
+
+@tagged("post_install", "-at_install")
+class TestRelayOAuthSecretAccess(_RelayOAuthCase):
+    """A developer saves the client secret and nobody but the system reads it.
+
+    ``post_install``: the users need a partner, and a module installed
+    later may add a column to it.
+    """
+
+    def setUp(self):
+        """A developer and a consultant of the project."""
+        super().setUp()
+        self.developer = new_test_user(
+            self.env, login="roauth-developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        self.consultant = new_test_user(
+            self.env, login="roauth-consultant",
+            groups="base.group_user,incubacloud.group_cloud_consultant",
+        )
+        self.project.member_ids = [(4, self.consultant.id), (4, self.developer.id)]
+
+    _call = TestRelayOAuthRoutes._call
+
+    def test_a_developer_saves_it_in_the_form_and_cannot_read_it(self):
+        self.env = self.env(user=self.developer)
+        answer = self._call("cloud_save_instance", instance_id=self.inst.id, vals={
+            "smtp_relay_auth": _relay_oauth.AUTH_OAUTH2_MICROSOFT,
+            "smtp_relay_oauth_directory_id": DIRECTORY,
+            "smtp_relay_oauth_client_id": CLIENT,
+            "smtp_relay_oauth_client_secret": SECRET,
+            "smtp_relay_user": MAILBOX,
+        })
+        self.assertTrue(answer.get("ok"), answer)
+        page = self._call("cloud_get_instance", instance_id=self.inst.id)
+        self.assertTrue(page["has_smtp_relay_oauth_client_secret"])
+        self.assertNotIn(SECRET, repr(page))
+        inst = self.inst.with_user(self.developer)
+        with self.assertRaises(AccessError):
+            inst.read(["smtp_relay_oauth_client_secret"])
+        with self.assertRaises(AccessError):
+            inst.search_read(
+                [("id", "=", inst.id)], ["smtp_relay_oauth_client_secret"],
+            )
+        self.assertEqual(self.inst.sudo()._relay_oauth_secret(), SECRET)
+        files = self.inst.with_user(self.developer)._extra_env_files()
+        self.assertIn(SECRET, files[_relay_oauth.CREDENTIALS_FILE])
+
+    def test_without_one_saved_the_form_says_so(self):
+        self.env = self.env(user=self.developer)
+        page = self._call("cloud_get_instance", instance_id=self.inst.id)
+        self.assertFalse(page["has_smtp_relay_oauth_client_secret"])
+
+    def test_a_consultant_cannot_write_it(self):
+        with self.assertRaises(AccessError):
+            self.inst.with_user(self.consultant).write(
+                {"smtp_relay_oauth_client_secret": "another"},
+            )

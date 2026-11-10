@@ -375,9 +375,9 @@
             <field name="code">relay_test_mail</field>
             <field name="apply_to">instance</field>
             <field name="description">Sends one mail through a production instance's mail relay to the person who asks, and says whether the relay's server took it. Changes nothing on the instance.</field>
-            <!-- One waiting at most, not a collapse: the payload carries
-                 who asks and the mail's tag, so a collapse would merge
-                 nothing, and each test may wait two minutes in a
+            <!-- One waiting at most, not a collapse: the mail goes to
+                 the job's creator, so a collapse would hand one person's
+                 test to another, and each test may wait two minutes in a
                  production's queue. -->
             <field name="queue_exclusive">True</field>
             <!-- False, not left out: an update writes only the fields
