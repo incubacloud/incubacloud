@@ -46,7 +46,7 @@ cd "$dir"
 MARKER="incubacloud_cron_pause"
 EXIT_CRONS_BUSY=75
 
-# Every query is best-effort: a stopped instance (a sleeping free plan)
+# Every query is best-effort: a stopped instance (a sleeping one)
 # has no database to talk to, and no crons running either — in that
 # case the guard simply gets out of the way.
 _psql() {

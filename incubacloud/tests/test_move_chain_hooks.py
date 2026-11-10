@@ -5,8 +5,8 @@ watchdog, with the executors mocked away. Nothing ran the steps' own
 closing hooks in order, on the one record they all share — and that is
 where a move broke: the state machine (2026-07-30) refused the first
 step's ``deployed`` → ``deployed``, because a move deploys a record that
-is still live on its source. Every move failed at its first step until a
-customer's upgrade to a paid plan hit it on 2026-10-15.
+is still live on its source. Every move failed at its first step until
+one was tried on 2026-10-15.
 
 Here the chain is built by the real ``move_to_host`` and ``enqueue_chain``,
 and each job's ``on_success`` runs through the executor the job runner

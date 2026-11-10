@@ -550,7 +550,7 @@ class TestCronRefreshBackupList(TransactionCase):
         self.assertIn(inst.id, calls)
 
     def test_instance_without_backup_service_skipped(self):
-        """Free-tier instance: backup backend inherited but no container."""
+        """An instance without the service: backend inherited, no container."""
         inst = self._create_instance("free-prod", "odoo,db,smtp")
         calls, original, mc = self._patch_list_backups()
         try:

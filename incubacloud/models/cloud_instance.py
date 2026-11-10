@@ -2543,11 +2543,10 @@ class CloudInstance(models.Model):
         container and handed over through the panel's disk to the
         restore. It needs neither the instance's ``backup`` container
         nor a bucket. The move used to take a duplicity snapshot through
-        that container first, and an instance without one (a free plan's,
-        which leaves it out to save memory) failed there: on 2026-10-15
-        QA's walk of a free customer paying for a plan stopped at "service
-        backup is not running". ``host_id`` flips to ``target_host`` only
-        inside ``move_cutover`` on success.
+        that container first, and an instance without one (a module may
+        leave it out to save memory) failed there: on 2026-10-15 a move
+        stopped at "service backup is not running". ``host_id`` flips to
+        ``target_host`` only inside ``move_cutover`` on success.
 
         The old copy is frozen rather than removed: stopped, its data
         kept, for ``move_frozen_source_hours``. A copy a previous move
