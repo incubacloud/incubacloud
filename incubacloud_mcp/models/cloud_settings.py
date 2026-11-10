@@ -137,17 +137,6 @@ class CloudSettings(models.Model):
         return ""
 
     @api.model
-    def _mcp_auto_approval_allowed(self):
-        """Whether an Administrator may let an agent's credential act without
-        asking (``incubacloud.mcp.auto.approval``).
-
-        True here. Read when a rule is granted and at every call it would
-        approve: a panel that answers False leaves the rules it has paused,
-        so this is also the switch that stops them all at once.
-        """
-        return True
-
-    @api.model
     def _mcp_auto_approval_charges(self):
         """Whether agents' actions on this panel can charge an account.
 

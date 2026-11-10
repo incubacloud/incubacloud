@@ -6,8 +6,10 @@ the mark of content others can write — and nothing else does: neither a
 rule of one of the person's keys, nor anyone else's (issue #8).
 """
 
+from datetime import timedelta
 from unittest.mock import patch
 
+from odoo import fields
 from odoo.exceptions import AccessError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
@@ -157,14 +159,22 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
 
     def test_a_rule_of_a_key_does_not_cover_the_assistant(self):
         """The person's API key has a rule; their assistant still shows a card."""
+        key = (
+            self.env["res.users.apikeys"]
+            .with_user(self.manager)
+            .sudo()
+            ._generate("rpc", "k", fields.Datetime.now() + timedelta(days=1))
+        )
+        _user, _name, key_id = self.env["incubacloud.mcp.auth"]._user_for_api_key(key)
+        credential = f"API key #{key_id}"
         with self.enter_registry_test_mode():
             self.env["incubacloud.mcp.credential"]._seen(
                 Principal(
-                    uid=self.manager.id, credential="API key k", client="API key #77"
+                    uid=self.manager.id, credential="API key k", client=credential
                 ),
                 "test-agent",
             )
-        self._grant("API key #77")
+        self._grant(credential)
         conversation = self._working(self.manager)
         self._delete_empty(conversation)
         self.assertTrue(self.empty.exists())
@@ -206,3 +216,26 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
                 [("user_id", "=", self.manager.id)]
             )
         )
+
+    def test_uninstalling_the_assistant_revokes_its_rules_and_keeps_them(self):
+        """What the uninstall does with the rules of kind ``assistant``: the
+        live one is revoked, as a deleted credential's, and stays as history
+        with its audit rows."""
+        rule = self._grant()
+        selection = self.env["ir.model.fields.selection"].search(
+            [
+                ("field_id.model", "=", "incubacloud.mcp.auto.approval"),
+                ("field_id.name", "=", "kind"),
+                ("value", "=", "assistant"),
+            ]
+        )
+        self.assertEqual(len(selection), 1)
+        selection._process_ondelete()
+        self.assertTrue(rule.exists())
+        self.assertEqual(rule.revoked_reason, "credential deleted")
+        actions = (
+            self.env["cloud.audit.log"]
+            .search([("approval_rule_id", "=", rule.id)])
+            .mapped("action")
+        )
+        self.assertIn("Auto-approval rule revoked", actions)

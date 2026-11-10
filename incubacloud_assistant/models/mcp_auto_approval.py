@@ -11,6 +11,18 @@ from odoo import api, fields, models
 ASSISTANT_CREDENTIAL = "assistant"
 
 
+def _end_assistant_rules(rules):
+    """End the assistant's live rules when this module is uninstalled.
+
+    Rules are history and cannot be deleted (``unlink`` refuses), so the
+    live ones are revoked as a deleted credential's, and every rule stays
+    with its audit rows.
+
+    :param rules: the rules of kind ``assistant``
+    """
+    rules._revoke("credential deleted")
+
+
 class McpAutoApproval(models.Model):
     """Rules may be granted to the panel's assistant of a person."""
 
@@ -18,7 +30,7 @@ class McpAutoApproval(models.Model):
 
     kind = fields.Selection(
         selection_add=[("assistant", "Panel assistant")],
-        ondelete={"assistant": "cascade"},
+        ondelete={"assistant": _end_assistant_rules},
     )
 
     @api.model

@@ -34,6 +34,23 @@ export function credentialText(item) {
 }
 
 /**
+ * What tells apart, in the grant form, two credentials with the same label
+ * (two API keys of one person with the same name): the credential itself,
+ * with its id, and when it last connected, to the minute.
+ *
+ * @param {{credential?: string, last_seen?: string}} item a credential the
+ *     server offers
+ * @returns {{key: string, lastSeen: string}|null} null for one that has
+ *     neither (the panel's assistant)
+ */
+export function credentialDetail(item) {
+    if (!item?.credential || !item.last_seen) {
+        return null;
+    }
+    return { key: item.credential, lastSeen: item.last_seen.slice(0, 16) };
+}
+
+/**
  * The period chosen in the grant form, as the server takes it: days, or
  * the last day.
  *

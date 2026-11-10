@@ -7,6 +7,7 @@ import { IcModal } from "@incubacloud/components/ic_modal/ic_modal";
 import {
     approvalNote,
     canRevoke,
+    credentialDetail,
     credentialText,
     grantPayload,
     grantReady,
@@ -63,6 +64,26 @@ export function ownRuleText(rule) {
     );
 }
 
+/**
+ * How a credential reads where one is chosen (the grant form's list and its
+ * notice): its label, then its id and when it last connected, so that two
+ * with the same label are told apart.
+ *
+ * @param {object} item a credential the server offers
+ * @returns {string} the text shown
+ */
+export function credentialChoiceText(item) {
+    const detail = credentialDetail(item);
+    if (!detail) {
+        return credentialText(item);
+    }
+    return _t("%(credential)s [%(key)s, last connected %(date)s UTC]", {
+        credential: credentialText(item),
+        key: detail.key,
+        date: detail.lastSeen,
+    });
+}
+
 /** Rows of a rule's activity per page. */
 export const ACTIVITY_PAGE = 20;
 
@@ -103,6 +124,7 @@ export class McpAutoApproval extends Component {
         });
         this.stateLabel = ruleStateLabel;
         this.credentialText = credentialText;
+        this.credentialChoiceText = credentialChoiceText;
         this.canRevoke = canRevoke;
         this.approvalText = approvalText;
         onWillStart(() => this.load());
@@ -155,7 +177,7 @@ export class McpAutoApproval extends Component {
             "Until %(date)s, %(credential)s of %(person)s runs every action that would wait for an approval, without asking.",
             {
                 date: this.endDay || _t("the date you choose"),
-                credential: credential ? credentialText(credential) : _t("the credential"),
+                credential: credential ? credentialChoiceText(credential) : _t("the credential"),
                 person: user?.name || _t("the person"),
             },
         );
