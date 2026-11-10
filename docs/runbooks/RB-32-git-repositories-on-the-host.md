@@ -6,10 +6,10 @@ build record or old images of a host have to be cleared now, the personal
 access token is rotated, the host's cache of trees takes too much disk, or
 the instances still to be rebuilt are wanted.
 
-From core 1.0.222 every series but 19.0 downloads each repository of
-`repos.yaml` on the host, in doodba's image used as a helper, before the
-image is built with `AGGREGATE=false`
-([architecture](../architecture.md#safe-rebuild)). No credential enters the
+Every series downloads each repository of `repos.yaml` on the host, in
+doodba's image used as a helper, before the image is built with
+`AGGREGATE=false` ([architecture](../architecture.md#safe-rebuild)): all but
+19.0 from core 1.0.222, 19.0 too from 1.0.224. No credential enters the
 image, its build or the instance's container. An instance moves to this at
 its next deploy or rebuild; until then its image and its `repos.yaml` on the
 host still hold the token they were built with.
@@ -34,6 +34,7 @@ The job's log names the repository and the cause:
 | `<alias>: its pinned commit could not be asked with its credential ...` | The host's cache has the tree, but this instance's credential no longer reads the repository | Nothing, if access was taken away on purpose: the download that follows fails naming it. Otherwise give access back |
 | `an earlier download of this instance's repositories (PID N) is still running: it is stopped` | A run an earlier job left (its worker died) was still downloading | Nothing: the new one goes on |
 | `<alias>: its tree could not be linked from the host's cache ...` | The cache and the instance are on different file systems, or the disk is full | Check `df -h ~`; a copy takes the tree's whole size per instance |
+| `<alias>: a head of its merges moved during the download, or could not be read again ...` | A repository with several merges moved while it downloaded: which merge brought what is not known | Nothing: the tree is this instance's alone, and its next deploy or rebuild fetches it again |
 
 A rebuild whose download fails keeps the instance on its previous image, as
 a failed build does. The trees may be left part new, part old; the next run
@@ -52,8 +53,8 @@ $ du -sh ~/.incubacloud/git-trees                   # the host's trees
 
 Without a new version of core: set the system parameter
 `incubacloud.repos_in_image_series` (Settings → Technical → System
-Parameters) to the series, separated by commas, for example `18.0,20.0`.
-8.0 to 10.0 cannot go back: their image's git is not safe.
+Parameters) to the series, separated by commas, for example `19.0` or
+`18.0,20.0`. 8.0 to 10.0 cannot go back: their image's git is not safe.
 
 The next deploy or rebuild of each instance of that series removes its
 downloaded trees, markers and `odoo/Dockerfile.dockerignore` (step «Record
@@ -90,6 +91,19 @@ account would share the trees, as they already share Docker.
   $ du -shc ~/.incubacloud/git-trees ~/*/*/odoo/custom/src
   ```
 
+  Odoo 19.0's tree is about 1.2 GB, kept once per commit the host's
+  instances are on; each instance's links add only its directories, about
+  35 MB.
+- **The build contexts.** Docker's build cache keeps the last context of
+  each instance it built, the trees included, until the daily maintenance
+  empties it; a deploy or rebuild empties it first when the disk is under
+  the host's threshold («Free the build cache if the disk is low»). After a
+  night that rebuilt many instances it is their number times their trees:
+
+  ```bash
+  $ docker buildx du --filter type=source.local | tail -3
+  ```
+
 - **What the daily maintenance removes:** a tree no instance links any more
   (its `head` has one link) unchanged for two hours, an entry without `head`
   two hours old, and downloads cut short. While a job holds the cache it
@@ -114,7 +128,8 @@ GitHub App's tokens expire within the hour by themselves.
 ## 6. The instances still to be rebuilt
 
 Instances whose last successful deploy or rebuild is older than the update
-of the panel to 1.0.222 (replace the date):
+that moved their series: of the panel to 1.0.222 for every series but 19.0,
+to 1.0.224 for 19.0 (replace both dates):
 
 ```sql
 db$ SELECT i.id, i.name, i.odoo_version, max(j.date_done) AS last_build
@@ -122,17 +137,25 @@ db$ SELECT i.id, i.name, i.odoo_version, max(j.date_done) AS last_build
     LEFT JOIN cloud_job j ON j.instance_id = i.id AND j.state = 'done'
         AND j.job_type_id IN (SELECT id FROM cloud_job_type
                               WHERE code IN ('deploy_instance', 'rebuild_instance'))
-    WHERE i.active AND i.odoo_version <> '19.0'
+    WHERE i.active
     GROUP BY i.id, i.name, i.odoo_version
-    HAVING max(j.date_done) IS NULL OR max(j.date_done) < '2026-11-11'
+    HAVING max(j.date_done) IS NULL OR max(j.date_done) <
+        CASE WHEN i.odoo_version = '19.0' THEN timestamp '2026-11-12'
+             ELSE timestamp '2026-11-11' END
     ORDER BY last_build NULLS FIRST;
 ```
+
+A layer may deploy and rebuild with job types of its own: add their codes
+to the list.
 
 Rebuild each from the panel.
 
 ## Rollback
 
 - **Of a series:** section 2.
+- **Of core from 1.0.224 to 1.0.222 or 1.0.223:** nothing by hand. 19.0 goes
+  back to cloning in the image, and the next deploy or rebuild of each 19.0
+  instance removes its downloaded trees, as section 2 does.
 - **Of core to a version before 1.0.222:** an instance already moved does not
   build until, in its directory on the host, `odoo/Dockerfile.dockerignore`
   and the trees of `odoo/custom/src` are removed (everything but `private`,

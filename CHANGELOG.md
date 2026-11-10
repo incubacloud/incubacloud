@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.224] — 2026-11-10
+
+19.0 downloads its repositories on the server too, as every other series
+has since 1.0.222. The update needs no data migration: a 19.0 instance
+moves at its next deploy or rebuild, which downloads all its repositories
+once. A server keeps one tree of each commit of Odoo its instances are
+on, about 1.2 GB for 19.0, and Docker's build cache keeps each instance's
+build context, of the same size, until the daily maintenance.
+
+### Changed
+
+- **19.0 downloads its repositories on the server.** Its deploys and
+  rebuilds run *Fetch the repositories* and build the image with
+  `AGGREGATE=false`; *Record repository heads* and *Trust the Git servers*
+  are gone, and the image no longer carries Odoo's `.git`. The system
+  parameter `incubacloud.repos_in_image_series` still sends it back to
+  cloning in the image; its next deploy or rebuild then removes the
+  downloaded trees.
+
+### Security
+
+- **No Git credential in a 19.0 image either.** A 19.0 instance deployed
+  or rebuilt with this version holds no token in its image, its build, its
+  container or the `repos.yaml` on its server. One not rebuilt yet keeps the
+  token it was built with until then.
+
+### Fixed
+
+- **A repository with several merges whose head moves while it downloads
+  is not shared.** The commit each merge brought is not known then, so its
+  tree stays the instance's own and the next deploy or rebuild fetches it
+  again, instead of being kept on the server under the commits read before
+  the download for other instances to take.
+
 ## [1.0.223] — 2026-11-10
 
 The update deletes the personal default values saved on the panel's
