@@ -268,6 +268,7 @@ the agents already send.
   secret**, its `/mcp` URL and the agents' issuer. The copy creates a key
   of its own on first use, takes its URL from `web.base.url`, and its
   agents connect with API keys until an issuer is set again.
+- **Neutralizing a database now also gives it its own `database.secret`.**
 
 ---
 
