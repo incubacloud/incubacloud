@@ -31,13 +31,14 @@ own modules and names its own exemptions, where its fields live.
 """
 import os
 import re
+import uuid
 
 from lxml import etree
 
 from odoo.modules.module import get_manifest, get_module_path
 from odoo.modules.neutralize import neutralize_database
 from odoo.tests.common import TransactionCase, tagged
-from odoo.tools.misc import file_open
+from odoo.tools.misc import file_open, hmac
 
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
 
@@ -312,6 +313,33 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
             " WHERE key = 'database.is_neutralized'"
         )
         self.assertEqual(self.env.cr.fetchone(), ("true",))
+
+    def test_a_neutralized_copy_signs_with_a_secret_of_its_own(self):
+        """``database.secret`` changes, a uuid4 as Odoo creates it.
+
+        Odoo signs sessions and links with it, and its own neutralization
+        leaves it as it is: a copy restored with ``pg_restore`` and
+        neutralized kept production's.
+        """
+        before = self.env["ir.config_parameter"].sudo().get_param("database.secret")
+        signed = hmac(self.env(su=True), "neutralize-test", "message")
+        self.env.flush_all()
+        neutralize_database(self.env.cr)
+        self.env.registry.clear_cache("stable")
+        self.env.cr.execute(
+            "SELECT value FROM ir_config_parameter WHERE key = 'database.secret'"
+        )
+        (after,) = self.env.cr.fetchone()
+        # Compared, never printed: a failure must not show the key.
+        self.assertTrue(after != before, "database.secret is still production's")
+        parsed = uuid.UUID(after)
+        self.assertTrue(
+            str(parsed) == after and parsed.version == 4,
+            "database.secret is not a uuid4 as Odoo creates it",
+        )
+        self.assertNotEqual(
+            hmac(self.env(su=True), "neutralize-test", "message"), signed,
+        )
 
     def test_a_neutralized_copy_reaches_nothing_outside(self):
         """No webhook, no metrics, no job of production's, no open console.

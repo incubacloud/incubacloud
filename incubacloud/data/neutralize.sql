@@ -112,3 +112,15 @@ DO $$ BEGIN
     DELETE FROM cloud_gitlab_hook;
 EXCEPTION WHEN undefined_table THEN NULL;
 END $$;
+
+-- 9. Odoo's database.secret, the key that signs sessions, signup and reset
+-- links, portal and unsubscribe links, and names the panel's handoffs: the
+-- copy gets one of its own, a uuid4 as Odoo creates it. A session or a link
+-- of production's does not open the copy, nor one of the copy's
+-- production; whoever is signed in to the copy signs in again. Nothing the
+-- panel stores is derived from it: a handoff is named from it only while its
+-- chain runs, and section 3 cancels the chains. A restore as a copy
+-- (click-odoo-restoredb's default) already gives a new one, with
+-- database.uuid; odoo neutralize after a pg_restore did not.
+UPDATE ir_config_parameter SET value = gen_random_uuid()::text
+ WHERE key = 'database.secret';
