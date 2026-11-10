@@ -300,7 +300,7 @@ class TestTheBuildContextsGoAfterTheBuild(BaseCase):
 
     Its context holds the repositories' trees, about 1.2 GB for 19.0, and
     Docker kept one per instance until the daily prune: a night that
-    rebuilt Tenants1's 25 panels would have taken some 30 GB.
+    rebuilt the 25 instances of one host would have taken some 30 GB.
     """
 
     def _run(self, statuses, shell="sh"):
