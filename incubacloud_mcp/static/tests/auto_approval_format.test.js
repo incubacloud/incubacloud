@@ -77,7 +77,17 @@ describe("Auto-approval — the grant dialog", () => {
             days: 90,
             acknowledged: true,
             notice_version: "2026-11-10",
+            include_charges: false,
         });
+    });
+
+    test("charges are included only when their box is ticked", () => {
+        expect(grantPayload(readyForm({ includeCharges: true }), "v").include_charges).toBe(
+            true
+        );
+        expect(grantPayload(readyForm({ includeCharges: "yes" }), "v").include_charges).toBe(
+            false
+        );
     });
 
     test("the notice says the day the rule ends", () => {

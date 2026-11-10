@@ -48,6 +48,16 @@ export function approvalText(entry) {
 }
 
 /**
+ * What the list of rules says of a rule's charges.
+ *
+ * @param {object} rule a rule as the server lists it
+ * @returns {string} "Included" or "Still ask"
+ */
+export function chargesText(rule) {
+    return rule?.include_charges ? _t("Included") : _t("Still ask for approval");
+}
+
+/**
  * The fixed notice "Connect an agent" shows to the person a rule covers.
  *
  * @param {object} rule one of the person's rules
@@ -94,6 +104,7 @@ function emptyForm() {
         credential: "",
         period: "",
         date: "",
+        includeCharges: false,
         acknowledged: false,
         busy: false,
         error: "",
@@ -127,6 +138,7 @@ export class McpAutoApproval extends Component {
         this.credentialChoiceText = credentialChoiceText;
         this.canRevoke = canRevoke;
         this.approvalText = approvalText;
+        this.chargesText = chargesText;
         onWillStart(() => this.load());
     }
 
@@ -193,7 +205,14 @@ export class McpAutoApproval extends Component {
         if (!this.state.data?.charges) {
             return reach;
         }
-        return `${reach} ${_t("It also includes what is charged to your account.")}`;
+        // Outside a template literal: the export of translations does not
+        // read a call written inside one.
+        const charges = this.state.grant?.form.includeCharges
+            ? _t("It also includes what is charged to your account.")
+            : _t(
+                  "Actions that charge your account are not included: they still ask for approval."
+              );
+        return `${reach} ${charges}`;
     }
 
     /** The leaked credential's risk, naming the person. */

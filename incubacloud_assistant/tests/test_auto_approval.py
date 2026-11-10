@@ -6,6 +6,7 @@ the mark of content others can write — and nothing else does: neither a
 rule of one of the person's keys, nor anyone else's (issue #8).
 """
 
+import dataclasses
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -19,7 +20,7 @@ from odoo.addons.incubacloud_mcp.protocol.context import Principal
 from odoo.addons.incubacloud_mcp.tests.common import AutoApprovalAllowedMixin
 from odoo.addons.queue_job.tests.common import trap_jobs
 
-from ..models.assistant_prompt import AUTO_APPROVAL_RULE
+from ..models.assistant_prompt import AUTO_APPROVAL_CHARGES, AUTO_APPROVAL_RULE
 from ..models.mcp_auto_approval import ASSISTANT_CREDENTIAL
 from ..request_scope import tool_request
 from .common import EngineMixin, answer
@@ -40,8 +41,9 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
             {"name": "Asis AA Empty", "remote_folder": "asisaaempty"}
         )
 
-    def _grant(self, credential=ASSISTANT_CREDENTIAL):
-        """Grant the manager's *credential* a rule for a week."""
+    def _grant(self, credential=ASSISTANT_CREDENTIAL, include_charges=False):
+        """Grant the manager's *credential* a rule for a week, with charges
+        when *include_charges*."""
         return (
             self.env["incubacloud.mcp.auto.approval"]
             .with_user(self.admin)
@@ -51,8 +53,23 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
                 days=7,
                 acknowledged=True,
                 notice_version=NOTICE_VERSION,
+                include_charges=include_charges,
             )
         )
+
+    def _charging(self, name="delete_project"):
+        """Declare the tool *name* as one that charges money, for the test."""
+        Catalog = type(self.env["incubacloud.mcp.catalog"])
+        original = Catalog._tool_specs
+
+        def specs(catalog):
+            """Every spec, *name*'s marked as charging."""
+            return [
+                dataclasses.replace(spec, charges=True) if spec.name == name else spec
+                for spec in original(catalog)
+            ]
+
+        return patch.object(Catalog, "_tool_specs", specs)
 
     def _delete_empty(self, conversation):
         """Make the model delete the empty project in the next step."""
@@ -192,6 +209,64 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
         self.assertIn(AUTO_APPROVAL_RULE, request.system)
         described = {tool.name: tool.description for tool in request.tools}
         self.assertIn("without asking", described["delete_project"])
+
+    def test_a_rule_without_charges_shows_a_card_for_a_tool_that_charges(self):
+        """By default the assistant's rule leaves out charges: a tool that
+        charges shows its card, runs nothing, and the rule counts no use."""
+        rule = self._grant()
+        conversation = self._working(self.manager)
+        with self._charging(), trap_jobs():
+            self._delete_empty(conversation)
+        self.assertTrue(self.empty.exists())
+        card = conversation.message_ids.filtered(lambda m: m.role == "card")
+        self.assertEqual(card.card_state, "pending")
+        rule.invalidate_recordset()
+        self.assertEqual(rule.use_count, 0)
+
+    def test_a_rule_with_charges_runs_a_tool_that_charges_without_a_card(self):
+        """With charges included, the tool that charges runs, marked auto."""
+        rule = self._grant(include_charges=True)
+        conversation = self._working(self.manager)
+        with self._charging(), trap_jobs():
+            self._delete_empty(conversation)
+        self.assertFalse(self.empty.exists())
+        self.assertFalse(conversation.message_ids.filtered(lambda m: m.role == "card"))
+        audit = (
+            self.env["cloud.audit.log"]
+            .sudo()
+            .search([("action", "=", "Agent: delete_project")], limit=1)
+        )
+        self.assertEqual((audit.approval, audit.approval_rule_id), ("auto", rule))
+
+    def test_a_rule_with_charges_runs_any_other_tool_too(self):
+        """Including charges takes nothing away: a tool that does not charge
+        runs without a card."""
+        self._grant(include_charges=True)
+        conversation = self._working(self.manager)
+        with trap_jobs():
+            self._delete_empty(conversation)
+        self.assertFalse(self.empty.exists())
+        self.assertFalse(conversation.message_ids.filtered(lambda m: m.role == "card"))
+
+    def test_the_prompt_and_the_tools_say_charges_still_show_a_card(self):
+        """Under a rule without charges, the model's rules say actions that
+        charge still show a card, and so does the tool's description; with
+        charges, neither does."""
+        conversation = self._working(self.manager)
+        Engine = self.env["incubacloud.assistant.engine"].with_user(self.manager)
+        rule = self._grant()
+        with self._charging():
+            request = Engine._request(conversation.with_user(self.manager), "m")
+            self.assertIn(AUTO_APPROVAL_CHARGES, request.system)
+            described = {tool.name: tool.description for tool in request.tools}
+            self.assertNotIn("without asking", described["delete_project"])
+            self.assertIn("does not include charges", described["delete_project"])
+            rule._revoke("manual")
+            self._grant(include_charges=True)
+            request = Engine._request(conversation.with_user(self.manager), "m")
+            self.assertNotIn(AUTO_APPROVAL_CHARGES, request.system)
+            described = {tool.name: tool.description for tool in request.tools}
+            self.assertIn("without asking", described["delete_project"])
 
     def test_the_assistant_cannot_grant_a_rule(self):
         """The grant route, reached from a tool's request, refuses it."""

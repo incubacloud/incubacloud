@@ -353,9 +353,16 @@ class AssistantEngine(models.AbstractModel):
         auto = conv.env["incubacloud.mcp.auto.approval"]._active_for(
             conv.sudo().user_id.id, ASSISTANT_CREDENTIAL
         )
+        charges_ask = (
+            bool(auto)
+            and not auto.include_charges
+            and conv.env["cloud.settings"].sudo()._mcp_auto_approval_charges()
+        )
         return ChatRequest(
             model=model,
-            system=system_prompt(language, auto_approved=bool(auto)),
+            system=system_prompt(
+                language, auto_approved=bool(auto), charges_ask=charges_ask
+            ),
             tools=conv.env["incubacloud.assistant.tools"]._definitions(),
             turns=self._turns(conv),
         )

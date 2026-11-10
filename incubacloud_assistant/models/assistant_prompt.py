@@ -78,9 +78,14 @@ AUTO_APPROVAL_RULE = (
     "card, at once, also on production and after you read content others can "
     "write. Before each change, make sure it is what the person asked for."
 )
+#: Added after it when that rule does not include charges and some tool
+#: charges money.
+AUTO_APPROVAL_CHARGES = (
+    "The rule does not include charges: actions that charge money still show a card."
+)
 
 
-def system_prompt(language, auto_approved=False):
+def system_prompt(language, auto_approved=False, charges_ask=False):
     """Return the rules for a conversation whose panel is in *language*.
 
     The panel's language is not the person's: one who writes in Spanish
@@ -90,9 +95,15 @@ def system_prompt(language, auto_approved=False):
     :param str language: the name of the panel's language, e.g. ``English``.
     :param bool auto_approved: an auto-approval rule lets the assistant act
         without a card (:data:`AUTO_APPROVAL_RULE` is added)
+    :param bool charges_ask: that rule leaves the actions that charge money
+        asking (:data:`AUTO_APPROVAL_CHARGES` is added too)
     :rtype: str
     """
-    rules = f"{SYSTEM}\n\n{AUTO_APPROVAL_RULE}" if auto_approved else SYSTEM
+    rules = SYSTEM
+    if auto_approved:
+        rules += f"\n\n{AUTO_APPROVAL_RULE}"
+        if charges_ask:
+            rules += f" {AUTO_APPROVAL_CHARGES}"
     return (
         f"{rules}\n\nAnswer in the language of the person's last message; "
         f"when it is unclear, in {language}."

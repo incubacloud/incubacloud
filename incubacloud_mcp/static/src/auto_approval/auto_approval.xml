@@ -55,6 +55,9 @@
                         <div><dt>Until (UTC)</dt><dd t-esc="rule.expires_at"/></div>
                         <div><dt>Last used</dt><dd t-esc="rule.last_used_at || '—'"/></div>
                         <div><dt>Auto-approved calls</dt><dd t-esc="rule.use_count"/></div>
+                        <div t-if="state.data.charges or rule.include_charges">
+                            <dt>Charges</dt><dd t-esc="chargesText(rule)"/>
+                        </div>
                         <div t-if="rule.revoked_at">
                             <dt>Ended</dt>
                             <dd><t t-esc="rule.revoked_reason"/> · <t t-esc="rule.revoked_at"/><t t-if="rule.revoked_by"> · <t t-esc="rule.revoked_by"/></t></dd>
@@ -134,6 +137,12 @@
                                t-on-change="(ev) => this.setField('date', ev.target.value)"/>
                     </div>
                 </div>
+                <label class="ic-mcp-auto-charges" t-if="state.data.charges">
+                    <input type="checkbox" t-att-checked="state.grant.form.includeCharges"
+                           t-on-change="(ev) => this.setField('includeCharges', ev.target.checked)"/>
+                    Include charges: orders, purchases and plan changes billed to your account
+                    run without asking too. Unticked, they still ask for approval.
+                </label>
 
                 <div class="ic-mcp-auto-notice">
                     <p t-esc="noticeLead"/>

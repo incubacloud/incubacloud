@@ -59,6 +59,11 @@ AUTO_APPROVAL_SENTENCE = (
     "the user, until {until} UTC: no action waits for an approval, so make sure "
     "of each call before you make it."
 )
+#: Added when that rule does not include charges and some tool charges money.
+AUTO_APPROVAL_CHARGES_SENTENCE = (
+    "The rule does not include charges: tools that charge money still wait for "
+    "the user's approval."
+)
 INSTRUCTIONS = (
     "Operates this IncubaCloud panel with the signed-in user's role and project "
     "access. Long operations (deploy, rebuild, backups, clones, restores, moves) "
@@ -303,25 +308,30 @@ class McpServer(models.AbstractModel):
         )
 
     @api.model
-    def _auto_until(self, ctx):
-        """Return until when a rule lets *ctx*'s credential run without asking
-        (``YYYY-MM-DD HH:MM:SS``, UTC), or ``''``.
+    def _auto_rule(self, ctx):
+        """Return the rule that lets *ctx*'s credential run without asking,
+        or an empty recordset.
 
         What the listing and the instructions say; the gate reads the rule
         again at every call.
         """
-        rule = self.env["incubacloud.mcp.auto.approval"]._active_for(
+        return self.env["incubacloud.mcp.auto.approval"]._active_for(
             ctx.principal.uid, ctx.principal.client
         )
-        return fields.Datetime.to_string(rule.expires_at) if rule else ""
 
     @api.model
     def _instructions(self, ctx):
         """Return the server's instructions for *ctx*: true about approvals."""
-        until = self._auto_until(ctx)
-        approvals = (
-            AUTO_APPROVAL_SENTENCE.format(until=until) if until else APPROVAL_SENTENCE
+        rule = self._auto_rule(ctx)
+        if not rule:
+            return INSTRUCTIONS.format(approvals=APPROVAL_SENTENCE)
+        approvals = AUTO_APPROVAL_SENTENCE.format(
+            until=fields.Datetime.to_string(rule.expires_at)
         )
+        if not rule.include_charges and any(
+            spec.charges for spec in self._visible_specs()
+        ):
+            approvals += f" {AUTO_APPROVAL_CHARGES_SENTENCE}"
         return INSTRUCTIONS.format(approvals=approvals)
 
     @api.model
@@ -420,11 +430,17 @@ class McpServer(models.AbstractModel):
         """Return ``tools/list``: same order every time, cacheable privately.
 
         With an auto-approval rule for the credential that lists, the tools
-        that would ask say they run without asking, and until when.
+        that would ask say they run without asking, and until when; but
+        those that charge money, under a rule that does not include charges.
         """
-        until = self._auto_until(ctx)
+        rule = self._auto_rule(ctx)
+        until = fields.Datetime.to_string(rule.expires_at) if rule else ""
+        charges = bool(rule.include_charges)
         result = {
-            "tools": [spec.listed(auto_until=until) for spec in self._visible_specs()]
+            "tools": [
+                spec.listed(auto_until=until, auto_charges=charges)
+                for spec in self._visible_specs()
+            ]
         }
         if ctx.modern:
             result.update(ttlMs=CACHE_TTL_MS, cacheScope="private")
