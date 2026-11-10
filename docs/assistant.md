@@ -107,7 +107,7 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   output), `compare_config` or the end of a job, `conversation.tainted` is set; every
   change then asks until the person's next message enters the context — also the
   work on the agent's own new branch and redeploying its staging. `TAINT_COVERS_OWN_WORK`
-  (`True`, the owner's decision of 28 October) is the one switch that decides whether
+  (`True`, decided on 28 October) is the one switch that decides whether
   the mark covers that work. Names and notes that `search` and `get_project` answer
   are written by the panel's own users under their roles and do not mark.
 - The code tools read only repositories of projects or instances the user reads and

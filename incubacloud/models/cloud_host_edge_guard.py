@@ -3,7 +3,7 @@
 Odoo answers ``/website/info`` to anyone, with the list of installed apps
 and the exact version, and with the language in front too
 (``/es/website/info`` is rerouted to the same page). That tells a stranger
-which known flaws to try. On 7-nov-2026 the owner decided it is refused on
+which known flaws to try. Since 7-nov-2026 it is refused on
 every instance of every host, the existing ones included, with an
 exception an instance can turn on (``cloud.instance.website_info_public``).
 

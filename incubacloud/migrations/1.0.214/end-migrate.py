@@ -1,7 +1,7 @@
 """End-migrate for 1.0.214 — the edge guard on every host that is already set up.
 
 From this version every host's proxy refuses Odoo's ``/website/info``
-(``cloud_host_edge_guard.py``; owner's decision, 7-nov-2026). A host set up
+(``cloud_host_edge_guard.py``; 7-nov-2026). A host set up
 from now on gets the guard from its Full Setup; one set up before gets it
 from ``push_edge_guard``, queued here once per active host with the
 panel's proxy. Never a Full Setup.

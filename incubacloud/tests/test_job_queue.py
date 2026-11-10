@@ -2774,7 +2774,7 @@ class TestMoves(_QueueCase):
     def test_a_failed_source_cleanup_does_not_hold_the_queue(self):
         """The move cut over and froze the old copy, and removing that copy
         from the source failed: the instance lives on the destination, and
-        its backups and jobs go on (owner, 27-oct-2026). The failure is
+        its backups and jobs go on (27-oct-2026). The failure is
         still announced, and its alert stays."""
         *steps, freeze = self._move_chain()
         self.assertEqual(freeze.job_type_id.code, "move_freeze_source")

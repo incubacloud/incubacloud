@@ -67,17 +67,17 @@ class TestTheSeriesCards(BaseCase):
             }
 
         expected = {
-            # 7.0 is retired (owner, 7-nov-2026). What doodba's template
+            # 7.0 is retired (7-nov-2026). What doodba's template
             # v10.0.8 allows each (its copier.yml) but below 12, the first
             # major with continuous recovery, which 9.6 lacks as well as a
             # backup service: 12 instead, beyond the template's 9.6 alone
             # for 8.0 to 10.0, and 12 to 13 for 11.0 and 12.0; 13.0 to
-            # 15.0 start at 12 instead of the template's 10 (owner,
-            # 7-nov-2026). No neutralization of Odoo's own before 16.0.
+            # 15.0 start at 12 instead of the template's 10
+            # (7-nov-2026). No neutralization of Odoo's own before 16.0.
             # 8.0 to 10.0 are built on Debian 8, gone from the mirrors,
             # and have no ``--no-http`` (7-nov-2026). Their git 2.1.4
             # follows a redirect to plain http with the token: every
-            # repository is fetched before the build (owner, 8-nov-2026).
+            # repository is fetched before the build (8-nov-2026).
             **dict.fromkeys(
                 ("8.0", "9.0", "10.0"),
                 card(
@@ -89,7 +89,7 @@ class TestTheSeriesCards(BaseCase):
             **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
             **dict.fromkeys(("13.0", "14.0"), card(("12", "16", "16"), "sql")),
             "15.0": card(("12", "17", "17"), "sql"),
-            # What the launch offered (owner, 2-nov-2026), and 16.0 and 17.0
+            # What the launch offered (2-nov-2026), and 16.0 and 17.0
             # since their run of the series passed (10-nov-2026); the rest
             # open one by one as theirs passes.
             **dict.fromkeys(
@@ -155,7 +155,7 @@ class TestTheSeriesCards(BaseCase):
 
     def test_seven_is_retired_and_nine_six_gone(self):
         """7.0 can neither dump, restore nor update its database, and 9.6
-        has no backup service (owner, 7-nov-2026): no picker, field or
+        has no backup service (7-nov-2026): no picker, field or
         tool offers either."""
         self.assertNotIn("7.0", versions.VERSIONS)
         self.assertNotIn(("7.0", "7.0"), versions.ODOO_VERSION_SELECTION)
@@ -547,7 +547,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
 class TestANewRecordGetsTheNewestSeriesItsPanelOffers(TransactionCase):
     """What creates a project, or an instance outside a project, without
     naming a series gets the newest one offered that the panel's pin
-    renders (owner's decision of 22-oct-2026). An instance in a project
+    renders (22-oct-2026). An instance in a project
     takes the project's."""
 
     def _new_project_and_instance(self, ref):

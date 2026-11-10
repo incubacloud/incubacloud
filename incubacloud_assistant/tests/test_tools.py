@@ -196,7 +196,7 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
         read = Catalog._spec("read_logs")
         self.assertIsNone(Tools._extra_confirmation(read, args, tainted=True))
 
-    def test_the_owner_s_switch_decides_about_the_agent_s_own_work(self):
+    def test_the_switch_decides_about_the_agent_s_own_work(self):
         """Tainted, a write to the agent's own branch asks; with the switch off, not."""
         Tools = self.env["incubacloud.assistant.tools"].with_user(self.developer)
         Branch = self.env["incubacloud.mcp.agent.branch"].with_user(self.developer)

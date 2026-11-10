@@ -29,7 +29,7 @@ Fields of a card:
     shows that range and ``cloud.instance`` refuses any other. What Odoo
     and doodba's template recommend for the series, unless a reason
     written beside the card, with its date, says otherwise; then the
-    nearest major that serves (owner, 7-nov-2026).
+    nearest major that serves (7-nov-2026).
 ``postgres_beyond_template``
     Whether that range is not the one doodba's template allows the
     series (its copier.yml's ``pg_per_odoo``), so the copier run of a
@@ -94,7 +94,7 @@ HEADLESS_FLAGS = ("--no-http", "--no-xmlrpc")
 #: doodba's template allows 8.0 to 12.0: it renders no ``backup`` service
 #: for it, since its backup image does not support it (template v10.0.8),
 #: and a series runs with every service of the panel or is not offered
-#: (owner, 7-nov-2026).
+#: (7-nov-2026).
 POSTGRES_MAJORS = (
     "10", "11", "12", "13", "14", "15", "16", "17", "18",
 )
@@ -149,12 +149,12 @@ def _card(
 # render is the series a new project, or an instance outside one, gets
 # (``default_version``); the platform's own panels name theirs.
 VERSIONS = {
-    # 7.0 to 17.0 were not offered at the launch (owner, 2-nov-2026): each
+    # 7.0 to 17.0 were not offered at the launch (2-nov-2026): each
     # opens here once its own run of the series passes on the code that
     # will serve it. 16.0 and 17.0 opened on 10-nov-2026, after their run
     # passed on the production image of 9-nov-2026. A record that holds one keeps it, and an administrator
     # can still deploy one, which is how that run tests it.
-    # 7.0 is retired (owner, 7-nov-2026): the click-odoo of its image can
+    # 7.0 is retired (7-nov-2026): the click-odoo of its image can
     # neither dump, restore nor update its database, so no panel deploys it
     # and the table no longer names it. No instance of production held it.
     # 8.0 to 15.0 run on what the doodba template allows each (v10.0.8's
@@ -165,7 +165,7 @@ VERSIONS = {
     # service (``POSTGRES_MAJORS``): 8.0 to 10.0, for which the template
     # allows 9.6 alone, run on 12 alone, 11.0 and 12.0 on 12 to 13, with 13
     # by default as the template recommends, and 13.0 to 15.0 from 12 up to
-    # the template's latest (owner, 7-nov-2026; 8.0 to 12.0 each checked on
+    # the template's latest (7-nov-2026; 8.0 to 12.0 each checked on
     # 12 that day: database created, modules installed and updated,
     # click-odoo and duplicity copies restored, login served, recovery to a
     # point in time; 13.0 to 15.0 are inside the template's own range, which
@@ -235,7 +235,7 @@ def offered_versions(template_ref=None):
 def default_version(template_ref=None):
     """Return the series a new project, or an instance outside one, gets.
 
-    Always the newest offered one (owner's decision of 22-oct-2026),
+    Always the newest offered one (22-oct-2026),
     among those *template_ref* can render, so a panel pinned below a
     series' floor does not start projects on a series it cannot deploy.
 
