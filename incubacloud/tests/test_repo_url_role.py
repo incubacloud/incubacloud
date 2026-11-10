@@ -153,6 +153,20 @@ class TestRepoUrlRole(CloudSecurityBase):
                 self._as(line, self.pm).write({line._owner_field: other.id})
                 self.assertEqual(line[line._owner_field], other)
 
+    def test_a_project_manager_moves_a_line_to_a_parent_they_are_not_in(self):
+        """Project Manager and above write every project and instance (their
+        record rules have no membership), so the check after a move, which
+        runs for them alone, passes wherever the line lands."""
+        outside = self._create_project("Repo URL outside", members=[self.consultant])
+        for line, other in (
+            (self.instance_repo, self._create_instance(outside, name="inst-outside")),
+            (self.project_repo, outside),
+        ):
+            with self.subTest(model=line._name):
+                self.assertNotIn(self.pm, outside.member_ids)
+                self._as(line, self.pm).write({line._owner_field: other.id})
+                self.assertEqual(line[line._owner_field], other)
+
     def test_a_consultant_cannot_create_a_line(self):
         """Of a project or of an instance: the access rights say so."""
         for line in self.lines:
