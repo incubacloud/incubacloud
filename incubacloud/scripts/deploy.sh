@@ -24,6 +24,8 @@ source "$(dirname "$0")/lib/common.sh"
 ic_require_args 2 "$#" "deploy.sh <operation> <dir> ..."
 
 op="$1"
+# As given, for ic_fetch_lock, which finds an earlier run by its arguments.
+IC_DIR_ARG="$2"
 dir="$(ic_expand_home "$2")"
 shift 2
 
@@ -31,6 +33,11 @@ shift 2
 # in well under a second; a host that cannot reach it should not hold
 # the build for minutes (5-nov-2026).
 HEADS_TIMEOUT=20
+# The same from the helper container, whose start counts too: a host
+# busy building would otherwise take a slow start for a server that does
+# not answer, and fetch every repository of it again (Fable's M10,
+# 10-nov-2026).
+HEADS_CONTAINER_TIMEOUT=40
 
 # Seconds set-system-params waits for ``db`` to accept connections. A
 # rebuild and a plan change run it right after ``docker compose up -d``
@@ -157,7 +164,9 @@ ic_git_container() {
     shift 5
     name="ic-git-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
     local args=(run --rm --name "$name" --label "ic.job=$IC_JOB_TOKEN"
-        --user "$(id -u):$(id -g)" -v "$home:/h:ro" -e HOME=/h
+        --user "$(id -u):$(id -g)" --cap-drop ALL
+        --security-opt no-new-privileges --pids-limit 512
+        -v "$home:/h:ro" -e HOME=/h
         -e GIT_CONFIG_NOSYSTEM=1 -e GIT_TERMINAL_PROMPT=0)
     for var in "${IC_GIT_ENV[@]}"; do
         args+=(-e "$var")
@@ -170,7 +179,9 @@ ic_git_container() {
     fi
     args+=(--entrypoint "$entry" "$GIT_HELPER_IMAGE" "$@")
     IC_GIT_CONTAINER="$name"
-    timeout -k 5 "$secs" docker "${args[@]}" &
+    # Without fetch-repos' lock (fd 9): a client that outlived this run
+    # would keep the instance locked.
+    timeout -k 5 "$secs" docker "${args[@]}" 9>&- &
     wait "$!" || rc=$?
     if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
         docker rm -f "$name" >/dev/null 2>&1 || true
@@ -304,8 +315,10 @@ ic_split_tabs() {
 }
 
 # Set IC_HEAD to the commit(s) <ref> names at <url>, space-separated, or
-# nothing. A variable, not printed: a helper container must run in this
-# shell, not in a command substitution, for the traps to remove it.
+# nothing, and IC_HEADS_SECS to the seconds it was given (HEADS_TIMEOUT,
+# or HEADS_CONTAINER_TIMEOUT from the helper container). Variables, not
+# printed: a helper container must run in this shell, not in a command
+# substitution, for the traps to remove it.
 #
 # Usage: remote_ref_head <git_home> <url> <ref> [cred_authority] [ca_file] [pin_ip]
 #   <git_home>  an empty owner-only directory, git's HOME for the call
@@ -330,6 +343,7 @@ remote_ref_head() {
     local out_file rc=0
     local wanted=("refs/heads/$ref" "refs/tags/$ref")
     IC_HEAD=""
+    IC_HEADS_SECS="$HEADS_TIMEOUT"
     [[ "$ref" != refs/* ]] || wanted=("$ref")
     if [ -n "$pin_ip" ] || [ -n "$IC_GIT_ALL_IN_CONTAINER" ]; then
         [ -n "$GIT_HELPER_IMAGE" ] || return 1
@@ -339,8 +353,9 @@ remote_ref_head() {
     url="$(ic_git_home "$home" "$url" "$cred_authority" "$ca_file" "$in_container")" \
         || return 1
     if [ -n "$in_container" ]; then
+        IC_HEADS_SECS="$HEADS_CONTAINER_TIMEOUT"
         out_file="$home/.ic-out"
-        ic_git_container "$HEADS_TIMEOUT" "$home" - "$add_host" git \
+        ic_git_container "$HEADS_CONTAINER_TIMEOUT" "$home" - "$add_host" git \
             -c credential.helper= -c protocol.version=2 \
             ls-remote -- "$url" "${wanted[@]}" > "$out_file" 2>/dev/null || rc=$?
         out="$(cat "$out_file")"
@@ -415,7 +430,7 @@ ic_resolve_heads() {
             # ended it.
             if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
                 timed_out[$server]=1
-                ic_warn "the head of $alias ($ref) did not arrive within ${HEADS_TIMEOUT}s: the rest of its server are not asked"
+                ic_warn "the head of $alias ($ref) did not arrive within ${IC_HEADS_SECS}s: the rest of its server are not asked"
             fi
         fi
         if [ -z "$sha" ]; then
@@ -522,31 +537,38 @@ ic_tree_ready() {
 }
 
 # Put the cached tree <entry> in place as <src>/<alias>, a copy made of
-# hard links (a plain copy on another file system), through a temporary
-# tree in <src> renamed into place as the last step; then link its
-# marker. The tree that was there stays until the new one is complete;
-# its marker goes first, so a run cut anywhere leaves no tree with a
-# marker it does not match. The trees are never written in place: a
-# write would reach every instance that links them.
+# hard links (a plain copy on another file system, which it warns of),
+# through a temporary tree in <src> renamed into place; then link its
+# marker. The tree that was there stays until the new one is complete,
+# and is renamed aside, not removed, just before the new one takes its
+# name: a run cut while it is removed leaves the new tree in place
+# (Fable's M1, 10-nov-2026). Its marker goes first, so a run cut anywhere
+# leaves no tree with a marker it does not match. ``-T`` everywhere: a
+# name taken meanwhile fails the copy or the rename, never nests a tree
+# in it (M2). The trees are never written in place: a write would reach
+# every instance that links them.
 #
 # Usage: ic_tree_link <src> <alias> <entry>
 ic_tree_link() {
-    local src="$1" alias="$2" entry="$3" tmp
+    local src="$1" alias="$2" entry="$3" tmp old
     tmp="${src:?}/.ic-tmp-${alias:?}"
-    IC_TMP_DIRS+=("$tmp")
-    rm -rf "${tmp:?}"
+    old="$tmp.old"
+    IC_TMP_DIRS+=("$tmp" "$old")
+    rm -rf "${tmp:?}" "${old:?}"
     # Its marker's change time keeps the daily prune off it meanwhile.
     touch "$entry/head"
-    if ! cp -al "$entry/tree" "$tmp" 2>/dev/null; then
+    if ! cp -alT "$entry/tree" "$tmp" 2>/dev/null; then
         rm -rf "${tmp:?}"
-        cp -a "$entry/tree" "$tmp"
+        ic_warn "$alias: its tree could not be linked from the host's cache (another file system, or no room): it is copied, and takes its own disk"
+        cp -aT "$entry/tree" "$tmp"
     fi
     rm -f "$(ic_heads_dir "$src")/${alias:?}"
     if [ -e "$src/$alias" ] || [ -L "$src/$alias" ]; then
-        rm -rf "${src:?}/${alias:?}"
+        mv -T "$src/$alias" "$old"
     fi
-    mv "$tmp" "$src/$alias"
+    mv -T "$tmp" "$src/$alias"
     ic_marker_link "$src" "$alias" "$entry/head"
+    rm -rf "${old:?}"
 }
 
 # Print <url> without its user and token.
@@ -558,6 +580,76 @@ ic_strip_userinfo() {
         url="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
     fi
     printf '%s' "$url"
+}
+
+# Take fetch-repos' lock on <src> (``.ic-fetch.lock``, on fd 9), with
+# this run's PID in it: two runs on one instance would link the same
+# alias at once. A run left over from an earlier job (its worker died, or
+# root's OpenSSH ignored the TERM) is told to stop, once ic_git_reap has
+# removed its container, and waited for; only a process that is
+# ``deploy.sh fetch-repos`` on <dir> is signalled. The lock goes with the
+# process that holds it (Fable's M2, 10-nov-2026).
+#
+# Usage: ic_fetch_lock <src>
+ic_fetch_lock() {
+    local lock="${1:?}/.ic-fetch.lock" old cmdline
+    [ ! -L "$lock" ] || rm -f "$lock"
+    exec 9>>"$lock"
+    if ! flock -n 9; then
+        old="$(head -c 16 "$lock" 2>/dev/null | tr -dc 0-9)"
+        if [ -n "$old" ] && [ "$old" != "$$" ] && [ -r "/proc/$old/cmdline" ]; then
+            cmdline="$(tr '\0' ' ' < "/proc/$old/cmdline" 2>/dev/null || true)"
+            if [[ "$cmdline" == *" fetch-repos $dir "* \
+                || "$cmdline" == *" fetch-repos $IC_DIR_ARG "* ]]; then
+                ic_warn "an earlier download of this instance's repositories (PID $old) is still running: it is stopped"
+                kill -TERM "$old" 2>/dev/null || true
+            fi
+        fi
+        flock -w 60 9 \
+            || ic_die "an earlier download of this instance's repositories did not stop"
+    fi
+    printf '%s\n' "$$" > "$lock"
+}
+
+# Hold the host's cache of trees shared (fd 8, ``$IC_TREES/.lock``) while
+# a tree is checked, linked or stored in it: the daily prune takes it
+# exclusive, and removes nothing while a job holds it (Fable's M3,
+# 10-nov-2026). Never held through a download.
+#
+# Usage: ic_trees_lock / ic_trees_unlock
+ic_trees_lock() {
+    flock -s -w 300 8 || ic_die "the host's cache of trees stayed locked"
+}
+ic_trees_unlock() {
+    flock -u 8
+}
+
+# Return whether every pinned merge of <alias> can still be read with its
+# own credential, the condition to link its tree from the host's cache:
+# a branch's head was read with it this same run, but a pinned commit is
+# never asked, and a tree another instance downloaded would otherwise
+# reach a repository whose access was taken away (Fable's I2,
+# 10-nov-2026). One ``ls-remote`` of the pinned commit's name, whose
+# answer does not matter, only its status; a public repository passes
+# without credential.
+#
+# Usage: ic_pins_readable <alias>
+#   reads ROWS and IDX_OF[<alias>], as ic_fetch_tree
+ic_pins_readable() {
+    local i pin_idx=()
+    read -ra pin_idx <<< "${IDX_OF[$1]}"
+    for i in "${pin_idx[@]}"; do
+        ic_split_tabs "${ROWS[$i]}"
+        [ "${IC_COLS[1]}" = pin ] || continue
+        [ -n "${IC_COLS[3]}" ] || return 1
+        if [ -z "$IC_ACCESS_HOME" ]; then
+            ic_git_tmpdir
+            IC_ACCESS_HOME="$IC_TMP"
+        fi
+        remote_ref_head "$IC_ACCESS_HOME" "${IC_COLS[3]}" "${IC_COLS[2]}" \
+            "${IC_COLS[4]:-github.com}" "${IC_COLS[5]}" "${IC_COLS[6]}" \
+            || return 1
+    done
 }
 
 # Undo fetch-repos in <dir>: remove the trees it put in place (those with
@@ -587,7 +679,8 @@ ic_unfetch() {
         [ -e "$marker" ] || [ -L "$marker" ] || continue
         rm -rf "${marker:?}"
     done
-    rm -f "$1/odoo/Dockerfile.dockerignore" "$src/.ic-fetch-seconds"
+    rm -f "$1/odoo/Dockerfile.dockerignore" "$src/.ic-fetch-seconds" \
+        "$src/.ic-fetch.lock"
 }
 
 # Download one repository of the spec, every merge of it, into a new tree
@@ -656,13 +749,28 @@ ic_fetch_tree() {
     # The credential's HOME goes as soon as the container has.
     rm -rf "${home:?}"
     if [ "$rc" -eq 0 ]; then
-        IC_FETCHED="$(head -c 64 "$tmp/.ic-head" 2>/dev/null || true)"
-        [ -n "$IC_FETCHED" ] && [ -d "$tmp/$alias" ] || rc=2
+        # Written by the container: a plain file naming a commit, or the
+        # download failed (Fable's M5, 10-nov-2026).
+        if [ -f "$tmp/.ic-head" ] && [ ! -L "$tmp/.ic-head" ]; then
+            IC_FETCHED="$(head -c 64 "$tmp/.ic-head" 2>/dev/null || true)"
+        fi
+        if [[ ! "$IC_FETCHED" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] \
+            || [ ! -d "$tmp/$alias" ] || [ -L "$tmp/$alias" ]; then
+            IC_FETCHED=""
+            rc=2
+        fi
     fi
     if [ "$rc" -ne 0 ]; then
-        if [ "$rc" -eq 2 ] && [ -f "$tmp/.ic-log" ]; then
-            tail -n 15 "$tmp/.ic-log" | grep -vi 'authorization' >&2 || true
-        fi
+        # git-aggregator's last lines, whatever failed but the statuses
+        # that say why themselves (M6): 125 is Docker's, 128 git's.
+        case "$rc" in
+            3|4|5|124|137) ;;
+            *)
+                if [ -f "$tmp/.ic-log" ] && [ ! -L "$tmp/.ic-log" ]; then
+                    tail -n 15 "$tmp/.ic-log" | grep -vi 'authorization' >&2 || true
+                fi
+                ;;
+        esac
         rm -rf "${tmp:?}"
         return "$rc"
     fi
@@ -981,6 +1089,9 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             ic_die "the host's cache of trees is a link: $IC_TREES"
         fi
         IC_GIT_ALL_IN_CONTAINER=1
+        # The spec holds the credentials and serves this step alone: it
+        # goes when the step ends, however it ends (Fable's M8).
+        IC_TMP_DIRS+=("$spec")
         ic_git_traps
         # 1. Before fetching anything: what a run cut short left, and the
         #    exclusions from the instance's history, so that a job killed
@@ -989,7 +1100,12 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         #    first: one still running would write into a temporary tree
         #    removed under it, or read its token from a HOME removed.
         ic_git_reap
+        ic_fetch_lock "$src"
         ic_git_sweep
+        (umask 077 && mkdir -p "$IC_TREES")
+        [ ! -L "$IC_TREES/.lock" ] || rm -f "$IC_TREES/.lock"
+        exec 8>>"$IC_TREES/.lock"
+        IC_ACCESS_HOME=""
         for leftover in "$src"/.ic-tmp-* "$IC_TREES/.tmp-$IC_JOB_TOKEN-"*; do
             [ -e "$leftover" ] || [ -L "$leftover" ] || continue
             rm -rf "${leftover:?}"
@@ -1075,11 +1191,19 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
             entry=""
             if [ -z "$unknown" ]; then
                 entry="$IC_TREES/$(ic_tree_key "$key_lines")"
-                if ic_tree_ready "$entry" "$marker"; then
-                    ic_tree_link "$src" "$alias" "$entry"
-                    ic_log "$alias at $marker, from the host's cache"
-                    cached=$((cached + 1))
-                    continue
+                if ic_tree_ready "$entry" "$marker" \
+                    && ! ic_pins_readable "$alias"; then
+                    ic_warn "$alias: its pinned commit could not be asked with its credential: it is downloaded, not taken from the host's cache"
+                else
+                    ic_trees_lock
+                    if ic_tree_ready "$entry" "$marker"; then
+                        ic_tree_link "$src" "$alias" "$entry"
+                        ic_trees_unlock
+                        ic_log "$alias at $marker, from the host's cache"
+                        cached=$((cached + 1))
+                        continue
+                    fi
+                    ic_trees_unlock
                 fi
             fi
             attempt=1
@@ -1110,7 +1234,11 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                     ic_die "$alias: the download failed (status $rc), and the step's budget of ${budget}s leaves no time to try again"
                 fi
                 ic_warn "$alias: the download failed (status $rc); trying again in ${retry_wait}s"
-                sleep "$retry_wait"
+                # Waited for, so a termination reaches the trap at once,
+                # and without the lock, which a sleep left behind would
+                # keep.
+                sleep "$retry_wait" 9>&- 8>&- &
+                wait "$!"
                 attempt=$((attempt + 1))
             done
             got="$IC_FETCHED"
@@ -1128,8 +1256,10 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
                     mv "$heads.ic-tmp" "$heads"
                 fi
             fi
+            ic_trees_lock
             entry="$(ic_tree_store "$IC_ENTRY_TMP" "$(ic_tree_key "$key_lines")" "$marker")"
             ic_tree_link "$src" "$alias" "$entry"
+            ic_trees_unlock
             ic_log "$alias fetched at $got"
             fetched=$((fetched + 1))
         done

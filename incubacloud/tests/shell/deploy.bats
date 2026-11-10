@@ -662,9 +662,10 @@ STUB
 #   commit in /w/.ic-head: <expect>, else $FETCH_SHA, else the first commit
 #   of $LS_REMOTE_OUT. With $FETCH_SLEEP it sleeps first (for the traps).
 # ``image inspect`` fails while $HELPER_MISSING is set and no ``build``
-# made the tag; ``build`` records the Dockerfile it reads in
-# $CALLS.dockerfile. ``ps`` prints $DOCKER_PS_IDS; everything else is
-# recorded and succeeds.
+# made the tag; ``image ls`` prints $HELPER_TAGS; ``build`` records the
+# Dockerfile it reads in $CALLS.dockerfile. ``ps`` prints $DOCKER_PS_IDS;
+# ``--entrypoint git`` fails (128) while $LS_REMOTE_FAIL is set; everything
+# else is recorded and succeeds.
 _stub_docker_helper() {
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -673,7 +674,12 @@ case "$1" in
     ps) [ -z "${DOCKER_PS_IDS:-}" ] || printf '%s\n' $DOCKER_PS_IDS; exit 0 ;;
     rm) [ -z "${LEFTOVER_PROBE:-}" ] || [ ! -e "$LEFTOVER_PROBE" ] \
             || echo "leftover present at docker $*" >> "$CALLS"; exit 0 ;;
-    image) [ -z "${HELPER_MISSING:-}" ] || [ -e "$CALLS.built" ] || exit 1; exit 0 ;;
+    image)
+        case "$2" in
+            ls) [ -z "${HELPER_TAGS:-}" ] || printf '%s\n' $HELPER_TAGS; exit 0 ;;
+            rm) exit 0 ;;
+        esac
+        [ -z "${HELPER_MISSING:-}" ] || [ -e "$CALLS.built" ] || exit 1; exit 0 ;;
     build) cat >> "$CALLS.dockerfile"; touch "$CALLS.built"; exit 0 ;;
     run) ;;
     *) exit 0 ;;
@@ -685,7 +691,7 @@ while [ "$#" -gt 0 ]; do
         -v) case "$2" in *:/h:ro) home="${2%:/h:ro}" ;; *:/w) work="${2%:/w}" ;; esac; shift 2 ;;
         -e) envs+=("$2"); shift 2 ;;
         --entrypoint) entry="$2"; shift 2 ;;
-        --name|--label|--user|-w|--add-host) shift 2 ;;
+        --name|--label|--user|-w|--add-host|--cap-drop|--security-opt|--pids-limit) shift 2 ;;
         --rm) shift ;;
         *) break ;;
     esac
@@ -701,6 +707,7 @@ printf '%s\n' "${envs[@]}" > "$CALLS.env.$n"
 # A container removed while it slept writes nothing more.
 [ "$entry" = git ] || [ -d "$work" ] || exit 137
 if [ "$entry" = git ]; then
+    [ -z "${LS_REMOTE_FAIL:-}" ] || exit 128
     printf '%s' "${LS_REMOTE_OUT:-}"
     exit 0
 fi
@@ -786,7 +793,7 @@ STUB
     [[ "$run_line" == *"--label ic.job="* ]]
     [[ "$run_line" == *":/h:ro"* ]]
     [[ "$run_line" == *"--entrypoint git $HELPER_TAG -c credential.helper= -c protocol.version=2 ls-remote -- $GL_PLAIN refs/heads/main refs/tags/main"* ]]
-    [[ "$(cat "$CALLS")" == *"timeout -k 5 20 docker run"* ]]
+    [[ "$(cat "$CALLS")" == *"timeout -k 5 40 docker run"* ]]
     ! grep -q "$GL_TOKEN" "$CALLS" || false
     ! grep -q '^git ' "$CALLS" || false
     grep -q 'sslCAInfo = /h/ca-git.acme.tld_8443.pem' "$CALLS.gitconfig.0"
@@ -911,10 +918,12 @@ _spec_80() {
     printf 'priv\tpin\t%s\t%s\t\t\t\n' "$PIN_SHA" "$HEADS_URL" >> "$TMP/spec"
 }
 
-# Run fetch-repos on $DIR with $TMP/spec, the helper image and 8.0, no
-# wait before a retry; more arguments follow those.
+# Run fetch-repos on $DIR with a copy of $TMP/spec (the step removes the
+# one it is given), the helper image and 8.0, no wait before a retry; more
+# arguments follow those.
 _fetch() {
-    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 8.0 0 "$@"
+    cp "$TMP/spec" "$TMP/spec.run"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec.run" "$HELPER" 8.0 0 "$@"
 }
 
 @test "fetch-repos fetches every repository at its head, out of git and into the build" {
@@ -1076,11 +1085,13 @@ $PIN_SHA	refs/heads/fix
     [ "$status" -ne 0 ]
     [[ "$output" == *"the step's budget of 100s ran out while addons was fetched"* ]]
     [ "$(wc -l < "$CALLS.fetches")" -eq 1 ]
-    grep -q "timeout -k 5 100 docker run" "$CALLS"
+    # What is left of the budget: a second may pass before the download.
+    grep -qE "timeout -k 5 (99|100) docker run" "$CALLS"
     # A failure that leaves no budget for the wait is not retried either.
     : > "$CALLS.fetches"
     export FETCH_FAIL_STATUS=2
-    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 8.0 200 100
+    cp "$TMP/spec" "$TMP/spec.run"
+    run bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec.run" "$HELPER" 8.0 200 100
     [ "$status" -ne 0 ]
     [[ "$output" == *"leaves no time to try again"* ]]
     [ "$(wc -l < "$CALLS.fetches")" -eq 1 ]
@@ -1146,7 +1157,8 @@ $PIN_SHA	refs/heads/fix
     other="$HOME/projects/other"
     mkdir -p "$other/odoo/custom/src"
     cp "$DIR/odoo/custom/src/repos.yaml" "$other/odoo/custom/src/"
-    run bash "$SCRIPT" fetch-repos "$other" "$TMP/spec" "$HELPER" 8.0 0
+    cp "$TMP/spec" "$TMP/spec.run"
+    run bash "$SCRIPT" fetch-repos "$other" "$TMP/spec.run" "$HELPER" 8.0 0
     [ "$status" -eq 0 ]
     [[ "$output" == *"addons at $HEADS_SHA, from the host's cache"* ]]
     [ "$(wc -l < "$CALLS.fetches")" -eq 1 ]
@@ -1206,7 +1218,7 @@ $HEADS_SHA	refs/heads/8.0
     [ "$(cat "$DIR/odoo/custom/src/addons/README")" = old ]
     [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = 1111 ]
     [ -z "$(find "$DIR/odoo/custom/src" -maxdepth 1 -name '.ic-tmp-*')" ]
-    [ -z "$(find "$TREES" -mindepth 1 -maxdepth 1)" ]
+    [ -z "$(find "$TREES" -mindepth 1 -maxdepth 1 ! -name .lock)" ]
     # One failure, then a good download: it ends well.
     : > "$CALLS.fetches"
     export FETCH_FAILS=1
@@ -1258,7 +1270,8 @@ $HEADS_SHA	refs/heads/8.0
 "
     for signal in TERM HUP; do
         : > "$CALLS"
-        FETCH_SLEEP=3 bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec" "$HELPER" 8.0 0 \
+        cp "$TMP/spec" "$TMP/spec.run"
+        FETCH_SLEEP=3 bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec.run" "$HELPER" 8.0 0 \
             >/dev/null 2>&1 &
         pid=$!
         for _ in $(seq 100); do
@@ -1503,4 +1516,166 @@ $HEADS_SHA	refs/heads/8.0
         [ -d "$src/$alias" ] || [ "$(cat "$src/$alias")" = "own $alias" ] \
             || [ "$alias" = repos.yaml ]
     done
+}
+
+# ── Fable's review of the tokens' option A (10-nov-2026) ──
+
+@test "fetch-repos asks a pinned repository with its credential before linking it from the host's cache" {
+    _instance_80
+    printf 'priv\tpin\t%s\t%s\t\t\t\n' "$PIN_SHA" "$HEADS_URL" > "$TMP/spec"
+    _fetch
+    [ "$status" -eq 0 ]
+    # Its own download asks nothing first: the download is the check.
+    ! grep '^docker run' "$CALLS" | grep -q 'entrypoint git' || false
+    other="$HOME/projects/other"
+    mkdir -p "$other/odoo/custom/src"
+    cp "$DIR/odoo/custom/src/repos.yaml" "$other/odoo/custom/src/"
+    : > "$CALLS"
+    cp "$TMP/spec" "$TMP/spec.run"
+    run bash "$SCRIPT" fetch-repos "$other" "$TMP/spec.run" "$HELPER" 8.0 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"priv at $PIN_SHA, from the host's cache"* ]]
+    grep '^docker run' "$CALLS" | grep -q "entrypoint git $HELPER_TAG .* ls-remote -- https://github.com/acme/addons.git"
+    grep -lq "$(printf 'x-access-token:%s' "$HEADS_TOKEN" | base64 -w0)" "$CALLS".gitconfig.*
+    # Access taken away: not from the cache, downloaded (and its download
+    # names the repository when it fails).
+    third="$HOME/projects/third"
+    mkdir -p "$third/odoo/custom/src"
+    cp "$DIR/odoo/custom/src/repos.yaml" "$third/odoo/custom/src/"
+    cp "$TMP/spec" "$TMP/spec.run"
+    LS_REMOTE_FAIL=1 run bash "$SCRIPT" fetch-repos "$third" "$TMP/spec.run" "$HELPER" 8.0 0
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"priv at $PIN_SHA, from the host's cache"* ]]
+    [[ "$output" == *"priv: its pinned commit could not be asked with its credential"* ]]
+    [ "$(wc -l < "$CALLS.fetches")" -eq 2 ]
+}
+
+@test "fetch-repos removes the helper image's tags of other digests, and caps its pull" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+" HELPER_MISSING=1 HELPER_TAGS="incubacloud-git-helper:aaaaaaaaaaaa $HELPER_TAG incubacloud-git-helper:bbbbbbbbbbbb"
+    _fetch
+    [ "$status" -eq 0 ]
+    grep -q "^timeout -k 5 300 docker build -q -t $HELPER_TAG -$" "$CALLS"
+    grep -qx 'docker image rm incubacloud-git-helper:aaaaaaaaaaaa' "$CALLS"
+    grep -qx 'docker image rm incubacloud-git-helper:bbbbbbbbbbbb' "$CALLS"
+    ! grep -qx "docker image rm $HELPER_TAG" "$CALLS" || false
+}
+
+@test "fetch-repos renames the old tree aside before the new one takes its name, never nesting it" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    src="$DIR/odoo/custom/src"
+    mkdir -p "$src/addons"
+    echo old > "$src/addons/README"
+    for tool in mv cp; do
+        real="$(command -v "$tool")"
+        printf '#!/usr/bin/env bash\necho "%s $*" >> "$CALLS.files"\nexec %s "$@"\n' \
+            "$tool" "$real" > "$TMP/bin/$tool"
+        chmod +x "$TMP/bin/$tool"
+    done
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    _fetch
+    [ "$status" -eq 0 ]
+    grep -q "^cp -alT .*/git-trees/[0-9a-f]*/tree $src/.ic-tmp-addons$" "$CALLS.files"
+    aside="$(grep -n "^mv -T $src/addons $src/.ic-tmp-addons.old$" "$CALLS.files" | cut -d: -f1)"
+    into="$(grep -n "^mv -T $src/.ic-tmp-addons $src/addons$" "$CALLS.files" | cut -d: -f1)"
+    [ -n "$aside" ] && [ -n "$into" ] && [ "$aside" -lt "$into" ]
+    [ "$(cat "$src/addons/README")" = "tree of addons" ]
+    [ -z "$(find "$src" -maxdepth 1 -name '.ic-tmp-*')" ]
+}
+
+@test "fetch-repos stops an earlier run on the same instance before it goes on" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    # An earlier run waiting for its retry, outside any container: its
+    # first download failed (FETCH_FAILS=1), and it would try again in 30s.
+    cp "$TMP/spec" "$TMP/spec.old"
+    FETCH_FAILS=1 bash "$SCRIPT" fetch-repos "$DIR" "$TMP/spec.old" "$HELPER" 8.0 30 \
+        > "$TMP/old.out" 2>&1 &
+    pid=$!
+    for _ in $(seq 100); do
+        ! grep -q 'trying again in 30s' "$TMP/old.out" || break
+        sleep 0.1
+    done
+    grep -q 'trying again in 30s' "$TMP/old.out"
+    start="$SECONDS"
+    _fetch
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"an earlier download of this instance's repositories (PID $pid) is still running: it is stopped"* ]]
+    old_status=0
+    wait "$pid" || old_status=$?
+    [ "$old_status" -ne 0 ]
+    [ $((SECONDS - start)) -lt 20 ]
+    # The earlier one downloaded nothing more.
+    [ "$(wc -l < "$CALLS.fetches")" -eq 2 ]
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
+    [ "$(head -1 "$DIR/odoo/custom/src/.ic-fetch.lock")" != "$pid" ]
+}
+
+@test "fetch-repos waits while the daily prune holds the host's cache" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    mkdir -p "$TREES"
+    flock -x "$TREES/.lock" sleep 3 &
+    holder=$!
+    sleep 0.5
+    start="$SECONDS"
+    _fetch
+    [ "$status" -eq 0 ]
+    [ $((SECONDS - start)) -ge 2 ]
+    wait "$holder"
+    [ "$(cat "$DIR/odoo/custom/src/.ic-heads/addons")" = "$HEADS_SHA" ]
+}
+
+@test "fetch-repos removes its spec, with the credentials, however it ends" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    _fetch
+    [ "$status" -eq 0 ]
+    [ ! -e "$TMP/spec.run" ]
+    export FETCH_FAILS=9
+    : > "$CALLS.fetches"
+    rm -rf "$DIR/odoo/custom/src/addons" "$DIR/odoo/custom/src/.ic-heads" "$TREES"
+    _fetch
+    [ "$status" -ne 0 ]
+    [ ! -e "$TMP/spec.run" ]
+}
+
+@test "fetch-repos takes no commit from the container but a plain file naming one, and shows git-aggregator's log on any failure" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="" FETCH_SHA="not-a-commit"
+    _fetch
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"addons: the download failed twice (status 2)"* ]]
+    [ ! -e "$DIR/odoo/custom/src/.ic-heads/addons" ]
+    # Docker's own failure (125) shows the log as well.
+    export FETCH_SHA="$HEADS_SHA" FETCH_FAILS=2 FETCH_FAIL_STATUS=125
+    : > "$CALLS.fetches"
+    sed -i 's|^    exit "\${FETCH_FAIL_STATUS:-2}"$|    echo "aggregator says why" > "$work/.ic-log"; exit "${FETCH_FAIL_STATUS:-2}"|' "$TMP/bin/docker"
+    grep -q 'aggregator says why' "$TMP/bin/docker"
+    _fetch
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"aggregator says why"* ]]
+}
+
+@test "the helper container runs without capabilities or new privileges, and with a cap on its processes" {
+    _instance_80
+    printf 'addons\tref\tmain\t%s\t%s\t\t\n' "$GL_URL" "$GL_AUTH" > "$TMP/spec"
+    export LS_REMOTE_OUT="$HEADS_SHA	refs/heads/main
+"
+    _fetch
+    [ "$status" -eq 0 ]
+    while read -r line; do
+        [[ "$line" == *"--cap-drop ALL --security-opt no-new-privileges --pids-limit 512"* ]]
+    done < <(grep '^docker run' "$CALLS")
 }

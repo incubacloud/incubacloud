@@ -160,12 +160,147 @@ class TestDockerPruneProtectFilter(TransactionCase):
                 "ic_protect_label": PROTECT_LABEL,
                 "ic_tmp_sweep": docker_prune_executor.tmp_sweep(self.env, host),
                 "ic_network_sweep": docker_prune_executor.network_sweep(self.env, host),
+                # No instance that fetches its repositories: no helper.
+                "ic_git_helper_image": "",
             },
         )
         self.assertEqual(
             docker_prune_executor.tmp_sweep(self.env, host),
             docker_prune_executor.TMP_SWEEP,
         )
+
+    def test_the_helper_image_is_prepared_where_an_instance_fetches(self):
+        """The night before, not the first job (Fable's M9, 10-nov-2026):
+        a host with an instance of a series that fetches its repositories
+        on the host gets the helper image's name; one with 19.0 only, not
+        while 19.0 clones in the image."""
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            GIT_HELPER_IMAGE,
+        )
+
+        host = self.env["cloud.host"].create({
+            "name": "helper-host", "ip_address": "198.51.100.72",
+            "user": "root", "wildcard_domain": "helper.example.com",
+        })
+        job = self.env["cloud.job"].create({
+            "name": "docker_prune", "host_id": host.id,
+            "job_type_id": self.env.ref("incubacloud.docker_prune").id,
+        })
+        project = self.env["cloud.project"].create(
+            {"name": "Helper", "remote_folder": "helper"})
+        inst = self.env["cloud.instance"].create({
+            "name": "nineteen", "project_id": project.id,
+            "environment": "production", "host_id": host.id,
+            "odoo_version": "19.0",
+        })
+        executor = DockerPruneExecutor(job, host)
+        self.assertEqual(executor.get_extra_vars()["ic_git_helper_image"], "")
+        inst.odoo_version = "18.0"
+        self.assertEqual(
+            executor.get_extra_vars()["ic_git_helper_image"], GIT_HELPER_IMAGE,
+        )
+
+    def _helper_cmd(self):
+        """Return the play's preparation of the helper image, rendered.
+
+        :rtype: str
+        """
+        import jinja2
+
+        tasks = [
+            task for task in self._play()["tasks"]
+            if "incubacloud-git-helper" in str(task.get("ansible.builtin.shell", ""))
+        ]
+        self.assertEqual(len(tasks), 1)
+        self.assertIs(tasks[0]["failed_when"], False)
+        self.assertIn("ic_git_helper_image", tasks[0]["when"])
+        return jinja2.Template(tasks[0]["ansible.builtin.shell"]["cmd"]).render(
+            ic_git_helper_image="ghcr.io/x/doodba:19.0@sha256:0123456789abcdef",
+            ic_protect_label=PROTECT_LABEL,
+        )
+
+    def test_lab_the_play_prepares_the_helper_once_and_drops_other_digests(self):
+        """With a Docker of the test's: the tag is built with the label
+        the prune spares and a cap on its pull, once; the tags of other
+        digests go (Fable's I3)."""
+        cmd = self._helper_cmd()
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp, "calls")
+            bin_dir = Path(tmp, "bin")
+            bin_dir.mkdir()
+            docker = bin_dir / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                f'echo "docker $*" >> {calls}\n'
+                'case "$1 $2" in\n'
+                f'  "image inspect") [ -e {tmp}/built ] ;;\n'
+                "  \"image ls\") printf '%s\\n' incubacloud-git-helper:aaaaaaaaaaaa"
+                " incubacloud-git-helper:0123456789ab ;;\n"
+                f'  "build -q") cat > {tmp}/dockerfile; touch {tmp}/built ;;\n'
+                "esac\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            env = os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+            for _run in range(2):
+                done = subprocess.run(["sh", "-c", cmd], check=False, env=env)
+                self.assertEqual(done.returncode, 0)
+            lines = calls.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                [line for line in lines if line.startswith("docker build")],
+                ["docker build -q -t incubacloud-git-helper:0123456789ab -"],
+            )
+            self.assertIn(
+                f"LABEL {PROTECT_LABEL}",
+                Path(tmp, "dockerfile").read_text(encoding="utf-8"),
+            )
+            self.assertIn("docker image rm incubacloud-git-helper:aaaaaaaaaaaa", lines)
+            self.assertNotIn("docker image rm incubacloud-git-helper:0123456789ab", lines)
+        self.assertIn("timeout -k 5 900 docker build", cmd)
+
+    def _trees_cmd(self):
+        """Return the play's removal of the cached repository trees.
+
+        :rtype: str
+        """
+        tasks = [
+            task for task in self._play()["tasks"]
+            if "git-trees" in str(task.get("ansible.builtin.shell", ""))
+        ]
+        self.assertEqual(len(tasks), 1)
+        return tasks[0]["ansible.builtin.shell"]["cmd"]
+
+    def test_lab_an_entry_without_head_goes_and_nothing_while_a_job_holds_the_cache(self):
+        """An entry a cut removal left without ``head`` goes two hours on;
+        an entry in use and a recent one stay; and while a job holds the
+        cache's lock shared, the removal waits for the next night
+        (Fable's M3, 10-nov-2026)."""
+        import fcntl
+
+        cmd = self._trees_cmd()
+        old = time.time() - 3 * 3600
+        with tempfile.TemporaryDirectory() as home:
+            trees = Path(home, ".incubacloud", "git-trees")
+            headless_old = trees / ("a" * 64)
+            headless_new = trees / ("b" * 64)
+            used = trees / ("c" * 64)
+            for entry in (headless_old, headless_new, used):
+                (entry / "tree").mkdir(parents=True)
+            (used / "head").write_text("x\n", encoding="utf-8")
+            os.link(used / "head", Path(home, "marker"))
+            os.utime(headless_old, (old, old))
+            env = os.environ | {"HOME": home}
+            with open(trees / ".lock", "a", encoding="utf-8") as lock:
+                fcntl.flock(lock, fcntl.LOCK_SH)
+                done = subprocess.run(["sh", "-c", cmd], check=False, env=env)
+                self.assertEqual(done.returncode, 0)
+                self.assertTrue(headless_old.exists())
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            done = subprocess.run(["sh", "-c", cmd], check=False, env=env)
+            self.assertEqual(done.returncode, 0)
+            self.assertFalse(headless_old.exists())
+            self.assertTrue(headless_new.exists())
+            self.assertTrue(used.exists())
 
     def test_playbook_inventories_survivors(self):
         """A container inventory runs after the prune and is exported.

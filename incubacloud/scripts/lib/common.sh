@@ -152,24 +152,58 @@ ic_git_helper_tag() {
     printf 'incubacloud-git-helper:%s' "${digest:0:12}"
 }
 
+# Seconds the pull of the git helper image may take when a job has to
+# prepare it (ic_git_helper_prepare): about 730 MB, which the daily
+# maintenance prepares beforehand on a host whose instances fetch their
+# repositories, so a job pays it only on a host that has not had that
+# night yet. A cap of its own, so a slow registry fails the step saying
+# so instead of eating the download's budget (Fable's M9, 10-nov-2026).
+# IC_GIT_HELPER_PULL_TIMEOUT overrides it (Full setup gives it longer).
+IC_GIT_HELPER_PULL_TIMEOUT="${IC_GIT_HELPER_PULL_TIMEOUT:-300}"
+
 # Make sure the host has the git helper image <image> under its local tag
 # (ic_git_helper_tag), built from it with the label the daily prune spares
 # (``incubacloud.protect=1``): the prune removes every image no container
 # uses, and the helper would be pulled again, hundreds of MB, every day.
-# The tag takes no more disk than the image. <docker> is the command that
-# runs Docker (``sudo docker`` while a host is being prepared).
+# The tag takes no more disk than the image. The pull has its own cap
+# (IC_GIT_HELPER_PULL_TIMEOUT). Then the tags of other digests go
+# (ic_git_helper_drop_old). <docker> is the command that runs Docker
+# (``sudo docker`` while a host is being prepared).
 #
 # Usage: ic_git_helper_prepare <image> [docker...]
-# Returns 0 when the tag is there, Docker's status otherwise.
+# Returns 0 when the tag is there, Docker's status otherwise (124 or 137
+# when the pull ran out of time).
 ic_git_helper_prepare() {
     local image="$1" tag
     shift
     [ "$#" -gt 0 ] || set -- docker
     tag="$(ic_git_helper_tag "$image")"
     [ "$tag" != "$image" ] || return 0
-    "$@" image inspect "$tag" >/dev/null 2>&1 && return 0
-    printf 'FROM %s\nLABEL incubacloud.protect=1\n' "$image" \
-        | "$@" build -q -t "$tag" - >/dev/null
+    if ! "$@" image inspect "$tag" >/dev/null 2>&1; then
+        printf 'FROM %s\nLABEL incubacloud.protect=1\n' "$image" \
+            | timeout -k 5 "$IC_GIT_HELPER_PULL_TIMEOUT" "$@" build -q -t "$tag" - \
+            >/dev/null || return
+    fi
+    ic_git_helper_drop_old "$tag" "$@"
+}
+
+# Remove every local ``incubacloud-git-helper`` tag but <tag>: the label
+# that spares the helper from the daily prune would otherwise keep the
+# tag of each digest core used before, about 2 GB a change on every host
+# (Fable's I3, 10-nov-2026). A tag a running container still uses is
+# left for the next time; this never fails.
+#
+# Usage: ic_git_helper_drop_old <tag> [docker...]
+ic_git_helper_drop_old() {
+    local tag="$1" old
+    shift
+    [ "$#" -gt 0 ] || set -- docker
+    while IFS= read -r old; do
+        if [ -n "$old" ] && [ "$old" != "$tag" ]; then
+            "$@" image rm "$old" >/dev/null 2>&1 || true
+        fi
+    done < <("$@" image ls --format '{{.Repository}}:{{.Tag}}' \
+        incubacloud-git-helper 2>/dev/null || true)
 }
 
 # Keep the instance's live Odoo log out of the copier repo's index

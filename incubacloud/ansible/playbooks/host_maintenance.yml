@@ -145,14 +145,42 @@
     # one a job is linking now) goes, with the temporary trees of
     # downloads killed that long ago. Never through a link; never fails
     # the play.
+    #
+    # The cache's lock (``.lock``), which a job holds shared while it
+    # checks, links or stores a tree, is taken exclusive without waiting:
+    # held, nothing goes until the next night. An entry a cut removal left
+    # without its ``head`` goes too, two hours on (Fable's M3, 10-nov-2026).
     - name: Remove the cached repository trees no instance uses  # noqa: command-instead-of-shell
       ansible.builtin.shell:
         cmd: >-
-          d="$HOME/.incubacloud/git-trees"; if [ -d "$d" ] && [ ! -L "$d" ];
-          then find "$d" -mindepth 2 -maxdepth 2 -type f -name head -links 1
-          -cmin +120 -exec sh -c 'rm -rf -- "${1%/head}"' sh {} \; ; find "$d"
-          -mindepth 1 -maxdepth 1 -type d -name '.tmp-*' -mmin +120 -exec rm
-          -rf {} +; fi
+          d="$HOME/.incubacloud/git-trees"; if [ -d "$d" ] && [ ! -L "$d" ] && [
+          ! -L "$d/.lock" ] && exec 9>>"$d/.lock" && flock -n -x 9; then find
+          "$d" -mindepth 2 -maxdepth 2 -type f -name head -links 1 -cmin +120
+          -exec sh -c 'rm -rf -- "${1%/head}"' sh {} \; ; find "$d" -mindepth 1
+          -maxdepth 1 -type d -name '.tmp-*' -mmin +120 -exec rm -rf {} +; find
+          "$d" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -mmin +120 ! -exec
+          test -e {}/head \; -exec rm -rf {} +; fi
+      changed_when: false
+      failed_when: false
+
+    # The image ``deploy.sh fetch-repos`` runs git in, under the local tag
+    # with the label the prune above spares, as ``ic_git_helper_prepare``
+    # (``scripts/lib/common.sh``) makes it: prepared here, after the prune,
+    # so no job pays its pull, about 730 MB, and with a cap on it; then the
+    # tags of other digests go, which the label would keep for ever, about
+    # 2 GB each (Fable's M9 and I3, 10-nov-2026). Only on a host with an
+    # instance that fetches (``ic_git_helper_image``); never fails the play.
+    - name: Prepare the git helper image  # noqa: command-instead-of-shell risky-shell-pipe
+      ansible.builtin.shell:
+        cmd: >-
+          img='{{ ic_git_helper_image }}'; tag="incubacloud-git-helper:$(printf
+          '%s' "${img##*@sha256:}" | cut -c1-12)"; docker image inspect "$tag"
+          >/dev/null 2>&1 || printf 'FROM %s\nLABEL {{ ic_protect_label }}\n'
+          "$img" | timeout -k 5 900 docker build -q -t "$tag" - >/dev/null;
+          docker image ls --format '{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}'
+          incubacloud-git-helper 2>/dev/null | while read -r old; do [ "$old" =
+          "$tag" ] || docker image rm "$old" >/dev/null 2>&1; done; true
+      when: (ic_git_helper_image | default('')) is search('@sha256:')
       changed_when: false
       failed_when: false
 
