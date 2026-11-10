@@ -465,7 +465,12 @@ running after a rule ends; a retry asks again.
 asked for before the rule was granted expires by itself. One point covers
 every tool, those of the modules on top included; a test calls `_gate` for
 every installed tool with `confirm != never` and checks it runs and is
-marked. Before the action runs the server logs
+marked. The one exception is a tool that charges money
+(`ToolSpec(charges=True)`): it runs under a rule only when the rule includes
+charges (`include_charges`, a box of the grant, unticked by default, decided
+on 10-nov-2026 so that an account is not charged without a person's yes
+unless the Administrator chose so); otherwise it asks, and the rule counts no
+use. The listing and the instructions say so. Before the action runs the server logs
 `[mcp] auto-approved <tool> uid=… via=… rule=…`, which stays if the
 transaction rolls back.
 
@@ -614,9 +619,11 @@ jobs' history and an instance's activity.
   defined in `incubacloud`, so a layer that overrides it answers after it
   whether or not it depends on the MCP) is read when a rule is granted and
   at every call it would approve: False refuses new rules and pauses those
-  that exist, so it is also the switch that stops them all at once. `_mcp_auto_approval_charges()` (False
-  here) adds to the notice that what an agent does may be charged to the
-  account. `incubacloud.mcp.auto.approval._candidates_for(user)` adds
+  that exist, so it is also the switch that stops them all at once.
+  `_mcp_auto_approval_charges()` says whether some tool of the catalog
+  charges money; then the grant offers **Include charges** and the notice
+  says whether the rule includes them. A layer marks its tools that charge
+  with `ToolSpec(charges=True)`. `incubacloud.mcp.auto.approval._candidates_for(user)` adds
   credentials of a kind of the module's own (the assistant's).
 - `auth.oauth.provider.issuer` and the JWKS cache
   (`odoo.addons.incubacloud_mcp.controllers._jwks_cache`) live here.

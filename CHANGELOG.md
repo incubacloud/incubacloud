@@ -60,6 +60,14 @@ the agents already send.
   a layer says False. A *Decline* or
   *Cancel* the person answers to a question asked before the rule existed
   still runs nothing.
+- **Charges are left out unless the rule includes them.** A tool declares
+  that it charges money (`ToolSpec.charges`); under a rule, such a tool
+  still asks unless the Administrator ticked **Include charges** when
+  granting it (`include_charges`, unticked by default; the box is offered
+  only when some tool of the panel charges). The rules' list, the grant's
+  audit row and the notice say whether a rule includes charges; the
+  listing, the server's instructions and the assistant's rules say which
+  tools still ask. No tool of this repository charges money.
 - **The approval is marked** in the audit and on the jobs: `approval` is
   `person` or `auto`, with the rule. The audit tables show
   *· auto-approved* or *· approved*; the jobs' history and an instance's

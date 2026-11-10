@@ -287,7 +287,7 @@ Agents' endpoint and the MCP's own pages; see [`mcp.md`](mcp.md).
 | JSON | `/cloud/mcp/get_settings`, `/cloud/mcp/save_settings` | manage settings | The agents' issuer, the MCP address and the agents' limit; read-only where the platform sets them. |
 | JSON | `/cloud/mcp/auto_approval/list` | cloud user | Auto-approval rules: every rule for an Administrator, the user's own otherwise; whether the panel allows them, the notice's version and the periods. |
 | JSON | `/cloud/mcp/auto_approval/candidates` | manage settings | The users a rule may be granted to, with their credentials that connected (and the assistant). |
-| JSON | `/cloud/mcp/auto_approval/grant` | manage settings | Grant a rule (`user_id`, `credential`, `days` or `expires_on`, `acknowledged`, `notice_version`); 90 days at most. `{ok, rule}` or `{ok: false, error}`. |
+| JSON | `/cloud/mcp/auto_approval/grant` | manage settings | Grant a rule (`user_id`, `credential`, `days` or `expires_on`, `acknowledged`, `notice_version`, `include_charges`); 90 days at most. `{ok, rule}` or `{ok: false, error}`. |
 | JSON | `/cloud/mcp/auto_approval/revoke` | manage settings, or the rule's user | End a rule now (`rule_id`). |
 | JSON | `/cloud/mcp/auto_approval/activity` | manage settings, or the rule's user | A page of the audit rows of a rule (`rule_id`, `offset`, `limit` ≤ 100), newest first. |
 
