@@ -83,6 +83,20 @@ cosign verify ghcr.io/incubacloud/relay-oauth@sha256:<digest> \
 gh attestation verify oci://ghcr.io/incubacloud/relay-oauth@sha256:<digest> --repo incubacloud/incubacloud
 ```
 
+**The provenance of `16.0.1-0.28-1` names another commit.** That revision
+was built and attested from commit `92131e40`, before the repository's
+history was rewritten; the rewrite gave the same content new hashes, and the
+tag `relay-oauth-v16.0.1-0.28-1` now points to `76974566`, its rewritten
+counterpart. `92131e40` is no longer in the branch's history, so the
+attestation's source commit cannot be checked out from it. What the image
+was built from did not change: `images/relay-oauth` and
+`.github/workflows/relay-oauth-image.yml` are the same trees in both commits
+(`8ba0496e` and `565b9849`), compared on 2026-11-10 with
+`git rev-parse <commit>:images/relay-oauth` in a clone that still had
+`92131e40`. The digest stays as it is; no
+revision is cut for this. The next revision is attested from a commit of the
+current history.
+
 **If the signing step fails** (cosign, the attestation), the images and the
 index are already pushed, so running the `publish` job again cannot work: it
 stops at "already exists". Do not delete or move the tag. Cut the next
