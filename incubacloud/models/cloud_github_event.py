@@ -497,6 +497,7 @@ class CloudGitHubEvent(models.Model):
                 if not self._pr_preview_allowed(prod):
                     continue
                 exists = self.env['cloud.instance'].search([
+                    ('pr_provider_id', '=', False),
                     ('pr_number', '=', pr_number),
                     ('pr_repo', '=', repo_full),
                     ('project_id', '=', prod.project_id.id),
@@ -546,7 +547,10 @@ class CloudGitHubEvent(models.Model):
 
         elif action == 'synchronize':
             # New commit pushed to the PR branch → rebuild existing preview instances
+            # A GitLab merge request's preview may carry the same
+            # repository name and number: never this event's.
             instances = self.env['cloud.instance'].search([
+                ('pr_provider_id', '=', False),
                 ('pr_number', '=', pr_number),
                 ('pr_repo', '=', repo_full),
             ])
@@ -578,7 +582,10 @@ class CloudGitHubEvent(models.Model):
 
         elif action == 'closed':
             # PR merged or closed → destroy preview instances
+            # A GitLab merge request's preview may carry the same
+            # repository name and number: never this event's.
             instances = self.env['cloud.instance'].search([
+                ('pr_provider_id', '=', False),
                 ('pr_number', '=', pr_number),
                 ('pr_repo', '=', repo_full),
             ])

@@ -1328,6 +1328,7 @@ class TestOnlyThePlatform(_QueueCase):
             ({"pr_repo": "acme/odoo"}, "panel's own actions"),
             ({"pr_head_branch": "feature"}, "panel's own actions"),
             ({"pr_comment_id": 5}, "panel's own actions"),
+            ({"pr_state": "closed"}, "panel's own actions"),
             ({"removal_finalized": True}, "panel's own actions"),
             ({"archived_at": now}, "panel's own actions"),
             ({"purge_cutoff_at": now}, "panel's own actions"),

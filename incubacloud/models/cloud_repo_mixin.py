@@ -11,7 +11,7 @@ import logging
 from urllib.parse import urlsplit
 
 from odoo import _, api, fields, models
-from odoo.exceptions import AccessError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ._repo_requirements import (
     RESERVED_REPO_ALIASES,
@@ -227,8 +227,9 @@ class CloudRepoMixin(models.AbstractModel):
         hook_id}``. For GitHub, from the App and
         the PAT the panel holds; for GitLab, push-to-rebuild from the
         state of the webhook that delivers the path (its project's, or
-        an active group's), ``unsupported`` previews for now and no
-        code writes.
+        an active group's); previews of merge requests from the same
+        webhook, ``no_notes`` when no credential of the path has ``api``
+        to write their note; and no code writes.
         """
         app = self.env['cloud.github.app'].sudo().search_count([], limit=1)
         pat = bool(self.env['cloud.settings'].sudo()._get_system().github_pat)
@@ -236,12 +237,21 @@ class CloudRepoMixin(models.AbstractModel):
         for repo in self:
             if repo.provider_id:
                 hook = Hook._find_for(repo.provider_id, repo.repo_path or '')
+                push = _HOOK_CAPABILITY.get(hook.state, 'no_hook')
+                previews = push
+                if push == 'ok':
+                    try:
+                        repo.provider_id.sudo()._credential_for(
+                            repo.repo_path or '', 'api_write',
+                        )
+                    except UserError:
+                        previews = 'no_notes'
                 repo.repo_capabilities = {
                     'provider': 'gitlab',
                     'host': repo.provider_id.sudo().authority,
                     'read': True,
-                    'push_rebuild': _HOOK_CAPABILITY.get(hook.state, 'no_hook'),
-                    'previews': 'unsupported',
+                    'push_rebuild': push,
+                    'previews': previews,
                     'code_tools': {'read': True, 'write': False},
                     'hook_id': hook.id or False,
                 }

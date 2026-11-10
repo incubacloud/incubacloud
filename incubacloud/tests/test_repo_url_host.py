@@ -485,7 +485,7 @@ class TestRepoLineProvider(TransactionCase):
         self.assertTrue(caps["read"])
         self.assertEqual(caps["push_rebuild"], "no_hook")
         self.assertFalse(caps["hook_id"])
-        self.assertEqual(caps["previews"], "unsupported")
+        self.assertEqual(caps["previews"], "no_hook")
         hook = self.env["cloud.gitlab.hook"].create({
             "provider_id": line.provider_id.id, "scope": "group", "path": "acme",
         })
@@ -498,6 +498,16 @@ class TestRepoLineProvider(TransactionCase):
         line.invalidate_recordset(["repo_capabilities"])
         self.assertEqual(line.repo_capabilities["push_rebuild"], "ok")
         self.assertEqual(line.repo_capabilities["hook_id"], hook.id)
+        self.assertEqual(
+            line.repo_capabilities["previews"], "no_notes",
+            "no credential with api: the preview comes, its note does not",
+        )
+        self.env["cloud.git.credential"].create({
+            "provider_id": line.provider_id.id, "namespace": "acme",
+            "kind": "group", "token": "glpat-routes12",
+        }).sudo().write({"scopes": "api"})
+        line.invalidate_recordset(["repo_capabilities"])
+        self.assertEqual(line.repo_capabilities["previews"], "ok")
         self.assertEqual(caps["code_tools"], {"read": True, "write": False})
         github = self._new(
             "cloud.project.repo", "project_id", self.project,

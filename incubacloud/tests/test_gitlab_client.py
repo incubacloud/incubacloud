@@ -353,6 +353,25 @@ class TestGitLabClientHooks(BaseCase):
                 _r, method, path, _b = self._send(call, _response(200, {}))
                 self.assertEqual((method, path), expected)
 
+    def test_the_notes_of_a_merge_request(self):
+        """The note calls: listed oldest first, a body in JSON, the path encoded."""
+        notes = "/api/v4/projects/acme%2Fweb/merge_requests/12/notes"
+        _r, method, path, _b = self._send(
+            lambda c: c.list_mr_notes("acme/web", 12), _response(200, []),
+        )
+        self.assertEqual(method, "GET")
+        self.assertEqual(path, f"{notes}?sort=asc&order_by=created_at&per_page=100")
+        for call, expected, body in (
+            (lambda c: c.create_mr_note("acme/web", 12, "hi"), ("POST", notes), {"body": "hi"}),
+            (lambda c: c.update_mr_note("acme/web", 12, 9, "re"), ("PUT", f"{notes}/9"),
+             {"body": "re"}),
+            (lambda c: c.delete_mr_note("acme/web", 12, 9), ("DELETE", f"{notes}/9"), None),
+        ):
+            with self.subTest(expected=expected):
+                _r, method, path, sent = self._send(call, _response(200, {}))
+                self.assertEqual((method, path), expected)
+                self.assertEqual(sent, body)
+
     def test_an_unknown_kind_is_refused(self):
         client = client_mod.GitLabClient("https://gitlab.example/api/v4", _TOKEN)
         with self.assertRaises(ValueError):

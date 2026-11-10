@@ -70,7 +70,7 @@
                 </t>
             </div>
 
-            <!-- A GitLab line: its server, its webhook, and what this version does not do yet -->
+            <!-- A GitLab line: its server and its webhook, which also brings merge request previews -->
             <div t-if="gitlabHost" class="ic-repo-provider">
                 <span class="ic-repo-provider-badge">GitLab · <t t-esc="gitlabHost"/></span>
                 <t t-set="push" t-value="pushRebuild"/>
@@ -101,9 +101,6 @@
                    t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
                     Open Git providers →
                 </a>
-                <span class="ic-repo-provider-next">
-                    Merge request previews: coming in a next version.
-                </span>
             </div>
             <div t-if="state.hookError" class="ic-repo-fetch-error">
                 <span t-esc="state.hookError"/>

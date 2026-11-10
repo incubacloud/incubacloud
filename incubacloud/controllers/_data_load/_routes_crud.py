@@ -1504,6 +1504,7 @@ class CrudMixin:
                     'project_id': i.project_id.id if i.project_id else None,
                     'project_name': i.project_id.name if i.project_id else '',
                     'pr_number': i.pr_number or 0,
+                    'pr_kind': 'gitlab' if i.pr_provider_id else 'github',
                 }
                 for i in host.instance_ids
             ],
@@ -1550,6 +1551,7 @@ class CrudMixin:
                 'compose_services': i.compose_services or 'odoo,db',
                 'latest_job_id': latest.id if latest else None,
                 'pr_number': i.pr_number or 0,
+                'pr_kind': 'gitlab' if i.pr_provider_id else 'github',
                 # Lets the refresh dialog tell "restore from the latest
                 # snapshot" apart from "there is no snapshot store, a
                 # live dump is the only option".
@@ -2258,6 +2260,10 @@ class CrudMixin:
             'auto_rebuild': inst.auto_rebuild,
             'auto_update': inst.auto_update,
             'autopurge_exempt': inst.autopurge_exempt,
+            # A preview's request, for the project's list: «PR #n» on
+            # GitHub, «MR !n» on GitLab.
+            'pr_number': inst.pr_number or 0,
+            'pr_kind': 'gitlab' if inst.pr_provider_id else 'github',
             'website_info_public': inst.website_info_public,
             'autopurge_days_left': inst._autopurge_days_left(),
             'tags': [
