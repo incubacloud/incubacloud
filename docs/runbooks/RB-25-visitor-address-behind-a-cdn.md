@@ -108,8 +108,8 @@ the options, nothing is corrected.
   into the panel's configuration (`DeployInstanceExecutor._conf_content`),
   the proxy being the host's Traefik container, `inverseproxy-proxy-1.`.
   A host that is not behind a CDN gets none of them. A panel deployed
-  before the option existed runs **without it** until its next deploy or
-  plan apply rewrites its configuration.
+  before the option existed runs **without it** until its next deploy
+  rewrites its configuration.
 - **Any other instance** gets the options too, but nothing in it reads
   them: the correction is part of `incubacloud`, which such an instance
   does not run. Its Odoo keeps recording the CDN's edges.
@@ -155,7 +155,7 @@ above. Remove all three options to stop correcting altogether; Odoo then
 records the CDN's edges, as it did before.
 
 On a panel the configuration is the deploy's: an edit by hand on the
-host lasts until the next deploy or plan apply writes it again. Change
+host lasts until the next deploy writes it again. Change
 the host instead (its *Real Client IP Header* and *Trusted Proxy Ranges*,
 or whether it is reached through a CDN) and deploy.
 
