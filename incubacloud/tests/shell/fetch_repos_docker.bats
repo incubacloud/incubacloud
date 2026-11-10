@@ -213,17 +213,31 @@ EOF
     [[ "$run_size" =~ ^[0-9.]+(B|kB)$ ]]
 }
 
-@test "emptying the record of builds while one runs does not break it" {
+@test "removing the record of a build while it runs does not break it" {
     docker buildx history --help >/dev/null 2>&1 || skip "no docker buildx history"
     mkdir -p "$BATS_TEST_TMPDIR/ctx"
     printf 'FROM %s\nRUN sleep 6\n' "$IMAGE" > "$BATS_TEST_TMPDIR/ctx/Dockerfile"
+    docker buildx history ls --format '{{.Ref}}' > "$BATS_TEST_TMPDIR/before" 2>/dev/null || true
     docker build --no-cache -q -t ic-fetch-test:sleep "$BATS_TEST_TMPDIR/ctx" \
         > "$BATS_TEST_TMPDIR/build.out" 2>&1 &
     pid=$!
-    sleep 3
-    docker buildx history rm --all >/dev/null 2>&1 || true
+    # The record of this build alone, while it runs: the daily prune's
+    # ``rm --all`` would also take every record of whoever runs the test
+    # (M14, 10-nov-2026). A record is removed the same way either way.
+    ref=""
+    for _ in $(seq 50); do
+        ref="$(docker buildx history ls --filter status=running --format '{{.Ref}}' 2>/dev/null \
+            | grep -vxF -f "$BATS_TEST_TMPDIR/before" | head -1)" || true
+        [ -z "$ref" ] || break
+        sleep 0.1
+    done
+    [ -n "$ref" ]
+    docker buildx history rm "$ref" >/dev/null 2>&1 || true
     status=0
     wait "$pid" || status=$?
+    # Its record again once it ended, which a running one may outlive:
+    # the test leaves no record behind, nor takes anyone else's.
+    docker buildx history rm "$ref" >/dev/null 2>&1 || true
     [ "$status" -eq 0 ]
     docker image inspect ic-fetch-test:sleep >/dev/null
 }
