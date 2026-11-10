@@ -19,8 +19,16 @@ nothing. The confirmation protects from the model's mistakes and from
 instructions injected into logs or mail; it does not protect from a
 malicious client, which can answer ``confirm: true`` by itself (see the
 user documentation).
+
+An auto-approval rule of the very user and credential
+(``incubacloud.mcp.auto.approval``) answers instead of the person: the
+call runs at once, after every check that comes before the question.
+Whoever approved it — the person or a rule — is left on the request
+(``set_approval_mark``), and the audit rows and jobs the call writes
+carry it.
 """
 
+import logging
 import secrets
 import time
 
@@ -28,7 +36,10 @@ from odoo import api, models
 
 from ..protocol.errors import URL_ELICITATION_REQUIRED, McpError
 from ..protocol.signing import fingerprint, sign, verify
+from .cloud_audit_log import set_approval_mark
 from .mcp_approval import APPROVAL_TTL
+
+_logger = logging.getLogger(__name__)
 
 #: The key of the single input request the server makes.
 INPUT_KEY = "confirm"
@@ -70,20 +81,61 @@ class McpConfirm(models.AbstractModel):
         :param dict params: the ``tools/call`` params, as the client sent them
         :raises McpError: -32042 for an earlier client with URL elicitation
         """
+        set_approval_mark(None)
         if spec.confirm == "never":
             return None
         message = self.env["incubacloud.mcp.tools"]._confirmation(spec, args)
         if not message:
             return None
+        # Before any approval of the person: one asked for before the rule
+        # was granted expires by itself.
+        if self._auto_approved(spec, ctx, ctx.principal.client):
+            return None
         digest = fingerprint(spec.name, args)
         if ctx.modern and params.get("requestState"):
-            return self._resume(spec, digest, ctx, params)
+            stop = self._resume(spec, digest, ctx, params)
+            if stop is None:
+                self._mark_person()
+            return stop
         approved = self.env["incubacloud.mcp.approval"]._find_approved(
             spec.name, digest, ctx.principal.client
         )
         if approved and approved._consume("approved"):
+            self._mark_person()
             return None
         return self._ask(spec, digest, message, ctx)
+
+    @api.model
+    def _auto_approved(self, spec, ctx, credential):
+        """Return whether a rule of the user and *credential* approves the call.
+
+        It is counted, and the call marked ``auto``, before the action runs;
+        a line in the server's log says so, where it stays even if the
+        transaction is rolled back.
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param ctx: the request's :class:`CallContext`
+        :param str credential: the rule's credential key
+        :rtype: bool
+        """
+        Rule = self.env["incubacloud.mcp.auto.approval"]
+        rule = Rule._active_for(ctx.principal.uid, credential)
+        if not rule or not rule._use():
+            return False
+        set_approval_mark({"approval": "auto", "rule": rule.id})
+        _logger.info(
+            "[mcp] auto-approved %s uid=%s via=%s rule=%s",
+            spec.name,
+            ctx.principal.uid,
+            ctx.via(),
+            rule.id,
+        )
+        return True
+
+    @api.model
+    def _mark_person(self):
+        """Mark the call as approved by the person, for its audit and jobs."""
+        set_approval_mark({"approval": "person", "rule": 0})
 
     @api.model
     def _channel(self, ctx):

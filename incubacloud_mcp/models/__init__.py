@@ -22,6 +22,8 @@ from . import mcp_agent_branch
 from . import mcp_tools_code
 from . import mcp_secrets
 from . import mcp_approval
+from . import mcp_auto_approval
+from . import res_users
 from . import mcp_download
 from . import mcp_confirm
 from . import mcp_server

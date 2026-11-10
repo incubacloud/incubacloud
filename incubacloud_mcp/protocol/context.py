@@ -9,6 +9,14 @@ VIA_CONTEXT_KEY = "incubacloud_mcp_client"
 #: an agent. Only the MCP endpoint sets it: a context key could be sent by
 #: any panel user through ``call_kw``.
 VIA_REQUEST_ATTR = "incubacloud_mcp_via"
+#: Attribute of the HTTP request that says how the call it runs was
+#: approved: ``{"approval": "person" | "auto", "rule": <rule id or 0>}``.
+#: Only ``incubacloud.mcp.confirm._gate`` sets it, as only the endpoint
+#: sets :data:`VIA_REQUEST_ATTR`.
+APPROVAL_REQUEST_ATTR = "incubacloud_mcp_approval"
+#: The same mark as a context key, read only where there is no request
+#: (tests calling the models).
+APPROVAL_CONTEXT_KEY = "incubacloud_mcp_approval"
 
 
 @dataclass(frozen=True)

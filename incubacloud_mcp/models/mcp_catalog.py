@@ -31,6 +31,10 @@ _GIT_PROVIDERS = (
     "Git providers and their tokens are managed in the panel (decision 6); a "
     "GitLab repository is read through its lines (repo_read, github_repo_info)."
 )
+_AUTO_APPROVAL = (
+    "Auto-approval rules are a person's decision in the panel: an agent never "
+    "sees, grants nor revokes one (issue #8)."
+)
 _GIT_HOOKS = (
     "GitLab webhooks and their secrets are managed in the panel (decision 6), "
     "as their Git providers are."
@@ -102,6 +106,11 @@ CORE_EXCLUDED = {
     ),
     "/cloud/mcp/download/<string:token>": "The link download_backup hands out.",
     "/cloud/mcp/config": "What the Connect an agent page shows.",
+    "/cloud/mcp/auto_approval/list": _AUTO_APPROVAL,
+    "/cloud/mcp/auto_approval/candidates": _AUTO_APPROVAL,
+    "/cloud/mcp/auto_approval/grant": _AUTO_APPROVAL,
+    "/cloud/mcp/auto_approval/revoke": _AUTO_APPROVAL,
+    "/cloud/mcp/auto_approval/activity": _AUTO_APPROVAL,
 }
 
 

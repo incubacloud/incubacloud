@@ -24,7 +24,16 @@ class McpSettingsController(http.Controller):
         request.env["cloud.security.mixin"]._check_cloud_group("group_cloud_user")
         Settings = request.env["cloud.settings"].sudo()
         api_keys = Settings._mcp_api_keys_allowed()
+        # The user's own auto-approval rules that still count: the page
+        # says which credential acts without asking, and offers to revoke it.
+        own = (
+            request.env["incubacloud.mcp.auto.approval"]
+            .sudo()
+            .search([("user_id", "=", request.env.uid), ("revoked_at", "=", False)])
+            ._format()
+        )
         return {
+            "auto_approvals": [rule for rule in own if rule["state"] != "expired"],
             "resource": Settings._mcp_resource(),
             "issuer": Settings._mcp_issuer(),
             "api_keys": api_keys,

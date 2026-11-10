@@ -408,3 +408,24 @@ class PanelFixtureMixin:
         for secret in SECRETS:
             for form in secret_variants(secret):
                 self.assertNotIn(form, text)
+
+
+class AutoApprovalAllowedMixin:
+    """Run the test on a panel that allows auto-approval rules.
+
+    A layer over core may answer False (the platform's own panel does):
+    the tests of the rules say what they are about whatever is installed.
+    A test of the switch sets ``self._auto_allowed.return_value`` itself.
+    """
+
+    def setUp(self):
+        """Hold ``_mcp_auto_approval_allowed`` to True for the test."""
+        super().setUp()
+        self._auto_allowed = self.startPatcher(
+            patch.object(
+                type(self.env["cloud.settings"]),
+                "_mcp_auto_approval_allowed",
+                autospec=True,
+                return_value=True,
+            )
+        )
