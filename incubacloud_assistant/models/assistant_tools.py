@@ -21,7 +21,7 @@ reading core's public code. On top of the MCP's rules, the assistant's
 
 import json
 
-from odoo import api, fields, models
+from odoo import api, models
 from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.incubacloud.models.cloud_security_mixin import _GROUP_HIERARCHY
@@ -237,7 +237,7 @@ class AssistantTools(models.AbstractModel):
         rule = self.env["incubacloud.mcp.auto.approval"]._active_for(
             self.env.uid, ASSISTANT_CREDENTIAL
         )
-        until = fields.Datetime.to_string(rule.expires_at) if rule else ""
+        until = rule._until()
         charges = bool(rule.include_charges)
         return tuple(
             ToolDef(listed["name"], listed["description"], listed["inputSchema"])

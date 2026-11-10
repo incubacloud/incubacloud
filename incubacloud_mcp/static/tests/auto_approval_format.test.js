@@ -6,6 +6,7 @@ import {
     credentialText,
     grantPayload,
     grantReady,
+    noEndChosen,
     ownRuleActive,
     periodEnd,
     periodPayload,
@@ -70,6 +71,16 @@ describe("Auto-approval — the grant dialog", () => {
         expect(periodPayload(readyForm({ period: "" }))).toBe(null);
     });
 
+    test("no end date is sent as such, and the button takes it", () => {
+        const form = readyForm({ period: "never" });
+        expect(periodPayload(form)).toEqual({ no_expiry: true });
+        expect(noEndChosen(form)).toBe(true);
+        expect(noEndChosen(readyForm({ period: "90" }))).toBe(false);
+        expect(grantReady(form)).toBe(true);
+        expect(grantPayload(form, "v").no_expiry).toBe(true);
+        expect(grantPayload(form, "v").days).toBe(undefined);
+    });
+
     test("the request carries the notice's version and the box", () => {
         expect(grantPayload(readyForm({ period: "90" }), "2026-11-10")).toEqual({
             user_id: 7,
@@ -92,11 +103,12 @@ describe("Auto-approval — the grant dialog", () => {
 
     test("the notice says the day the rule ends", () => {
         const now = new Date("2026-11-10T12:00:00Z");
-        expect(periodEnd(readyForm({ period: "1" }), now)).toBe("2026-11-11");
+        expect(periodEnd(readyForm({ period: "7" }), now)).toBe("2026-11-17");
         expect(periodEnd(readyForm({ period: "date", date: "2026-11-20" }), now)).toBe(
             "2026-11-20"
         );
         expect(periodEnd(readyForm({ period: "" }), now)).toBe("");
+        expect(periodEnd(readyForm({ period: "never" }), now)).toBe("");
     });
 });
 

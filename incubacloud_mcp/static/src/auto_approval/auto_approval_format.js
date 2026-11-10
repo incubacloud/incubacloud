@@ -51,16 +51,20 @@ export function credentialDetail(item) {
 }
 
 /**
- * The period chosen in the grant form, as the server takes it: days, or
- * the last day.
+ * The period chosen in the grant form, as the server takes it: days, the
+ * last day, or no end date.
  *
- * @param {{period: string, date: string}} form the form's period ("1",
- *     "7", "30", "90" or "date") and its date
- * @returns {{days?: number, expires_on?: string}|null} null while none is chosen
+ * @param {{period: string, date: string}} form the form's period ("7",
+ *     "30", "90", "never" or "date") and its date
+ * @returns {{days?: number, expires_on?: string, no_expiry?: boolean}|null}
+ *     null while none is chosen
  */
 export function periodPayload(form) {
     if (!form?.period) {
         return null;
+    }
+    if (form.period === "never") {
+        return { no_expiry: true };
     }
     if (form.period === "date") {
         return form.date ? { expires_on: form.date } : null;
@@ -113,10 +117,11 @@ export function grantPayload(form, noticeVersion) {
  * @param {object} form the grant form
  * @param {Date} [now] the time it is now
  * @returns {string} the day, as YYYY-MM-DD, or "" while none is chosen
+ *     and for no end date
  */
 export function periodEnd(form, now = new Date()) {
     const payload = periodPayload(form);
-    if (!payload) {
+    if (!payload || payload.no_expiry) {
         return "";
     }
     if (payload.expires_on) {
@@ -147,6 +152,16 @@ export function approvalNote(entry) {
         return { kind: "person", rule: null, by: "" };
     }
     return null;
+}
+
+/**
+ * Whether the grant form chose a rule with no end date.
+ *
+ * @param {{period?: string}} form the grant form
+ * @returns {boolean} true for "No end date"
+ */
+export function noEndChosen(form) {
+    return form?.period === "never";
 }
 
 /**

@@ -52,7 +52,7 @@
                     </div>
                     <dl class="ic-mcp-auto-facts">
                         <div><dt>Granted by</dt><dd><t t-esc="rule.granted_by"/> · <t t-esc="rule.granted_at"/></dd></div>
-                        <div><dt>Until (UTC)</dt><dd t-esc="rule.expires_at"/></div>
+                        <div><dt>Until (UTC)</dt><dd t-esc="ruleEndText(rule)"/></div>
                         <div><dt>Last used</dt><dd t-esc="rule.last_used_at || '—'"/></div>
                         <div><dt>Auto-approved calls</dt><dd t-esc="rule.use_count"/></div>
                         <div t-if="state.data.charges or rule.include_charges">
@@ -122,17 +122,20 @@
                         <select id="ic_mcp_auto_period"
                                 t-on-change="(ev) => this.setField('period', ev.target.value)">
                             <option value="" t-att-selected="!state.grant.form.period">Choose how long…</option>
-                            <option value="1" t-att-selected="state.grant.form.period === '1'">1 day</option>
                             <option value="7" t-att-selected="state.grant.form.period === '7'">7 days</option>
                             <option value="30" t-att-selected="state.grant.form.period === '30'">30 days</option>
                             <option value="90" t-att-selected="state.grant.form.period === '90'">90 days</option>
+                            <option value="never" t-att-selected="state.grant.form.period === 'never'">No end date</option>
                             <option value="date" t-att-selected="state.grant.form.period === 'date'">Until a date…</option>
                         </select>
+                        <span class="ic-form-note">
+                            Recommended: 90 days, the usual rotation period of a credential.
+                        </span>
                     </div>
                     <div class="rl-frow" t-if="state.grant.form.period === 'date'">
                         <label for="ic_mcp_auto_date">Last day</label>
                         <input id="ic_mcp_auto_date" type="date"
-                               t-att-min="minDay" t-att-max="maxDay"
+                               t-att-min="minDay"
                                t-att-value="state.grant.form.date"
                                t-on-change="(ev) => this.setField('date', ev.target.value)"/>
                     </div>
@@ -146,6 +149,11 @@
 
                 <div class="ic-mcp-auto-notice">
                     <p t-esc="noticeLead"/>
+                    <p t-if="noEnd" class="ic-mcp-auto-noend">
+                        <strong>This rule has no end date.</strong>
+                        It lasts until someone revokes it, the credential is deleted or the person
+                        is archived. Whoever grants it decides for how long; a date is safer.
+                    </p>
                     <p t-esc="noticeReach"/>
                     <p><strong>What the panel stops protecting you from:</strong></p>
                     <ul>

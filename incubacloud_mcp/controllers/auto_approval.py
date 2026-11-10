@@ -12,7 +12,7 @@ from odoo.http import request
 
 from odoo.addons.incubacloud.controllers._client_ip import client_ip
 
-from ..models.mcp_auto_approval import MAX_DAYS, NOTICE_VERSION, PERIOD_DAYS
+from ..models.mcp_auto_approval import NOTICE_VERSION, PERIOD_DAYS, RECOMMENDED_DAYS
 
 #: The most activity rows one page holds.
 ACTIVITY_PAGE_MAX = 100
@@ -66,7 +66,7 @@ class McpAutoApprovalController(http.Controller):
             "charges": Settings._mcp_auto_approval_charges(),
             "notice_version": NOTICE_VERSION,
             "periods": list(PERIOD_DAYS),
-            "max_days": MAX_DAYS,
+            "recommended_days": RECOMMENDED_DAYS,
         }
 
     @http.route("/cloud/mcp/auto_approval/candidates", type="jsonrpc", auth="user")
@@ -86,10 +86,13 @@ class McpAutoApprovalController(http.Controller):
         acknowledged=False,
         notice_version="",
         include_charges=False,
+        no_expiry=False,
     ):
         """Grant a rule, once the notice is accepted. Administrators.
 
-        ``include_charges`` lets the tools that charge money through too.
+        ``include_charges`` lets the tools that charge money through too;
+        ``no_expiry``, instead of ``days`` or ``expires_on``, grants a rule
+        with no end date.
         """
         Rule = self._rules()
         try:
@@ -102,6 +105,7 @@ class McpAutoApprovalController(http.Controller):
                 notice_version=notice_version or "",
                 ip=client_ip(),
                 include_charges=include_charges is True,
+                no_expiry=no_expiry is True,
             )
         except UserError as exc:
             return {"ok": False, "error": str(exc)}

@@ -14,7 +14,7 @@ import time
 
 import psycopg2
 
-from odoo import api, fields, models
+from odoo import api, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 from odoo.modules.module import get_manifest
@@ -35,6 +35,7 @@ from ..protocol.limits import MAX_BYTES, fit_answer, size_of
 from ..protocol.redact import drop_secret_keys, mask_token_urls
 from ..protocol.schema import SchemaError, resolve, validate
 from ..protocol.signing import sign, verify
+from ..protocol.tool_spec import until_text
 from ..protocol.versions import LEGACY, MODERN, SUPPORTED, negotiate_legacy
 from .cloud_audit_log import approval_mark
 
@@ -56,7 +57,7 @@ APPROVAL_SENTENCE = (
 #: And with one: nothing waits, so the agent cannot count on being stopped.
 AUTO_APPROVAL_SENTENCE = (
     "An auto-approval rule lets this credential run every tool without asking "
-    "the user, until {until} UTC: no action waits for an approval, so make sure "
+    "the user, {until}: no action waits for an approval, so make sure "
     "of each call before you make it."
 )
 #: Added when that rule does not include charges and some tool charges money.
@@ -325,9 +326,7 @@ class McpServer(models.AbstractModel):
         rule = self._auto_rule(ctx)
         if not rule:
             return INSTRUCTIONS.format(approvals=APPROVAL_SENTENCE)
-        approvals = AUTO_APPROVAL_SENTENCE.format(
-            until=fields.Datetime.to_string(rule.expires_at)
-        )
+        approvals = AUTO_APPROVAL_SENTENCE.format(until=until_text(rule._until()))
         if not rule.include_charges and any(
             spec.charges for spec in self._visible_specs()
         ):
@@ -434,7 +433,7 @@ class McpServer(models.AbstractModel):
         those that charge money, under a rule that does not include charges.
         """
         rule = self._auto_rule(ctx)
-        until = fields.Datetime.to_string(rule.expires_at) if rule else ""
+        until = rule._until()
         charges = bool(rule.include_charges)
         result = {
             "tools": [

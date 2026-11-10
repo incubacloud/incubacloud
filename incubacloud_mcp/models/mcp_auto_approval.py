@@ -1,4 +1,5 @@
-"""Auto-approval: one credential of one person runs without asking, until a date.
+"""Auto-approval: one credential of one person runs without asking, until a
+date or, if so granted, with no end date.
 
 An Administrator grants a rule, in the panel, to one credential of one
 user: an API key, an OAuth client, or (with the assistant) the panel's
@@ -14,7 +15,8 @@ grant left unticked by default; under any other rule it still asks.
 The rule is active when, at the very call (no cache, no cron):
 
 1. its user and credential are the request's, exactly;
-2. it is not revoked and ``expires_at`` is after the database's clock;
+2. it is not revoked and, if it has one, ``expires_at`` is after the
+   database's clock;
 3. the person's role is not above the one they had when it was granted;
 4. ``cloud.settings._mcp_auto_approval_allowed()`` says yes.
 
@@ -22,11 +24,17 @@ Rules are never deleted: revoked or expired, they stay as history. No
 group may create, write or delete them; the logic lives in private
 methods (``_grant``, ``_revoke``, ``_use``) that Odoo's RPC cannot reach.
 
-Values, with their reason (10-nov-2026):
+Values, with their reason:
 
-* at most 90 days (:data:`MAX_DAYS`): the usual rotation period of a
-  credential, so a forgotten rule does not outlive the key that holds it;
-* no period chosen beforehand: whoever grants it picks one on purpose;
+* the end date is optional, with no maximum (decided on 10-nov-2026): a
+  rule without one lasts until it is revoked or its credential or person
+  ends; how long an agent acts without asking is the decision of whoever
+  grants it. The panel recommends 90 days (:data:`RECOMMENDED_DAYS`), the
+  usual rotation period of a credential, and says in the notice when a
+  rule has no end date;
+* no period chosen beforehand (10-nov-2026): the shortcuts
+  (:data:`PERIOD_DAYS`, "no end date") and a date are offered, none
+  preselected, so whoever grants it picks one on purpose;
 * a credential is recorded when it connects, at most once an hour, and
   forgotten 90 days after it was last seen (:data:`SEEN_EVERY`,
   :data:`SEEN_KEPT`): a short list to choose from, without a write per call.
@@ -44,18 +52,20 @@ from odoo.exceptions import AccessError, UserError
 from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
 from odoo.addons.incubacloud.models.cloud_security_mixin import _GROUP_HIERARCHY
 
+from ..protocol.tool_spec import NO_END_DATE
 from .cloud_audit_log import agent_mark
 
 _logger = logging.getLogger(__name__)
 
-#: The longest a rule may last.
-MAX_DAYS = 90
-#: The periods the panel offers, in days; a date up to :data:`MAX_DAYS` too.
-PERIOD_DAYS = (1, 7, 30, 90)
+#: The shortcuts the panel offers, in days; "no end date" and a date too.
+PERIOD_DAYS = (7, 30, 90)
+#: The period the panel recommends: the usual rotation period of a credential.
+RECOMMENDED_DAYS = 90
 #: The version of the notice the Administrator accepts (§6.7). A new text
 #: gets a new version, and the panel refuses a grant that accepted another.
-#: ``.2``: the notice says whether the rule includes charges.
-NOTICE_VERSION = "2026-11-10.2"
+#: ``.2``: the notice says whether the rule includes charges; ``.3``: it
+#: says when the rule has no end date.
+NOTICE_VERSION = "2026-11-10.3"
 #: A credential is recorded again when last seen longer ago than this.
 SEEN_EVERY = timedelta(hours=1)
 #: A credential not seen for this long, and without a live rule, is forgotten.
@@ -137,7 +147,9 @@ class McpAutoApproval(models.Model):
     )
     credential_label = fields.Char(readonly=True, help="How the audit names it.")
     role_at_grant = fields.Selection(ROLE_SELECTION, required=True, readonly=True)
-    expires_at = fields.Datetime(required=True, readonly=True)
+    expires_at = fields.Datetime(
+        readonly=True, help="When the rule ends; empty, it has no end date."
+    )
     include_charges = fields.Boolean(
         readonly=True,
         default=False,
@@ -216,7 +228,7 @@ class McpAutoApproval(models.Model):
         rule = self.sudo()
         if rule.revoked_at:
             return "revoked"
-        if rule.expires_at <= fields.Datetime.now():
+        if rule.expires_at and rule.expires_at <= fields.Datetime.now():
             return "expired"
         if not self.env["cloud.settings"].sudo()._mcp_auto_approval_allowed():
             return "paused_platform"
@@ -234,6 +246,20 @@ class McpAutoApproval(models.Model):
             return rule
         return self.sudo().browse()
 
+    def _until(self):
+        """Return until when this rule lets its credential act without
+        asking, as the listing and the instructions say it: its end
+        (``YYYY-MM-DD HH:MM:SS``, UTC), :data:`NO_END_DATE` for a rule
+        without one, or ``''`` for no rule.
+
+        :rtype: str
+        """
+        if not self:
+            return ""
+        self.ensure_one()
+        expires_at = self.sudo().expires_at
+        return fields.Datetime.to_string(expires_at) if expires_at else NO_END_DATE
+
     def _covers(self, spec):
         """Return whether this rule approves the tool of *spec*: every tool,
         but one that charges money only when the rule includes charges.
@@ -250,7 +276,8 @@ class McpAutoApproval(models.Model):
         One statement on a cursor of its own, at READ COMMITTED, committed
         before the action runs: it checks the revocation and the date
         against the database's clock (``clock_timestamp()``, the time of
-        the statement, not of the transaction) as it counts, and an agent's parallel
+        the statement, not of the transaction) as it counts, a rule without
+        an end date passing that check, and an agent's parallel
         calls neither wait for each other during a long action nor make the
         request retry.
 
@@ -264,7 +291,8 @@ class McpAutoApproval(models.Model):
                     "SET use_count = use_count + 1, "
                     "last_used_at = (clock_timestamp() at time zone 'UTC') "
                     "WHERE id = %s AND revoked_at IS NULL "
-                    "AND expires_at > (clock_timestamp() at time zone 'UTC') "
+                    "AND (expires_at IS NULL "
+                    "OR expires_at > (clock_timestamp() at time zone 'UTC')) "
                     "RETURNING id",
                     (self.id,),
                 )
@@ -376,28 +404,32 @@ class McpAutoApproval(models.Model):
         return result
 
     @api.model
-    def _expiry(self, days=None, expires_on=None):
-        """Return when a rule granted now with this period ends (UTC, naive).
+    def _expiry(self, days=None, expires_on=None, no_expiry=False):
+        """Return when a rule granted now with this period ends (UTC, naive),
+        or None for a rule with no end date.
 
-        :param int days: one of the periods, 1 to :data:`MAX_DAYS`
-        :param str expires_on: a date (``YYYY-MM-DD``) after today and at
-            most :data:`MAX_DAYS` ahead: the rule ends at the end of that
-            day, in the Administrator's time zone, and never more than
-            :data:`MAX_DAYS` from now
-        :raises UserError: for no period, or one out of bounds
+        :param int days: a number of days, 1 or more
+        :param str expires_on: a date (``YYYY-MM-DD``) after today: the rule
+            ends at the end of that day, in the Administrator's time zone
+        :param bool no_expiry: the rule has no end date (only ``True``
+            counts), and neither *days* nor *expires_on* is given
+        :raises UserError: for no period, more than one, or one out of bounds
         """
         now = fields.Datetime.now()
-        limit = now + timedelta(days=MAX_DAYS)
+        chosen = [
+            value for value in (days, expires_on) if value not in (None, False, "")
+        ]
+        if no_expiry is True:
+            if chosen:
+                raise UserError(self.env._("Choose a period or no end date, not both."))
+            return None
         if days not in (None, False, ""):
-            if (
-                isinstance(days, bool)
-                or not isinstance(days, int)
-                or not 1 <= days <= MAX_DAYS
-            ):
-                raise UserError(
-                    self.env._("The rule lasts from 1 to %(max)s days.", max=MAX_DAYS)
-                )
-            return now + timedelta(days=days)
+            if isinstance(days, bool) or not isinstance(days, int) or days < 1:
+                raise UserError(self.env._("The rule lasts 1 day or more."))
+            try:
+                return now + timedelta(days=days)
+            except OverflowError:
+                raise UserError(self.env._("Choose a nearer end.")) from None
         if not expires_on:
             raise UserError(self.env._("Choose how long the rule lasts."))
         try:
@@ -406,15 +438,10 @@ class McpAutoApproval(models.Model):
             day = None
         tz = pytz.timezone(self.env.user.tz or "UTC")
         today = now.replace(tzinfo=pytz.utc).astimezone(tz).date()
-        if not day or day <= today or day > today + timedelta(days=MAX_DAYS):
-            raise UserError(
-                self.env._(
-                    "The rule ends on a day after today, at most %(max)s days ahead.",
-                    max=MAX_DAYS,
-                )
-            )
+        if not day or day <= today:
+            raise UserError(self.env._("The rule ends on a day after today."))
         end = tz.localize(datetime.combine(day, time(23, 59, 59)))
-        return min(end.astimezone(pytz.utc).replace(tzinfo=None), limit)
+        return end.astimezone(pytz.utc).replace(tzinfo=None)
 
     @api.model
     def _grant(
@@ -427,6 +454,7 @@ class McpAutoApproval(models.Model):
         notice_version="",
         ip="",
         include_charges=False,
+        no_expiry=False,
     ):
         """Grant a rule to *credential* of *user_id*, as the current user.
 
@@ -443,6 +471,7 @@ class McpAutoApproval(models.Model):
         :param str ip: the Administrator's address
         :param bool include_charges: the tools that charge money run
             without asking too (only ``True`` counts)
+        :param bool no_expiry: the rule has no end date, see :meth:`_expiry`
         :return: the rule
         :raises AccessError: through an agent, or below Administrator
         :raises UserError: for anything else that does not hold
@@ -476,7 +505,7 @@ class McpAutoApproval(models.Model):
                     "Choose one of this user's credentials that connected to the panel."
                 )
             )
-        expires_at = self._expiry(days=days, expires_on=expires_on)
+        expires_at = self._expiry(days=days, expires_on=expires_on, no_expiry=no_expiry)
         Rule = self.sudo().with_context(**{_INTERNAL: True})
         Rule._live_for(user.id, credential)._revoke("superseded")
         rule = Rule.create(
@@ -493,12 +522,19 @@ class McpAutoApproval(models.Model):
                 "include_charges": include_charges is True,
             }
         )
-        details = self.env._(
-            "%(person)s · %(credential)s · until %(date)s UTC",
-            person=user.name,
-            credential=rule.credential_label,
-            date=fields.Datetime.to_string(expires_at),
-        )
+        if expires_at:
+            details = self.env._(
+                "%(person)s · %(credential)s · until %(date)s UTC",
+                person=user.name,
+                credential=rule.credential_label,
+                date=fields.Datetime.to_string(expires_at),
+            )
+        else:
+            details = self.env._(
+                "%(person)s · %(credential)s · no end date",
+                person=user.name,
+                credential=rule.credential_label,
+            )
         if rule.include_charges:
             details += " · " + self.env._("charges included")
         rule._audit("Auto-approval rule granted", details)
@@ -508,7 +544,7 @@ class McpAutoApproval(models.Model):
             rule.id,
             user.id,
             credential,
-            expires_at,
+            expires_at or "no end date",
             rule.include_charges,
             self.env.uid,
         )
@@ -594,7 +630,9 @@ class McpAutoApproval(models.Model):
                 "credential_label": rule.credential_label or rule.credential,
                 "granted_by": rule.granted_by_id.name or "",
                 "granted_at": fields.Datetime.to_string(rule.create_date),
-                "expires_at": fields.Datetime.to_string(rule.expires_at),
+                "expires_at": fields.Datetime.to_string(rule.expires_at)
+                if rule.expires_at
+                else "",
                 "last_used_at": fields.Datetime.to_string(rule.last_used_at)
                 if rule.last_used_at
                 else "",
