@@ -86,7 +86,9 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
                 "/scrape.yml",
             )
         )
-        env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+        env = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+            undefined=jinja2.StrictUndefined,
+        )
         env.filters["to_json"] = lambda v, **kw: json.dumps(v, **kw)
         odd = 'x"\ny: [z]: #'
         # Every label the file writes through ``to_json`` holds the odd
