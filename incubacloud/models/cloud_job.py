@@ -3618,7 +3618,7 @@ class CloudJob(models.Model):
         # Same for a job type whose executor files an alert of its own
         # for a failure, with what failed in it (``_failure_alert_code``):
         # while that one is open, a ``job_failed`` beside it told the
-        # same failure twice (host 2412's hardening, 27-oct-2026). Not
+        # same failure twice (a host's hardening, 27-oct-2026). Not
         # for a type whose failure holds its queue: the hold is read off
         # ``job_failed`` (``_queue_holding_alert_codes``).
         own_code = getattr(

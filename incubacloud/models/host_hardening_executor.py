@@ -52,7 +52,7 @@ _SSHD_DROPIN = "/etc/ssh/sshd_config.d/00-incubacloud-hardening.conf"
 #: (Debian 13 after the playbook: ``ssh.socket`` holds the port) a reload
 #: makes sshd re-exec and bind the port itself, which the socket holds:
 #: «Cannot bind any address», and the daemon dies. That is what failed the
-#: hardening of Cloud1 on 2 November 2026, and of a fresh Debian 13 server
+#: hardening of a panel's own host on 2 November 2026, and of a fresh Debian 13 server
 #: after it. A restart of the service is handed the socket's port by
 #: systemd instead (verified on that server: new logins read the new
 #: file, and a reboot brings both units back). Without the socket, a

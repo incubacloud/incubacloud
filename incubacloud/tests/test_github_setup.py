@@ -19,14 +19,14 @@ class TestGitHubAppName(BaseCase):
 
     def test_uses_host_subdomain(self):
         self.assertEqual(
-            self._name("https://acme.incubacloud.io"),
+            self._name("https://acme.example.com"),
             "IncubaCloud-acme",
         )
 
     def test_distinct_per_tenant_subdomain(self):
         # Same base domain, different subdomain → different app names.
-        a = self._name("https://t1.incubacloud.io")
-        b = self._name("https://t2.incubacloud.io")
+        a = self._name("https://t1.example.com")
+        b = self._name("https://t2.example.com")
         self.assertNotEqual(a, b)
         self.assertEqual(a, "IncubaCloud-t1")
         self.assertEqual(b, "IncubaCloud-t2")
@@ -47,7 +47,7 @@ class TestGitHubAppName(BaseCase):
     def test_falls_back_to_provided_host(self):
         # No hostname in base_url → use the fallback host header.
         self.assertEqual(
-            self._name("", "beta.incubacloud.io"),
+            self._name("", "beta.example.com"),
             "IncubaCloud-beta",
         )
 

@@ -362,7 +362,7 @@ class FullSetupExecutor(
         ships_cert, ships_ca = self._proxy_ships()
         # A host set up by hand may hold the certificate as root: the push
         # of the proxy settings falls back to sudo the same way, and a Full
-        # Setup without it failed on Tenants1 (1-nov-2026).
+        # Setup without it failed on a production host (1-nov-2026).
         put = 'ic_put() { mv "$1" "$2" 2>/dev/null || sudo mv "$1" "$2"; };'
         if ships_cert:
             install_cert = (
@@ -646,7 +646,7 @@ class FullSetupExecutor(
         # each leaves the proxy other than configured when it fails —
         # serving an old certificate, taking traffic that did not come
         # through the CDN, or writing a log nothing rotates — and the job
-        # used to end "fully configured" all the same (Tenants1, 1-nov).
+        # used to end "fully configured" all the same (a production host, 1-nov).
         for label in (
             "Create traefik directory",
             *ran,

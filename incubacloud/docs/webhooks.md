@@ -18,7 +18,7 @@ payload to that endpoint every time a job reaches a terminal state
   "severe": true,
   "host": "prod-host-1",
   "instance": "my-project / prod-instance",
-  "log_url": "https://app.incubacloud.io/cloud/log/123",
+  "log_url": "https://panel.example.com/cloud/log/123",
   "timestamp": "2026-07-10T17:42:00"
 }
 ```

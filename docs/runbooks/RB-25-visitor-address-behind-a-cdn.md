@@ -99,7 +99,7 @@ without the options, nothing is installed there.
 
 ## What the platform sets
 
-- **The master** (`odoo/custom/conf.d/incubacloud-production.conf` in
+- **The master** (`odoo/custom/conf.d/<deployment>.conf` in
   the deployment repository): the header, Cloudflare's ranges and
   `x_real_ip_proxy=inverseproxy-proxy-1.`, the name `docker compose -p
   inverseproxy` gives Traefik's container.

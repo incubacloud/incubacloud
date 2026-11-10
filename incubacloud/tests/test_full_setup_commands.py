@@ -139,8 +139,8 @@ class TestFullSetupWritesTheEdgeGuard(TransactionCase):
 
     The step is fatal, as the direct list is: a Full Setup that did not
     write it cannot end green, or every instance of the host would serve
-    the page with nothing saying so (the silence closed on Tenants1,
-    1-nov-2026). The proxy is neither mounted nor running yet, so the
+    the page with nothing saying so (the silence closed on a production
+    host, 1-nov-2026). The proxy is neither mounted nor running yet, so the
     script checks neither.
     """
 

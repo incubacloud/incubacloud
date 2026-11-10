@@ -159,7 +159,7 @@ class TestSeededRules(TransactionCase):
         )
 
     def test_a_host_without_its_proxy_is_named(self):
-        """2-nov-2026: saas-free ran nine hours with no proxy, unnoticed.
+        """2-nov-2026: a host ran nine hours with no proxy, unnoticed.
 
         The rule names a host that reports but whose proxy container does
         not: on the live backend the expression is empty with every proxy

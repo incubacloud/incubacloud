@@ -77,7 +77,7 @@ table inet filter {
 EOF
 }
 
-# Cloud1's: hardened before the SSH set existed, the list inlined.
+# A host hardened before the SSH set existed: the list inlined.
 legacy_conf() {
     cat > "$IC_NFT_CONF" <<'EOF'
 table inet filter
@@ -127,7 +127,7 @@ live_rules() {
     [ "$(grep -c '^add rule inet filter forward ' "$APPLIED")" -eq 3 ]
 }
 
-@test "set works on Cloud1's older ruleset too" {
+@test "set works on an older ruleset too" {
     legacy_conf
     run bash "$SCRIPT" set 9443 10.0.0.0/8 46.4.0.20/32
     [ "$status" -eq 0 ]

@@ -2,7 +2,7 @@
 
 The metrics name an instance by its compose name, which is what Grafana
 filters on and therefore what the picker must send. Shown bare it meant
-nothing — ``ic-tenant-034a549f`` or a dozen ``production`` — so the
+nothing — ``ic-acme-034a549f`` or a dozen ``production`` — so the
 picker now shows a label and keeps sending the name.
 """
 from odoo.tests.common import TransactionCase

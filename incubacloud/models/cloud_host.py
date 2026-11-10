@@ -2838,7 +2838,7 @@ class CloudHost(models.Model):
 
         The nightly prune (``host_maintenance.yml``) removes every stopped
         container without ``incubacloud.protect=1``, and the image with
-        it. On 2 November 2026 saas-free's proxy, stopped by a reboot,
+        it. On 2 November 2026 a host's proxy, stopped by a reboot,
         was deleted that way and no instance on the host answered for
         hours. Added as the first entry of the ``proxy`` service's
         ``labels`` list; a file whose proxy service has no such list, or

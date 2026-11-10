@@ -1,7 +1,7 @@
 """A failed hardening is one alert, not two.
 
-On 27 October 2026 one hardening run that failed on host 2412 (job
-382128) left two alerts side by side: ``hardening_failed``, critical,
+On 27 October 2026 one hardening run that failed on a host left two
+alerts side by side: ``hardening_failed``, critical,
 saying root SSH was preserved and to check the log, and ``job_failed``,
 a warning, saying what failed. The same failure, told twice, each half
 of it in a different row.

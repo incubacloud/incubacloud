@@ -1522,11 +1522,11 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
     # ── Who can open SSH after the hardening ───────────────────────────
     #
     # The dialog says it, and the asker's own address enters the list only
-    # through its checkbox (planes-mejoras/plan-lista-ssh-sin-relleno.md).
+    # through its checkbox.
     # Until 27-oct-2026 the SaaS manager filled an empty list with the
     # asker's address before every hardening, unannounced: an IPv6 a host
-    # reached over IPv4 could not use, and on Tenants1 an address of the
-    # CDN (104.22.23.52).
+    # reached over IPv4 could not use, and on a production host an address
+    # of the CDN.
 
     _PERSON = "81.40.12.7"
     _PERSON6 = "2a01:4f8:c0c:1234::1"

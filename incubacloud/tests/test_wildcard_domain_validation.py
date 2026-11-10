@@ -40,14 +40,14 @@ class TestValidateWildcardDomain(BaseCase):
         )
 
     def test_normalises_case_and_whitespace_without_rewriting_storage(self):
-        """Production holds ``Tenants1.incubacloud.io``.
+        """Production holds mixed-case rows such as ``Pool1.Example.com``.
 
         The comparison is case-insensitive so that row stays writable; the
         model constraint only reads this result, it never writes it back.
         """
         self.assertEqual(
-            validate_wildcard_domain("  Tenants1.Incubacloud.IO  "),
-            "tenants1.incubacloud.io",
+            validate_wildcard_domain("  Pool1.Example.COM  "),
+            "pool1.example.com",
         )
 
     def test_rejects_malformed_shapes(self):
@@ -101,28 +101,28 @@ class TestValidateWildcardDomain(BaseCase):
                 )
 
     def test_reserved_matches_the_domain_and_anything_under_it(self):
-        reserved = ("incubacloud.io", "incubacloud.com")
+        reserved = ("example.net", "example.org")
         self.assertEqual(
-            self._code("incubacloud.io", reserved=reserved), "reserved",
+            self._code("example.net", reserved=reserved), "reserved",
         )
         self.assertEqual(
-            self._code("evil.incubacloud.io", reserved=reserved), "reserved",
+            self._code("evil.example.net", reserved=reserved), "reserved",
         )
         self.assertEqual(
-            self._code("*.incubacloud.io", reserved=reserved), "reserved",
+            self._code("*.example.net", reserved=reserved), "reserved",
         )
         # Case and stray whitespace in the configured list must not be a
         # way past it — the list is operator-typed.
         self.assertEqual(
-            self._code("x.incubacloud.io", reserved=("  Incubacloud.IO ",)),
+            self._code("x.example.net", reserved=("  Example.NET ",)),
             "reserved",
         )
         # A domain that merely ends with the same letters is not under it.
         self.assertEqual(
             validate_wildcard_domain(
-                "notincubacloud.io", reserved=reserved,
+                "notexample.net", reserved=reserved,
             ),
-            "notincubacloud.io",
+            "notexample.net",
         )
         # An empty entry in the list must not reserve everything.
         self.assertEqual(
@@ -154,9 +154,9 @@ class TestHostWildcardConstraint(TransactionCase):
 
     def test_mixed_case_host_stays_writable(self):
         """The row shape production actually holds must survive an edit."""
-        host = self._create("Tenants1.incubacloud.io")
-        host.write({"wildcard_domain": "Tenants2.incubacloud.io"})
-        self.assertEqual(host.wildcard_domain, "Tenants2.incubacloud.io")
+        host = self._create("Pool1.Example.com")
+        host.write({"wildcard_domain": "Pool2.Example.com"})
+        self.assertEqual(host.wildcard_domain, "Pool2.Example.com")
 
     def test_model_does_not_apply_the_internal_blocklist(self):
         """Shape only here — see the validator's docstring for why."""

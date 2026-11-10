@@ -20,7 +20,7 @@ import {
  * each is checked here against the client's documented form.
  */
 
-const URL = "https://acme.incubacloud.io/mcp";
+const URL = "https://acme.example.com/mcp";
 
 describe("Connect an agent — what it shows", () => {
     test("the panel's URL and the Claude Code command with it", () => {

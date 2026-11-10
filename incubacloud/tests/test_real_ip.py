@@ -849,7 +849,7 @@ class TestEachMode(_DockerAnswers, _OnTheUncorrectedProxyFix, BaseCase):
                                chain=f"{FORGED}, {EDGE}", claimed=FORGED)
         self.assertEqual(request.remote_addr, NEIGHBOUR)
 
-    # The master, on Cloud1: Traefik trusts Cloudflare's ranges and is
+    # A panel behind the CDN: Traefik trusts Cloudflare's ranges and is
     # named in its configuration.
 
     def test_master_records_the_visitor(self):

@@ -513,7 +513,7 @@ class AbstractExecutor(ABC):
     # Ten attempts, ~30 s apart, is a deliberate ~10 minute tolerance.
     # Three (~90 s) was shorter than the routine maintenance of the very
     # hosts being probed: unattended-upgrades reboots them inside its
-    # 04:00 window, which took Tenants1 out for two minutes, and a
+    # 04:00 window, which took a production host out for two minutes, and a
     # network blip on the same day took it out for four. Both paged.
     # A host that is genuinely gone is still critical ten minutes later,
     # and ``metrics_host_absent`` covers the same ground from the other
