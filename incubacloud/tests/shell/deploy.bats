@@ -1518,7 +1518,7 @@ $HEADS_SHA	refs/heads/8.0
     done
 }
 
-# ── Fable's review of the tokens' option A (10-nov-2026) ──
+# ── The review of the tokens' option A (10-nov-2026) ──
 
 @test "fetch-repos asks a pinned repository with its credential before linking it from the host's cache" {
     _instance_80

@@ -157,7 +157,7 @@ ic_git_helper_tag() {
 # maintenance prepares beforehand on a host whose instances fetch their
 # repositories, so a job pays it only on a host that has not had that
 # night yet. A cap of its own, so a slow registry fails the step saying
-# so instead of eating the download's budget (Fable's M9, 10-nov-2026).
+# so instead of eating the download's budget (10-nov-2026).
 # IC_GIT_HELPER_PULL_TIMEOUT overrides it (Full setup gives it longer).
 IC_GIT_HELPER_PULL_TIMEOUT="${IC_GIT_HELPER_PULL_TIMEOUT:-300}"
 
@@ -190,7 +190,7 @@ ic_git_helper_prepare() {
 # Remove every local ``incubacloud-git-helper`` tag but <tag>: the label
 # that spares the helper from the daily prune would otherwise keep the
 # tag of each digest core used before, about 2 GB a change on every host
-# (Fable's I3, 10-nov-2026). A tag a running container still uses is
+# (10-nov-2026). A tag a running container still uses is
 # left for the next time; this never fails.
 #
 # Usage: ic_git_helper_drop_old <tag> [docker...]

@@ -35,8 +35,7 @@ shift 2
 HEADS_TIMEOUT=20
 # The same from the helper container, whose start counts too: a host
 # busy building would otherwise take a slow start for a server that does
-# not answer, and fetch every repository of it again (Fable's M10,
-# 10-nov-2026).
+# not answer, and fetch every repository of it again (10-nov-2026).
 HEADS_CONTAINER_TIMEOUT=40
 
 # Seconds set-system-params waits for ``db`` to accept connections. A
@@ -542,7 +541,7 @@ ic_tree_ready() {
 # marker. The tree that was there stays until the new one is complete,
 # and is renamed aside, not removed, just before the new one takes its
 # name: a run cut while it is removed leaves the new tree in place
-# (Fable's M1, 10-nov-2026). Its marker goes first, so a run cut anywhere
+# (10-nov-2026). Its marker goes first, so a run cut anywhere
 # leaves no tree with a marker it does not match. ``-T`` everywhere: a
 # name taken meanwhile fails the copy or the rename, never nests a tree
 # in it (M2). The trees are never written in place: a write would reach
@@ -588,7 +587,7 @@ ic_strip_userinfo() {
 # root's OpenSSH ignored the TERM) is told to stop, once ic_git_reap has
 # removed its container, and waited for; only a process that is
 # ``deploy.sh fetch-repos`` on <dir> is signalled. The lock goes with the
-# process that holds it (Fable's M2, 10-nov-2026).
+# process that holds it (10-nov-2026).
 #
 # Usage: ic_fetch_lock <src>
 ic_fetch_lock() {
@@ -613,8 +612,8 @@ ic_fetch_lock() {
 
 # Hold the host's cache of trees shared (fd 8, ``$IC_TREES/.lock``) while
 # a tree is checked, linked or stored in it: the daily prune takes it
-# exclusive, and removes nothing while a job holds it (Fable's M3,
-# 10-nov-2026). Never held through a download.
+# exclusive, and removes nothing while a job holds it (10-nov-2026).
+# Never held through a download.
 #
 # Usage: ic_trees_lock / ic_trees_unlock
 ic_trees_lock() {
@@ -628,10 +627,10 @@ ic_trees_unlock() {
 # own credential, the condition to link its tree from the host's cache:
 # a branch's head was read with it this same run, but a pinned commit is
 # never asked, and a tree another instance downloaded would otherwise
-# reach a repository whose access was taken away (Fable's I2,
-# 10-nov-2026). One ``ls-remote`` of the pinned commit's name, whose
-# answer does not matter, only its status; a public repository passes
-# without credential.
+# reach a repository whose access was taken away (10-nov-2026). One
+# ``ls-remote`` of the pinned commit's name, whose answer does not
+# matter, only its status; a public repository passes without
+# credential.
 #
 # Usage: ic_pins_readable <alias>
 #   reads ROWS and IDX_OF[<alias>], as ic_fetch_tree
@@ -750,7 +749,7 @@ ic_fetch_tree() {
     rm -rf "${home:?}"
     if [ "$rc" -eq 0 ]; then
         # Written by the container: a plain file naming a commit, or the
-        # download failed (Fable's M5, 10-nov-2026).
+        # download failed (10-nov-2026).
         if [ -f "$tmp/.ic-head" ] && [ ! -L "$tmp/.ic-head" ]; then
             IC_FETCHED="$(head -c 64 "$tmp/.ic-head" 2>/dev/null || true)"
         fi
@@ -1090,7 +1089,7 @@ ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; END IF; END \$\$;"
         fi
         IC_GIT_ALL_IN_CONTAINER=1
         # The spec holds the credentials and serves this step alone: it
-        # goes when the step ends, however it ends (Fable's M8).
+        # goes when the step ends, however it ends.
         IC_TMP_DIRS+=("$spec")
         ic_git_traps
         # 1. Before fetching anything: what a run cut short left, and the

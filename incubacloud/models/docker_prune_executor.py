@@ -413,7 +413,7 @@ class DockerPruneExecutor(AnsibleExecutor):
         on a host with an instance of a series that fetches its
         repositories on the host: there the night pays its pull, about
         730 MB, not the first job, and the tags of other digests go
-        (Fable's M9 and I3, 10-nov-2026). A host whose instances all
+        (10-nov-2026). A host whose instances all
         clone in the image does not hold it for nothing.
 
         :rtype: str
