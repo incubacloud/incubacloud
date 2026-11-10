@@ -21,8 +21,9 @@ webhook. `incubacloud_assistant` 1.0.3 comes with it.
 - **Stricter permission checks** on repository reads, the import and its
   preview, and on creating instances, hosts and jobs, and on defaults and
   internal context keys sent by clients.
-- **Below Project Manager, a repository line's URL cannot be changed**; the
-  editor shows it read-only, and `/cloud/get_config` answers
+- **Below Project Manager, a repository line's URL cannot be changed**, nor
+  the line moved to another project or instance; the editor shows the URL
+  read-only, and `/cloud/get_config` answers
   `permissions.can_change_repo_url`.
 - **A pull request preview only for the panel's own repositories.** A
   `pull_request` event counts only when GitHub sends it for the panel's

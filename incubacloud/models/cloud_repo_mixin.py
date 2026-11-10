@@ -418,10 +418,35 @@ class CloudRepoMixin(models.AbstractModel):
                     "branch.",
                 ) % repo.url)
 
+    def _check_owner_unchanged(self, owner):
+        """Refuse moving these lines to another parent unless the user may.
+
+        Below Project Manager a line stays on its project or instance: on
+        another one it would hand that parent a repository the user may
+        not name there. Writing the parent a line already has, as a
+        parent's ``Command.SET`` does for its own lines, is allowed.
+        Superuser writes are not checked.
+
+        :param owner: the parent's id (or record, or False) being written
+        :raises AccessError: when a line would change its parent
+        """
+        if self.env['cloud.security.mixin']._can_change_repo_url():
+            return
+        if isinstance(owner, models.BaseModel):
+            owner = owner.id
+        for repo in self:
+            if repo[self._owner_field].id != (owner or False):
+                raise AccessError(_(
+                    "Only a Project Manager or higher can move the "
+                    "repository %s to another project or instance.",
+                ) % repo.url)
+
     def write(self, vals):
         vals = _with_canonical_url(
             self.env, _without_derived_fields(self.env, vals),
         )
+        if self._owner_field in vals:
+            self._check_owner_unchanged(vals[self._owner_field])
         if 'url' in vals:
             self._check_url_unchanged(vals['url'])
             result = super().write(vals)
