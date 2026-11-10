@@ -403,7 +403,33 @@ class DockerPruneExecutor(AnsibleExecutor):
             "ic_protect_label": PROTECT_LABEL,
             "ic_tmp_sweep": tmp_sweep(self.env, self.job.host_id),
             "ic_network_sweep": network_sweep(self.env, self.job.host_id),
+            "ic_git_helper_image": self._git_helper_image(),
         }
+
+    def _git_helper_image(self):
+        """Return the git helper image the play prepares, or "".
+
+        The image ``deploy.sh fetch-repos`` runs (``GIT_HELPER_IMAGE``),
+        on a host with an instance of a series that fetches its
+        repositories on the host: there the night pays its pull, about
+        730 MB, not the first job, and the tags of other digests go
+        (Fable's M9 and I3, 10-nov-2026). A host whose instances all
+        clone in the image does not hold it for nothing.
+
+        :rtype: str
+        """
+        # Imported here: deploy_instance_executor imports this module.
+        from ._odoo_versions import VERSIONS, prefetch_repos
+        from .deploy_instance_executor import GIT_HELPER_IMAGE
+
+        versions = set(
+            self.env["cloud.instance"].sudo().search(
+                [("host_id", "=", self.job.host_id.id)],
+            ).mapped("odoo_version")
+        )
+        if any(v in VERSIONS and prefetch_repos(v) for v in versions):
+            return GIT_HELPER_IMAGE
+        return ""
 
     async def before_execute(self, transport):
         self._sys("Starting Docker cleanup...")

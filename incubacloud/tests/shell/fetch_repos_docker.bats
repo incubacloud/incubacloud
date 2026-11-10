@@ -153,8 +153,9 @@ _fetch() {
     ! grep -q '^[A-Z]* /team/addons.git/.* auth=no$' "$FILE_TMP/access.log" || false
     grep -q '^GET /team/other.git/info/refs auth=no$' "$FILE_TMP/access.log"
     ! grep -q '^[A-Z]* /team/other.git/.* auth=yes$' "$FILE_TMP/access.log" || false
-    # No credential is left on the host but in the spec.
-    [ -z "$(grep -rl "$TOKEN" "$HOME" "$TMPDIR" --exclude=spec)" ]
+    # No credential is left on the host: the spec went with the step.
+    [ ! -e "$TMPDIR/spec" ]
+    [ -z "$(grep -rl "$TOKEN" "$HOME" "$TMPDIR")" ]
     [[ "$output" != *"$TOKEN"* ]]
 }
 
