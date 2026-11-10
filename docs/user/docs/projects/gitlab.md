@@ -38,6 +38,8 @@ public addresses refuses a server with a private one.
 |---|---|---|
 | Deploy, rebuild, list branches and modules, pin a commit, the assistant's reads | `read_repository` (Reporter role) | deploy token, project, group or personal token |
 | Show a token's scopes and expiry | any scope | project, group or personal token |
+| Register the webhook | `api` (Maintainer role; Owner for a group) | project, group or personal token |
+| Write the preview's note on a merge request | `api` | project, group or personal token |
 
 - **To deploy**, a **deploy token** or a **project access token** with
   `read_repository`, one per repository, is enough. A deploy token needs its own
@@ -47,9 +49,6 @@ public addresses refuses a server with a private one.
   panel warns two weeks before a token it knows the expiry of runs out.
 - On gitlab.com Free there are no project or group tokens: use a deploy token,
   or a personal token of a bot user.
-
-Previews of merge requests come in a next version; until then a GitLab
-repository line says so under its address.
 
 ## Repository URLs
 
@@ -106,6 +105,34 @@ not rebuild twice: press **Rebuild** if you want another build.
 
 Webhooks that arrive while the panel is stopped (GitLab's and GitHub's) are
 lost: rebuild by hand after a push.
+
+## Merge request previews
+
+With **Preview instances for pull requests and merge requests** on in the
+project's settings, a merge request gets a preview as a GitHub pull request
+does (see [Pull request previews](../instances/index.md#pull-request-previews)):
+a staging named `mr-<number>` on the production's host, with the merge
+request's branch and a neutralized copy of the production's data. It needs the
+repository's webhook, with **Merge request events**.
+
+- **Opening or reopening** the merge request creates the preview, from each
+  production instance whose own repository lines follow the project, unpinned.
+  The project's lines, a template for new instances, do not count.
+- **New commits** on its branch rebuild it. Editing the title, the labels or
+  the reviewers, and approvals, do nothing.
+- **Closing or merging** it deletes the preview.
+- Once the preview is up, the panel writes a note on the merge request with its
+  address, and takes it off when the merge request closes. The note needs a
+  credential of the repository with the `api` scope; without one the preview
+  works and the production instance gets an alert saying the note could not be
+  written. If GitLab does not answer, the panel tries again for about 20
+  minutes before the alert.
+- **A merge request from a fork gets no preview**: a preview runs the branch
+  with a copy of production's data, so only branches of the project itself
+  count. The panel says so in a note on the merge request.
+- If a preview cannot be created, the merge request gets a note saying why and
+  the production instance an alert. Fix the cause, then close and reopen the
+  merge request.
 
 ## What the panel does not do with GitLab
 

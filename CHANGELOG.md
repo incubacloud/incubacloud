@@ -31,6 +31,10 @@ instance, and six empty ones (`smtp_relay_oauth_directory_id`,
 type `relay_test_mail` and the alert policy of `smtp_relay_failing`. No
 instance shows changes to apply: a relay with a password renders as before.
 
+GitLab merge requests get previews. The update adds two empty columns,
+`cloud_instance.pr_provider_id` and `cloud_instance.pr_state`, and needs no
+data migration.
+
 ### Added
 
 - **Auto-approval rules.** An Administrator lets one credential of one user
@@ -118,6 +122,19 @@ instance shows changes to apply: a relay with a password renders as before.
   it: a mail delivered after the last failure the probe saw, or a test
   mail that went out. The relay's state shows under its fields. With a password, a refusal
   from Microsoft 365 says to switch to OAuth2. Spanish translation included.
+- **Merge request previews on GitLab.** With **Preview instances for pull
+  requests and merge requests** on in a project, opening or reopening a merge
+  request on a GitLab repository creates a staging `mr-<number>` from each
+  production whose own repository lines follow it, unpinned, on the
+  production's host, with the merge request's branch and a neutralized copy
+  of its data. New commits rebuild it; a new title, labels, reviewers or
+  approvals do nothing; closing or merging deletes it. It comes through the
+  repository's webhook, with its merge request events. The project's list
+  marks it **MR !number**. Once the preview is up, the panel writes a note on
+  the merge request with its address, and takes it off when the merge
+  request closes; the note needs a credential with the `api` scope, and a
+  note GitLab did not take is tried again for about 20 minutes before an
+  alert on the instance. Spanish translation included.
 
 ### Changed
 
@@ -143,6 +160,9 @@ instance shows changes to apply: a relay with a password renders as before.
   tree stays the instance's own and the next deploy or rebuild fetches it
   again, instead of being kept on the server under the commits read before
   the download for other instances to take.
+- **The project's list marks a pull request preview again** with **PR
+  #number**: the badge was in the list, but the project's data did not
+  carry the number.
 
 ### Security
 
@@ -150,6 +170,14 @@ instance shows changes to apply: a relay with a password renders as before.
   or rebuilt with this version holds no token in its image, its build, its
   container or the `repos.yaml` on its server. One not rebuilt yet keeps the
   token it was built with until then.
+- **No merge request preview from a fork.** Only a merge request whose
+  branch is in the project it is opened on, the one the webhook belongs to,
+  gets a preview; one from a fork gets a note saying why. A preview runs the
+  branch with a copy of production's data. As for GitHub, the production's
+  own repository lines decide, not the project's.
+- **A GitHub pull request and a GitLab merge request of the same name and
+  number stay apart**: GitHub's events never rebuild nor delete a merge
+  request's preview.
 
 ---
 
