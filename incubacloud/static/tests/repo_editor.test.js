@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
+import { getTemplate } from "@web/core/templates";
 import {
     gitlabReposWithoutHook,
     pushRebuildOfHook,
@@ -335,5 +336,52 @@ describe("RepoEditor — the webhook of a GitLab line", () => {
         ];
         expect(gitlabReposWithoutHook(repos)).toEqual([repos[0], repos[1]]);
         expect(gitlabReposWithoutHook(undefined)).toEqual([]);
+    });
+});
+
+describe("RepoEditor — who changes a saved line's URL", () => {
+    beforeEach(() => allowTranslations());
+
+    /**
+     * A RepoEditor stand-in for a reader with *permissions*.
+     *
+     * @param {Object} permissions the reader's ``env.permissions``
+     * @param {Object} repo values over a saved GitHub line
+     * @returns {Object} the stand-in, with the ``onChange`` calls it made
+     */
+    function editor(permissions, repo = {}) {
+        const comp = Object.create(RepoEditor.prototype);
+        const changes = [];
+        comp.env = { permissions };
+        comp.props = {
+            hasAddons: true,
+            onChange: (field, value) => changes.push([field, value]),
+            repo: { id: 7, url: "https://github.com/acme/addons", branch: "19.0", ...repo },
+        };
+        comp.state = { modules: [], branches: [] };
+        comp.changes = changes;
+        return comp;
+    }
+
+    test("a saved line's URL is read-only below Project Manager", () => {
+        expect(editor({ can_change_repo_url: false }).urlLocked).toBe(true);
+        expect(editor({}).urlLocked).toBe(true);
+        expect(editor({ can_change_repo_url: true }).urlLocked).toBe(false);
+    });
+
+    test("a line not saved yet keeps its URL editable", () => {
+        expect(editor({ can_change_repo_url: false }, { id: false }).urlLocked).toBe(false);
+    });
+
+    test("leaving a read-only URL keeps the branch and modules", async () => {
+        const comp = editor({ can_change_repo_url: false });
+        comp.onUrlInput({ target: { value: "https://github.com/acme/private" } });
+        await comp.onUrlBlur({ target: { value: "https://github.com/acme/addons" } });
+        expect(comp.changes).toEqual([]);
+    });
+
+    test("the template makes the URL read-only by it", () => {
+        const input = getTemplate("incubacloud.RepoEditor").querySelector("input.rl-repo-url");
+        expect(input.getAttribute("t-att-readonly")).toBe("urlLocked");
     });
 });

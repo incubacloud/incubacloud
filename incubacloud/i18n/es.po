@@ -19500,3 +19500,19 @@ msgid ""
 msgstr ""
 "El nombre de un proyecto no puede contener '{{', '{%', '{#' ni caracteres "
 "invisibles o de control."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_repo_mixin.py:0
+msgid ""
+"Only a Project Manager or higher can change the URL of the repository %s; "
+"you can still change its branch."
+msgstr ""
+"Solo un Gerente de proyecto o superior puede cambiar la URL del repositorio "
+"%s; usted sí puede cambiar su rama."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.js:0
+msgid "Only a Project Manager or higher can change the repository URL."
+msgstr "Solo un Gerente de proyecto o superior puede cambiar la URL del repositorio."

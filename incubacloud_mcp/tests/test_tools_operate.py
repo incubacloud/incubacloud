@@ -169,6 +169,68 @@ class TestOperateTools(
             self.staging.repo_ids.mapped("url"), ["https://github.com/acme/x.git"]
         )
 
+    def test_a_consultant_s_agent_changes_a_branch_but_not_a_url(self):
+        """The route's write refuses another repository (10-nov-2026).
+
+        The same URL with another branch is saved; another URL is
+        refused with the role it takes, and the line is left as it was.
+        """
+        line = (
+            self.env["cloud.instance.repo"]
+            .with_context(skip_apply_requirements=True)
+            .create(
+                {
+                    "instance_id": self.staging.id,
+                    "url": "https://github.com/acme/addons",
+                    "branch": "19.0",
+                }
+            )
+        )
+        with patch.object(
+            type(self.env["cloud.instance"]), "_check_addon_conflicts", autospec=True
+        ):
+            refused = self._call_tool(
+                self.key,
+                "update_instance",
+                {
+                    "instance_id": self.staging.id,
+                    "vals": {
+                        "repos": [
+                            {
+                                "id": line.id,
+                                "url": "https://github.com/acme/elsewhere",
+                                "branch": "19.0",
+                            }
+                        ]
+                    },
+                },
+            )
+            self.assertTrue(refused["isError"], refused)
+            self.assertIn("Project Manager", refused["content"][0]["text"])
+            self.env.invalidate_all()
+            self.assertEqual(line.url, "https://github.com/acme/addons")
+            kept = self._call_tool(
+                self.key,
+                "update_instance",
+                {
+                    "instance_id": self.staging.id,
+                    "vals": {
+                        "repos": [
+                            {
+                                "id": line.id,
+                                "url": "https://github.com/acme/addons",
+                                "branch": "19.0-dev",
+                            }
+                        ]
+                    },
+                },
+            )
+        self.assertFalse(kept["isError"], kept)
+        self.env.invalidate_all()
+        self.assertEqual(
+            (line.url, line.branch), ("https://github.com/acme/addons", "19.0-dev")
+        )
+
     def test_tags_are_listed_and_created(self):
         """A tag is created, then listed."""
         created = self._payload(

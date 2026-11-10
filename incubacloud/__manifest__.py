@@ -1,6 +1,6 @@
 {
     "name": "Incubacloud",
-    "version": "1.0.222",
+    "version": "1.0.223",
     "summary": "Deploy, manage and monitor doodba-based Odoo instances via SSH",
     "sequence": 10,
     "description": """
@@ -139,6 +139,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             # The templates of the components a test mounts or reads.
             "incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml",
             "incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml",
+            "incubacloud/static/src/components/repo_editor/repo_editor.xml",
             "incubacloud/static/src/components/ic_menu/ic_menu.xml",
             "incubacloud/static/src/components/alert_history/alert_history.xml",
             "incubacloud/static/src/components/ic_modal/ic_modal.xml",

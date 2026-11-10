@@ -73,6 +73,18 @@ class CloudSecurityMixin(models.AbstractModel):
     def _check_can_deploy(self):
         self._check_cloud_group('group_cloud_consultant')
 
+    def _can_change_repo_url(self):
+        """Whether the user may point a repository line at another repository.
+
+        From Project Manager up (10-nov-2026): the panel fetches a line's
+        repository with its own GitHub App or token, which may reach
+        private repositories of other projects, so a Consultant changes a
+        line's branch but not the repository it names.
+
+        :rtype: bool
+        """
+        return self._has_cloud_group('group_cloud_project_manager')
+
     def _check_can_manage_hosts(self):
         self._check_cloud_group('group_cloud_manager')
 
@@ -166,5 +178,8 @@ class CloudSecurityMixin(models.AbstractModel):
             'can_create_instance': is_at_least['consultant'],
             'can_edit_instance': is_at_least['consultant'],
             'can_edit_project': is_at_least['consultant'],
+            # ``_can_change_repo_url``: a saved repository line's URL is
+            # read-only below it.
+            'can_change_repo_url': is_at_least['project_manager'],
             'role': role,
         }

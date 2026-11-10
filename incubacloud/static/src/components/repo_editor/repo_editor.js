@@ -110,6 +110,22 @@ export class RepoEditor extends Component {
         return !!this.props.repo.commit_sha;
     }
 
+    /**
+     * Whether this line's URL is read-only for the user: a saved line names
+     * another repository only from Project Manager up, as the server checks
+     * (``can_change_repo_url``). Its branch stays editable.
+     *
+     * @returns {boolean}
+     */
+    get urlLocked() {
+        return !!this.props.repo.id && !this.env.permissions?.can_change_repo_url;
+    }
+
+    /** The URL field's tooltip while it is read-only. */
+    get urlLockedTitle() {
+        return _t("Only a Project Manager or higher can change the repository URL.");
+    }
+
     get shortSha() {
         return (this.props.repo.commit_sha || "").slice(0, 7);
     }
@@ -232,10 +248,14 @@ export class RepoEditor extends Component {
     // ── URL ────────────────────────────────────────────────────────────────
 
     onUrlInput(ev) {
+        if (this.urlLocked) return;
         this.props.onChange("url", ev.target.value);
     }
 
     async onUrlBlur(ev) {
+        // A read-only URL is focused and left without changing: the branch
+        // and the modules stay as they are.
+        if (this.urlLocked) return;
         const url = (ev.target.value || "").trim();
         if (!url) return;
         // Normalise URL in parent state first so repo.url is correct when
