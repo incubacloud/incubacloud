@@ -46,21 +46,25 @@ and open `/cloud`.
 ## 2. Choose the server
 
 The size of the server depends on how many people will use Odoo. This is the
-rule the panel recommends with, for one production and one staging on the same
-server:
+rule the panel recommends with, for one production with room for a staging on
+the same server:
 
 | RAM | Recommended for up to |
 |---|---|
 | Under 4 GB | Tests only |
-| 4 GB | 5 users |
+| 4 GB | 5 users, and a staging only while you try something |
 | 8 GB | 15 users |
 | 16 GB | 40 users |
 | 32 GB | 90 users |
 
 The rule behind it: 2 GB stay for the system, the proxy and the database, each
-further GB serves about 3 users, and a vCPU at most 8. It is a starting point:
-heavy reports, large imports or many websites ask for more. You can move an
-instance to a bigger server later, with **Move to host** on the instance.
+further GB serves about 3 users, and a vCPU at most 8. The figures are a
+ceiling: a size with fewer vCPUs for its memory, as those with dedicated vCPUs
+often are, is recommended for fewer, such as 30 users with 4 vCPU and 16 GB, or
+60 with 8 vCPU and 32 GB. The panel shows each size's own figure. It is a
+starting point: heavy reports, large imports or many websites ask for more. You
+can move an instance to a bigger server later, with **Move to host** on the
+instance.
 
 !!! info "IncubaCloud SaaS: order it from the panel"
     Go to **Hosts** and press **Order new VPS**. In **How many people will use
@@ -68,7 +72,9 @@ instance to a bigger server later, with **Move to host** on the instance.
     the size recommended for you is picked, and every size says how many users
     it is recommended for and its price. The DNS is done for you: the platform
     creates the server's record under its own domain, and you do not need a
-    domain to start. See [Order a VPS](../hosts/hire.md).
+    domain to start. While the panel has no backup destination, the order of
+    the managed backup storage opens once the server is ordered: step 3
+    explains it. See [Order a VPS](../hosts/hire.md).
 
 With your own server, rent one with Ubuntu 22.04 or newer from any provider,
 of the size above, and follow [Connect your own VPS](../hosts/connect.md). It
@@ -93,8 +99,14 @@ under **Backup Destinations → New Backend**, as
 [Backup destinations](../backups/index.md#backup-destinations) explains, and
 choose it in **Settings → General → Default Backup Destination**.
 
-Either way, keep a copy of the backup **passphrase** in your password manager:
-without it nobody can read the backups ([why](../backups/index.md#encryption)).
+Either way, the backups are encrypted with the destination's **passphrase**,
+and without it nobody can read them ([why](../backups/index.md#encryption)).
+The managed backup storage comes with one the panel generated and never shows.
+Before the first deploy, open it in **Backup Destinations**, and on its
+**Storage** tab type a passphrase of your own in **Passphrase**, keep a copy in
+your password manager, and save. On a destination of your own, type it when you
+create it. Changed later, it re-encrypts nothing: the backups made before still
+need the passphrase they were made with.
 
 ## 4. Create the project
 
@@ -115,6 +127,13 @@ The first deploy takes a few minutes; you can follow it in **Recent activity**.
 When it ends in green, the instance's address, a name under the server's
 domain, opens Odoo's sign-in page. Details in
 [Deploy your first instance](first-deploy.md).
+
+Every instance starts with the limits of a small team: Odoo with 2 workers,
+2 GB of memory and 2 CPUs, and its database with 1 GB. Above about 15 users,
+raise them: on the instance's **Resources** tab, the **Memory Limit** and
+**CPUs** of Odoo and of the database, and on its **Config** tab, `workers`
+(Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
+**Deploy**. See [Memory and resources](../instances/resources.md).
 
 ## 6. Your own domain
 
@@ -176,7 +195,8 @@ fields **SMTP Host**, **SMTP Port**, **SMTP Encryption**, **SMTP User** and
 - [x] The instance's **Backups** tab shows a first backup the morning after
       the deploy; **Create Backup** takes one at once
       ([Set up backups](../backups/index.md)).
-- [x] The backup passphrase is in your password manager.
+- [x] The passphrase you typed on the backup destination is in your password
+      manager.
 - [x] A test mail arrived, and not in spam.
 - [x] Your colleagues are invited: Odoo's own users are created in Odoo,
       under *Settings → Users*.

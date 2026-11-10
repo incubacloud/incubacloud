@@ -88,7 +88,14 @@ one.
 ## 4. Bring the data
 
 Make a ZIP of the database with its filestore on the old host, and restore it
-on the new instance with **Restore Database**:
+on the new instance with **Restore Database**.
+
+!!! warning "Two Odoos sending the same mail"
+    Nothing is switched off by the restore: the new production comes back with
+    the scheduled actions and the mail servers of the old one. While the old
+    Odoo runs, both would send the same mail to your customers and fetch the
+    same mailboxes. Switch them off on the new one right after restoring
+    (point 3).
 
 1. **Make the ZIP**: from Odoo's database manager (`/web/database/manager`,
    **Backup**, format **zip**), or by hand on the server. The
@@ -97,7 +104,12 @@ on the new instance with **Restore Database**:
    default), through SSH with a temporary upload key (no limit), or as a link
    the host downloads itself (no limit):
    [Restore from an external ZIP](../backups/restore.md#restore-from-an-external-zip).
-3. **Sign in** with the users and passwords of the old database.
+3. **Right after it, switch off** in the new Odoo, with the developer mode on,
+   under **Settings → Technical**: the **Automation → Scheduled Actions**, and
+   the **Email → Outgoing Mail Servers** and **Email → Incoming Mail
+   Servers**. Select them all and archive them (**Actions → Archive**). The
+   final restore of step 6 brings them back.
+4. **Sign in** with the users and passwords of the old database.
 
 ## 5. Try it before you switch
 
@@ -109,10 +121,9 @@ The old Odoo keeps working while you try the new one: nobody has moved yet.
   customers.
 - **Check what matters to you**: the last invoices, stock, reports, your own
   modules' screens, an import you do every week.
-- **Nothing is switched off by the restore** on production: scheduled actions
-  and outgoing mail servers come back as they were. While the old Odoo runs,
-  stop them on one side, or both will send mail
-  ([details](../backups/restore.md#bring-an-odoo-you-run-elsewhere)).
+- **Keep the scheduled actions and mail servers off** on the new production
+  until the switch (step 4,
+  [details](../backups/restore.md#bring-an-odoo-you-run-elsewhere)).
 
 ## 6. Switch over
 
@@ -122,7 +133,8 @@ Pick a quiet moment, outside working hours, and tell your team.
    lets you, to a few minutes: the change will then be seen sooner.
 2. **Stop work on the old Odoo**: stop it, or tell everyone not to use it.
 3. **Make a fresh ZIP and restore it** on the new production (step 4), so
-   nothing done since the test is lost.
+   nothing done since the test is lost. This time leave the scheduled actions
+   and the mail servers on: the old Odoo no longer runs.
 4. **Point your domain at the new host**: change the A record to the new
    host's IP address, and add the name to the instance's **Networking →
    Domains** ([how](../getting-started/zero-to-odoo.md#6-your-own-domain)).
