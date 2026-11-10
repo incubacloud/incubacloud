@@ -74,10 +74,12 @@ alert, tags, and the code on the assistant's own branch. So, among others, these
   opening a pull request in a public repository, or in a project that makes a
   preview of production for each pull request;
 - after the assistant read something other people can write — logs, files of your
-  repository, mail a staging caught, a command's output — every change, until you
-  write again: that text could carry instructions the assistant must not follow.
-  This includes the work on the assistant's own new branch and redeploying its
-  staging, which otherwise need no card.
+  repository, mail a staging caught, a command's output, or a project and its jobs
+  when a member with a lower role than yours can change them — every change, until
+  you write again while the assistant is not working: that text could carry
+  instructions the assistant must not follow. A message you send while it works
+  does not lift this. This includes the work on the assistant's own new branch and
+  redeploying its staging, which otherwise need no card.
 
 The assistant reads only repositories of your projects and instances, and writes only
 to those of your projects. A branch counts as the assistant's when an agent of yours
