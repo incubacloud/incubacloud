@@ -4627,6 +4627,12 @@ class CloudInstance(models.Model):
 
         :raises ValidationError: when one of them is outside it.
         """
+        # A mapping, not a tuple of pairs: Odoo's extractor would take the
+        # field names of pairs for terms to translate.
+        labels = {
+            "smtp_relay_user": _("SMTP user"),
+            "odoo_admin_email": _("Admin email"),
+        }
         for inst in self:
             host = inst.smtp_relay_host
             if host and (len(host) > 253 or not _SMTP_HOST_RE.fullmatch(host)):
@@ -4640,10 +4646,7 @@ class CloudInstance(models.Model):
                     "SMTP port %(port)s is invalid. Use a port from 1 to 65535.",
                     port=inst.smtp_relay_port,
                 ))
-            for fname, label in (
-                ("smtp_relay_user", _("SMTP user")),
-                ("odoo_admin_email", _("Admin email")),
-            ):
+            for fname, label in labels.items():
                 value = inst[fname]
                 if value and (len(value) > 254 or _yaml_text_unsafe(value)):
                     raise ValidationError(_(
