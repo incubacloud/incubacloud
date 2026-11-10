@@ -609,10 +609,11 @@ jobs' history and an instance's activity.
   calling `super()`.
 - **How the layer above runs the panel.** `cloud.settings._mcp_api_keys_allowed()`,
   `_mcp_settings_managed()` and `_mcp_agents_url()`.
-- **Auto-approval.** `cloud.settings._mcp_auto_approval_allowed()` (True
-  here) is read when a rule is granted and at every call it would approve:
-  False refuses new rules and pauses those that exist, so it is also the
-  switch that stops them all at once. `_mcp_auto_approval_charges()` (False
+- **Auto-approval.** `cloud.settings._mcp_auto_approval_allowed()` (True,
+  defined in `incubacloud`, so a layer that overrides it answers after it
+  whether or not it depends on the MCP) is read when a rule is granted and
+  at every call it would approve: False refuses new rules and pauses those
+  that exist, so it is also the switch that stops them all at once. `_mcp_auto_approval_charges()` (False
   here) adds to the notice that what an agent does may be charged to the
   account. `incubacloud.mcp.auto.approval._candidates_for(user)` adds
   credentials of a kind of the module's own (the assistant's).
