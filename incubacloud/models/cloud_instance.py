@@ -1218,7 +1218,9 @@ class CloudInstance(models.Model):
                     target=to_state,
                 )
             )
-        return self.with_context(cloud_state_transition=True).write(
+        # With superuser rights, once the move is valid: ``write`` takes
+        # ``state`` from no one else, whatever their context says.
+        return self.sudo().with_context(cloud_state_transition=True).write(
             {"state": to_state},
         )
 
@@ -1227,7 +1229,9 @@ class CloudInstance(models.Model):
         # The lifecycle is a state machine, so ``state`` is written by
         # _transition() alone. Refusing the direct write here is what
         # keeps the map from being quietly bypassed later.
-        if "state" in vals and not self.env.context.get("cloud_state_transition"):
+        if "state" in vals and not (
+            self.env.su and self.env.context.get("cloud_state_transition")
+        ):
             raise UserError(
                 _(
                     "The lifecycle state of an instance is set by "

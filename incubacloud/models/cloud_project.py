@@ -11,6 +11,7 @@ from odoo.exceptions import AccessError, UserError, ValidationError
 
 from . import _odoo_versions
 from ._odoo_versions import ODOO_VERSION_SELECTION
+from .cloud_security_mixin import defaults_as_sent
 
 
 def _slugify(name):
@@ -280,6 +281,8 @@ class CloudProject(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_create_project()
+        # The defaults the caller chose are checked as what they send.
+        self = defaults_as_sent(self, vals_list)
         derived = False
         for vals in vals_list:
             self._check_backup_backend_choice(vals)

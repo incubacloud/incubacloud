@@ -278,3 +278,4 @@ from . import test_observability_project_label_safe
 from . import test_parent_member_rule
 from . import test_repo_url_role
 from . import test_new_record_rows
+from . import test_panel_defaults

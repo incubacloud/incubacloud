@@ -69,6 +69,27 @@ class TestViaClient(TransactionCase):
         )
         self.assertFalse(row.via_client)
 
+    def test_a_forged_mark_by_default_is_dropped_on_create(self):
+        """Nor as a default of the context, with another user and date."""
+        user = new_test_user(
+            self.env,
+            login="via-default-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        row = (
+            self.env["cloud.audit.log"]
+            .with_user(user)
+            .with_context(
+                default_via_client="forged",
+                default_user_id=self.env.ref("base.user_admin").id,
+                default_create_date="2020-01-01 00:00:00",
+            )
+            .create({"action": "Config changed"})
+        )
+        self.assertFalse(row.via_client)
+        self.assertEqual(row.user_id, user)
+        self.assertGreater(row.create_date.year, 2020)
+
     def test_nobody_but_the_platform_writes_the_mark_by_hand(self):
         """After a job exists, only the superuser writes its mark: not even
         a manager, who may write the rest of it."""
