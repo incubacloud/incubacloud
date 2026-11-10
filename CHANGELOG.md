@@ -128,13 +128,18 @@ data migration.
   production whose own repository lines follow it, unpinned, on the
   production's host, with the merge request's branch and a neutralized copy
   of its data. New commits rebuild it; a new title, labels, reviewers or
-  approvals do nothing; closing or merging deletes it. It comes through the
-  repository's webhook, with its merge request events. The project's list
-  marks it **MR !number**. Once the preview is up, the panel writes a note on
-  the merge request with its address, and takes it off when the merge
-  request closes; the note needs a credential with the `api` scope, and a
-  note GitLab did not take is tried again for about 20 minutes before an
-  alert on the instance. Spanish translation included.
+  approvals do nothing; closing or merging deletes it, also while it is still
+  being created, once the step running then ends. Closed and reopened at
+  once, the merge request gets a new preview. It comes through the
+  repository's webhook, with its merge request events; a group's webhook
+  leaves alone a project with an active webhook of its own, so a merge
+  request is never cloned twice. The project's list marks it **MR !number**.
+  Once the preview is up, the panel writes a note on the merge request with
+  its address, and takes it off when the merge request closes; the note needs
+  a credential with the `api` scope (without one the preview works without
+  its note), and a note GitLab did not take is tried again for about 20
+  minutes before an alert, which the next note that goes through, or closing
+  the merge request, resolves. Spanish translation included.
 
 ### Changed
 
@@ -163,6 +168,10 @@ data migration.
 - **The project's list marks a pull request preview again** with **PR
   #number**: the badge was in the list, but the project's data did not
   carry the number.
+- **A pull request closed while its preview is still being created deletes
+  the preview** once the step running then ends. Before, the panel tried to
+  delete the record at once, which the running job refused, and the preview
+  stayed up.
 
 ### Security
 

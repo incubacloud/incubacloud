@@ -120,13 +120,16 @@ repository's webhook, with **Merge request events**.
   The project's lines, a template for new instances, do not count.
 - **New commits** on its branch rebuild it. Editing the title, the labels or
   the reviewers, and approvals, do nothing.
-- **Closing or merging** it deletes the preview.
+- **Closing or merging** it deletes the preview, also while it is still being
+  created: the panel waits for the step running then.
 - Once the preview is up, the panel writes a note on the merge request with its
   address, and takes it off when the merge request closes. The note needs a
   credential of the repository with the `api` scope; without one the preview
-  works and the production instance gets an alert saying the note could not be
-  written. If GitLab does not answer, the panel tries again for about 20
-  minutes before the alert.
+  works without its note. If GitLab does not answer, the panel tries again for
+  about 20 minutes; then, or at once if GitLab refuses the note, an alert says
+  the note could not be written: on the preview for its address, on the
+  production instance for a note saying why no preview was created. The next
+  note that goes through resolves it, and so does closing the merge request.
 - **A merge request from a fork gets no preview**: a preview runs the branch
   with a copy of production's data, so only branches of the project itself
   count. The panel says so in a note on the merge request.
