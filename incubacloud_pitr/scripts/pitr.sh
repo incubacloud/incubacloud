@@ -719,12 +719,10 @@ EOF
         # wal-fetch needs; the db service never holds them. Odoo is
         # stopped, so nothing of the instance's runs SQL meanwhile.
         #
-        # The restored copy's settings are the instance's: its database
-        # superuser writes postgresql.auto.conf (ALTER SYSTEM) and its
-        # roles' settings. Whatever makes the server run a program or load
-        # a library is therefore set on the server's command line, which
-        # that file cannot override: the panel's own commands, and nothing
-        # else. archive_library is a setting from PostgreSQL 15 on,
+        # The settings that run a program or load a library are set on
+        # the server's command line, which postgresql.auto.conf does not
+        # override: the panel's own commands, and nothing else.
+        # archive_library is a setting from PostgreSQL 15 on,
         # event_triggers from 17 on.
         docker rm -f "$recovery" >/dev/null 2>&1 || true
         # shellcheck disable=SC2016  # expanded in the container
