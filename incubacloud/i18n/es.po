@@ -19546,3 +19546,13 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.js:0
 msgid "Only a Project Manager or higher can change the repository URL."
 msgstr "Solo un Gerente de proyecto o superior puede cambiar la URL del repositorio."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/ir_default.py:0
+msgid ""
+"Only an Administrator sets personal default values on the records of "
+"IncubaCloud."
+msgstr ""
+"Solo un administrador establece valores predeterminados personales en los "
+"registros de IncubaCloud."

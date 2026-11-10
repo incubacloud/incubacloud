@@ -235,15 +235,40 @@ class TestANewRecordTakesRowsOfItsOwn(CloudSecurityBase):
         ))
 
     def test_a_consultant_keeps_rows_that_exist_as_their_own_default(self):
-        """A default of their own in ``ir.default`` is refused as well."""
-        self.env["ir.default"].with_user(self.consultant).set(
-            "cloud.instance", "domain_ids", [(4, self.domain.id)],
-            user_id=True,
-        )
-        with self.assertRaisesRegex(AccessError, _OWN_ROWS), \
+        """A default of their own in ``ir.default`` is refused, and one saved
+        before is not read."""
+        with self.assertRaisesRegex(AccessError, "Only an Administrator"), \
                 self.env.cr.savepoint():
-            self._create(self.env(user=self.consultant), "refused")
+            self.env["ir.default"].with_user(self.consultant).set(
+                "cloud.instance", "domain_ids", [(4, self.domain.id)],
+                user_id=True,
+            )
+        self.env["ir.default"].set(
+            "cloud.instance", "domain_ids", [(4, self.domain.id)],
+            user_id=self.consultant.id,
+        )
+        inst = self._create(self.env(user=self.consultant), "not-read")
+        self.assertFalse(inst.sudo().domain_ids)
         self._rows_as_they_were()
+
+    def test_a_row_it_created_is_checked_with_the_users_rules(self):
+        """A row of a model the user may create, refused by a rule of its
+        model once created: the instance is not created either."""
+        self.env["ir.rule"].create({
+            "name": "No refused-row domains",
+            "model_id": self.env["ir.model"]._get_id("cloud.instance.domain"),
+            "domain_force": "[('hostname', '!=', 'refused-row.example.com')]",
+            "perm_read": False, "perm_write": False, "perm_unlink": False,
+            "perm_create": True,
+        })
+        with self.assertRaises(AccessError), self.env.cr.savepoint():
+            self._create(
+                self.env(user=self.consultant), "refused-row",
+                domain_ids=[(0, 0, {"hostname": "refused-row.example.com"})],
+            )
+        self.assertFalse(self.env["cloud.instance"].search(
+            [("name", "=", "refused-row")],
+        ))
 
     def test_the_system_chooses_them(self):
         """As before."""

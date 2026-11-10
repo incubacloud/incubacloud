@@ -349,8 +349,9 @@ class HostHardeningExecutor(AnsibleExecutor):
             if self._needs_user_creation:
                 vals["user"] = self._hardened_user
         # Hardening rotates the SSH port from inside its own running job;
-        # the endpoint-change guard would self-block. Opt out.
-        host.with_context(skip_endpoint_change_guard=True).write(vals)
+        # the endpoint-change guard would self-block. Opt out, as only
+        # superuser rights may.
+        host.sudo().with_context(skip_endpoint_change_guard=True).write(vals)
         # Same machine, new port — so the verified key stays and is simply
         # re-filed under the rotated endpoint. Skipping this leaves the
         # entry labelled for the old port, which asyncssh tolerates but

@@ -330,6 +330,9 @@ class CloudAlert(models.Model):
             }
         raise ValueError(f"cloud.alert cannot hang on {link_field!r}")
 
+    # Private: the platform raises and resolves its alerts; through
+    # ``call_kw`` a user would do it as the platform.
+    @api.private
     @api.model
     def raise_alert(self, code, message, level="warning",
                     host=None, instance=None, job=None, payload=None,
@@ -469,6 +472,9 @@ class CloudAlert(models.Model):
             )
             return self.browse()
 
+    # Private: the platform raises and resolves its alerts; through
+    # ``call_kw`` a user would do it as the platform.
+    @api.private
     @api.model
     def resolve_alert(self, code, host=None, instance=None, project=None, key=None):
         """Dismiss the active alert for (code, target), if any.

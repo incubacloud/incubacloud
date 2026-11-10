@@ -10,6 +10,7 @@ from odoo import _, api, fields, models, tools
 from odoo import cli as odoo_cli
 from odoo.exceptions import UserError, ValidationError
 from odoo.service import server as odoo_server
+from odoo.tools import clean_context
 
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from ._job_server_limits import (
@@ -912,7 +913,8 @@ class CloudSettings(models.Model):
         """
         rec = self.search([], limit=1)
         if not rec:
-            rec = self.create({})
+            # Created with the fields' own defaults, none of the caller's.
+            rec = self.with_context(clean_context(self.env.context)).create({})
         return rec
 
     @api.model
@@ -929,7 +931,10 @@ class CloudSettings(models.Model):
         """
         rec = self.sudo().search([], limit=1)
         if not rec:
-            rec = self.sudo().create({})
+            # Created with the fields' own defaults, none of the caller's.
+            rec = self.sudo().with_context(
+                clean_context(self.env.context),
+            ).create({})
         return rec
 
     @api.constrains('staging_autopurge_days')

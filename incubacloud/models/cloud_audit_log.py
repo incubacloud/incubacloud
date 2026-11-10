@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from odoo import api, fields, models
+from odoo.tools import clean_context
 
 
 class CloudAuditLog(models.Model):
@@ -41,6 +42,28 @@ class CloudAuditLog(models.Model):
     )
     details = fields.Char(readonly=True)
     create_date = fields.Datetime(readonly=True, default=fields.Datetime.now)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Write each row as whoever acts, when it acts.
+
+        The panel writes its rows with ``sudo``, which keeps the user, and
+        a manager may create one too. The defaults of the caller's context
+        (``default_*``) are not applied to a row, and its user and date
+        are written here: code with superuser rights may name another
+        user, or a date, in the values it sends; for anyone else they are
+        the caller and now.
+        """
+        now = fields.Datetime.now()
+        for vals in vals_list:
+            if not self.env.su:
+                vals.pop("user_id", None)
+                vals.pop("create_date", None)
+            vals.setdefault("user_id", self.env.uid)
+            vals.setdefault("create_date", now)
+        return super(
+            CloudAuditLog, self.with_context(clean_context(self.env.context)),
+        ).create(vals_list)
 
     @api.model
     def _purge_old(self, days):

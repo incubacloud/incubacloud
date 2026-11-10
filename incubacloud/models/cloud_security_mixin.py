@@ -29,13 +29,15 @@ def defaults_as_sent(model, vals_list):
 
     The ORM fills the fields a ``create`` was not sent with their
     defaults after the ``create`` checked its values: those of the
-    context (``default_*``, which an RPC call brings with it) and of
-    ``ir.default`` come from the caller, and a ``create`` that runs with
-    ``sudo`` applies them past the access rights and record rules too.
-    For a caller without superuser rights they are written in the values
-    here, before any check, and the model returned has a context without
-    ``default_*`` keys: the ORM does not apply them again, nor to the rows
-    the ``create`` makes itself. A field's own default stays the ORM's.
+    context (``default_*``, which an RPC call brings with it) and the
+    caller's own rows of ``ir.default`` come from the caller, and a
+    ``create`` that runs with ``sudo`` applies them past the access rights
+    and record rules too. For a caller without superuser rights they are
+    written in the values here, before any check, and the model returned
+    has a context without ``default_*`` keys: the ORM does not apply them
+    again, nor to the rows the ``create`` makes itself. A field's own
+    default stays the ORM's, and so do the rows of ``ir.default`` an
+    administrator sets for everyone or for a company.
 
     :param model: the model ``create`` was called on
     :param list vals_list: the values of each record created, completed
@@ -50,7 +52,7 @@ def defaults_as_sent(model, vals_list):
         for key in model.env.context
         if key.startswith("default_")
     }
-    chosen.update(model.env["ir.default"]._get_model_defaults(model._name))
+    chosen.update(_own_default_names(model))
     chosen.intersection_update(model._fields)
     Command = fields.Command
     for vals in vals_list:
@@ -68,6 +70,28 @@ def defaults_as_sent(model, vals_list):
                 ]
             vals[name] = value
     return model.with_context(clean_context(model.env.context))
+
+
+def _own_default_names(model):
+    """Return the fields of *model* its user has a default of their own for.
+
+    The rows of ``ir.default`` of this user's alone, as
+    ``_get_model_defaults`` applies them without a condition.
+
+    :param model: a model, in the user's environment
+    :rtype: set
+    """
+    env = model.env
+    own = env["ir.default"].sudo().search_fetch(
+        [
+            ("field_id.model", "=", model._name),
+            ("user_id", "=", env.uid),
+            ("company_id", "in", (False, env.company.id)),
+            ("condition", "=", False),
+        ],
+        ["field_id"],
+    )
+    return set(own.field_id.mapped("name"))
 
 
 class CloudSecurityMixin(models.AbstractModel):

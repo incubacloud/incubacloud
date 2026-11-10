@@ -8,6 +8,7 @@ from . import cloud_rate_limit
 from . import cloud_terminal_route_mixin
 from . import cloud_terminal_route
 from . import res_users_ext
+from . import ir_default
 from . import cloud_audit_log
 from . import password_utils
 from . import encrypted_char
