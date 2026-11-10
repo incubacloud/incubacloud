@@ -8,12 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.223] — 2026-11-10
 
-The update needs no data migration.
+The update deletes the personal default values saved on the panel's
+records; only an Administrator sets them from this version on.
 
 ### Security
 
 - **Stricter permission checks** on repository reads, the import and its
-  preview, and on creating instances, hosts and jobs.
+  preview, and on creating instances, hosts and jobs, and on defaults and
+  internal context keys sent by clients.
 - **Below Project Manager, a repository line's URL cannot be changed**; the
   editor shows it read-only, and `/cloud/get_config` answers
   `permissions.can_change_repo_url`.
