@@ -371,7 +371,7 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
 |---|---|---|
 | `ATTEMPT_BUDGET_FACTOR` | 0.6 | 540 s with 900: leaves 360 s to the longest step run in the request and to the closing hooks |
 | `ATTACHED_STEP_FACTOR` | 0.4 | Budget plus a step started just before it ends fit in the limit |
-| `MIN_LIMIT_TIME_REAL` | 900 | Odoo.sh's limit, the one the panel is tested with |
+| `MIN_LIMIT_TIME_REAL` | 3600 | Only the startup warning reads it. Only the rebuild's image build runs apart so far: a deploy's database initialisation or a long restore may outlast Odoo.sh's 900 s in the request. Down to 900 once every long step runs apart |
 | `PARK_GAP_SECONDS` | 5 | queue_job's postpone; lets the request that parked end first |
 | `DETACHED_POLL_S` | 1 | One `read` a second on the open connection; the log's latency is about today's |
 | `DETACHED_STDOUT_TAIL` | 256 KiB | Tail of a step's stdout kept as its result, in the checkpoint too |

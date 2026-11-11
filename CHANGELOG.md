@@ -123,9 +123,11 @@ step runs as before.
 
 ### Changed
 
-- **The startup warning about `limit_time_real` starts below 900 s**
-  instead of 3600 s, and says the attempt's budget and what a step in the
-  request has left. The log says the budget at every start. It also says
+- **The startup warning about `limit_time_real` says the attempt's
+  budget** and what a step in the request has left. It still starts below
+  3600 s: only the rebuild's image build runs apart so far, and with 900 s
+  a deploy's database initialisation or a long restore can outlast the
+  request and die. The log says the budget at every start. It also says
   when `root.user` has no capacity of its own among queue_job's channels,
   and which channels other modules' jobs ran in over the last 30 days: a
   parked job may wait for those. These two are only logged, never part of
