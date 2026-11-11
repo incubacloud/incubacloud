@@ -63,6 +63,7 @@ from . import (
     test_host_autoassign,
     test_pluggable_actions,
     test_action_bar_labels,
+    test_js_terms_translated,
     test_behind_cdn,
     test_tls_names,
     test_real_ip,
