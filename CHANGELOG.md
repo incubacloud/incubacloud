@@ -136,6 +136,13 @@ is unchanged.
 
 ### Changed
 
+- **From zero to Odoo sizes the users at once leaving a worker for the
+  scheduled actions.** The guide's figure is (workers - 1) x 6, as in the
+  example of Odoo's deployment guide (owner, 11-nov-2026): 24, 48, 96 and
+  192 users at once for 2 vCPU/4 GB, 4/8, 8/16 and 16/32, where all the
+  workers were counted before (30, 54, 102, 198). An instance's default 2
+  workers still serve about 12 users at once: its configuration sets
+  `max_cron_threads` apart, so both workers answer people.
 - **The startup warning about `limit_time_real` says the attempt's
   budget** and what a step in the request has left. It still starts below
   3600 s: only the rebuild's image build runs apart so far, and with 900 s
