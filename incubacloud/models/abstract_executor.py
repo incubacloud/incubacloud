@@ -801,6 +801,9 @@ class AbstractExecutor(ABC):
     # Since when the server of the running step could not be reached, as
     # the checkpoint says; None while it can.
     _lost_contact_since = None
+    # The host whose build lock this attempt took (``HostBuildLockMixin``),
+    # which a park keeps in the checkpoint; None when it took none.
+    _held_build_lock_host_id = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -2139,6 +2142,13 @@ class AbstractExecutor(ABC):
         self._checkpoint_data["results"] = self._kept_results()
         self._checkpoint_data["carried"] = self._carried_state()
         until = fields.Datetime.now() + timedelta(seconds=seconds)
+        if self._held_build_lock_host_id:
+            # Written before the job's transaction lets the lock go: no
+            # other build of the host starts in between (``HostBuildLockMixin``).
+            vals = {
+                **(vals or {}),
+                "build_lock_host_id": self._held_build_lock_host_id,
+            }
         self._write_checkpoint({
             **(vals or {}),
             "next_index": next_index,
@@ -2152,6 +2162,39 @@ class AbstractExecutor(ABC):
         return JobParked(
             f"Parked until {fields.Datetime.to_string(until)} UTC: {reason}",
             seconds=seconds,
+        )
+
+    def _retake_host_build_lock(self):
+        """Take again the host's build lock a parked attempt of the job held.
+
+        Nothing to take for an executor that takes none: see
+        ``HostBuildLockMixin``.
+
+        :return: whether the job may go on
+        :rtype: bool
+        """
+        return True
+
+    def _wait_for_build_lock(self):
+        """Park the job again for a moment: another job holds its host's lock.
+
+        It is about to defer itself, as it finds this job's checkpoint
+        (``HostBuildLockMixin.pre_run_checks``). The checkpoint stays as
+        the last attempt left it, ``parked``; only when the job comes back
+        changes.
+
+        :return: the ``JobParked`` to raise
+        """
+        until = fields.Datetime.now() + timedelta(seconds=PARK_GAP_SECONDS)
+        self._write_checkpoint({"parked_until": until})
+        self._sys(
+            "Another job holds this host's build lock for a moment: the job"
+            f" tries again in {PARK_GAP_SECONDS} s."
+        )
+        self._flush_logs()
+        return JobParked(
+            "Waits for the host's build lock, which it holds while it is"
+            " parked.",
         )
 
     def _resume(self, row):

@@ -38,6 +38,12 @@ unchanged.
   makes the job wait 30 s and try again, for up to 10 minutes; past them
   the job fails and the step is left for later. The cloud job stays
   running all along.
+- **A parked build still holds its host.** A rebuild or a teardown takes
+  its host's build lock in its transaction, which a park lets go: the
+  checkpoint keeps the host instead, written before the lock goes, and
+  another build or teardown of the host waits 30 s while it is there.
+  The parked job takes the lock again when it comes back, and waits 5 s
+  if another one holds it at that instant.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in

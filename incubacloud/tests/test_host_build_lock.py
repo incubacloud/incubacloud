@@ -13,6 +13,8 @@ Contention needs a SECOND real DB connection: ``pg_try_advisory_xact_lock``
 is re-entrant within a session, so two calls on one cursor both succeed
 and a single connection cannot simulate a busy host.
 """
+from unittest.mock import patch
+
 import odoo
 from odoo.addons.queue_job.exception import RetryableJobError
 from odoo.tests.common import TransactionCase
@@ -297,3 +299,99 @@ class TestTeardownsShareTheHostLock(_HostLockBase):
         finally:
             cr.rollback()
             cr.close()
+
+
+class TestTheLockOutlivesAPark(_HostLockBase):
+    """A rebuild parked between two attempts still holds its host (``HostBuildLockMixin``).
+
+    The lock is transactional, and a parked job's transaction is gone: the
+    checkpoint keeps the host instead, until the job ends. Registry test
+    mode, so the fresh cursor that reads it sees the test's rows; the
+    contention of a lock needs a second real connection all the same.
+    """
+
+    def setUp(self):
+        """A rebuild of the fixture instance, run by queue_job."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.parked = self._executor()
+        self.qjob = self.env['queue.job'].sudo().create({
+            'uuid': 'build-lock-parked',
+            'name': 'parked rebuild',
+            'state': 'started',
+            'method_name': 'execute',
+            'model_name': 'cloud.job',
+            'func_string': 'execute()',
+        })
+        self.parked.job.sudo().write({
+            'queue_job_uuid': self.qjob.uuid,
+            'queue_job_id': self.qjob.id,
+        })
+        self.env.flush_all()
+
+    def _park(self, take_lock=True):
+        """The rebuild takes its lock, runs, and parks.
+
+        :param bool take_lock: take it in this session, which then keeps
+            it; without, the lock is only said held, as by a transaction
+            that has ended since
+        """
+        if take_lock:
+            self.parked.pre_run_checks()
+        else:
+            self.parked._held_build_lock_host_id = self.host.id
+        self.parked._checkpoint = True
+        self.parked._checkpoint_data = {"plan": [], "results": {}}
+        self.parked._step_results = {}
+        self.parked._write_checkpoint({'queue_job_uuid': self.qjob.uuid})
+        self.parked._park(0, "parked for the test")
+        return self.env['cloud.job.checkpoint'].sudo().search(
+            [('job_id', '=', self.parked.job.id)],
+        )
+
+    def _other_build(self):
+        """A rebuild of another instance of the same host."""
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'build-lock-other',
+            'project_id': self.instance.project_id.id,
+            'environment': 'staging',
+            'host_id': self.host.id,
+        })
+        return self._executor()
+
+    def test_a_build_defers_while_another_is_parked(self):
+        """The lock is free (this session's own), the checkpoint is not."""
+        row = self._park()
+        self.assertEqual(row.build_lock_host_id, self.host)
+        other = self._other_build()
+        with self.assertRaises(RetryableJobError):
+            other.pre_run_checks()
+        row.unlink()
+        other.pre_run_checks()  # the parked job ended: must not raise
+
+    def test_a_parked_build_waits_for_the_one_about_to_defer(self):
+        """It comes back while another build holds the lock for an instant."""
+        row = self._park(take_lock=False)
+        cr = self._hold_lock(self.host.id)
+        try:
+            with patch.object(RebuildInstanceExecutor, 'run', autospec=True) as run:
+                with self.assertRaises(RetryableJobError) as caught:
+                    self.parked.job.execute()
+            run.assert_not_called()
+        finally:
+            cr.rollback()
+            cr.close()
+        self.assertEqual(caught.exception.seconds, 5)
+        self.assertTrue(caught.exception.ignore_retry)
+        row.invalidate_recordset()
+        self.assertTrue(row.parked)
+
+    def test_a_parked_build_takes_its_lock_back(self):
+        """Free: the job goes on, with the lock and the checkpoint's hold."""
+        self._park(take_lock=False)
+        with patch.object(RebuildInstanceExecutor, 'run', autospec=True) as run:
+            self.parked.job.execute()
+        run.assert_called_once()
+        executor = run.call_args.args[0]
+        self.assertTrue(executor._resumed)
+        self.assertEqual(executor._held_build_lock_host_id, self.host.id)
