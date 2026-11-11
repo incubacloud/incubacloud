@@ -19,7 +19,10 @@ no line and repeats none.
 The rule: **while the row exists, the job may have something on a
 server that nobody has closed.** It goes in the durable transaction of
 the hook that closes the job, unless something was left alive that could
-not be stopped, and when an attempt ends in a retry from the start. A
+not be stopped, and when an attempt ends in a retry from the start. A row
+kept that way is marked ``closed`` in that transaction: no attempt
+resumes the job from it, and one that runs the job again stops and
+removes what it says first. A
 neutralized copy of the database has none (``data/neutralize.sql``): it
 must not go stop the steps of the database it was copied from.
 
@@ -87,6 +90,16 @@ class CloudJobCheckpoint(models.Model):
     lost_contact_since = fields.Datetime(
         help="Since when the panel cannot reach the server of a running"
              " step.",
+    )
+    closed = fields.Boolean(
+        help="A hook closed the job and kept the row: something it left on"
+             " the server could not be stopped or removed. No attempt"
+             " resumes the job from it; it is the reconciliation's, or the"
+             " cleaning of an attempt that runs the job again.",
+    )
+    reconcile_tried_at = fields.Datetime(
+        help="When the reconciliation last tried to reach the server to"
+             " clean up after the ended job, and could not.",
     )
     build_lock_host_id = fields.Many2one(
         "cloud.host",

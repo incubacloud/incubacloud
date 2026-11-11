@@ -25,6 +25,7 @@ limit then needs to fit the steps that still run inside the request, not
 a whole build: ``MIN_LIMIT_TIME_REAL``, the limit Odoo.sh imposes.
 """
 import logging
+import os
 
 from .password_utils import IncubacloudCryptoError, _read_conf_section
 
@@ -125,6 +126,37 @@ def job_server_limit_problems(options):
     return problems
 
 
+#: The ``[incubacloud]`` section of each odoo.conf read, with the file's
+#: mtime and size it was read at: every job starts its clock
+#: (``AbstractExecutor._start_clock``), and the file changes only by hand.
+_CONF_SECTIONS = {}
+
+
+def conf_section(path):
+    """Return the ``[incubacloud]`` section of the odoo.conf at *path*.
+
+    Read again only once the file changed (its mtime or its size).
+
+    :param path: the odoo.conf, or None
+    :return: the section's options; empty without a file or a section
+    :rtype: dict
+    :raise IncubacloudCryptoError: when the file cannot be parsed
+    """
+    if not path:
+        return {}
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return {}
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _CONF_SECTIONS.get(path)
+    if cached and cached[0] == key:
+        return cached[1]
+    section = _read_conf_section(path)
+    _CONF_SECTIONS[path] = (key, section)
+    return section
+
+
 def _configured_budget(options):
     """Return the budget odoo.conf sets in ``[incubacloud]``, or None.
 
@@ -134,7 +166,7 @@ def _configured_budget(options):
     :rtype: int | None
     """
     try:
-        section = _read_conf_section(options.get("config"))
+        section = conf_section(options.get("config"))
     except IncubacloudCryptoError:
         return None
     raw = (section.get(ATTEMPT_BUDGET_OPTION) or "").strip()

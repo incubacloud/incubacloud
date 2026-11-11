@@ -128,6 +128,9 @@ class QueueJob(models.Model):
         only an attempt of it or the reconciliation can reach. Its cloud
         job is left ``started`` for the reconciliation, which stops the
         step and gives the job its hook (``cloud.job._clean_up_lost_job``).
+        Any row of the queue job counts, parked or not: one whose worker
+        died mid-attempt is put back ``pending`` by queue_job's SQL, with
+        the row as that attempt left it.
 
         :param dict vals: what is being stored
         :return: the ``queue.job`` records concerned
@@ -137,14 +140,16 @@ class QueueJob(models.Model):
         waiting = self.filtered(lambda job: job.state not in _TERMINAL | {"started"})
         if not waiting:
             return self.browse()
-        return waiting._with_parked_checkpoint()
+        return waiting._with_parked_checkpoint(parked_only=False)
 
-    def _with_parked_checkpoint(self):
+    def _with_parked_checkpoint(self, parked_only=True):
         """The jobs of ``self`` whose cloud job's checkpoint is ``parked``.
 
         Written by the executor's attempt on a cursor of its own, and read
         on a fresh cursor: the reader's transaction may predate it.
 
+        :param bool parked_only: only a row marked ``parked``; False for
+            any row this queue job wrote
         :return: the ``queue.job`` records concerned
         """
         with self.env["cloud.job"]._fresh_env() as env:
@@ -153,8 +158,8 @@ class QueueJob(models.Model):
                 " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
                 " JOIN cloud_job_checkpoint k"
                 "   ON k.job_id = c.id AND k.queue_job_uuid = q.uuid"
-                " WHERE q.id IN %s AND k.parked",
-                (tuple(self.ids),),
+                " WHERE q.id IN %s AND (k.parked OR NOT %s)",
+                (tuple(self.ids), parked_only),
             )
             ids = [row[0] for row in env.cr.fetchall()]
         return self.browse(ids)

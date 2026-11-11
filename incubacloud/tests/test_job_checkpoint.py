@@ -14,11 +14,14 @@ a step that runs in the request must fit in what is left
 import json
 import os
 import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from odoo.modules.neutralize import neutralize_database
 from odoo.tests.common import BaseCase, TransactionCase
 from odoo.tools import mute_logger
 
+from ..models import _job_server_limits
 from ..models._job_server_limits import (
     MIN_LIMIT_TIME_REAL,
     attached_step_limit_seconds,
@@ -189,6 +192,23 @@ class TestAttemptBudget(BaseCase):
         self.assertEqual(attempt_budget_seconds(
             {"limit_time_real": 900, "config": path},
         ), 60)
+
+    def test_odoo_conf_is_read_again_only_once_it_changed(self):
+        """Every job starts its clock: the file is not parsed every time."""
+        path = self._conf("[incubacloud]\nattempt_budget_seconds = 60\n")
+        options = {"limit_time_real": 900, "config": path}
+        with patch.object(
+            _job_server_limits, "_read_conf_section",
+            wraps=_job_server_limits._read_conf_section,
+        ) as read:
+            self.assertEqual(attempt_budget_seconds(options), 60)
+            self.assertEqual(attempt_budget_seconds(options), 60)
+            self.assertEqual(read.call_count, 1)
+            Path(path).write_text("[incubacloud]\nattempt_budget_seconds = 90\n")
+            stat = os.stat(path)
+            os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+            self.assertEqual(attempt_budget_seconds(options), 90)
+            self.assertEqual(read.call_count, 2)
 
     def test_a_budget_that_is_not_seconds_is_ignored(self):
         """A wrong value is logged and the share of the limit applies."""

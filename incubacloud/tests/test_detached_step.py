@@ -190,7 +190,7 @@ class TestStepsApart(TransactionCase):
     def _clean_server(self):
         """Stop and remove what a failed test may have left running."""
         for index in range(4):
-            directory = detached_dir(self.env, self.job.id, index)
+            directory = self._dir(index)
             if Path(f"{directory}/ctl.sh").exists():
                 subprocess.run(
                     ["bash", f"{directory}/ctl.sh", "stop", directory, "0"],
@@ -203,6 +203,10 @@ class TestStepsApart(TransactionCase):
         with contextlib.suppress(ChildProcessError):
             while os.waitpid(-1, os.WNOHANG)[0]:
                 pass
+
+    def _dir(self, index):
+        """The directory step *index* of the job runs apart in."""
+        return detached_dir(self.env, self.job.id, self.job.queue_job_uuid, index)
 
     def _executor(self, *plan):
         """Return an executor of the job that runs *plan*."""
@@ -276,7 +280,7 @@ class TestStepsApart(TransactionCase):
         log = self._log()
         for line in ("one", "two", "warn"):
             self.assertEqual(log.count(line), 2, line)
-        self.assertFalse(Path(detached_dir(self.env, self.job.id, 1)).exists())
+        self.assertFalse(Path(self._dir(1)).exists())
         row = self._row()
         self.assertEqual(row.next_index, 2)
         self.assertFalse(row.detached_started)
@@ -310,7 +314,7 @@ class TestStepsApart(TransactionCase):
         log = self._log()
         self.assertIn("started", log)
         self.assertIn("⚠ Command exceeded 1s timeout — killed.", log)
-        self.assertFalse(Path(detached_dir(self.env, self.job.id, 0)).exists())
+        self.assertFalse(Path(self._dir(0)).exists())
         self.assertFalse(executor._detached_left_alive)
 
     def test_a_step_whose_process_died_fails_with_a_clear_message(self):
@@ -323,7 +327,7 @@ class TestStepsApart(TransactionCase):
         self.assertIn("neither ended nor runs", str(exc))
         executor._flush_logs()
         self.assertIn("before", self._log())
-        self.assertFalse(Path(detached_dir(self.env, self.job.id, 0)).exists())
+        self.assertFalse(Path(self._dir(0)).exists())
 
     def test_a_server_that_kills_at_logout_runs_the_step_attached(self):
         """78: the step runs in the request, as before, and says so."""
@@ -344,6 +348,32 @@ class TestStepsApart(TransactionCase):
             and "runs attached" in line
             for line in self._log()
         ))
+
+    def test_a_start_that_may_have_started_is_stopped_and_removed(self):
+        """Any answer of start but 73, 74 and 78: the step may run there."""
+        transport = _local_transport()
+
+        async def _ambiguous(command, timeout=3600):
+            """The step starts, and start answers as if it had not."""
+            result = await _local_run(command, timeout)
+            if "detached_step.sh start" in command:
+                return CommandResult(
+                    stdout="[incubacloud] ERROR: the step did not start within 10 s",
+                    exit_status=1,
+                )
+            return result
+
+        transport.run.side_effect = _ambiguous
+        executor = self._executor(
+            (
+                "Apart", "trap 'echo trapped; exit 7' TERM; sleep 300 & wait",
+                {"detached": True},
+            ),
+        )
+        exc = self._raised(RuntimeError, self._steps, executor, transport)
+        self.assertIn("did not start within 10 s", str(exc))
+        self.assertFalse(Path(self._dir(0)).exists())
+        self.assertFalse(executor._detached_left_alive)
 
     def test_another_job_s_live_step_makes_the_job_try_again(self):
         """73: the job parks at that step, and keeps its place."""
@@ -405,7 +435,7 @@ class TestStepsApart(TransactionCase):
             _Apart, "_check_cancel", autospec=True, side_effect=_stop_once_started,
         ):
             self._raised(JobCancelled, self._run, executor)
-        directory = detached_dir(self.env, self.job.id, 1)
+        directory = self._dir(1)
         self.assertFalse(Path(directory).exists())
         self.assertEqual(executor.closed[0], "failure")
         self.assertEqual(list(executor.closed[1]), ["First"])

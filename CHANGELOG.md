@@ -36,12 +36,15 @@ unchanged.
   line of the log is lost or repeated. A worker that dies is taken up the
   same way. A server that cannot be reached while the step runs there
   makes the job wait 30 s and try again, for up to 10 minutes; past them
-  the job fails and the step is left for later. The cloud job stays
+  the job fails and the step is left for later. The same holds between
+  two steps, for an attempt that comes back and cannot connect. A step's
+  directory goes only once its result is recorded, so an attempt that
+  dies in between finds the step's end there. The cloud job stays
   running all along.
 - **A parked build still holds its host.** A rebuild or a teardown takes
   its host's build lock in its transaction, which a park lets go: the
-  checkpoint keeps the host instead, written before the lock goes, and
-  another build or teardown of the host waits 30 s while it is there.
+  checkpoint keeps the host from its first write, before any lock can go,
+  and another build or teardown of the host waits 30 s while it is there.
   The parked job takes the lock again when it comes back, and waits 5 s
   if another one holds it at that instant.
 - **A parked job is stopped and closed by itself or by the
@@ -51,11 +54,17 @@ unchanged.
   with the results of the steps that had ended. Its queue job cancelled,
   set done or deleted by hand from queue_job's views is not taken for a
   job that never ran: the reconciliation of lost jobs stops what it left
-  on the server (20 s for the trap) before its hook. A job that ended
-  with something left on a server it could not reach is picked up by the
-  same reconciliation at each pass, and given up an hour past the step's
-  cap. A step past the job's point of no return is never stopped: it is
-  left to end and removed afterwards.
+  on the server (20 s for the trap) before its hook; one that had been
+  cancelled meanwhile closes cancelled, as a stop. A job that ended with
+  something left on a server it could not reach is picked up by the same
+  reconciliation after the jobs it has to close, every 10 minutes, and
+  given up an hour past the step's cap, counted from the job's close; its
+  log says so the first time and when it gives up. A step past the job's
+  point of no return is never stopped: it is left to end and removed
+  afterwards, as is a step's directory a process of it kept. A job run
+  again over a checkpoint it does not take up — kept by the hook that
+  closed it, or written by another queue job — stops and removes what
+  that checkpoint says first, and waits 30 s while it cannot.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in
