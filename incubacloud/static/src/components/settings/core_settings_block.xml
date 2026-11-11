@@ -88,7 +88,7 @@
                 <SettingsBlock title.translate="Trusted proxies"
                                how.translate="Everything that keys on who is asking (rate limits, allowlists, audit lines) reads an address that belongs to the proxy whenever something sits in front. The forwarded header is believed only on connections from these ranges, and stripped from every other. With none, the connecting address is used as it is: too strict, but never spoofable.">
                     <SettingField id="'trusted_proxy_ranges'" form="form"/>
-                    <SettingRow id="'effective_proxy_ranges'" help="proxySourceLabel">
+                    <SettingRow id="'effective_proxy_ranges'" help="proxySourceLabel" plain="true">
                         <div t-if="state.effectiveProxyRanges.length" class="ic-set-chips">
                             <code t-foreach="state.effectiveProxyRanges" t-as="range" t-key="range"
                                   class="ic-set-chip" t-esc="range"/>
@@ -121,7 +121,7 @@
                             </button>
                         </t>
                     </SettingRow>
-                    <SettingRow id="'observability_status'">
+                    <SettingRow id="'observability_status'" plain="true">
                         <span class="ic-set-ro" t-esc="observabilityStatus"/>
                     </SettingRow>
                     <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_ship_security_logs', 'grafana_base_url', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">

@@ -98,8 +98,9 @@ The viewer's day picker filters as you type (`08-17`) and steps with
 ◀ ▶. When you do not know the date, type the error in the filter box
 and press **Enter**: the host greps every archived day and the picker
 marks the ones that match with their hit counts. The sweep is bounded
-— newest 60 files and 30 s by default, both on Settings → General →
-Instance Logs (`log_search_max_files`, `log_search_timeout_s`); if it
+— newest 60 files and 30 s by default, both on Settings → Logs &
+retention → Instance logs → Advanced (`log_search_max_files`,
+`log_search_timeout_s`); if it
 is cut short the viewer says so rather than reporting "no match".
 
 ## 5. Verify

@@ -231,10 +231,12 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
     def test_the_tab_sends_every_cap_it_shows(self):
         """Every cap the tab loads is also sent back when it saves.
 
-        The tab lists its fields twice by hand — in the defaults it
+        The tab listed its fields twice by hand — in the defaults it
         renders and in the payload it saves — and the mailbox cap was
         rendered and editable but never sent, so a change to it was
-        silently dropped. The backend's GET answer is the reference.
+        silently dropped. The payload is now the fields of the form that
+        changed, so the defaults the form starts from must hold every cap
+        the backend's GET answers.
         """
         with patch.object(_routes_crud, 'request', self._fake_request()):
             served = set(self.controller.cloud_get_core_rate_limits())
@@ -245,10 +247,10 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
             src = js.read()
         defaults = src.split('CORE_RATE_DEFAULTS = Object.freeze({', 1)[1]
         defaults = defaults.split('});', 1)[0]
-        payload = src.split('vals: {', 1)[1].split('},', 1)[0]
         key = re.compile(r'^\s*(rate_limit_\w+):', re.MULTILINE)
         self.assertEqual(set(key.findall(defaults)), served)
-        self.assertEqual(set(key.findall(payload)), served)
+        self.assertIn('form: { ...CORE_RATE_DEFAULTS }', src)
+        self.assertIn('changes("CoreRates", form)', src)
 
 
 class TestGeneralSettingsSavePerSection(TransactionCase):

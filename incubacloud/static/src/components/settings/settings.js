@@ -16,7 +16,10 @@
  * last saved, checks them by their declarations before saving, sends only
  * the blocks that changed, and puts a server error under its field when the
  * answer names one. ``writeOnly`` are fields the server keeps and never
- * shows back (secrets), empty again once saved.
+ * shows back (secrets), empty again once saved. A save answers
+ * ``{ok: false, error, field?}`` when refused, and ``{cancelled: true}``
+ * when the user called it off before anything was sent: the block has put
+ * its form back, and nothing is reported.
  */
 
 import {
@@ -28,7 +31,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { confirmVia } from "../../utils/use_confirm";
 import {
-    blocksOf, fieldProblem, sectionFor, settingField, settingsMenu,
+    blocksOf, fieldProblem, sectionShown, settingField, settingsMenu,
 } from "./settings_registry";
 import { SettingsSearch } from "./settings_search_box";
 
@@ -46,6 +49,22 @@ export function changedKeys(form, saved) {
     return Object.keys(form).filter(
         (key) => JSON.stringify(form[key]) !== (saved || {})[key],
     );
+}
+
+/**
+ * The values of a form that differ from a snapshot of it.
+ *
+ * What a block sends: a field it did not change is left to the server, so
+ * a value a job wrote since the page loaded is not put back.
+ *
+ * @param {object} form the form as it is
+ * @param {Object<string, string>|undefined} saved the snapshot; without
+ *     one, the whole form
+ * @returns {object} the changed fields and their values
+ */
+export function changedValues(form, saved) {
+    const keys = saved ? changedKeys(form, saved) : Object.keys(form);
+    return Object.fromEntries(keys.map((key) => [key, form[key]]));
 }
 
 /**
@@ -103,6 +122,7 @@ export class Settings extends Component {
             settingsForm: {
                 store: this.store,
                 isChanged: (id, store) => this.isChanged(id, store),
+                changes: (key, form) => changedValues(form, this.store.saved[key]),
                 setError: (id, message) => this.setError(id, message),
             },
         });
@@ -149,9 +169,7 @@ export class Settings extends Component {
 
     /** @returns {string} the id of the section on screen */
     get sectionId() {
-        const id = sectionFor(this.props.section, this.props.tab);
-        const all = this.menu.flatMap((group) => group.sections.map((s) => s.id));
-        return all.includes(id) ? id : (all[0] || id);
+        return sectionShown(this.props.section, this.props.tab, this.env);
     }
 
     /** @returns {object[]} the groups of the menu, with their sections */
@@ -303,6 +321,7 @@ export class Settings extends Component {
         this.state.saving = true;
         this.state.pageError = null;
         const failures = [];
+        let savedAny = false;
         for (const [key, tab] of [...this._tabs]) {
             if (tab.state && !changedKeys(tab.state.form, this.store.saved[key]).length) {
                 continue;
@@ -310,6 +329,9 @@ export class Settings extends Component {
             const sent = tab.state && { ...tab.state.form };
             try {
                 const result = await tab.save();
+                if (result && result.cancelled) {
+                    continue;
+                }
                 if (result && result.ok === false) {
                     if (result.field && settingField(result.field)) {
                         this.setError(result.field, result.error || _t("Not saved."));
@@ -324,6 +346,7 @@ export class Settings extends Component {
                     }
                     this.store.saved[key] = snapshot(sent);
                 }
+                savedAny = true;
             } catch (error) {
                 failures.push(error?.data?.message || error?.message || _t("Not saved."));
             }
@@ -335,7 +358,7 @@ export class Settings extends Component {
         if (this.errorCount) {
             this._focusFirstError();
         }
-        if (!failures.length && !this.errorCount) {
+        if (savedAny && !failures.length && !this.errorCount) {
             this.env.toast?.success(_t("Saved"));
         }
     }

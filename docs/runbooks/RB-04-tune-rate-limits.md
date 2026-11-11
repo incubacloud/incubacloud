@@ -55,7 +55,8 @@ Then look at the current caps. The tunable ones are fields on the
   downloads, per user. Each search decompresses up to
   `log_search_max_files` days on the instance's host; the per-search
   cost itself is bounded by `log_search_timeout_s` and
-  `log_download_max_mb` (Settings → General → Instance Logs)
+  `log_download_max_mb` (Settings → Logs & retention → Instance logs
+  → Advanced)
 
 ```sql
 db$ SELECT rate_limit_webhook_per_min,
