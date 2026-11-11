@@ -16,8 +16,8 @@
   has left before the answer and before each block of its body.
 
 It reads the token's introspection (``token_self``), its user
-(``current_user``) and the webhooks of a project or group, and writes
-the panel's note on a merge request.
+(``current_user``), the webhooks of a project or group and the state of
+a merge request, and writes the panel's note on a merge request.
 """
 import http.client
 import json
@@ -219,6 +219,16 @@ class GitLabClient:
             "POST",
             [_hook_kind(kind), target, "hooks", hook_id, "test", "tag_push_events"],
         )
+
+    def get_merge_request(self, project, iid):
+        """Return a merge request, with its ``state`` (``read_api`` or ``api``).
+
+        :param project: the project's id or path
+        :param int iid: the merge request's number in the project
+        :rtype: dict
+        :raises GitLabError: when the call fails
+        """
+        return self._get(["projects", project, "merge_requests", iid])
 
     def list_mr_notes(self, project, iid, page=1):
         """Return one page of a merge request's notes, oldest first.

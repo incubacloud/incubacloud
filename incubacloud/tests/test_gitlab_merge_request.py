@@ -481,6 +481,49 @@ class TestUpdateAndClose(_MergeRequestCase):
         ), self.assertRaises(pg_errors.SerializationFailure):
             event._dispatch_safely()
 
+    def test_a_rebuild_that_cannot_be_queued_keeps_the_others(self):
+        """The event keeps its error; the rebuild queued stays, and the
+        cron's second try queues only the one that failed: the other
+        collapses into its rebuild still waiting."""
+        self._preview()
+        self._preview(name="mr-12-b")
+        previews = self.env["cloud.instance"].sudo().search([
+            ("pr_provider_id", "=", self.provider.id), ("pr_number", "=", 12),
+        ])
+        self.assertEqual(len(previews), 2)
+        failing, queued = previews[-1], previews[:-1]
+        # A job running on the preview: its rebuild waits behind it.
+        running = self.env["cloud.job"].sudo().create({
+            "name": "restart", "host_id": self.host.id, "instance_id": queued.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restart_instance")], limit=1,
+            ).id,
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'started' WHERE id = %s", (running.id,),
+        )
+        self.env.invalidate_all()
+        Job = type(self.env["cloud.job"])
+        enqueue = Job.enqueue
+
+        def refuse_one(job, host_id, instance_id, job_type_code, *args, **kwargs):
+            if instance_id == failing.id:
+                raise UserError("The queue is full.")
+            return enqueue(job, host_id, instance_id, job_type_code, *args, **kwargs)
+
+        with patch.object(Job, "enqueue", autospec=True, side_effect=refuse_one):
+            event = self._mr(action="update", oldrev=BEFORE)
+        self.assertFalse(event.processed)
+        self.assertIn("The queue is full.", event.error)
+        self.assertEqual(len(self._rebuild_jobs(queued)), 1)
+        self.assertEqual(self._rebuild_jobs(queued).state, "queued")
+        self.assertFalse(self._rebuild_jobs(failing))
+        event._dispatch_safely()
+        self.assertTrue(event.processed)
+        self.assertFalse(event.error)
+        for preview in previews:
+            self.assertEqual(len(self._rebuild_jobs(preview)), 1)
+
     def test_a_rebuild_that_cannot_be_queued_fails_the_event(self):
         self._preview()
         with patch.object(
@@ -551,6 +594,7 @@ class TestNoteJob(_MergeRequestCase):
         self.api = MagicMock(spec=GitLabClient)
         self.api.create_mr_note.return_value = {"id": 501}
         self.api.list_mr_notes.return_value = []
+        self.api.get_merge_request.return_value = {"iid": 12, "state": "opened"}
         patcher = patch.object(
             cloud_gitlab_mr_note, "GitLabClient", autospec=True, return_value=self.api,
         )
@@ -612,6 +656,51 @@ class TestNoteJob(_MergeRequestCase):
         self._run()
         self.api.delete_mr_note.assert_called_once_with("acme/web", 12, 77)
         self.assertEqual(preview.pr_comment_id, 0)
+        self.api.get_merge_request.assert_not_called()
+
+    def test_a_merge_request_merged_meanwhile_loses_its_preview_and_its_note(self):
+        """The open and the close crossed: the close found no preview to close."""
+        preview = self._preview(pr_comment_id=77)
+        self.api.get_merge_request.return_value = {"iid": 12, "state": "merged"}
+        self._run()
+        self.api.get_merge_request.assert_called_once_with("acme/web", 12)
+        self.api.create_mr_note.assert_not_called()
+        self.api.update_mr_note.assert_not_called()
+        self.api.delete_mr_note.assert_called_once_with("acme/web", 12, 77)
+        self.assertEqual(preview.pr_state, "closed")
+        self.assertEqual(preview.pr_comment_id, 0)
+        self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
+
+    def test_a_failure_s_note_on_a_closed_merge_request_is_deleted_not_written(self):
+        """Its open event may be gone: GitLab says the merge request is closed."""
+        self.api.get_merge_request.return_value = {"iid": 40, "state": "closed"}
+        self._run(iid=40, kind="failed", reason="No room.", prod_id=self.prod.id,
+                  comment_id=91)
+        self.api.create_mr_note.assert_not_called()
+        self.api.update_mr_note.assert_not_called()
+        self.api.delete_mr_note.assert_called_once_with("acme/web", 40, 91)
+        self.assertFalse(self._note_alert())
+
+    def test_a_merge_request_that_cannot_be_read_gets_its_note(self):
+        """A read that fails, or says nothing usable, costs no retry and no alert."""
+        preview = self._preview()
+        for answer in (GitLabError("unreachable"), GitLabError("forbidden", 403),
+                       [], {"iid": 12}, {"iid": 12, "state": "locked"}):
+            with self.subTest(answer=answer):
+                self.api.reset_mock()
+                if isinstance(answer, Exception):
+                    self.api.get_merge_request.side_effect = answer
+                else:
+                    self.api.get_merge_request.side_effect = None
+                    self.api.get_merge_request.return_value = answer
+                with patch.object(type(self.Note), "_last_attempt", return_value=False):
+                    self._run()
+                self.api.get_merge_request.assert_called_once()
+                self.assertTrue(
+                    self.api.create_mr_note.called or self.api.update_mr_note.called,
+                )
+                self.assertEqual(preview.pr_state, "open")
+                self.assertFalse(self._note_alert())
 
     def test_a_deleted_preview_s_note_goes_by_its_id_or_its_marker(self):
         self._run(iid=30, comment_id=88)
@@ -883,6 +972,7 @@ class TestNoteOfAPreviewNotUpdated(_MergeRequestCase):
         self.api = MagicMock(spec=GitLabClient)
         self.api.create_mr_note.return_value = {"id": 501}
         self.api.list_mr_notes.return_value = []
+        self.api.get_merge_request.return_value = {"iid": 12, "state": "opened"}
         patcher = patch.object(
             cloud_gitlab_mr_note, "GitLabClient", autospec=True, return_value=self.api,
         )

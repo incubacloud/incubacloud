@@ -15,6 +15,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from psycopg2 import errors as pg_errors
+
 from odoo.exceptions import UserError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
@@ -66,6 +68,31 @@ def _pr_payload(
         },
         'repository': {'full_name': base[0], 'clone_url': base[1]},
     })
+
+
+def _github_get(comments=(), state='open'):
+    """Return a ``side_effect`` for ``GitHubAppClient.get``, by endpoint.
+
+    :param comments: what the pull request's comments answer
+    :param state: the pull request's ``state``; an exception is raised,
+        anything else that is not a string is answered as it is
+    """
+    def get(endpoint, **_kwargs):
+        """Answer *endpoint* as GitHub would."""
+        if '/pulls/' in endpoint:
+            if isinstance(state, Exception):
+                raise state
+            if isinstance(state, str):
+                return {'number': 7, 'state': state}
+            return state
+        return list(comments)
+    return get
+
+
+class _LostRace(pg_errors.SerializationFailure):
+    """A serialization failure as PostgreSQL raises it, with its code."""
+
+    pgcode = '40001'
 
 
 class _PreviewBase(TransactionCase):
@@ -500,7 +527,7 @@ class TestPreviewCommentInstallation(_PreviewBase):
         """Stand in for the client of the App: return (client, class patch)."""
         client = MagicMock(spec=GitHubAppClient)
         client.post_issue_comment.return_value = {'id': 31}
-        client.get.return_value = []
+        client.get.side_effect = _github_get()
         return client, patch.object(
             cloud_instance, 'GitHubAppClient', return_value=client,
         )
@@ -764,12 +791,12 @@ class TestPreviewCommentFoundAgain(_CommentCase):
     def test_a_comment_found_by_its_marker_is_rewritten(self):
         preview = self._preview()
         client, patcher = self._client()
-        client.get.return_value = [
+        client.get.side_effect = _github_get([
             {'id': 5, 'body': preview._pr_note_marker(),
              'performed_via_github_app': {'id': 999}},
             {'id': 6, 'body': 'thanks ' + preview._pr_note_marker(),
              'performed_via_github_app': {'id': 12345}},
-        ]
+        ])
         with patcher:
             preview._job_pr_comment()
         client.post_issue_comment.assert_not_called()
@@ -779,10 +806,10 @@ class TestPreviewCommentFoundAgain(_CommentCase):
     def test_a_marker_pasted_by_someone_else_is_not_taken(self):
         preview = self._preview()
         client, patcher = self._client()
-        client.get.return_value = [
+        client.get.side_effect = _github_get([
             {'id': 5, 'body': preview._pr_note_marker(),
              'user': {'login': 'someone'}},
-        ]
+        ])
         with patcher:
             preview._job_pr_comment()
         client.post_issue_comment.assert_called_once()
@@ -840,6 +867,152 @@ class TestPreviewCommentFailures(_CommentCase):
         with patcher, patch.object(Note, '_last_attempt', return_value=False), \
                 self.assertRaises(RetryableJobError):
             preview._job_pr_comment()
+
+
+class TestPreviewOfAClosedPullRequest(_CommentCase):
+    """The comment's job asks GitHub whether the pull request is still open.
+
+    An open and a close at once: the close's search did not see the
+    preview the open had not committed yet, so nothing closed it, and its
+    restore queued the «ready» comment on a closed pull request. The job
+    runs after both, and a pull request closed meanwhile gets no comment
+    and loses its preview.
+    """
+
+    def _deletes(self, preview):
+        """Return the ``delete_instance`` jobs of *preview*."""
+        return self.env['cloud.job'].search([
+            ('instance_id', '=', preview.id),
+            ('job_type_id.code', '=', 'delete_instance'),
+        ])
+
+    def test_a_closed_pull_request_gets_no_comment_and_loses_its_preview(self):
+        preview = self._preview(pr_comment_id=31)
+        client, patcher = self._client()
+        client.get.side_effect = _github_get(state='closed')
+        with patcher:
+            preview._job_pr_comment()
+        client.get.assert_called_once_with(f'/repos/{REPO_FULL}/pulls/7')
+        client.post_issue_comment.assert_not_called()
+        client.patch_issue_comment.assert_not_called()
+        client.delete_issue_comment.assert_called_once_with('owner', 'repo', 31)
+        self.assertEqual(preview.pr_state, 'closed')
+        self.assertEqual(len(self._deletes(preview)), 1)
+
+    def test_it_resolves_the_alert_of_its_comment(self):
+        preview = self._preview()
+        self.env['cloud.alert'].sudo().raise_alert(
+            PR_PREVIEW_NOTE_FAILED_CODE, 'x', level='warning', instance=self.prod,
+            key=f'github_pr:{REPO_FULL}:7',
+        )
+        client, patcher = self._client()
+        client.get.side_effect = _github_get(state='closed')
+        client.post_issue_comment.side_effect = GitHubAPIError(403, 'Forbidden')
+        with patcher:
+            preview._job_pr_comment()
+        self.assertFalse(self._note_alert(self.prod))
+
+    def test_a_delete_that_cannot_be_queued_leaves_it_closed(self):
+        """Closed before the delete's savepoint: the note's job and the
+        restore see it closed; a lost race reaches queue_job's retry."""
+        preview = self._preview()
+        client, patcher = self._client()
+        client.get.side_effect = _github_get(state='closed')
+        Instance = type(self.env['cloud.instance'])
+        with patcher, patch.object(
+            Instance, '_remove_closed_preview', side_effect=UserError('Full.'),
+        ):
+            preview._job_pr_comment()
+        self.assertEqual(preview.pr_state, 'closed')
+        client.post_issue_comment.assert_not_called()
+        other = self._preview(name='pr-8', pr_number=8)
+        with patcher, patch.object(
+            Instance, '_remove_closed_preview', side_effect=_LostRace('lost'),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            other._job_pr_comment()
+
+    def test_a_pull_request_that_cannot_be_read_gets_its_comment(self):
+        """A read that fails, or says nothing usable, costs no retry and no alert."""
+        Note = type(self.env['cloud.gitlab.mr.note'])
+        for i, state in enumerate((
+            GitHubAPIError(502, 'Bad gateway'), GitHubAPIError(404, 'Not Found'),
+            OSError('unreachable'), [], {'number': 7},
+        )):
+            with self.subTest(state=state):
+                preview = self._preview(name=f'pr-7-{i}')
+                client, patcher = self._client()
+                client.get.side_effect = _github_get(state=state)
+                with patcher, patch.object(Note, '_last_attempt', return_value=False):
+                    preview._job_pr_comment()
+                client.post_issue_comment.assert_called_once()
+                self.assertEqual(preview.pr_state, 'open')
+                self.assertFalse(self._note_alert(self.prod))
+
+    def test_a_401_on_the_read_is_tried_once_more_at_once(self):
+        """The client dropped the token it had kept, which GitHub may have revoked."""
+        preview = self._preview()
+        client, patcher = self._client()
+        answers = iter((GitHubAPIError(401, 'Bad credentials'), 'closed'))
+        reads = _github_get(state='closed')
+
+        def get(endpoint, **kwargs):
+            """Refuse the first read of the pull request with a 401."""
+            answer = next(answers)
+            if isinstance(answer, Exception):
+                raise answer
+            return reads(endpoint, **kwargs)
+
+        client.get.side_effect = get
+        with patcher:
+            preview._job_pr_comment()
+        self.assertEqual(client.get.call_count, 2)
+        client.post_issue_comment.assert_not_called()
+        self.assertEqual(preview.pr_state, 'closed')
+
+
+class TestPreviewReopenedAtOnce(_CommentCase):
+    """A pull request closed and reopened at once gets a new preview.
+
+    The closed preview still being deleted counted as the pull request's:
+    the reopened one was left without a preview or a comment. It does
+    not count now, and the new one takes another name while it holds its
+    own, as a merge request's does.
+    """
+
+    def test_closed_and_reopened_at_once_it_gets_a_new_preview(self):
+        old = self._preview(name='pr-7', state='deploying', pr_state='closed')
+        with self._clone_patch(return_value={}) as clone:
+            self._event(action='reopened')._process_pull_request_event()
+        clone.assert_called_once()
+        self.assertEqual(clone.call_args.args, ('pr-7-2',))
+        self.assertTrue(old.exists())
+
+    def test_a_push_rebuilds_only_the_open_preview(self):
+        closed = self._preview(name='pr-7', pr_state='closed')
+        reopened = self._preview(name='pr-7-2')
+        Job = type(self.env['cloud.job'])
+        with patch.object(Job, 'enqueue', autospec=True) as enqueue:
+            self._event(action='synchronize')._process_pull_request_event()
+        rebuilt = [c.args[2] for c in enqueue.call_args_list]
+        self.assertEqual(rebuilt, [reopened.id])
+        self.assertNotIn(closed.id, rebuilt)
+
+    def test_two_deliveries_at_once_leave_one_preview_and_no_alert(self):
+        """The loser of the unique name finds the winner's preview and says nothing."""
+        self.registry_enter_test_mode()
+        self._preview(name='pr-7', state='deploying')
+        Event = type(self.env['cloud.github.event'])
+        with patch.object(
+            Event, '_pr_previews', return_value=self.env['cloud.instance'],
+        ), patch.object(
+            Event, '_free_preview_name', return_value='pr-7',
+        ), patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            event = self._event()
+            event._process_pull_request_event()
+        self.assertTrue(event.processed)
+        self.assertFalse(self._alert())
 
 
 class TestPreviewCommentAlertKey(_CommentCase):

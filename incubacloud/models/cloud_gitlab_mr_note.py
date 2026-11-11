@@ -16,6 +16,14 @@ true then and makes the note match:
   failure, a merge request from a fork): that note;
 - otherwise (the merge request closed, the preview gone): no note.
 
+Before writing, it asks GitLab whether the merge request is still open.
+An open and a close delivered at once leave the close without a preview
+to close (it was not committed yet), and this job is all that runs after
+both: a merge request closed or merged meanwhile has its open previews
+closed and their delete queued, and loses its note instead. A read that
+fails, or says no state, counts as open, as before: logged, with no
+retry and no alert.
+
 So jobs queued twice collapse into one (``identity_key``) without a
 deletion being hidden behind a pending update: whichever runs decides
 from the truth of that moment. The close queues a job of its own (the
@@ -214,6 +222,10 @@ class CloudGitLabMrNote(models.AbstractModel):
         try:
             client = self._client(provider, cred)
             bot = cred.token_user or ""
+            if writing and self._merge_request_closed(client, path, iid):
+                self._close_previews(previews)
+                previews = previews.exists()
+                live, kind, writing = live.browse(), "closed", False
             if live:
                 note_id = self._upsert(
                     client, bot, path, iid, marker, known,
@@ -256,6 +268,23 @@ class CloudGitLabMrNote(models.AbstractModel):
         self._resolve(provider, path, iid, prod | previews)
 
     @api.model
+    def _close_previews(self, previews):
+        """Close the merge request's open previews and queue their delete.
+
+        Each one is marked closed before its delete's savepoint
+        (:meth:`_remove_closed`): a delete that cannot be queued leaves
+        it known to be closed, and a close delivered meanwhile waits on
+        the same row instead of queueing a second delete.
+
+        :param previews: the merge request's ``cloud.instance`` records,
+            with sudo
+        """
+        previews.filtered(
+            lambda i: i.active and i.pr_state != "closed",
+        ).write({"pr_state": "closed"})
+        self._remove_closed(previews)
+
+    @api.model
     def _remove_closed(self, previews):
         """Queue the delete of each closed preview still active that has none.
 
@@ -289,6 +318,38 @@ class CloudGitLabMrNote(models.AbstractModel):
             pin_ip=provider._resolve_pin(),
             deadline=time.monotonic() + NOTE_BUDGET_S,
         )
+
+    @api.model
+    def _merge_request_closed(self, client, path, iid):
+        """Return whether GitLab says the merge request is closed or merged.
+
+        ``locked`` (a merge being made) counts as open. A read that
+        fails, or an answer without its ``state``, counts as open too: it
+        is logged and costs no retry nor alert, and
+        ``cloud.gitlab.event._closed_after`` is still there for a
+        failure's or a fork's note.
+
+        :param GitLabClient client: the run's client
+        :param str path: the project's path
+        :param int iid: the merge request's number
+        :rtype: bool
+        """
+        try:
+            merge_request = client.get_merge_request(path, iid)
+        except (GitLabError, UserError) as exc:
+            _logger.info(
+                "Merge request !%s of %s was not read before its note: %s",
+                iid, path, getattr(exc, "code", None) or exc,
+            )
+            return False
+        state = merge_request.get("state") if isinstance(merge_request, dict) else None
+        if not state:
+            _logger.info(
+                "Merge request !%s of %s was read without its state before its note",
+                iid, path,
+            )
+            return False
+        return state in ("closed", "merged")
 
     @staticmethod
     def _retryable(exc):

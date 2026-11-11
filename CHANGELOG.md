@@ -278,6 +278,24 @@ is unchanged.
   job list offers Cancel and Retry only on jobs whose type the reader may
   ask for (`may_control` in the job rows), so a consultant is no longer
   offered them on the test mail, a manager's type.
+- **A pull or merge request closed while its preview was being created
+  gets no «ready» comment and loses its preview.** An open and a close
+  delivered at once left the close without a preview to close, and the
+  restore announced it on a closed request. The job of the comment, or of
+  the note, now asks GitHub or GitLab whether the request is still open
+  before writing: one closed or merged has its preview closed and its
+  delete queued, and its comment or note deleted. A read that fails
+  writes as before.
+- **A pull request closed and reopened at once gets a new preview.** The
+  closed preview still being deleted counted as its own: the reopened
+  request was left without one. It now takes `pr-<n>-2` while the old
+  one holds its name, as a merge request does, and a push rebuilds only
+  the open one. Two deliveries of one pull request at once leave one
+  preview and no alert.
+- **A merge request's push keeps the rebuilds it could queue.** When the
+  rebuild of one of its previews could not be queued, the others were
+  undone with it and waited for the daily retry. They stay queued now,
+  the event keeps its error, and the retry queues only what is missing.
 
 ---
 

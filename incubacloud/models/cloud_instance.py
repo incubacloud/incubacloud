@@ -3671,12 +3671,21 @@ class CloudInstance(models.Model):
         was cloned from: the preview works, but nobody on the pull
         request hears of it.
 
+        First it asks GitHub whether the pull request is still open
+        (:meth:`_pr_closed_on_github`): an open and a close delivered at
+        once leave the close without a preview to close, and this job
+        runs after both. One closed meanwhile gets no comment and loses
+        its preview (:meth:`_close_pr_preview`).
+
         :raises RetryableJobError: when GitHub may answer on a later try
         """
         inst = self.sudo().with_context(active_test=False).exists()
         if not (inst and inst.active and inst.pr_number
                 and not inst.pr_provider_id and inst.pr_state != "closed"
                 and inst.state == "deployed"):
+            return
+        if inst._pr_closed_on_github():
+            inst._close_pr_preview()
             return
         Note = self.env["cloud.gitlab.mr.note"]
         try:
@@ -3716,6 +3725,81 @@ class CloudInstance(models.Model):
         key = inst._pr_comment_alert_key()
         for target in inst | inst._pr_preview_production():
             Alert.resolve_alert(PR_PREVIEW_NOTE_FAILED_CODE, instance=target, key=key)
+
+    def _pr_closed_on_github(self):
+        """Return whether GitHub says the pull request is closed (merged included).
+
+        ``GET /repos/{account}/{repo}/pulls/{number}`` with the
+        installation's client. A 401 is tried once more at once, as the
+        comment's write: the client dropped the token it had kept. A read
+        that fails, or an answer that is not a pull request with its
+        ``state``, counts as open: it is logged and costs no retry nor
+        alert, and the comment is written as before.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        account, repo = self.pr_repo.split("/", 1)
+        endpoint = f"/repos/{account}/{repo}/pulls/{self.pr_number}"
+        try:
+            client = self._pr_github_client()
+            try:
+                pull = client.get(endpoint)
+            except GitHubAPIError as exc:
+                if exc.status_code != 401:
+                    raise
+                pull = client.get(endpoint)
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.info(
+                "Pull request #%s of %s was not read before its comment: %s",
+                self.pr_number, self.pr_repo,
+                getattr(exc, "status_code", None) or type(exc).__name__,
+            )
+            return False
+        state = pull.get("state") if isinstance(pull, dict) else None
+        if not state:
+            _logger.info(
+                "Pull request #%s of %s was read without its state before its comment",
+                self.pr_number, self.pr_repo,
+            )
+            return False
+        return state == "closed"
+
+    def _close_pr_preview(self):
+        """Close the preview of a pull request GitHub says is closed.
+
+        As the close's event does, in a fixed order: the preview is
+        marked closed first, outside its delete's savepoint, so a close
+        delivered meanwhile waits on the same row instead of queueing a
+        second delete, and a delete that cannot be queued leaves it known
+        to be closed. Then its comment is deleted, its delete queued
+        (:meth:`_remove_closed_preview`; a lost race is raised for
+        queue_job to retry) and the alert about its comment resolved: a
+        closed pull request has no comment to write.
+        """
+        self.ensure_one()
+        inst = self.sudo()
+        # The platform's field (``_PLATFORM_FIELDS``).
+        inst.write({"pr_state": "closed"})
+        if inst.pr_comment_id:
+            inst._delete_pr_comment()
+        try:
+            with self.env.cr.savepoint():
+                inst._remove_closed_preview()
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.exception("The closed preview %s was not deleted", inst.name)
+        else:
+            _logger.info(
+                "PR preview instance %s queued for deletion (PR #%s closed on GitHub)",
+                inst.name, inst.pr_number,
+            )
+        self.env["cloud.github.event"]._resolve_pr_comment_alerts(
+            inst.pr_repo, inst.pr_number,
+        )
 
     def _pr_comment_alert_key(self):
         """Return the key of the alert about this pull request's comment.
