@@ -346,7 +346,7 @@ class TestStepsApart(TransactionCase):
         ))
 
     def test_another_job_s_live_step_makes_the_job_try_again(self):
-        """73: the job is retried from the start, and keeps no place."""
+        """73: the job parks at that step, and keeps its place."""
         transport = _local_transport(start_answer=CommandResult(
             stdout="[incubacloud] ERROR: another step still runs for host"
                    " on this server: job 12 Build",
@@ -359,7 +359,8 @@ class TestStepsApart(TransactionCase):
         exc = self._raised(RetryableJobError, self._run, executor, transport)
         self.assertEqual(exc.seconds, DETACHED_BUSY_RETRY_S)
         self.assertTrue(exc.ignore_retry)
-        self.assertFalse(self._row())
+        self.assertTrue(self._row().parked)
+        self.assertEqual(self._row().next_index, 1)
         self.assertTrue(any("job 12 Build" in line for line in self._log()))
 
     def test_the_hook_that_closes_the_job_takes_its_row(self):

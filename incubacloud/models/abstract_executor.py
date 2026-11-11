@@ -12,6 +12,7 @@ import shlex
 import socket
 import time
 from abc import ABC, abstractmethod
+from datetime import timedelta
 from pathlib import Path
 
 import asyncssh
@@ -22,11 +23,12 @@ from odoo import fields
 from odoo.exceptions import AccessError, MissingError, UserError
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.sql_db import Cursor
-from odoo.tools import file_path
+from odoo.tools import config, file_path
 
 from odoo.addons.queue_job.exception import RetryableJobError
 
 from ._concurrency import read_committed_cursor
+from ._job_server_limits import attempt_budget_seconds
 from ._repo_requirements import has_pip_conflicts
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .registry import executor_registry
@@ -381,9 +383,34 @@ DETACHED_EXIT_RUNNING = 75
 DETACHED_EXIT_KILLED_AT_LOGOUT = 78
 
 #: How long a job whose step found another job's step running for the same
-#: target waits before it tries again, in seconds (10-nov-2026): as long as
-#: a job that waits for its host's build lock.
+#: target stays parked before it tries again, in seconds (10-nov-2026): as
+#: long as a job that waits for its host's build lock.
 DETACHED_BUSY_RETRY_S = 30
+
+#: How long a parked job waits for its next attempt, in seconds (9-nov-2026).
+#: queue_job's runner wakes at the job's ``eta`` exactly, so the gap is not
+#: rounded up to any cycle; the attempt's budget, not the gap, sets how
+#: often the job reconnects; and 5 s let the attempt that parked close its
+#: request and its connection before the next one starts. Less would risk
+#: overlapping a slow store of the postpone.
+PARK_GAP_SECONDS = 5
+
+#: The priority a parked job's queue.job comes back with (9-nov-2026): the
+#: most urgent, so that once its ``eta`` passes the runner gives it the next
+#: slot of its channel before any job pending there (``queue_job_ext``).
+PARKED_RETURN_PRIORITY = 0
+
+#: How long a job that cannot reach the server of its running step stays
+#: parked before it connects again, in seconds (10-nov-2026): as long as a
+#: job that cannot reach its host waits (``CONNECTION_RETRY_SECONDS``).
+DETACHED_RECONNECT_GAP_S = CONNECTION_RETRY_SECONDS
+
+#: How long a job may go without reaching the server of its running step
+#: before it fails, in seconds (10-nov-2026): the tolerance of
+#: ``_connection_retry_attempts`` (10 × 30 s), which covers a host that
+#: reboots for its updates. The step is then left, with the job's
+#: checkpoint, to the reconciliation.
+DETACHED_CONTACT_GRACE_S = 600
 
 #: The header ``detached_step.sh read`` answers with: state, exit status,
 #: whether the cap cut the step, and the offset the bytes after it end at.
@@ -540,6 +567,27 @@ BLOCKED_BY_ALERT = "Blocked until an alert is resolved."
 # What ``cloud.job.execute`` returns when an earlier attempt's
 # ``on_success`` committed (``cloud.job.outcome``): this one runs nothing.
 ALREADY_DONE = "Done by an earlier attempt."
+
+
+class JobParked(RetryableJobError):
+    """The attempt left the job to a later one; the job goes on.
+
+    Raised once the attempt's budget is spent, while another job's step
+    holds the job's target on its server, or when that server cannot be
+    reached while a step of the job runs there. The job's checkpoint says
+    where it is, marked ``parked``, and queue_job runs the job again
+    *seconds* later without counting the attempt (``ignore_retry``). No
+    hook runs, the job's staging stays on its server, and the cloud job
+    stays ``started`` (``queue_job_ext``).
+    """
+
+    def __init__(self, msg, seconds=PARK_GAP_SECONDS):
+        """Park for *seconds*, off the job's retry budget.
+
+        :param str msg: why, for queue_job's ``result``
+        :param int seconds: how long until the next attempt
+        """
+        super().__init__(msg, seconds=seconds, ignore_retry=True)
 
 
 class JobRefused(RuntimeError):
@@ -725,6 +773,34 @@ class AbstractExecutor(ABC):
     # A step marked ``detached`` ran attached to the request: the server
     # kills processes at logout (``DETACHED_EXIT_KILLED_AT_LOGOUT``).
     _detached_attached = False
+    # The step of the plan whose process may run on the server now, from
+    # just before its start until it is removed or stopped: what a lost
+    # connection leaves running (``_contact_lost``).
+    _on_server_index = None
+
+    #: Attributes of the executor its closing hooks read and that are set
+    #: before its steps: kept in the checkpoint, and set again on an attempt
+    #: that resumes the job (``_resume``). Names of instance attributes,
+    #: whose values JSON keeps.
+    _carried = ()
+    #: Carried for every executor: the job log's cap is the job's, not the
+    #: attempt's.
+    _CARRIED_ALWAYS = ("_chunks_persisted", "_cap_marker_emitted")
+
+    # When this attempt's budget ends (``time.monotonic()``), or None: an
+    # attempt whose clock was not started (``_start_clock``) never parks.
+    _budget_ends = None
+    # The attempt goes on from an earlier one's checkpoint (``_resume``).
+    _resumed = False
+    # The first step a resumed attempt runs.
+    _resume_index = 0
+    # A resumed attempt whose first step had started on the server: when it
+    # started, and how much of its log the job log has.
+    _resumed_step_started_at = None
+    _resumed_log_offset = 0
+    # Since when the server of the running step could not be reached, as
+    # the checkpoint says; None while it can.
+    _lost_contact_since = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -914,38 +990,77 @@ class AbstractExecutor(ABC):
     async def _async_entry(self):
         logger = logging.getLogger("AbstractExecutor")
         logger.debug("[_async_entry] Starting _async_entry")
+        connected = False
         try:
             self._sys(f"Connecting to {self.host}:{self.port}...")
             async with self._host_record.get_transport() as transport:
+                connected = True
                 logger.debug("[_async_entry] Connection established")
                 self._sys("Connection established.")
+                if self._lost_contact_since:
+                    self._write_checkpoint({"lost_contact_since": False})
+                    self._lost_contact_since = None
+                # What the job left on the server for a later attempt stays.
+                keep_staging = False
                 try:
-                    await self.before_execute(transport)
+                    if self._resumed:
+                        # The plan as the first attempt materialised it,
+                        # with the scripts and the staging it uploaded.
+                        commands = [
+                            tuple(step) for step in self._checkpoint_data["plan"]
+                        ]
+                    else:
+                        await self.before_execute(transport)
 
-                    # Materialise the commands before running any of
-                    # them: ``run_script()`` queues its uploads while
-                    # ``get_commands()`` builds the tuples, so the
-                    # scripts have to reach the host before the first
-                    # command fires.
-                    commands = list(self.get_commands())
-                    await self._upload_scripts(transport)
+                        # Materialise the commands before running any of
+                        # them: ``run_script()`` queues its uploads while
+                        # ``get_commands()`` builds the tuples, so the
+                        # scripts have to reach the host before the first
+                        # command fires.
+                        commands = list(self.get_commands())
+                        await self._upload_scripts(transport)
 
                     results, skipped = await self._run_steps(
                         transport, commands,
                     )
+                    if self._may_park() and self._budget_spent():
+                        raise self._park(len(commands), (
+                            "This attempt's time is up: the job closes in"
+                            " a few seconds."
+                        ))
                     # Before the cleanup below, so ``after_commands`` can
                     # still run a script.
                     await self._dispatch_outcome(
                         results, transport, skipped=skipped,
                     )
+                except Exception as exc:
+                    keep_staging = (
+                        isinstance(exc, JobParked) or self._contact_lost(exc)
+                    )
+                    raise
                 finally:
                     # Outermost, so what ``before_execute`` staged — a
                     # secret, the scripts — is gone even when that hook
                     # is what failed.
-                    await self._discard_staging(transport)
+                    if not keep_staging:
+                        await self._discard_staging(transport)
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
+            if not isinstance(e, JobParked) and self._contact_lost(e):
+                parked = self._park_on_lost_contact(e)
+                if parked is not None:
+                    logger.info("[_async_entry] Job parked: %s", parked)
+                    raise parked from e
+            if isinstance(e, JobParked):
+                # Nothing ends: the job goes on in a later attempt.
+                logger.info("[_async_entry] Job parked: %s", e)
+                raise
+            if self._resumed and not connected:
+                # What the first attempt staged is still on the server, and
+                # this one could not remove it: the checkpoint stays, for
+                # whoever reaches the server next.
+                self._detached_left_alive = True
             retrying = self._will_be_retried(e)
             cancelled = isinstance(e, JobCancelled)
             # Neither ``on_success`` nor ``on_failure`` ran, and nothing
@@ -1026,7 +1141,11 @@ class AbstractExecutor(ABC):
         connection (``_run_detached``), within the same ``timeout``: it
         outlives the request, and answers as ``transport.execute`` would.
         A plan with such a step keeps its place in ``cloud.job.checkpoint``
-        from before its first step to its end.
+        from before its first step to its end. Its attempt parks
+        (``JobParked``) once its budget is spent: before a step, or while
+        it follows a step apart. An attempt that resumes the job
+        (``_resume``) starts at the checkpoint's step, with the results of
+        the steps before it.
 
         :return: ``(results, skipped)``. ``results`` maps each label that
             ran to ``{'stdout': str, 'exit_status': int}``; ``skipped``
@@ -1037,22 +1156,41 @@ class AbstractExecutor(ABC):
         # Shared with ``_step_results``: a cancellation halfway hands
         # ``on_failure`` what had run.
         results = self._step_results = {}
-        if any(len(item) == 3 and item[2].get("detached") for item in commands):
+        first = 0
+        if self._resumed:
+            results.update(self._checkpoint_data.get("results") or {})
+            first = self._resume_index
+            cut = self._checkpoint_data.get("skipped")
+            if cut is not None:
+                # A step stopped the run before the attempt parked.
+                return results, list(cut)
+        elif any(len(item) == 3 and item[2].get("detached") for item in commands):
             await self._open_checkpoint(transport, commands)
         for index, item in enumerate(commands):
+            if index < first:
+                continue
             label, command = item[0], item[1]
             opts = item[2] if len(item) == 3 else {}
+            if self._may_park() and self._budget_spent():
+                raise self._park(index, (
+                    "This attempt's time is up: the job goes on in a few"
+                    " seconds."
+                ))
+            # The step an earlier attempt left running on the server: it
+            # passed its point of no return and said it runs back then.
+            resumed = index == first and self._resumed_step_started_at is not None
             logger.debug("[_run_steps] Executing: %s", command)
-            if label == self._no_return_from:
+            if label == self._no_return_from and not resumed:
                 self._pass_no_return(label)
             self._running_step = label
-            self._sys(f"Running: {label}")
+            if not resumed:
+                self._sys(f"Running: {label}")
             # ``timeout``: a step that needs longer than the transport's
             # default per command (``fetch-repos``).
             extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
             if opts.get("detached"):
                 result = await self._run_detached(
-                    transport, index, label, command, opts,
+                    transport, index, label, command, opts, resume=resumed,
                 )
             else:
                 result = await transport.execute(
@@ -1060,8 +1198,16 @@ class AbstractExecutor(ABC):
                 )
             status = result.exit_status
             results[label] = {'stdout': result.stdout, 'exit_status': status}
+            stops = (
+                status != 0
+                and status not in opts.get('continue_on', ())
+                and opts.get('stop_on_failure')
+            )
+            skipped = [step[0] for step in commands[index + 1:]] if stops else None
             if self._checkpoint:
-                self._save_checkpoint_step(index + 1)
+                self._save_checkpoint_step(
+                    len(commands) if stops else index + 1, skipped,
+                )
             if status == 0:
                 continue
             if status in opts.get('continue_on', ()):
@@ -1070,12 +1216,12 @@ class AbstractExecutor(ABC):
                     f" step accepts — continuing."
                 )
                 continue
-            if opts.get('stop_on_failure'):
+            if stops:
                 self._sys(
                     f"✗ '{label}' failed (exit {status})"
                     f" — aborting remaining steps."
                 )
-                return results, [step[0] for step in commands[index + 1:]]
+                return results, skipped
             self._sys(f"✗ '{label}' exited with status {status}.")
         return results, []
 
@@ -1874,6 +2020,7 @@ class AbstractExecutor(ABC):
             "results": {},
             "job_dir": self._job_dir() if self._job_dir_created else None,
             "private_uploads": list(self._private_uploads),
+            "carried": self._carried_state(),
         }
         self._write_checkpoint({
             "queue_job_uuid": self.job.queue_job_uuid or False,
@@ -1890,7 +2037,7 @@ class AbstractExecutor(ABC):
         })
         self._checkpoint = True
 
-    def _save_checkpoint_step(self, next_index):
+    def _save_checkpoint_step(self, next_index, skipped=None):
         """Record in the checkpoint that the steps before *next_index* ended.
 
         The lines buffered so far are written first, with the offset of
@@ -1898,10 +2045,15 @@ class AbstractExecutor(ABC):
         all of its log.
 
         :param int next_index: the first step of the plan not run yet
+        :param skipped: the labels a step that stopped the run cut off, or
+            None: an attempt that resumes after it runs no step
         """
         if self._flush_logs():
             self._publish_bus()
-        self._checkpoint_data["results"] = dict(self._step_results or {})
+        self._checkpoint_data["results"] = self._kept_results()
+        self._checkpoint_data["carried"] = self._carried_state()
+        if skipped is not None:
+            self._checkpoint_data["skipped"] = list(skipped)
         self._write_checkpoint({
             "next_index": next_index,
             "detached_started": False,
@@ -1909,6 +2061,181 @@ class AbstractExecutor(ABC):
             "log_offset": 0,
             "data": json.dumps(self._checkpoint_data),
         })
+
+    def _start_clock(self):
+        """Start this attempt's budget; ``cloud.job.execute`` calls it first.
+
+        ``attempt_budget_seconds`` of the server's configuration, counted
+        from now: the connection, the uploads and the steps before a long
+        one take their share. No budget when it is 0 (no limit).
+        """
+        budget = attempt_budget_seconds(config)
+        self._budget_ends = time.monotonic() + budget if budget > 0 else None
+
+    def _budget_spent(self):
+        """Whether this attempt's budget is spent.
+
+        :rtype: bool
+        """
+        return self._budget_ends is not None and time.monotonic() >= self._budget_ends
+
+    def _may_park(self):
+        """Whether this attempt may leave the job to a later one.
+
+        Only a job that keeps a checkpoint, and none of whose steps marked
+        ``detached`` ran attached to the request: such a step dies with it.
+
+        :rtype: bool
+        """
+        return self._checkpoint and not self._detached_attached
+
+    def _carried_state(self):
+        """Return the executor's carried attributes (``_carried``), by name.
+
+        :rtype: dict
+        """
+        return {
+            name: getattr(self, name)
+            for name in (*self._CARRIED_ALWAYS, *self._carried)
+        }
+
+    def _kept_results(self):
+        """Return the steps' results as the checkpoint keeps them.
+
+        Each step's stdout is cut to its last ``DETACHED_STDOUT_TAIL``
+        bytes, without the line they cut, as a step apart's is.
+
+        :rtype: dict
+        """
+        kept = {}
+        for label, data in (self._step_results or {}).items():
+            stdout = data.get("stdout") or ""
+            raw = stdout.encode("utf-8")
+            if len(raw) > DETACHED_STDOUT_TAIL:
+                stdout = raw[-DETACHED_STDOUT_TAIL:].partition(b"\n")[2].decode(
+                    "utf-8", "replace",
+                )
+            kept[label] = {**data, "stdout": stdout}
+        return kept
+
+    def _park(self, next_index, reason, seconds=PARK_GAP_SECONDS, vals=None):
+        """Leave the job to a later attempt; return the ``JobParked`` to raise.
+
+        The lines read so far go first, with the offset of the step apart
+        they come from (``_flush_logs``). Then, in one durable transaction,
+        where the job is: the step it goes on from, the results so far,
+        the carried state, ``parked`` and when it connects again. Then the
+        job log says why, and its watchers hear of it. Nothing on the
+        server is touched: a step running there goes on, and the job's
+        staging stays for it.
+
+        :param int next_index: the step the next attempt starts at
+        :param str reason: the job log's line
+        :param int seconds: how long until the next attempt
+        :param dict vals: more checkpoint values to write with the rest
+        :rtype: JobParked
+        """
+        self._flush_logs()
+        self._checkpoint_data["results"] = self._kept_results()
+        self._checkpoint_data["carried"] = self._carried_state()
+        until = fields.Datetime.now() + timedelta(seconds=seconds)
+        self._write_checkpoint({
+            **(vals or {}),
+            "next_index": next_index,
+            "parked": True,
+            "parked_until": until,
+            "data": json.dumps(self._checkpoint_data),
+        })
+        self._sys(reason)
+        self._flush_logs()
+        self._publish_bus()
+        return JobParked(
+            f"Parked until {fields.Datetime.to_string(until)} UTC: {reason}",
+            seconds=seconds,
+        )
+
+    def _resume(self, row):
+        """Take the job up where an earlier attempt left it.
+
+        Called by ``cloud.job.execute`` with the checkpoint an attempt of
+        the same queue job wrote. The attempt adopts what the first one
+        set up — its plan, its working directory and the scripts in it,
+        the secrets it staged, the steps' results, the carried state —
+        and starts at the checkpoint's step: ``before_execute`` and
+        ``get_commands()`` are not called again. A step that was started
+        on the server is followed from the offset its log had reached.
+        The row is marked as taken up, ``parked`` cleared.
+
+        :param row: the job's ``cloud.job.checkpoint``
+        """
+        data = row._data()
+        self._checkpoint = True
+        self._resumed = True
+        self._checkpoint_data = data
+        self._resume_index = row.next_index
+        self._job_dir_path = data.get("job_dir")
+        self._job_dir_created = bool(data.get("job_dir"))
+        self._private_uploads = tuple(data.get("private_uploads") or ())
+        self._scripts_requested = self._scripts_uploaded = True
+        names = {*self._CARRIED_ALWAYS, *self._carried}
+        for name, value in (data.get("carried") or {}).items():
+            if name in names:
+                setattr(self, name, value)
+        if row.detached_started:
+            self._on_server_index = row.next_index
+            self._resumed_step_started_at = row.step_started_at
+            self._resumed_log_offset = row.log_offset
+        self._lost_contact_since = row.lost_contact_since or None
+        self._write_checkpoint({
+            "parked": False,
+            "parked_until": False,
+            "attempts": row.attempts + 1,
+        })
+
+    def _contact_lost(self, exc):
+        """Whether *exc* cut the job off the server of a step that runs there.
+
+        :param Exception exc: what ended the attempt
+        :rtype: bool
+        """
+        return bool(
+            self._checkpoint
+            and self._on_server_index is not None
+            and is_transient_connection_error(exc)
+        )
+
+    def _park_on_lost_contact(self, exc):
+        """Park a job cut off the server of its running step, or let it fail.
+
+        The step goes on there, and the job connects again in
+        ``DETACHED_RECONNECT_GAP_S``. Once ``DETACHED_CONTACT_GRACE_S``
+        have gone by since contact was lost, the job fails instead and
+        leaves its checkpoint, and the step, to the reconciliation
+        (``_detached_left_alive``).
+
+        :param Exception exc: the transient connection error
+        :return: the ``JobParked`` to raise, or None to fail
+        """
+        now = fields.Datetime.now()
+        since = self._lost_contact_since or now
+        plan = self._checkpoint_data.get("plan") or []
+        label = (
+            plan[self._on_server_index][0]
+            if self._on_server_index < len(plan) else "the step"
+        )
+        if (now - since).total_seconds() >= DETACHED_CONTACT_GRACE_S:
+            self._detached_left_alive = True
+            self._sys(
+                f"✗ The server could not be reached for"
+                f" {DETACHED_CONTACT_GRACE_S} s while '{label}' runs there:"
+                " the job fails, and the step is left to the reconciliation."
+            )
+            return None
+        return self._park(self._on_server_index, (
+            f"Lost contact with the server while '{label}' runs there"
+            f" ({type(exc).__name__}): the panel connects again in"
+            f" {DETACHED_RECONNECT_GAP_S} s."
+        ), seconds=DETACHED_RECONNECT_GAP_S, vals={"lost_contact_since": since})
 
     def _detached_scope(self):
         """Return what a step apart of this job holds on its server.
@@ -1932,7 +2259,9 @@ class AbstractExecutor(ABC):
         last = lines[-1] if lines else ""
         return re.sub(r"^\[incubacloud\] (ERROR: )?", "", last.strip())
 
-    async def _run_detached(self, transport, index, label, command, opts):
+    async def _run_detached(
+        self, transport, index, label, command, opts, resume=False,
+    ):
         """Run step *index* on the server apart from the connection.
 
         ``detached_step.sh start`` runs it in a session of its own, capped
@@ -1944,18 +2273,23 @@ class AbstractExecutor(ABC):
 
         A server that kills processes at logout runs the step attached
         instead. A step of another job still running for the same target
-        makes the job try again in ``DETACHED_BUSY_RETRY_S``. A step the cap
-        cut raises ``asyncio.TimeoutError``, as an attached one does; one
-        whose process died, or whose server lost it, fails the job. Ended
-        by anything but its own end — a cancellation, an error — the step
-        is stopped and its directory removed before the error goes on
-        (``_stop_detached``).
+        parks the job for ``DETACHED_BUSY_RETRY_S``. A step the cap cut
+        raises ``asyncio.TimeoutError``, as an attached one does; one whose
+        process died, or whose server lost it, fails the job. Ended by
+        anything but its own end — a cancellation, an error — the step is
+        stopped and its directory removed before the error goes on
+        (``_stop_detached``). Not when the attempt parks, nor when the
+        server cannot be reached: the step goes on, for a later attempt.
 
         :param transport: the job's open transport
         :param int index: position of the step in the plan
         :param str label: the step's label
         :param str command: the step's command
         :param dict opts: the step's options
+        :param bool resume: an earlier attempt started the step: it is
+            followed from where its log was read up to, and not started
+            again (the start of a step whose directory is gone would run
+            it a second time)
         :return: the step's ``CommandResult``
         """
         directory = detached_dir(self.env, self.job.id, index)
@@ -1963,56 +2297,105 @@ class AbstractExecutor(ABC):
         # From before the start: a stop that comes while it runs finds a
         # step it may have launched already.
         self._detached_running = directory
-        self._detached_offset = 0
+        self._on_server_index = index
         try:
-            start = await transport.run(self.run_script("detached_step.sh", [
-                "start", directory, cap, self._detached_scope(), self.job.id,
-                label, command,
-            ]) + " 2>&1")
-            status = start.exit_status
-            if status != 0:
-                # Nothing of this step was started, and a path taken by
-                # someone else is not this job's to stop or remove.
-                self._detached_running = None
-            if status == DETACHED_EXIT_KILLED_AT_LOGOUT:
-                self._detached_attached = True
-                self._sys(
-                    f"⚠ {self._script_message(start.stdout)}. '{label}' runs"
-                    " attached to this connection."
+            if resume:
+                self._detached_offset = self._resumed_log_offset
+                started_at = self._resumed_step_started_at
+                self._resumed_step_started_at = None
+            else:
+                started_at = await self._start_detached(
+                    transport, index, directory, cap, label, command,
                 )
-                extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
-                return await transport.execute(
-                    command, self.on_stdout, self.on_stderr, **extra,
-                )
-            if status == DETACHED_EXIT_BUSY:
-                self._sys(
-                    f"'{label}' waits: {self._script_message(start.stdout)}."
-                    f" The job tries again in {DETACHED_BUSY_RETRY_S} s."
-                )
-                raise RetryableJobError(
-                    f"'{label}' waits for another job's step on the server.",
-                    seconds=DETACHED_BUSY_RETRY_S, ignore_retry=True,
-                )
-            if status != 0:
-                raise RuntimeError(
-                    f"Could not start '{label}' on the server (exit {status}):"
-                    f" {self._script_message(start.stdout)}"
-                )
-            self._write_checkpoint({
-                "detached_started": True,
-                "step_started_at": fields.Datetime.now(),
-                "log_offset": 0,
-            })
-            deadline = time.monotonic() + cap + DETACHED_OVERDUE_GRACE_S
+                if started_at is None:
+                    extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
+                    return await transport.execute(
+                        command, self.on_stdout, self.on_stderr, **extra,
+                    )
+            # The cap counts from the step's start, whichever attempt saw it.
+            overdue = started_at + timedelta(seconds=cap + DETACHED_OVERDUE_GRACE_S)
+            deadline = time.monotonic() + (
+                overdue - fields.Datetime.now()
+            ).total_seconds()
             return await self._follow_detached(
-                transport, directory, label, cap, deadline,
+                transport, directory, label, cap, deadline, index,
             )
+        except JobParked:
+            # Left to run on its server, for the next attempt.
+            self._detached_running = None
+            raise
+        except Exception as exc:
+            if is_transient_connection_error(exc) and not isinstance(
+                exc, asyncio.TimeoutError,
+            ):
+                # The server cannot be reached: nothing can be stopped, and
+                # the job parks to connect again (``_park_on_lost_contact``).
+                self._detached_running = None
+            raise
         finally:
             if self._detached_running:
                 await self._stop_detached(transport, directory)
 
-    async def _follow_detached(self, transport, directory, label, cap, deadline):
+    async def _start_detached(self, transport, index, directory, cap, label, command):
+        """Start step *index* apart on the server; return when it started.
+
+        ``detached_step.sh start`` does nothing for a step already started
+        (its ``pid`` is there): an attempt that died before it recorded
+        the start starts it again harmlessly.
+
+        :param transport: the job's open transport
+        :param int index: position of the step in the plan
+        :param str directory: :func:`detached_dir`
+        :param int cap: the step's cap, in seconds
+        :param str label: the step's label
+        :param str command: the step's command
+        :return: the start's time, or None when the step is to run attached
+            (the server kills processes at logout)
+        :raise JobParked: when another job's step holds the target
+        """
+        self._detached_offset = 0
+        start = await transport.run(self.run_script("detached_step.sh", [
+            "start", directory, cap, self._detached_scope(), self.job.id,
+            label, command,
+        ]) + " 2>&1")
+        status = start.exit_status
+        if status != 0:
+            # Nothing of this step was started, and a path taken by someone
+            # else is not this job's to stop or remove.
+            self._detached_running = None
+            self._on_server_index = None
+        if status == DETACHED_EXIT_KILLED_AT_LOGOUT:
+            self._detached_attached = True
+            self._sys(
+                f"⚠ {self._script_message(start.stdout)}. '{label}' runs"
+                " attached to this connection."
+            )
+            return None
+        if status == DETACHED_EXIT_BUSY:
+            raise self._park(index, (
+                f"'{label}' waits: {self._script_message(start.stdout)}."
+                f" The job tries again in {DETACHED_BUSY_RETRY_S} s."
+            ), seconds=DETACHED_BUSY_RETRY_S)
+        if status != 0:
+            raise RuntimeError(
+                f"Could not start '{label}' on the server (exit {status}):"
+                f" {self._script_message(start.stdout)}"
+            )
+        started_at = fields.Datetime.now()
+        self._write_checkpoint({
+            "detached_started": True,
+            "step_started_at": started_at,
+            "log_offset": 0,
+        })
+        return started_at
+
+    async def _follow_detached(
+        self, transport, directory, label, cap, deadline, index,
+    ):
         """Read the step apart in *directory* until it ends; return its result.
+
+        No read starts once the attempt's budget is spent: the job parks,
+        and the step goes on.
 
         :param transport: the job's open transport
         :param str directory: :func:`detached_dir`
@@ -2020,12 +2403,19 @@ class AbstractExecutor(ABC):
         :param int cap: the step's cap, in seconds
         :param float deadline: ``time.monotonic()`` past which a step still
             running is stopped and fails the job
+        :param int index: position of the step in the plan
         :return: the step's ``CommandResult``
         :raise asyncio.TimeoutError: when its cap cut it, or it ran past
             the cap and the grace
         :raise RuntimeError: when its process died, or the server lost it
+        :raise JobParked: when the budget is spent
         """
         while True:
+            if self._may_park() and self._budget_spent():
+                raise self._park(index, (
+                    "The step keeps running on the server; the panel"
+                    " reconnects in a few seconds."
+                ))
             state, exit_status, timedout, more = await self._read_detached(
                 transport, directory,
             )
@@ -2128,6 +2518,7 @@ class AbstractExecutor(ABC):
         """
         self._detached_running = None
         result = await transport.run(_detached_ctl(directory, "clean") + " 2>&1")
+        self._on_server_index = None
         if result.exit_status == 0:
             return True
         self._detached_left_alive = True
@@ -2153,6 +2544,7 @@ class AbstractExecutor(ABC):
         :param str directory: :func:`detached_dir`
         """
         self._detached_running = None
+        self._on_server_index = None
         try:
             stop = await transport.run(
                 _detached_ctl(directory, "stop", DETACHED_STOP_WAIT_S) + " 2>&1",

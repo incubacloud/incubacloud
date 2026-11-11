@@ -28,6 +28,9 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
 
     _job_type = "export_instance"
     _attachment_id = None
+    #: Read by the end hooks: a job that resumes from its checkpoint takes
+    #: it from the attempt that set it.
+    _carried = ("_attachment_id",)
 
     def _inst(self):
         return self.job.instance_id

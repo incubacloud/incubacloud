@@ -11,6 +11,7 @@ from ._concurrency import run_after_commit
 from .abstract_executor import (
     BLOCKED_BY_ALERT,
     CANCELLED_WHILE_RUNNING,
+    PARKED_RETURN_PRIORITY,
     deferred_instance_unlink,
 )
 from .purge_archived_executor import PurgeArchivedBackupsExecutor
@@ -117,6 +118,35 @@ class QueueJob(models.Model):
             (tuple(self.ids),),
         )
         return self.browse([row[0] for row in self.env.cr.fetchall()])
+
+    def _parked_postpones(self, vals):
+        """The jobs of ``self`` whose attempt parked, as their postpone is stored.
+
+        queue_job stores ``pending`` over ``started`` once an attempt raised
+        ``JobParked``: its step keeps running on the server, and the job
+        goes on in a later attempt. The executor marked the job's checkpoint
+        ``parked`` before it raised, on a cursor of its own: read on a
+        fresh cursor, as the runner's transaction began before that commit.
+
+        :param dict vals: what queue_job is storing
+        :return: the ``queue.job`` records concerned
+        """
+        if vals.get("state") != "pending" or not self.ids:
+            return self.browse()
+        started = self.filtered(lambda job: job.state == "started")
+        if not started:
+            return self.browse()
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT q.id FROM queue_job q"
+                " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+                " JOIN cloud_job_checkpoint k"
+                "   ON k.job_id = c.id AND k.queue_job_uuid = q.uuid"
+                " WHERE q.id IN %s AND k.parked",
+                (tuple(started.ids),),
+            )
+            ids = [row[0] for row in env.cr.fetchall()]
+        return self.browse(ids)
 
     def _succeeded_before_cancel(self, outcome=False):
         """The jobs of ``self`` whose ``on_success`` returned before a stop.
@@ -301,6 +331,22 @@ class QueueJob(models.Model):
         # from the start. No cancellation of a running job had ever ended
         # cancelled (16-oct-2026); the postpone is read in a cursor of its
         # own, which sees the flag.
+        #
+        # A job that parked is still running: its step on the server, and
+        # the job in its next attempt, which comes back first of its
+        # channel (``PARKED_RETURN_PRIORITY``). Its cloud job stays
+        # ``started``, and the parking does not count as an attempt that
+        # failed: queue_job's ``JobFoundDead`` then means three deaths in a
+        # row, with no clean attempt between them. A stop written while it
+        # parked is not stored as one either: the job comes back and closes
+        # itself.
+        parked = self._parked_postpones(vals)
+        if parked:
+            (self - parked).write(vals)
+            return super(QueueJob, parked).write(vals | {
+                "priority": PARKED_RETURN_PRIORITY,
+                "retry": 0,
+            })
         if vals.get("state") == "failed" or (
             vals.get("state") == "done"
             and vals.get("result") == CANCELLED_WHILE_RUNNING

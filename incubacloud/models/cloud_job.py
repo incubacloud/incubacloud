@@ -709,6 +709,8 @@ class CloudJob(models.Model):
             job_record=self,
             host_record=self.host_id,
         )
+        # The attempt's budget counts from here (``JobParked``).
+        ssh_executor._start_clock()
         # An earlier attempt's ``on_success`` committed and its own
         # transaction did not: the store of ``done`` lost a serialization
         # race, or the worker died before the commit. The job is done;
@@ -718,6 +720,11 @@ class CloudJob(models.Model):
         outcome = self._committed_outcome()
         if outcome is not None:
             return self._replay_committed_outcome(ssh_executor, *outcome)
+        # An earlier attempt parked, or its worker died, with a step run
+        # apart on the server: this one goes on where it left the job.
+        checkpoint = self._resumable_checkpoint()
+        if checkpoint:
+            ssh_executor._resume(checkpoint)
         # ``run`` hands a failure inside it to ``on_abort`` itself; one
         # before it is handed over here.
         running = False
@@ -727,29 +734,31 @@ class CloudJob(models.Model):
             # again, still ``cancelled`` (``queue_job_ext``). It does not run.
             if self._stopped_flags()[0]:
                 raise JobCancelled(CANCELLED_WHILE_RUNNING)
-            ssh_executor.pre_run_checks()
-            if not self._has_dependents():
-                blocking = ssh_executor.blocking_alert()
-                if blocking:
-                    # A failure while it is left blocked rolls back to
-                    # here: what ``on_blocked`` wrote is undone and the
-                    # instance's row freed, which ``on_abort`` writes on a
-                    # cursor of its own — it waited 30 s for it, failed,
-                    # and the instance stayed in 'deploying'.
-                    with self.env.cr.savepoint():
-                        return self._block_on(ssh_executor, blocking)
-            else:
-                # A step of a chain cannot wait: queue_job would store it
-                # done and run the next step — on a move, stop the source
-                # and restore onto a target never deployed. It fails, so
-                # the chain is cancelled as before. Its alert is raised
-                # on a cursor of its own: the failure rolls this
-                # transaction back, and the alert is what says why.
-                with ssh_executor._as_durable():
+            # A job half way through is neither refused nor blocked.
+            if not checkpoint:
+                ssh_executor.pre_run_checks()
+                if not self._has_dependents():
                     blocking = ssh_executor.blocking_alert()
-                    refusal = blocking.message if blocking else None
-                if refusal:
-                    raise JobRefused(refusal)
+                    if blocking:
+                        # A failure while it is left blocked rolls back to
+                        # here: what ``on_blocked`` wrote is undone and the
+                        # instance's row freed, which ``on_abort`` writes on a
+                        # cursor of its own — it waited 30 s for it, failed,
+                        # and the instance stayed in 'deploying'.
+                        with self.env.cr.savepoint():
+                            return self._block_on(ssh_executor, blocking)
+                else:
+                    # A step of a chain cannot wait: queue_job would store it
+                    # done and run the next step — on a move, stop the source
+                    # and restore onto a target never deployed. It fails, so
+                    # the chain is cancelled as before. Its alert is raised
+                    # on a cursor of its own: the failure rolls this
+                    # transaction back, and the alert is what says why.
+                    with ssh_executor._as_durable():
+                        blocking = ssh_executor.blocking_alert()
+                        refusal = blocking.message if blocking else None
+                    if refusal:
+                        raise JobRefused(refusal)
             ssh_executor._publish_bus()
             running = True
             ssh_executor.run()
@@ -852,6 +861,26 @@ class CloudJob(models.Model):
         if not row:
             return None
         return row[0] or {}, row[1] or []
+
+    def _resumable_checkpoint(self):
+        """Return the checkpoint this job's attempts left, if this one resumes it.
+
+        Read in this attempt's own transaction, as ``_committed_outcome``:
+        the earlier attempt wrote it on cursors that committed before this
+        one began. A row of another queue job is not resumed: it is the
+        reconciliation's.
+
+        :return: a ``cloud.job.checkpoint``, or None
+        """
+        self.ensure_one()
+        if not self.queue_job_uuid:
+            return None
+        row = self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", self.id)], limit=1,
+        )
+        if not row or row.queue_job_uuid != self.queue_job_uuid:
+            return None
+        return row
 
     def _replay_committed_outcome(self, executor, own_job_vals, owed):
         """End an attempt whose job an earlier attempt finished; run nothing.
