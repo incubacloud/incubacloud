@@ -348,12 +348,12 @@ class TestProcessPushEventGuards(_GitHubEventBase):
         Event = type(self.env['cloud.github.event'])
         calls, mock = self._enqueue_calls()
         with mock, patch.object(
-            Event, '_rebuild_job_type', return_value='warm_rebuild_instance',
+            Event, '_rebuild_job_type', return_value='custom_rebuild_instance',
         ):
             ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
             ev._process_push_event()
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]['job_type_code'], 'warm_rebuild_instance')
+        self.assertEqual(calls[0]['job_type_code'], 'custom_rebuild_instance')
 
     # A push that arrives while a rebuild runs or waits is merged into the
     # waiting rebuild, or queued behind the running one, by ``enqueue``

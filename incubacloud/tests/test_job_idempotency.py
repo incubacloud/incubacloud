@@ -6,9 +6,8 @@ specification or an exemption that says why, and the coverage test
 fails on one that has neither: a type added later is either specified
 or exempted on purpose.
 
-Delivery C1 of the idempotency plan (8-nov-2026) specifies two types here:
-``delete_instance`` and ``restore_instance``; ``relay_test_mail`` came with
-the relay's test mail. The rest wait for C2-C5.
+Specified here: ``delete_instance`` and ``restore_instance``, and
+``relay_test_mail``, which came with the relay's test mail. The rest wait.
 """
 import json
 import shlex
@@ -28,7 +27,7 @@ from .idempotency_harness import (
 #: The core repository: the types its addons declare are checked here.
 CORE_ROOT = Path(__file__).resolve().parents[2]
 
-_PENDING = "pending: the idempotency plan's deliveries C2-C5"
+_PENDING = "pending: not specified yet"
 
 #: Core's types without a specification yet, and why.
 EXEMPT = {

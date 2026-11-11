@@ -100,7 +100,7 @@ class TestTheSeriesCards(BaseCase):
                 card(("14", "18", "17"), offered=True),
             ),
             # Offered since core 1.0.198: PostgreSQL 16 to 18, odoo db,
-            # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
+            # template v10.0.3 (lab of 22-oct-2026).
             "20.0": card(
                 ("16", "18", "17"), db_tool="odoo-db", template="v10.0.3", offered=True,
             ),
@@ -129,7 +129,7 @@ class TestTheSeriesCards(BaseCase):
                 self.assertLessEqual(default, highest)
 
     def test_every_series_fetches_its_repositories_first(self):
-        """19.0 too, from core 1.0.224 (plan of the Git tokens, phase 2)."""
+        """19.0 too, from core 1.0.224."""
         self.assertEqual(
             [v for v in versions.VERSIONS if not versions.prefetch_repos(v)],
             [],

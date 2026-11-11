@@ -1,12 +1,11 @@
 """A host's direct port: which numbers it may take, and what it changes.
 
-The direct entrypoint (plan-trafico-interno-directo, piece 1) is a port
-of the host's own for the platform's traffic. A number the platform
-already publishes there would take the proxy down at the next Full
-Setup, so it is refused where the operator types it. And the port joins
-the host's configuration snapshot only when there is one: a new key in
-every snapshot marks the whole fleet "configuration pending"
-(migrations/1.0.134).
+The direct entrypoint is a port of the host's own for the platform's
+traffic. A number the platform already publishes there would take the
+proxy down at the next Full Setup, so it is refused where the operator
+types it. And the port joins the host's configuration snapshot only when
+there is one: a new key in every snapshot marks the whole fleet
+"configuration pending" (migrations/1.0.134).
 """
 import hashlib
 import json
