@@ -38,6 +38,12 @@ _logger = logging.getLogger(__name__)
 # both concrete session modules and both controllers read it from here.
 SESSION_TIMEOUT = 120
 
+# Longest a read of the output may wait for something new, in seconds,
+# whatever the caller asks. The wait holds the Odoo worker that proxies
+# it, so it stays short: long enough for the echo of a keystroke from a
+# host in the same region, not a long poll.
+MAX_OUTPUT_WAIT = 0.5
+
 
 class BaseTerminalSession:
     """Interactive SSH terminal session — transport, buffers, lifecycle.
@@ -83,11 +89,18 @@ class BaseTerminalSession:
         # Output buffer: list of (seq, bytes)
         self._output_buffer: list = []
         self._output_lock = threading.Lock()
+        # Wakes a read waiting for output (``read_output(wait=...)``).
+        self._output_cond = threading.Condition(self._output_lock)
         self._output_seq = 0
 
         # Input queue: list of bytes (None = close signal)
         self._input_queue: list = []
         self._input_lock = threading.Lock()
+        # The last batch of input applied, as ``(stream, seq)``: the page
+        # sends a batch again when it did not get an answer, and one that
+        # already arrived must not reach the shell twice.
+        self._input_stream = None
+        self._input_seq = 0
 
         self._loop = None
         self._process = None
@@ -144,24 +157,56 @@ class BaseTerminalSession:
         """True when the session has been idle past ``SESSION_TIMEOUT``."""
         return self.idle_seconds() > SESSION_TIMEOUT
 
-    def read_output(self, after_seq=0):
-        """Return ``[(seq, bytes), ...]`` with seq > after_seq."""
-        with self._output_lock:
-            return [(s, d) for s, d in self._output_buffer if s > after_seq]
+    def read_output(self, after_seq=0, wait=0.0):
+        """Return ``[(seq, bytes), ...]`` with seq > after_seq.
 
-    def write_input(self, data: bytes):
-        """Queue bytes for the remote PTY and reset the idle clock."""
+        :param int after_seq: the last chunk the caller already has.
+        :param float wait: seconds to wait for a chunk when there is none
+            yet, capped at ``MAX_OUTPUT_WAIT``; it returns as soon as one
+            arrives or the session closes, and ``0`` does not wait.
+        :return: the chunks after ``after_seq``, possibly none.
+        """
+        deadline = time.monotonic() + min(max(wait or 0.0, 0.0), MAX_OUTPUT_WAIT)
+        with self._output_cond:
+            while True:
+                chunks = [(s, d) for s, d in self._output_buffer if s > after_seq]
+                remaining = deadline - time.monotonic()
+                if chunks or self._closed or remaining <= 0:
+                    return chunks
+                # In slices, so a close (which does not notify) is seen.
+                self._output_cond.wait(min(remaining, 0.05))
+
+    def write_input(self, data: bytes, seq=None, stream=None):
+        """Queue bytes for the remote PTY and reset the idle clock.
+
+        :param bytes data: what was typed.
+        :param int seq: the batch's number in the page's *stream*, or
+            ``None`` for input that is never sent twice.
+        :param str stream: the page that numbered the batch.
+        :return: ``False`` when the batch was already applied (a resend
+            whose first try arrived), ``True`` when it was queued.
+        """
         self._last_input = time.time()  # reset idle clock on every keystroke
         with self._input_lock:
+            if seq is not None:
+                if stream == self._input_stream and seq <= self._input_seq:
+                    return False
+                self._input_stream, self._input_seq = stream, seq
             self._input_queue.append(data)
+        return True
 
     def resize(self, cols: int, rows: int):
-        """Resize the remote PTY window."""
+        """Resize the remote PTY window.
+
+        ``change_terminal_size`` is a plain method of asyncssh's process,
+        not a coroutine: it was handed to ``run_coroutine_threadsafe``,
+        which raised, so no resize ever reached the shell (11-nov-2026).
+        It runs on the session's loop, which owns the channel.
+        """
         self._last_input = time.time()
         if self._process and self._loop and not self._closed:
-            asyncio.run_coroutine_threadsafe(
-                self._process.change_terminal_size(cols, rows),
-                self._loop,
+            self._loop.call_soon_threadsafe(
+                self._process.change_terminal_size, cols, rows,
             )
 
     def close(self, reason=None):
@@ -175,12 +220,13 @@ class BaseTerminalSession:
 
     def _append_output(self, data: bytes):
         """Append a chunk to the ring buffer, capping unbounded growth."""
-        with self._output_lock:
+        with self._output_cond:
             self._output_seq += 1
             self._output_buffer.append((self._output_seq, data))
             # Cap the buffer to avoid unbounded growth
             if len(self._output_buffer) > 10_000:
                 self._output_buffer = self._output_buffer[-5_000:]
+            self._output_cond.notify_all()
 
     def _run(self):
         """Thread entrypoint: own an event loop and drive ``_async_run``."""

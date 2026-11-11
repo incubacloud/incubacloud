@@ -23,6 +23,12 @@ neutralized staging or preview neutralizes it again after its update.
 `cloud_instance.pr_update_cut_off`, and needs no data migration; the hosts
 need nothing either: the scripts travel with each job.
 
+The web terminals, a host's shell and an instance's, keep what is typed
+when the proxy in front of the panel answers 429, make about half the
+requests, and take the page's size. The update changes the terminal pages'
+templates and adds one, `terminal_client_script`; it adds no column and the
+hosts need nothing: the proxy's limit is unchanged.
+
 ### Added
 
 - **A rebuild's image build runs apart on its server.** «Rebuild Odoo
@@ -187,6 +193,33 @@ need nothing either: the scripts travel with each job.
   neutralization again (the panel's SQL before 16.0) and the mail catcher's
   step; any other is left as it is. A query that fails stops the rebuild
   rather than pass for «not neutralized».
+- **The web terminals no longer lose what is typed.** The host shell and an
+  instance's terminal read the output every 80 ms and sent the keystrokes in
+  requests of their own: typing at a normal pace went over the per-address
+  limit of the proxy in front of the panel (`ratelimit`, 300 a minute,
+  bursts of 100), which answered 429, and the page dropped the input that
+  failed: `ss -tln | grep ":22 "` reached the shell as `s-n| ep2`. The page
+  now sends again a batch that fails, after the wait the proxy's
+  `Retry-After` asks for, in order and numbered, so the session applies
+  each batch once; while it waits, the status bar says how many bytes are
+  waiting, and what never reaches the shell is said when the session ends.
+  It reads the output again soon while output keeps coming and less often
+  when nothing happens (100 ms to 1 s), and the answer to what is typed
+  brings the echo that follows, waited for up to 200 ms on the server
+  (`/input` takes `seq`, `stream` and `after_seq`; the session's `/output`
+  takes `wait`, capped at 0.5 s); requests with input start at least
+  200 ms apart, keys typed meanwhile going in the next. Typing makes about
+  half the requests and an idle terminal about one a second. Both pages call one script,
+  `terminal_client_script`.
+- **The web terminals take the page's size.** A shell stayed at 80×24
+  whatever the page measured, and long lines were drawn over each other:
+  the session handed asyncssh's `change_terminal_size`, a plain method, to
+  `run_coroutine_threadsafe`, which raised, so no resize ever reached the
+  shell; and the panel took the error the session answered for a session
+  gone, dropped its route and closed it. The size now reaches the shell
+  when it connects, after the connection comes back and when the window
+  changes, and an error the session answers is reported without closing
+  it.
 
 ---
 

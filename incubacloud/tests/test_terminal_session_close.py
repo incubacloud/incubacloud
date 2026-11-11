@@ -7,7 +7,8 @@ open on the server until its tab was closed or the routes' GC came, and a
 second console on that host was refused meanwhile (QA, 19-oct-2026).
 
 Nothing in the Python suite runs the pages' script, so the checks are
-textual, as in ``test_terminal_input_order``.
+textual, as in ``test_terminal_input_order``. Both pages call the same
+script, ``terminal_client_script.xml``.
 """
 import pathlib
 
@@ -15,8 +16,8 @@ from odoo.tests.common import BaseCase
 
 _VIEWS = pathlib.Path(__file__).resolve().parent.parent / "views"
 
-#: The two terminal pages: an instance's containers and a host.
-_PAGES = ("cloud_terminal_page.xml", "host_terminal_page.xml")
+#: The script both terminal pages call: an instance's containers and a host.
+_PAGES = ("terminal_client_script.xml",)
 
 
 class TestTerminalSessionClose(BaseCase):
