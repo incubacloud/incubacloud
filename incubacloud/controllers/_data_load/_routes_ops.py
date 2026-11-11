@@ -309,7 +309,8 @@ class OpsMixin:
             connection and the login included; a worker of the panel
             waits on it.
         :returns: ``(stdout, stderr, exit status)``.
-        :raises TimeoutError: when the host does not answer in time.
+        :raises asyncio.TimeoutError: when the host does not answer in
+            time (the built-in ``TimeoutError`` from Python 3.11).
         """
         script = (_SCRIPTS_DIR / name).read_text()
         # The connection and the login share the reading's own deadline

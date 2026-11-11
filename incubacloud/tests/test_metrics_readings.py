@@ -479,7 +479,8 @@ class TestReadWithScript(TransactionCase):
         with patch.object(asyncssh, "connect",
                           return_value=self._connection(conn, login_seconds=2)):
             began = time.monotonic()
-            with self.assertRaises(TimeoutError):
+            # asyncio's own: the built-in TimeoutError only from Python 3.11.
+            with self.assertRaises(asyncio.TimeoutError):
                 OpsMixin()._read_with_script(self.host, "probe.sh", [], timeout=0.3)
         self.assertLess(time.monotonic() - began, 1.5)
         conn.run.assert_not_called()
