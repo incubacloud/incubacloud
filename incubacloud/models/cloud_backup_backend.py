@@ -234,8 +234,8 @@ class CloudBackupBackend(models.Model):
         copy=False,
         help="When set, this backend is in retention period — the bucket "
         "still works for backup_download but new backups should not "
-        "be written here. The tenant cron unlinks the record when "
-        "the manager confirms the bucket has been purged.",
+        "be written here. The module that manages the backend unlinks "
+        "the record once the bucket has been purged.",
     )
 
     # ── Password handling ───────────────────────────────────────────────────
