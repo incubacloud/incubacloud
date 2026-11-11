@@ -458,16 +458,16 @@ class TestRelayTestMail(_RelayCase):
                 self.assertFalse(self._alert())
                 self.assertEqual(self.inst.smtp_relay_state, "unknown")
 
-    def test_a_deferral_says_the_test_mail_will_not_arrive_later(self):
-        """``relay_test.sh`` takes a deferred test mail out of the queue."""
+    def test_a_deferral_says_the_test_mail_was_taken_out_of_the_queue(self):
+        """``relay_test.sh`` tries to take a deferred test mail out of the queue."""
         job, _errors = self._run({
             "status": "deferred", "response": "451 4.3.0 Temporary server error",
             "token": None,
         })
         message = job.result["message"]
         self.assertIn(f"{HOST} deferred the mail: 451 4.3.0", message)
-        self.assertIn("removed from the relay's queue", message)
-        self.assertIn("will not arrive later", message)
+        self.assertIn("taken out of the relay's queue; send another test", message)
+        self.assertNotIn("will not arrive later", message)
         self.assertNotIn("keeps watching", message)
 
     def test_only_an_unreachable_relay_fails_the_job(self):
@@ -628,6 +628,19 @@ class TestRelayTestMailAsker(_RelayCase):
                     "A Relay Test Mail is already queued for this instance; "
                     + ending,
                 )
+
+    def test_a_refund_that_fails_does_not_hide_the_queue_s_refusal(self):
+        """The refusal is what the person is told; the refund's error is logged."""
+        waiting = self._job("relay_test_mail", user=self.consultant)
+        waiting.state = "queued"
+        with patch(
+            "odoo.addons.incubacloud.models.cloud_instance.refund_quota",
+            autospec=True, side_effect=RuntimeError("lock timeout"),
+        ) as refund, self.assertLogs(
+            "odoo.addons.incubacloud.models.cloud_instance", "ERROR",
+        ), self.assertRaisesRegex(UserError, "already queued"):
+            self.inst.with_user(self.consultant).send_relay_test_mail()
+        refund.assert_called_once()
 
     def test_the_panel_offers_cancel_and_retry_to_who_may_use_them(self):
         """A consultant's own test mail is a manager's type to stop."""
