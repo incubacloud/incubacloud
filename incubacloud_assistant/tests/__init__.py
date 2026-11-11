@@ -17,7 +17,7 @@ from . import test_engine_tools
 from . import test_engine_limits
 from . import test_ui_settings
 from . import test_ui_panel
-from . import test_terms_12a
+from . import test_changes_that_ask
 from . import test_assistant_prompt
 from . import test_mcp_settings_tools
 from . import test_auto_approval
