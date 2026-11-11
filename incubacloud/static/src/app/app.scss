@@ -1379,7 +1379,9 @@ button:active:not(:disabled),
         &::before { order: 4; }
         &::after { order: 7; }
 
-        td:nth-child(1) { order: 1; flex: none; }
+        // The state shrinks and wraps rather than run past the card: a
+        // job parked between two attempts says when the panel reconnects.
+        td:nth-child(1) { order: 1; flex: 0 1 auto; }
         td:nth-child(2) {
             order: 2;
             flex: 1 1 0;

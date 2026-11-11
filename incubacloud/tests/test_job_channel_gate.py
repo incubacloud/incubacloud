@@ -250,6 +250,47 @@ class TestTheGate(_GateCase):
         )
 
 
+class TestWhatTheListsShow(_GateCase):
+    """A parked job says when the panel reconnects, in the lists and the history."""
+
+    def test_a_parked_job_on_its_server(self):
+        """Its step runs apart: on the server, and the time it comes back."""
+        job = self._running(state="pending", parked=True)
+        row = self.env["cloud.job.checkpoint"].sudo().search([("job_id", "=", job.id)])
+        row.detached_started = True
+        until = fields.Datetime.to_string(row.parked_until)
+        for formatted in (job._format()[0], job._format_history()[0]):
+            self.assertEqual(formatted["state"], "started")
+            self.assertTrue(formatted["on_server"])
+            self.assertEqual(formatted["parked_until"], until)
+
+    def test_parked_between_two_steps_is_not_on_the_server(self):
+        """Nothing runs apart: only the time it comes back."""
+        job = self._running(state="pending", parked=True)
+        formatted = job._format()[0]
+        self.assertFalse(formatted["on_server"])
+        self.assertTrue(formatted["parked_until"])
+
+    def test_a_job_that_runs_or_a_closed_row_is_not_parked(self):
+        """Taken up again, or kept by a closing hook: no time to show."""
+        running = self._running()
+        kept = self._running(state="pending", parked=True)
+        self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", kept.id)],
+        ).closed = True
+        for job in running | kept:
+            formatted = job._format()[0]
+            self.assertFalse(formatted["on_server"])
+            self.assertIsNone(formatted["parked_until"])
+
+    def test_the_history_shows_the_held_job_too(self):
+        """Its channel, as the lists show it."""
+        self._running()
+        held = self._asked()
+        self._assert_held(held)
+        self.assertEqual(held._format_history()[0]["channel_wait"]["channel"], "root.user")
+
+
 class TestTheWakeUp(_GateCase):
     """When a place frees, the jobs held wait no longer than the sweep."""
 

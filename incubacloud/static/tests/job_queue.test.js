@@ -7,11 +7,14 @@ import { JobHistory } from "@incubacloud/components/job_history/job_history";
 import { createToastService } from "@incubacloud/toast/toast";
 import {
     announceJob,
+    channelWaitLabel,
     enqueueNotice,
+    jobStateText,
     jobTone,
     queuedLabel,
     stateLabel,
 } from "@incubacloud/utils/job_queue";
+import { parseUTC, userLocale } from "@incubacloud/utils/dates";
 
 /**
  * The job queue as the panel shows it (core 1.0.198).
@@ -179,6 +182,46 @@ describe("job queue — labels", () => {
             expect(proto.jobTone("started")).toBe("running");
             expect(proto.jobTone("pending")).toBe("queued");
         }
+    });
+
+    test("a job the channel gate holds says which slot it waits for", () => {
+        const wait = { channel: "root.user", load: 1, capacity: 1, since: "2026-11-11 10:00:00" };
+        expect(String(channelWaitLabel(wait))).toBe(
+            "Queued · waiting for a free slot (root.user 1/1)",
+        );
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            const comp = Object.create(proto);
+            expect(String(comp.jobStateText({
+                state: "queued", queue_position: 0, channel_wait: wait,
+            }))).toBe("Queued · waiting for a free slot (root.user 1/1)");
+        }
+        const history = Object.create(JobHistory.prototype);
+        expect(String(history.rowStateText({ state: "queued", channel_wait: wait }))).toBe(
+            "Queued · waiting for a free slot (root.user 1/1)",
+        );
+        expect(String(jobStateText({ state: "queued", queue_position: 2, channel_wait: null })))
+            .toBe("Queued · 2 ahead");
+    });
+
+    test("a parked job runs on its server and says when the panel reconnects", () => {
+        const until = "2026-11-11 12:03:05";
+        const at = parseUTC(until).toLocaleTimeString(userLocale(), {
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+        });
+        const parked = { state: "started", on_server: true, parked_until: until };
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            expect(String(Object.create(proto).jobStateText(parked))).toBe(
+                `Running · on the server, reconnecting at ${at}`,
+            );
+        }
+        expect(String(Object.create(JobHistory.prototype).rowStateText(parked))).toBe(
+            `Running · on the server, reconnecting at ${at}`,
+        );
+        expect(String(jobStateText({ ...parked, on_server: false }))).toBe(
+            `Running · reconnecting at ${at}`,
+        );
+        expect(String(jobStateText({ state: "started", parked_until: null }))).toBe("Running");
+        expect(jobTone("started")).toBe("running");
     });
 
     test("a queued job counts as active and has its own state class", () => {

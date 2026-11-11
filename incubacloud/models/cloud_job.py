@@ -4480,6 +4480,8 @@ class CloudJob(models.Model):
                 "action_job_type_code": alert.job_id.job_type_id.code or None,
             }
 
+        parked = self._parked_rows()
+
         return [
             {
                 "id": job.id,
@@ -4514,6 +4516,7 @@ class CloudJob(models.Model):
                 "retry_of_id": job.retry_of_id.id if job.retry_of_id else None,
                 # Held back by the channel gate: what for, and since when.
                 "channel_wait": job._channel_wait(),
+                **job._parked_fields(parked.get(job.id)),
                 "user_id": job.create_uid.id,
                 "user_name": job.create_uid.name or "",
                 **_webhook_fields(job.payload),
@@ -4680,9 +4683,50 @@ class CloudJob(models.Model):
             "preClaim": pre_claim,
         }
 
+    def _parked_rows(self):
+        """Return the checkpoints of those of these jobs parked between two attempts.
+
+        Read with ``sudo``: no role reads the checkpoints, and the jobs
+        are the reader's. A row a closing hook kept (``closed``) is no
+        longer the job's place.
+
+        :return: ``{cloud.job id: cloud.job.checkpoint}``
+        :rtype: dict
+        """
+        if not self.ids:
+            return {}
+        rows = self.env["cloud.job.checkpoint"].sudo().search([
+            ("job_id", "in", self.ids),
+            ("parked", "=", True),
+            ("closed", "=", False),
+        ])
+        return {row.job_id.id: row for row in rows}
+
+    def _parked_fields(self, row):
+        """Say what a job parked between two attempts is doing, for the lists.
+
+        It reads ``started``: its step may go on on its server
+        (``on_server``) while the panel waits to connect again at
+        ``parked_until``.
+
+        :param row: the job's ``cloud.job.checkpoint`` from
+            ``_parked_rows``, or None
+        :return: ``{on_server, parked_until}``; false and None for a job
+            not parked
+        :rtype: dict
+        """
+        self.ensure_one()
+        if not row or self.state != "started":
+            return {"on_server": False, "parked_until": None}
+        return {
+            "on_server": bool(row.detached_started),
+            "parked_until": fields.Datetime.to_string(row.parked_until) or None,
+        }
+
     def _format_history(self):
         now = fields.Datetime.now()
         places = self._queue_places()
+        parked = self._parked_rows()
         result = []
         for job in self:
             start = job.create_date
@@ -4715,6 +4759,10 @@ class CloudJob(models.Model):
                     "queue_position": (
                         places[job.id][1] if job.id in places else None
                     ),
+                    # What a held or a parked job waits for, as in
+                    # ``_format``.
+                    "channel_wait": job._channel_wait(),
+                    **job._parked_fields(parked.get(job.id)),
                     "create_date": job.create_date,
                     "write_date": job.write_date,
                     "duration_s": max(0, duration_s),
