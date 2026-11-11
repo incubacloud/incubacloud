@@ -37,7 +37,10 @@
             var INPUT_GROUP_MS = 20;
             // Requests with input start at least this far apart, five a
             // second at most: what is typed meanwhile goes in the next.
-            var INPUT_GAP_MS   = 200;
+            // Four, 250 ms apart: the proxy's average limit is 300 a
+            // minute per address (docs/runbooks/RB-18), five a second
+            // with the output reads in between went over it.
+            var INPUT_GAP_MS   = 250;
             // Waits before trying a failed request again: doubling from
             // the first to the last, or what the server's Retry-After says.
             var RETRY_FIRST_MS = 500;
@@ -106,6 +109,12 @@
                     if (r.error) {
                         var err = new Error((r.error.data &amp;&amp; r.error.data.message) || r.error.message);
                         err.rpc = true;
+                        // An Odoo session that expired (code 100) does not
+                        // come back by trying again: the user has to sign
+                        // in to the panel again.
+                        var name = (r.error.data &amp;&amp; r.error.data.name) || '';
+                        err.fatal = r.error.code === 100 ||
+                            name.indexOf('SessionExpiredException') !== -1;
                         throw err;
                     }
                     return r.result;
@@ -150,6 +159,25 @@
             function isOpen() {
                 return badge.className.indexOf('closed') === -1 &amp;&amp;
                     badge.className.indexOf('error') === -1;
+            }
+
+            // A request failed for good, the Odoo session being over:
+            // everything stops and the bar says what to do. What was
+            // typed and never went is counted. Returns whether *err*
+            // was such a failure.
+            function endedByPanel(err) {
+                if (!err || !err.fatal) return false;
+                if (polling) {
+                    var note = lostInputNote();
+                    polling = false;
+                    clearTimeout(pollTimer);
+                    clearTimeout(inputTimer);
+                    clearTimeout(sizeTimer);
+                    pollTimer = inputTimer = sizeTimer = null;
+                    setBadge('error', 'Error');
+                    statusText.textContent = 'Your panel session has expired: sign in to the panel again.' + note;
+                }
+                return true;
             }
 
             // A request failed with *err* and will be sent again: say
@@ -332,7 +360,7 @@
                     inputOut = false;
                     if (batch !== sent) return;  // dropped meanwhile: the session ended
                     inputFailures = 0;
-                    if (!result || !result.ok) {
+                    if (!result || !result.ok || result.closed) {
                         // The session refused it (closed, or not ours):
                         // nothing would take it again.
                         dropInput();
@@ -351,6 +379,7 @@
                 }, function (err) {
                     inputOut = false;
                     if (batch !== sent) return;
+                    if (endedByPanel(err)) return;
                     inputFailures++;
                     showRetrying(err);
                     inputTimer = setTimeout(flushInput, retryDelay(err, inputFailures));
@@ -383,6 +412,7 @@
                 }).then(function () {
                     sizeFailures = 0;
                 }, function (err) {
+                    if (endedByPanel(err)) return;
                     sizeFailures++;
                     sizeTimer = setTimeout(sendSize, retryDelay(err, sizeFailures));
                 });
@@ -441,6 +471,7 @@
                         showRecovered();
                         pollDelay = next = nextPollDelay(applyOutput(result));
                     }, function (err) {
+                        if (endedByPanel(err)) return;
                         pollFailures++;
                         showRetrying(err);
                         next = retryDelay(err, pollFailures);

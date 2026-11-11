@@ -44,6 +44,10 @@ SESSION_TIMEOUT = 120
 # host in the same region, not a long poll.
 MAX_OUTPUT_WAIT = 0.5
 
+# How many pages' numbering of the input a session remembers to tell a
+# resent batch from a new one: the most recent ones.
+MAX_INPUT_STREAMS = 8
+
 
 class BaseTerminalSession:
     """Interactive SSH terminal session — transport, buffers, lifecycle.
@@ -96,11 +100,12 @@ class BaseTerminalSession:
         # Input queue: list of bytes (None = close signal)
         self._input_queue: list = []
         self._input_lock = threading.Lock()
-        # The last batch of input applied, as ``(stream, seq)``: the page
-        # sends a batch again when it did not get an answer, and one that
-        # already arrived must not reach the shell twice.
-        self._input_stream = None
-        self._input_seq = 0
+        # The last batch of input applied in each page's stream, as
+        # ``{stream: seq}`` for the most recent ``MAX_INPUT_STREAMS``:
+        # the page sends a batch again when it did not get an answer, and
+        # one that already arrived must not reach the shell twice, also
+        # with two pages on the same session taking turns.
+        self._input_seqs = {}
 
         self._loop = None
         self._process = None
@@ -189,9 +194,13 @@ class BaseTerminalSession:
         self._last_input = time.time()  # reset idle clock on every keystroke
         with self._input_lock:
             if seq is not None:
-                if stream == self._input_stream and seq <= self._input_seq:
+                if seq <= self._input_seqs.get(stream, 0):
                     return False
-                self._input_stream, self._input_seq = stream, seq
+                # Re-inserted last, so the oldest stream is the first.
+                self._input_seqs.pop(stream, None)
+                self._input_seqs[stream] = seq
+                while len(self._input_seqs) > MAX_INPUT_STREAMS:
+                    del self._input_seqs[next(iter(self._input_seqs))]
             self._input_queue.append(data)
         return True
 

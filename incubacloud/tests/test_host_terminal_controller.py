@@ -224,6 +224,19 @@ class TestInputBringsItsEcho(BaseCase):
                 self.assertNotIn("output", result)
                 self.assertEqual(len(calls), 1)
 
+    def test_input_to_a_session_that_is_gone_is_not_taken(self):
+        """The sentinel of a gone session reads ``ok``: input must not."""
+        gone = terminal_proxy_mixin._closed_sentinel()
+        for controller, method in self._controllers():
+            with self.subTest(method=method):
+                result, calls = self._send(
+                    controller, method, [gone], seq=1, stream="page",
+                    after_seq=0,
+                )
+                self.assertFalse(result["ok"])
+                self.assertTrue(result["closed"])
+                self.assertEqual(len(calls), 1)
+
 
 class TestAnErrorOfTheSessionKeepsItOpen(TransactionCase):
     """A subprocess that answers with an error is alive.
