@@ -364,7 +364,7 @@ class TestConnectAsScripts(ConnectAsBase):
         out = io.StringIO()
         with patch.object(psycopg2, 'connect', return_value=conn), \
                 contextlib.redirect_stdout(out):
-            exec(compile(script, '<remote>', 'exec'), {})
+            exec(compile(script, '<remote>', 'exec'), {})  # nosec B102 — the module's own remote script, against mocks
         self.assertTrue(json.loads(out.getvalue())['ok'], out.getvalue())
         return [c.args[0] for c in cur.execute.call_args_list]
 
