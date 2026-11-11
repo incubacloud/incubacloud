@@ -55,7 +55,8 @@
 
     <t t-name="incubacloud.SettingField">
         <SettingRow id="props.id" label="props.label" help="props.help" warning="props.warning" form="props.form"
-                    stacked="field.type === 'textarea' and width === 'l'" plain="field.type === 'readonly'">
+                    stacked="field.type === 'textarea' and width === 'l'" plain="field.type === 'readonly'"
+                    button="field.type === 'secret' and showsStored">
             <t t-set-slot="default" t-slot-scope="row">
                 <t t-set="type" t-value="field.type"/>
                 <!-- Number, with its unit as a suffix -->
@@ -99,7 +100,7 @@
                     <div t-if="showsStored" t-attf-class="ic-set-secret ic-set-w-{{width}}">
                         <t t-out="env.icon('lock', 14)"/>
                         <span class="ic-set-secret__state">Stored</span>
-                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-att-id="row.inputId"
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-att-aria-describedby="row.describedBy || undefined"
                                 t-att-disabled="props.disabled || props.readonly || null"
                                 t-on-click="() => this.replace()">Replace</button>
                     </div>
