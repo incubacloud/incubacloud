@@ -8651,16 +8651,6 @@ msgid "Job"
 msgstr "Tarea"
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid ""
-"Job %(name)s (#%(id)d) has been running for %(minutes)d minutes; the job "
-"runner kills it at 60."
-msgstr ""
-"El trabajo %(name)s (#%(id)d) lleva %(minutes)d minutos en ejecución; el "
-"runner lo detiene a los 60."
-
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
@@ -20947,3 +20937,282 @@ msgstr ""
 "al código de la solicitud, tal como lo dice su comentario o nota; se vacía "
 "cuando una restauración o una reconstrucción de la vista previa termina "
 "bien."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__closed
+msgid ""
+"A hook closed the job and kept the row: something it left on the server "
+"could not be stopped or removed. No attempt resumes the job from it; it is "
+"the reconciliation's, or the cleaning of an attempt that runs the job again."
+msgstr ""
+"Un hook cerró el trabajo y conservó la fila: algo que dejó en el servidor no"
+" se pudo detener ni eliminar. Ningún intento retoma el trabajo desde ella; "
+"queda para la conciliación o para la limpieza de un intento que vuelva a "
+"ejecutar el trabajo."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_job_checkpoint_job_uniq
+msgid "A job has one checkpoint."
+msgstr "Un trabajo tiene un solo punto de control."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__attempts
+msgid "Attempts"
+msgstr "Intentos"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__attempts
+msgid "Attempts that reached the steps."
+msgstr "Intentos que llegaron a los pasos."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__build_lock_host_id
+msgid "Build Lock Host"
+msgstr "Host del cerrojo de construcción"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__log_offset
+msgid ""
+"Bytes of that step's log already in the job log; written with the lines it "
+"covers."
+msgstr ""
+"Bytes del log de ese paso que ya están en el log del trabajo; se escribe con"
+" las líneas que cubre."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__data
+msgid "Data"
+msgstr "Datos"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__detached_started
+msgid "Detached Started"
+msgstr "Paso aparte iniciado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__first_started_at
+msgid "First Started At"
+msgstr "Primer inicio"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__data
+msgid ""
+"JSON: the materialised plan ([label, command, opts]), the results of the "
+"steps that ended, the job's working directory, the secrets it staged and the"
+" executor's carried state."
+msgstr ""
+"JSON: el plan materializado ([etiqueta, comando, opciones]), los resultados "
+"de los pasos terminados, el directorio de trabajo del trabajo, los secretos "
+"que subió y el estado que conserva el ejecutor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job %(name)s (#%(id)d) has been running for %(minutes)d minutes in this "
+"attempt; the server cuts a request at %(limit)d s."
+msgstr ""
+"El trabajo %(name)s (#%(id)d) lleva %(minutes)d minutos en ejecución en este"
+" intento; el servidor corta una petición a los %(limit)d s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Job %(name)s (#%(id)d) has been running for %(minutes)d minutes."
+msgstr "El trabajo %(name)s (#%(id)d) lleva %(minutes)d minutos en ejecución."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job %(name)s (#%(id)d) waits for a free slot in %(channel)s since %(since)s "
+"UTC."
+msgstr ""
+"El trabajo %(name)s (#%(id)d) espera un hueco libre en %(channel)s desde las"
+" %(since)s UTC."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_job_checkpoint
+msgid "Job Checkpoint"
+msgstr "Punto de control del trabajo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__log_offset
+msgid "Log Offset"
+msgstr "Posición en el log"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__lost_contact_since
+msgid "Lost Contact Since"
+msgstr "Sin contacto desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__next_index
+msgid "Next Index"
+msgstr "Paso siguiente"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__overdue_noted
+msgid "Overdue Noted"
+msgstr "Retraso anotado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__parked
+msgid "Parked"
+msgstr "En espera entre intentos"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__parked_until
+msgid "Parked Until"
+msgstr "En espera hasta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Queued · waiting for a free slot (%s)"
+msgstr "En cola · esperando hueco (%s)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__reconcile_tried_at
+msgid "Reconcile Tried At"
+msgstr "Último intento de conciliación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Running · on the server, reconnecting at %s"
+msgstr "En ejecución · en el servidor, reconecta a las %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Running · reconnecting at %s"
+msgstr "En ejecución · reconecta a las %s"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__channel_wait_since
+msgid ""
+"Since when the dispatcher holds this queued job back: its queue_job channel "
+"has no free slot, counting the jobs parked between two attempts. Cleared "
+"once it is dispatched."
+msgstr ""
+"Desde cuándo el despachador retiene este trabajo en cola: su canal de "
+"queue_job no tiene hueco libre, contando los trabajos en espera entre dos "
+"intentos. Se borra al despacharlo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__lost_contact_since
+msgid "Since when the panel cannot reach the server of a running step."
+msgstr ""
+"Desde cuándo el panel no puede llegar al servidor de un paso en marcha."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__step_started_at
+msgid "Step Started At"
+msgstr "Inicio del paso"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__next_index
+msgid "The first step of the plan that has not ended."
+msgstr "El primer paso del plan que no ha terminado."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__build_lock_host_id
+msgid "The host whose build lock the parked job keeps."
+msgstr "El host cuyo cerrojo de construcción conserva el trabajo en espera."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__overdue_noted
+msgid ""
+"The job log says the parked job is late to come back: its queue job has not "
+"started its next attempt."
+msgstr ""
+"El log del trabajo dice que el trabajo en espera vuelve tarde: su trabajo de"
+" queue_job no ha empezado el intento siguiente."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__parked
+msgid "The job waits between two attempts while its step runs."
+msgstr "El trabajo espera entre dos intentos mientras su paso se ejecuta."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__host_id
+msgid "The job's host, where its steps run."
+msgstr "El host del trabajo, donde se ejecutan sus pasos."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__queue_job_uuid
+msgid ""
+"The queue job whose attempts wrote the row: a row of another one is not "
+"resumed, it is the reconciliation's."
+msgstr ""
+"El trabajo de queue_job cuyos intentos escribieron la fila: la fila de otro "
+"no se retoma, es de la conciliación."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"The server could not be reached since well past the cap of what this job "
+"left there: the reconciliation gives up on it. Check the server's /tmp by "
+"hand."
+msgstr ""
+"No se ha podido llegar al servidor hasta mucho después del tope de lo que "
+"este trabajo dejó allí: la conciliación lo da por perdido. Revise a mano el "
+"/tmp del servidor."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__detached_started
+msgid "The step at next_index runs apart on the server."
+msgstr "El paso de next_index se ejecuta aparte en el servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"This job ended with something left on its server: the reconciliation stops "
+"and removes it."
+msgstr ""
+"Este trabajo terminó con algo pendiente en su servidor: la conciliación lo "
+"detiene y lo elimina."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"This job was cancelled while it waited between two attempts, and its "
+"queue_job record was then ended or deleted by hand: what it left on its "
+"server is stopped, and it is closed as cancelled."
+msgstr ""
+"Este trabajo se canceló mientras esperaba entre dos intentos, y después su "
+"registro de queue_job se terminó o se eliminó a mano: lo que dejó en su "
+"servidor se detiene y se cierra como cancelado."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__channel_wait_since
+msgid "Waiting for a Slot Since"
+msgstr "Esperando hueco desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__first_started_at
+msgid "When the job's first attempt reached its steps."
+msgstr "Cuándo llegó a sus pasos el primer intento del trabajo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__parked_until
+msgid "When the parked job is to connect again."
+msgstr "Cuándo debe volver a conectar el trabajo en espera."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__reconcile_tried_at
+msgid ""
+"When the reconciliation last tried to reach the server to clean up after the"
+" ended job, and could not."
+msgstr ""
+"Cuándo intentó la conciliación por última vez llegar al servidor para "
+"limpiar tras el trabajo terminado, sin conseguirlo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__step_started_at
+msgid "When the step at next_index started on the server."
+msgstr "Cuándo empezó en el servidor el paso de next_index."

@@ -9,6 +9,7 @@
  */
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { parseUTC, userLocale } from "./dates";
 
 /** Dispatched to queue_job and not ended (``cloud.job._running_states``). */
 export const RUNNING_STATES = ["pending", "enqueued", "wait_dependencies", "started"];
@@ -28,6 +29,39 @@ export const ACTIVE_STATES = ["queued", ...RUNNING_STATES];
  */
 export function queuedLabel(position) {
     return _t("Queued · %s ahead", position || 0);
+}
+
+/**
+ * Label of a job the channel gate holds back: first in its target's
+ * queue, it waits for a free slot in queue_job's channel
+ * (``channel_wait`` of ``_format``).
+ *
+ * @param {{channel: string, load: number, capacity: number|null}} wait
+ *     the channel it waits on, how many of the panel's jobs take a place
+ *     in it and how many it holds
+ * @returns {string} "Queued · waiting for a free slot (root.user 1/1)"
+ */
+export function channelWaitLabel(wait) {
+    const count = wait.capacity ? `${wait.load}/${wait.capacity}` : `${wait.load}`;
+    return _t("Queued · waiting for a free slot (%s)", `${wait.channel} ${count}`);
+}
+
+/**
+ * Label of a job parked between two attempts: it runs, its step may go
+ * on on its server (``on_server``), and the panel connects again at
+ * ``parked_until``, written in the reader's time.
+ *
+ * @param {{on_server?: boolean, parked_until: string}} job a ``_format``
+ *     or ``_format_history`` row
+ * @returns {string} "Running · on the server, reconnecting at 12:03:05"
+ */
+export function parkedLabel(job) {
+    const at = parseUTC(job.parked_until).toLocaleTimeString(userLocale(), {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+    return job.on_server
+        ? _t("Running · on the server, reconnecting at %s", at)
+        : _t("Running · reconnecting at %s", at);
 }
 
 /**
@@ -72,15 +106,26 @@ export function jobTone(state) {
 }
 
 /**
- * Text of a job's state in the job lists and the history: its label,
- * and for a job waiting in its queue how many entries go before it.
+ * Text of a job's state in the job lists and the history: its label;
+ * for a job waiting in its queue how many entries go before it, or the
+ * channel slot it waits for when the gate holds it; for a job parked
+ * between two attempts, when the panel connects again.
  *
- * @param {{state: string, queue_position?: number}} job a ``_format`` or
- *     ``_format_history`` row
+ * @param {{state: string, queue_position?: number, channel_wait?: object|null,
+ *     on_server?: boolean, parked_until?: string|null}} job a ``_format``
+ *     or ``_format_history`` row
  * @returns {string}
  */
 export function jobStateText(job) {
-    return job.state === "queued" ? queuedLabel(job.queue_position) : stateLabel(job.state);
+    if (job.state === "queued") {
+        return job.channel_wait
+            ? channelWaitLabel(job.channel_wait)
+            : queuedLabel(job.queue_position);
+    }
+    if (job.state === "started" && job.parked_until) {
+        return parkedLabel(job);
+    }
+    return stateLabel(job.state);
 }
 
 /**
