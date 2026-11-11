@@ -27,6 +27,7 @@ _HOOK_HELPERS = {
     "_record": "records what a base copy and its housekeeping did",
     "_restored": "records a restore and queues its full base copy",
     "_follow_up_restore": "queues a restore's full base copy, tells the addons",
+    "_judge_modules": "alerts or settles a restored database's update",
     "_follow_on": "hands a running restore to the next job",
     "_cancel_unanswered": "a cancel the host did not answer: followed, alerted",
     "_judge_cancel": "records how a cancelled restore ended on the host",

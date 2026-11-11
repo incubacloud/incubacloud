@@ -7,6 +7,7 @@
 #   restore.sh neutralize     <dir> <dbname>
 #   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   restore.sh use-mail-catcher <dir> <pg_user> <dbname>
+#   restore.sh renew-neutralization <dir> <pg_user> <dbname>
 #   restore.sh ensure-connect <dir> <pg_user> <dbname> <headless>
 #
 # ``restore-db`` takes an optional 4th argument (0/1, default 0): with 1
@@ -32,6 +33,13 @@
 # signed stay valid), database.uuid and web.base.url, where a copy has
 # them regenerated (the base URL to http://localhost:8069). Sessions are
 # not carried: they live in the data dir's sessions/, outside the archive.
+#
+# ``renew-neutralization`` does both, ``neutralize`` then
+# ``use-mail-catcher``, on a database that says it was neutralized
+# (``database.is_neutralized``), and nothing on any other: for the rebuild
+# of a staging or a preview, whose update rewrites what neutralization
+# switched off, without neutralizing one a person made live on
+# purpose. Never on a production stack (``use-mail-catcher``).
 #
 # ``set-base-url`` overwrites the web.base.url/report.url that travelled
 # inside the restored dump. It also drops web.base.url.freeze: with the
@@ -70,6 +78,36 @@ shift 2
 
 [ -d "$dir" ] || ic_die "instance directory not found: $dir"
 cd "$dir"
+
+# Neutralize a loaded database again: Odoo's own command from 16.0, the
+# panel's SQL before (``IC_NEUTRALIZE``).
+#   $1  database
+neutralize_again() {
+    ic_log "neutralizing $1 again"
+    if [ "$(ic_neutralizer)" = odoo ]; then
+        ic_compose_run --rm odoo odoo neutralize -d "$1"
+    else
+        ic_db_neutralize_args "$1"
+        ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
+    fi
+}
+
+# Remove the placeholder outgoing server a neutralization inserts, so the
+# database sends through the stack's mail catcher (``use-mail-catcher``).
+#   $1  database user
+#   $2  database
+use_mail_catcher() {
+    ic_log "letting $2 send through the stack's mail catcher"
+    # Guarded like set-base-url; matching on name and host leaves any
+    # real server alone, and a database neutralized by an Odoo that
+    # inserts no placeholder simply has nothing to delete.
+    docker compose exec -T db psql -U "$1" -d "$2" -c \
+"DO \$\$ BEGIN IF EXISTS (SELECT FROM information_schema.tables WHERE \
+table_schema='public' AND table_name='ir_mail_server') THEN \
+DELETE FROM ir_mail_server WHERE name='neutralization - disable emails' \
+AND smtp_host='invalid'; \
+END IF; END \$\$;"
+}
 
 case "$op" in
     verify-file)
@@ -117,13 +155,23 @@ case "$op" in
     neutralize)
         ic_require_args 1 "$#" "restore.sh neutralize <dir> <dbname>"
         dbname="$1"
-        ic_log "neutralizing $dbname again"
-        if [ "$(ic_neutralizer)" = odoo ]; then
-            ic_compose_run --rm odoo odoo neutralize -d "$dbname"
-        else
-            ic_db_neutralize_args "$dbname"
-            ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
+        neutralize_again "$dbname"
+        ;;
+    renew-neutralization)
+        ic_require_args 2 "$#" \
+            "restore.sh renew-neutralization <dir> <pg_user> <dbname>"
+        pg_user="$1"; dbname="$2"
+        # Odoo writes ``True`` or ``true``, the panel's SQL ``true``; a
+        # database without the table (none loaded) is no neutralized one.
+        flag="$(docker compose exec -T db psql -U "$pg_user" -d "$dbname" -tA -c \
+"SELECT 1 FROM ir_config_parameter WHERE key = 'database.is_neutralized' \
+AND lower(coalesce(value, '')) NOT IN ('', 'false', '0')" 2>/dev/null || true)"
+        if [ "$(printf '%s' "$flag" | tr -d '[:space:]')" != "1" ]; then
+            ic_log "$dbname is not neutralized: left as it is"
+            exit 0
         fi
+        neutralize_again "$dbname"
+        use_mail_catcher "$pg_user" "$dbname"
         ;;
 
     set-base-url)
@@ -148,16 +196,7 @@ END IF; END \$\$;"
         ic_require_args 2 "$#" \
             "restore.sh use-mail-catcher <dir> <pg_user> <dbname>"
         pg_user="$1"; dbname="$2"
-        ic_log "letting $dbname send through the stack's mail catcher"
-        # Guarded like set-base-url; matching on name and host leaves any
-        # real server alone, and a database neutralized by an Odoo that
-        # inserts no placeholder simply has nothing to delete.
-        docker compose exec -T db psql -U "$pg_user" -d "$dbname" -c \
-"DO \$\$ BEGIN IF EXISTS (SELECT FROM information_schema.tables WHERE \
-table_schema='public' AND table_name='ir_mail_server') THEN \
-DELETE FROM ir_mail_server WHERE name='neutralization - disable emails' \
-AND smtp_host='invalid'; \
-END IF; END \$\$;"
+        use_mail_catcher "$pg_user" "$dbname"
         ;;
     ensure-connect)
         ic_require_args 3 "$#" \

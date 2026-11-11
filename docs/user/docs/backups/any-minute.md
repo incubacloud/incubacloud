@@ -38,8 +38,17 @@ What happens next, in order:
 2. Odoo is stopped. Nothing of the instance runs meanwhile.
 3. The database is brought back to the moment chosen and the files with
    it. Whatever happened after that moment is undone.
-4. The instance is started again, and a fresh base copy is taken: the
+4. The restored database's modules are updated to the code the instance
+   runs now, as a rebuild does (unless **Auto-update modules on rebuild**
+   is off); the job's log names the branches and pinned commits.
+5. The instance is started again, and a fresh base copy is taken: the
    window now continues from the restored moment.
+
+A restore does not change the code: to undo a deployment, revert its code
+first, or its migration runs again on the restored database. If the update
+fails, the instance still starts, on the database as it was restored, and
+a warning names the module in the job's log: fix it and rebuild the
+instance.
 
 How long it takes depends on the size of the database, usually a few
 minutes. The job's log shows every step; if the restored database does
@@ -50,7 +59,8 @@ again, and the job says so.
 where it is, the previous data is put back and the instance is started
 again; the job's log says so, usually within a minute. Once the restored
 database is up, the last step, the restore is no longer undone: it
-finishes, files included, and the log says it had already been applied.
+finishes, files and the update of its modules included, and the log says
+it had already been applied.
 
 !!! warning "A restore undoes everything after the moment"
     Orders, invoices, messages, anything written after the moment chosen

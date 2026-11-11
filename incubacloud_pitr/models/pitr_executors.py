@@ -26,7 +26,7 @@ from odoo.addons.incubacloud.models.abstract_executor import (
     AbstractSSHExecutor,
 )
 
-from ._constants import WALG_SHA256, WALG_VERSION
+from ._constants import ALERT_MODULES, WALG_SHA256, WALG_VERSION
 
 _logger = logging.getLogger(__name__)
 
@@ -290,6 +290,39 @@ class _PitrExecutor(AbstractSSHExecutor):
             payload={"full": True}, bypass_running_check=True,
         )
         self._call_addon_hook(inst, "_after_restore_hook", "pitr")
+
+    def _judge_modules(self, result):
+        """Say whether a restored database was updated to the instance's code.
+
+        ``pitr.sh`` updates it once its files are back when the job asked
+        for it (``auto_update``), and starts the instance however that
+        ended: one that failed runs on the database as restored, under
+        code that may expect a schema it does not have. A warning says so
+        and what to do; a restore that updated its database settles it.
+        Nothing for a restore that did not update (``skipped``) or a
+        result of a script that never did (no ``modules``).
+
+        :param dict result: the restore's ``IC_PITR_RESTORE`` fields
+        """
+        modules = result.get("modules")
+        inst = self._inst()
+        if modules == "updated":
+            self._pitr_resolve(ALERT_MODULES)
+        elif modules == "failed":
+            self._sys(
+                f"✗ The restored database of '{inst.name}' could not be "
+                f"updated to the code the instance runs: the restore's log "
+                f"above names the module. Odoo runs on it as it was restored."
+            )
+            self._pitr_alert(
+                ALERT_MODULES,
+                f"'{inst.name}' was restored, but its modules could not be "
+                f"updated to the code it runs: Odoo serves that code over "
+                f"the database as it was restored, and screens that read "
+                f"what the code changed may fail. The restore job's log "
+                f"names the module. Fix it, then rebuild the instance with "
+                f"'Auto-update modules on rebuild' on.",
+            )
 
     def _log_errors(self, errors):
         """Put a failure's errors in the job's log."""
@@ -704,6 +737,7 @@ class PitrStatusExecutor(_PitrExecutor):
             inst._pitr_record_restore(restore)
         ):
             self._follow_up_restore(inst)
+            self._judge_modules(restore)
         if status.get("restoring") == "lost":
             self._pitr_alert(
                 ALERT_FAILING,
@@ -888,9 +922,16 @@ class PitrRestoreExecutor(_PitrExecutor):
             f"{chosen['backup_name']} ({chosen['finish_time']} UTC), "
             f"timeline {timeline}."
         )
+        if inst.auto_update:
+            self._say_update_target(inst)
 
     def get_commands(self):
         """Start the restore on the host (unless following one), then wait.
+
+        The restored database has its modules updated to the code the
+        instance runs, on the host once its files are back and before
+        Odoo starts, when the instance updates them on a rebuild
+        (``auto_update``).
 
         :raise ValueError: when no base copy was chosen
         """
@@ -905,6 +946,7 @@ class PitrRestoreExecutor(_PitrExecutor):
             return [wait]
         if not self._plan:
             raise ValueError("No base copy was chosen for the restore.")
+        inst = self._inst()
         target = self._target()
         return [
             (
@@ -915,6 +957,8 @@ class PitrRestoreExecutor(_PitrExecutor):
                     self._plan["timeline"],
                     target.strftime("%Y-%m-%d %H:%M:%S") + "+00",
                     target.strftime("%Y-%m-%d"),
+                    inst.postgres_dbname or "prod",
+                    1 if inst.auto_update else 0,
                 ]),
                 {"stop_on_failure": True},
             ),
@@ -929,6 +973,8 @@ class PitrRestoreExecutor(_PitrExecutor):
         The watch may have recorded it first, and followed it up then. One
         that cannot be recorded (its timeline unread) is followed up here
         all the same: the watch, which cannot record it either, never does.
+        Whether its modules were updated is said either way
+        (``_judge_modules``).
 
         :param dict result: the restore's ``IC_PITR_RESTORE`` fields
         """
@@ -939,6 +985,7 @@ class PitrRestoreExecutor(_PitrExecutor):
         })
         if recorded is not False:
             self._follow_up_restore(inst)
+        self._judge_modules(result)
 
     def _follow_on(self, reached=True):
         """Hand the restore, still running, to a job of the same type.

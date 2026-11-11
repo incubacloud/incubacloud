@@ -281,6 +281,24 @@ class TestAPushAfterAPreviewUpdateFailed(_PushCase):
         self.assertFalse(self.instance.pr_update_error)
         self.assertFalse(self.Job._queue_held_by(self.instance.id, None))
 
+    def test_an_update_cut_off_keeps_holding(self):
+        """An update that never answered may still run on the host,
+        with no lock the rebuild's own update would wait for: a person
+        lifts that hold, not a push."""
+        restore, alert = self._failed_restore()
+        self.instance.pr_update_cut_off = True
+        self.assertFalse(restore._is_failed_preview_update())
+        fix = self._push("fix0002")
+        self.assertEqual(fix.state, "queued")
+        self.assertEqual(fix._format()[0]["queue_held_alert_id"], alert.id)
+
+    def test_the_success_of_a_rebuild_clears_the_cut(self):
+        _restore, _alert = self._failed_restore()
+        self.instance.pr_update_cut_off = True
+        self.instance._preview_rebuilt(self.Job)
+        self.assertFalse(self.instance.pr_update_cut_off)
+        self.assertFalse(self.instance.pr_update_error)
+
     def test_another_failure_of_the_restore_keeps_holding(self):
         self._failed_restore(update_failed=False)
         fix = self._push("fix0002")

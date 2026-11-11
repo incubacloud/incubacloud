@@ -21,6 +21,8 @@ echo "docker $*" >> "$CALLS"
 case "$*" in
     *"id -u"*) echo "1234" ;;
     *"name = 'incubacloud_connect'"*) [ -n "${CONNECT_STATE:-}" ] && echo "$CONNECT_STATE" ;;
+    *"SELECT 1 FROM ir_config_parameter WHERE key = 'database.is_neutralized'"*)
+        if [ -n "${NEUTRALIZED:-}" ]; then echo "$NEUTRALIZED"; fi ;;
 esac
 STUB
     # sudo: record and run nothing (chown/chmod would need real perms).
@@ -190,6 +192,35 @@ STUB
 
 @test "use-mail-catcher refuses to run with missing arguments" {
     run bash "$SCRIPT" use-mail-catcher "$DIR" odoo
+    [ "$status" -eq 1 ]
+}
+
+@test "renew-neutralization neutralizes a neutralized database again, then routes its mail to the catcher" {
+    NEUTRALIZED=1 run bash "$SCRIPT" renew-neutralization "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    neutralize="$(grep -n "odoo odoo neutralize -d prod" "$CALLS" | cut -d: -f1)"
+    catcher="$(grep -n "DELETE FROM ir_mail_server WHERE name='neutralization - disable emails'" "$CALLS" | cut -d: -f1)"
+    [ -n "$neutralize" ] && [ -n "$catcher" ] && [ "$neutralize" -lt "$catcher" ]
+}
+
+@test "renew-neutralization uses the panel's SQL on a series without Odoo's" {
+    NEUTRALIZED=1 IC_NEUTRALIZE=sql run bash "$SCRIPT" renew-neutralization "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    grep -q "odoo psql -v ON_ERROR_STOP=1 -d prod -c" "$CALLS"
+    ! grep -q "odoo neutralize" "$CALLS"
+}
+
+@test "renew-neutralization leaves a database that is not neutralized as it is" {
+    run bash "$SCRIPT" renew-neutralization "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not neutralized"* ]]
+    grep -q "database.is_neutralized" "$CALLS"
+    ! grep -q "neutralize -d" "$CALLS"
+    ! grep -q "DELETE FROM ir_mail_server" "$CALLS"
+}
+
+@test "renew-neutralization refuses to run with missing arguments" {
+    run bash "$SCRIPT" renew-neutralization "$DIR" odoo
     [ "$status" -eq 1 ]
 }
 

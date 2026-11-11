@@ -1711,6 +1711,135 @@ class TestARestore(_PitrCase):
         self.assertIn(f" {executor.job.id} ", only[1])
 
 
+class TestARestoreUpdatesItsModules(_PitrCase):
+    """A restore to a moment updates its database to the instance's code.
+
+    The code is the one the instance was last built from, which a restore
+    does not change: Odoo started on a database of before a deployment
+    serves the deployment's code over the schema of that moment. The
+    host updates it once its files are back, before Odoo starts, when the
+    instance updates its modules on a rebuild (``auto_update``); one that
+    fails still leaves the instance running, and a warning says so.
+    """
+
+    LIST = TestARestore.LIST
+    _planned = TestARestore._planned
+
+    def setUp(self):
+        """An instance archiving, with base copies to restore from."""
+        super().setUp()
+        self.inst.write({
+            "pitr_enabled": True, "pitr_state": "ok", "pitr_cluster_id": "77",
+        })
+
+    def _said(self):
+        """Everything the job wrote to its log."""
+        return " ".join(str(c.args[1]) for c in self.sys_log.call_args_list)
+
+    def _ended(self, modules, state="done", status=0):
+        """What the host answers once the restore ended with *modules*."""
+        return {"Wait for the restore": {"stdout": (
+            f"IC_PITR_RESTORE job=1 state={state} timeline=00000002 "
+            f"promoted_at=1792369056 target=2026-10-18T22:31:00+00 "
+            f"filestore=restored modules={modules} cancelled=0"
+        ), "exit_status": status}}
+
+    def test_the_host_is_asked_to_update_the_database_it_restores(self):
+        executor = self._planned()
+        start = dict(c[:2] for c in executor.get_commands())["Start the restore"]
+        self.assertTrue(start.endswith(" 2026-10-18 prod 1"), start)
+
+    def test_with_auto_update_off_it_is_not(self):
+        self.inst.auto_update = False
+        executor = self._planned()
+        start = dict(c[:2] for c in executor.get_commands())["Start the restore"]
+        self.assertTrue(start.endswith(" 2026-10-18 prod 0"), start)
+        self.assertNotIn("revert its code first", self._said())
+
+    def test_the_log_names_the_code_it_is_updated_to(self):
+        """Restoring to undo a deployment without reverting its code
+        migrates the database again."""
+        self.inst.odoo_version = "17.0"
+        self._planned()
+        said = self._said()
+        self.assertIn("updated to the code this instance was last built from", said)
+        self.assertIn("Odoo 17.0", said)
+        self.assertIn("revert its code first", said)
+
+    def test_an_update_that_failed_is_a_warning_and_the_instance_runs(self):
+        self.inst.write({"running": False})
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success(self._ended("failed")))
+        alert = self._alerts(ex.ALERT_MODULES)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("could not be updated", alert.message)
+        self.assertIn("rebuild the instance", alert.message)
+        self.assertFalse(self._alerts("pitr_failing"))
+        self.assertTrue(self.inst.running)
+        self.assertIn("names the module", self._said())
+
+    def test_an_update_that_failed_without_the_files_says_both(self):
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_failure(
+                self._ended("failed", state="db-only", status=2), ["exit 2"],
+            ))
+        self.assertTrue(self._alerts(ex.ALERT_MODULES))
+        self.assertIn("not its files", self._alerts("pitr_failing").message)
+
+    def test_a_restore_that_updated_its_database_settles_the_warning(self):
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success(self._ended("failed")))
+            self.assertTrue(self._alerts(ex.ALERT_MODULES))
+            asyncio.run(executor.on_success(self._ended("updated")))
+        self.assertFalse(self._alerts(ex.ALERT_MODULES))
+
+    def test_a_restore_that_did_not_update_says_nothing_of_it(self):
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success(self._ended("skipped")))
+        self.assertFalse(self._alerts(ex.ALERT_MODULES))
+
+    def test_a_cancel_that_came_during_the_update_reads_how_it_ended(self):
+        """From the promotion on the restore goes on to the end, update
+        included: the cancel finds it done, its update failed or not."""
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            executor._judge_cancel({
+                "job": "1", "state": "done", "timeline": "00000002",
+                "promoted_at": "1792369056", "modules": "failed",
+                "cancelled": "1",
+            })
+        self.assertTrue(self._alerts(ex.ALERT_MODULES))
+
+    def test_the_watch_says_it_of_a_restore_that_outlived_its_jobs(self):
+        watch = self._executor(ex.PitrStatusExecutor, "pitr_status")
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(watch.on_success({"r": {"stdout": (
+                "IC_PITR_STATUS restoring=1 restore_job=5 restore_state=done "
+                "restore_timeline=00000002 restore_promoted_at=1792369056 "
+                "restore_target=2026-10-18T22:31:00+00 restore_modules=failed"
+            ), "exit_status": 0}}))
+        self.assertTrue(self._alerts(ex.ALERT_MODULES))
+
+    def test_a_rebuild_that_updates_the_modules_settles_the_warning(self):
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success(self._ended("failed")))
+        with (
+            patch.object(self.Job, "enqueue_chain", autospec=True, return_value=[1]),
+            patch.object(self.Job, "enqueue", autospec=True, return_value=1),
+        ):
+            self.inst.auto_update = False
+            self.inst._after_stack_rendered()
+            self.assertTrue(self._alerts(ex.ALERT_MODULES), "no update, no settling")
+            self.inst.auto_update = True
+            self.inst._after_stack_rendered()
+        self.assertFalse(self._alerts(ex.ALERT_MODULES))
+
+
 class TestCancellingARestore(_PitrCase):
     """A cancel stops the restore on the host and waits for it to undo.
 

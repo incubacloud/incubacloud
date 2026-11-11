@@ -21216,3 +21216,22 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__step_started_at
 msgid "When the step at next_index started on the server."
 msgstr "Cuándo empezó en el servidor el paso de next_index."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_update_cut_off
+msgid "Preview Update Cut Off"
+msgstr "Actualización de la vista previa cortada"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_update_cut_off
+msgid ""
+"The update of a preview's restore never answered (the connection dropped or "
+"the step ran out of time) and may still run on the server: a push does not "
+"rebuild the preview past the restore's alert until someone dismisses it. "
+"Cleared with the update error."
+msgstr ""
+"La actualización de la restauración de una vista previa no llegó a responder"
+" (se cortó la conexión o el paso agotó su tiempo) y puede seguir "
+"ejecutándose en el servidor: un push no reconstruye la vista previa por "
+"encima de la alerta de la restauración hasta que alguien la descarte. Se "
+"vacía junto con el error de actualización."

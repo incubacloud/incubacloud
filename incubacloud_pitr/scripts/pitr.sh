@@ -9,7 +9,7 @@
 #   pitr.sh list          <dir> <pg_user>
 #   pitr.sh status        <dir> <pg_user>
 #   pitr.sh drain         <dir> <pg_user> <timeout_s>
-#   pitr.sh restore-start <dir> <pg_user> <job> <cluster> <base> <timeline> <target_utc> <since_day>
+#   pitr.sh restore-start <dir> <pg_user> <job> <cluster> <base> <timeline> <target_utc> <since_day> [<db> <update>]
 #   pitr.sh restore-wait  <dir> <job> <max_s>   (0 also while it still runs)
 #   pitr.sh restore-cancel <dir> <job> <max_s>
 #   pitr.sh disable       <dir> <pg_user>
@@ -35,10 +35,18 @@
 # not come up, starts the instance again however it ends, and records how
 # it ended in .walg/restore/result.
 #
+# With ``update`` 1 the restored database <db> has its modules updated to
+# the code the instance runs, as a rebuild does (``cron_guard.sh update``,
+# copied next to this script for the process): once the files are back,
+# with Odoo still stopped, before the stack comes up. Only a database that
+# replaced the previous one (promoted) is updated; one that failed does
+# not keep the instance down (``modules=failed`` in the result).
+#
 # ``restore-cancel`` stops it: a TERM to that process, which puts back what
 # it changed, and a wait for the result. Up to the promotion of the
-# restored database; from there it goes on to the end, since a database
-# that has replaced the previous one cannot be taken back (6-nov-2026).
+# restored database; from there it goes on to the end, update included,
+# since a database that has replaced the previous one cannot be taken
+# back (6-nov-2026).
 #
 # IC_PITR_HOME and IC_PITR_ENV name another directory and environment
 # (default .walg and .docker/pitr.env) for a second stack in the same
@@ -454,8 +462,9 @@ EOF
         ;;
 
     restore-start)
-        ic_require_args 7 "$#" "pitr.sh restore-start <dir> <pg_user> <job> <cluster> <base> <timeline> <target_utc> <since_day>"
+        ic_require_args 7 "$#" "pitr.sh restore-start <dir> <pg_user> <job> <cluster> <base> <timeline> <target_utc> <since_day> [<db> <update>]"
         user="$1"; job="$2"; cluster="$3"; backup="$4"; timeline="$5"; target="$6"; since="$7"
+        db="${8:-}"; update="${9:-0}"
         [[ "$job" =~ ^[0-9]+$ ]] || ic_die "bad job: $job"
         [[ "$cluster" =~ ^[0-9]+$ ]] || ic_die "bad cluster: $cluster"
         [[ "$backup" =~ ^base_[0-9A-F_D]+$ ]] || ic_die "bad base backup: $backup"
@@ -463,6 +472,11 @@ EOF
         [[ "$target" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\+00$ ]] \
             || ic_die "bad target time: $target"
         [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ic_die "bad day: $since"
+        [[ "$update" =~ ^[01]$ ]] || ic_die "bad update flag: $update"
+        if [ "$update" = 1 ]; then
+            [[ "$db" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || ic_die "bad database: $db"
+        fi
+        [ -f "$here/cron_guard.sh" ] || ic_die "cron_guard.sh is missing next to pitr.sh"
         mkdir -p "$RESTORE"
         # The same job again (queue_job runs a job that died once more):
         # follow the restore it started, never start a second one.
@@ -491,10 +505,11 @@ EOF
         rm -rf "${RESTORE:?}/bin"
         mkdir -p "$RESTORE/bin/lib"
         install -m 755 "$0" "$RESTORE/bin/pitr.sh"
+        install -m 755 "$here/cron_guard.sh" "$RESTORE/bin/cron_guard.sh"
         install -m 644 "$here/lib/common.sh" "$RESTORE/bin/lib/common.sh"
         : > "$RESTORE/log"
         setsid nohup bash "$RESTORE/bin/pitr.sh" restore-run "$dir" "$user" "$job" \
-            "$cluster" "$backup" "$timeline" "$target" "$since" \
+            "$cluster" "$backup" "$timeline" "$target" "$since" "$db" "$update" \
             >> "$RESTORE/log" 2>&1 < /dev/null &
         echo "$!" > "$RESTORE/pid"
         ic_log "restore started on the host (job $job); its log is $dir/$RESTORE/log"
@@ -506,10 +521,12 @@ EOF
         # scripts in single quotes run in containers, with their own
         # variables.
         user="$1"; job="$2"; cluster="$3"; backup="$4"; timeline="$5"; target="$6"; since="$7"
+        db="${8:-}"; update="${9:-0}"
         recovery="pitr-recovery-$job"
         fetcher="pitr-fetch-$job"
         stamp="$(date -u +%Y%m%dT%H%M%SZ)"
         state=starting; staged=0; promoted=0; new_timeline=""; promoted_at=0; fs=no
+        modules=skipped
         # The step running in the background (``background``), if any.
         child=""
         say() { printf '[incubacloud] %s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
@@ -579,6 +596,24 @@ EOF
                 done
                 rmdir "$old"; rm -rf "$bad"' -e "IC_STAMP=$stamp"
         }
+        # Update the restored database's modules to the code the instance
+        # runs, as a rebuild does, with Odoo stopped: a restore to before
+        # a deployment would otherwise serve the deployment's code over
+        # the schema of the moment. Never cut short (``finish`` holds the
+        # signals), and a failure does not keep the instance down: the
+        # result says it (``modules=failed``) and the panel raises it.
+        update_modules() {
+            local rc=0
+            say "updating the restored database's modules to the code the instance runs"
+            modules=failed
+            bash "$here/cron_guard.sh" update "$dir" "$db" "$user" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+                modules=updated
+                say "modules updated"
+            else
+                say "updating the modules failed (exit $rc): Odoo starts on the restored database as it is; the lines above name the module"
+            fi
+        }
         finish() {
             local rc=$? stopped_at="$state" cancelled=0
             set +e
@@ -601,15 +636,24 @@ EOF
                 if [ "$promoted" -eq 1 ]; then
                     # The restored database is in place; what came after
                     # it did not finish.
-                    state=db-only
+                    state="db-only"
                 elif [ "$staged" -eq 1 ]; then
                     if rollback; then state="failed"; else state="failed-unknown"; fi
                 else
                     state=failed
                 fi
             fi
+            # A database that replaced the previous one is updated before
+            # anything starts on it, whatever came after its promotion.
+            if [ "$promoted" -eq 1 ] && [ "$update" = 1 ]; then
+                update_modules
+            fi
             # Whatever happened, the instance runs again.
             docker compose up -d
+            # A cancel that came during the update went unheard: said too.
+            if [ "$(cat "$RESTORE/cancel" 2>/dev/null)" = "$job" ]; then
+                cancelled=1
+            fi
             {
                 echo "job=$job"
                 echo "state=$state"
@@ -618,6 +662,7 @@ EOF
                 echo "timeline=$new_timeline"
                 echo "promoted_at=$promoted_at"
                 echo "filestore=$fs"
+                echo "modules=$modules"
                 echo "cancelled=$cancelled"
             } > "$RESTORE/result"
             rm -f "$RESTORE/lock" "$RESTORE/pid" "$RESTORE/armed"
@@ -801,7 +846,7 @@ EOF
             state="done"
         else
             say "the filestore could not be restored; the database was"
-            state=db-only
+            state="db-only"
         fi
         ;;
 

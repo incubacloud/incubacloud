@@ -638,3 +638,14 @@ msgstr "nada todavía: tomando la primera copia base…"
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "to confirm"
 msgstr "para confirmar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid ""
+"Its modules are then updated to the code the instance runs now. To undo a "
+"deployment, revert its code first, or its migration runs again."
+msgstr ""
+"Después, sus módulos se actualizan al código que la instancia ejecuta ahora."
+" Para deshacer un despliegue, revierta primero su código, o su migración "
+"volverá a ejecutarse."

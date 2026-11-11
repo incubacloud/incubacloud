@@ -29,6 +29,7 @@ from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 
 from ._constants import (
     AGENT_SERVICE,
+    ALERT_MODULES,
     ENV_FILE,
     OBJECTIVES,
     PGDATA,
@@ -578,9 +579,15 @@ class CloudInstance(models.Model):
         has the agent and the archive command, or no longer has them, and
         only the database settings are left. Doing it here spares the
         second rebuild the watch would queue.
+
+        A rebuild that updates the modules (``auto_update``) also settles a
+        restore to a moment whose database could not be updated to the
+        code (``ALERT_MODULES``).
         """
         super()._after_stack_rendered()
         self._pitr_reconcile(after_rebuild=True)
+        if self.auto_update:
+            self.env["cloud.alert"].resolve_alert(ALERT_MODULES, instance=self)
 
     def _pitr_failed_lately(self, code, within=_RETRY_AFTER):
         """Whether a *code* job of this instance failed or was cancelled lately.

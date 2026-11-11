@@ -24,11 +24,12 @@ setup() {
     mkdir -p "$TMP/scripts/lib"
     cp "$SRC"/*.sh "$TMP/scripts/"
     cp "${BATS_TEST_DIRNAME}/../../../incubacloud/scripts/lib/common.sh" "$TMP/scripts/lib/"
+    cp "${BATS_TEST_DIRNAME}/../../../incubacloud/scripts/cron_guard.sh" "$TMP/scripts/"
     SCRIPT="$TMP/scripts/pitr.sh"
     DIR="$TMP/inst"
     JOB="$((RANDOM + 1000))"
     export COMPOSE_PROJECT_NAME="icpitrtest$JOB"
-    mkdir -p "$DIR/.walg" "$DIR/.docker" "$DIR/archive" "$DIR/bases" "$DIR/marks"
+    mkdir -p "$DIR/.walg" "$DIR/.docker" "$DIR/archive" "$DIR/bases" "$DIR/marks" "$DIR/bin"
     chmod 777 "$DIR/archive" "$DIR/marks"
     echo "IC_PITR_PREFIX=test" > "$DIR/.docker/pitr.env"
     # No network: everything goes through docker exec and the database's
@@ -54,6 +55,9 @@ services:
     command: ["sleep", "infinity"]
     # PID 1 ignores TERM: a stop takes the whole grace period.
     stop_grace_period: 6s
+    volumes:
+      - ./bin/click-odoo-update:/usr/local/bin/click-odoo-update:ro
+      - ./marks:/marks
   pitr:
     image: alpine:3
     network_mode: none
@@ -90,7 +94,19 @@ case "$1" in
         touch /marks/fs-restored ;;
 esac
 EOF
-    chmod 755 "$DIR/.walg/run" "$DIR/.walg/pitr_agent.sh"
+    # The module update: it notes when it starts and ends, can be slowed
+    # down (delay-update) or made to fail (fail-update).
+    cat > "$DIR/bin/click-odoo-update" <<'EOF'
+#!/bin/sh
+touch /marks/update
+[ -f /marks/delay-update ] && sleep "$(cat /marks/delay-update)"
+if [ -f /marks/fail-update ]; then
+    echo "ERROR prod odoo.modules.loading: module broken_module failed"
+    exit 1
+fi
+touch /marks/updated
+EOF
+    chmod 755 "$DIR/.walg/run" "$DIR/.walg/pitr_agent.sh" "$DIR/bin/click-odoo-update"
     cd "$DIR"
     docker compose up -d --quiet-pull >/dev/null 2>&1
     # The image's first start initialises the cluster on a server of its
@@ -106,6 +122,9 @@ EOF
     docker compose restart db >/dev/null 2>&1
     wait_db
     sql "CREATE TABLE t (v text)"
+    # What the update's guard pauses and puts back.
+    sql "CREATE TABLE ir_cron (id serial PRIMARY KEY, cron_name text, active boolean)"
+    sql "INSERT INTO ir_cron (cron_name, active) VALUES ('mail queue', true), ('off', false)"
     sql "INSERT INTO t VALUES ('1-base')"
     docker compose exec -T db pg_basebackup -U odoo -D - -Ft -X fetch > "$DIR/bases/$BASE.tar"
     sql "INSERT INTO t VALUES ('2-before-target')"
@@ -213,8 +232,17 @@ volume_top() {
         -v "${COMPOSE_PROJECT_NAME}_db:/d:ro" alpine:3 ls -a /d
 }
 
+# Start the restore; $1 1 asks for the update of its modules.
 start_restore() {
-    bash "$SCRIPT" restore-start "$DIR" odoo "$JOB" 7698 "$BASE" 1 "$TARGET" "$(date -u +%F)" 3>&-
+    bash "$SCRIPT" restore-start "$DIR" odoo "$JOB" 7698 "$BASE" 1 "$TARGET" "$(date -u +%F)" \
+        prod "${1:-0}" 3>&-
+}
+
+# Whether the instance's own odoo runs, one-off containers left out.
+odoo_runs() {
+    [ -n "$(docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+        --filter label=com.docker.compose.service=odoo \
+        --filter label=com.docker.compose.oneoff=False)" ]
 }
 
 # The rows, the services running and what is left in the data directory.
@@ -406,4 +434,59 @@ assert_as_before() {
     [[ "$(services)" == *"db "*"odoo "* ]]
     [ -z "$(leftovers)" ]
     [ ! -e "$DIR/.walg/restore/lock" ]
+}
+
+@test "with the update asked for, the restored database is updated after its files, with Odoo stopped" {
+    echo 5 > "$DIR/marks/delay-update"
+    run start_restore 1
+    [ "$status" -eq 0 ]
+    wait_mark update 240
+    [ -e "$DIR/marks/fs-restored" ]
+    # Odoo is not serving the database while it is updated.
+    if odoo_runs; then false; fi
+    run bash "$SCRIPT" restore-wait "$DIR" "$JOB" 240
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"state=done"* ]]
+    [[ "$output" == *"modules=updated"* ]]
+    [ -e "$DIR/marks/updated" ]
+    wait_db
+    [ "$(rows)" = "1-base,2-before-target" ]
+    # The guard put back the scheduled actions it paused.
+    [ "$(sql "SELECT string_agg(cron_name || '=' || active, ',' ORDER BY id) FROM ir_cron")" = "mail queue=true,off=false" ]
+    odoo_runs
+}
+
+@test "an update that fails leaves the restored database running, and says so" {
+    touch "$DIR/marks/fail-update"
+    run start_restore 1
+    [ "$status" -eq 0 ]
+    run bash "$SCRIPT" restore-wait "$DIR" "$JOB" 240
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"state=done"* ]]
+    [[ "$output" == *"modules=failed"* ]]
+    [[ "$output" == *"broken_module failed"* ]]
+    wait_db
+    [ "$(rows)" = "1-base,2-before-target" ]
+    odoo_runs
+    [ ! -e "$DIR/.walg/restore/lock" ]
+}
+
+@test "cancelled while its modules are updated: the update is not cut, the restore ends" {
+    echo 15 > "$DIR/marks/delay-update"
+    run start_restore 1
+    [ "$status" -eq 0 ]
+    wait_mark update 240
+    run bash "$SCRIPT" restore-cancel "$DIR" "$JOB" 180
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"state=done"* ]]
+    [[ "$output" == *"modules=updated"* ]]
+    [[ "$output" == *"cancelled=1"* ]]
+    [ -e "$DIR/marks/updated" ]
+    grep -q "a cancel came as the restore ends" "$DIR/.walg/restore/log"
+    wait_db
+    [ "$(rows)" = "1-base,2-before-target" ]
+    odoo_runs
 }

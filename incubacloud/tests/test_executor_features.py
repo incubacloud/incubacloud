@@ -482,6 +482,50 @@ class TestIncubaclouEnvInjection(BaseCase):
 # Class 8: TestAutoUpdateFlag
 # ---------------------------------------------------------------------------
 
+class TestRebuildRenewsNeutralization(BaseCase):
+    """The rebuild of a staging or a preview neutralizes it again after its update.
+
+    The update rewrites the records its data files leave unprotected
+    (``noupdate`` off), scheduled actions and mail servers among them: a
+    neutralized copy (``database.is_neutralized``) came out of the rebuild
+    with them live. The host neutralizes it again and routes its mail to
+    the stack's catcher (``restore.sh renew-neutralization``); one that is
+    not neutralized is left as it is. Never on a production, whose
+    ``smtplocal`` is the real relay.
+    """
+
+    LABEL = "Neutralize again after the update"
+
+    def _labels(self, cmds):
+        """The labels of *cmds*, in order."""
+        return [c[0] for c in cmds]
+
+    def test_a_staging_is_neutralized_again_after_its_update(self):
+        cmds = _make_rebuild_executor(environment="staging").get_commands()
+        labels = self._labels(cmds)
+        self.assertIn(self.LABEL, labels)
+        update = labels.index("Update changed modules")
+        self.assertLess(update, labels.index(self.LABEL))
+        self.assertLess(labels.index(self.LABEL), labels.index("Restart instance"))
+        step = _find_cmd(cmds, self.LABEL)
+        self.assertIn(
+            "restore.sh renew-neutralization '~/projects/test-inst' odoo prod",
+            step[1],
+        )
+        self.assertIn("IC_NEUTRALIZE=", step[1])
+        self.assertTrue(step[2].get("stop_on_failure"))
+
+    def test_a_production_is_not(self):
+        cmds = _make_rebuild_executor(environment="production").get_commands()
+        self.assertNotIn(self.LABEL, self._labels(cmds))
+
+    def test_a_staging_rebuilt_without_its_update_is_not(self):
+        cmds = _make_rebuild_executor(
+            environment="staging", auto_update=False,
+        ).get_commands()
+        self.assertNotIn(self.LABEL, self._labels(cmds))
+
+
 class TestAutoUpdateFlag(BaseCase):
     """Rebuild skips boot test + update when ``auto_update`` is off.
 

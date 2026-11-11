@@ -15,6 +15,14 @@ and needs no data migration. One step runs apart from its request so far:
 the image build of a rebuild, before its point of no return. Every other
 step runs as before.
 
+A restore to a moment updates its database to the code the instance runs,
+as every other restore does since 1.0.224; a stopped update of a preview no
+longer lets a push start a second one beside it; and the rebuild of a
+neutralized staging or preview neutralizes it again after its update.
+`incubacloud_pitr` 1.0.13 comes with it. The update adds one empty column,
+`cloud_instance.pr_update_cut_off`, and needs no data migration; the hosts
+need nothing either: the scripts travel with each job.
+
 ### Added
 
 - **A rebuild's image build runs apart on its server.** «Rebuild Odoo
@@ -137,6 +145,43 @@ step runs as before.
 - **The slow job warning measures the attempt**, from its own start,
   against 0.75 of the server's `limit_time_real` (45 minutes with 3600, as
   before; 45 minutes without a limit), and says the limit.
+- **Restore to a moment updates the modules.** Once the files are back, with
+  Odoo still stopped, the restored database's modules are updated to the code
+  the instance was last built from (`cron_guard.sh update`, as a rebuild
+  does), unless **Auto-update modules on rebuild** is off. `pitr.sh
+  restore-start` takes the database and the flag, copies `cron_guard.sh` next
+  to the copy of itself the restore runs from, and records the outcome in
+  the result (`modules=updated|failed|skipped`). The update runs only on a
+  database that replaced the previous one, after its promotion: a cancel no
+  longer undoes anything there and does not cut it. One that fails still
+  starts the instance, on the database as it was restored, and raises
+  `pitr_modules_not_updated` (a warning naming what to do); a restore that
+  updates its database, or a rebuild that updates the modules, resolves it.
+  The job log names the code the database is updated to, and the restore
+  dialog says that undoing a deployment needs its code reverted first, or
+  its migration runs again.
+
+### Fixed
+
+- **A preview's update cut off holds the push.** The restore of a pull or
+  merge request preview whose «Update changed modules» never answered (the
+  connection dropped, the step ran out of time) counted as a failed update,
+  so the rebuild of the next push passed its hold while `cron_guard.sh
+  update` could still be running on the host, unlocked: two updates of the
+  same database at once. It is kept apart now (`pr_update_cut_off`), the
+  hold stays until someone dismisses the alert, and the request's comment or
+  note still gives the reason and says the preview is rebuilt once the alert
+  is dismissed.
+- **A rebuild neutralizes a neutralized copy again.** The update of a
+  staging's or a preview's rebuild rewrote the records its modules' data
+  files leave unprotected, scheduled actions among them, on a database
+  copied neutralized. Outside production, a rebuild that updates the modules
+  now runs `restore.sh renew-neutralization` after the update: on a database
+  that says it is neutralized (`database.is_neutralized`), Odoo's
+  neutralization again (the panel's SQL before 16.0) and the mail catcher's
+  step; any other is left as it is.
+
+---
 
 ## [1.0.224] — 2026-11-10
 
