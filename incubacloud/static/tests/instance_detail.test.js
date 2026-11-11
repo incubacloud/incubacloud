@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { rpc } from "@web/core/network/rpc";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import {
     newestSeries,
@@ -1044,5 +1045,53 @@ describe("InstanceDetail — Recent requests table", () => {
         expect(cmp.requestClass({ DownstreamStatus: 0 })).toBe("");
         expect(cmp.requestClass({})).toBe("");
         expect(cmp.requestClass({ DownstreamStatus: 301 })).toBe("3");
+    });
+});
+
+describe("InstanceDetail — save", () => {
+    /**
+     * A stand-in for a saved instance's form, as the component holds it.
+     *
+     * @returns {object} the stand-in; ``toasts`` collects what it showed
+     */
+    function formOf() {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.toasts = [];
+        comp.props = { instance_id: 7 };
+        comp.state = {
+            saving: false,
+            form: { name: "after", smtp_relay_port: "587", repos: [] },
+            pipDeps: [],
+            aptDeps: [],
+            selectedTags: [],
+            inst: { id: 7, name: "before", config_dirty: false },
+        };
+        comp.validator = { validate: () => ({ isValid: true, firstError: "" }) };
+        comp.env = {
+            toast: {
+                success: (text) => comp.toasts.push(text),
+                warning: (text) => comp.toasts.push(text),
+                error: (text) => comp.toasts.push(text),
+            },
+        };
+        return comp;
+    }
+
+    test("a save that leaves changes to deploy lights the pill at once", async () => {
+        patchWithCleanup(rpc, {
+            _rpc: () => Promise.resolve({ ok: true, config_dirty: true }),
+        });
+        const comp = formOf();
+        await InstanceDetail.prototype.save.call(comp);
+        expect(comp.state.inst.name).toBe("after");
+        expect(comp.state.inst.config_dirty).toBe(true);
+    });
+
+    test("a save whose answer says nothing keeps the pill as it was", async () => {
+        patchWithCleanup(rpc, { _rpc: () => Promise.resolve({ ok: true }) });
+        const comp = formOf();
+        comp.state.inst.config_dirty = true;
+        await InstanceDetail.prototype.save.call(comp);
+        expect(comp.state.inst.config_dirty).toBe(true);
     });
 });

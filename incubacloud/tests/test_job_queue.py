@@ -3824,6 +3824,19 @@ class TestTheEnvironmentIsNotSavedLater(HttpCase):
         self.inst.invalidate_recordset()
         self.assertEqual(self.inst.environment, "staging")
 
+    def test_a_save_says_whether_the_configuration_is_pending(self):
+        """The answer carries ``config_dirty``, which lights the drift pill.
+
+        After a deploy the saved configuration matches the deployed one;
+        a save that changes what a deploy ships makes the answer say so,
+        so the form shows "Changes not deployed" without a reload.
+        """
+        self.inst.applied_config_hash = self.inst._config_snapshot_hash()
+        self.inst.invalidate_recordset()
+        answer = self._save({"environment": "staging", "odoo_conf": "limit_time_cpu = 99"})
+        self.assertTrue(answer["ok"])
+        self.assertIs(answer["config_dirty"], True)
+
     def test_the_form_saving_it_as_it_is_still_saves(self):
         """The form's save, with the environment as it is, goes through."""
         answer = self._save({"environment": "staging", "autopurge_exempt": True})
