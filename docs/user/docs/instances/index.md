@@ -24,10 +24,10 @@ one filestore. It belongs to a project and runs on a host.
 - **Staging instance** — test copy. Re-deploys are direct. As many as you like:
   stagings run on servers you already pay for, so they never count against the
   instance allowance of a SaaS plan.
-- **Odoo version** — one the panel offers, 18.0 to 20.0, taken from the project
+- **Odoo version** — one the panel offers, 9.0 to 20.0, taken from the project
   when the instance is created and fixed once it is deployed. Odoo 20.0 runs on
-  PostgreSQL 16 to 18; 18.0 and 19.0, on 14 to 18. Older series open as they pass
-  their tests.
+  PostgreSQL 16 to 18; 16.0 to 19.0, on 14 to 18; 13.0 to 15.0, on 12 up to 16 or
+  17; 11.0 and 12.0, on 12 to 13; 9.0 and 10.0, on 12 alone.
 - **Sleeping** (SaaS Free plan) — on Free it is your control plane, not your
   instances, that is suspended after ~30 minutes without traffic to save
   resources. It wakes up on the next request (the first request after a nap takes

@@ -81,20 +81,31 @@ class TestTheSeriesCards(BaseCase):
             # to cloning in the image (8-nov-2026). Every series
             # fetches its repositories before the build: all but 19.0
             # from core 1.0.222, 19.0 too from 1.0.224.
+            "8.0": card(
+                ("12", "12", "12"), "sql", debian_archive=True,
+                headless="--no-xmlrpc", beyond_template=True,
+                image_git_safe=False,
+            ),
+            # Offered since 11-nov-2026, their run of the series having
+            # passed on the production image of 9-nov-2026; 8.0 waits for
+            # its run to be repeated.
             **dict.fromkeys(
-                ("8.0", "9.0", "10.0"),
+                ("9.0", "10.0"),
                 card(
                     ("12", "12", "12"), "sql", debian_archive=True,
                     headless="--no-xmlrpc", beyond_template=True,
-                    image_git_safe=False,
+                    image_git_safe=False, offered=True,
                 ),
             ),
-            **dict.fromkeys(("11.0", "12.0"), card(("12", "13", "13"), "sql")),
-            **dict.fromkeys(("13.0", "14.0"), card(("12", "16", "16"), "sql")),
-            "15.0": card(("12", "17", "17"), "sql"),
+            **dict.fromkeys(
+                ("11.0", "12.0"), card(("12", "13", "13"), "sql", offered=True),
+            ),
+            **dict.fromkeys(
+                ("13.0", "14.0"), card(("12", "16", "16"), "sql", offered=True),
+            ),
+            "15.0": card(("12", "17", "17"), "sql", offered=True),
             # What the launch offered (2-nov-2026), and 16.0 and 17.0
-            # since their run of the series passed (10-nov-2026); the rest
-            # open one by one as theirs passes.
+            # since their run of the series passed (10-nov-2026).
             **dict.fromkeys(
                 ("16.0", "17.0", "18.0", "19.0"),
                 card(("14", "18", "17"), offered=True),
