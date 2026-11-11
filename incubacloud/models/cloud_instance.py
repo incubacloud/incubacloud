@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import hashlib
 import json
 import logging
@@ -10,7 +11,9 @@ from urllib.parse import urlsplit
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from ..github.client import GitHubAppClient
+from odoo.addons.queue_job.exception import RetryableJobError
+
+from ..github.client import GitHubAPIError, GitHubAppClient
 from ..github.http_utils import HTTPBudget
 from ..net.outbound import OutboundError
 from ..net.restore_source import (
@@ -32,6 +35,8 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from .cloud_gitlab_mr_note import PR_PREVIEW_NOTE_FAILED_CODE
+from .cloud_gitlab_mr_note import RETRY_SECONDS as NOTE_RETRY_SECONDS
 from .cloud_rate_limit import consume_quota
 from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
 from .cloud_security_mixin import defaults_as_sent
@@ -163,7 +168,7 @@ _PLATFORM_FIELDS = frozenset({
     "move_rollback_in_progress", "move_frozen_source_host_id",
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
-    "pr_provider_id", "pr_state", "removal_finalized",
+    "pr_installation_id", "pr_provider_id", "pr_state", "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
 })
 
@@ -439,6 +444,13 @@ class CloudInstance(models.Model):
         string="GitHub Comment ID",
         help="ID of the comment posted on the pull request, or of the "
         "note on the merge request.",
+    )
+    pr_installation_id = fields.Char(
+        string="GitHub App Installation",
+        copy=False,
+        help="The installation of the panel's GitHub App that sent the "
+        "pull request's event: the comment on the pull request is written "
+        "and deleted with its token.",
     )
     pr_provider_id = fields.Many2one(
         "cloud.git.provider",
@@ -2381,7 +2393,7 @@ class CloudInstance(models.Model):
 
     def clone_to_staging(
         self, staging_name, pr_number=0, pr_repo="", pr_head_branch="",
-        pr_provider_id=False,
+        pr_provider_id=False, pr_installation_id="",
     ):
         """Create a staging copy of this production instance with its data.
 
@@ -2394,6 +2406,9 @@ class CloudInstance(models.Model):
 
         :param int pr_provider_id: the GitLab server of a merge request,
             or False for a GitHub pull request
+        :param str pr_installation_id: the GitHub App installation the
+            pull request's event came through; the platform's alone to
+            set (``_PLATFORM_FIELDS``), as every field of a preview
         """
         self.ensure_one()
         # Server-side backstop: the method is public and therefore
@@ -2434,6 +2449,7 @@ class CloudInstance(models.Model):
                 "pr_repo": pr_repo,
                 "pr_head_branch": pr_head_branch,
                 "pr_provider_id": pr_provider_id or False,
+                "pr_installation_id": str(pr_installation_id or "") or False,
                 "pr_state": "open",
             }
         staging = self.with_context(
@@ -3359,37 +3375,170 @@ class CloudInstance(models.Model):
             )
         return body
 
+    def _pr_github_client(self):
+        """Return a GitHub client of the installation the request came through.
+
+        The panel's App may be installed on more than one account. The
+        token is the one of the installation that sent the pull request's
+        event (``pr_installation_id``), which is the one that may write on
+        its repository, whatever installation the panel uses now; a
+        preview created before it was kept uses the panel's. GitHub
+        issues a token only for an installation of this App: one of
+        another App is refused there.
+
+        :rtype: GitHubAppClient
+        :raises UserError: when the panel has no GitHub App
+        """
+        self.ensure_one()
+        creds = self.env["cloud.github.credential.service"].get_credentials()
+        installation = self.pr_installation_id
+        if installation and installation != creds.installation_id:
+            creds = dataclasses.replace(creds, installation_id=installation)
+        return GitHubAppClient(creds)
+
     def _post_or_update_pr_comment(self, body):
-        """Post or update the GitHub PR comment for this PR preview instance."""
+        """Post or update the GitHub PR comment for this PR preview instance.
+
+        A comment removed on GitHub is written again.
+
+        :param str body: the comment's Markdown
+        :raises GitHubAPIError: when GitHub refuses it
+        :raises UserError: when the panel has no GitHub App
+        """
         if not self.pr_number or not self.pr_repo:
             return
         owner, repo = self.pr_repo.split("/", 1)
-        creds = self.env["cloud.github.credential.service"].get_credentials()
-        if not creds:
-            return
-        client = GitHubAppClient(creds)
-        try:
-            if self.pr_comment_id:
+        client = self._pr_github_client()
+        if self.pr_comment_id:
+            try:
                 client.patch_issue_comment(owner, repo, self.pr_comment_id, body)
-            else:
-                result = client.post_issue_comment(owner, repo, self.pr_number, body)
-                if result.get("id"):
-                    # The platform's field (``_PLATFORM_FIELDS``).
-                    self.sudo().write({"pr_comment_id": result["id"]})
-        except Exception:
-            _logger.exception("PR comment update failed for %s", self.name)
+                return
+            except GitHubAPIError as exc:
+                if exc.status_code != 404:
+                    raise
+        result = client.post_issue_comment(owner, repo, self.pr_number, body)
+        if result.get("id"):
+            # The platform's field (``_PLATFORM_FIELDS``).
+            self.sudo().write({"pr_comment_id": result["id"]})
+
+    def _enqueue_pr_comment(self):
+        """Queue the job that writes the «ready» comment on the pull request.
+
+        Not written in the restore that brings the preview up: GitHub may
+        be away then, and a job is tried again (``_job_pr_comment``).
+        Queued twice, it is one job.
+
+        :return: the queued job, or None for no GitHub pull request preview
+        """
+        self.ensure_one()
+        if not self.pr_number or self.pr_provider_id:
+            return None
+        return self.sudo().with_delay(
+            max_retries=len(NOTE_RETRY_SECONDS) + 1,
+            channel="root.bg",
+            description=f"Comment on pull request #{self.pr_number} of {self.pr_repo}",
+            identity_key=f"github-pr-comment:{self.id}",
+        )._job_pr_comment()
+
+    def _job_pr_comment(self):
+        """Write the «ready» comment on the pull request (queued).
+
+        Nothing for a preview gone, closed or not deployed: the close
+        deletes the comment, and the restore that brings a preview up
+        queues this again. GitHub unreachable, or answering 5xx or 429:
+        tried again after 60, 300 and 900 s, as a merge request's note.
+        Then, or at once on an answer that will not change, the alert
+        ``pr_preview_note_failed`` goes on the production the preview was
+        cloned from: the preview works, but nobody on the pull request
+        hears of it.
+
+        :raises RetryableJobError: when GitHub may answer on a later try
+        """
+        inst = self.sudo().with_context(active_test=False).exists()
+        if not (inst and inst.active and inst.pr_number
+                and not inst.pr_provider_id and inst.pr_state != "closed"
+                and inst.state == "deployed"):
+            return
+        Note = self.env["cloud.gitlab.mr.note"]
+        try:
+            inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
+        except (GitHubAPIError, OSError) as exc:
+            status = getattr(exc, "status_code", None)
+            if (status is None or status >= 500 or status == 429) \
+                    and not Note._last_attempt():
+                raise RetryableJobError(
+                    f"GitHub did not take the comment of #{inst.pr_number} "
+                    f"of {inst.pr_repo}: {status or type(exc).__name__}",
+                    seconds=Note._retry_seconds(),
+                ) from exc
+            inst._report_pr_comment_failure(
+                _("GitHub answered %(code)s.", code=status or type(exc).__name__),
+            )
+            return
+        except UserError as exc:
+            inst._report_pr_comment_failure(str(exc))
+            return
+        Alert = self.env["cloud.alert"].sudo()
+        for target in inst | inst._pr_preview_production():
+            Alert.resolve_alert(PR_PREVIEW_NOTE_FAILED_CODE, instance=target)
+
+    def _pr_preview_production(self):
+        """Return the production this preview was cloned from, or nothing.
+
+        The project's production that follows the pull request's
+        repository; a preview keeps no link to it.
+
+        :rtype: cloud.instance
+        """
+        self.ensure_one()
+        key = _normalize_url(f"https://github.com/{self.pr_repo or ''}")
+        return self.project_id.instance_ids.filtered(
+            lambda i: i.environment == "production" and any(
+                _normalize_url(r.url) == key for r in i.repo_ids
+            )
+        )[:1]
+
+    def _report_pr_comment_failure(self, reason):
+        """Raise ``pr_preview_note_failed``: the comment could not be written.
+
+        On the production the preview was cloned from, where people look,
+        else on the preview.
+
+        :param str reason: what failed
+        """
+        _logger.warning(
+            "The comment of pull request #%s of %s was not written: %s",
+            self.pr_number, self.pr_repo, reason,
+        )
+        self.env["cloud.alert"].sudo().raise_alert(
+            PR_PREVIEW_NOTE_FAILED_CODE,
+            _(
+                "The panel could not write its comment on pull request "
+                "#%(number)s of %(repo)s for the preview %(preview)s: "
+                "%(reason)s The preview works without it; check that the "
+                "panel's GitHub App is still installed on that repository's "
+                "account and may write on its pull requests.",
+                number=self.pr_number, repo=self.pr_repo,
+                preview=self.name, reason=reason,
+            ),
+            level="warning",
+            instance=self._pr_preview_production() or self,
+        )
 
     def _delete_pr_comment(self):
-        """Delete the GitHub PR comment for this PR preview instance."""
+        """Delete the GitHub PR comment for this PR preview instance.
+
+        With the token of the installation the request came through. A
+        comment that could not be deleted only goes to the log, as a
+        merge request's note: an alert nobody can resolve helps no one.
+        """
         if not self.pr_comment_id or not self.pr_repo:
             return
         owner, repo = self.pr_repo.split("/", 1)
-        creds = self.env["cloud.github.credential.service"].get_credentials()
-        if not creds:
-            return
-        client = GitHubAppClient(creds)
         try:
-            client.delete_issue_comment(owner, repo, self.pr_comment_id)
+            self._pr_github_client().delete_issue_comment(
+                owner, repo, self.pr_comment_id,
+            )
             self.sudo().write({"pr_comment_id": 0})
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)

@@ -517,6 +517,9 @@ class CloudGitHubEvent(models.Model):
                             pr_number=pr_number,
                             pr_repo=repo_full,
                             pr_head_branch=head_ref,
+                            pr_installation_id=str(
+                                (payload.get('installation') or {}).get('id') or ''
+                            ),
                         )
                 except (UserError, ValidationError) as exc:
                     # Written for a user to read, so it can be shown.

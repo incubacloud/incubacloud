@@ -482,6 +482,19 @@ class TestRefreshGate(CloudSecurityBase):
         self.assertEqual(staging.environment, "staging")
         self.assertEqual(self.prod.environment, "production")
 
+    def test_over_rpc_a_developer_cannot_pick_the_comment_s_installation(self):
+        """Only the webhook, as the platform, says which installation of
+        the GitHub App writes a preview's comment: over RPC the caller
+        would choose whose token writes it."""
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue_chain",
+            return_value=[31, 32, 33],
+        ), self.assertRaisesRegex(AccessError, "pr_installation_id"):
+            self.prod.with_user(self.developer).clone_to_staging(
+                "gate-pr", pr_number=8, pr_repo="owner/repo",
+                pr_head_branch="feature-x", pr_installation_id="777",
+            )
+
     def test_a_developer_passes_the_gate(self):
         with patch.object(
             type(self.env["cloud.job"]), "enqueue_chain",

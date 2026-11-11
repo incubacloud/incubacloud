@@ -20829,3 +20829,39 @@ msgid ""
 msgstr ""
 "Si la solicitud de una vista previa sigue abierta. Se escribe cerrada cuando"
 " se cierra, antes de quitar la nota del merge request."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_installation_id
+msgid "GitHub App Installation"
+msgstr "Instalación de la GitHub App"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_installation_id
+msgid ""
+"The installation of the panel's GitHub App that sent the pull request's "
+"event: the comment on the pull request is written and deleted with its "
+"token."
+msgstr ""
+"La instalación de la GitHub App del panel que envió el evento del pull "
+"request: el comentario en el pull request se escribe y se borra con su "
+"token."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "GitHub answered %(code)s."
+msgstr "GitHub respondió %(code)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The panel could not write its comment on pull request #%(number)s of "
+"%(repo)s for the preview %(preview)s: %(reason)s The preview works without "
+"it; check that the panel's GitHub App is still installed on that "
+"repository's account and may write on its pull requests."
+msgstr ""
+"El panel no pudo escribir su comentario en el pull request #%(number)s de "
+"%(repo)s para la vista previa %(preview)s: %(reason)s La vista previa "
+"funciona sin él; compruebe que la GitHub App del panel sigue instalada en la"
+" cuenta de ese repositorio y puede escribir en sus pull requests."

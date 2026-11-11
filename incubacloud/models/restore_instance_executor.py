@@ -1207,7 +1207,8 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 lambda: self.env['cloud.gitlab.mr.note']._enqueue(inst),
             )
         elif inst.pr_number:
-            inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
+            # A pull request's comment too: GitHub may be away now.
+            self._queue_preview_follow_up(inst._enqueue_pr_comment)
 
     def _queue_preview_follow_up(self, queue):
         """Queue what follows a preview's restore, in a savepoint of its own.
