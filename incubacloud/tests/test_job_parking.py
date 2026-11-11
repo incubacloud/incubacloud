@@ -661,3 +661,216 @@ class TestAParkedPostponeIsNotMirrored(TransactionCase):
         self._checkpoint(uuid="another-qj")
         self._postpone()
         self.assertEqual(self.cjob.state, "pending")
+
+
+#: A step apart that says when it started, then waits for its stop and
+#: says it trapped it.
+_TRAPPED = (
+    "trap 'echo trapped; exit 7' TERM; echo Apart >> {runs}; echo line-1;"
+    " sleep 300 & wait"
+)
+
+
+class _StopCase(_ParkingCase):
+    """A started job whose first attempt parks while its step runs."""
+
+    def setUp(self):
+        """The job runs, as queue_job leaves it once it started it."""
+        super().setUp()
+        self.job.with_context(ic_skip_state_hook=True).write({"state": "started"})
+        self.env.flush_all()
+        self.directory = detached_dir(self.env, self.job.id, 1)
+
+    def _parked(self, apart=None, **attrs):
+        """Run the first attempt, which parks with its step running.
+
+        :return: the executor class
+        """
+        cls = self._class(
+            self._plan(apart=apart or _TRAPPED.format(runs=self.runs)),
+            spend_at="follow",
+        )
+        for name, value in attrs.items():
+            setattr(cls, name, value)
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertTrue(Path(self.directory).exists())
+        return cls
+
+    def _postponed(self):
+        """What queue_job's ``retry_postpone`` stores for the park."""
+        self.qjob.write({
+            "state": "pending", "eta": "2026-11-11 08:00:05",
+            "date_started": False, "result": "Parked",
+        })
+        self.env["cloud.job"].invalidate_model(["state"])
+
+    def _age(self):
+        """Put the job past the reconciliation's margin."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '10 minutes'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self.env.cr.execute(
+            "UPDATE queue_job SET date_created = date_created - interval"
+            " '10 minutes', date_enqueued = (now() at time zone 'UTC')"
+            " - interval '10 minutes',"
+            " date_done = date_done - interval '10 minutes',"
+            " date_cancelled = date_cancelled - interval '10 minutes'"
+            " WHERE uuid = %s", (self.job.queue_job_uuid,),
+        )
+        self.env.invalidate_all()
+
+    def _reconcile(self, cls, connect=None):
+        """One pass of the reconciliation, with *cls* as the job's executor."""
+        self._age()
+        with self._connected(cls, connect=connect), patch.object(
+            abstract_executor.executor_registry, "get", return_value=cls,
+        ):
+            self.env["cloud.job"]._cron_reconcile_lost_jobs()
+        self.env.invalidate_all()
+
+
+class TestAParkedJobIsStopped(_StopCase):
+    """Windows 2 and 3: a stop while it is parked closes it when it is back."""
+
+    def test_a_stop_while_parked_stops_the_step_when_the_job_is_back(self):
+        """The flag, the postpone kept, then the next attempt closes it."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        # The flag came between the attempt's last check and its store.
+        self._postponed()
+        self.assertEqual(self.qjob.state, "pending")
+        self.assertEqual(self.job.state, "cancelled")
+        self.qjob.write({"state": "started"})
+        self.env["cloud.job"].invalidate_model(["state"])
+        self.assertEqual(self.job.state, "cancelled")
+        with self._connected(cls):
+            self.assertEqual(
+                self.job.execute(), abstract_executor.CANCELLED_WHILE_RUNNING,
+            )
+        closing = cls.instances[-1]
+        self.assertEqual(closing.closed[0], "failure")
+        self.assertEqual(list(closing.closed[1]), ["First"])
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(Path(cls.instances[0]._job_dir_path).exists())
+        self.assertIn("trapped", self._log())
+        self.assertFalse(self._row())
+        self.assertEqual(self._runs(), ["First", "Apart"])
+
+    def test_a_close_that_cannot_reach_the_server_is_picked_up_later(self):
+        """The hook closes the job; the step waits for the reconciliation."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=TestLostContact._refused):
+            self.job.execute()
+        self.assertEqual(cls.instances[-1].closed[0], "failure")
+        self.assertTrue(self._row())
+        self.assertTrue(Path(self.directory).exists())
+        # What queue_job stores of that attempt: the stop.
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self.env["cloud.job"].invalidate_model(["state"])
+        self.assertEqual(self.job.state, "cancelled")
+        self._reconcile(cls)
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(Path(cls.instances[0]._job_dir_path).exists())
+        self.assertFalse(self._row())
+        self.assertEqual(self.job.state, "cancelled")
+        # No hook a second time.
+        self.assertEqual(sum(1 for e in cls.instances if e.closed), 1)
+
+    def test_a_server_never_reached_again_is_given_up(self):
+        """Past the step's cap and an hour, the row goes, with a line."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=TestLostContact._refused):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertTrue(self._row())
+        self._row().write({
+            "step_started_at": fields.Datetime.now() - timedelta(hours=3),
+        })
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertFalse(self._row())
+        self.assertTrue(any("gives up on it" in line for line in self._log()))
+
+
+class TestTheReconciliationReachesTheServer(_StopCase):
+    """A parked job's queue.job ended or deleted by hand: the cron closes it."""
+
+    def test_cancelled_by_hand(self):
+        """Not a job that never ran: its step is stopped, its hook runs."""
+        cls = self._parked()
+        self._postponed()
+        # What queue_job's own Cancel button stores.
+        self.qjob.write({
+            "state": "cancelled", "date_cancelled": fields.Datetime.now(),
+        })
+        self.env["cloud.job"].invalidate_model(["state"])
+        self.assertEqual(self.job.state, "started")
+        self._reconcile(cls)
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertEqual(cls.instances[-1].closed[0], "failure")
+        self.assertEqual(list(cls.instances[-1].closed[1]), ["First"])
+        self.assertIn("trapped", self._log())
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(self._row())
+
+    def test_done_by_hand(self):
+        """Closed done as queue_job says, with nothing left on the server."""
+        cls = self._parked()
+        self._postponed()
+        self.qjob.write({"state": "done"})
+        self.env["cloud.job"].invalidate_model(["state"])
+        self.assertEqual(self.job.state, "started")
+        self._reconcile(cls)
+        self.assertEqual(self.job.state, "done")
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(Path(cls.instances[0]._job_dir_path).exists())
+        self.assertFalse(self._row())
+
+    def test_deleted_by_hand(self):
+        """Closed failed, with nothing left on the server."""
+        cls = self._parked()
+        self._postponed()
+        self.qjob.unlink()
+        self._reconcile(cls)
+        self.assertEqual(self.job.state, "failed")
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(self._row())
+
+    def test_a_step_past_the_point_of_no_return_is_left_to_end(self):
+        """Not stopped: removed by a later pass, once it ended on its own."""
+        done = os.path.join(self.marks, "ended")
+        cls = self._parked(
+            apart=(
+                f"echo Apart >> {self.runs}; echo line-1; sleep 2;"
+                f" echo line-2; touch {done}"
+            ),
+            _no_return_from="Apart",
+        )
+        self._postponed()
+        self.qjob.unlink()
+        self._reconcile(cls)
+        self.assertEqual(self.job.state, "failed")
+        self.assertTrue(self._row())
+        self.assertTrue(Path(self.directory).exists())
+        for _wait in range(50):
+            if Path(f"{self.directory}/exit").exists():
+                break
+            subprocess.run(["sleep", "0.2"], check=False)
+        self.assertTrue(Path(done).exists())
+        self._reconcile(cls)
+        self.assertFalse(Path(self.directory).exists())
+        self.assertFalse(self._row())
+        self.assertIn("line-2", self._log())

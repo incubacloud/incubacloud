@@ -34,6 +34,9 @@ from .abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
+    DETACHED_GIVE_UP_AFTER_CAP_S,
+    DETACHED_RECONCILE_WAIT_S,
+    DETACHED_STOP_WAIT_S,
     JobCancelled,
     JobRefused,
     JobWorkerLost,
@@ -44,6 +47,7 @@ from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .cloud_security_mixin import defaults_as_sent
 from .registry import executor_registry
 from .res_users_ext import as_platform, telegram_markdown
+from .transport import DEFAULT_SSH_COMMAND_TIMEOUT
 
 _logger = logging.getLogger(__name__)
 
@@ -781,7 +785,7 @@ class CloudJob(models.Model):
             # the customer's panel (12-oct-2026). ``queue_job_ext``
             # stores this ending as the cancellation it is.
             if not running:
-                self._close_stopped_before_run(ssh_executor, exc)
+                self._close_stopped_before_run(ssh_executor, exc, checkpoint)
             return CANCELLED_WHILE_RUNNING
         except OperationalError as e:
             # Serialisation failures belong to queue_job, which already
@@ -1007,7 +1011,7 @@ class CloudJob(models.Model):
         row = self.env.cr.fetchone()
         return (bool(row[0]), bool(row[1])) if row else (False, False)
 
-    def _close_stopped_before_run(self, executor, exc):
+    def _close_stopped_before_run(self, executor, exc, checkpoint=None):
         """Close a job stopped before this attempt began, without running it.
 
         A person cancelled it while it ran, and its worker died before
@@ -1024,8 +1028,18 @@ class CloudJob(models.Model):
         says so, and the watchers hear of it. Never raises: the caller
         returns ``CANCELLED_WHILE_RUNNING`` next.
 
+        A job stopped while it was parked, its step running on the server
+        (``JobParked``), comes back here too: what it left there is
+        stopped and removed first — the step sent TERM and given its time
+        to trap it, its working directory and its secrets — and
+        ``on_cancelled_running`` gets the results of the steps that ended.
+        Only it, or the reconciliation, can reach that server: whatever it
+        cannot reach stays with the checkpoint for the reconciliation.
+
         :param executor: the executor whose run does not start
         :param JobCancelled exc: the stop
+        :param checkpoint: the ``cloud.job.checkpoint`` an earlier attempt
+            of this queue job left, if any
         """
         try:
             succeeded = self._stopped_flags()[1]
@@ -1033,8 +1047,16 @@ class CloudJob(models.Model):
                 "This job was cancelled before this attempt of it began:"
                 " it is not run."
             ))
+            if checkpoint:
+                executor._adopt_checkpoint(checkpoint)
+                executor._step_results = dict(
+                    executor._checkpoint_data.get("results") or {},
+                )
+                asyncio.run(executor._close_on_server(DETACHED_STOP_WAIT_S))
             if not succeeded:
                 asyncio.run(executor._dispatch_cancel(exc))
+            else:
+                executor._forget_checkpoint()
             executor._flush_logs()
             executor._publish_bus()
         except Exception:
@@ -2972,6 +2994,12 @@ class CloudJob(models.Model):
         is gone is history (the autovacuum deletes them after 30 days),
         and one whose queue.job still waits or runs is queue_job's.
 
+        And an ended job that still has a checkpoint, whose queue.job
+        ended or is gone: something of it may be left on its server — its
+        close could not reach the server, a step past its point of no
+        return was left to end, or its queue.job was ended by hand
+        (``checkpoint``).
+
         :rtype: list[int]
         """
         self.env.flush_all()
@@ -2993,6 +3021,13 @@ class CloudJob(models.Model):
             "   AND c.state = 'cancelled'"
             "   AND c.write_date < %(cutoff)s AND COALESCE(q.date_done,"
             "     q.date_cancelled, q.date_enqueued, q.date_created) < %(cutoff)s"
+            " UNION"
+            " SELECT c.id FROM cloud_job_checkpoint k"
+            " JOIN cloud_job c ON c.id = k.job_id"
+            " LEFT JOIN queue_job q ON q.uuid = k.queue_job_uuid"
+            " WHERE c.state NOT IN %(active)s"
+            "   AND (q.id IS NULL OR q.state IN ('failed', 'cancelled', 'done'))"
+            "   AND c.write_date < %(cutoff)s"
             " ORDER BY 1 LIMIT %(limit)s",
             {
                 "active": tuple(self._running_states),
@@ -3136,7 +3171,13 @@ class CloudJob(models.Model):
                 queue_row and queue_row["exc_name"],
             ))
             if case is None:
-                return None
+                if job_row["state"] in self._running_states or not (
+                    self._orphan_checkpoint(cr, job_id)
+                ) or (job_row["write_date"] or cutoff) >= cutoff:
+                    return None
+                # Nothing to close: only the server to clean, again at
+                # every pass until it is reached.
+                return "checkpoint", False
             if job_row["worker_lost_at"]:
                 return case, True
             if (job_row["write_date"] or cutoff) >= cutoff or (
@@ -3149,6 +3190,23 @@ class CloudJob(models.Model):
                 (job_id,),
             )
         return case, False
+
+    @api.model
+    def _orphan_checkpoint(self, cr, job_id):
+        """Whether *job_id* has a checkpoint whose queue.job ended or is gone.
+
+        :param cr: the reconciliation's cursor
+        :param int job_id: the ``cloud.job``
+        :rtype: bool
+        """
+        cr.execute(
+            "SELECT 1 FROM cloud_job_checkpoint k"
+            " LEFT JOIN queue_job q ON q.uuid = k.queue_job_uuid"
+            " WHERE k.job_id = %s"
+            "   AND (q.id IS NULL OR q.state IN ('failed', 'cancelled', 'done'))",
+            (job_id,),
+        )
+        return bool(cr.fetchone())
 
     @api.model
     def _lost_job_note(self, env, case, gone):
@@ -3185,6 +3243,11 @@ class CloudJob(models.Model):
                 "This job had finished and its outcome was saved when the"
                 " process running it was lost: it is closed as done, and"
                 " nothing is undone."
+            )
+        if case == "checkpoint":
+            return env._(
+                "This job ended with something left on its server: the"
+                " reconciliation stops and removes it."
             )
         return env._(
             "queue_job recorded this job as cancelled, but its end was never"
@@ -3233,7 +3296,22 @@ class CloudJob(models.Model):
                     job_record=runner, host_record=runner.sudo().host_id,
                 )
                 executor._sys(note)
-                if resumed:
+                row = job.env["cloud.job.checkpoint"].sudo().search(
+                    [("job_id", "=", job_id)], limit=1,
+                )
+                if row:
+                    # First what the job left on its server, which only the
+                    # reconciliation can reach now; the hook below gets the
+                    # results of the steps that ended.
+                    hooked = True
+                    executor._adopt_checkpoint(row)
+                    executor._step_results = dict(
+                        executor._checkpoint_data.get("results") or {},
+                    )
+                    asyncio.run(executor._close_on_server(DETACHED_RECONCILE_WAIT_S))
+                if case == "checkpoint":
+                    self._forget_or_give_up(executor, row)
+                elif resumed:
                     executor._sys(runner.env._(
                         "An earlier pass took this job up and stopped before"
                         " closing it: what the lost run left may not all"
@@ -3251,6 +3329,9 @@ class CloudJob(models.Model):
                     asyncio.run(executor._dispatch_cancel(
                         JobCancelled(CANCELLED_WHILE_RUNNING),
                     ))
+                else:
+                    # No hook to take the checkpoint along.
+                    executor._forget_checkpoint()
                 executor._flush_logs()
                 executor._publish_bus()
         except Exception:
@@ -3258,6 +3339,37 @@ class CloudJob(models.Model):
                 "cloud.job %s: the clean-up of its lost run failed", job_id,
             )
         return hooked
+
+    @api.model
+    def _forget_or_give_up(self, executor, row):
+        """Delete an ended job's checkpoint once its server was cleaned up.
+
+        Kept while the server cannot be reached, for the next pass, until
+        ``DETACHED_GIVE_UP_AFTER_CAP_S`` past the cap of the step it ran:
+        the step's own ``timeout`` killed it long before, and the row is
+        given up, with a line in the job log.
+
+        :param executor: the job's executor, with the row adopted
+        :param row: the job's ``cloud.job.checkpoint``
+        """
+        if not executor._detached_left_alive:
+            executor._forget_checkpoint()
+            return
+        plan = executor._checkpoint_data.get("plan") or []
+        index = row.next_index
+        opts = plan[index][2] if index < len(plan) else {}
+        cap = int((opts or {}).get("timeout") or DEFAULT_SSH_COMMAND_TIMEOUT)
+        since = row.step_started_at or row.first_started_at
+        if since and fields.Datetime.now() > since + timedelta(
+            seconds=cap + DETACHED_GIVE_UP_AFTER_CAP_S,
+        ):
+            executor._sys(executor.env._(
+                "The server could not be reached since well past the cap of"
+                " what this job left there: the reconciliation gives up on"
+                " it. Check the server's /tmp by hand."
+            ))
+            executor._detached_left_alive = False
+            executor._forget_checkpoint()
 
     @api.model
     def _close_lost_job(self, job_id):

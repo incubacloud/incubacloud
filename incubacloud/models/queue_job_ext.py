@@ -119,6 +119,46 @@ class QueueJob(models.Model):
         )
         return self.browse([row[0] for row in self.env.cr.fetchall()])
 
+    def _parked_ended_by_hand(self, vals):
+        """The jobs of ``self`` ended from queue_job's own views while parked.
+
+        A parked job's queue.job waits ``pending`` for its next attempt;
+        ended from there — cancelled, set done or failed by hand — it is
+        not a job that never ran: its step may run on the server, which
+        only an attempt of it or the reconciliation can reach. Its cloud
+        job is left ``started`` for the reconciliation, which stops the
+        step and gives the job its hook (``cloud.job._clean_up_lost_job``).
+
+        :param dict vals: what is being stored
+        :return: the ``queue.job`` records concerned
+        """
+        if vals.get("state") not in _TERMINAL or not self.ids:
+            return self.browse()
+        waiting = self.filtered(lambda job: job.state not in _TERMINAL | {"started"})
+        if not waiting:
+            return self.browse()
+        return waiting._with_parked_checkpoint()
+
+    def _with_parked_checkpoint(self):
+        """The jobs of ``self`` whose cloud job's checkpoint is ``parked``.
+
+        Written by the executor's attempt on a cursor of its own, and read
+        on a fresh cursor: the reader's transaction may predate it.
+
+        :return: the ``queue.job`` records concerned
+        """
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT q.id FROM queue_job q"
+                " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+                " JOIN cloud_job_checkpoint k"
+                "   ON k.job_id = c.id AND k.queue_job_uuid = q.uuid"
+                " WHERE q.id IN %s AND k.parked",
+                (tuple(self.ids),),
+            )
+            ids = [row[0] for row in env.cr.fetchall()]
+        return self.browse(ids)
+
     def _parked_postpones(self, vals):
         """The jobs of ``self`` whose attempt parked, as their postpone is stored.
 
@@ -136,17 +176,7 @@ class QueueJob(models.Model):
         started = self.filtered(lambda job: job.state == "started")
         if not started:
             return self.browse()
-        with self.env["cloud.job"]._fresh_env() as env:
-            env.cr.execute(
-                "SELECT q.id FROM queue_job q"
-                " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
-                " JOIN cloud_job_checkpoint k"
-                "   ON k.job_id = c.id AND k.queue_job_uuid = q.uuid"
-                " WHERE q.id IN %s AND k.parked",
-                (tuple(started.ids),),
-            )
-            ids = [row[0] for row in env.cr.fetchall()]
-        return self.browse(ids)
+        return started._with_parked_checkpoint()
 
     def _succeeded_before_cancel(self, outcome=False):
         """The jobs of ``self`` whose ``on_success`` returned before a stop.
@@ -347,6 +377,14 @@ class QueueJob(models.Model):
                 "priority": PARKED_RETURN_PRIORITY,
                 "retry": 0,
             })
+        ended = self._parked_ended_by_hand(vals)
+        if ended:
+            (self - ended).write(vals)
+            _logger.info(
+                "[queue_job_ext] queue jobs %s ended by hand while parked:"
+                " left to the reconciliation", ended.ids,
+            )
+            return super(QueueJob, ended).write(vals)
         if vals.get("state") == "failed" or (
             vals.get("state") == "done"
             and vals.get("result") == CANCELLED_WHILE_RUNNING
