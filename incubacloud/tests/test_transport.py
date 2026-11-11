@@ -909,6 +909,7 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
             name="myinst",
             postgres_username="odoo",
             postgres_dbname="prod",
+            auto_update=True,
         )
         ex = object.__new__(RestoreInstanceExecutor)
         ex._inst = lambda: inst

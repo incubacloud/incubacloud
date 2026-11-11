@@ -7,20 +7,25 @@ step stops on failure, and each step invokes the right script operation.
 The shell behaviour (the ON_ERROR_STOP import, the ``$SRC``/``$DST``
 isolation) is covered by ``tests/shell/backup_restore.bats``.
 """
+import asyncio
 import shlex
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import BaseCase
 
 
-def _make_executor(time='2026-01-01T00:00:00', dbname='prod'):
+def _make_executor(time='2026-01-01T00:00:00', dbname='prod',
+                   auto_update=True):
     from odoo.addons.incubacloud.models.backup_restore_executor import (
         BackupRestoreExecutor,
     )
     inst = SimpleNamespace(
         name='inst',
         postgres_dbname=dbname,
+        postgres_username='odoo',
         environment='production',
+        auto_update=auto_update,
     )
     job = SimpleNamespace(id=99, instance_id=inst, payload={'time': time})
     ex = object.__new__(BackupRestoreExecutor)
@@ -93,3 +98,58 @@ class TestBackupRestoreCommands(BaseCase):
             labels.index("Restore from backup"),
             labels.index("Drop database"),
         )
+
+
+
+class TestBackupRestoreUpdatesModules(BaseCase):
+    """A restored backup gets its modules updated to the instance's code.
+
+    The backup was taken under the code of its day, and a revive rebuilds
+    the instance from its branch: Odoo started on it as it came served
+    today's code over that day's schema until the next rebuild.
+    """
+
+    _LABEL = "Update changed modules"
+
+    def test_the_update_runs_between_the_import_and_the_start(self):
+        labels = [t[0] for t in _make_executor().get_commands()]
+        self.assertLess(labels.index("Import SQL"), labels.index(self._LABEL))
+        self.assertLess(
+            labels.index(self._LABEL), labels.index("Start instance"),
+        )
+
+    def test_it_is_the_rebuild_s_update_and_stops_the_job(self):
+        step = _find(_make_executor(dbname='main').get_commands(), self._LABEL)
+        argv = shlex.split(step[1])
+        self.assertTrue(argv[1].endswith("/cron_guard.sh"))
+        self.assertEqual(argv[2:], ["update", "~/projects/inst", "main", "odoo"])
+        self.assertTrue(step[2].get("stop_on_failure"))
+
+    def test_an_instance_without_auto_update_is_left_alone(self):
+        labels = [
+            t[0] for t in _make_executor(auto_update=False).get_commands()
+        ]
+        self.assertNotIn(self._LABEL, labels)
+        self.assertEqual(labels[-1], "Start instance")
+
+    def test_a_failed_update_leaves_the_instance_in_error_saying_why(self):
+        from odoo.addons.incubacloud.models.backup_restore_executor import (
+            BackupRestoreExecutor,
+        )
+        from odoo.addons.incubacloud.models.cloud_instance import CloudInstance
+
+        ex = _make_executor()
+        inst = MagicMock(spec=CloudInstance)
+        ex.job.instance_id = inst
+        lines = []
+        with patch.object(
+            BackupRestoreExecutor, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(ex.on_failure(
+                {self._LABEL: {"exit_status": 1, "stdout": ""}},
+                [f"'{self._LABEL}' exited with status 1"],
+            ))
+        inst.write.assert_called_once_with({'status': 'error'})
+        self.assertTrue(any("Odoo was left stopped" in line for line in lines))
+        self.assertFalse(any("inconsistent state" in line for line in lines))
