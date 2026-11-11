@@ -699,9 +699,24 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
+msgid "A %(type)s is already queued for this host; wait for it to finish."
+msgstr ""
+"Ya hay un trabajo «%(type)s» en cola para este host; espere a que termine."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
 msgid "A %(type)s is already queued for this instance; cancel it first."
 msgstr ""
 "Ya hay un trabajo «%(type)s» en cola para esta instancia; cancélelo primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "A %(type)s is already queued for this instance; wait for it to finish."
+msgstr ""
+"Ya hay un trabajo «%(type)s» en cola para esta instancia; espere a que "
+"termine."
 
 #. module: incubacloud
 #. odoo-python
