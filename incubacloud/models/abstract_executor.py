@@ -809,7 +809,9 @@ class AbstractExecutor(ABC):
     #: Attributes of the executor its closing hooks read and that are set
     #: before its steps: kept in the checkpoint, and set again on an attempt
     #: that resumes the job (``_resume``). Names of instance attributes,
-    #: whose values JSON keeps.
+    #: whose values JSON keeps, each with a default on its class. Every
+    #: class of the executor adds its own (``_carried_names``): a mixin
+    #: declares what its hooks read without repeating its bases' names.
     _carried = ()
     #: Carried for every executor: the job log's cap is the job's, not the
     #: attempt's.
@@ -2160,15 +2162,25 @@ class AbstractExecutor(ABC):
         """
         return self._checkpoint and not self._detached_attached
 
+    def _carried_names(self):
+        """Return the names of the attributes the checkpoint carries.
+
+        ``_CARRIED_ALWAYS``, then the ``_carried`` of every class of the
+        executor, its own first, each name once.
+
+        :rtype: tuple
+        """
+        names = dict.fromkeys(self._CARRIED_ALWAYS)
+        for cls in type(self).__mro__:
+            names.update(dict.fromkeys(vars(cls).get("_carried", ())))
+        return tuple(names)
+
     def _carried_state(self):
-        """Return the executor's carried attributes (``_carried``), by name.
+        """Return the executor's carried attributes (``_carried_names``), by name.
 
         :rtype: dict
         """
-        return {
-            name: getattr(self, name)
-            for name in (*self._CARRIED_ALWAYS, *self._carried)
-        }
+        return {name: getattr(self, name) for name in self._carried_names()}
 
     def _kept_results(self):
         """Return the steps' results as the checkpoint keeps them.
@@ -2309,7 +2321,7 @@ class AbstractExecutor(ABC):
         self._job_dir_created = bool(data.get("job_dir"))
         self._private_uploads = tuple(data.get("private_uploads") or ())
         self._scripts_requested = self._scripts_uploaded = True
-        names = {*self._CARRIED_ALWAYS, *self._carried}
+        names = set(self._carried_names())
         for name, value in (data.get("carried") or {}).items():
             if name in names:
                 setattr(self, name, value)

@@ -11,11 +11,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Jobs that outlive the request that runs them, as on Odoo.sh, where a
 request is cut at 900 s. The update adds one empty table,
 `cloud_job_checkpoint`, and one column, `cloud_job.channel_wait_since`,
-and needs no data migration. No step of the panel's jobs runs apart from
-its request yet: what each job does is unchanged.
+and needs no data migration. One step runs apart from its request so far:
+the image build of a rebuild, before its point of no return. Every other
+step runs as before.
 
 ### Added
 
+- **A rebuild's image build runs apart on its server.** «Rebuild Odoo
+  image» is the first step marked `detached`, in core's rebuild and in
+  every rebuild that inherits it. A rebuild whose build outlasts the
+  attempt's budget leaves the build to the server and comes back for it;
+  cancelled meanwhile, the build is stopped and the rebuild closes as it
+  does today, leaving the instance on its previous image. What an
+  executor's hooks read that is set before the steps (`_carried`) now adds
+  up over its classes, so a mixin declares its own without hiding its
+  bases'.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the

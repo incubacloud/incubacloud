@@ -252,6 +252,23 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertEqual(len(cmd), 3)
         self.assertTrue(cmd[2].get("stop_on_failure"))
 
+    def test_the_build_runs_apart_before_the_point_of_no_return(self):
+        """Marked ``detached`` (11-nov-2026): a stop still leaves the old image."""
+        labels = [cmd[0] for cmd in self.cmds]
+        cmd = _find_cmd(self.cmds, "Rebuild Odoo image")
+        from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+            RebuildInstanceExecutor,
+        )
+
+        self.assertTrue(cmd[2].get("detached"))
+        self.assertLess(
+            labels.index(cmd[0]), labels.index(RebuildInstanceExecutor._no_return_from),
+        )
+        self.assertEqual(
+            [c[0] for c in self.cmds if len(c) == 3 and c[2].get("detached")],
+            [cmd[0]],
+        )
+
     def test_a_failed_build_is_repeated_once(self):
         """A passing failure at GitHub must not fail the whole rebuild."""
         build = _find_cmd(self.cmds, "Rebuild Odoo image")[1]

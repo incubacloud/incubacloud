@@ -278,8 +278,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     drops the lookup with it.
             #     A series that fetches its repositories does it first
             #     instead, in a step of its own.
+            #     Run apart on the host (11-nov-2026): a build without
+            #     cache passes the 0.4 of limit_time_real a step in the
+            #     request may last (p90 450 s, max 541 s on 10-nov), and it
+            #     comes before the point of no return, so a stop leaves the
+            #     instance on its previous image.
             *fetch_steps,
-            (_LABEL_BUILD, build, {"stop_on_failure": True}),
+            (_LABEL_BUILD, build, {"stop_on_failure": True, "detached": True}),
         ]
         # 11 + 12: safe boot test and actual module update both rely
         # on ``click-odoo-update``. When ``auto_update`` is disabled
