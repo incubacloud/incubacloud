@@ -262,6 +262,114 @@ An instance runs one visible job at a time, and a host one host-level job at a t
 - **The sweep.** `cron_job_queue_dispatch` (`_cron_dispatch_queued`, every 2 minutes) serves every queue that waits with nothing running and nothing holding it, one fresh cursor per queue: a dispatch lost to a rollback or to a path nobody hooked starts within two minutes.
 - **Who reads a busy target.** Everything that asks whether an instance is busy counts a waiting job as busy: the host endpoint guard, the PITR checks, the docker prune's per-instance check, the hardening preflight (`has_active_job`). The move watchdog counts a waiting job only when it is a step of the move or of its rollback: one asked for after the failure waits behind its hold, and would keep the source stopped for as long. The health probe does not — a job that has not started silences nothing — and `/cloud/get_backup_result` treats a queued listing as waiting, not as an error.
 
+### Steps run apart on the server
+
+A job runs inside an Odoo request, and Odoo cuts a request at
+`limit_time_real` (900 s on Odoo.sh). A step that may outlast it is marked
+`detached` in `get_commands()` (`(label, command, {"detached": True, …})`)
+and runs on its server apart from the request; the job follows it, leaves
+it there when its attempt's time is up, and comes back for it in a later
+attempt. An executor with no step marked runs as before: no checkpoint, no
+park, a dead worker repeats it from the start. No step of the product is
+marked yet: each is marked on its own, with its own review and QA.
+
+- **The step on the server** (`scripts/detached_step.sh`, its contract in
+  its header). `start` runs the command in a session of its own
+  (`setsid -f nohup`), capped by `timeout` at the step's timeout, in a
+  directory `/tmp/.incubacloud-detached-<16 hex>` named from the job and
+  the step (`detached_dir`); `read <offset>` returns the log from an
+  offset with a header saying `running`, `done`, `lost` (the process died
+  without an exit status) or `none`; `result` the tail of stdout; `stop`
+  TERM to the session, a wait, KILL; `clean` removes the directory once
+  nothing lives. One live step per instance, or per host (exit 73: the job
+  waits 30 s). A server whose logind kills an account's processes at
+  logout (exit 78) runs the step attached, and that job never parks.
+- **The checkpoint** (`cloud.job.checkpoint`, one row per job, no access
+  for any role: `sudo` and SQL only). The step that comes next, the
+  running step's start and log offset, the park and when it ends, the
+  attempts, a loss of contact, the host whose build lock it keeps, and,
+  encrypted, the plan as the first attempt made it, the results of the
+  steps that ended, the job's working directory, the secrets it staged and
+  the executor's `_carried` attributes (what its closing hooks read that is
+  set before the steps). Written on cursors of its own, never in the job's
+  transaction; the log offset with the log lines it covers. **While the row
+  exists, the job may have something on a server that nobody has closed.**
+  The closing hook takes it in its durable transaction; one that could not
+  stop what it left keeps it marked `closed`, for the reconciliation.
+  `data/neutralize.sql` deletes every row.
+- **The attempt's budget.** 0.6 × the server's `limit_time_real` (540 s
+  with 900; 0, never parks, without a limit), or
+  `[incubacloud] attempt_budget_seconds` in odoo.conf to test it. A step
+  run in the request must last less than 0.4 × the limit (360 s with 900):
+  it may start just before the budget ends.
+- **Park and resume.** Past the budget — before a step, while it follows a
+  step apart, before its closing hooks — the attempt writes the
+  checkpoint, says so in the log and raises `JobParked`, a
+  `RetryableJobError` that comes back in 5 s, first of its channel
+  (priority 0) and without counting the attempt. The cloud job stays
+  `started` (`queue_job_ext.write` does not mirror that `pending`). The
+  next attempt reads the row before anything else, calls neither
+  `before_execute` nor `get_commands()`, adopts the plan, and goes on at
+  the step and the log offset it was at. A worker that dies is taken up
+  the same way; a short step it was in is run again. A server that cannot
+  be reached while a step runs there parks the job 30 s at a time, for up
+  to 600 s; past them the job fails and the row stays for the
+  reconciliation.
+- **Who closes a job with a checkpoint**: an attempt of its own or the
+  reconciliation, the only two that reach the server. Cancelled while it
+  follows its step, the attempt stops the step (TERM, 60 s, KILL) and
+  closes as today. Cancelled while parked, only the flag is written: the
+  job comes back within seconds, stops the step, removes its working
+  directory and closes with the results of the steps that ended. Its
+  queue job ended or deleted by hand from queue_job's views is not taken
+  for a job that never ran: `_cron_reconcile_lost_jobs` stops what it left
+  (20 s for the trap) before its hook, retries a server it cannot reach at
+  every pass, and gives up an hour past the step's cap. A step past the
+  point of no return is never stopped.
+- **The host's build lock outlives a park.** `HostBuildLockMixin` takes a
+  transactional lock, which a park lets go: the checkpoint names the host
+  from its first write, and any other build or teardown of the host that
+  finds it defers 30 s. The parked job takes the lock again when it comes
+  back.
+- **A parked job keeps its slot in its channel.** queue_job's runner does
+  not count a job waiting between two attempts, and would give its slot
+  away. The dispatcher hands a job to queue_job only while its channel and
+  every channel above it have room, counting the panel's `enqueued`,
+  `started`, due `pending` and parked jobs (not those asleep until later,
+  nor a step of a chain waiting for the one before), with the channels the
+  runner reads (`ODOO_QUEUE_JOB_CHANNELS`, else `[queue_job] channels`,
+  else `root:1`): the process that dispatches and the runner must see the
+  same string. A job held back stays `queued` with `channel_wait_since`;
+  when a job ends, or one that is not parked sleeps, `_wake_channel_waiters`
+  serves those held by priority and age, and the sweep in the same order.
+  `[incubacloud] channel_gate = off` turns it off without a deploy. In
+  tests the gate is open unless the test asks for it (`ic_channel_gate`).
+- **What a person sees.** A parked job reads *Running · on the server,
+  reconnecting at 12:03:05* (`on_server`, `parked_until` of `_format`), one
+  held by the gate *Queued · waiting for a free slot (root.user 1/1)*
+  (`channel_wait`). A parked job 600 s late to come back says so once in its
+  log and raises `job_running_too_long`, naming the channel it waits for;
+  the slow job warning otherwise measures the attempt against 0.75 ×
+  `limit_time_real`.
+- **At startup**, besides the limits, the log says when `root.user` has no
+  capacity of its own and which channels other modules' jobs used in the
+  last 30 days: a parked job may wait for those. Only logged: the alert
+  `job_server_limits_too_low` is about limits that kill jobs.
+
+| Value | | Why (10/11-nov-2026) |
+|---|---|---|
+| `ATTEMPT_BUDGET_FACTOR` | 0.6 | 540 s with 900: leaves 360 s to the longest step run in the request and to the closing hooks |
+| `ATTACHED_STEP_FACTOR` | 0.4 | Budget plus a step started just before it ends fit in the limit |
+| `MIN_LIMIT_TIME_REAL` | 900 | Odoo.sh's limit, the one the panel is tested with |
+| `PARK_GAP_SECONDS` | 5 | queue_job's postpone; lets the request that parked end first |
+| `DETACHED_POLL_S` | 1 | One `read` a second on the open connection; the log's latency is about today's |
+| `DETACHED_STDOUT_TAIL` | 256 KiB | Tail of a step's stdout kept as its result, in the checkpoint too |
+| `DETACHED_BUSY_RETRY_S` | 30 | Another job's step still lives on the instance or host |
+| `DETACHED_RECONNECT_GAP_S`, `DETACHED_CONTACT_GRACE_S` | 30, 600 | The connection retries' own: they cover a host rebooting for its updates |
+| `CANCEL_TERM_WAIT_S`; reconciliation | 60; 20 | The transport's wait for an `EXIT` trap; 20 fits the reconciliation's hook budget |
+| `PARKED_OVERDUE_S` | 600 | Two of Odoo.sh's sweeps; then the job says it waits for a slot |
+| Step cap on the server | the step's `timeout`, else 3600 s | As in the request; the panel stops a step still running 120 s past it |
+
 ### Implementing a new executor
 
 Executors self-register: subclassing `AbstractSSHExecutor` with a `_job_type` adds the class to the registry (`models/registry.py`) automatically. The code must match a `cloud.job.type` record.

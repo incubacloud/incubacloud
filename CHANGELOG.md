@@ -8,15 +8,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.225] — 2026-11-11
 
-The groundwork for jobs that outlive the request that runs them, as on
-Odoo.sh, where a request is cut at 900 s. The update adds one empty table,
+Jobs that outlive the request that runs them, as on Odoo.sh, where a
+request is cut at 900 s. The update adds one empty table,
 `cloud_job_checkpoint`, and one column, `cloud_job.channel_wait_since`,
-and needs no data migration. No step of the
-panel's jobs runs apart from its request yet: what each job does is
-unchanged.
+and needs no data migration. No step of the panel's jobs runs apart from
+its request yet: what each job does is unchanged.
 
 ### Added
 
+- **The job lists say what a waiting job waits for.** A job parked
+  between two attempts reads *Running · on the server, reconnecting at
+  12:03:05* (*Running · reconnecting at …* when nothing of it runs on the
+  server), and one the channel gate holds back reads *Queued · waiting
+  for a free slot (root.user 1/1)*, in the recent activity of an instance
+  or a host and in the job history. `_format` and `_format_history` give
+  `on_server`, `parked_until` and `channel_wait`. Spanish translation
+  included.
 - **A step of a job can run apart on its server.** A step marked
   `detached` runs in a session of its own (`scripts/detached_step.sh`),
   capped on the server by its timeout, and is read every second: its lines
@@ -99,7 +106,10 @@ unchanged.
   request has left. The log says the budget at every start. It also says
   when `root.user` has no capacity of its own among queue_job's channels,
   and which channels other modules' jobs ran in over the last 30 days: a
-  parked job may wait for those.
+  parked job may wait for those. These two are only logged, never part of
+  the alert `job_server_limits_too_low`: they kill no job, most servers
+  have one of them and never park, and a parked job that does find no
+  slot raises the slow job warning by itself, naming the channel.
 - **The slow job warning measures the attempt**, from its own start,
   against 0.75 of the server's `limit_time_real` (45 minutes with 3600, as
   before; 45 minutes without a limit), and says the limit.

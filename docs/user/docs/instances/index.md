@@ -59,6 +59,13 @@ itself when the one ahead of it ends, in the order they were asked for.
   Deploy Instance*.
 - **Recent activity** lists a waiting action as *Queued · N ahead*: how many
   actions start before it.
+- *Queued · waiting for a free slot (root.user 1/1)* means nothing runs on
+  the instance, but the panel already runs as many actions as it runs at
+  once (here one of one). It starts as soon as one of them ends.
+- *Running · on the server, reconnecting at 12:03:05* means a long step,
+  such as building the image, goes on on the server while the panel steps
+  away and comes back for it at that time. Nothing to do: the action is
+  running, and **Cancel** still stops it.
 - Changed your mind? A waiting action has not started yet, so **Cancel** takes
   it out of the queue at once and nothing happens on the server.
 - Asking twice for the same thing while it waits — two restarts, the same

@@ -220,8 +220,8 @@ channels = root:3,root.user:2,root.bg:1
 |---|---|---|
 | `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,web`) instead of adding to it. |
 | `workers` | More than the `root` channel's capacity | Each running job holds a worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
-| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once; without the setting `queue_job` runs one at a time. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, clean-up) to `root.bg`, so background jobs never hold up a deploy. With `incubacloud_assistant`, add `root.assistant:1` or more. |
-| `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). The limit counts the whole job: 3600 lets its longest command finish. |
+| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once; without the setting `queue_job` runs one at a time. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, clean-up) to `root.bg`, so background jobs never hold up a deploy. With `incubacloud_assistant`, add `root.assistant:1` or more. The panel reads the same string as the runner (`ODOO_QUEUE_JOB_CHANNELS` in the environment, else this setting) to keep a slot for a job waiting between two attempts: give it to both the same way, and give `root.user` a capacity of its own. `channel_gate = off` in the `[incubacloud]` section stops the panel counting slots. |
+| `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). 3600 lets the longest command finish in one request. 900 is the least the panel accepts: a step marked to run apart then goes on on the server when the job's attempt has run for 0.6 of the limit, and the job comes back for it; every other step must end within 0.4 of the limit. |
 | `limit_time_cpu` | `600` | Odoo's default is 60 seconds of CPU per request, enforced on each worker. Jobs mostly wait on SSH; 600 is a margin for the long ones, not a measured need. |
 | `limit_memory_soft`, `limit_memory_hard` | Odoo's defaults, with workers | They are per worker, and a panel worker stays far below them. With `workers = 0` they mean something else: [below](#with-workers--0). |
 | `limit_time_real_cron` | Default, or `0` | The panel's scheduled checks visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). Its default follows `limit_time_real`, which is enough at 3600; `0` removes the limit. |
@@ -244,18 +244,23 @@ but calls it unfit for production, and the limits change meaning:
   running in it, and past the hard one its allocations fail.
 - **`limit_time_real_cron = 0`** falls back to `limit_time_real`.
 
-Set `limit_time_real = 3600` and both memory limits to `0` (or to what the whole
-server may use). It suits trying the panel; for daily use, run with workers.
+Set `limit_time_real = 3600` (900 at the least) and both memory limits to `0`
+(or to what the whole server may use). It suits trying the panel; for daily
+use, run with workers.
 
 ### The check at startup
 
 The panel checks these limits when Odoo starts. A server started with
 `odoo server` that runs the job runner (`queue_job` among its
 `server_wide_modules`) logs a warning per setting and raises the alert
-`job_server_limits_too_low` when `limit_time_real` is below 3600 seconds or,
+`job_server_limits_too_low` when `limit_time_real` is below 900 seconds or,
 with `workers = 0`, when a memory limit is at Odoo's per-worker default or
 lower. The alert closes at the next start with values that fit. A web-only
-server (`--load=web`) beside a dedicated runner is not judged.
+server (`--load=web`) beside a dedicated runner is not judged. The log also
+says how long a job's attempt runs before it leaves a long step to the
+server, and, only in the log, when `root.user` has no capacity of its own or
+other modules use the job queue: a job waiting between two attempts may then
+wait for theirs.
 
 ## The proxy
 
@@ -361,7 +366,9 @@ The restart ends the worker that runs it, and with it the job's SSH session.
 
 1. `queue_job` sees the job's worker gone and puts the job back in the queue:
    once the panel is back, **the job runs again from the start**. A job whose
-   worker dies a third time fails for good (`JobFoundDead`).
+   worker dies a third time fails for good (`JobFoundDead`). A job that runs
+   a step apart on its server is the exception: the step goes on through the restart, and the job **resumes**
+   where it was, with no step done twice.
 2. Every 5 minutes the panel closes the jobs a lost worker left behind (still
    shown running while `queue_job` has failed or removed them) and undoes what
    they leave: a deploy that never finished puts its instance back to draft
