@@ -215,7 +215,22 @@ class TestBackupRestoreCutOff(BaseCase):
     def test_a_run_cut_before_its_steps_leaves_the_instance_alone(self):
         inst, lines = self._abort(None, None, exc=RuntimeError("no host"))
         inst.write.assert_not_called()
-        self.assertEqual(lines, ["✗ RuntimeError: no host"])
+        self.assertEqual(lines[0], "✗ RuntimeError: no host")
+
+    def test_a_run_cut_before_its_steps_says_it_did_not_start(self):
+        """No step ran: the log says so, that nothing changed, and what to do."""
+        inst, lines = self._abort(None, None, exc=RuntimeError("no host"))
+        self.assertEqual(len(lines), 2)
+        said = lines[1]
+        self.assertIn("did not start", said)
+        self.assertIn("as it was", said)
+        self.assertIn("try the restore again", said.lower())
+        self.assertIn("contact", said.lower())
+
+    def test_a_run_cut_after_a_step_started_does_not_say_it_did_not_start(self):
+        for ran, running in (({}, "Stop Odoo"), ({}, "Import SQL")):
+            inst, lines = self._abort(ran, running)
+            self.assertFalse(any("did not start" in line for line in lines))
 
 
 class TestBackupRestoreSaysWhichCode(BaseCase):
