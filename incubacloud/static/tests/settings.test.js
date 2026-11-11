@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { click, queryOne, waitFor } from "@odoo/hoot-dom";
+import { animationFrame } from "@odoo/hoot-mock";
+import { allowTranslations, mountWithCleanup } from "@web/../tests/web_test_helpers";
+import { relayIcon } from "@incubacloud/utils/icons";
 import { _buildUrl, _parseRoute } from "@incubacloud/app/app";
 import {
     changedKeys, changedValues, Settings, snapshot,
@@ -417,5 +420,38 @@ describe("Settings — the label of a row names its control", () => {
         expect(fieldWith({ id: "token", stored: true }, { replacing: true }, "").showsStored).toBe(false);
         expect(fieldWith({ id: "token", stored: true }, { replacing: false }, "new").showsStored).toBe(false);
         expect(fieldWith({ id: "token", stored: false }, { replacing: false }, "").showsStored).toBe(false);
+    });
+
+    test("a stored secret's row names its control, and keeps the focus where it was", async () => {
+        // Mounted, not stood in for: what the reader's tool announces is the
+        // template's, and the button the focus was on is gone after a click.
+        await mountWithCleanup(SettingField, {
+            props: { id: "webhook_secret", form: { webhook_secret: "" }, stored: true },
+            env: { icon: relayIcon },
+            noMainContainer: true,
+        });
+        await waitFor("#ic-set-webhook_secret");
+        const labelId = "ic-set-webhook_secret-label";
+        expect("label.ic-set-label").toHaveAttribute("id", labelId);
+        expect(queryOne("label.ic-set-label").getAttribute("for")).toBe(null);
+        // The label describes the button (the help line may follow it) and
+        // names no one: the button keeps the name its text gives.
+        expect(queryOne(".ic-set-secret button").getAttribute("aria-describedby").split(" ")[0]).toBe(
+            labelId
+        );
+        expect(queryOne(".ic-set-secret button").getAttribute("id")).toBe(null);
+
+        await click(".ic-set-secret button");
+        await animationFrame();
+        const inputId = "ic-set-webhook_secret-input";
+        expect("label.ic-set-label").toHaveAttribute("for", inputId);
+        expect(`input#${inputId}`).toHaveCount(1);
+        expect(`input#${inputId}`).toBeFocused();
+
+        await click(".ic-set-secret-edit button");
+        await animationFrame();
+        expect(".ic-set-secret button").toHaveCount(1);
+        expect(".ic-set-secret button").toBeFocused();
+        expect(queryOne("label.ic-set-label").getAttribute("for")).toBe(null);
     });
 });
