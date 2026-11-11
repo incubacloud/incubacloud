@@ -723,8 +723,6 @@ class CloudJob(models.Model):
         # An earlier attempt parked, or its worker died, with a step run
         # apart on the server: this one goes on where it left the job.
         checkpoint = self._resumable_checkpoint()
-        if checkpoint:
-            ssh_executor._resume(checkpoint)
         # ``run`` hands a failure inside it to ``on_abort`` itself; one
         # before it is handed over here.
         running = False
@@ -734,8 +732,13 @@ class CloudJob(models.Model):
             # again, still ``cancelled`` (``queue_job_ext``). It does not run.
             if self._stopped_flags()[0]:
                 raise JobCancelled(CANCELLED_WHILE_RUNNING)
-            # A job half way through is neither refused nor blocked.
-            if not checkpoint:
+            # A job half way through is neither refused nor blocked; it
+            # takes again the host's build lock it held, if any.
+            if checkpoint:
+                if not ssh_executor._retake_host_build_lock():
+                    raise ssh_executor._wait_for_build_lock()
+                ssh_executor._resume(checkpoint)
+            else:
                 ssh_executor.pre_run_checks()
                 if not self._has_dependents():
                     blocking = ssh_executor.blocking_alert()

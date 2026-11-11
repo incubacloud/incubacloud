@@ -26,6 +26,13 @@ The lock is transactional, so it is released when the worker commits at
 job end — and also on rollback or a crashed worker, which is why nothing
 can leave it held.
 
+A job that parks between two attempts, its build running on the host
+(``JobParked``), lets the transaction go and the lock with it. Its
+checkpoint keeps the host instead (``build_lock_host_id``), written before
+the lock goes: a build that takes the lock then finds the row and defers
+as if the lock were held. The parked job takes the lock again when it
+comes back; the row, and with it the hold, goes when the job ends.
+
 The namespace is shared with the build lock a layer may take for
 builds of its own (the first one solved this for its builds only). One
 namespace is what makes "at most one build per host" true across all of
@@ -77,6 +84,10 @@ class HostBuildLockMixin:
         keying on ``inst.host_id`` would lock the machine they never
         touch while leaving the one they do touch open. For every other
         executor the two are the same host.
+
+        A job parked between two attempts holds the host too: its
+        checkpoint says so (``build_lock_host_id``), read on a fresh
+        cursor, as the parked job committed it on a cursor of its own.
         """
         super().pre_run_checks()
         if not self._takes_host_build_lock:
@@ -84,13 +95,49 @@ class HostBuildLockMixin:
         host = self._host()
         if not host:
             return
+        busy = RetryableJobError(
+            "Another build is running on this host; deferring.",
+            seconds=30,
+            ignore_retry=True,
+        )
+        if not self._try_host_build_lock(host):
+            raise busy
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT 1 FROM cloud_job_checkpoint"
+                " WHERE build_lock_host_id = %s AND job_id != %s LIMIT 1",
+                (host.id, self.job.id),
+            )
+            if env.cr.fetchone():
+                raise busy
+
+    def _try_host_build_lock(self, host):
+        """Try the build lock of *host* in the job's transaction.
+
+        :param host: the ``cloud.host``
+        :return: whether this job holds it now
+        :rtype: bool
+        """
         self.env.cr.execute(
             "SELECT pg_try_advisory_xact_lock(%s, %s)",
             (_HOST_BUILD_LOCK_NS, host.id),
         )
         if not self.env.cr.fetchone()[0]:
-            raise RetryableJobError(
-                "Another build is running on this host; deferring.",
-                seconds=30,
-                ignore_retry=True,
-            )
+            return False
+        self._held_build_lock_host_id = host.id
+        return True
+
+    def _retake_host_build_lock(self):
+        """Take the host's lock again as a parked job comes back.
+
+        Its checkpoint kept the host while it was parked, so a build that
+        took the lock meanwhile is deferring itself: when it is held for
+        that instant, the job waits 5 s (``_wait_for_build_lock``).
+
+        :return: whether the job holds the lock, or takes none
+        :rtype: bool
+        """
+        if not self._takes_host_build_lock:
+            return True
+        host = self._host()
+        return not host or self._try_host_build_lock(host)
