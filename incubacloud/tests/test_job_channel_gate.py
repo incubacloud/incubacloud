@@ -13,10 +13,12 @@ The gate is open in tests unless a test asks for it (``ic_channel_gate``):
 without a runner every job dispatched stays ``pending`` and would fill the
 channels of every other test.
 """
+import contextlib
 from datetime import timedelta
 from unittest.mock import patch
 
 from odoo import fields
+from odoo.sql_db import Callbacks
 from odoo.tests.common import BaseCase
 
 from ..models import cloud_job as cloud_job_module
@@ -63,6 +65,29 @@ class TestChannelLoads(BaseCase):
         manager = channel_manager("root:0,root.user:0")
         self.assertIsNone(full_channel(manager, "root.user", ["root.user"] * 9))
 
+    def test_a_channel_created_during_a_count_does_not_break_it(self):
+        """With workers = 0 the threads share a manager: one may create a
+        channel (``resolve_channel``) while another walks the children."""
+        manager = channel_manager("root:3,root.user:1,root.race:1")
+        race = manager.get_channel_by_name("root.race")
+        Channel = type(race)
+
+        class _Racing(Channel):
+            """A channel whose capacity, read, has another thread create one."""
+
+            @property
+            def capacity(self):
+                """Create a sibling, as another request would, then answer."""
+                manager.get_channel_by_name("root.late", parent_fallback=True)
+                return self.__dict__["capacity"]
+
+        race.__class__ = _Racing
+        try:
+            loads = channel_loads(manager, ["root.user", "root.race"])
+        finally:
+            race.__class__ = Channel
+        self.assertEqual(loads[manager.get_channel_by_name("root")], 2)
+
     def test_the_channels_that_make_a_parked_job_wait(self):
         """``root.user`` without capacity of its own, and other modules' jobs."""
         self.assertEqual(channel_problems("root:3,root.user:1,root.bg:1"), [])
@@ -95,12 +120,14 @@ class _GateCase(_QueueCase):
 
     def _running(
         self, inst=None, channel="root.user", state="started", eta=None,
-        parked=False, code="rebuild_instance",
+        parked=False, code="rebuild_instance", next_uuid=None,
     ):
         """A job of the panel whose queue.job is in *state*, in *channel*.
 
         :param parked: give it the checkpoint of a job parked between two
             attempts
+        :param str next_uuid: the queue job of the step of its chain that
+            waits for it
         :return: the ``cloud.job``
         """
         self._seq += 1
@@ -113,6 +140,10 @@ class _GateCase(_QueueCase):
             "method_name": "execute",
             "model_name": "cloud.job",
             "func_string": "execute()",
+            "dependencies": {
+                "depends_on": [],
+                "reverse_depends_on": [next_uuid] if next_uuid else [],
+            },
         })
         job = self._job(
             code, state="started", inst=inst if inst is not None else self.inst,
@@ -146,6 +177,38 @@ class _GateCase(_QueueCase):
         self.assertEqual(job.state, "pending")
         self.assertTrue(job.queue_job_uuid)
         self.assertFalse(job.channel_wait_since)
+
+    def _held(self, inst, since):
+        """A job held by the gate since *since*."""
+        return self._job(
+            "restart_instance", state="queued", inst=inst, channel_wait_since=since,
+        )
+
+    @contextlib.contextmanager
+    def _committed(self):
+        """Gather what the block registers for after the commit, then run it.
+
+        The test's cursor never commits: its ``postcommit`` is swapped for
+        callbacks of its own, run once the block ends, with the fresh
+        dispatcher recorded instead of run.
+
+        :return: the queues served, in order, filled once the block ends
+        """
+        cr = self.env.cr
+        original = cr.postcommit
+        cr.postcommit = armed = Callbacks()
+        served = []
+        try:
+            yield served
+        finally:
+            cr.postcommit = original
+        self.env.flush_all()
+        with patch.object(
+            cloud_job_module, "_dispatch_scope_fresh",
+            side_effect=lambda _registry, scope, refused=None:
+                served.append(scope) or False,
+        ):
+            armed.run()
 
 
 class TestTheGate(_GateCase):
@@ -234,6 +297,119 @@ class TestTheGate(_GateCase):
         held.invalidate_recordset()
         self._assert_dispatched(held)
 
+    @contextlib.contextmanager
+    def _unseen_by_fresh_reads(self):
+        """Hide from the gate's fresh reads the queue jobs the block creates.
+
+        In registry test mode a fresh cursor rides on the test's
+        transaction and sees what it wrote; a real one does not see what
+        the transaction has not committed. Renamed for the read, they are
+        not found, as there.
+        """
+        self.env.flush_all()
+        self.env.cr.execute("SELECT coalesce(max(id), 0) FROM queue_job")
+        since = self.env.cr.fetchone()[0]
+        Job = type(self.env["cloud.job"])
+        original = Job._fresh_env
+
+        @contextlib.contextmanager
+        def _fresh_env(job):
+            """The fresh environment, without this transaction's queue jobs."""
+            with original(job) as env:
+                env.cr.execute(
+                    "UPDATE queue_job SET uuid = 'unseen-' || uuid"
+                    " WHERE id > %s RETURNING id", (since,),
+                )
+                hidden = tuple(row[0] for row in env.cr.fetchall())
+                try:
+                    yield env
+                finally:
+                    if hidden:
+                        env.cr.execute(
+                            "UPDATE queue_job SET uuid = substr(uuid, 8)"
+                            " WHERE id IN %s", (hidden,),
+                        )
+
+        with patch.object(Job, "_fresh_env", _fresh_env):
+            yield
+
+    def test_two_jobs_asked_in_one_transaction_take_one_slot(self):
+        """The second counts the first, which no fresh cursor sees yet."""
+        third = self._instance("gate-third")
+        with self._unseen_by_fresh_reads():
+            first = self._asked(self.other)
+            second = self._asked(third)
+        self._assert_dispatched(first)
+        self._assert_held(second)
+
+    def _probes(self, count=3, state="pending"):
+        """*count* probes in ``root.bg``, due and not started."""
+        for _probe in range(count):
+            self._running(
+                channel="root.bg", code="instance_health", inst=False, state=state,
+            )
+
+    def _held_since(self, minutes):
+        """A restart held *minutes* ago by the gate, then served again."""
+        job = self._asked()
+        self._assert_held(job)
+        job.with_context(ic_skip_state_hook=True).write({
+            "channel_wait_since": fields.Datetime.now() - timedelta(minutes=minutes),
+        })
+        self.env.flush_all()
+        self.Job._dispatch_next(*job._scope_of(), channel_lock=True)
+        job.invalidate_recordset()
+        return job
+
+    def test_held_two_minutes_a_job_stops_waiting_for_the_probes_due(self):
+        """``root:1``: past the patience, probes not started do not count."""
+        self.channels = "root:1,root.user:1,root.bg:1"
+        self._probes()
+        self._assert_dispatched(self._held_since(3))
+
+    def test_within_the_patience_the_probes_due_count(self):
+        """Under two minutes it still waits for them."""
+        self.channels = "root:1,root.user:1,root.bg:1"
+        self._probes()
+        self._assert_held(self._held_since(1))
+
+    def test_past_the_patience_a_probe_that_runs_still_counts(self):
+        """Only the probes not started stop counting."""
+        self.channels = "root:1,root.user:1,root.bg:1"
+        self._probes(count=1, state="started")
+        self._assert_held(self._held_since(3))
+
+    def test_past_the_patience_a_parked_job_keeps_its_place(self):
+        """Its place is never given up."""
+        self.channels = "root:1,root.user:1,root.bg:1"
+        self._probes()
+        self._running(
+            state="pending", eta=fields.Datetime.now() + timedelta(seconds=5),
+            parked=True,
+        )
+        self._assert_held(self._held_since(3))
+
+    def test_a_list_of_held_jobs_counts_the_channels_once(self):
+        """One fresh read for the whole list, however many are held."""
+        self._running()
+        held = self._asked()
+        Job = type(self.env["cloud.job"])
+
+        def _reads(jobs):
+            """Fresh reads ``_format`` and ``_format_history`` make for *jobs*."""
+            original = Job._fresh_env
+            with patch.object(
+                Job, "_fresh_env", autospec=True, side_effect=original,
+            ) as fresh:
+                jobs._format()
+                jobs._format_history()
+            return fresh.call_count
+
+        one = _reads(held)
+        for name in ("gate-a", "gate-b", "gate-c"):
+            held |= self._asked(self._instance(name))
+        self.assertEqual(_reads(held), one)
+
     def test_what_the_held_job_shows(self):
         """Its channel, the load and the capacity, and since when."""
         self._running()
@@ -294,12 +470,6 @@ class TestWhatTheListsShow(_GateCase):
 class TestTheWakeUp(_GateCase):
     """When a place frees, the jobs held wait no longer than the sweep."""
 
-    def _held(self, inst, since):
-        """A job held by the gate since *since*."""
-        return self._job(
-            "restart_instance", state="queued", inst=inst, channel_wait_since=since,
-        )
-
     def test_the_held_are_served_by_priority_then_age(self):
         """Production first, as queue_job's priorities order them."""
         prod = self._instance("gate-prod", environment="production")
@@ -307,13 +477,67 @@ class TestTheWakeUp(_GateCase):
         older = self._held(self.other, now - timedelta(minutes=5))
         urgent = self._held(prod, now - timedelta(minutes=1))
         newer = self._held(self.inst, now)
-        Job = type(self.env["cloud.job"])
-        with patch.object(Job, "_schedule_dispatch", autospec=True) as schedule:
+        with self._committed() as served:
             self.Job._wake_channel_waiters()
         self.assertEqual(
-            list(schedule.call_args.args[1]),
-            [urgent._scope_of(), older._scope_of(), newer._scope_of()],
+            served, [urgent._scope_of(), older._scope_of(), newer._scope_of()],
         )
+
+    def test_a_job_held_while_the_ending_one_ran_is_served(self):
+        """Looked for once the end commits: the runner's snapshot is older."""
+        running = self._running()
+        with self._committed() as served:
+            self._end(running)
+            late = self._held(self.other, fields.Datetime.now())
+        self.assertIn(late._scope_of(), served)
+
+    def test_the_held_go_before_the_queue_of_the_job_that_ended(self):
+        """A staging's next job does not take a slot a production waits for."""
+        prod = self._instance("gate-prod", environment="production")
+        running = self._running()
+        self._job("restart_instance", state="queued", inst=self.inst)
+        held = self._held(prod, fields.Datetime.now() - timedelta(minutes=1))
+        with self._committed() as served:
+            self._end(running)
+        self.assertEqual(served[:2], [held._scope_of(), running._scope_of()])
+
+    def test_once_a_channel_refuses_its_other_held_jobs_are_not_tried(self):
+        """``root.user`` full: the first held finds no slot, the rest wait."""
+        self._running()
+        now = fields.Datetime.now()
+        for name in ("gate-a", "gate-b", "gate-c"):
+            self._held(self._instance(name), now)
+        self.env.flush_all()
+        Job = type(self.env["cloud.job"])
+        original = Job._dispatch_next
+        # The fresh dispatcher's environment does not carry the test's
+        # ``ic_channel_gate``.
+        with patch.object(
+            Job, "_dispatch_next", autospec=True, side_effect=original,
+        ) as dispatch, patch.object(Job, "_channel_gate_on", return_value=True):
+            cloud_job_module._serve_held_fresh(self.env.registry)
+        self.assertEqual(dispatch.call_count, 1)
+
+    def test_a_step_that_hands_its_slot_to_the_next_wakes_nobody(self):
+        """Done, the next step of its chain takes the slot it leaves."""
+        self._running(state="wait_dependencies", inst=self.other)
+        first = self._running(next_uuid=f"gate-qj-{self._seq}")
+        Job = type(self.env["cloud.job"])
+        with patch.object(Job, "_wake_channel_waiters", autospec=True) as wake:
+            self._end(first)
+        wake.assert_not_called()
+
+    def test_a_step_whose_next_is_elsewhere_or_that_failed_wakes_them(self):
+        """Another channel, or no next step to run: the slot is free."""
+        self._running(state="wait_dependencies", inst=self.other, channel="root.bg")
+        elsewhere = self._running(next_uuid=f"gate-qj-{self._seq}")
+        self._running(state="wait_dependencies", inst=self.other)
+        failed = self._running(next_uuid=f"gate-qj-{self._seq}")
+        Job = type(self.env["cloud.job"])
+        for job, state in ((elsewhere, "done"), (failed, "failed")):
+            with patch.object(Job, "_wake_channel_waiters", autospec=True) as wake:
+                self._end(job, state=state)
+            wake.assert_called()
 
     def test_the_sweep_serves_them_in_the_same_order(self):
         """``_cron_dispatch_queued`` goes through the queues in that order."""

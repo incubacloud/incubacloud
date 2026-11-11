@@ -21,6 +21,7 @@ see the same string (``INSTALL.md``): on Odoo.sh they are one process, in
 Doodba the service's environment, in production the odoo.conf.
 """
 import os
+import threading
 from collections import Counter
 
 from odoo.addons.queue_job.jobrunner import queue_job_config
@@ -41,6 +42,13 @@ USER_CHANNEL = "root.user"
 
 #: Configured channel managers, by configuration string.
 _MANAGERS = {}
+
+#: Held while a manager's channels are created or walked. A manager is
+#: shared by the threads of one process (every request with workers = 0),
+#: and looking up a channel it has not seen creates it under its parent
+#: (``resolve_channel``): a walk of the children in another thread would
+#: see the dict change size.
+_LOCK = threading.RLock()
 
 
 def configured_channels():
@@ -66,11 +74,12 @@ def channel_manager(config):
     :param str config: a channels string, as ``configured_channels``
     :rtype: ChannelManager
     """
-    manager = _MANAGERS.get(config)
-    if manager is None:
-        manager = ChannelManager()
-        manager.simple_configure(config)
-        _MANAGERS[config] = manager
+    with _LOCK:
+        manager = _MANAGERS.get(config)
+        if manager is None:
+            manager = ChannelManager()
+            manager.simple_configure(config)
+            _MANAGERS[config] = manager
     return manager
 
 
@@ -83,7 +92,8 @@ def resolve_channel(manager, name):
     :param manager: a ``ChannelManager``
     :param str name: a queue job's channel
     """
-    return manager.get_channel_by_name(name or "root", parent_fallback=True)
+    with _LOCK:
+        return manager.get_channel_by_name(name or "root", parent_fallback=True)
 
 
 def channel_loads(manager, names):
@@ -104,13 +114,14 @@ def channel_loads(manager, names):
     def _load(channel):
         """Count *channel*'s load, and its children's on the way."""
         total = direct.get(channel, 0)
-        for child in channel.children.values():
+        for child in list(channel.children.values()):
             through = _load(child)
             total += min(through, child.capacity) if child.capacity else through
         loads[channel] = total
         return total
 
-    _load(manager.get_channel_by_name("root"))
+    with _LOCK:
+        _load(manager.get_channel_by_name("root"))
     return loads
 
 

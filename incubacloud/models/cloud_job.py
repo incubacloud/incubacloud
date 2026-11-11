@@ -77,6 +77,24 @@ _HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
 #: (``cloud.job._channel_admits``): two dispatchers of different queues
 #: never both see the last slot free.
 _CHANNEL_LOCK_NAMESPACE = 0x0C10D110
+#: Where a transaction keeps, in ``cr.postcommit.data``, the queue jobs it
+#: handed to queue_job, ``{uuid: (channel, hidden)}``: a fresh cursor does
+#: not see them before the commit, and the gate counts them all the same
+#: (``cloud.job._channel_load``).
+_DISPATCHED_KEY = "cloud_job_dispatched"
+#: Where a transaction keeps, in ``cr.postcommit.data``, that the jobs the
+#: gate holds are to be served once it commits (``_wake_channel_waiters``).
+_WAKE_KEY = "cloud_job_wake"
+
+#: How long the gate holds a visible job before it stops counting the
+#: background jobs that are due but not started, in seconds (11-nov-2026).
+#: Hidden types (probes, metrics) go to queue_job without the gate, a
+#: batch at a time: with ``root:1`` (Odoo.sh) or a panel of two workers, a
+#: job of a person would otherwise wait for the whole batch, and for the
+#: next one. Past this wait it goes to queue_job if the other jobs fit,
+#: and queue_job orders it among the probes; a parked job still counts.
+#: The sweep passes every two minutes: this is one pass.
+CHANNEL_PROBE_PATIENCE_S = 120
 
 #: How many entries may wait in one queue (an instance's, or a host's for
 #: host-level jobs). A chain is one entry. Follow-ups an executor queues
@@ -116,7 +134,7 @@ def _scope_label(scope):
     return f"instance {scope[0]}" if scope[0] else f"host {scope[1]}"
 
 
-def _dispatch_scope_fresh(registry, scope):
+def _dispatch_scope_fresh(registry, scope, refused=None):
     """Serve one queue on a cursor of its own, READ COMMITTED; never raises.
 
     The dispatcher that every event registers for after its commit
@@ -136,18 +154,66 @@ def _dispatch_scope_fresh(registry, scope):
 
     :param registry: the Odoo registry to open the cursor on
     :param scope: ``(instance_id, host_id)`` as ``_scope_of_step`` gives it
+    :param set refused: where to add the channel of an entry the gate
+        held back (``cloud.job._dispatch_next``)
     :return: whether an entry was dispatched
     :rtype: bool
     """
     try:
         with read_committed_cursor(registry) as cr:
             Job = as_platform(api.Environment(cr, SUPERUSER_ID, {})["cloud.job"])
-            return bool(Job._dispatch_next(*scope, channel_lock=True))
+            return bool(Job._dispatch_next(
+                *scope, channel_lock=True, refused=refused,
+            ))
     except Exception:  # the event this follows is recorded already
         _logger.exception(
             "cloud.job: could not serve the queue of %s", _scope_label(scope),
         )
         return False
+
+
+def _serve_held_fresh(registry):
+    """Serve the queues of the jobs the channel gate holds; never raises.
+
+    Run once the transaction that freed a slot commits
+    (``cloud.job._wake_channel_waiters``), so the jobs are looked for on
+    a fresh cursor: the runner's REPEATABLE READ snapshot of a job that
+    ends is the one it took when the job started, and a job held while it
+    ran is not in it. Each queue is served by the fresh dispatcher, in
+    the order of ``_waiter_order``; once the gate holds back an entry of
+    a channel, the jobs held in that channel after it are not tried.
+
+    :param registry: the Odoo registry to open the cursors on
+    """
+    try:
+        with read_committed_cursor(registry) as cr:
+            Job = api.Environment(cr, SUPERUSER_ID, {})["cloud.job"]
+            held = Job._held_by_the_gate()
+    except Exception:  # the event this follows is recorded already
+        _logger.exception("cloud.job: could not read the jobs held for a slot")
+        return
+    refused = set()
+    for scope, channel in held:
+        if channel in refused:
+            continue
+        _dispatch_scope_fresh(registry, scope, refused=refused)
+
+
+def _wake_once(data, registry):
+    """Serve the held jobs once, if this transaction asked for it.
+
+    Called by the callback ``_wake_channel_waiters`` registers and, first,
+    by every dispatch ``_schedule_dispatch`` registers: whichever runs
+    first after the commit serves the held jobs before its own queue, so
+    the jobs held for a slot go before the queue of the job that left it.
+
+    :param dict data: the committed cursor's ``postcommit.data``
+    :param registry: the Odoo registry to open the cursors on
+    """
+    if data.get(_WAKE_KEY) != "asked":
+        return
+    data[_WAKE_KEY] = "done"
+    _serve_held_fresh(registry)
 
 
 def _webhook_fields(payload):
@@ -1558,20 +1624,27 @@ class CloudJob(models.Model):
         Registered on ``cr.postcommit``, so a transaction that rolls back
         serves nothing — what it would have served it never recorded.
         Deduplicated per queue within the transaction: a chain of three
-        steps ending on one instance registers one dispatch.
+        steps ending on one instance registers one dispatch. When the
+        transaction also asked to wake the jobs held for a slot
+        (``_wake_channel_waiters``), they are served before these queues.
 
         :param scopes: iterable of ``(instance_id, host_id)``
         """
         cr = self.env.cr
-        pending = cr.postcommit.data.setdefault("cloud_job_dispatch", set())
+        data = cr.postcommit.data
+        pending = data.setdefault("cloud_job_dispatch", set())
         registry = self.env.registry
+
+        def _serve(scope):
+            """Serve the held jobs first if asked for, then *scope*."""
+            _wake_once(data, registry)
+            _dispatch_scope_fresh(registry, scope)
+
         for scope in scopes:
             if scope in pending:
                 continue
             pending.add(scope)
-            cr.postcommit.add(
-                lambda scope=scope: _dispatch_scope_fresh(registry, scope),
-            )
+            cr.postcommit.add(lambda scope=scope: _serve(scope))
 
     @contextlib.contextmanager
     def _fresh_env(self):
@@ -2154,7 +2227,9 @@ class CloudJob(models.Model):
             raise UserError(message)
 
     @api.model
-    def _dispatch_next(self, instance_id=None, host_id=None, channel_lock=False):
+    def _dispatch_next(
+        self, instance_id=None, host_id=None, channel_lock=False, refused=None,
+    ):
         """Start the next entry waiting in one queue, if its target is free.
 
         The one place a waiting job is started. Run on a fresh cursor
@@ -2189,6 +2264,8 @@ class CloudJob(models.Model):
         :param bool channel_lock: take the channels' lock before counting
             their slots: the fresh dispatcher does, the fast path of
             ``enqueue`` does not
+        :param set refused: where to add the entry's channel when the gate
+            holds it back
         :return: the entry dispatched, or an empty recordset
         """
         Job = self.sudo()
@@ -2206,6 +2283,8 @@ class CloudJob(models.Model):
             if verdict == "wait":
                 return self.browse()
             if not Job._channel_admits(entry, lock=channel_lock):
+                if refused is not None:
+                    refused.add(Job._entry_channel(entry[:1]))
                 return self.browse()
             Job._dispatch_entry(entry)
             return entry
@@ -2246,7 +2325,7 @@ class CloudJob(models.Model):
         )[0]
 
     @api.model
-    def _channel_load_names(self):
+    def _channel_load(self, dispatched=None):
         """Return the channel of each of the panel's jobs that takes a slot.
 
         Read from queue_job: ``enqueued`` and ``started``; ``pending`` due
@@ -2257,19 +2336,59 @@ class CloudJob(models.Model):
         crons: up to 30 minutes), nor a step of a chain that waits for the
         one before it, which takes the slot that one leaves.
 
-        :return: one channel name per job
-        :rtype: list[str]
+        Meant for a fresh cursor, which does not see what the calling
+        transaction has not committed: the jobs it handed to queue_job
+        itself (*dispatched*) count unless the cursor finds them, so two
+        ``enqueue`` in one transaction do not both take the last slot.
+
+        :param dict dispatched: ``{uuid: (channel, hidden)}`` of the jobs
+            the calling transaction dispatched (``_DISPATCHED_KEY``)
+        :return: ``(channel, idle_probe)`` per job; *idle_probe* for a job
+            of a hidden type that is due and has not started
+        :rtype: list[tuple[str, bool]]
         """
-        self.env.cr.execute(
-            "SELECT q.channel FROM queue_job q"
+        cr = self.env.cr
+        cr.execute(
+            "SELECT q.uuid, q.channel,"
+            "   q.state = 'pending' AND t.code IN %s"
+            "   AND NOT EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
+            "     WHERE k.queue_job_uuid = q.uuid AND k.closed IS NOT TRUE)"
+            " FROM queue_job q"
             " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " JOIN cloud_job_type t ON t.id = c.job_type_id"
             " WHERE q.state IN ('enqueued', 'started')"
             "   OR (q.state = 'pending' AND (q.eta IS NULL"
             "     OR q.eta <= (now() at time zone 'UTC')"
             "     OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
-            "       WHERE k.queue_job_uuid = q.uuid AND k.closed IS NOT TRUE)))"
+            "       WHERE k.queue_job_uuid = q.uuid AND k.closed IS NOT TRUE)))",
+            (tuple(self._get_hidden_job_types()) or ("",),),
         )
-        return [row[0] for row in self.env.cr.fetchall()]
+        load = {uuid: (channel, idle) for uuid, channel, idle in cr.fetchall()}
+        if dispatched:
+            cr.execute(
+                "SELECT uuid FROM queue_job WHERE uuid IN %s", (tuple(dispatched),),
+            )
+            seen = {row[0] for row in cr.fetchall()}
+            for uuid, (channel, hidden) in dispatched.items():
+                if uuid not in seen:
+                    load[uuid] = (channel, bool(hidden))
+        return list(load.values())
+
+    @api.model
+    def _note_dispatched(self, uuid, channel, hidden):
+        """Record a queue job this transaction handed to queue_job.
+
+        Kept in ``cr.postcommit.data`` (``_DISPATCHED_KEY``) for the gate
+        of a later ``enqueue`` in the same transaction, whose fresh count
+        cannot see it yet (``_channel_load``).
+
+        :param str uuid: the queue job's uuid
+        :param str channel: its channel
+        :param bool hidden: whether its type is hidden (a probe)
+        """
+        self.env.cr.postcommit.data.setdefault(_DISPATCHED_KEY, {})[uuid] = (
+            channel, hidden,
+        )
 
     @api.model
     def _channel_admits(self, entry, lock=False):
@@ -2282,10 +2401,13 @@ class CloudJob(models.Model):
         above it, has fewer of the panel's jobs taking a slot than its
         capacity (``_job_channels``), parked ones included. One held back
         stays ``queued`` with ``channel_wait_since``, and waits for a slot
-        to free (``_wake_channel_waiters``).
+        to free (``_wake_channel_waiters``). Held for
+        ``CHANNEL_PROBE_PATIENCE_S``, it no longer counts the probes that
+        are due and have not started.
 
-        The slots are counted on a fresh cursor. With *lock*, under one
-        lock for every channel, held to the end of the transaction
+        The slots are counted on a fresh cursor, with the jobs this
+        transaction dispatched (``_note_dispatched``). With *lock*, under
+        one lock for every channel, held to the end of the transaction
         (``_CHANNEL_LOCK_NAMESPACE``), so two dispatchers never both see
         the last slot free; the scope's lock is taken first, always. The
         fast path of ``enqueue`` takes none: it dispatches at most one
@@ -2303,21 +2425,62 @@ class CloudJob(models.Model):
             self.env.cr.execute(
                 "SELECT pg_advisory_xact_lock(%s, 0)", (_CHANNEL_LOCK_NAMESPACE,),
             )
+        dispatched = self.env.cr.postcommit.data.get(_DISPATCHED_KEY)
         with self._fresh_env() as env:
-            names = env["cloud.job"]._channel_load_names()
-        full = full_channel(channel_manager(configured_channels()), channel, names)
+            load = env["cloud.job"]._channel_load(dispatched)
+        manager = channel_manager(configured_channels())
+        full = full_channel(manager, channel, [name for name, _idle in load])
+        since = first.channel_wait_since
+        if full is not None and since and (
+            fields.Datetime.now() - since
+        ).total_seconds() >= CHANNEL_PROBE_PATIENCE_S:
+            full = full_channel(
+                manager, channel, [name for name, idle in load if not idle],
+            )
         if full is None:
             return True
-        if not first.channel_wait_since:
+        if not since:
             entry.with_context(ic_skip_state_hook=True).write(
                 {"channel_wait_since": fields.Datetime.now()},
             )
             self._broadcast_job_update(first.id)
-        _logger.info(
+        # Debug: the sweep and every wake-up come by here for each job held.
+        _logger.debug(
             "cloud.job %s waits for a free slot in %s (%d/%d)",
             first.id, *full,
         )
         return False
+
+    def _channel_waits(self):
+        """Say what each job of these, held back by the gate, waits for.
+
+        The load is read once, on one fresh cursor, for all of them: a
+        list of jobs asks for many.
+
+        :return: ``{job id: {channel, load, capacity, since}}``, for the
+            jobs held only
+        :rtype: dict
+        """
+        held = self.filtered(
+            lambda job: job.state == "queued" and job.channel_wait_since,
+        )
+        if not held:
+            return {}
+        with self._fresh_env() as env:
+            names = [name for name, _idle in env["cloud.job"]._channel_load()]
+        manager = channel_manager(configured_channels())
+        waits = {}
+        for job in held:
+            name, load, capacity = channel_wait(
+                manager, self._entry_channel(job.sudo()), names,
+            )
+            waits[job.id] = {
+                "channel": name,
+                "load": load,
+                "capacity": capacity,
+                "since": fields.Datetime.to_string(job.channel_wait_since),
+            }
+        return waits
 
     def _channel_wait(self):
         """Say what this job, held back by the gate, waits for.
@@ -2327,20 +2490,7 @@ class CloudJob(models.Model):
         :rtype: dict
         """
         self.ensure_one()
-        if self.state != "queued" or not self.channel_wait_since:
-            return None
-        with self._fresh_env() as env:
-            names = env["cloud.job"]._channel_load_names()
-        name, load, capacity = channel_wait(
-            channel_manager(configured_channels()),
-            self._entry_channel(self.sudo()), names,
-        )
-        return {
-            "channel": name,
-            "load": load,
-            "capacity": capacity,
-            "since": fields.Datetime.to_string(self.channel_wait_since),
-        }
+        return self._channel_waits().get(self.id)
 
     @api.model
     def _waiter_order(self, job):
@@ -2359,29 +2509,50 @@ class CloudJob(models.Model):
         return (priority, job.channel_wait_since or datetime.max, job.id)
 
     @api.model
-    def _wake_channel_waiters(self):
-        """Serve the queues of the jobs the gate holds, in order, after commit.
+    def _held_by_the_gate(self):
+        """Return the queues of the jobs the gate holds, in serving order.
 
-        Called when a slot may have freed: a job's end, and a postpone of a
-        job that is not parked, which sleeps until its ``eta``. The jobs
-        the gate held (``channel_wait_since``) are served in the order of
-        ``_waiter_order``, each queue on a fresh cursor of its own; the
-        first that finds a slot takes it. A parked job that comes back
-        wakes nobody: the slot was its own.
+        The jobs held for a slot (``channel_wait_since``), in the order of
+        ``_waiter_order``; one queue once, at the place of its first job.
+
+        :return: ``(scope, channel)`` per queue, the channel its job waits in
+        :rtype: list[tuple]
         """
         waiting = self.sudo().search([
             ("state", "=", "queued"),
             ("channel_wait_since", "!=", False),
             ("blocked_alert_id", "=", False),
         ])
-        if not waiting:
-            return
-        scopes = []
+        held = []
+        scopes = set()
         for job in waiting.sorted(key=self._waiter_order):
             scope = job._scope_of()
             if scope not in scopes:
-                scopes.append(scope)
-        self._schedule_dispatch(scopes)
+                scopes.add(scope)
+                held.append((scope, self._entry_channel(job)))
+        return held
+
+    @api.model
+    def _wake_channel_waiters(self):
+        """Serve the queues of the jobs the gate holds, in order, after commit.
+
+        Called when a slot may have freed: a job's end, and a postpone of a
+        job that is not parked, which sleeps until its ``eta``. Once this
+        transaction commits, the jobs the gate held are looked for on a
+        fresh cursor and their queues served in the order of
+        ``_waiter_order`` (``_serve_held_fresh``), before any queue this
+        transaction registered a dispatch of (``_schedule_dispatch``): a
+        job held for a slot goes before the next one of the queue of the
+        job that left it. Once per transaction. A parked job that comes
+        back wakes nobody: the slot was its own.
+        """
+        cr = self.env.cr
+        data = cr.postcommit.data
+        if data.get(_WAKE_KEY):
+            return
+        data[_WAKE_KEY] = "asked"
+        registry = self.env.registry
+        cr.postcommit.add(lambda: _wake_once(data, registry))
 
     @api.model
     def _entry_verdict(self, entry, scope):
@@ -2532,6 +2703,9 @@ class CloudJob(models.Model):
             "state": "pending",
             "channel_wait_since": False,
         })
+        self._note_dispatched(
+            delayed.uuid, channel, job_type.code in self._get_hidden_job_types(),
+        )
         self._broadcast_job_update(job.id)
 
     def _as_its_creator(self):
@@ -2589,6 +2763,12 @@ class CloudJob(models.Model):
             }
             if node._generated_job:
                 vals["queue_job_uuid"] = node._generated_job.uuid
+                if position == 0:
+                    # The step that takes a slot; the others wait for it.
+                    self._note_dispatched(
+                        node._generated_job.uuid, node._generated_job.channel,
+                        False,
+                    )
             record.with_context(ic_skip_state_hook=True).write(vals)
             self._broadcast_job_update(record.id)
 
@@ -2823,9 +3003,10 @@ class CloudJob(models.Model):
 
         For a terminal state: ``_after_job_terminal`` (what a layer hooks
         into), then a dispatch of every queue the job waited in is
-        registered for after this transaction commits, and of the queues
-        whose jobs wait for a slot in their channel
-        (``_wake_channel_waiters``). A ``cancelled``
+        registered for after this transaction commits, and, first, of the
+        queues whose jobs wait for a slot in their channel
+        (``_wake_channel_waiters``), unless the next step of its chain
+        takes the slot (``_hands_its_slot_on``). A ``cancelled``
         written on a job whose queue.job still runs is the cooperative
         stop flag of ``cancel_job``, not an end: the end arrives through
         ``queue_job_ext`` when the executor stops, and is acted on then.
@@ -2841,12 +3022,13 @@ class CloudJob(models.Model):
             return
         hidden = self._get_hidden_job_types()
         scopes = set()
-        ended = False
+        wake = False
         for job in self.sudo():
             queue_job = job.queue_job_id
             if queue_job and queue_job.state in self._running_states:
                 continue
-            ended = True
+            if not (new_state == "done" and job._hands_its_slot_on()):
+                wake = True
             if after_commit:
                 job._run_after_terminal_after_commit(new_state)
             else:
@@ -2855,10 +3037,34 @@ class CloudJob(models.Model):
                 continue
             scopes |= self._queue_scopes_of(job)
         self._schedule_dispatch(scopes)
-        if ended:
+        if wake:
             # Its slot in the channel is free: the jobs held for one go
-            # next, hidden types' too (they take slots).
+            # next, hidden types' too (they take slots), before the queues
+            # above.
             self._wake_channel_waiters()
+
+    def _hands_its_slot_on(self):
+        """Whether the next step of this job's chain takes the slot it leaves.
+
+        A step that ends done lets queue_job start the step that waits for
+        it (``wait_dependencies``), in the same channel: that one takes
+        the slot, and waking the jobs held for it would let one of them
+        take it first, between the two steps of the chain.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        queue_job = self.sudo().queue_job_id
+        children = (queue_job.dependencies or {}).get("reverse_depends_on") or []
+        if not children:
+            return False
+        self.env.cr.execute(
+            "SELECT 1 FROM queue_job WHERE uuid IN %s"
+            " AND state = 'wait_dependencies'"
+            " AND channel IS NOT DISTINCT FROM %s LIMIT 1",
+            (tuple(children), queue_job.channel or None),
+        )
+        return bool(self.env.cr.fetchone())
 
     def _run_after_terminal(self, new_state):
         """Give the layers their ``_after_job_terminal``; never raises.
@@ -4481,6 +4687,7 @@ class CloudJob(models.Model):
             }
 
         parked = self._parked_rows()
+        waits = self._channel_waits()
 
         return [
             {
@@ -4515,7 +4722,7 @@ class CloudJob(models.Model):
                 ),
                 "retry_of_id": job.retry_of_id.id if job.retry_of_id else None,
                 # Held back by the channel gate: what for, and since when.
-                "channel_wait": job._channel_wait(),
+                "channel_wait": waits.get(job.id),
                 **job._parked_fields(parked.get(job.id)),
                 "user_id": job.create_uid.id,
                 "user_name": job.create_uid.name or "",
@@ -4727,6 +4934,7 @@ class CloudJob(models.Model):
         now = fields.Datetime.now()
         places = self._queue_places()
         parked = self._parked_rows()
+        waits = self._channel_waits()
         result = []
         for job in self:
             start = job.create_date
@@ -4761,7 +4969,7 @@ class CloudJob(models.Model):
                     ),
                     # What a held or a parked job waits for, as in
                     # ``_format``.
-                    "channel_wait": job._channel_wait(),
+                    "channel_wait": waits.get(job.id),
                     **job._parked_fields(parked.get(job.id)),
                     "create_date": job.create_date,
                     "write_date": job.write_date,
