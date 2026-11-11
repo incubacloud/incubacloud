@@ -470,15 +470,48 @@ class TestAPlanWithoutStepsApart(BaseCase):
         self.assertFalse(executor._checkpoint)
         transport.run.assert_not_called()
 
-    def test_no_executor_of_the_product_marks_a_step(self):
+    def test_only_the_rebuild_marks_a_step(self):
         """Steps are marked one by one, each with its own review and QA.
 
-        The first, the rebuild's image build, comes with the plan's tenth
-        cut (decided on 10-nov-2026): this list then names it.
+        The first, the rebuild's image build (decided on 10-nov-2026),
+        marked in core's rebuild and inherited by every rebuild built on
+        it; no other module of an executor marks one.
         """
         marked = re.compile(r"""["']detached["']\s*:""")
-        found = sorted(
-            cls.__name__ for cls in executor_registry.all().values()
+        found = sorted({
+            inspect.getmodule(cls).__name__.rsplit(".", 1)[-1]
+            for cls in executor_registry.all().values()
             if marked.search(inspect.getsource(inspect.getmodule(cls)))
+        })
+        self.assertEqual(found, ["rebuild_instance_executor"])
+
+    def test_every_class_adds_what_it_carries(self):
+        """A mixin's ``_carried`` adds to its bases' instead of hiding them."""
+
+        class _Base(AbstractExecutor):
+            """Carries one attribute."""
+
+            _carried = ("_a",)
+            _a = 1
+
+            def get_commands(self):
+                """Unused."""
+                return []
+
+        class _Mixin:
+            """Carries another."""
+
+            _carried = ("_b",)
+            _b = 2
+
+        class _Both(_Mixin, _Base):
+            """Both."""
+
+        executor = object.__new__(_Both)
+        executor._chunks_persisted = 0
+        executor._cap_marker_emitted = False
+        self.assertEqual(
+            executor._carried_names(),
+            ("_chunks_persisted", "_cap_marker_emitted", "_b", "_a"),
         )
-        self.assertEqual(found, [])
+        self.assertEqual(executor._carried_state()["_a"], 1)

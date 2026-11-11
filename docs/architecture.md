@@ -270,8 +270,10 @@ A job runs inside an Odoo request, and Odoo cuts a request at
 and runs on its server apart from the request; the job follows it, leaves
 it there when its attempt's time is up, and comes back for it in a later
 attempt. An executor with no step marked runs as before: no checkpoint, no
-park, a dead worker repeats it from the start. No step of the product is
-marked yet: each is marked on its own, with its own review and QA.
+park, a dead worker repeats it from the start. Steps are marked one by one,
+each with its own review and QA. Marked so far: «Rebuild Odoo image» of
+`rebuild_instance` and of every rebuild that inherits it (1.0.225,
+11-nov-2026), before the rebuild's point of no return.
 
 - **The step on the server** (`scripts/detached_step.sh`, its contract in
   its header). `start` runs the command in a session of its own
@@ -290,8 +292,9 @@ marked yet: each is marked on its own, with its own review and QA.
   attempts, a loss of contact, the host whose build lock it keeps, and,
   encrypted, the plan as the first attempt made it, the results of the
   steps that ended, the job's working directory, the secrets it staged and
-  the executor's `_carried` attributes (what its closing hooks read that is
-  set before the steps). Written on cursors of its own, never in the job's
+  the executor's carried attributes (what its closing hooks read that is
+  set before the steps: the `_carried` of each of its classes, a mixin's
+  added to its bases'). Written on cursors of its own, never in the job's
   transaction; the log offset with the log lines it covers. **While the row
   exists, the job may have something on a server that nobody has closed.**
   The closing hook takes it in its durable transaction; one that could not
