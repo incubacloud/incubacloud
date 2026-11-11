@@ -29,7 +29,8 @@
                 <span t-if="props.plain" class="ic-set-label">
                     <t t-esc="label"/>
                 </span>
-                <label t-else="" class="ic-set-label" t-att-for="inputId">
+                <label t-else="" class="ic-set-label" t-att-for="props.button ? null : inputId"
+                       t-att-id="props.button ? labelId : null">
                     <t t-esc="label"/>
                     <span t-if="changed" class="ic-set-dot" role="img" aria-label="Changed" title="Changed"/>
                 </label>

@@ -387,6 +387,7 @@ describe("Settings — the label of a row names its control", () => {
     function rowWith(props) {
         const row = Object.create(SettingRow.prototype);
         row.props = props;
+        row.store = { errors: {} };
         return row;
     }
 
@@ -395,5 +396,10 @@ describe("Settings — the label of a row names its control", () => {
         expect(rowWith({ id: "provider", control: "ic_asst_provider" }).inputId).toBe(
             "ic_asst_provider"
         );
+    });
+
+    test("a button row's control is described by the label, which names it no more", () => {
+        expect(rowWith({ id: "read", help: "", button: true }).describedBy).toBe("ic-set-read-label");
+        expect(rowWith({ id: "read", help: "" }).describedBy).toBe("");
     });
 });

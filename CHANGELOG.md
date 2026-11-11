@@ -212,7 +212,10 @@ is unchanged.
 - **The labels of the assistant's provider, models, allowed models and
   users name their control.** A settings row takes a `control` id for a
   control whose slot draws an id of its own; the label's `for` pointed to
-  an id that did not exist.
+  an id that did not exist. A row whose control is a button (the models'
+  «Read the models») takes `button`: its label describes the button
+  through `aria-describedby` instead of naming it, so the button keeps the
+  name its text gives.
 - **Connect as user lists the users of an Odoo 8.0 instance.** That
   version's `res_users` has no `share` column (base adds it from 9.0), so
   its internal users are taken from `base.group_user`.
