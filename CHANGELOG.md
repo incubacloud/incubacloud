@@ -51,7 +51,10 @@ is unchanged.
   `detached` runs in a session of its own (`scripts/detached_step.sh`),
   capped on the server by its timeout, and is read every second: its lines
   reach the job log as an attached step's do, and its exit status and
-  stdout (the last 256 KiB) are what the job gets. Cancelled, it is sent
+  stdout (the last 256 KiB) are what the job gets. Its command runs with
+  the umask of the session that starts it, so what it creates on the
+  server has the modes it would have attached; the step's own directory
+  and files stay `0700` and `0600`. Cancelled, it is sent
   TERM, given 60 s for its trap and killed; its last lines still reach the
   log. One step at a time per instance, or per host: a job that finds
   another job's step still running there waits 30 s for it. A

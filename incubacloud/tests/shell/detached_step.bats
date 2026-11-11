@@ -78,6 +78,37 @@ wait_state() {
     [ "$(cat "$TMP/bytes")" = "$(printf '%s\nend' "$HOME")" ]
 }
 
+@test "the step creates files with the umask of who starts it, as attached" {
+    (umask 022 && start "$D" 'umask; echo a > "$HOME/file"; mkdir "$HOME/dir"')
+    wait_state "$D" done
+    [ "$(cat "$TMP/bytes")" = "0022" ]
+    [ "$(stat -c %a "$HOME/file")" = 644 ]
+    [ "$(stat -c %a "$HOME/dir")" = 755 ]
+    # The step's own directory and files stay its account's only.
+    [ "$(stat -c %a "$D")" = 700 ]
+    [ "$(stat -c %a "$D/log")" = 600 ]
+    [ "$(stat -c %a "$D/out")" = 600 ]
+    [ "$(stat -c %a "$D/exit")" = 600 ]
+}
+
+@test "a stricter umask of who starts it is kept, not widened to 022" {
+    (umask 077 && start "$D" 'echo a > "$HOME/file"; mkdir "$HOME/dir"')
+    wait_state "$D" done
+    [ "$(stat -c %a "$HOME/file")" = 600 ]
+    [ "$(stat -c %a "$HOME/dir")" = 700 ]
+}
+
+@test "a umask _run cannot read falls back to 022" {
+    mkdir -m 700 "$D"
+    cp "$SCRIPT" "$D/ctl.sh"
+    printf '%s\n' "$(($(date +%s) + 60))" > "$D/deadline"
+    printf '%s\n' 'umask; echo a > "$HOME/file"' > "$D/cmd"
+    (umask 077 && bash "$D/ctl.sh" _run "$D" 60 'u=rwx' </dev/null >/dev/null 2>&1)
+    [ "$(cat "$D/exit")" = 0 ]
+    [ "$(cat "$D/out")" = "0022" ]
+    [ "$(stat -c %a "$HOME/file")" = 644 ]
+}
+
 @test "a second start does nothing: the step runs once" {
     start "$D" 'echo ran >> "$HOME/runs"; sleep 1'
     run start "$D" 'echo ran >> "$HOME/runs"; sleep 1'
