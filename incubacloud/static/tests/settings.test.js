@@ -14,6 +14,7 @@ import {
 import {
     coreForm, CORE_PARTS, coreSaveVals,
 } from "@incubacloud/components/settings/core_settings_block";
+import { SettingRow } from "@incubacloud/components/settings_form/settings_form";
 import { GithubSettingsBlock } from "@incubacloud/components/settings/github_settings_block";
 import { logSizeProblem, looksLikeRange, rangesProblem } from "@incubacloud/components/settings/core_sections";
 import {
@@ -373,5 +374,26 @@ describe("Settings — rate limits", () => {
 
     test("a limit under 1 is refused before it is sent", () => {
         expect(fieldProblem(settingField("rate_limit_webhook_per_min"), 0)).toBe("Must be 1 or more.");
+    });
+});
+
+describe("Settings — the label of a row names its control", () => {
+    /**
+     * A row stand-in with the props it was drawn with.
+     *
+     * @param {object} props the row's props
+     * @returns {object} the stand-in
+     */
+    function rowWith(props) {
+        const row = Object.create(SettingRow.prototype);
+        row.props = props;
+        return row;
+    }
+
+    test("the control takes the row's own id unless the slot draws one of its own", () => {
+        expect(rowWith({ id: "provider" }).inputId).toBe("ic-set-provider-input");
+        expect(rowWith({ id: "provider", control: "ic_asst_provider" }).inputId).toBe(
+            "ic_asst_provider"
+        );
     });
 });
