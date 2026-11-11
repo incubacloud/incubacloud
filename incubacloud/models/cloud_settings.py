@@ -1138,6 +1138,14 @@ class CloudSettings(models.Model):
         the panel, not to the people working in it. Never blocks the
         startup.
 
+        What in the channels may make a parked job wait for others
+        (``channel_problems``) is only logged: it kills no job, and it
+        matters only once a job parks and finds no slot when it comes
+        back, which raises the slow job warning by itself, naming the
+        channel (``cloud.job._parked_overdue``). Most servers have it
+        and never park: a dedicated runner with an hour's limit and
+        other modules' jobs in the queue would carry the alert for good.
+
         Only a server started by ``odoo server`` is judged. ``click-odoo``
         tools (``click-odoo-update`` in every deploy) and scripts load
         the registry without starting a server, and ``odoo shell``
@@ -1161,14 +1169,15 @@ class CloudSettings(models.Model):
             options.get("limit_time_real") or 0,
         )
         try:
-            problems = problems + channel_problems(
+            channels = channel_problems(
                 configured_channels(), self._foreign_job_channels(),
             )
         except Exception:  # noqa: BLE001 — never block the startup
+            channels = []
             _logger.warning(
                 "Could not read the job queue's channels.", exc_info=True,
             )
-        for problem in problems:
+        for problem in problems + channels:
             _logger.warning(problem)
         Alert = self.env["cloud.alert"].sudo()
         try:

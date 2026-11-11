@@ -11,6 +11,7 @@ from odoo import cli as odoo_cli
 from odoo.service import server as odoo_server
 from odoo.tests.common import BaseCase, TransactionCase
 
+from odoo.addons.incubacloud.models import cloud_settings as cloud_settings_module
 from odoo.addons.incubacloud.models._job_server_limits import (
     JOB_LIMITS_ALERT_CODE,
     job_server_limit_problems,
@@ -98,6 +99,16 @@ class TestJobServerLimitAlert(TransactionCase):
             odoo_server, "server", MagicMock(spec=odoo_server.ThreadedServer),
         ))
         self.startPatcher(patch.object(odoo_cli, "COMMAND", "server"))
+        # Channels with nothing to say, whatever the server tested runs with.
+        self.channels = "root:3,root.user:1,root.bg:1"
+        self.startPatcher(patch.object(
+            cloud_settings_module, "configured_channels",
+            side_effect=lambda: self.channels,
+        ))
+        self.startPatcher(patch.object(
+            type(self.env["cloud.settings"]), "_foreign_job_channels",
+            return_value=set(),
+        ))
 
     def _active(self):
         """Return the active alert about the job server's limits."""
@@ -121,6 +132,27 @@ class TestJobServerLimitAlert(TransactionCase):
         Settings._warn_job_server_limits(_options(
             limit_time_real=3600, limit_memory_soft=0, limit_memory_hard=0,
         ))
+        self.assertFalse(self._active())
+
+    def test_the_channels_are_logged_and_raise_nothing(self):
+        """``root:1`` with other modules' jobs: two lines in the log, no alert.
+
+        A dedicated runner with an hour's limit carries them for good, and
+        a parked job that finds no slot raises the slow job warning itself.
+        """
+        self.channels = "root:1"
+        Settings = self.env["cloud.settings"]
+        with patch.object(
+            type(Settings), "_foreign_job_channels", return_value={"root.oidc"},
+        ), self.assertLogs(
+            "odoo.addons.incubacloud.models.cloud_settings", "WARNING",
+        ) as logs:
+            Settings._warn_job_server_limits(_options(
+                workers=9, limit_time_real=3600,
+            ))
+        self.assertEqual(len(logs.records), 2)
+        self.assertIn("root.user no capacity", logs.output[0])
+        self.assertIn("root.oidc", logs.output[1])
         self.assertFalse(self._active())
 
     def test_a_web_only_server_leaves_the_alert_alone(self):
