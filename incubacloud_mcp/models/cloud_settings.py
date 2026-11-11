@@ -145,5 +145,6 @@ class CloudSettings(models.Model):
         notice says whether it does.
         """
         return any(
-            spec.charges for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()
+            spec.may_charge
+            for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()
         )

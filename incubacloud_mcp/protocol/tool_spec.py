@@ -60,7 +60,10 @@ class ToolSpec:
     and is listed with its description.
     ``charges`` marks a tool that changes what an account is billed (an
     order, a purchase, a plan): an auto-approval rule lets it through only
-    when the rule includes charges.
+    when the rule includes charges. ``charges_per_call`` marks a tool that
+    charges only for some arguments (deleting a destination the platform
+    bills for): a ``_charges_<name>`` method of ``incubacloud.mcp.tools``
+    says whether this call does, and a call it cannot judge charges.
     """
 
     name: str
@@ -77,6 +80,7 @@ class ToolSpec:
     audit: bool = True
     requires: str = ""
     charges: bool = False
+    charges_per_call: bool = False
 
     def __post_init__(self):
         """Refuse a declaration the server could not honour safely.
@@ -88,6 +92,16 @@ class ToolSpec:
             raise ValueError(f"{self.name}: confirm is one of {CONFIRM_MODES}")
         if self.destructive and self.confirm == "never":
             raise ValueError(f"{self.name}: a destructive tool asks for approval")
+        if self.charges and self.charges_per_call:
+            raise ValueError(f"{self.name}: charges always, or per call, not both")
+
+    @property
+    def may_charge(self):
+        """Whether a call of this tool may charge an account: always, or by call.
+
+        :rtype: bool
+        """
+        return self.charges or self.charges_per_call
 
     def listed(self, auto_until="", auto_charges=False):
         """Return this tool's ``tools/list`` entry.
@@ -107,11 +121,19 @@ class ToolSpec:
             description += " Destructive."
         ruled = bool(auto_until) and self.confirm != "never"
         # A rule without charges leaves a tool that charges asking.
-        charge_asks = ruled and self.charges and not auto_charges
+        charge_asks = ruled and self.may_charge and not auto_charges
         if ruled and not charge_asks:
             description += (
                 " An auto-approval rule lets this credential run it without asking "
                 f"the user, {until_text(auto_until)}."
+            )
+        elif charge_asks and self.charges_per_call:
+            # Most calls run under the rule; only the ones that charge ask.
+            description += (
+                " An auto-approval rule lets this credential run it without asking "
+                f"the user, {until_text(auto_until)}, but not when it acts on "
+                "something the platform bills: it charges money then, and the "
+                "rule does not include charges."
             )
         elif self.confirm == "always":
             description += " The panel asks the user to approve it before it runs."
@@ -119,7 +141,7 @@ class ToolSpec:
             description += (
                 " In some cases the panel asks the user to approve it before it runs."
             )
-        if charge_asks:
+        if charge_asks and not self.charges_per_call:
             description += (
                 " It charges money, and this credential's auto-approval rule does "
                 "not include charges."

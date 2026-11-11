@@ -328,7 +328,7 @@ class McpServer(models.AbstractModel):
             return INSTRUCTIONS.format(approvals=APPROVAL_SENTENCE)
         approvals = AUTO_APPROVAL_SENTENCE.format(until=until_text(rule._until()))
         if not rule.include_charges and any(
-            spec.charges for spec in self._visible_specs()
+            spec.may_charge for spec in self._visible_specs()
         ):
             approvals += f" {AUTO_APPROVAL_CHARGES_SENTENCE}"
         return INSTRUCTIONS.format(approvals=approvals)

@@ -594,9 +594,10 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
             Principal(self.dev.id, "API key ci", self.credential),
         )
 
-    def _gate(self, spec):
-        """Return what ``_gate`` answers to the developer's key calling *spec*,
-        and the marks it leaves; the tool always asks without a rule."""
+    def _gate(self, spec, args=None):
+        """Return what ``_gate`` answers to the developer's key calling *spec*
+        with *args*, and the marks it leaves; the tool always asks without a
+        rule."""
         Tools = type(self.env["incubacloud.mcp.tools"])
         marks = []
         with (
@@ -608,7 +609,7 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
             result = (
                 self.env["incubacloud.mcp.confirm"]
                 .with_user(self.dev)
-                ._gate(spec, {}, self._ctx(), {})
+                ._gate(spec, args or {}, self._ctx(), {})
             )
         return result, [mark for mark in marks if mark]
 
@@ -648,6 +649,42 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
                 result, marks = self._gate(spec)
                 self.assertIsNone(result)
                 self.assertEqual(marks, [{"approval": "auto", "rule": rule.id}])
+
+    def test_a_rule_without_charges_asks_only_for_the_calls_that_charge(self):
+        """A tool that charges per call asks under a rule without charges when
+        its call does, and runs, marked auto, when it does not; a call whose
+        arguments are not known counts as charging."""
+        rule = self._grant(self.dev, self.credential)
+        plain = self.env["incubacloud.mcp.catalog"]._spec("delete_project")
+        spec = dataclasses.replace(plain, charges_per_call=True)
+        self.assertTrue(spec.may_charge)
+        self.assertFalse(spec.charges)
+
+        def charges(_tools, args):
+            """The call charges when its arguments say so."""
+            return args["billed"]
+
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        with patch.object(Tools, "_charges_delete_project", charges, create=True):
+            self.assertFalse(rule._covers(spec, {"billed": True}))
+            self.assertTrue(rule._covers(spec, {"billed": False}))
+            self.assertFalse(rule._covers(spec))
+            result, marks = self._gate(spec, {"billed": True})
+            self.assertIsNotNone(result)
+            self.assertEqual(marks, [])
+            result, marks = self._gate(spec, {"billed": False})
+            self.assertIsNone(result)
+            self.assertEqual(marks, [{"approval": "auto", "rule": rule.id}])
+        # Without a method to judge it, a per-call tool always charges.
+        self.assertFalse(rule._covers(spec, {"billed": False}))
+
+    def test_a_rule_with_charges_covers_the_calls_that_charge(self):
+        """With its box ticked, every call of a per-call tool is covered."""
+        rule = self._grant(self.dev, self.credential, include_charges=True)
+        plain = self.env["incubacloud.mcp.catalog"]._spec("delete_project")
+        spec = dataclasses.replace(plain, charges_per_call=True)
+        self.assertTrue(rule._covers(spec, {}))
+        self.assertTrue(rule._covers(spec))
 
     def test_only_true_includes_charges(self):
         """A box sent as anything but true includes no charges."""
@@ -731,7 +768,8 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
     def test_without_charges_only_the_tools_that_charge_still_ask(self):
         """For every installed tool that asks: under a rule without charges,
         ``_gate`` runs it unless it charges money, and those that charge
-        still ask, whatever module declares them."""
+        still ask, whatever module declares them; so does one that charges
+        for some calls, called with arguments it cannot judge."""
         self._grant(self.dev, self.credential)
         specs = [
             spec
@@ -741,8 +779,8 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         for spec in specs:
             with self.subTest(tool=spec.name):
                 result, marks = self._gate(spec)
-                self.assertEqual(result is None, not spec.charges)
-                self.assertEqual(bool(marks), not spec.charges)
+                self.assertEqual(result is None, not spec.may_charge)
+                self.assertEqual(bool(marks), not spec.may_charge)
 
 
 @tagged("post_install", "-at_install")
