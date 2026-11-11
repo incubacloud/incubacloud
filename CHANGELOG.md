@@ -44,6 +44,18 @@ unchanged.
   another build or teardown of the host waits 30 s while it is there.
   The parked job takes the lock again when it comes back, and waits 5 s
   if another one holds it at that instant.
+- **A parked job is stopped and closed by itself or by the
+  reconciliation.** Cancelled while parked, it comes back within seconds,
+  stops its step (TERM, 60 s for its trap, KILL), removes its working
+  directory and its secrets, and closes as a job cancelled while it ran,
+  with the results of the steps that had ended. Its queue job cancelled,
+  set done or deleted by hand from queue_job's views is not taken for a
+  job that never ran: the reconciliation of lost jobs stops what it left
+  on the server (20 s for the trap) before its hook. A job that ended
+  with something left on a server it could not reach is picked up by the
+  same reconciliation at each pass, and given up an hour past the step's
+  cap. A step past the job's point of no return is never stopped: it is
+  left to end and removed afterwards.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in

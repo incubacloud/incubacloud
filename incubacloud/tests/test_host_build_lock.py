@@ -374,9 +374,10 @@ class TestTheLockOutlivesAPark(_HostLockBase):
         row = self._park(take_lock=False)
         cr = self._hold_lock(self.host.id)
         try:
-            with patch.object(RebuildInstanceExecutor, 'run', autospec=True) as run:
-                with self.assertRaises(RetryableJobError) as caught:
-                    self.parked.job.execute()
+            with patch.object(
+                RebuildInstanceExecutor, 'run', autospec=True,
+            ) as run, self.assertRaises(RetryableJobError) as caught:
+                self.parked.job.execute()
             run.assert_not_called()
         finally:
             cr.rollback()
