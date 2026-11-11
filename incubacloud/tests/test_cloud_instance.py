@@ -623,8 +623,8 @@ class TestCronRefreshBackupList(TransactionCase):
 
         A stopped stack answers ``service "backup" is not running`` with
         status 1, so the job can only fail. The case that forced this:
-        a warm spare, which ships stopped by design and holds no
-        customer data, had ``backup`` written into its
+        an instance kept stopped on purpose, which holds no data,
+        had ``backup`` written into its
         ``compose_services`` by its own rebuild — the only gate at the
         time — and the cron started shelling into it daily. One failed
         job and one alert per spare, for as long as it sat unclaimed.

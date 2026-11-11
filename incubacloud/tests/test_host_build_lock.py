@@ -143,7 +143,7 @@ class TestTeardownsShareTheHostLock(_HostLockBase):
     """Instance teardowns take the same lock the builds do.
 
     Production, 2026-09-19: "Recycle all" on a host enqueued one
-    ``delete_instance`` per warm, ``enqueue`` only serialises per
+    ``delete_instance`` per instance, ``enqueue`` only serialises per
     instance, and both ran ``docker compose`` in the same millisecond.
     One of them saw ``compose config`` die in under 110 ms and reported
     the instance's compose as missing its backup service — a diagnosis

@@ -9,7 +9,7 @@ ram_total_gb, disk_usage, disk_free_gb, last_probed, and the
 disk-critical alert, which is now a seeded ``cloud.metric.rule``). It does
 NOT cover ``instance_health``, which also does HTTP health probing and
 error-log scraping — those need blackbox and Loki, both part of
-observability v2 (the deferred second batch of the metrics plan, not the
+observability v2 (a later batch of the metrics work, not the
 roadmap's phase 2). That job therefore stays.
 """
 import logging

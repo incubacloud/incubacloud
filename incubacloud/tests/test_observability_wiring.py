@@ -1378,8 +1378,8 @@ class TestStaleOrganisationsAreDeleted(BaseCase):
 class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
     """The host's instances share ``inverseproxy_shared``; the agents must not.
 
-    That network is flat: every instance's Odoo, the warm spares and the
-    proxy see each other on it. vmagent used to join it to scrape
+    That network is flat: every instance's Odoo, stopped ones included,
+    and the proxy see each other on it. vmagent used to join it to scrape
     Traefik, and listened on ``:8429`` there, so any process running in
     an instance could push series that vmagent forwards to the central
     under the host's own credential — activity that never happened,

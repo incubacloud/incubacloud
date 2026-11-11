@@ -219,7 +219,7 @@ _LABEL_FETCH = "Fetch the repositories"
 
 #: Seconds the whole of ``fetch-repos`` may take: each repository has
 #: 600 s or what is left of these, and is retried once only while some is
-#: left (plan of the Git tokens, 10-nov-2026). A fixed budget, not one per
+#: left (10-nov-2026). A fixed budget, not one per
 #: repository: three of 1 260 s each already passed the 3 600 s at which
 #: the job runner kills a job. It counts for the build's repetition too
 #: (``_build_retried_once``).
@@ -259,7 +259,7 @@ _ICP_RESYNC = "incubacloud.requirements_resync_enabled"
 
 #: The series that clone their repositories in the image again, comma
 #: separated: the way back from fetching them on the host, without a new
-#: version of core (plan of the Git tokens, 10-nov-2026). Empty by default.
+#: version of core (10-nov-2026). Empty by default.
 _ICP_REPOS_IN_IMAGE = "incubacloud.repos_in_image_series"
 
 #: The most of GitHub's answer about one repository read, in bytes: the
@@ -1995,10 +1995,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         tears its sandbox down and releases the endpoint, so a stopped
         stack's network counts as unused and ``docker system prune``
         deletes it however well its containers are labelled. On
-        2026-08-20 it deleted the networks of both ``ready`` warm
-        spares: the containers survived, the post-prune check reported
-        every stack intact, and neither stack could start again —
-        a container that compose merely *starts* keeps the network id
+        2026-08-20 it deleted the networks of two instances kept
+        stopped on purpose: the containers survived, the post-prune
+        check reported every stack intact, and neither stack could start
+        again — a container that compose merely *starts* keeps the network id
         it was created with. The prune therefore no longer touches
         networks at all; see ``ansible/playbooks/host_maintenance.yml``.
         """
@@ -2602,8 +2602,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         self._sys("✓ Configuration files uploaded.")
 
     #: Whether this executor checks the instance's repositories for an
-    #: addon defined twice before it starts (``blocking_alert``). A warm
-    #: claim ships the repositories the warm was built from and skips it.
+    #: addon defined twice before it starts (``blocking_alert``). An executor
+    #: that ships repositories already checked once turns it off.
     _preflight_addons = True
 
     def blocking_alert(self):

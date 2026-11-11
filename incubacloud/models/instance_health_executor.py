@@ -1690,7 +1690,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             if svc not in expected_other:
                 # Service runs on the host but the instance doesn't
                 # actually need it (e.g. backup container left over
-                # from a plan downgrade). Drop any stale alert and
+                # from a change of its services). Drop any stale alert and
                 # move on — we don't grade what we don't expect.
                 self._resolve_inst_alert(code)
                 continue

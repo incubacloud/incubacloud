@@ -36,7 +36,7 @@ PURGE_ALERT_BY_EXIT = {
     # is usually transient (the script already retried once) and whose
     # fix is "try again", not "rebuild". Production 2026-09-19: a read
     # that died in under 110 ms was reported as 20, and the operator was
-    # sent to rebuild a warm instance that was about to be destroyed.
+    # sent to rebuild an instance that was about to be destroyed.
     23: (
         "backup_purge_compose_unreadable",
         "The host could not read %(name)s's compose file, so its backups "
@@ -51,7 +51,7 @@ PURGE_ALERT_BY_EXIT = {
 #: ``continue_on`` so it does: forgiving it only in ``parse_results``
 #: came too late, after ``stop_on_failure`` had already cut the teardown
 #: off, and the delete reported instances removed that were still on
-#: the host (2026-09-29: nine warm stacks left running).
+#: the host (2026-09-29: nine stacks left running).
 PURGE_EXIT_ALREADY_EMPTY = 10
 
 #: Label of the archive step, for the same reason as ``PURGE_LABEL``.
@@ -87,7 +87,7 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
     """Stop and remove a doodba instance from the remote host.
 
     Takes the per-host lock: ``enqueue`` only serialises per instance,
-    so "Recycle all" on a host fired one of these per warm in the same
+    so "Recycle all" on a host fired one of these per instance in the same
     millisecond, and the concurrent ``docker compose`` calls are the
     likeliest reason one of them saw its compose read fail
     (2026-09-19). A teardown that has to wait 30 s for its sibling

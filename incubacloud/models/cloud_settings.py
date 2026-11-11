@@ -137,7 +137,7 @@ class CloudSettings(models.Model):
     # A staging nobody uses still costs disk on the customer's host,
     # still generates probes and series, and still holds a copy of
     # production data. Nothing pushes anyone to delete it once stagings
-    # stopped counting against the plan allowance, so the window does.
+    # stopped counting against any allowance, so the window does.
     staging_autopurge_days = fields.Integer(
         string='Staging autopurge (days)',
         default=90,

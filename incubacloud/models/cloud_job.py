@@ -755,10 +755,11 @@ class CloudJob(models.Model):
             ssh_executor.run()
         except RetryableJobError:
             # Executors can raise RetryableJobError to ask queue_job to
-            # reschedule the job (e.g. the warm rebuild executor uses it
-            # to honour a per-host advisory lock). Let it propagate so
-            # queue_job applies its retry semantics; wrapping it as
-            # JobError would mark the job permanently failed instead.
+            # reschedule the job (e.g. an executor of a module that
+            # extends the panel, to honour a per-host advisory lock). Let
+            # it propagate so queue_job applies its retry semantics;
+            # wrapping it as JobError would mark the job permanently
+            # failed instead.
             raise
         except JobCancelled as exc:
             # A person cancelled it and the executor stopped on the flag.
@@ -3783,7 +3784,7 @@ class CloudJob(models.Model):
         Each one records this job as what resolved it, and its
         resolution is announced where the failure was: the failure
         reached email and Telegram, and its quiet dismissal left the
-        panel showing nothing of it (two warm rebuilds, 2026-10-08).
+        panel showing nothing of it (two rebuilds, 2026-10-08).
         """
         stale = self.env["cloud.alert"].sudo().search(
             self._job_failed_domain(cjob),

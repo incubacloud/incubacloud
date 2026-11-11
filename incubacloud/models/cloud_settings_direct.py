@@ -1,4 +1,4 @@
-"""Settings of the direct path (plan-trafico-interno-directo).
+"""Settings of the direct path.
 
 The DNS token the direct certificates are asked for with, the central's
 direct name and the state of its probe. The state moves by the rules of

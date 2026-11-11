@@ -34,7 +34,7 @@ class BackendsMixin:
         "backup_retention",
         "retention_owner",
         "backup_tz",
-        # Usage / quota / alert (universal, see Phase A.1 of managed backup plan)
+        # Usage / quota / alert (every backend has them)
         "quota_gb",
         "alert_threshold_pct",
         "alert_email",

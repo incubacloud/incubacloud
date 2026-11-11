@@ -58,8 +58,8 @@ class TestStateRefresh(_QueueCase):
         self.assertEqual(len(self.inst._refresh_state_now()), 1)
 
     def test_what_the_crons_leave_alone_is_not_probed(self):
-        """An instance the layer keeps out of the periodic crons (the
-        master's warm spares) is not probed either."""
+        """An instance the layer keeps out of the periodic crons (one it
+        keeps stopped on purpose) is not probed either."""
         with patch.object(
             type(self.inst),
             "_periodic_maintenance_domain",

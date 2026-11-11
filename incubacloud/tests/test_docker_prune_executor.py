@@ -76,9 +76,9 @@ class TestDockerPruneProtectFilter(TransactionCase):
         ``docker system prune`` also prunes networks. A project network
         cannot be protected by the label — labelling it makes compose
         recreate it mid-command — and a stopped stack's network counts
-        as unused, so the prune deleted the networks of both ``ready``
-        warm spares while their labelled containers survived. Neither
-        stack could start afterwards: a container that is started
+        as unused, so the prune deleted the networks of two instances
+        kept stopped on purpose while their labelled containers survived.
+        Neither stack could start afterwards: a container that is started
         rather than recreated keeps the network id it was born with.
         """
         for cmd in self._prune_cmds():
@@ -727,7 +727,7 @@ class TestPostPruneNetworkGuard(TransactionCase):
 
     This is the check that was missing on 2026-08-20: the containers
     were all present, the guard said every stack was intact, and both
-    warm spares were unstartable because their network was gone.
+    stopped instances were unstartable because their network was gone.
     """
 
     def setUp(self):

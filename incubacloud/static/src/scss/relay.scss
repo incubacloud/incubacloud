@@ -214,7 +214,7 @@
     background:var(--rl-amber); box-shadow:0 0 0 3px var(--rl-amber-soft); animation:rl-pulse 1s infinite; }
   .rl-pill.stopped, .rl-pill.draft, .rl-pill.unknown { color:var(--rl-muted); }
   .rl-pill.stopped .rl-d, .rl-pill.draft .rl-d, .rl-pill.unknown .rl-d { background:var(--rl-faint); }
-  // Down on purpose (a plan that sleeps an idle instance). Amber, so it
+  // Down on purpose (a layer that sleeps an idle instance). Amber, so it
   // reads apart from both "up" and "stopped" at a glance in the sidebar
   // where there is no label — but still, unlike the amber above, so no
   // pulse: nothing is in progress, it is resting.

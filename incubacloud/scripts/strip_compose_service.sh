@@ -9,7 +9,7 @@
 # "  <service>:" and every following line at deeper indent (or blank)
 # until the next top-level service key.
 #
-# Shared on purpose — deploy, rebuild and warm-claim all strip the same
+# Shared on purpose — deploy, rebuild and a layer's builds strip the same
 # ``smtp`` block, which used to be three copies of the same awk. A file
 # that does not exist is skipped, so callers can pass every file that
 # *might* contain the service.

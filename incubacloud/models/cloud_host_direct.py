@@ -6,7 +6,7 @@ detour and a dependency, and a host behind the CDN refuses everything
 else on 443. So a host can open a second Traefik entrypoint, ``direct``,
 on a port of its own (``direct_port``), admitting only the platform's
 addresses -- in nftables and in Traefik -- with a certificate from Let's
-Encrypt obtained by DNS-01 (plan-trafico-interno-directo, 27-oct-2026).
+Encrypt obtained by DNS-01 (27-oct-2026).
 
 This file holds what the host knows about it: the port and what was
 applied, the list of admitted addresses, the documents the setup jobs

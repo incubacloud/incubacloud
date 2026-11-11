@@ -188,9 +188,8 @@ class TestCloudHostReleaseHook(TransactionCase):
 # the model-level ``write/unlink`` covered above — calling it from a
 # bare TransactionCase requires faking the full ``odoo.http.request``
 # proxy, which is more plumbing than the branch is worth. The
-# end-to-end behaviour is checked manually per the plan's Verificación
-# table; if that ever changes, an ``HttpCase`` test with authentication
-# is the right tool.
+# end-to-end behaviour is checked by hand; if that ever changes, an
+# ``HttpCase`` test with authentication is the right tool.
 
 
 class TestCloudHostRBACGates(TransactionCase):

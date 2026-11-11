@@ -39,7 +39,7 @@ CDN_V4_ONLY = {
     "ic_http_allowed_ranges_v6": "",
 }
 
-#: A host with a direct port (plan-trafico-interno-directo): its set and
+#: A host with a direct port: its set and
 #: its three forward rules, alone and behind the CDN.
 DIRECT_PORT = {
     "ic_direct_port": 9443,

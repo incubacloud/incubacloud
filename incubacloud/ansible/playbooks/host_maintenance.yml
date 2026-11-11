@@ -110,7 +110,7 @@
     # moment the stack is stopped, because a stopped container releases
     # its endpoint and the network then counts as unused. That is not a
     # theory: on 2026-08-20 this play deleted the networks of both
-    # ``ready`` warm spares, whose labelled containers survived intact,
+    # instances kept stopped on purpose, whose labelled containers survived,
     # and neither stack could start again.
     #
     # Pruning only what actually occupies disk sidesteps the choice.

@@ -27,7 +27,7 @@
     # Where access logs are pushed. Empty disables collection entirely
     # rather than starting a collector that pushes into the void.
     ic_logs_write_url: ""
-    # The direct path (plan-trafico-interno-directo), when the panel offers
+    # The direct path, when the panel offers
     # it: the URLs and what to try first. Empty: the URLs above, as before.
     ic_direct_write_url: ""
     ic_direct_logs_write_url: ""

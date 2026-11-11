@@ -712,7 +712,7 @@ describe("HostDetail — hostAction", () => {
 });
 
 /**
- * The SSH list the hardening dialog hands back (plan-lista-ssh-sin-relleno).
+ * The SSH list the hardening dialog hands back.
  *
  * Ticking "Also allow my IP" adds the address on the server. The page
  * then holds the list in its form and in the baseline its changes are

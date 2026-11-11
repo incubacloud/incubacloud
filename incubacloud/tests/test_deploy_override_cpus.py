@@ -3,7 +3,7 @@
 Docker refuses to create a container whose ``cpus`` is above the
 daemon's ``NCPU`` ("range of CPUs is from 0.01 to 2.00, as there are
 only 2 CPUs available"), and ``docker compose up -d`` had already
-recreated ``db`` when it refused ``odoo``: a plan of 2.5 CPUs applied
+recreated ``db`` when it refused ``odoo``: a limit of 2.5 CPUs applied
 on a server of 2 left the database ``Created``, never started, and the
 panel down (job 457397, 8-nov-2026). The override written on the host
 therefore asks at most the server's CPUs, read from the daemon when the
@@ -35,7 +35,7 @@ _NCPU = "docker info --format '{{.NCPU}}'"
 class TestTheCpusFitTheHost(TransactionCase):
 
     def setUp(self):
-        """An instance with a plan's CPUs on a host that has not been measured."""
+        """An instance asking 2.5 CPUs on a host that has not been measured."""
         super().setUp()
         pin_template(self.env)
         self.project = self.env["cloud.project"].create({"name": "Cpu Proj"})

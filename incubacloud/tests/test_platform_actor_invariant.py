@@ -6,9 +6,9 @@ declared ``auth="public"`` or ``auth="none"`` therefore runs as the
 ``queue_job.user_id`` (so the executor runs as the public user too), and
 every row that executor goes on to write.
 
-This has now been found three times in three different shapes: the warm
-pool stamped the customer who was signing up onto the spare built for the
-*next* one, the GitHub webhook stamped the public user onto 348 fleet
+This has now been found three times in three different shapes: a layer's
+spare instances stamped the user who was signing up onto the spare built
+for the *next* one, the GitHub webhook stamped the public user onto 348 fleet
 rebuilds and 192k log chunks, and the alerts raised along the way
 inherited whichever of the two produced them.
 

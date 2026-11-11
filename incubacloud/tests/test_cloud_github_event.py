@@ -262,7 +262,7 @@ class TestProcessPushEventGuards(_GitHubEventBase):
 
     def test_archived_instance_no_enqueue(self):
         # The repo match can surface an archived instance (e.g. a recycled
-        # warm); it must never be auto-rebuilt.
+        # one); it must never be auto-rebuilt.
         self.instance.write({'active': False})
         calls, mock = self._enqueue_calls()
         with mock:
