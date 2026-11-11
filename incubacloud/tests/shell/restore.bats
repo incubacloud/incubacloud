@@ -21,7 +21,11 @@ echo "docker $*" >> "$CALLS"
 case "$*" in
     *"id -u"*) echo "1234" ;;
     *"name = 'incubacloud_connect'"*) [ -n "${CONNECT_STATE:-}" ] && echo "$CONNECT_STATE" ;;
+    *"to_regclass('public.ir_config_parameter')"*)
+        [ -z "${QUERY_FAILS:-}" ] || { echo 'psql: error: connection refused' >&2; exit 2; }
+        echo "${HAS_PARAMS:-t}" ;;
     *"SELECT 1 FROM ir_config_parameter WHERE key = 'database.is_neutralized'"*)
+        [ -z "${FLAG_FAILS:-}" ] || { echo 'ERROR: canceling statement' >&2; exit 1; }
         if [ -n "${NEUTRALIZED:-}" ]; then echo "$NEUTRALIZED"; fi ;;
 esac
 STUB
@@ -217,6 +221,25 @@ STUB
     grep -q "database.is_neutralized" "$CALLS"
     ! grep -q "neutralize -d" "$CALLS"
     ! grep -q "DELETE FROM ir_mail_server" "$CALLS"
+}
+
+@test "renew-neutralization dies when it cannot read whether the database is neutralized" {
+    # A rebuild of a neutralized staging would otherwise start it with
+    # its scheduled actions and mail servers on again.
+    for fails in QUERY_FAILS FLAG_FAILS; do
+        : > "$CALLS"
+        run env NEUTRALIZED=1 "$fails=1" bash "$SCRIPT" renew-neutralization "$DIR" odoo prod
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"could not read whether prod is neutralized"* ]]
+        ! grep -q "neutralize -d" "$CALLS"
+    done
+}
+
+@test "renew-neutralization leaves a database without Odoo's parameters as it is" {
+    HAS_PARAMS=f NEUTRALIZED=1 run bash "$SCRIPT" renew-neutralization "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"not neutralized"* ]]
+    ! grep -q "neutralize -d" "$CALLS"
 }
 
 @test "renew-neutralization refuses to run with missing arguments" {

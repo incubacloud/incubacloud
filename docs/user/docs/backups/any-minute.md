@@ -46,9 +46,9 @@ What happens next, in order:
 
 A restore does not change the code: to undo a deployment, revert its code
 first, or its migration runs again on the restored database. If the update
-fails, the instance still starts, on the database as it was restored, and
-a warning names the module in the job's log: fix it and rebuild the
-instance.
+fails, or has not ended within an hour, the instance still starts, on the
+database partly updated, and a warning names the module in the job's log:
+fix it and rebuild the instance.
 
 How long it takes depends on the size of the database, usually a few
 minutes. The job's log shows every step; if the restored database does

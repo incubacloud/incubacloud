@@ -1677,7 +1677,11 @@ class TestARestore(_PitrCase):
                 "stdout": "IC_PITR_RESTORE state=running", "exit_status": 0,
             }}))
         self.assertEqual(enqueue.call_args.kwargs["payload"]["follow"], 5)
-        self.assertIn("running for hours", self._alerts("pitr_failing").message)
+        message = self._alerts("pitr_failing").message
+        self.assertIn("running for hours", message)
+        # Never an update: it is cut after an hour and the instance started.
+        self.assertIn(".walg/restore/log", message)
+        self.assertIn("cut after an hour", message)
 
     def test_one_the_host_cannot_be_asked_about_is_given_up_in_the_end(self):
         executor = self._executor(
@@ -1778,6 +1782,10 @@ class TestARestoreUpdatesItsModules(_PitrCase):
         self.assertFalse(self._alerts("pitr_failing"))
         self.assertTrue(self.inst.running)
         self.assertIn("names the module", self._said())
+        # A failed update may have committed some modules before it died.
+        for text in (self._said(), alert.message):
+            self.assertIn("partly updated", text)
+            self.assertNotIn("as it was restored", text)
 
     def test_an_update_that_failed_without_the_files_says_both(self):
         executor = self._planned()
@@ -1832,11 +1840,11 @@ class TestARestoreUpdatesItsModules(_PitrCase):
             patch.object(self.Job, "enqueue_chain", autospec=True, return_value=[1]),
             patch.object(self.Job, "enqueue", autospec=True, return_value=1),
         ):
-            self.inst.auto_update = False
+            # A flow that skips the update, or a move's deploy, renders the stack and
+            # updates nothing, whatever ``auto_update`` says.
             self.inst._after_stack_rendered()
             self.assertTrue(self._alerts(ex.ALERT_MODULES), "no update, no settling")
-            self.inst.auto_update = True
-            self.inst._after_stack_rendered()
+            self.inst.with_context(ic_modules_updated=True)._after_stack_rendered()
         self.assertFalse(self._alerts(ex.ALERT_MODULES))
 
 
@@ -2007,6 +2015,22 @@ class TestCancellingARestore(_PitrCase):
         self.assertEqual(call.kwargs["payload"]["follow"], executor.job.id)
         self.assertTrue(call.kwargs["bypass_running_check"])
         self.assertEqual(self._alerts("pitr_failing").level, "warning")
+
+    def test_one_whose_modules_are_being_updated_is_not_said_to_be_undone(self):
+        """From the promotion on nothing is undone: the restore ends, its
+        update within the limit ``pitr.sh`` gives it."""
+        executor = self._restore()
+        _transport, enqueue = self._cancel(
+            executor, "IC_PITR_RESTORE state=running phase=update",
+        )
+        self.assertEqual(enqueue.call_args.args[3], "pitr_restore")
+        said = self._said()
+        self.assertNotIn("undoing", said)
+        self.assertIn("its modules are being updated", said)
+        alert = self._alerts("pitr_failing")
+        self.assertNotIn("being undone", alert.message)
+        self.assertIn("cannot be undone", alert.message)
+        self.assertIn("an hour", alert.message)
 
     def test_one_whose_process_is_gone_is_critical(self):
         executor = self._restore()
