@@ -71,6 +71,9 @@ export class SettingRow extends Component {
         // The form holding the value, when the row draws its own control:
         // read here so the row's dot follows what is typed.
         form: { type: Object, optional: true },
+        // The id of a control the row's slot draws with an id of its own
+        // (one a test or a script reaches): the label's ``for`` names it.
+        control: { type: String, optional: true },
         slots: { type: Object, optional: true },
     };
 
@@ -103,7 +106,7 @@ export class SettingRow extends Component {
 
     /** @returns {string} the id the control takes, for the label's ``for`` */
     get inputId() {
-        return `ic-set-${this.props.id}-input`;
+        return this.props.control || `ic-set-${this.props.id}-input`;
     }
 
     /** @returns {string|null} the error under the control */
