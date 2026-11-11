@@ -87,7 +87,6 @@ _LABELS = (
     "the observability labels tenant and tenant_id, renamed with the "
     "dashboards of their own"
 )
-_VISIBLE = "help texts and screens, rewritten with their Spanish"
 _LAYER_TESTS = (
     "a check core runs over the modules of a layer, naming them; it moves "
     "to that layer"
@@ -95,13 +94,8 @@ _LAYER_TESTS = (
 
 #: Files allowed an exact number of matches, and why.
 _ALLOWED_FILES = {
-    "incubacloud/i18n/es.po": (7, _VISIBLE),
     "incubacloud/ansible/playbooks/host_observability.yml": (11, _LABELS),
     "incubacloud/models/observability_agents_executor.py": (7, _LABELS),
-    "incubacloud/models/cloud_settings.py": (3, _VISIBLE),
-    "incubacloud/models/cloud_host.py": (1, _VISIBLE),
-    "incubacloud/models/cloud_backup_backend.py": (1, _VISIBLE),
-    "incubacloud/static/src/components/settings/settings.xml": (1, _VISIBLE),
     "incubacloud/tests/test_form_field_width.py": (2, _LAYER_TESTS),
     "incubacloud/tests/test_responsive_css.py": (5, _LAYER_TESTS),
     "incubacloud/tests/test_platform_actor_invariant.py": (5, _LAYER_TESTS),

@@ -738,7 +738,7 @@
                                       t-on-change="(ev) => this.state.form.metrics_central_operator_sources = ev.target.value"/>
                             <div class="rl-th">
                                 One range per line: the panel's public address, so removing
-                                a host or a tenant clears its series. Only used with a public
+                                a host or an instance clears its series. Only used with a public
                                 name; the central's own host is always allowed.
                             </div>
                         </div>

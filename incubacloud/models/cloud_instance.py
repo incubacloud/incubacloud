@@ -392,7 +392,7 @@ class CloudInstance(models.Model):
         compute="_compute_stop_is_expected",
         help="True when this instance being down is normal rather than "
         "an incident. Always False here: base knows no reason for a "
-        "deployed instance to be stopped. A layer above may — a plan "
+        "deployed instance to be stopped. A layer above may — one "
         "that puts an idle instance to sleep — and answers by "
         "overriding ``_stop_is_expected``.",
     )

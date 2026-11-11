@@ -356,7 +356,7 @@ class CloudSettings(models.Model):
         default=20,
         help='Max connect-as calls/min targeting the same cloud.instance, '
              'across all users. Each call opens an SSH connection and runs '
-             'a script inside the tenant container.',
+             'a script inside the instance container.',
     )
     rate_limit_logs_per_min = fields.Integer(
         string="Log reads per minute (per user)",
@@ -387,7 +387,7 @@ class CloudSettings(models.Model):
         string='Connect as user (per user, per minute)',
         default=10,
         help='Max connect-as calls/min from a single panel user. Caps a '
-             'compromised account from enumerating tenant users or minting '
+             'compromised account from enumerating instance users or minting '
              'impersonation tokens in bulk.',
     )
     rate_limit_github_previews_per_hour = fields.Integer(
@@ -467,8 +467,8 @@ class CloudSettings(models.Model):
              'for us. It is what keeps one panel from reading or poisoning '
              "another's data, so it is never accepted from the agent: the "
              'central derives it from the authenticated user. A '
-             'self-hosted panel generates its own; in SaaS mode the '
-             'manager assigns it.',
+             'panel generates its own, unless a module that extends the '
+             'panel assigns it.',
     )
     # Where the central runs, and who it currently lets in. Both are
     # written by the deployment from what it actually did, never from
