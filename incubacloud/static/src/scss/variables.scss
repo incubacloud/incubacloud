@@ -69,6 +69,28 @@ $font-display: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif
 $font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;    // UI/body (was Inter)
 $font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;             // unchanged
 
+// A form field's label (ESTANDAR-FORMULARIOS §3): sentence case written in
+// the source, never through text-transform, so the search and the
+// translations read what the screen shows.
+@mixin rl-field-label {
+    font-family: var(--rl-fb);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--rl-fg);
+}
+
+// The title of a group of fields inside a form, one step above its labels.
+@mixin rl-group-title {
+    font-family: var(--rl-fd);
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--rl-fg);
+}
+
 // ── Transition durations ──────────────────────────────────────────────────── (unchanged)
 $duration-fast: 150ms;
 $duration-normal: 250ms;

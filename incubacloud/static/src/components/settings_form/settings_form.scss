@@ -22,11 +22,8 @@
     }
 
     .ic-set-block__title {
-        font-family: var(--rl-fd);
-        font-size: 14.5px;
-        font-weight: 600;
+        @include rl-group-title;
         margin: 0;
-        color: var(--rl-fg);
     }
 
     .ic-set-block__body {
@@ -129,10 +126,7 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        font-family: var(--rl-fb);
-        font-size: 13.5px;
-        font-weight: 600;
-        color: var(--rl-fg);
+        @include rl-field-label;
         margin: 0;
     }
 

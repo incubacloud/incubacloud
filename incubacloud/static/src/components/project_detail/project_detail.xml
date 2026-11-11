@@ -163,7 +163,7 @@
                                     </div>
                                     <div class="rl-frow"
                                          t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
-                                        <label>Odoo Version <span class="rl-req">*</span></label>
+                                        <label>Odoo version <span class="rl-req">*</span></label>
                                         <RlSelect options="odooVersions"
                     ariaInvalid="validator.fieldError('odoo_version') ? true : false"
                     ariaDescribedby="validator.fieldError('odoo_version') ? 'pd-err-odoo_version' : undefined"
@@ -176,7 +176,7 @@
                                         </t>
                                     </div>
                                     <div class="rl-frow">
-                                        <label>Initial Language</label>
+                                        <label>Initial language</label>
                                         <div class="ic-lang-picker">
                                             <input type="text"
                                                    placeholder="— default (en_US) —"
@@ -220,7 +220,7 @@
                                                   onChange="(value) => this.onInput('project_license', { target: { value: value } })"/>
                                     </div>
                                     <div class="rl-frow">
-                                        <label>Backup Destination <span class="rl-opt">— only for production</span></label>
+                                        <label>Backup destination <span class="rl-opt">— only for production</span></label>
                                         <RlSelect options="backupBackendOptions"
                                                   value="state.form.backup_backend_id"
                                                   disabled="backupBackendLocked"

@@ -105,11 +105,7 @@
     // row). A component nested in the row (SearchSelect) keeps its own CSS.
     > label {
         display: block;
-        font-family: var(--rl-fm);
-        font-size: 10.5px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--rl-muted);
+        @include rl-field-label;
         margin-bottom: 6px;
     }
 

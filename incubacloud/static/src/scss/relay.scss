@@ -406,8 +406,7 @@
   // single-class rule — and broke the domain row outright: its certificate
   // select went 100% wide and squeezed both text fields to nothing.
   .rl-frow { margin-block-end:16px;
-    > label { display:block; font-family:var(--rl-fm); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
-      color:var(--rl-muted); margin-block-end:6px; }
+    > label { display:block; @include rl-field-label; margin-block-end:6px; }
     // Checkboxes and radios are excluded: they have an intrinsic size,
     // and stretching one to 100% painted it as an empty text box with
     // its label off to the right (visible on New Host).
@@ -423,7 +422,8 @@
     // rule above outweighs a bare ``textarea``, and would set the body font.
     textarea, textarea:not([class]) { font-family:var(--rl-fm); resize:vertical; min-block-size:90px; }
     .rl-req { color:var(--rl-green); }
-    .rl-opt { color:var(--rl-faint); text-transform:none; letter-spacing:0; } }
+    // The note a label carries (« · optional», «— production only») reads as help.
+    .rl-opt { font-size:12.5px; font-weight:400; color:var(--rl-muted); } }
   // A field with a button beside it: the field takes what is left.
   .rl-frow-inline { display:flex; align-items:flex-end; gap:10px;
     > :first-child { flex:1 1 auto; min-inline-size:0; }
@@ -493,7 +493,7 @@
     &:focus { border-color:var(--rl-green); box-shadow:0 0 0 3px var(--rl-green-soft); }
     &[readonly] { color:var(--rl-muted); cursor:default; } }
   .rl-repo-branch { display:flex; align-items:center; gap:7px; }
-  .rl-repo-lbl { font-family:var(--rl-fm); font-size:9px; letter-spacing:.08em; text-transform:uppercase; color:var(--rl-faint); }
+  .rl-repo-lbl { @include rl-field-label; }
   .rl-repo-bval { font-family:var(--rl-fm); font-size:11.5px; color:var(--rl-fg2); background:var(--rl-surf); border:1px solid var(--rl-line2); border-radius:6px; padding-block:6px; padding-inline:9px; }
   .rl-repo-freeze { display:inline-flex; align-items:center; gap:5px; font-family:var(--rl-fm); font-size:11px; color:var(--rl-muted);
     background:var(--rl-surf); border:1px solid var(--rl-line2); border-radius:6px; padding-block:6px; padding-inline:9px; cursor:pointer;

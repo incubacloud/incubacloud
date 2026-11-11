@@ -440,13 +440,7 @@
     flex-direction: column;
     gap: 6px;
 
-    label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: $text-secondary;
-    }
+    label { @include rl-field-label; }
   }
 }
 
