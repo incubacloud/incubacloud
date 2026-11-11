@@ -249,6 +249,21 @@ the agents already send.
   the preview** once the step running then ends. Before, the panel tried to
   delete the record at once, which the running job refused, and the preview
   stayed up.
+- **A restored database is updated to the code of the instance it lands on.**
+  A pull or merge request preview restored production's database over the
+  request's code and started Odoo on it without updating the modules: what
+  the request changed did not show until its first push rebuilt the
+  preview, and a stored field it added had no column, so every screen that
+  read it failed. The same held for a staging cloned or refreshed from
+  production, an uploaded archive and a restored backup, a revive included.
+  These restores now run the rebuild's own module update
+  (`click-odoo-update` through `cron_guard.sh`) after the copy is
+  neutralized and before Odoo starts, unless the instance's "Auto-update
+  modules on rebuild" is off. A move does not: it is the same instance on a
+  new host, built from the same code. In a preview, a staging or an upload
+  the update runs after the database is loaded, where a stop of the restore
+  is already refused. When it fails, Odoo is left stopped, the instance in
+  error, and the job log says so under the update's own output.
 
 ### Security
 

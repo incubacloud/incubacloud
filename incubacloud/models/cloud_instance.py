@@ -209,7 +209,8 @@ class CloudInstance(models.Model):
     auto_update = fields.Boolean(
         string="Auto-Update Modules on Rebuild",
         default=True,
-        help="Run click-odoo-update during rebuild to apply module "
+        help="Run click-odoo-update during rebuild, and after a database "
+        "is restored into the instance, to apply module "
         "schema/data changes. Disable for instances that manage "
         "module state manually or cannot accept automatic updates "
         "(e.g. frozen production with a change-management policy). "

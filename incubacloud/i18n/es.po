@@ -13521,16 +13521,18 @@ msgstr "Ejecutar"
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__auto_update
 msgid ""
-"Run click-odoo-update during rebuild to apply module schema/data changes. "
-"Disable for instances that manage module state manually or cannot accept "
-"automatic updates (e.g. frozen production with a change-management policy). "
-"Disabling also skips the safe boot test that relies on click-odoo-update."
+"Run click-odoo-update during rebuild, and after a database is restored into "
+"the instance, to apply module schema/data changes. Disable for instances "
+"that manage module state manually or cannot accept automatic updates (e.g. "
+"frozen production with a change-management policy). Disabling also skips the"
+" safe boot test that relies on click-odoo-update."
 msgstr ""
-"Ejecuta click-odoo-update durante el rebuild para aplicar cambios de "
-"esquema/datos de módulos. Desactive para instancias que gestionan el estado "
-"de módulos manualmente o no pueden aceptar actualizaciones automáticas (p. "
-"ej. producción congelada con política de gestión de cambios). Desactivar "
-"también salta el boot test seguro que depende de click-odoo-update."
+"Ejecuta click-odoo-update durante el rebuild, y tras restaurar una base de "
+"datos en la instancia, para aplicar cambios de esquema/datos de módulos. "
+"Desactive para instancias que gestionan el estado de módulos manualmente o "
+"no pueden aceptar actualizaciones automáticas (p. ej. producción congelada "
+"con política de gestión de cambios). Desactivar también salta el boot test "
+"seguro que depende de click-odoo-update."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18914,11 +18916,12 @@ msgstr "en marcha desde %s"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
-"runs click-odoo-update during rebuild. Disable to skip module migrations and"
-" the safe boot test."
+"runs click-odoo-update during rebuild and after a restore. Disable to skip "
+"module migrations and the safe boot test."
 msgstr ""
-"ejecuta click-odoo-update durante la reconstrucción. Desactive para omitir "
-"las migraciones de módulos y la prueba de arranque segura."
+"ejecuta click-odoo-update durante la reconstrucción y tras una restauración."
+" Desactive para omitir las migraciones de módulos y la prueba de arranque "
+"segura."
 
 #. module: incubacloud
 #. odoo-javascript

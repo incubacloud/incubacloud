@@ -1101,6 +1101,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if self._writes_secret_key:
             cmds.append(self._write_secret_key_step(d))
             start_op = "up"
+        # After the key (the update's container reads the instance's
+        # environment, the key in it) and before anything boots an Odoo
+        # on the database: the archive was made by other code, and this
+        # code's modules are applied to it as a rebuild would.
+        if self._updates_modules(inst, load_as):
+            cmds.append(self._update_restored_modules_step(d, inst))
         cmds += [
             (
                 "Ensure incubacloud_connect",
@@ -1129,6 +1135,23 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             ),
         ]
         return cmds
+
+    def _updates_modules(self, inst, load_as):
+        """Return whether this restore updates the modules it loads.
+
+        A copy, yes: whatever made the archive — production's branch
+        for a pull request preview or a staging, a backup's day, another
+        server — ran other code than this instance's. A move, no: it is
+        the same instance on a new host, built from the same code, in a
+        cutover whose window the customer waits through. Nor an instance
+        whose rebuilds leave its modules alone (``auto_update`` off):
+        whoever manages them updates this database too.
+
+        :param inst: the instance restored
+        :param str load_as: ``"copy"`` or ``"move"``
+        :rtype: bool
+        """
+        return load_as == "copy" and bool(inst.auto_update)
 
     def parse_results(self, results):
         # Odoo is up on the restored database when only the check after
@@ -1233,6 +1256,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        self._report_failed_module_update(results)
         self._inst().write({"status": "error"})
 
 

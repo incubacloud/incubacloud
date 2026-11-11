@@ -57,7 +57,7 @@ def _find(cmds, label):
 
 def _make_restore_executor(payload, domain="staging.example.com",
                            dbname="prod", pg_user="odoo",
-                           environment="staging"):
+                           environment="staging", auto_update=True):
     from odoo.addons.incubacloud.models.restore_instance_executor import (
         RestoreInstanceExecutor,
     )
@@ -70,6 +70,7 @@ def _make_restore_executor(payload, domain="staging.example.com",
         postgres_dbname=dbname,
         postgres_username=pg_user,
         environment=environment,
+        auto_update=auto_update,
     )
     job = SimpleNamespace(id=42, instance_id=inst, payload=payload)
 
@@ -783,6 +784,7 @@ class TestRestoreBaseUrl(BaseCase):
                 "Verify backup file",
                 "Stop Odoo service",
                 "Restore database",
+                "Update changed modules",
                 "Ensure incubacloud_connect",
                 "Start Odoo service",
                 "Remove remote backup file",
@@ -798,3 +800,141 @@ class TestRestoreBaseUrl(BaseCase):
             "Reset base URL",
         ))
         self.assertIn("https://it''s.example.com", argv)
+
+
+#: What ``clone_to_staging`` asks the restore of a pull request preview,
+#: with the archive taken from a job (``from_host`` needs a real chain).
+_PREVIEW = {"mode": "from_job", "neutralize": True, "reset_base_url": True}
+
+
+class TestRestoreUpdatesModules(BaseCase):
+    """A copy restored on an instance gets its modules updated to its code.
+
+    The archive was made by other code: production's branch, for a pull
+    request preview or a staging cloned or refreshed from it. Started as
+    it came, Odoo ran the branch's code over production's schema — a
+    stored field the branch adds has no column — until the first push
+    rebuilt the instance. The update is the rebuild's own
+    (``cron_guard.sh update``), before anything boots an Odoo on the
+    database.
+    """
+
+    _LABEL = "Update changed modules"
+
+    def _labels(self, executor):
+        """Return the labels of *executor*'s steps, in order."""
+        return [c[0] for c in executor.get_commands()]
+
+    def test_a_preview_s_restore_updates_the_modules(self):
+        step = _find(
+            _make_restore_executor(_PREVIEW).get_commands(), self._LABEL,
+        )
+        self.assertIsNotNone(step)
+        argv = _argv(step)
+        self.assertTrue(argv[1].endswith("/cron_guard.sh"))
+        self.assertEqual(argv[2:], ["update", INSTANCE_DIR, "prod", "odoo"])
+        self.assertTrue(step[2].get("stop_on_failure"))
+
+    def test_the_database_and_user_are_the_instance_s(self):
+        step = _find(
+            _make_restore_executor(
+                _PREVIEW, dbname="main", pg_user="erp",
+            ).get_commands(),
+            self._LABEL,
+        )
+        self.assertEqual(_argv(step)[-3:], [INSTANCE_DIR, "main", "erp"])
+
+    def test_the_update_runs_after_the_copy_is_made_safe(self):
+        # Neutralized, its mail sent to the catcher and its base URL its
+        # own before any Odoo runs on it: an update that sends mail or
+        # calls out must not do it as production.
+        labels = self._labels(_make_restore_executor(_PREVIEW))
+        for before in ("Restore database", "Route mail to the mail catcher",
+                       "Reset base URL"):
+            self.assertLess(labels.index(before), labels.index(self._LABEL))
+
+    def test_the_update_runs_before_odoo_boots(self):
+        labels = self._labels(_make_restore_executor(_PREVIEW))
+        for after in ("Ensure incubacloud_connect", "Start Odoo service"):
+            self.assertLess(labels.index(self._LABEL), labels.index(after))
+
+    def test_a_stop_is_refused_by_then(self):
+        # Past the load of the database a stop is refused: the update,
+        # cut halfway, would leave it half updated with nothing to go
+        # back to.
+        ex = _make_restore_executor(_PREVIEW)
+        labels = self._labels(ex)
+        self.assertLess(
+            labels.index(ex._no_return_from), labels.index(self._LABEL),
+        )
+
+    def test_the_update_reads_the_key_the_restore_wrote(self):
+        from odoo.addons.incubacloud.models.secret_key_escrow import (
+            LABEL_WRITE_SECRET_KEY,
+        )
+        ex = _make_restore_executor(_PREVIEW | {"neutralize": False})
+        ex._writes_secret_key = True
+        ex._secret_key_tmp = lambda: "~/.incubacloud-key-42"
+        labels = self._labels(ex)
+        self.assertLess(
+            labels.index(LABEL_WRITE_SECRET_KEY), labels.index(self._LABEL),
+        )
+
+    def test_an_upload_restore_updates_too(self):
+        # An archive from another server: other code, by definition.
+        labels = self._labels(_make_restore_executor({"mode": "from_job"}))
+        self.assertIn(self._LABEL, labels)
+
+    def test_a_move_does_not_update(self):
+        # The same instance on a new host, built from the same code, in a
+        # cutover the customer waits through.
+        ex = _make_restore_executor({"mode": "from_job", "as_move": True})
+        ex.job.instance_id.move_target_host_id = SimpleNamespace(id=3)
+        ex.job.host_id = SimpleNamespace(id=3)
+        self.assertNotIn(self._LABEL, self._labels(ex))
+
+    def test_an_instance_without_auto_update_is_left_alone(self):
+        # Whoever manages its modules on rebuilds manages them here.
+        ex = _make_restore_executor(_PREVIEW, auto_update=False)
+        self.assertNotIn(self._LABEL, self._labels(ex))
+
+
+class TestRestoreModuleUpdateFailure(BaseCase):
+    """A failed update leaves the instance in error, saying why."""
+
+    def _fail(self, results):
+        """Run ``on_failure`` with *results*; return the instance and log."""
+        import asyncio
+
+        from odoo.addons.incubacloud.models.cloud_instance import CloudInstance
+        from odoo.addons.incubacloud.models.restore_instance_executor import (
+            RestoreInstanceExecutor,
+        )
+
+        ex = _make_restore_executor({"mode": "from_job"})
+        inst = MagicMock(spec=CloudInstance)
+        ex.job.instance_id = inst
+        lines = []
+        with patch.object(
+            RestoreInstanceExecutor, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(ex.on_failure(results, ["'step' exited with status 1"]))
+        return inst, lines
+
+    def test_a_failed_update_says_odoo_was_left_stopped(self):
+        inst, lines = self._fail({
+            "Restore database": {"exit_status": 0, "stdout": ""},
+            "Update changed modules": {"exit_status": 1, "stdout": ""},
+        })
+        inst.write.assert_called_once_with({"status": "error"})
+        said = [line for line in lines if "could not be updated" in line]
+        self.assertEqual(len(said), 1)
+        self.assertIn("Odoo was left stopped", said[0])
+
+    def test_another_failure_says_nothing_of_the_update(self):
+        inst, lines = self._fail({
+            "Restore database": {"exit_status": 1, "stdout": ""},
+        })
+        inst.write.assert_called_once_with({"status": "error"})
+        self.assertFalse([line for line in lines if "could not be updated" in line])

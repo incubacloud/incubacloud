@@ -14,7 +14,8 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
     3. dropdb
     4. createdb
     5. psql -f $SRC/$PGDATABASE.sql
-    6. docker compose up -d
+    6. click-odoo-update, unless the instance's ``auto_update`` is off
+    7. docker compose up -d
 
     Payload:
         time: duplicity timestamp (e.g. '2026-03-19T02:00:00')
@@ -58,7 +59,7 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             time = 'now'
         dbname = inst.postgres_dbname or 'prod'
 
-        return [
+        cmds = [
             (
                 "Stop Odoo",
                 self.run_script("compose_op.sh", [d, "stop", "odoo"]),
@@ -86,12 +87,20 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
                 self.run_script("backup_restore.sh", ["import-sql", d, dbname]),
                 {"stop_on_failure": True},
             ),
-            (
-                "Start instance",
-                self.run_script("compose_op.sh", [d, "up"]),
-                {"continue_on": (COMPOSE_OP_EXIT_UNCHECKED,)},
-            ),
         ]
+        # The backup was taken under the code of its day; the instance
+        # runs today's, and a revive rebuilds it from its branch. Its
+        # modules are brought up to that code before Odoo serves it, as
+        # a rebuild would — unless this instance's rebuilds leave them
+        # alone (``auto_update`` off).
+        if inst.auto_update:
+            cmds.append(self._update_restored_modules_step(d, inst))
+        cmds.append((
+            "Start instance",
+            self.run_script("compose_op.sh", [d, "up"]),
+            {"continue_on": (COMPOSE_OP_EXIT_UNCHECKED,)},
+        ))
+        return cmds
 
     def parse_results(self, results):
         # The database is restored and the stack up when only the check
@@ -117,6 +126,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
+        if self._report_failed_module_update(results):
+            self._inst().write({'status': 'error'})
+            return
         self._sys(
             "⚠ Restore failed. The instance may be in an"
             " inconsistent state. Check the logs and try"

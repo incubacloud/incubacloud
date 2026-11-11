@@ -2600,7 +2600,7 @@
               >Auto-update modules on rebuild</div>
                             <div
                 class="rl-th"
-              >runs click-odoo-update during rebuild. Disable to skip module migrations and the safe boot test.</div>
+              >runs click-odoo-update during rebuild and after a restore. Disable to skip module migrations and the safe boot test.</div>
                         </div>
                         <button
               type="button"

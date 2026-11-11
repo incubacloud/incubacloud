@@ -98,6 +98,11 @@ def compose_own_container(service):
 #: through the routes odoo has (``instance_unresponsive``).
 COMPOSE_OP_EXIT_UNCHECKED = 24
 
+#: Label of the step that brings a restored database's modules up to the
+#: instance's code (:meth:`AbstractExecutor._update_restored_modules_step`),
+#: the rebuild's own label for the same update.
+UPDATE_RESTORED_MODULES_LABEL = "Update changed modules"
+
 # Errnos that mark a transient, retryable connection problem (host
 # momentarily unreachable / refused / reset / rebooting), as opposed to a
 # permanent misconfiguration.
@@ -2063,6 +2068,64 @@ class AbstractExecutor(ABC):
             " what may be wrong until the instance is restarted."
         )
         return {key: data for key, data in results.items() if key != label}
+
+    def _update_restored_modules_step(self, d, inst):
+        """Return the step that updates a restored database to this code.
+
+        A database restored on an instance was written by other code than
+        the one the instance runs: production's branch for a pull request
+        preview or a staging, the code of its day for a backup, anybody's
+        for an upload. Odoo started on it as it came serves the new code
+        over the old schema (a stored field the code adds has no column,
+        and every screen that reads it fails) until a rebuild updates it.
+        This is the rebuild's own update, ``cron_guard.sh update``:
+        ``click-odoo-update`` compares the checksum each module has stored
+        in the database with the code and updates the modules that
+        changed, all of them when the database stored none. It runs in a
+        one-shot container of the instance's image, after any running
+        cron, within the time limit of one command
+        (``DEFAULT_SSH_COMMAND_TIMEOUT``). It stops the job when it
+        fails: Odoo is not started over a database its code cannot read.
+
+        :param str d: the instance's directory on its host
+        :param inst: the ``cloud.instance`` whose database was restored
+        :return: ``(label, command, options)``, labelled
+            ``UPDATE_RESTORED_MODULES_LABEL``
+        :rtype: tuple
+        """
+        return (
+            UPDATE_RESTORED_MODULES_LABEL,
+            self.run_script(
+                "cron_guard.sh",
+                [
+                    "update", d,
+                    inst.postgres_dbname or "prod",
+                    inst.postgres_username or "odoo",
+                ],
+            ),
+            {"stop_on_failure": True},
+        )
+
+    def _report_failed_module_update(self, results):
+        """Say in the job log what a failed update of a restored database left.
+
+        :param dict results: what the steps answered
+            (``{label: {'stdout': str, 'exit_status': int}}``)
+        :return: whether the update was the step that failed
+        :rtype: bool
+        """
+        step = (results or {}).get(UPDATE_RESTORED_MODULES_LABEL) or {}
+        if step.get('exit_status', 0) == 0:
+            return False
+        self._sys(
+            f"✗ The restored database could not be updated to this"
+            f" instance's code: the output of '{UPDATE_RESTORED_MODULES_LABEL}'"
+            f" above names the module that failed. Odoo was left stopped,"
+            f" so it does not serve a database its code cannot read. Fix"
+            f" what it names, in the code or in the data, then rebuild the"
+            f" instance."
+        )
+        return True
 
     async def on_success(self, results):
         """Called when parse_results returns an empty list."""
