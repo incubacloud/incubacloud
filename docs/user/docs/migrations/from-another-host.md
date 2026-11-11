@@ -153,9 +153,13 @@ something up. Cancel it when you are sure.
 
 ## If you need help
 
-Write to us through [the contact form](https://www.incubacloud.io/contactus)
+Open an issue on [GitHub](https://github.com/incubacloud/incubacloud/issues)
 with where your Odoo runs today, its version and edition, the size of a backup,
-and whether it has modules of your own. We reply with the steps for your case.
+and whether it has modules of your own.
+
+!!! info "IncubaCloud SaaS"
+    Write to us through [the contact form](https://www.incubacloud.io/contactus)
+    with the same details. We reply with the steps for your case.
 
 ## See also
 
