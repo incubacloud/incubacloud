@@ -800,7 +800,7 @@
                                                         </span>
                                                         <div class="rl-acts">
                                                             <t
-                                  t-if="isActiveJob(job.state) or job.state === 'blocked'"
+                                  t-if="canCancelJob(job)"
                                 >
                                                                 <button
                                     class="rl-tl-abtn"
@@ -812,7 +812,7 @@
                                                                 </button>
                                                             </t>
                                                             <t
-                                  t-if="job.state === 'failed'"
+                                  t-if="canRetryJob(job)"
                                 >
                                                                 <button
                                     class="rl-tl-abtn"
