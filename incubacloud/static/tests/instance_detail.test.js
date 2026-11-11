@@ -359,6 +359,27 @@ describe("InstanceDetail — isActiveJob", () => {
     });
 });
 
+describe("InstanceDetail — Cancel and Retry follow who may use them", () => {
+    const proto = InstanceDetail.prototype;
+
+    test("a job of a type the reader may ask for offers both", () => {
+        expect(proto.canCancelJob({state: "queued", may_control: true})).toBe(true);
+        expect(proto.canCancelJob({state: "blocked", may_control: true})).toBe(true);
+        expect(proto.canRetryJob({state: "failed", may_control: true})).toBe(true);
+    });
+
+    test("a job of a higher role's type offers neither", () => {
+        expect(proto.canCancelJob({state: "queued", may_control: false})).toBe(false);
+        expect(proto.canCancelJob({state: "blocked", may_control: false})).toBe(false);
+        expect(proto.canRetryJob({state: "failed", may_control: false})).toBe(false);
+    });
+
+    test("the state still decides which one", () => {
+        expect(proto.canCancelJob({state: "done", may_control: true})).toBe(false);
+        expect(proto.canRetryJob({state: "started", may_control: true})).toBe(false);
+    });
+});
+
 describe("InstanceDetail — jobIcon mapping", () => {
     test("deploy_instance maps to fa-rocket", () => {
         expect(jobIcon("deploy_instance")).toBe("fa-rocket");
