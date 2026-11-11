@@ -9,25 +9,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.225] — 2026-11-11
 
 Jobs that outlive the request that runs them, as on Odoo.sh, where a
-request is cut at 900 s. The update adds one empty table,
-`cloud_job_checkpoint`, and one column, `cloud_job.channel_wait_since`,
-and needs no data migration. One step runs apart from its request so far:
-the image build of a rebuild, before its point of no return. Every other
-step runs as before.
+request is cut at 900 s: one step runs apart from its request so far, the
+image build of a rebuild, before its point of no return, and every other
+step runs as before. Settings is a menu of sections, one page each, with a
+search over every setting (issue #3). A restore to a moment updates its
+database to the code the instance runs, as every other restore does since
+1.0.224; a stopped update of a preview no longer lets a push start a second
+one beside it; the rebuild of a neutralized staging or preview neutralizes
+it again after its update; and the web terminals, a host's shell and an
+instance's, keep what is typed when the proxy in front of the panel answers
+429, make about half the requests, and take the page's size.
+`incubacloud_pitr` 1.0.13 comes with it.
 
-A restore to a moment updates its database to the code the instance runs,
-as every other restore does since 1.0.224; a stopped update of a preview no
-longer lets a push start a second one beside it; and the rebuild of a
-neutralized staging or preview neutralizes it again after its update.
-`incubacloud_pitr` 1.0.13 comes with it. The update adds one empty column,
-`cloud_instance.pr_update_cut_off`, and needs no data migration; the hosts
-need nothing either: the scripts travel with each job.
-
-The web terminals, a host's shell and an instance's, keep what is typed
-when the proxy in front of the panel answers 429, make about half the
-requests, and take the page's size. The update changes the terminal pages'
-templates and adds one, `terminal_client_script`; it adds no column and the
-hosts need nothing: the proxy's limit is unchanged.
+The update adds one empty table, `cloud_job_checkpoint`, and two empty
+columns, `cloud_job.channel_wait_since` and
+`cloud_instance.pr_update_cut_off`, and needs no data migration. It changes
+the terminal pages' templates and adds one, `terminal_client_script`. The
+hosts need nothing: the scripts travel with each job, and the proxy's limit
+is unchanged.
 
 ### Added
 
@@ -172,9 +171,26 @@ hosts need nothing: the proxy's limit is unchanged.
   The job log names the code the database is updated to, and the restore
   dialog says that undoing a deployment needs its code reverted first, or
   its migration runs again.
+- **Settings is a menu of sections** (issue #3), one page each at
+  `/cloud/settings/<section>`, grouped as Platform (General, Instances,
+  Logs & retention, Network edge), Integrations (GitHub, Git providers,
+  Monitoring, Agents (MCP), Assistant) and Limits (Rate limits); a module
+  adds a section, or a block to another's, through the registries in
+  `settings_registry.js`. **Search settings** atop the menu, and a Settings
+  group in Ctrl K, find a field by its label, synonyms, block or help. The
+  save bar shows only with unsaved changes, counts them, checks every field
+  before sending and puts a server error under its field; leaving the page
+  with changes asks first. A section sends only the fields changed since it
+  loaded or saved, so it never puts back another's settings or a value a job
+  wrote meanwhile. Older `?tab=` links land on their section.
 
 ### Fixed
 
+- **A Settings save with a value refused keeps nothing of itself.**
+  `save_general_settings` wrote each field in a savepoint of its own, so
+  the page said the save failed while half of it was kept. The whole save
+  now runs in one savepoint and a refusal undoes it, named under its field.
+  An agent's `update_settings` sends only the values it gives.
 - **A preview's update cut off holds the push.** The restore of a pull or
   merge request preview whose «Update changed modules» never answered (the
   connection dropped, the step ran out of time) counted as a failed update,
