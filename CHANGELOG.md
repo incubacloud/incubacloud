@@ -186,6 +186,9 @@ is unchanged.
 
 ### Fixed
 
+- **Connect as user lists the users of an Odoo 8.0 instance.** That
+  version's `res_users` has no `share` column (base adds it from 9.0), so
+  its internal users are taken from `base.group_user`.
 - **A Settings save with a value refused keeps nothing of itself.**
   `save_general_settings` wrote each field in a savepoint of its own, so
   the page said the save failed while half of it was kept. The whole save
