@@ -23,6 +23,12 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
 
     _job_type = "backup_restore"
 
+    #: From the drop of the database on a stop is refused: stopped there
+    #: the database is left missing, half loaded or half updated, and the
+    #: stop kills the ``docker compose exec`` client while ``psql`` goes on
+    #: in the container (``cloud.job._no_return_refusal``).
+    _no_return_from = "Drop database"
+
     def _inst(self):
         return self.job.instance_id
 
@@ -45,6 +51,8 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         # validating the format up-front is the only defense against
         # shell injection through this field.
         validate_dup_time(payload['time'])
+        if inst.auto_update:
+            self._say_update_target(inst)
 
     def get_commands(self):
         inst = self._inst()
@@ -122,6 +130,21 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         self._call_addon_hook(
             self._inst(), '_after_restore_hook', 'backup_restore',
         )
+
+    async def on_abort(self, exc):
+        """A restore cut off halfway fails as one whose step failed.
+
+        A connection to the host that dropped, or a step out of its time
+        (``DEFAULT_SSH_COMMAND_TIMEOUT``), ends the run with no outcome:
+        Odoo stayed stopped, the database as the cut left it, and the
+        instance said nothing of it. Once a step ran the restore closes
+        as ``on_failure`` closes it, the step that never answered counted
+        as failed. Before its steps nothing changed on the host and the
+        instance keeps its status.
+
+        :param Exception exc: what stopped the run
+        """
+        await self._fail_cut_off_run(exc)
 
     async def on_failure(self, results, errors):
         for err in errors:

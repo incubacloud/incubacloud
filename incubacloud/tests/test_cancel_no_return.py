@@ -549,3 +549,10 @@ class TestTheRefusalSaysWhyByType(TransactionCase):
         text = self._job("restore_instance")._no_return_refusal(_RESTORE_STEP)
         self.assertIn(_RESTORE_STEP, text)
         self.assertIn("empty or half loaded", text)
+
+    def test_a_backup_s_restore_names_its_missing_database(self):
+        job = self._job("backup_restore")
+        text = job._no_return_refusal("Drop database")
+        self.assertIn(f"Job #{job.id} cannot be stopped any more", text)
+        self.assertIn("Drop database", text)
+        self.assertIn("missing, half loaded or half updated", text)

@@ -9,7 +9,9 @@ that transaction does not commit, the job does not exist either.
 The job reconciles instead of obeying. When it runs it reads what is
 true then and makes the note match:
 
-- the preview open and deployed: the «ready» note, with its address;
+- the preview open and deployed: the «ready» note, with its address,
+  or, while its restore could not update its modules
+  (``pr_update_error``), the note saying so;
 - no preview, and the job was queued to say why none was created (a
   failure, a merge request from a fork): that note;
 - otherwise (the merge request closed, the preview gone): no note.
@@ -215,7 +217,7 @@ class CloudGitLabMrNote(models.AbstractModel):
             if live:
                 note_id = self._upsert(
                     client, bot, path, iid, marker, known,
-                    live._pr_preview_ready_body(),
+                    live._pr_preview_body(),
                 )
                 if note_id and live.pr_comment_id != note_id:
                     live.write({"pr_comment_id": note_id})

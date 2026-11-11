@@ -117,6 +117,41 @@ STUB
     [[ "$(cat "$CALLS")" != *"--neutralize"* ]]
 }
 
+@test "restore-db drops the list of paused crons a neutralized copy brings" {
+    # A dump taken while production's update had its crons paused carries
+    # cron_guard.sh's list; the update of the copy would switch them on.
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"odoo psql -v ON_ERROR_STOP=1 -d prod -c DROP TABLE IF EXISTS incubacloud_cron_pause"* ]]
+    load="$(grep -n 'restoredb' "$CALLS" | head -1 | cut -d: -f1)"
+    drop="$(grep -n 'incubacloud_cron_pause' "$CALLS" | head -1 | cut -d: -f1)"
+    [ "$load" -lt "$drop" ]
+}
+
+@test "restore-db keeps the list of a copy that is not neutralized" {
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 0
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"incubacloud_cron_pause"* ]]
+}
+
+@test "neutralize runs Odoo's own neutralization on the database" {
+    run bash "$SCRIPT" neutralize "$DIR" prod
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm odoo odoo neutralize -d prod"* ]]
+}
+
+@test "neutralize runs the panel's SQL on a series without Odoo's" {
+    IC_NEUTRALIZE=sql run bash "$SCRIPT" neutralize "$DIR" prod
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"odoo psql -v ON_ERROR_STOP=1 -d prod -c"*"UPDATE ir_cron SET active = false"* ]]
+    [[ "$(cat "$CALLS")" != *"odoo neutralize"* ]]
+}
+
+@test "neutralize refuses to run without the database" {
+    run bash "$SCRIPT" neutralize "$DIR"
+    [ "$status" -ne 0 ]
+}
+
 @test "set-base-url upserts both parameters and drops the freeze" {
     run bash "$SCRIPT" set-base-url "$DIR" odoo prod \
         "https://staging.example.com" "http://localhost:8069"

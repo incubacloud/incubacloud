@@ -474,6 +474,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             f" with updated configuration."
         )
         self._call_addon_hook(inst, "_after_stack_rendered")
+        inst._preview_rebuilt(self.job)
 
     #: The payload keys that describe one push, of GitHub or GitLab.
     _PUSH_KEYS = (
@@ -580,6 +581,12 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         resolves the alerts (``cloud.job._dismiss_job_failed_alerts``);
         its failure refreshes the same ``job_failed``.
 
+        The restore of a preview that failed in its update alone
+        (``cloud.job._is_failed_preview_update``) is replaced by any
+        push's rebuild: it was asked for no commit, and the fix comes as
+        a push to the request's branch. The success of the rebuild
+        resolves that alert too (``cloud.instance._preview_rebuilt``).
+
         :param waiting_job: a ``queued`` rebuild of the instance
         :param failed_jobs: the failed jobs whose alerts hold its queue
         :rtype: bool
@@ -589,9 +596,12 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         pushed = cls._pushed_shas(waiting_job.payload)
         if not pushed or not failed_jobs:
             return False
-        if any(job.job_type_id != waiting_job.job_type_id for job in failed_jobs):
+        rebuilds = failed_jobs.filtered(lambda job: not job._is_failed_preview_update())
+        if any(job.job_type_id != waiting_job.job_type_id for job in rebuilds):
             return False
-        tried = set().union(*(cls._pushed_shas(job.payload) for job in failed_jobs))
+        if not rebuilds:
+            return True
+        tried = set().union(*(cls._pushed_shas(job.payload) for job in rebuilds))
         return bool(pushed - tried)
 
     async def on_abort(self, exc):

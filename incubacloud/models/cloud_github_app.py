@@ -87,7 +87,33 @@ class CloudGitHubApp(models.Model):
 
     def write(self, vals):
         self._check_can_manage_settings()
-        return super().write(vals)
+        res = super().write(vals)
+        if vals.get("installation_id"):
+            self._resolve_other_installation_alerts(str(vals["installation_id"]))
+        return res
+
+    def _resolve_other_installation_alerts(self, installation_id):
+        """Resolve the alerts about pull requests of an installation now chosen.
+
+        ``github_pr_other_installation`` said that the pull requests of
+        this installation got no preview, the panel acting on another
+        one; it acts on this one now.
+
+        :param str installation_id: the installation chosen
+        """
+        # Here, not at the top: that module's model inherits a mixin
+        # imported after this one.
+        from .cloud_github_event import PR_OTHER_INSTALLATION_CODE as code
+
+        Alert = self.env["cloud.alert"].sudo()
+        for alert in Alert.search([
+            ("code", "=", code),
+            ("state", "=", "active"),
+            ("dedup_key", "=", installation_id),
+        ]):
+            Alert.resolve_alert(
+                code, instance=alert.instance_id or None, key=installation_id,
+            )
 
     def unlink(self):
         self._check_can_manage_settings()

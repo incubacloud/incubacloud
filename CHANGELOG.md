@@ -24,6 +24,7 @@ The update adds two tables, `incubacloud_mcp_auto_approval` and
 `approval_rule_id` on `cloud_audit_log` and `cloud_job` (rows written
 before it have no approval mark, which the panel does not show), and on
 `cloud_instance` `pr_provider_id`, `pr_state`, `pr_installation_id`,
+`pr_update_error`,
 `smtp_relay_oauth_directory_id`, `smtp_relay_oauth_client_id`,
 `smtp_relay_oauth_client_secret`, `smtp_relay_state`,
 `smtp_relay_checked_at` and `smtp_relay_error`. It also adds
@@ -214,6 +215,16 @@ re-runs by itself.
   and the readings count with the log reads (*Log reads (per user)*). A
   reading takes 20 s at most, the SSH connection included; each chart is
   asked of the central once, within 8 s.
+- **A pull request through another installation of the App is said aloud.**
+  The panel acts on the pull requests of one installation of its GitHub
+  App. One opened through an installation on another account, on a
+  repository a production of the panel would preview, was ignored with a
+  line in the server's log. It now raises the warning
+  `github_pr_other_installation` on that production, keyed by the
+  installation, naming the account and saying that no preview is created;
+  choosing that installation under Settings → GitHub resolves it, as does
+  dismissing it. A repository no production follows, and a fork, make no
+  noise. Settings → GitHub says so under the connected App.
 
 ### Changed
 
@@ -283,6 +294,41 @@ re-runs by itself.
   `pr_preview_note_failed` goes on the production the preview was cloned
   from. A comment that cannot be deleted goes to the log, as before. A
   preview created before this version uses the panel's installation.
+- **A preview whose update fails says so on its request, and the push of the
+  fix brings it up.** The restore of a pull or merge request preview that
+  failed in "Update changed modules" left Odoo stopped and the request
+  without a word, and its failure, a step of the clone's chain, held the
+  preview's queue against the rebuild of the push with the fix. Now the
+  request's comment or note says the preview could not be updated and why
+  (`pr_update_error` on the preview, the text it publishes); any push's
+  rebuild passes that hold, and its success resolves the restore's alert
+  and turns the comment or note into «ready». A rebuild that succeeds on a
+  preview without its comment writes it. A pull request's comment carries
+  the hidden marker of a merge request's note, so one written by a try
+  whose answer never came is found and rewritten instead of written twice;
+  a 401 is tried once more at once, GitHub's secondary rate limit later,
+  and anything else that fails raises the alert instead of ending the job
+  in silence. The alert is keyed by the pull request
+  (`github_pr:<repo>:<number>`), so two pull requests of one production
+  have one each, and the close of the pull request resolves it. A comment
+  that cannot be deleted is a warning in the log, not an error.
+- **What a restore leaves when it is cut off or updated.** A restore whose
+  connection dropped, or whose step ran out of time, ended with no outcome:
+  Odoo stopped and the instance with no error. A restore into an instance
+  and a backup's restore now fail as one whose step failed, naming the step
+  that never ended. A backup's restore refuses a stop from "Drop database"
+  on, with a reason of its own: stopped there, the database is left
+  missing, half loaded or half updated, and `psql` goes on inside the
+  server. A neutralized copy is neutralized again after its update, which
+  rewrites scheduled actions and mail servers its data files do not
+  protect, and drops the list of paused crons (`incubacloud_cron_pause`) a
+  dump taken during an update of the source carries, which the update
+  would have switched on. The job log names the branches and pinned
+  commits a restored database is updated to, and the backup's restore
+  dialog says that its modules are updated to the code the instance runs
+  now: to undo a deployment, revert its code first. A failed update says to
+  dismiss the job's alert before the rebuild, and that a rebuild with
+  "Auto-update modules on rebuild" off does not update.
 
 ### Security
 
