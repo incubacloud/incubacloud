@@ -147,13 +147,35 @@ there.
    Counts should be close to the pre-incident numbers. `max(create_date)`
    tells you the actual data loss window.
 
-6. **Bring the stack back up**:
+6. **Cancel the jobs the copy has in progress** before the job runner
+   starts. They belong to the moment of the backup: a job that ran a step
+   apart on its server would come back and go on from its checkpoint, with
+   a plan made for an instance that has moved on since. Cancel them, and
+   their queue jobs, and drop their checkpoints:
+
+   ```sql
+   db$ BEGIN;
+   db$ DELETE FROM cloud_job_checkpoint;
+   db$ WITH live AS (UPDATE queue_job SET state = 'cancelled'
+         WHERE state IN ('wait_dependencies', 'pending', 'enqueued', 'started')
+         RETURNING id)
+       UPDATE cloud_job SET state = 'cancelled'
+         WHERE queue_job_id IN (SELECT id FROM live) OR state = 'queued';
+   db$ COMMIT;
+   ```
+
+   A step those jobs left on a server ended at its cap, an hour at most;
+   its directory, `/tmp/.incubacloud-detached-*`, stays on the server and
+   can be removed by hand. Ask again for what was cancelled once the panel
+   is up.
+
+7. **Bring the stack back up**:
 
    ```bash
    $ invoke restart
    ```
 
-7. **Drop the corrupt copy** only after 24h of clean operation:
+8. **Drop the corrupt copy** only after 24h of clean operation:
 
    ```bash
    db$ DROP DATABASE prod_corrupt_YYYYMMDD;
