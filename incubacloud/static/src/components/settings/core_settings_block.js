@@ -110,6 +110,25 @@ export function coreForm(part, data) {
 }
 
 /**
+ * What a part sends: the fields changed since it was loaded or last saved.
+ *
+ * Only those, so a value a job wrote meanwhile (the metrics URLs that
+ * "Enable observability" fills in, say) is not put back by a stale form.
+ * The default destination goes as 0 when there is none: nothing sent means
+ * "unchanged".
+ *
+ * @param {object} changes the changed fields and their values
+ * @returns {object} the values to send
+ */
+export function coreSaveVals(changes) {
+    const vals = { ...changes };
+    if ("default_backup_backend_id" in vals) {
+        vals.default_backup_backend_id = vals.default_backup_backend_id || 0;
+    }
+    return vals;
+}
+
+/**
  * One section of the panel's own settings: General, Instances, Logs &
  * retention, Network edge or Monitoring.
  *
@@ -207,16 +226,13 @@ export class CoreSettingsBlock extends Component {
     }
 
     /**
-     * Send the part's fields; a stored secret left empty is kept.
+     * Send the part's changed fields; a stored secret left empty is kept.
      *
      * @returns {Promise<object>} the server's answer
      */
     async _save() {
-        const vals = { ...this.state.form };
-        if ("default_backup_backend_id" in vals) {
-            // 0 is "no default destination"; nothing sent is "unchanged".
-            vals.default_backup_backend_id = vals.default_backup_backend_id || 0;
-        }
+        const form = this.state.form;
+        const vals = coreSaveVals(this.env.settingsForm?.changes(this.key, form) ?? { ...form });
         const result = await rpc("/cloud/save_general_settings", vals);
         if (result?.ok !== false) {
             if (vals.metrics_remote_write_token) {

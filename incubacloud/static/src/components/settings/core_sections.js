@@ -74,7 +74,7 @@ settingsGroups.add("limits", { title: _t("Limits"), sequence: 30 });
 
 // ── Platform ────────────────────────────────────────────────────────────────
 settingsSections.add("general", {
-    group: "platform", sequence: 10, title: _t("General"),
+    group: "platform", sequence: 10, title: _t("General"), legacyTab: "general",
     description: _t("Where new instances go and where their backups are kept by default."),
 });
 settingsBlocks.add("core-general", {
@@ -232,7 +232,7 @@ settingsBlocks.add("core-edge", {
 
 // ── Integrations ────────────────────────────────────────────────────────────
 settingsSections.add("github", {
-    group: "integrations", sequence: 10, title: _t("GitHub"),
+    group: "integrations", sequence: 10, title: _t("GitHub"), legacyTab: "github",
     description: _t("The GitHub App that rebuilds on push and reads repositories, and a fallback token."),
 });
 settingsBlocks.add("core-github", {
@@ -273,7 +273,7 @@ settingsBlocks.add("core-github", {
 });
 
 settingsSections.add("git-providers", {
-    group: "integrations", sequence: 15, title: _t("Git providers"),
+    group: "integrations", sequence: 15, title: _t("Git providers"), legacyTab: "git_providers",
     description: _t("GitLab servers the panel reads, deploys and rebuilds from, each with its credentials."),
 });
 settingsBlocks.add("core-git-providers", {
@@ -289,7 +289,7 @@ settingsBlocks.add("core-git-providers", {
 });
 
 settingsSections.add("monitoring", {
-    group: "integrations", sequence: 20, title: _t("Monitoring"),
+    group: "integrations", sequence: 20, title: _t("Monitoring"), legacyTab: "monitoring",
     description: _t("Metrics from every host to a central stack, read back for alerts and dashboards."),
     // Where the platform runs observability for the panel, it is not
     // configured here.
@@ -384,7 +384,7 @@ settingsBlocks.add("core-monitoring", {
 
 // ── Limits ──────────────────────────────────────────────────────────────────
 settingsSections.add("rates", {
-    group: "limits", sequence: 10, title: _t("Rate limits"),
+    group: "limits", sequence: 10, title: _t("Rate limits"), legacyTab: "rates",
     description: _t("Requests per minute in a tumbling window unless a field says per hour. Changes apply at once."),
 });
 /**

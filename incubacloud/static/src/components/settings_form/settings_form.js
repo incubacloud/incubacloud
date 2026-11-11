@@ -65,6 +65,9 @@ export class SettingRow extends Component {
         // The control under the words at every width (long lists, PEM).
         stacked: { type: Boolean, optional: true },
         warning: { type: String, optional: true },
+        // The row shows text, not a form control: its words are text too,
+        // since a <label> names a control and has none to name here.
+        plain: { type: Boolean, optional: true },
         // The form holding the value, when the row draws its own control:
         // read here so the row's dot follows what is typed.
         form: { type: Object, optional: true },

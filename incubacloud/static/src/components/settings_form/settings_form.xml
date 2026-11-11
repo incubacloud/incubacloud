@@ -26,7 +26,10 @@
                 'ic-set-row--error': error,
              }">
             <div class="ic-set-row__text">
-                <label class="ic-set-label" t-att-for="inputId">
+                <span t-if="props.plain" class="ic-set-label">
+                    <t t-esc="label"/>
+                </span>
+                <label t-else="" class="ic-set-label" t-att-for="inputId">
                     <t t-esc="label"/>
                     <span t-if="changed" class="ic-set-dot" role="img" aria-label="Changed" title="Changed"/>
                 </label>
@@ -51,7 +54,7 @@
 
     <t t-name="incubacloud.SettingField">
         <SettingRow id="props.id" label="props.label" help="props.help" warning="props.warning" form="props.form"
-                    stacked="field.type === 'textarea' and width === 'l'">
+                    stacked="field.type === 'textarea' and width === 'l'" plain="field.type === 'readonly'">
             <t t-set-slot="default" t-slot-scope="row">
                 <t t-set="type" t-value="field.type"/>
                 <!-- Number, with its unit as a suffix -->
@@ -106,6 +109,7 @@
                                   t-att-placeholder="props.placeholder ?? field.placeholder ?? (props.stored ? '' : notSetText)"
                                   t-att-value="value || ''"
                                   t-att-disabled="props.disabled || null"
+                                  t-att-aria-invalid="row.invalid ? 'true' : undefined"
                                   t-att-aria-describedby="row.describedBy || undefined"
                                   t-on-input="(ev) => this.set(ev.target.value)"/>
                         <input t-else="" type="password" class="ic-set-input" autocomplete="new-password"
@@ -113,6 +117,7 @@
                                t-att-placeholder="props.placeholder ?? (props.stored ? newValueText : notSetText)"
                                t-att-value="value || ''"
                                t-att-disabled="props.disabled || null"
+                               t-att-aria-invalid="row.invalid ? 'true' : undefined"
                                t-att-aria-describedby="row.describedBy || undefined"
                                t-on-input="(ev) => this.set(ev.target.value)"/>
                         <button t-if="props.stored" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"

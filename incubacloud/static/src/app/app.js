@@ -12,7 +12,7 @@ import { HostsDashboard } from "../components/hosts_dashboard/hosts_dashboard";
 import { HostDetail } from "../components/host_detail/host_detail";
 import { InstanceDetail } from "../components/instance_detail/instance_detail";
 import { Settings } from "../components/settings/settings";
-import { LEGACY_TABS } from "../components/settings/settings_registry";
+import { legacySection } from "../components/settings/settings_registry";
 import "../components/settings/core_sections";
 import { BackupBackendsList } from "../components/backup_backend_detail/backup_backends_list";
 import { BackupBackendDetail } from "../components/backup_backend_detail/backup_backend_detail";
@@ -131,7 +131,7 @@ export function _buildUrl(route, params = {}) {
 
         case "monitoring":            return `${_BASE}/monitoring`;
         case "settings": {
-            const section = params.section || LEGACY_TABS[params.tab];
+            const section = params.section || legacySection(params.tab);
             const path = section ? `${_BASE}/settings/${section}` : `${_BASE}/settings`;
             return params.field ? `${path}#${params.field}` : path;
         }

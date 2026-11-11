@@ -120,39 +120,15 @@ export class CoreRatesTab extends Component {
     }
 
     /**
-     * Save the limits; Settings checked each against its declaration
-     * (a whole number, 1 or more) first.
+     * Save the limits changed; Settings checked each against its
+     * declaration (a whole number, 1 or more) first.
      *
      * @returns {Promise<object>} the server's answer
      */
     async _save() {
+        const form = this.state.form;
         return await rpc("/cloud/save_core_rate_limits", {
-            vals: {
-                rate_limit_webhook_per_min:
-                    this.state.form.rate_limit_webhook_per_min,
-                rate_limit_terminal_per_min:
-                    this.state.form.rate_limit_terminal_per_min,
-                rate_limit_terminal_user_per_min:
-                    this.state.form.rate_limit_terminal_user_per_min,
-                rate_limit_host_console_per_min:
-                    this.state.form.rate_limit_host_console_per_min,
-                rate_limit_connect_per_min:
-                    this.state.form.rate_limit_connect_per_min,
-                rate_limit_connect_user_per_min:
-                    this.state.form.rate_limit_connect_user_per_min,
-                rate_limit_logs_per_min:
-                    this.state.form.rate_limit_logs_per_min,
-                rate_limit_mail_reads_per_min:
-                    this.state.form.rate_limit_mail_reads_per_min,
-                rate_limit_log_search_per_min:
-                    this.state.form.rate_limit_log_search_per_min,
-                rate_limit_github_previews_per_hour:
-                    this.state.form.rate_limit_github_previews_per_hour,
-                rate_limit_github_imports_per_hour:
-                    this.state.form.rate_limit_github_imports_per_hour,
-                rate_limit_git_reads_per_hour:
-                    this.state.form.rate_limit_git_reads_per_hour,
-            },
+            vals: this.env.settingsForm?.changes("CoreRates", form) ?? { ...form },
         });
     }
 }

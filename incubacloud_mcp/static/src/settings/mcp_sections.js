@@ -8,7 +8,7 @@ import { McpRatesSection } from "./mcp_rates_section";
 import { McpSettingsTab } from "./mcp_settings_tab";
 
 settingsSections.add("agents", {
-    group: "integrations", sequence: 30, title: _t("Agents (MCP)"),
+    group: "integrations", sequence: 30, title: _t("Agents (MCP)"), legacyTab: "agents",
     description: _t("AI agents that operate the panel on behalf of a user, and the rules that let one act without asking."),
 });
 settingsBlocks.add("mcp-agents", {

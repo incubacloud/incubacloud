@@ -9,7 +9,7 @@ import { AssistantSettingsTab } from "./assistant_settings_tab";
 const ai = ["ai", "assistant", "llm", "chat"];
 
 settingsSections.add("assistant", {
-    group: "integrations", sequence: 40, title: _t("Assistant"),
+    group: "integrations", sequence: 40, title: _t("Assistant"), legacyTab: "assistant",
     description: _t("The built-in assistant: its provider, its spending and who may use it."),
 });
 settingsBlocks.add("assistant", {

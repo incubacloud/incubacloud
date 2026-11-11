@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { allowTranslations } from "@web/../tests/web_test_helpers";
 import { _buildUrl, _parseRoute } from "@incubacloud/app/app";
-import { changedKeys, Settings, snapshot } from "@incubacloud/components/settings/settings";
 import {
-    blocksOf, fieldProblem, LEGACY_TABS, sectionFor, settingField, settingsIndex, settingsMenu,
+    changedKeys, changedValues, Settings, snapshot,
+} from "@incubacloud/components/settings/settings";
+import {
+    blocksOf, fieldProblem, legacySection, sectionFor, sectionShown, settingField, settingsIndex,
+    settingsMenu, settingsSections,
 } from "@incubacloud/components/settings/settings_registry";
 import {
     editDistance, fold, markMatch, scoreField, searchElsewhere, searchSettings, suggestion,
 } from "@incubacloud/components/settings/settings_search";
-import { coreForm, CORE_PARTS } from "@incubacloud/components/settings/core_settings_block";
+import {
+    coreForm, CORE_PARTS, coreSaveVals,
+} from "@incubacloud/components/settings/core_settings_block";
 import { GithubSettingsBlock } from "@incubacloud/components/settings/github_settings_block";
 import { logSizeProblem, looksLikeRange, rangesProblem } from "@incubacloud/components/settings/core_sections";
 import {
@@ -57,8 +62,37 @@ describe("Settings — the menu", () => {
         expect(sectionFor(undefined, undefined)).toBe("general");
         expect(sectionFor("logs", "github")).toBe("logs");
         expect(sectionFor(undefined, "git_providers")).toBe("git-providers");
-        expect(sectionFor(undefined, "saas")).toBe("saas-instances");
-        expect(LEGACY_TABS.providers).toBe("saas-providers");
+        expect(sectionFor(undefined, "rates")).toBe("rates");
+        expect(legacySection("no-such-tab")).toBe(undefined);
+    });
+
+    test("each module names its own old tabs", () => {
+        // Core names no section of another module: a tab is found only in
+        // the section its module registered.
+        for (const [id, section] of settingsSections.getEntries()) {
+            if (section.legacyTab) {
+                expect(legacySection(section.legacyTab)).toBe(id);
+            }
+        }
+    });
+
+    test("a section of a module absent or hidden opens the first", () => {
+        const agents = settingsSections.get("agents", null);
+        if (agents) {
+            settingsSections.remove("agents");
+        }
+        try {
+            expect(sectionShown("agents", undefined, env())).toBe("general");
+            expect(sectionShown(undefined, "agents", env())).toBe("general");
+        } finally {
+            if (agents) {
+                settingsSections.add("agents", agents);
+            }
+        }
+        const hidden = env({ observability: { configure: false } });
+        expect(sectionShown("monitoring", undefined, hidden)).toBe("general");
+        expect(sectionShown("monitoring", undefined, env())).toBe("monitoring");
+        expect(sectionShown("logs", undefined, env())).toBe("logs");
     });
 });
 
@@ -226,6 +260,48 @@ describe("Settings — unsaved changes", () => {
     test("secrets come back empty", () => {
         const form = coreForm("monitoring", { metrics_remote_write_token: "x" });
         expect(form.metrics_remote_write_token).toBe("");
+    });
+
+    test("a block sends the fields it changed, not the whole form", () => {
+        // A job may write the others meanwhile ("Enable observability"
+        // fills the metrics URLs): sending them back would undo it.
+        const form = coreForm("monitoring", { metrics_central_url: "" });
+        const saved = snapshot(form);
+        form.metrics_retention_days = 30;
+        expect(coreSaveVals(changedValues(form, saved))).toEqual({ metrics_retention_days: 30 });
+        expect(Object.keys(changedValues(form, undefined))).toEqual(CORE_PARTS.monitoring);
+    });
+
+    test("no default destination is sent as 0, and only when it changed", () => {
+        const form = coreForm("general", { default_backup_backend_id: 4 });
+        const saved = snapshot(form);
+        expect(coreSaveVals(changedValues(form, saved))).toEqual({});
+        form.default_backup_backend_id = null;
+        expect(coreSaveVals(changedValues(form, saved))).toEqual({ default_backup_backend_id: 0 });
+    });
+
+    test("a save called off leaves the page as it was, and says nothing", async () => {
+        const toasts = [];
+        const block = { form: { github_webhook_allowlist: true } };
+        const page = Object.create(Settings.prototype);
+        page.env = { toast: { success: (message) => toasts.push(message) } };
+        page.state = { saving: false, pageError: null };
+        page.store = { saved: { Edge: snapshot(block.form) }, errors: {}, found: null };
+        page._tabs = new Map([["Edge", {
+            state: block,
+            writeOnly: [],
+            save: async () => {
+                // The user called it off: the block puts its form back.
+                block.form.github_webhook_allowlist = true;
+                return { cancelled: true };
+            },
+        }]]);
+        block.form.github_webhook_allowlist = false;
+        expect(page.changedCount).toBe(1);
+        await page.save();
+        expect(page.state.pageError).toBe(null);
+        expect(page.changedCount).toBe(0);
+        expect(toasts).toEqual([]);
     });
 });
 

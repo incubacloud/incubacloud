@@ -14,7 +14,9 @@
  * Groups      registry "incubacloud.settings_groups"
  *     { title, sequence }
  * Sections    registry "incubacloud.settings_sections", keyed by the URL id
- *     { group, sequence, title, description, visible?(env) }
+ *     { group, sequence, title, description, legacyTab?, visible?(env) }
+ *     ``legacyTab`` is the ``?tab=`` of the Settings that had tabs that
+ *     this section took over, so older links still land on it.
  * Blocks      registry "incubacloud.settings_blocks"
  *     { section, sequence, Component, props?, fields?, visible?(env) }
  * Elsewhere   registry "incubacloud.settings_elsewhere"
@@ -39,22 +41,6 @@ export const settingsElsewhere = registry.category("incubacloud.settings_elsewhe
 
 /** The section Settings opens on when the URL names none. */
 export const DEFAULT_SECTION = "general";
-
-/**
- * The tabs of the Settings that had tabs, and the section each one became,
- * so links and bookmarks that name a tab still land where they meant.
- */
-export const LEGACY_TABS = Object.freeze({
-    general: "general",
-    github: "github",
-    git_providers: "git-providers",
-    rates: "rates",
-    monitoring: "monitoring",
-    agents: "agents",
-    assistant: "assistant",
-    saas: "saas-instances",
-    providers: "saas-providers",
-});
 
 /**
  * Whether a registry entry shows for this user and installation.
@@ -165,6 +151,23 @@ export function settingField(id) {
 }
 
 /**
+ * The section that took over a tab of the Settings that had tabs.
+ *
+ * Each module names, in its sections, the tabs it used to add, so a tab
+ * of a module that is not installed lands nowhere.
+ *
+ * @param {string|undefined} tab the ``?tab=`` of an older link
+ * @returns {string|undefined} the section's id, or undefined
+ */
+export function legacySection(tab) {
+    if (!tab) {
+        return undefined;
+    }
+    const found = settingsSections.getEntries().find(([, section]) => section.legacyTab === tab);
+    return found ? found[0] : undefined;
+}
+
+/**
  * The section a Settings URL opens.
  *
  * @param {string|undefined} section the section the path names
@@ -172,7 +175,26 @@ export function settingField(id) {
  * @returns {string} the section's id
  */
 export function sectionFor(section, tab) {
-    return section || LEGACY_TABS[tab] || DEFAULT_SECTION;
+    return section || legacySection(tab) || DEFAULT_SECTION;
+}
+
+/**
+ * The section Settings shows for a URL: the one it names when the menu
+ * has it here, else the first of the menu.
+ *
+ * A section of a module that is not installed, or one hidden for this
+ * user or installation, is not a page of its own: its link opens Settings
+ * on the first section instead of an empty page.
+ *
+ * @param {string|undefined} section the section the path names
+ * @param {string|undefined} tab the ``?tab=`` of an older link
+ * @param {object} env the component environment
+ * @returns {string} the section's id
+ */
+export function sectionShown(section, tab, env) {
+    const id = sectionFor(section, tab);
+    const all = settingsMenu(env).flatMap((group) => group.sections.map((s) => s.id));
+    return all.includes(id) ? id : (all[0] || id);
 }
 
 /**
