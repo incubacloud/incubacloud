@@ -917,6 +917,8 @@ msgid "Provider key"
 msgstr "Clave del proveedor"
 
 #. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_models
 msgid "Provider's models"
 msgstr "Modelos del proveedor"
