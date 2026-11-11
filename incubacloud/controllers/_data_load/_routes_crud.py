@@ -2652,7 +2652,10 @@ class CrudMixin:
                     {'instance_id': inst.id, 'hostname': h, 'sequence': i * 10}
                     for i, h in enumerate(hostnames, 1)
                 ])
-        answer = {'ok': True}
+        # What the pill "Changes not deployed" shows, as it is after this
+        # save: the form lights it without a reload.
+        inst.invalidate_recordset(['config_dirty'])
+        answer = {'ok': True, 'config_dirty': inst.config_dirty}
         warning = git_budget and git_budget.addons_warning()
         if warning:
             answer['warning'] = warning

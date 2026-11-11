@@ -1315,6 +1315,12 @@ export class InstanceDetail extends JobsMixin(
           vals,
         });
         this.state.inst.name = vals.name;
+        // The pill "Changes not deployed" follows what was just saved,
+        // with no reload: the route says whether the saved configuration
+        // now differs from the deployed one.
+        if (saved && "config_dirty" in saved) {
+          this.state.inst.config_dirty = saved.config_dirty;
+        }
         this.env.toast?.success(_t("Changes saved"));
         if (saved?.warning) {
           this.env.toast?.warning(saved.warning);
