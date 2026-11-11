@@ -382,6 +382,12 @@ class QueueJob(models.Model):
                 "priority": PARKED_RETURN_PRIORITY,
                 "retry": 0,
             })
+        # A postpone that is not a park: the job sleeps until its eta,
+        # and its slot in the channel is free for the jobs held for one.
+        postponed = (
+            self.filtered(lambda job: job.state == "started")
+            if vals.get("state") == "pending" else self.browse()
+        )
         ended = self._parked_ended_by_hand(vals)
         if ended:
             (self - ended).write(vals)
@@ -431,6 +437,8 @@ class QueueJob(models.Model):
                 stopped._let_go_between_ticks(vals)
                 return result
         result = super().write(vals)
+        if postponed:
+            self.env["cloud.job"]._wake_channel_waiters()
         new_state = vals.get("state")
         if new_state not in _MIRRORED:
             return result

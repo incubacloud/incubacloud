@@ -97,6 +97,10 @@ class CloudJobCheckpoint(models.Model):
              " resumes the job from it; it is the reconciliation's, or the"
              " cleaning of an attempt that runs the job again.",
     )
+    overdue_noted = fields.Boolean(
+        help="The job log says the parked job is late to come back: its"
+             " queue job has not started its next attempt.",
+    )
     reconcile_tried_at = fields.Datetime(
         help="When the reconciliation last tried to reach the server to"
              " clean up after the ended job, and could not.",

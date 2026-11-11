@@ -8,7 +8,7 @@ import re
 import time
 import urllib.request
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from markupsafe import escape
 from psycopg2 import OperationalError
@@ -37,14 +37,24 @@ from .abstract_executor import (
     DETACHED_GIVE_UP_AFTER_CAP_S,
     DETACHED_RECONCILE_WAIT_S,
     DETACHED_STOP_WAIT_S,
+    PARKED_OVERDUE_S,
     JobCancelled,
     JobRefused,
     JobWorkerLost,
     _is_refusal,
     is_transient_connection_error,
 )
+from ._job_channels import (
+    CHANNEL_GATE_OPTION,
+    channel_manager,
+    channel_wait,
+    configured_channels,
+    full_channel,
+)
+from ._job_server_limits import conf_section
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .cloud_security_mixin import defaults_as_sent
+from .password_utils import IncubacloudCryptoError
 from .registry import executor_registry
 from .res_users_ext import as_platform, telegram_markdown
 from .transport import DEFAULT_SSH_COMMAND_TIMEOUT
@@ -63,6 +73,10 @@ _JOB_LOCK_NAMESPACE = 0x0C10D10B
 # instance.id can collide numerically, so host locks must live in their own
 # namespace to avoid falsely serialising unrelated host/instance work.
 _HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
+#: The one advisory lock of the dispatcher's count of channel slots
+#: (``cloud.job._channel_admits``): two dispatchers of different queues
+#: never both see the last slot free.
+_CHANNEL_LOCK_NAMESPACE = 0x0C10D110
 
 #: How many entries may wait in one queue (an instance's, or a host's for
 #: host-level jobs). A chain is one entry. Follow-ups an executor queues
@@ -91,7 +105,7 @@ _QUEUE_CONTROL_FIELDS = frozenset({
     "blocked_alert_id", "queue_job_uuid", "queue_job_id", "job_type_id",
     "payload", "secret_payload", "instance_id", "host_id",
     "asked_as_superuser", "date_done", "succeeded_before_cancel",
-    "worker_lost_at",
+    "worker_lost_at", "channel_wait_since",
 })
 
 _CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
@@ -128,7 +142,7 @@ def _dispatch_scope_fresh(registry, scope):
     try:
         with read_committed_cursor(registry) as cr:
             Job = as_platform(api.Environment(cr, SUPERUSER_ID, {})["cloud.job"])
-            return bool(Job._dispatch_next(*scope))
+            return bool(Job._dispatch_next(*scope, channel_lock=True))
     except Exception:  # the event this follows is recorded already
         _logger.exception(
             "cloud.job: could not serve the queue of %s", _scope_label(scope),
@@ -232,6 +246,14 @@ class CloudJob(models.Model):
             " (AbstractExecutor._mark_success_before_cancel). Cleared"
             " when the job starts again."
         ),
+    )
+    channel_wait_since = fields.Datetime(
+        string="Waiting for a Slot Since",
+        copy=False,
+        readonly=True,
+        help="Since when the dispatcher holds this queued job back: its"
+             " queue_job channel has no free slot, counting the jobs parked"
+             " between two attempts. Cleared once it is dispatched.",
     )
     worker_lost_at = fields.Datetime(
         string="Worker Lost At",
@@ -2132,7 +2154,7 @@ class CloudJob(models.Model):
             raise UserError(message)
 
     @api.model
-    def _dispatch_next(self, instance_id=None, host_id=None):
+    def _dispatch_next(self, instance_id=None, host_id=None, channel_lock=False):
         """Start the next entry waiting in one queue, if its target is free.
 
         The one place a waiting job is started. Run on a fresh cursor
@@ -2158,8 +2180,15 @@ class CloudJob(models.Model):
         in other queues too starts only when it is first in all of them
         and every target is free; until then this queue waits for it.
 
+        An entry ready to start still waits while its queue_job channel
+        has no free slot (``_channel_admits``): the queue then serves
+        nothing, as when its target is busy.
+
         :param int instance_id: the instance whose queue to serve, or
         :param int host_id: the host whose host-level queue to serve
+        :param bool channel_lock: take the channels' lock before counting
+            their slots: the fresh dispatcher does, the fast path of
+            ``enqueue`` does not
         :return: the entry dispatched, or an empty recordset
         """
         Job = self.sudo()
@@ -2176,9 +2205,183 @@ class CloudJob(models.Model):
                 continue
             if verdict == "wait":
                 return self.browse()
+            if not Job._channel_admits(entry, lock=channel_lock):
+                return self.browse()
             Job._dispatch_entry(entry)
             return entry
         return self.browse()
+
+    @api.model
+    def _channel_gate_on(self):
+        """Whether the dispatcher counts the slots of queue_job's channels.
+
+        Off with ``[incubacloud] channel_gate = off`` in odoo.conf
+        (``CHANNEL_GATE_OPTION``). Off in tests, unless a test asks for it
+        (``ic_channel_gate`` in the context): without a runner every job
+        dispatched stays ``pending``, and the gate would hold the second
+        job of almost every test.
+
+        :rtype: bool
+        """
+        if odoo_config.get("test_enable") and not self.env.context.get(
+            "ic_channel_gate",
+        ):
+            return False
+        try:
+            section = conf_section(odoo_config.get("config"))
+        except IncubacloudCryptoError:
+            section = {}
+        value = (section.get(CHANNEL_GATE_OPTION) or "on").strip().lower()
+        return value not in ("off", "0", "false", "no")
+
+    @api.model
+    def _entry_channel(self, job):
+        """Return the queue_job channel *job* is dispatched to.
+
+        :param job: a ``cloud.job``; for a chain, its first step
+        :rtype: str
+        """
+        return self._resolve_channel_priority(
+            job.job_type_id, job.instance_id.id if job.instance_id else False,
+        )[0]
+
+    @api.model
+    def _channel_load_names(self):
+        """Return the channel of each of the panel's jobs that takes a slot.
+
+        Read from queue_job: ``enqueued`` and ``started``; ``pending`` due
+        now (no ``eta``, or one gone by), which the runner starts next;
+        and every job parked between two attempts, whose ``eta`` is ahead
+        — its checkpoint is there and not ``closed``: the place it keeps.
+        Not a job that sleeps until a later ``eta`` (a build lock, busy
+        crons: up to 30 minutes), nor a step of a chain that waits for the
+        one before it, which takes the slot that one leaves.
+
+        :return: one channel name per job
+        :rtype: list[str]
+        """
+        self.env.cr.execute(
+            "SELECT q.channel FROM queue_job q"
+            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " WHERE q.state IN ('enqueued', 'started')"
+            "   OR (q.state = 'pending' AND (q.eta IS NULL"
+            "     OR q.eta <= (now() at time zone 'UTC')"
+            "     OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
+            "       WHERE k.queue_job_uuid = q.uuid AND k.closed IS NOT TRUE)))"
+        )
+        return [row[0] for row in self.env.cr.fetchall()]
+
+    @api.model
+    def _channel_admits(self, entry, lock=False):
+        """Whether *entry*'s channel has a free slot for it; hold it if not.
+
+        queue_job's runner stops counting a parked job, which goes back to
+        ``pending``: in the seconds before it comes back, the runner would
+        give its slot to another job of the channel. The panel keeps it:
+        an entry goes to queue_job only while its channel, and every one
+        above it, has fewer of the panel's jobs taking a slot than its
+        capacity (``_job_channels``), parked ones included. One held back
+        stays ``queued`` with ``channel_wait_since``, and waits for a slot
+        to free (``_wake_channel_waiters``).
+
+        The slots are counted on a fresh cursor. With *lock*, under one
+        lock for every channel, held to the end of the transaction
+        (``_CHANNEL_LOCK_NAMESPACE``), so two dispatchers never both see
+        the last slot free; the scope's lock is taken first, always. The
+        fast path of ``enqueue`` takes none: it dispatches at most one
+        job too many, which queue_job keeps ``pending``, as before.
+
+        :param entry: the waiting entry (a lone job or a chain)
+        :param bool lock: take the channels' lock
+        :rtype: bool
+        """
+        if not self._channel_gate_on():
+            return True
+        first = entry[:1]
+        channel = self._entry_channel(first)
+        if lock:
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, 0)", (_CHANNEL_LOCK_NAMESPACE,),
+            )
+        with self._fresh_env() as env:
+            names = env["cloud.job"]._channel_load_names()
+        full = full_channel(channel_manager(configured_channels()), channel, names)
+        if full is None:
+            return True
+        if not first.channel_wait_since:
+            entry.with_context(ic_skip_state_hook=True).write(
+                {"channel_wait_since": fields.Datetime.now()},
+            )
+            self._broadcast_job_update(first.id)
+        _logger.info(
+            "cloud.job %s waits for a free slot in %s (%d/%d)",
+            first.id, *full,
+        )
+        return False
+
+    def _channel_wait(self):
+        """Say what this job, held back by the gate, waits for.
+
+        :return: ``{channel, load, capacity, since}``, or None when it is
+            not held
+        :rtype: dict
+        """
+        self.ensure_one()
+        if self.state != "queued" or not self.channel_wait_since:
+            return None
+        with self._fresh_env() as env:
+            names = env["cloud.job"]._channel_load_names()
+        name, load, capacity = channel_wait(
+            channel_manager(configured_channels()),
+            self._entry_channel(self.sudo()), names,
+        )
+        return {
+            "channel": name,
+            "load": load,
+            "capacity": capacity,
+            "since": fields.Datetime.to_string(self.channel_wait_since),
+        }
+
+    @api.model
+    def _waiter_order(self, job):
+        """Return where *job* comes among the queued: priority, wait, id.
+
+        The priority of queue_job, which its channel and its instance give
+        (production first); then how long the gate has held it; a job it
+        never held comes after those it did.
+
+        :param job: a ``cloud.job``
+        :rtype: tuple
+        """
+        priority = self._resolve_channel_priority(
+            job.job_type_id, job.instance_id.id if job.instance_id else False,
+        )[1]
+        return (priority, job.channel_wait_since or datetime.max, job.id)
+
+    @api.model
+    def _wake_channel_waiters(self):
+        """Serve the queues of the jobs the gate holds, in order, after commit.
+
+        Called when a slot may have freed: a job's end, and a postpone of a
+        job that is not parked, which sleeps until its ``eta``. The jobs
+        the gate held (``channel_wait_since``) are served in the order of
+        ``_waiter_order``, each queue on a fresh cursor of its own; the
+        first that finds a slot takes it. A parked job that comes back
+        wakes nobody: the slot was its own.
+        """
+        waiting = self.sudo().search([
+            ("state", "=", "queued"),
+            ("channel_wait_since", "!=", False),
+            ("blocked_alert_id", "=", False),
+        ])
+        if not waiting:
+            return
+        scopes = []
+        for job in waiting.sorted(key=self._waiter_order):
+            scope = job._scope_of()
+            if scope not in scopes:
+                scopes.append(scope)
+        self._schedule_dispatch(scopes)
 
     @api.model
     def _entry_verdict(self, entry, scope):
@@ -2324,9 +2527,11 @@ class CloudJob(models.Model):
             # dispatcher's language is nobody's in particular.
             description=job.name,
         ).execute()
-        job.with_context(ic_skip_state_hook=True).write(
-            {"queue_job_uuid": delayed.uuid, "state": "pending"},
-        )
+        job.with_context(ic_skip_state_hook=True).write({
+            "queue_job_uuid": delayed.uuid,
+            "state": "pending",
+            "channel_wait_since": False,
+        })
         self._broadcast_job_update(job.id)
 
     def _as_its_creator(self):
@@ -2378,7 +2583,10 @@ class CloudJob(models.Model):
             ).execute())
         delay_chain(*nodes).delay()
         for position, (node, record) in enumerate(zip(nodes, records, strict=False)):
-            vals = {"state": "pending" if position == 0 else "wait_dependencies"}
+            vals = {
+                "state": "pending" if position == 0 else "wait_dependencies",
+                "channel_wait_since": False,
+            }
             if node._generated_job:
                 vals["queue_job_uuid"] = node._generated_job.uuid
             record.with_context(ic_skip_state_hook=True).write(vals)
@@ -2615,7 +2823,9 @@ class CloudJob(models.Model):
 
         For a terminal state: ``_after_job_terminal`` (what a layer hooks
         into), then a dispatch of every queue the job waited in is
-        registered for after this transaction commits. A ``cancelled``
+        registered for after this transaction commits, and of the queues
+        whose jobs wait for a slot in their channel
+        (``_wake_channel_waiters``). A ``cancelled``
         written on a job whose queue.job still runs is the cooperative
         stop flag of ``cancel_job``, not an end: the end arrives through
         ``queue_job_ext`` when the executor stops, and is acted on then.
@@ -2631,10 +2841,12 @@ class CloudJob(models.Model):
             return
         hidden = self._get_hidden_job_types()
         scopes = set()
+        ended = False
         for job in self.sudo():
             queue_job = job.queue_job_id
             if queue_job and queue_job.state in self._running_states:
                 continue
+            ended = True
             if after_commit:
                 job._run_after_terminal_after_commit(new_state)
             else:
@@ -2643,6 +2855,10 @@ class CloudJob(models.Model):
                 continue
             scopes |= self._queue_scopes_of(job)
         self._schedule_dispatch(scopes)
+        if ended:
+            # Its slot in the channel is free: the jobs held for one go
+            # next, hidden types' too (they take slots).
+            self._wake_channel_waiters()
 
     def _run_after_terminal(self, new_state):
         """Give the layers their ``_after_job_terminal``; never raises.
@@ -2809,7 +3025,9 @@ class CloudJob(models.Model):
         after the running job ended, an instance freed by a path nobody
         hooked. Each queue is served by the fresh dispatcher on a cursor
         of its own (``_dispatch_scope_fresh``), so one that fails does
-        not stop the rest.
+        not stop the rest. In the order the jobs held for a slot are
+        woken in (``_waiter_order``): the first slot that frees goes to
+        the first of them.
 
         :return: how many entries were dispatched
         :rtype: int
@@ -2817,60 +3035,142 @@ class CloudJob(models.Model):
         waiting = self.sudo().search([
             ("state", "=", "queued"), ("blocked_alert_id", "=", False),
         ])
-        scopes = {job._scope_of() for job in waiting}
+        scopes = []
+        for job in waiting.sorted(key=self._waiter_order):
+            scope = job._scope_of()
+            if scope not in scopes:
+                scopes.append(scope)
         registry = self.env.registry
         self.env.flush_all()
-        return sum(
-            _dispatch_scope_fresh(registry, scope)
-            for scope in sorted(scopes, key=lambda s: (s[0] or 0, s[1] or 0))
-        )
+        return sum(_dispatch_scope_fresh(registry, scope) for scope in scopes)
 
-    #: Warn at 45 running minutes: the dedicated runner kills jobs at
-    #: ``limit_time_real`` = 60, so the alert fires while there is still
-    #: time to look before the hard kill (decision log P12.5).
+    #: Warn at 45 running minutes on a server without ``limit_time_real``
+    #: (decision log P12.5).
     _LONG_RUNNING_MINUTES = 45
+    #: Warn once an attempt has run this share of the server's
+    #: ``limit_time_real`` (10-nov-2026): 45 minutes of 60, as before, and
+    #: 11 of Odoo.sh's 15; the alert fires while there is time to look
+    #: before the server cuts the request.
+    _LONG_RUNNING_SHARE = 0.75
     _LONG_RUNNING_ALERT_CODE = "job_running_too_long"
+
+    @api.model
+    def _server_limit_time_real(self):
+        """Return the ``limit_time_real`` of this server, in seconds; 0 for none.
+
+        :rtype: int
+        """
+        return odoo_config.get("limit_time_real") or 0
+
+    @api.model
+    def _parked_overdue(self, now):
+        """Return the parked jobs late to come back, with their channel.
+
+        Parked, ``PARKED_OVERDUE_S`` past the moment it was to come back,
+        its queue.job still waiting for the runner: no slot in its channel,
+        or no runner. Its place is kept all the same.
+
+        :param now: the time to judge by
+        :return: ``{cloud.job id: (checkpoint, channel)}``
+        :rtype: dict
+        """
+        rows = self.env["cloud.job.checkpoint"].sudo().search([
+            ("parked", "=", True),
+            ("closed", "=", False),
+            ("parked_until", "<", now - timedelta(seconds=PARKED_OVERDUE_S)),
+        ])
+        late = {}
+        for row in rows:
+            job = row.job_id
+            queue_job = job.queue_job_id
+            if (
+                job.state != "started" or not queue_job
+                or queue_job.uuid != row.queue_job_uuid
+                or queue_job.state not in ("pending", "enqueued")
+            ):
+                continue
+            late[job.id] = (row, queue_job.channel or "root")
+        return late
 
     @api.model
     def _cron_watch_long_running(self):
         """Alert on jobs running past the duration ceiling; self-resolve.
 
         One warning per (host, instance) target while at least one of
-        its jobs has been ``started`` for over ``_LONG_RUNNING_MINUTES``;
-        the alert resolves on the pass where no long runner remains for
-        that target. The point is to surface jobs about to hit the
-        runner's ``limit_time_real`` **with real data**, so the limit is
-        tuned from evidence instead of guessed.
+        its jobs is slow; the alert resolves on the pass where no slow job
+        remains for that target. Slow is either:
+
+        - an attempt running for ``_LONG_RUNNING_SHARE`` of the server's
+          ``limit_time_real`` (``_LONG_RUNNING_MINUTES`` without one),
+          measured from the attempt's own start: a job parked between two
+          attempts starts its clock again at each;
+        - a parked job ``PARKED_OVERDUE_S`` late to come back
+          (``_parked_overdue``): its log says so once, with the channel it
+          waits for a slot in.
+
+        The point is to surface jobs about to hit the limit **with real
+        data**, so it is tuned from evidence instead of guessed.
         """
-        cutoff = fields.Datetime.now() - timedelta(
-            minutes=self._LONG_RUNNING_MINUTES,
+        now = fields.Datetime.now()
+        limit = self._server_limit_time_real()
+        ceiling = (
+            limit * self._LONG_RUNNING_SHARE if limit > 0
+            else self._LONG_RUNNING_MINUTES * 60
         )
+        cutoff = now - timedelta(seconds=ceiling)
         alerts = self.env["cloud.alert"].sudo()
-
-        def _started_at(job):
-            return job.queue_job_id.date_started or job.create_date
-
-        long_jobs = (
-            self.sudo()
-            .search([("state", "=", "started")])
-            .filtered(lambda j: _started_at(j) and _started_at(j) < cutoff)
-        )
+        late = self._parked_overdue(now)
         long_targets = set()
-        for job in long_jobs:
+        for job in self.sudo().search([("state", "=", "started")]):
+            name = job.display_name or job.job_type_id.code
+            if job.id in late:
+                row, channel = late[job.id]
+                since = row.parked_until.strftime("%H:%M")
+                if not row.overdue_noted:
+                    self.env["cloud.job.log.chunk"].sudo().create({
+                        "job_id": job.id,
+                        "content": (
+                            f"Parked, waiting for a free slot in {channel}"
+                            f" since {since} UTC: queue_job has not started"
+                            " its next attempt yet."
+                        ),
+                        "source": "system",
+                    })
+                    row.overdue_noted = True
+                    self._broadcast_job_update(job.id)
+                message = _(
+                    "Job %(name)s (#%(id)d) waits for a free slot in"
+                    " %(channel)s since %(since)s UTC.",
+                    name=name, id=job.id, channel=channel, since=since,
+                )
+            else:
+                queue_job = job.queue_job_id
+                if queue_job and queue_job.state != "started":
+                    # Between two attempts, or not started yet.
+                    continue
+                started_at = (
+                    queue_job.date_started if queue_job else None
+                ) or job.create_date
+                if not started_at or started_at >= cutoff:
+                    continue
+                minutes = int((now - started_at).total_seconds() // 60)
+                if limit > 0:
+                    message = _(
+                        "Job %(name)s (#%(id)d) has been running for"
+                        " %(minutes)d minutes in this attempt; the server"
+                        " cuts a request at %(limit)d s.",
+                        name=name, id=job.id, minutes=minutes, limit=limit,
+                    )
+                else:
+                    message = _(
+                        "Job %(name)s (#%(id)d) has been running for"
+                        " %(minutes)d minutes.",
+                        name=name, id=job.id, minutes=minutes,
+                    )
             long_targets.add((job.host_id.id, job.instance_id.id or False))
-            minutes = int(
-                (fields.Datetime.now() - _started_at(job)).total_seconds()
-                // 60
-            )
             alerts.raise_alert(
                 self._LONG_RUNNING_ALERT_CODE,
-                _(
-                    "Job %(name)s (#%(id)d) has been running for "
-                    "%(minutes)d minutes; the job runner kills it at 60.",
-                    name=job.display_name or job.job_type_id.code,
-                    id=job.id,
-                    minutes=minutes,
-                ),
+                message,
                 level="warning",
                 host=job.host_id or None,
                 instance=job.instance_id or None,
@@ -4212,6 +4512,8 @@ class CloudJob(models.Model):
                     else None
                 ),
                 "retry_of_id": job.retry_of_id.id if job.retry_of_id else None,
+                # Held back by the channel gate: what for, and since when.
+                "channel_wait": job._channel_wait(),
                 "user_id": job.create_uid.id,
                 "user_name": job.create_uid.name or "",
                 **_webhook_fields(job.payload),

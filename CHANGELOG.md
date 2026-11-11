@@ -10,7 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The groundwork for jobs that outlive the request that runs them, as on
 Odoo.sh, where a request is cut at 900 s. The update adds one empty table,
-`cloud_job_checkpoint`, and needs no data migration. No step of the
+`cloud_job_checkpoint`, and one column, `cloud_job.channel_wait_since`,
+and needs no data migration. No step of the
 panel's jobs runs apart from its request yet: what each job does is
 unchanged.
 
@@ -65,6 +66,21 @@ unchanged.
   again over a checkpoint it does not take up — kept by the hook that
   closed it, or written by another queue job — stops and removes what
   that checkpoint says first, and waits 30 s while it cannot.
+- **A parked job keeps its slot in its queue_job channel.** queue_job's
+  runner stops counting a job that waits between two attempts, and would
+  give its slot to another job of the channel. The panel hands a job to
+  queue_job only while its channel, and every channel above it, has room
+  for one more of its jobs, parked ones included, counted as the runner
+  reads its channels (`ODOO_QUEUE_JOB_CHANNELS`, else `[queue_job]
+  channels`, else `root:1`). A job held back waits in its queue, saying
+  since when, and the channel with its load and capacity; when a job ends,
+  or one that is not parked sleeps until later, those held go first, by
+  priority and age. A job asleep until a later time takes no slot, nor
+  does a step of a chain waiting for the one before it. The place is kept
+  however late the parked job is to come back: 600 s late, its log says
+  it waits for a free slot and in which channel, and the slow job warning
+  is raised. `channel_gate = off` in odoo.conf's `[incubacloud]` section
+  dispatches as before.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in
@@ -80,7 +96,13 @@ unchanged.
 
 - **The startup warning about `limit_time_real` starts below 900 s**
   instead of 3600 s, and says the attempt's budget and what a step in the
-  request has left. The log says the budget at every start.
+  request has left. The log says the budget at every start. It also says
+  when `root.user` has no capacity of its own among queue_job's channels,
+  and which channels other modules' jobs ran in over the last 30 days: a
+  parked job may wait for those.
+- **The slow job warning measures the attempt**, from its own start,
+  against 0.75 of the server's `limit_time_real` (45 minutes with 3600, as
+  before; 45 minutes without a limit), and says the limit.
 
 ## [1.0.224] — 2026-11-10
 
