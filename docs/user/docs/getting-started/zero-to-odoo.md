@@ -53,7 +53,8 @@ sizes a server by its *workers*, the processes that answer people's clicks:
 - at most two workers for each vCPU, plus one: (vCPU × 2) + 1;
 - about 325 MB of memory each, on average: Odoo counts 80% of light requests
   at about 150 MB and 20% of heavy ones at about 1 GB;
-- about 6 users at once for each worker.
+- about 6 users at once for each worker, with one worker left for the
+  scheduled actions (the crons), as in Odoo's own example.
 
 A server runs as many workers as both its vCPUs and its memory allow, after
 2 GB kept for the system, the database and the proxy. For the usual sizes:
@@ -61,14 +62,14 @@ A server runs as many workers as both its vCPUs and its memory allow, after
 | vCPU | RAM | Recommended for up to |
 |---|---|---|
 | Any | Under 4 GB | Tests only |
-| 2 | 4 GB | 30 users at once |
-| 2 | 8 GB | 30 users at once |
-| 4 | 8 GB | 54 users at once |
-| 4 | 16 GB | 54 users at once |
-| 8 | 16 GB | 102 users at once |
-| 8 | 32 GB | 102 users at once |
-| 16 | 32 GB | 198 users at once |
-| 16 | 64 GB | 198 users at once |
+| 2 | 4 GB | 24 users at once |
+| 2 | 8 GB | 24 users at once |
+| 4 | 8 GB | 48 users at once |
+| 4 | 16 GB | 48 users at once |
+| 8 | 16 GB | 96 users at once |
+| 8 | 32 GB | 96 users at once |
+| 16 | 32 GB | 192 users at once |
+| 16 | 64 GB | 192 users at once |
 
 Users at once are the people working in Odoo at the same moment, not everyone
 with an account: a team of 40 where about a dozen work in Odoo at the same
