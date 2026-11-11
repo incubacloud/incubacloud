@@ -87,7 +87,7 @@ Give the app this one mailbox only: whoever holds its secret can send as it.
 
 Under **Instance detail → Networking**:
 
-1. **SMTP Authentication**: *OAuth2 – Microsoft 365*. The host, port and
+1. **SMTP authentication**: *OAuth2 – Microsoft 365*. The host, port and
    encryption are set for you.
 2. **Sender mailbox**: the mailbox of step 2.
 3. **Directory ID** and **Application (client) ID**: the two IDs of step 1.

@@ -42,7 +42,7 @@ or [connect another](../hosts/connect.md).
 ## 4. Odoo and Postgres versions
 
 The instance runs its project's Odoo version, which you pick in the project's form
-(**Odoo Version**, when you create the project or later under its **General** tab):
+(**Odoo version**, when you create the project or later under its **General** tab):
 the panel offers 9.0 to 20.0, and a new project starts on the newest one
 (20.0) unless you pick another. The
 deployment form does not ask for it: a new instance takes its project's, and keeps

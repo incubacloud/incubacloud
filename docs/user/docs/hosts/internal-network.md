@@ -32,14 +32,14 @@ The hosts still need **outbound** HTTPS:
 
 ## Names: the wildcard domain
 
-**Host → Traefik → Wildcard Domain** is the domain the host's instances are
+**Host → Traefik → Wildcard domain** is the domain the host's instances are
 named under when you give them no name of your own. Write it with or without
 the leading `*.`: `*.odoo.example.com` and `odoo.example.com` mean the same.
 
 | Name | For |
 |---|---|
 | `<project folder>-<instance name>.odoo.example.com` | An instance created without a domain: the panel adds this row to its **Networking → Domains**. Without a project folder, `<instance name>.odoo.example.com`. |
-| `traefik.odoo.example.com` | The proxy's dashboard, behind the host's **Panel Password**. |
+| `traefik.odoo.example.com` | The proxy's dashboard, behind the host's **Panel password**. |
 
 The panel creates no DNS records. On your network's DNS server, point the whole
 domain at the host — one wildcard record, `*.odoo.example.com → 192.0.2.20`, or

@@ -71,7 +71,7 @@ Pick the case that matches where your Odoo runs.
 
     Your Odoo uses only Odoo's modules, and perhaps some from the app store.
 
-    1. On **Projects**, press **New Project**, and choose the **Odoo Version**
+    1. On **Projects**, press **New Project**, and choose the **Odoo version**
        of your database.
     2. Add the production instance with the same modules, as in
        [Deploy your first instance](../getting-started/first-deploy.md).

@@ -60,12 +60,12 @@ Go to `/cloud/hosts`. Click **Add Host**.
 ### 2. Fill in connection details
 
 - **Name** — whatever helps you remember it (e.g. `customer-foo-prod`).
-- **IP Address** — the public IP works fine.
+- **IP address** — the public IP works fine.
 - **Port** — the SSH port, usually `22`.
 - **User** — `root` is fine; a user with passwordless `sudo` is also fine.
-- **Login Type** — **SSH Key** (recommended) or **Password**. Hardening
+- **Login type** — **SSH Key** (recommended) or **Password**. Hardening
   needs a key: it copies the user's authorized keys to the account it creates.
-- **Wildcard Domain** — the domain your instances get their names under
+- **Wildcard domain** — the domain your instances get their names under
   (`example.com` or `*.example.com`): each instance answers at a name such as
   `myproject-prod.example.com`. Point a wildcard DNS record (`*.example.com`)
   at the host's IP before you deploy.
@@ -91,7 +91,7 @@ Keep this page open until you create the host: the key is saved with it. Once
 you have copied the key, the panel asks before you leave the page.
 
 To use a key of your own instead, choose **Upload my own private key** and
-upload the private half in **SSH Private Key**. It must have no passphrase (the
+upload the private half in **SSH private key**. It must have no passphrase (the
 panel has no field for one).
 
 The host's **Connection** tab keeps showing the public key, so you can copy it
