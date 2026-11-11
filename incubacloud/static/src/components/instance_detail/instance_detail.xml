@@ -2297,7 +2297,7 @@
                     </t>
                 </div>
                 <div class="rl-frow">
-                    <label>Admin Password</label>
+                    <label>Admin password</label>
                     <PasswordInput
             hasValue="state.has_odoo_admin_password"
             required="true"
@@ -2328,7 +2328,7 @@
                     </div>
                 </t>
                 <div class="rl-frow">
-                    <label>PostgreSQL Version</label>
+                    <label>PostgreSQL version</label>
                     <RlSelect
             options="pgVersions"
             value="state.form.postgres_version"
@@ -2337,7 +2337,7 @@
           />
                 </div>
                 <div class="rl-frow">
-                    <label>DB User</label>
+                    <label>DB user</label>
                     <input
             type="text"
             placeholder="odoo"
@@ -2347,7 +2347,7 @@
           />
                 </div>
                 <div class="rl-frow rl-full">
-                    <label>DB Password</label>
+                    <label>DB password</label>
                     <PasswordInput
             hasValue="state.has_postgres_password"
             required="true"
@@ -2427,7 +2427,7 @@
                 </div>
                 <t t-if="showsRelayAuth">
                     <div class="rl-frow">
-                        <label>SMTP Authentication</label>
+                        <label>SMTP authentication</label>
                         <RlSelect
             options="relayAuthOptions"
             ariaLabel="'SMTP authentication'"
@@ -2437,7 +2437,7 @@
                     </div>
                 </t>
                 <div class="rl-frow">
-                    <label>SMTP Host <span
+                    <label>SMTP host <span
               t-if="!isOAuthRelay"
               class="rl-opt"
             >— leave empty to skip</span></label>
@@ -2453,7 +2453,7 @@
           class="rl-frow"
           t-att-class="validator.fieldError('smtp_relay_port') ? 'has-error' : ''"
         >
-                    <label>SMTP Port</label>
+                    <label>SMTP port</label>
                     <input
                     t-att-aria-invalid="validator.fieldError('smtp_relay_port') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('smtp_relay_port') ? 'idet-err-smtp_relay_port' : undefined"
@@ -2472,7 +2472,7 @@
                     </t>
                 </div>
                 <div class="rl-frow">
-                    <label>SMTP Encryption</label>
+                    <label>SMTP encryption</label>
                     <RlSelect
             options="[{value:'none',label:'None'},{value:'starttls',label:'STARTTLS'},{value:'ssl',label:'SSL/TLS'}]"
             value="state.form.smtp_relay_security"
@@ -2482,7 +2482,7 @@
                 </div>
                 <div class="rl-frow">
                     <label t-if="isOAuthRelay">Sender mailbox</label>
-                    <label t-else="">SMTP User</label>
+                    <label t-else="">SMTP user</label>
                     <input
             type="text"
             t-att-placeholder="isOAuthRelay ? 'notifications@example.com' : undefined"
@@ -2492,7 +2492,7 @@
                 </div>
                 <t t-if="!isOAuthRelay">
                     <div class="rl-frow">
-                        <label>SMTP Password</label>
+                        <label>SMTP password</label>
                         <PasswordInput
             hasValue="state.has_smtp_relay_password"
             onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"
@@ -2571,7 +2571,7 @@
                 <!-- Backup backend (production only) -->
                 <t t-if="state.form.environment === 'production'">
                     <div class="rl-frow">
-                        <label>Backup Backend
+                        <label>Backup backend
                             <span class="rl-opt"> — production only</span>
                         </label>
                         <RlSelect
@@ -2678,7 +2678,7 @@
             <div class="rl-fgrid">
                 <div class="rl-full ic-form-section-header"><h3>Odoo</h3></div>
                 <div class="rl-frow">
-                    <label>Memory Limit</label>
+                    <label>Memory limit</label>
                     <input
             type="text"
             t-att-value="state.form.odoo_memory_limit"
@@ -2698,7 +2698,7 @@
 
                 <div class="rl-full ic-form-section-header"><h3>Database</h3></div>
                 <div class="rl-frow">
-                    <label>Memory Limit</label>
+                    <label>Memory limit</label>
                     <input
             type="text"
             t-att-value="state.form.db_memory_limit"
@@ -2718,7 +2718,7 @@
 
                 <div class="rl-full ic-form-section-header"><h3>Backup</h3></div>
                 <div class="rl-frow">
-                    <label>Memory Limit</label>
+                    <label>Memory limit</label>
                     <input
             type="text"
             t-att-value="state.form.backup_memory_limit"
@@ -2738,7 +2738,7 @@
 
                 <div class="rl-full ic-form-section-header"><h3>SMTP</h3></div>
                 <div class="rl-frow">
-                    <label>Memory Limit</label>
+                    <label>Memory limit</label>
                     <input
             type="text"
             t-att-value="state.form.smtp_memory_limit"

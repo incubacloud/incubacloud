@@ -943,10 +943,14 @@ msgid "Allow Odoo's public website info page"
 msgstr "Permitir la página pública de información del sitio web de Odoo"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_access_key_id
 msgid "Access Key ID"
+msgstr "ID de clave de acceso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Access key ID"
 msgstr "ID de clave de acceso"
 
 #. module: incubacloud
@@ -1103,10 +1107,14 @@ msgid "Admin Email"
 msgstr "Correo del administrador"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_admin_password
 msgid "Admin Password"
+msgstr "Contraseña de administrador"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Admin password"
 msgstr "Contraseña de administrador"
 
 #. module: incubacloud
@@ -1186,11 +1194,15 @@ msgid "Alert Confirmation Policy"
 msgstr "Política de confirmación de alertas"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_email
 msgid "Alert Email"
 msgstr "Email de aviso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Alert email"
+msgstr "Correo de aviso"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1209,10 +1221,14 @@ msgid "Alert Suspicion"
 msgstr "Sospecha de alerta"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_threshold_pct
 msgid "Alert Threshold (%)"
+msgstr "Umbral de aviso (%)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Alert threshold (%)"
 msgstr "Umbral de aviso (%)"
 
 #. module: incubacloud
@@ -1843,11 +1859,15 @@ msgid "Backup"
 msgstr "Copia de seguridad"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model,name:incubacloud.model_cloud_backup_backend
 msgid "Backup Backend"
 msgstr "Backend de backup"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Backup backend"
+msgstr "Destino de copia"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_cpus
@@ -1856,11 +1876,16 @@ msgstr "CPUs Backup"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_backend_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__backup_backend_id
 msgid "Backup Destination"
+msgstr "Destino de copia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Backup destination"
 msgstr "Destino de copia"
 
 #. module: incubacloud
@@ -1889,7 +1914,7 @@ msgstr "Ruta de copia"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Backup Path (preview)"
+msgid "Backup path (preview)"
 msgstr "Ruta de copia (vista previa)"
 
 #. module: incubacloud
@@ -3829,8 +3854,6 @@ msgid "DB Name"
 msgstr "Nombre de BD"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__postgres_password
 msgid "DB Password"
 msgstr "Contraseña de BD"
@@ -3838,8 +3861,18 @@ msgstr "Contraseña de BD"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "DB password"
+msgstr "Contraseña de BD"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__postgres_username
 msgid "DB User"
+msgstr "Usuario de BD"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "DB user"
 msgstr "Usuario de BD"
 
 #. module: incubacloud
@@ -7379,10 +7412,14 @@ msgstr ""
 "request."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__ip_address
 msgid "IP Address"
+msgstr "Dirección IP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "IP address"
 msgstr "Dirección IP"
 
 #. module: incubacloud
@@ -7463,10 +7500,14 @@ msgstr ""
 "arriba:"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backup_image_version
 msgid "Image Version"
+msgstr "Versión de imagen"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Image version"
 msgstr "Versión de imagen"
 
 #. module: incubacloud
@@ -7622,11 +7663,15 @@ msgid "Infrastructure"
 msgstr "Infraestructura"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_initial_lang
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__odoo_initial_lang
 msgid "Initial Language"
+msgstr "Idioma inicial"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Initial language"
 msgstr "Idioma inicial"
 
 #. module: incubacloud
@@ -8896,10 +8941,14 @@ msgid "Log →"
 msgstr "Registro →"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__login_type
 msgid "Login Type"
+msgstr "Tipo de acceso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Login type"
 msgstr "Tipo de acceso"
 
 #. module: incubacloud
@@ -9134,7 +9183,7 @@ msgstr "Miembros"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Memory Limit"
+msgid "Memory limit"
 msgstr "Límite de memoria"
 
 #. module: incubacloud
@@ -10371,11 +10420,16 @@ msgstr "Licencia propietaria de Odoo v1.0"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_version
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__odoo_version
 msgid "Odoo Version"
+msgstr "Versión de Odoo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Odoo version"
 msgstr "Versión de Odoo"
 
 #. module: incubacloud
@@ -10963,7 +11017,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid "Panel Password"
+msgid "Panel password"
 msgstr "Contraseña del panel"
 
 #. module: incubacloud
@@ -11260,10 +11314,14 @@ msgid "PostgreSQL"
 msgstr "PostgreSQL"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__postgres_version
 msgid "PostgreSQL Version"
+msgstr "Versión de PostgreSQL"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "PostgreSQL version"
 msgstr "Versión de PostgreSQL"
 
 #. module: incubacloud
@@ -12601,10 +12659,14 @@ msgid "Retention Owner Declared"
 msgstr "Propietario de retención declarado"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backup_retention
 msgid "Retention Period"
+msgstr "Período de retención"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Retention period"
 msgstr "Período de retención"
 
 #. module: incubacloud
@@ -12910,14 +12972,18 @@ msgstr "CPUs SMTP"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "SMTP Encryption"
-msgstr "Encriptación SMTP"
+msgid "SMTP encryption"
+msgstr "Cifrado SMTP"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_host
+msgid "SMTP Host"
+msgstr "Host SMTP"
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_host
-msgid "SMTP Host"
+msgid "SMTP host"
 msgstr "Host SMTP"
 
 #. module: incubacloud
@@ -12926,8 +12992,6 @@ msgid "SMTP Memory Limit"
 msgstr "Límite de memoria SMTP"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_password
 msgid "SMTP Password"
 msgstr "Contraseña SMTP"
@@ -12935,8 +12999,18 @@ msgstr "Contraseña SMTP"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "SMTP password"
+msgstr "Contraseña SMTP"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_port
 msgid "SMTP Port"
+msgstr "Puerto SMTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "SMTP port"
 msgstr "Puerto SMTP"
 
 #. module: incubacloud
@@ -12945,10 +13019,14 @@ msgid "SMTP Security"
 msgstr "Seguridad SMTP"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_user
 msgid "SMTP User"
+msgstr "Usuario SMTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "SMTP user"
 msgstr "Usuario SMTP"
 
 #. module: incubacloud
@@ -12962,7 +13040,7 @@ msgstr "Clave SSH"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid "SSH Private Key"
+msgid "SSH private key"
 msgstr "Clave privada SSH"
 
 #. module: incubacloud
@@ -13211,10 +13289,14 @@ msgid "Secret"
 msgstr "Secreto"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_secret_access_key
 msgid "Secret Access Key"
+msgstr "Clave de acceso secreta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Secret access key"
 msgstr "Clave de acceso secreta"
 
 #. module: incubacloud
@@ -16943,10 +17025,14 @@ msgstr ""
 "aislada."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__wildcard_domain
 msgid "Wildcard Domain"
+msgstr "Dominio comodín"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Wildcard domain"
 msgstr "Dominio comodín"
 
 #. module: incubacloud
@@ -19626,10 +19712,14 @@ msgid "Relay Test Mail"
 msgstr "Correo de prueba del relé"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__smtp_relay_auth
 msgid "SMTP Authentication"
+msgstr "Autenticación SMTP"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "SMTP authentication"
 msgstr "Autenticación SMTP"
 
 #. module: incubacloud

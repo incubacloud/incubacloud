@@ -412,7 +412,7 @@
                                 </div>
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('ip_address') ? 'has-error' : ''">
-                                    <label>IP Address <span class="rl-req">*</span></label>
+                                    <label>IP address <span class="rl-req">*</span></label>
                                     <input
                     t-att-aria-invalid="validator.fieldError('ip_address') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('ip_address') ? 'hd-err-ip_address' : undefined"
@@ -591,7 +591,7 @@
                                     </t>
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Login Type <span class="rl-req">*</span></label>
+                                    <label>Login type <span class="rl-req">*</span></label>
                                     <RlSelect value="state.form.login_type"
                                               options="loginTypeOptions"
                                               onChange="(value) => this.onSelect('login_type', { target: { value: value } })"
@@ -632,7 +632,7 @@
                                         </div>
                                     </div>
                                     <div class="rl-frow rl-full" t-if="!isNew or state.form.key_source === 'upload'">
-                                        <label>SSH Private Key <span class="rl-req">*</span></label>
+                                        <label>SSH private key <span class="rl-req">*</span></label>
                                         <input type="file" accept=".pem,.key,.txt"
                                                t-on-change="onKeyFileChange"/>
                                         <t t-if="!isNew and state.has_key_file and !state.form.key_file">
@@ -690,7 +690,7 @@
                             <div class="rl-fgrid ic-traefik-meta">
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('wildcard_domain') ? 'has-error' : ''">
-                                    <label>Wildcard Domain <span class="rl-req">*</span></label>
+                                    <label>Wildcard domain <span class="rl-req">*</span></label>
                                     <input
                     t-att-aria-invalid="validator.fieldError('wildcard_domain') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('wildcard_domain') ? 'hd-err-wildcard_domain' : undefined" type="text" placeholder="example.com"
@@ -703,7 +703,7 @@
                                     </t>
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Panel Password</label>
+                                    <label>Panel password</label>
                                     <PasswordInput
                                         hasValue="state.has_traefik_panel_password"
                                         onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>

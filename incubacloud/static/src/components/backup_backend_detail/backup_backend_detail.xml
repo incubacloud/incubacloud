@@ -108,7 +108,7 @@
                   />
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Image Version</label>
+                                    <label>Image version</label>
                                     <input
                     type="text"
                     placeholder="latest"
@@ -166,7 +166,7 @@
                   />
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Access Key ID</label>
+                                    <label>Access key ID</label>
                                     <input
                     type="text"
                     t-att-value="state.form.s3_access_key_id"
@@ -174,7 +174,7 @@
                   />
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Secret Access Key</label>
+                                    <label>Secret access key</label>
                                     <PasswordInput
                     hasValue="state.has_s3_secret_access_key"
                     onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"
@@ -189,7 +189,7 @@
                                 </div>
                                 <t t-if="backupDst">
                                     <div class="rl-frow rl-full">
-                                        <label>Backup Path (preview)</label>
+                                        <label>Backup path (preview)</label>
                                         <code
                       class="rl-mono ic-backup-dst"
                       t-esc="backupDst"
@@ -272,7 +272,7 @@
                   >0 = no quota (usage still tracked).</span>
                                 </div>
                                 <div class="rl-frow">
-                                    <label>Alert Threshold (%)</label>
+                                    <label>Alert threshold (%)</label>
                                     <input
                     type="number"
                     min="-1"
@@ -286,7 +286,7 @@
                   >0 = inherit settings default; -1 = disabled; 1–100 = explicit.</span>
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Alert Email
+                                    <label>Alert email
                                         <span
                       class="rl-opt"
                     > — falls back to Notification To</span>
@@ -367,7 +367,7 @@
                                 <div
                   t-att-class="'rl-frow' + (validator.fieldError('backup_retention') ? ' has-error' : '')"
                 >
-                                    <label>Retention Period</label>
+                                    <label>Retention period</label>
                                     <input
                     t-att-aria-invalid="validator.fieldError('backup_retention') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('backup_retention') ? 'bbd-err-backup_retention' : undefined"
