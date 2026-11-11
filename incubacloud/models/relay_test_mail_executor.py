@@ -148,13 +148,14 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
             )
         if status == "deferred":
             # A temporary answer none of the causes names: the server may
-            # take the next mail. ``relay_test.sh`` has taken this one out
-            # of the queue, so no retry of it will tell; the relay's own
-            # mail, which the health probe watches, or another test will.
+            # take the next mail. ``relay_test.sh`` takes this one out of
+            # the queue as best it can (``postsuper -d ... || true``), so
+            # no retry of it will tell; the relay's own mail, which the
+            # health probe watches, or another test will.
             return False, None, (
                 f"{inst.smtp_relay_host} deferred the mail: {response}. "
-                f"The test mail was removed from the relay's queue and "
-                f"will not arrive later; send another test in a few minutes."
+                f"The test mail was taken out of the relay's queue; send "
+                f"another test in a few minutes."
             )
         # A refusal none of the causes names, at the end of the mail (a
         # bounce): still the relay's server refusing what the relay sends.

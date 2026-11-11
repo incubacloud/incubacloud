@@ -1828,8 +1828,14 @@ class CloudInstance(models.Model):
                 self.host_id.id, self.id, "relay_test_mail",
             )
         except Exception:
-            # The hit was committed apart; no mail will leave for it.
-            refund_quota(self.env, bucket)
+            # The hit was committed apart; no mail will leave for it. A
+            # refund that fails must not hide the refusal the asker gets.
+            try:
+                refund_quota(self.env, bucket)
+            except Exception:
+                _logger.exception(
+                    "Could not give back the hit of %s", bucket,
+                )
             raise
 
     def _extra_env_files(self):
