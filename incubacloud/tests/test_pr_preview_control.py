@@ -969,6 +969,45 @@ class TestPreviewOfAClosedPullRequest(_CommentCase):
         client.post_issue_comment.assert_not_called()
         self.assertEqual(preview.pr_state, 'closed')
 
+    def test_a_repository_without_a_slash_is_not_read_and_counts_as_open(self):
+        """There is no account and repository to ask about: no error, no read."""
+        for i, repo in enumerate(('', 'norepo', '/repo', 'owner/')):
+            with self.subTest(repo=repo):
+                preview = self._preview(name=f'pr-7-{i}', pr_repo=repo)
+                client, patcher = self._client()
+                with patcher:
+                    self.assertFalse(preview._pr_closed_on_github())
+                client.get.assert_not_called()
+
+    def test_the_failures_to_expect_are_logged_as_information(self):
+        """GitHub's answer, the network and the installation: no warning."""
+        for i, error in enumerate((
+            GitHubAPIError(502, 'Bad gateway'), OSError('unreachable'),
+            UserError('No GitHub App.'),
+        )):
+            with self.subTest(error=error):
+                preview = self._preview(name=f'pr-7-{i}')
+                client, patcher = self._client()
+                client.get.side_effect = _github_get(state=error)
+                with patcher, self.assertLogs(
+                    cloud_instance._logger.name, level='INFO',
+                ) as logs:
+                    self.assertFalse(preview._pr_closed_on_github())
+                self.assertEqual([r.levelname for r in logs.records], ['INFO'])
+
+    def test_any_other_failure_is_a_warning_with_its_traceback(self):
+        """A bug in what reads the pull request is not hidden at INFO."""
+        preview = self._preview()
+        client, patcher = self._client()
+        client.get.side_effect = _github_get(state=RuntimeError('boom'))
+        with patcher, self.assertLogs(
+            cloud_instance._logger.name, level='INFO',
+        ) as logs:
+            self.assertFalse(preview._pr_closed_on_github())
+        self.assertEqual([r.levelname for r in logs.records], ['WARNING'])
+        self.assertIsNotNone(logs.records[0].exc_info)
+        self.assertIs(logs.records[0].exc_info[0], RuntimeError)
+
 
 class TestPreviewReopenedAtOnce(_CommentCase):
     """A pull request closed and reopened at once gets a new preview.

@@ -3730,12 +3730,22 @@ class CloudInstance(models.Model):
         comment's write: the client dropped the token it had kept. A read
         that fails, or an answer that is not a pull request with its
         ``state``, counts as open: it is logged and costs no retry nor
-        alert, and the comment is written as before.
+        alert, and the comment is written as before. So does a pull
+        request whose repository has no ``account/repo`` form: there is
+        nothing to ask. Only the failures to expect (GitHub's answer, the
+        network, the installation) are logged as information; any other
+        is a warning with its traceback.
 
         :rtype: bool
         """
         self.ensure_one()
-        account, repo = self.pr_repo.split("/", 1)
+        account, slash, repo = (self.pr_repo or "").partition("/")
+        if not (account and slash and repo):
+            _logger.info(
+                "Pull request #%s has no repository to read before its comment: %r",
+                self.pr_number, self.pr_repo,
+            )
+            return False
         endpoint = f"/repos/{account}/{repo}/pulls/{self.pr_number}"
         try:
             client = self._pr_github_client()
@@ -3748,11 +3758,17 @@ class CloudInstance(models.Model):
         except Exception as exc:
             if is_concurrency_error(exc):
                 raise
-            _logger.info(
-                "Pull request #%s of %s was not read before its comment: %s",
-                self.pr_number, self.pr_repo,
-                getattr(exc, "status_code", None) or type(exc).__name__,
-            )
+            if isinstance(exc, (GitHubAPIError, OSError, UserError)):
+                _logger.info(
+                    "Pull request #%s of %s was not read before its comment: %s",
+                    self.pr_number, self.pr_repo,
+                    getattr(exc, "status_code", None) or type(exc).__name__,
+                )
+            else:
+                _logger.warning(
+                    "Pull request #%s of %s was not read before its comment",
+                    self.pr_number, self.pr_repo, exc_info=True,
+                )
             return False
         state = pull.get("state") if isinstance(pull, dict) else None
         if not state:
