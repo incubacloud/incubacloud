@@ -666,7 +666,7 @@ class TestTheDailySweepOfTmp(TransactionCase):
             other = _step(".incubacloud-detached-not-hex")
             link = root / ".incubacloud-detached-00000000000000a4"
             link.symlink_to(orphan)
-            env = dict(os.environ, HOME=tmp)
+            env = os.environ | {"HOME": tmp}
             live = root / ".incubacloud-detached-00000000000000a5"
             started = subprocess.run(
                 ["bash", str(script), "start", str(live), "600", "host", "9",
