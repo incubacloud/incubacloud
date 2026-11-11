@@ -88,7 +88,7 @@ the Docker daemon or a system service.
   and when it closed. What you type and what the server answers are **not**
   recorded, because a shell is where passwords get typed.
 - **Limits** — one open shell per person and host, and at most 3 opened per
-  minute (tunable in Settings → Rates). A shell with no keystrokes for 2
+  minute (tunable in Settings → Rate limits). A shell with no keystrokes for 2
   minutes closes itself.
 
 Everything you run there affects the whole server and every instance on it.

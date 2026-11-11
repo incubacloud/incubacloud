@@ -5,11 +5,12 @@ import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { changedSettings, settingsView } from "../connect_agent/connect_agent_format";
 import { McpAutoApproval } from "../auto_approval/auto_approval";
+import { SettingField, SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
 
-/** Settings → Agents: the agents' OAuth issuer and this panel's MCP URL. */
+/** Settings → Agents (MCP): the agents' OAuth issuer and this panel's MCP URL. */
 export class McpSettingsTab extends Component {
     static template = "incubacloud_mcp.McpSettingsTab";
-    static components = { McpAutoApproval };
+    static components = { McpAutoApproval, SettingField, SettingsBlock };
     static props = {};
 
     /** Read the settings; save them with the page's Save button. */
@@ -57,12 +58,12 @@ export class McpSettingsTab extends Component {
      * one now on screen. Settings then saves it, and counts it as an
      * unsaved change, only while its form differs from what was read.
      * Read-only, where the platform sets both, it does not join: there
-     * is nothing to save, and Settings shows no Save on the tab.
+     * is nothing to save.
      */
     _register() {
         if (this._loaded && !this.view.readonly && status(this) === "mounted") {
             this.env.registerSettingsSave?.(
-                "McpSettings", () => this._save(), this.state, [], "agents",
+                "McpSettings", () => this._save(), this.state, [],
             );
         }
     }

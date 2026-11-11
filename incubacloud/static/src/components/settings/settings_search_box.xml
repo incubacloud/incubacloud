@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.SettingsSearch">
+        <div t-att-class="'ic-set-search' + (state.open and searching ? ' ic-set-search--open' : '')"
+             t-on-focusout="onFocusOut">
+            <div class="ic-set-search__box">
+                <i class="fa fa-search ic-set-search__icon" aria-hidden="true"/>
+                <input type="search" t-ref="input" class="ic-set-search__input"
+                       placeholder="Search settings" aria-label="Search settings"
+                       role="combobox" autocomplete="off"
+                       t-att-aria-expanded="state.open and searching ? 'true' : 'false'"
+                       t-att-aria-controls="uid + '-list'"
+                       t-att-aria-activedescendant="state.open and items[state.active] ? uid + '-' + items[state.active].key : undefined"
+                       t-att-value="state.query"
+                       t-on-input="onInput"
+                       t-on-focus="() => this.state.open = true"
+                       t-on-keydown="onKeydown"/>
+                <button t-if="state.query" type="button" class="ic-set-search__clear"
+                        aria-label="Clear the search" t-on-click="clear">
+                    <t t-out="env.icon('x', 14)"/>
+                </button>
+                <kbd class="ic-set-search__kbd" aria-hidden="true">/</kbd>
+            </div>
+            <p class="visually-hidden" aria-live="polite" t-esc="searching ? countLabel : ''"/>
+            <div t-if="state.open and searching" class="ic-set-results" t-att-id="uid + '-list'" role="listbox"
+                 aria-label="Settings that match">
+                <div class="ic-set-results__head">
+                    <span>Settings</span>
+                    <span t-esc="countLabel"/>
+                </div>
+                <div class="ic-set-results__body">
+                    <t t-foreach="results.groups" t-as="group" t-key="group.section">
+                        <div class="ic-set-results__group" role="group" t-att-aria-label="group.sectionTitle">
+                            <div class="ic-set-results__cap">
+                                <t t-esc="group.groupTitle"/> › <t t-esc="group.sectionTitle"/>
+                            </div>
+                            <t t-foreach="group.fields" t-as="field" t-key="field.id">
+                                <t t-set="m" t-value="mark(field.label)"/>
+                                <div t-att-id="uid + '-f-' + field.id" role="option"
+                                     t-att-aria-selected="isActive('f-' + field.id) ? 'true' : 'false'"
+                                     t-att-class="'ic-set-result' + (isActive('f-' + field.id) ? ' ic-set-result--active' : '')"
+                                     t-on-mousedown="(ev) => ev.preventDefault()"
+                                     t-on-click="() => this.pick({ kind: 'field', field })">
+                                    <div class="ic-set-result__label">
+                                        <t t-esc="m.before"/><mark t-if="m.match" t-esc="m.match"/><t t-esc="m.after"/>
+                                        <span t-if="field.advanced" class="ic-set-result__adv">Advanced</span>
+                                    </div>
+                                    <div class="ic-set-result__where" t-esc="field.blockTitle"/>
+                                    <div t-if="field.help" class="ic-set-result__help" t-esc="field.help"/>
+                                </div>
+                            </t>
+                            <div t-if="group.more" class="ic-set-results__more">
+                                +<t t-esc="group.more"/> more in <t t-esc="group.sectionTitle"/>
+                            </div>
+                        </div>
+                    </t>
+                    <div t-if="elsewhere.length" class="ic-set-results__group" role="group" aria-label="Elsewhere in the panel">
+                        <div class="ic-set-results__cap">Elsewhere in the panel</div>
+                        <t t-foreach="elsewhere" t-as="entry" t-key="entry.key">
+                            <t t-set="m" t-value="mark(entry.label)"/>
+                            <div t-att-id="uid + '-e-' + entry.key" role="option"
+                                 t-att-aria-selected="isActive('e-' + entry.key) ? 'true' : 'false'"
+                                 t-att-class="'ic-set-result' + (isActive('e-' + entry.key) ? ' ic-set-result--active' : '')"
+                                 t-on-mousedown="(ev) => ev.preventDefault()"
+                                 t-on-click="() => this.pick({ kind: 'elsewhere', entry })">
+                                <div class="ic-set-result__label">
+                                    <t t-esc="m.before"/><mark t-if="m.match" t-esc="m.match"/><t t-esc="m.after"/>
+                                </div>
+                                <div class="ic-set-result__where" t-esc="entry.where"/>
+                            </div>
+                        </t>
+                    </div>
+                    <div t-if="!items.length" class="ic-set-results__none">
+                        <p class="ic-set-results__nomatch" t-esc="noMatchText"/>
+                        <p t-if="didYouMean">
+                            Did you mean
+                            <button type="button" class="ic-set-link" t-on-mousedown="(ev) => ev.preventDefault()"
+                                    t-on-click="() => this.useSuggestion(didYouMean)" t-esc="didYouMean"/>?
+                        </p>
+                        <ul>
+                            <li>Try a shorter word, or what the setting does (“retention”, “proxy”, “smtp”).</li>
+                            <li>Search the whole panel instead with <kbd>Ctrl K</kbd>: instances, hosts, projects and their own settings.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="ic-set-results__foot" aria-hidden="true">
+                    <t t-if="items.length">
+                        <kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open
+                    </t>
+                    <kbd>Esc</kbd> close
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

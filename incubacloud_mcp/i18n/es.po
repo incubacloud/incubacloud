@@ -142,18 +142,6 @@ msgid "A branch is remembered once per user."
 msgstr "Una rama se recuerda una sola vez por usuario."
 
 #. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "A manager can correct it in Settings, on the Agents tab."
-msgstr "Un gerente puede corregirla en Configuración, en la pestaña Agentes."
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "A manager sets it in Settings, on the Agents tab."
-msgstr "Un gerente la define en Configuración, en la pestaña Agentes."
-
-#. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid ""
@@ -239,12 +227,6 @@ msgstr "Llamadas de agentes (por usuario, todos sus agentes)"
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_cloud_settings__rate_limit_mcp_user_per_min
 msgid "Agent calls per user and minute"
 msgstr "Llamadas de agentes por usuario y minuto"
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/mcp_templates.xml:0
-msgid "Agents"
-msgstr "Agentes"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1960,17 +1942,6 @@ msgstr ""
 "usuario, todos juntos. Cero o menos vuelve al valor por defecto (120)."
 
 #. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/settings/mcp_rates_section.xml:0
-msgid ""
-"Tool calls per minute that one user's agents may make together. Past it, the\n"
-"            panel refuses their calls until the minute ends."
-msgstr ""
-"Llamadas a herramientas por minuto que pueden hacer juntos los agentes de un"
-" usuario. Por encima, el panel rechaza sus llamadas hasta que acaba el "
-"minuto."
-
-#. module: incubacloud_mcp
 #: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_catalog
 msgid "Tools agents may call, and the routes they may not"
 msgstr "Herramientas que pueden llamar los agentes, y rutas que no"
@@ -2066,19 +2037,6 @@ msgid "Via Client"
 msgstr "Vía agente"
 
 #. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
-msgid ""
-"Where AI agents connect to this panel, and who signs them in. Without an\n"
-"                issuer, agents connect with API keys only. With one, the panel accepts its\n"
-"                tokens for the users linked to an enabled OAuth provider with the same issuer."
-msgstr ""
-"Dónde se conectan los agentes de IA a este panel, y quién les da acceso. Sin"
-" emisor, los agentes se conectan solo con claves API. Con uno, el panel "
-"acepta sus tokens para los usuarios vinculados a un proveedor OAuth activo "
-"con el mismo emisor."
-
-#. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
 msgid ""
@@ -2162,12 +2120,6 @@ msgstr "un volcado hecho ahora"
 #: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
 msgid "backend_id is for the backup_backend section, not %s."
 msgstr "backend_id es de la sección backup_backend, no de %s."
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
-msgid "https://login.example.com"
-msgstr "https://login.example.com"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -3266,9 +3218,9 @@ msgid ""
 "Include charges: orders, purchases and other changes billed to your account\n"
 "                    run without asking too. Unticked, they still ask for approval."
 msgstr ""
-"Incluir cobros: los pedidos, las compras y otros cambios que se "
-"facturan a su cuenta también se ejecutan sin preguntar. Sin marcar, siguen "
-"pidiendo aprobación."
+"Incluir cobros: los pedidos, las compras y otros cambios que se facturan a "
+"su cuenta también se ejecutan sin preguntar. Sin marcar, siguen pidiendo "
+"aprobación."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -3395,22 +3347,119 @@ msgstr ""
 "acción que esperaría una aprobación, hasta que alguien revoque la regla."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose a number of days or a date, not both."
+msgstr "Elija un número de días o una fecha, no ambos."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid "/min"
+msgstr "/min"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "A manager can correct it in Settings › Agents (MCP)."
+msgstr "Un gerente puede corregirla en Configuración › Agentes (MCP)."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "A manager sets it in Settings › Agents (MCP)."
+msgstr "Un gerente la define en Configuración › Agentes (MCP)."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid ""
+"AI agents that operate the panel on behalf of a user, and the rules that let"
+" one act without asking."
+msgstr ""
+"Agentes de IA que manejan el panel en nombre de un usuario, y las reglas que"
+" dejan a uno actuar sin preguntar."
+
+#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 msgid ""
-"An auto-approval rule lets one credential of one person act without asking until\n"
-"            a date, or with no end date: an API key, an OAuth client or the panel's assistant. Every other agent\n"
-"            keeps asking. Each action run this way is marked auto-approved in the audit log\n"
-"            and on its jobs."
+"An auto-approval rule lets one credential of one person act without asking "
+"until a date, or with no end date: an API key, an OAuth client or the "
+"panel's assistant. Every other agent keeps asking. Each action run this way "
+"is marked auto-approved in the audit log and on its jobs."
 msgstr ""
-"Una regla de aprobación automática permite que una credencial de una persona"
-" actúe sin preguntar hasta una fecha, o sin caducidad: una clave de API, un "
+"Una regla de aprobación automática deja que una credencial de una persona "
+"actúe sin preguntar hasta una fecha, o sin fecha de fin: una clave API, un "
 "cliente OAuth o el asistente del panel. Los demás agentes siguen "
 "preguntando. Cada acción ejecutada así queda marcada como aprobada "
 "automáticamente en el registro de auditoría y en sus trabajos."
 
 #. module: incubacloud_mcp
-#. odoo-python
-#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
-msgid "Choose a number of days or a date, not both."
-msgstr "Elija un número de días o una fecha, no ambos."
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid "Auto-approval rules"
+msgstr "Reglas de aprobación automática"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
+msgid "Connection"
+msgstr "Conexión"
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid ""
+"Let one credential of one person act without asking, until a date or for "
+"good."
+msgstr ""
+"Dejar que una credencial de una persona actúe sin preguntar, hasta una fecha"
+" o para siempre."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_rates_section.xml:0
+msgid ""
+"Past the limit, the panel refuses the calls of that user's agents until the "
+"minute ends."
+msgstr ""
+"Pasado el límite, el panel rechaza las llamadas de los agentes de ese "
+"usuario hasta que acaba el minuto."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid "The address to give the agent."
+msgstr "La dirección que hay que dar al agente."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid "Tool calls per minute one user's agents may make together."
+msgstr ""
+"Llamadas a herramientas por minuto que pueden hacer entre todos los agentes "
+"de un usuario."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_sections.js:0
+msgid ""
+"Who signs the tokens agents present. Empty: agents connect with API keys "
+"only."
+msgstr ""
+"Quién firma los tokens que presentan los agentes. Vacío: los agentes solo se"
+" conectan con claves API."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
+msgid ""
+"Without an issuer, agents connect with API keys only. With one, the panel "
+"accepts its tokens for the users linked to an enabled OAuth provider with "
+"the same issuer."
+msgstr ""
+"Sin emisor, los agentes solo se conectan con claves API. Con uno, el panel "
+"acepta sus tokens para los usuarios vinculados a un proveedor OAuth activo "
+"con el mismo emisor."

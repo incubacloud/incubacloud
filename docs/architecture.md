@@ -102,7 +102,7 @@ incubacloud_assistant/        # The AI assistant in the panel: see assistant.md
 ├── connectors/               # One per AI provider, one common shape (HTTP, no SDK)
 ├── models/                   # Conversations, messages, usage, engine, tools' view, cards
 ├── controllers/              # The chat's routes and Settings → Assistant's
-└── static/src/               # Top-bar button, side panel, Settings tab
+└── static/src/               # Top-bar button, side panel, Settings section
 ```
 
 ---
@@ -1061,7 +1061,7 @@ The UI is an **OWL single-page application** served from `/cloud`. It uses a cus
 | `create_instance` | `/cloud/projects/:id/instances/new` | Instance form |
 | `instance_detail` | `/cloud/projects/:id/instances/:iid` | Instance detail |
 | `hosts` / `new_host` / `host_detail` | `/cloud/hosts[...]` | Hosts (manager-gated) |
-| `settings` | `/cloud/settings?tab=…` | Settings (manager-gated) |
+| `settings` | `/cloud/settings/<section>#<field>` | Settings: a menu of sections, one page each (manager-gated) |
 | `backup_backends` / detail / new | `/cloud/backup-backends[...]` | Backup backends |
 
 Jobs and alerts are **slide-over panels** (not routes) opened from the header; notification preferences are a header modal. The router is extensible: private modules register additional routes with `registerRoute(name, parseFn, buildFn)`.

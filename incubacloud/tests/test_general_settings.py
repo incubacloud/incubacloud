@@ -9,7 +9,6 @@ retention fields and that ``save_general_settings`` persists them onto
 import re
 from unittest.mock import MagicMock, patch
 
-from odoo.exceptions import ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
 from odoo.tools.misc import file_open
@@ -122,13 +121,22 @@ class TestGeneralSettingsContainerLogRotation(TransactionCase):
         self.assertEqual(settings.container_log_max_size, '30m')
         self.assertEqual(settings.container_log_max_file, 6)
 
-    def test_save_rejects_a_malformed_size(self):
-        """The model constraint is the gate; the endpoint lets it speak."""
-        with patch.object(_routes_crud, 'request', self._fake_request()), \
-                self.assertRaises(ValidationError):
-            self.controller.cloud_save_general_settings(
+    def test_save_rejects_a_malformed_size_under_its_field(self):
+        """The model constraint is the gate; its message names the field.
+
+        Settings shows a server error under the field it is about, so the
+        answer says which one, and the size stored is kept.
+        """
+        settings = self.env['cloud.settings'].sudo()._get()
+        settings.container_log_max_size = '30m'
+        with patch.object(_routes_crud, 'request', self._fake_request()):
+            result = self.controller.cloud_save_general_settings(
                 container_log_max_size='lots',
             )
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['field'], 'container_log_max_size')
+        self.assertTrue(result['error'])
+        self.assertEqual(settings.container_log_max_size, '30m')
 
 
 class TestGeneralSettingsLogBounds(TransactionCase):
@@ -241,3 +249,71 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
         key = re.compile(r'^\s*(rate_limit_\w+):', re.MULTILINE)
         self.assertEqual(set(key.findall(defaults)), served)
         self.assertEqual(set(key.findall(payload)), served)
+
+
+class TestGeneralSettingsSavePerSection(TransactionCase):
+    """Each section of Settings sends its own fields, and only those are written.
+
+    The endpoint used to write the General fields from its own defaults
+    when they were not sent, so a section saving its fields alone would
+    have put back the default destination, the auto-assignment and the
+    retentions of another.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.controller = _routes_crud.CrudMixin()
+        self.controller._sec = lambda: self.env['cloud.security.mixin']
+        self.ICP = self.env['ir.config_parameter'].sudo()
+        self.settings = self.env['cloud.settings'].sudo()._get()
+
+    def _save(self, **values):
+        """Call the endpoint with *values*, as a section sends them."""
+        fake_req = MagicMock(spec=Request)
+        fake_req.env = self.env
+        with patch.object(_routes_crud, 'request', fake_req):
+            return self.controller.cloud_save_general_settings(**values)
+
+    def test_a_section_leaves_the_others_alone(self):
+        """Logs & retention saved: General's settings keep their values."""
+        self.ICP.set_param('incubacloud.host_autoassign', '1')
+        self.ICP.set_param('incubacloud.audit_log_retention_days', '15')
+        self.settings.write({
+            'default_backup_alert_threshold_pct': 55,
+            'move_frozen_source_hours': 12,
+        })
+        result = self._save(job_retention_days=40, job_log_retention_days=9)
+        self.assertTrue(result['ok'])
+        self.assertEqual(self.ICP.get_param('incubacloud.host_autoassign'), '1')
+        self.assertEqual(
+            self.ICP.get_param('incubacloud.audit_log_retention_days'), '15',
+        )
+        self.assertEqual(self.settings.default_backup_alert_threshold_pct, 55)
+        self.assertEqual(self.settings.move_frozen_source_hours, 12)
+        self.assertEqual(self.settings.job_retention_days, 40)
+        self.assertEqual(self.settings.job_log_retention_days, 9)
+
+    def test_general_writes_what_it_sends(self):
+        """Auto-assignment off and no default destination are values too."""
+        self.ICP.set_param('incubacloud.host_autoassign', '1')
+        self.ICP.set_param('incubacloud.backup_backend_id', '7')
+        result = self._save(
+            autoassign_enabled=False, default_backup_backend_id=0,
+            default_backup_alert_threshold_pct=120,
+        )
+        self.assertTrue(result['ok'])
+        self.assertEqual(self.ICP.get_param('incubacloud.host_autoassign'), '0')
+        self.assertEqual(self.ICP.get_param('incubacloud.backup_backend_id'), '0')
+        self.assertEqual(self.settings.default_backup_alert_threshold_pct, 100)
+
+    def test_an_unknown_destination_is_refused_under_its_field(self):
+        """A destination that does not exist names the field it is about."""
+        result = self._save(default_backup_backend_id=987654321)
+        self.assertEqual(result['field'], 'default_backup_backend_id')
+        self.assertFalse(result['ok'])
+
+    def test_a_refused_range_names_its_field(self):
+        """The model refuses a range that is not one: under the ranges."""
+        result = self._save(trusted_proxy_ranges='2001:db8:::1/32')
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['field'], 'trusted_proxy_ranges')

@@ -8,6 +8,7 @@
 
             <!-- Closed control -->
             <button type="button" class="rl-sel__trigger"
+                    t-att-id="props.id"
                     t-att-disabled="props.disabled || null"
                     t-att-aria-label="props.ariaLabel"
                     t-att-aria-invalid="props.ariaInvalid ? 'true' : undefined"

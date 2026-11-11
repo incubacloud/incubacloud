@@ -3,13 +3,15 @@
 import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { SettingField, SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
 
 /** Calls per user and minute when the setting is empty, as the server says. */
 export const MCP_RATE_DEFAULT = 120;
 
-/** Settings → Rates: the agents' calls per user and minute. */
+/** Settings → Rate limits: the agents' calls per user and minute. */
 export class McpRatesSection extends Component {
     static template = "incubacloud_mcp.McpRatesSection";
+    static components = { SettingField, SettingsBlock };
     static props = {};
 
     /** Read the limit; save it with the page's Save button. */
@@ -59,7 +61,7 @@ export class McpRatesSection extends Component {
     _register() {
         if (this.state.loaded && status(this) === "mounted") {
             this.env.registerSettingsSave?.(
-                "McpRates", () => this._save(), this.state, [], "rates",
+                "McpRates", () => this._save(), this.state, [],
             );
         }
     }
@@ -68,16 +70,6 @@ export class McpRatesSection extends Component {
     async reload() {
         await this.load();
         this._register();
-    }
-
-    /**
-     * Keep a positive whole number, as the core limits do.
-     *
-     * @param {Event} ev the input's change event
-     */
-    onInput(ev) {
-        const raw = parseInt(ev.target.value || 0, 10);
-        this.state.form.rate_limit_mcp_user_per_min = Number.isFinite(raw) ? Math.max(1, raw) : 1;
     }
 
     /**

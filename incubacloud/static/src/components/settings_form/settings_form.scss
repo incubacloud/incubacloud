@@ -1,0 +1,366 @@
+// ── Settings rows (ESTANDAR-FORMULARIOS §2–§6, §8–§10) ──────────────────────
+// A block is a card; a row puts the label and its help on the left (5/11)
+// and the control on the right (6/11). Controls come in three widths: S for
+// numbers and short values, M for names and secrets, L for long lists. At
+// 900 px and under a row stacks, and a switch stays beside its label.
+
+.ic-app {
+
+    .ic-set-block {
+        background: var(--rl-surf);
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-r);
+        box-shadow: var(--rl-card-shadow);
+        margin-block-end: 18px;
+        overflow: visible;
+    }
+
+    .ic-set-block__head {
+        padding: 16px 20px 6px;
+
+        > .rl-set-inline-msg, > .ic-set-block__status { margin-block: 8px 6px; }
+    }
+
+    .ic-set-block__title {
+        font-family: var(--rl-fd);
+        font-size: 14.5px;
+        font-weight: 600;
+        margin: 0;
+        color: var(--rl-fg);
+    }
+
+    .ic-set-block__body {
+        padding: 6px 20px 16px;
+        font-size: 13.5px;
+        color: var(--rl-fg2);
+    }
+
+    .ic-set-block__status {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .ic-set-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--rl-fm);
+        font-size: 11.5px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--rl-line2);
+        color: var(--rl-fg2);
+
+        &--ok {
+            color: var(--rl-green-text);
+            border-color: rgba(var(--rl-green-rgb), 0.35);
+            background: var(--rl-green-soft);
+            &::before {
+                content: "";
+                inline-size: 7px;
+                block-size: 7px;
+                border-radius: 50%;
+                background: var(--rl-green);
+            }
+        }
+    }
+
+    .ic-set-danger {
+        margin-inline-start: auto;
+        border: 0;
+        background: transparent;
+        color: var(--rl-red-text);
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        padding: 6px 4px;
+        &:hover { text-decoration: underline; }
+    }
+
+    .ic-set-how {
+        border: 0;
+        background: transparent;
+        padding: 6px 0 2px;
+        color: var(--rl-green-text);
+        font-size: 12.5px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        &:hover { text-decoration: underline; }
+    }
+
+    .ic-set-how__text {
+        margin: 4px 0 6px;
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: var(--rl-fg2);
+        max-inline-size: 72ch;
+    }
+
+    // ── A row ────────────────────────────────────────────────────────────────
+    .ic-set-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+        gap: 8px 32px;
+        align-items: start;
+        padding: 14px 20px;
+        border-block-start: 1px solid var(--rl-line);
+        scroll-margin-block: 120px;
+
+        &--stacked { grid-template-columns: minmax(0, 1fr); }
+
+        &--found {
+            background: var(--rl-green-soft);
+            box-shadow: inset 3px 0 0 var(--rl-green);
+            @media (prefers-reduced-motion: no-preference) {
+                transition: background 0.4s;
+            }
+        }
+    }
+
+    .ic-set-block__head + .ic-set-row,
+    .ic-set-block > .ic-set-row:first-child { border-block-start: 0; }
+
+    .ic-set-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--rl-fb);
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--rl-fg);
+        margin: 0;
+    }
+
+    .ic-set-help {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--rl-muted);
+        margin: 3px 0 0;
+    }
+
+    .ic-set-dot {
+        display: inline-block;
+        inline-size: 7px;
+        block-size: 7px;
+        border-radius: 50%;
+        background: var(--rl-amber);
+        flex: none;
+    }
+
+    .ic-set-found {
+        position: absolute;
+        inset-block-start: 10px;
+        inset-inline-end: 12px;
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--rl-green-text);
+    }
+
+    .ic-set-row__ctl { min-inline-size: 0; }
+
+    .ic-set-row__line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        min-block-size: 36px;
+
+        > .rl-sw { margin-inline-start: auto; }
+    }
+
+    .ic-set-err, .ic-set-warn {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        margin: 6px 0 0;
+        font-size: 12.5px;
+    }
+    .ic-set-err { color: var(--rl-red-text); }
+    .ic-set-warn { color: var(--rl-amber-ink); }
+
+    // An action under a field (Test SMTP, Register…), apart from it.
+    .ic-set-actions-row { margin-block-start: 8px; }
+
+    .ic-set-note {
+        margin: 6px 0 0;
+        font-size: 12.5px;
+        color: var(--rl-muted);
+    }
+
+    // ── Controls ─────────────────────────────────────────────────────────────
+    .ic-set-input {
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        padding: 8px 11px;
+        min-block-size: 36px;
+        color: var(--rl-fg);
+        font-family: var(--rl-fb);
+        font-size: 13.5px;
+        outline: none;
+        max-inline-size: 100%;
+
+        &:focus {
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
+        }
+        &[aria-invalid="true"] { border-color: var(--rl-red); }
+        &[readonly], &:disabled { background: var(--rl-surf2); color: var(--rl-fg2); }
+        &--mono { font-family: var(--rl-fm); font-size: 12.5px; }
+    }
+
+    textarea.ic-set-input {
+        font-family: var(--rl-fm);
+        font-size: 12.5px;
+        line-height: 1.5;
+        resize: vertical;
+        inline-size: 100%;
+    }
+
+    .ic-set-w-s { inline-size: 140px; }
+    .ic-set-w-m { inline-size: 320px; }
+    .ic-set-w-l { inline-size: 100%; }
+    input.ic-set-w-s, input.ic-set-w-m, input.ic-set-w-l { display: block; }
+
+    .ic-set-num {
+        display: inline-flex;
+        align-items: stretch;
+        inline-size: auto;
+
+        .ic-set-input {
+            inline-size: 110px;
+            border-start-end-radius: 0;
+            border-end-end-radius: 0;
+        }
+        .ic-set-input:only-child {
+            inline-size: 140px;
+            border-radius: var(--rl-rsm);
+        }
+    }
+
+    .ic-set-unit {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border: 1px solid var(--rl-line2);
+        border-inline-start: 0;
+        border-start-end-radius: var(--rl-rsm);
+        border-end-end-radius: var(--rl-rsm);
+        background: var(--rl-surf2);
+        font-size: 12px;
+        color: var(--rl-muted);
+        white-space: nowrap;
+    }
+
+    .ic-set-secret {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 4px 4px 12px;
+        min-block-size: 36px;
+        border: 1px dashed var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        background: var(--rl-surf2);
+        color: var(--rl-fg2);
+        max-inline-size: 100%;
+
+        .ic-set-secret__state { flex: 1 1 auto; font-size: 13.5px; }
+    }
+
+    .ic-set-secret-edit {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        max-inline-size: 100%;
+        .ic-set-input { flex: 1 1 auto; min-inline-size: 0; }
+    }
+
+    .ic-set-ro {
+        font-size: 13.5px;
+        color: var(--rl-fg);
+        padding-block: 8px;
+        &--mono { font-family: var(--rl-fm); font-size: 12.5px; word-break: break-all; }
+    }
+
+    .ic-set-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-block: 6px;
+    }
+
+    .ic-set-row .rl-sel { inline-size: 100%; }
+
+    // ── Advanced ─────────────────────────────────────────────────────────────
+    .ic-set-adv { border-block-start: 1px solid var(--rl-line); }
+
+    .ic-set-adv__toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        inline-size: 100%;
+        padding: 12px 20px;
+        border: 0;
+        background: transparent;
+        color: var(--rl-fg);
+        text-align: start;
+        cursor: pointer;
+        min-block-size: 44px;
+
+        .fa { font-size: 11px; color: var(--rl-muted); inline-size: 12px; }
+        &:hover { background: var(--rl-surf2); }
+        &:focus-visible { outline: 2px solid var(--rl-green-dim, #0c7a55); outline-offset: -2px; }
+    }
+
+    .ic-set-adv__title { font-weight: 600; font-size: 13.5px; }
+
+    .ic-set-adv__count {
+        font-family: var(--rl-fm);
+        font-size: 11px;
+        color: var(--rl-muted);
+    }
+
+    .ic-set-adv__changed {
+        font-family: var(--rl-fm);
+        font-size: 11px;
+        color: var(--rl-amber-ink);
+        background: var(--rl-amber-soft);
+        border-radius: 4px;
+        padding: 1px 6px;
+    }
+
+    // Focus: 2 px, green, on every control of the page.
+    .ic-set-page {
+        .ic-set-input:focus-visible, .rl-sw:focus-visible, .rl-btn:focus-visible,
+        .rl-sel__trigger:focus-visible, .ic-set-how:focus-visible {
+            outline: 2px solid var(--rl-green-dim, #0c7a55);
+            outline-offset: 2px;
+        }
+    }
+
+    // ── Phones and narrow windows ────────────────────────────────────────────
+    @media (max-width: 900px) {
+        .ic-set-row {
+            grid-template-columns: minmax(0, 1fr);
+            padding: 14px 16px;
+        }
+
+        // A switch stays on the label's line.
+        .ic-set-row:has(> .ic-set-row__ctl > .ic-set-row__line > .rl-sw:only-child) {
+            grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .ic-set-w-m, .ic-set-w-l, .ic-set-secret, .ic-set-secret-edit { inline-size: 100%; }
+        .ic-set-block__head { padding: 14px 16px 4px; }
+        .ic-set-block__body { padding: 6px 16px 14px; }
+        .ic-set-adv__toggle { padding: 12px 16px; }
+        .ic-set-found { inset-block-start: 6px; }
+    }
+}

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.SettingsBlock">
+        <section class="ic-set-block" t-att-aria-labelledby="props.title ? titleId : undefined">
+            <header class="ic-set-block__head" t-if="props.title or props.slots?.head">
+                <h3 t-if="props.title" class="ic-set-block__title" t-att-id="titleId" t-esc="props.title"/>
+                <button t-if="props.how" type="button" class="ic-set-how"
+                        t-att-aria-expanded="state.how ? 'true' : 'false'"
+                        t-on-click="() => this.state.how = !this.state.how">
+                    <i class="fa fa-info-circle" aria-hidden="true"/> How it works
+                </button>
+                <p t-if="props.how and state.how" class="ic-set-how__text" t-esc="props.how"/>
+                <t t-slot="head"/>
+            </header>
+            <t t-slot="default"/>
+        </section>
+    </t>
+
+    <t t-name="incubacloud.SettingRow">
+        <div t-att-id="rowId" t-att-data-field="props.id"
+             t-att-class="{
+                'ic-set-row': true,
+                'ic-set-row--stacked': props.stacked,
+                'ic-set-row--found': found,
+                'ic-set-row--error': error,
+             }">
+            <div class="ic-set-row__text">
+                <label class="ic-set-label" t-att-for="inputId">
+                    <t t-esc="label"/>
+                    <span t-if="changed" class="ic-set-dot" role="img" aria-label="Changed" title="Changed"/>
+                </label>
+                <p t-if="help" class="ic-set-help" t-att-id="rowId + '-help'" t-esc="help"/>
+            </div>
+            <div class="ic-set-row__ctl">
+                <div class="ic-set-row__line">
+                    <t t-slot="default" inputId="inputId" describedBy="describedBy" invalid="!!error"/>
+                    <t t-slot="action"/>
+                </div>
+                <p t-if="error" class="ic-set-err" t-att-id="rowId + '-error'">
+                    <i class="fa fa-exclamation-circle" aria-hidden="true"/> <t t-esc="error"/>
+                </p>
+                <p t-if="props.warning" class="ic-set-warn" t-att-id="rowId + '-warning'">
+                    <i class="fa fa-exclamation-triangle" aria-hidden="true"/> <t t-esc="props.warning"/>
+                </p>
+                <t t-slot="after"/>
+            </div>
+            <span t-if="found" class="ic-set-found" aria-hidden="true">Found</span>
+        </div>
+    </t>
+
+    <t t-name="incubacloud.SettingField">
+        <SettingRow id="props.id" label="props.label" help="props.help" warning="props.warning" form="props.form"
+                    stacked="field.type === 'textarea' and width === 'l'">
+            <t t-set-slot="default" t-slot-scope="row">
+                <t t-set="type" t-value="field.type"/>
+                <!-- Number, with its unit as a suffix -->
+                <div t-if="type === 'number'" t-attf-class="ic-set-num ic-set-w-{{width}}">
+                    <input type="number" class="ic-set-input"
+                           t-att-id="row.inputId"
+                           t-att-min="field.min"
+                           t-att-max="field.max"
+                           t-att-step="field.decimals ? '0.01' : '1'"
+                           t-att-value="value"
+                           t-att-disabled="props.disabled || null"
+                           t-att-readonly="props.readonly || null"
+                           t-att-aria-invalid="row.invalid ? 'true' : undefined"
+                           t-att-aria-describedby="row.describedBy || undefined"
+                           t-on-input="(ev) => this.set(ev.target.value)"
+                           t-on-blur="() => this.check()"/>
+                    <span t-if="field.unit" class="ic-set-unit" t-esc="field.unit"/>
+                </div>
+                <!-- Switch -->
+                <button t-elif="type === 'toggle'" type="button" role="switch"
+                        t-att-id="row.inputId"
+                        t-att-class="'rl-sw' + (value ? ' on' : '')"
+                        t-att-aria-checked="value ? 'true' : 'false'"
+                        t-att-aria-describedby="row.describedBy || undefined"
+                        t-att-disabled="props.disabled || props.readonly || null"
+                        t-on-click="() => this.toggle()"/>
+                <!-- Select -->
+                <div t-elif="type === 'select'" t-attf-class="ic-set-w-{{width}}">
+                    <RlSelect id="row.inputId"
+                              options="options"
+                              value="value"
+                              emptyLabel="props.emptyLabel"
+                              disabled="props.disabled || props.readonly"
+                              ariaLabel="labelText"
+                              ariaInvalid="row.invalid"
+                              ariaDescribedby="row.describedBy || undefined"
+                              onChange="(v) => this.set(v)"/>
+                </div>
+                <!-- Secret: never shown back; "Stored" until replaced -->
+                <t t-elif="type === 'secret'">
+                    <div t-if="showsStored" t-attf-class="ic-set-secret ic-set-w-{{width}}">
+                        <t t-out="env.icon('lock', 14)"/>
+                        <span class="ic-set-secret__state">Stored</span>
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-att-id="row.inputId"
+                                t-att-disabled="props.disabled || props.readonly || null"
+                                t-on-click="() => this.replace()">Replace</button>
+                    </div>
+                    <div t-else="" t-attf-class="ic-set-secret-edit ic-set-w-{{width === 'l' ? 'l' : width}}">
+                        <textarea t-if="field.rows" class="ic-set-input ic-set-input--mono"
+                                  t-att-id="row.inputId" t-att-rows="field.rows"
+                                  autocomplete="off" spellcheck="false"
+                                  t-att-placeholder="props.placeholder ?? field.placeholder ?? (props.stored ? '' : notSetText)"
+                                  t-att-value="value || ''"
+                                  t-att-disabled="props.disabled || null"
+                                  t-att-aria-describedby="row.describedBy || undefined"
+                                  t-on-input="(ev) => this.set(ev.target.value)"/>
+                        <input t-else="" type="password" class="ic-set-input" autocomplete="new-password"
+                               t-att-id="row.inputId"
+                               t-att-placeholder="props.placeholder ?? (props.stored ? newValueText : notSetText)"
+                               t-att-value="value || ''"
+                               t-att-disabled="props.disabled || null"
+                               t-att-aria-describedby="row.describedBy || undefined"
+                               t-on-input="(ev) => this.set(ev.target.value)"/>
+                        <button t-if="props.stored" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="() => this.keep()">Keep stored</button>
+                    </div>
+                </t>
+                <!-- Read-only value: text, not a disabled input -->
+                <span t-elif="type === 'readonly'" t-att-id="row.inputId"
+                      t-att-class="'ic-set-ro' + (field.mono ? ' ic-set-ro--mono' : '')"
+                      t-esc="value || '—'"/>
+                <!-- Long text -->
+                <textarea t-elif="type === 'textarea'"
+                          t-attf-class="ic-set-input ic-set-w-{{width}} {{field.mono ? 'ic-set-input--mono' : ''}}"
+                          t-att-id="row.inputId"
+                          t-att-rows="field.rows || 3"
+                          t-att-placeholder="props.placeholder ?? field.placeholder"
+                          t-att-value="value"
+                          t-att-disabled="props.disabled || null"
+                          t-att-readonly="props.readonly || null"
+                          t-att-aria-invalid="row.invalid ? 'true' : undefined"
+                          t-att-aria-describedby="row.describedBy || undefined"
+                          t-on-input="(ev) => this.set(ev.target.value)"
+                          t-on-blur="() => this.check()"/>
+                <!-- Text -->
+                <input t-else="" type="text"
+                       t-attf-class="ic-set-input ic-set-w-{{width}} {{field.mono ? 'ic-set-input--mono' : ''}}"
+                       t-att-id="row.inputId"
+                       t-att-placeholder="props.placeholder ?? field.placeholder"
+                       t-att-value="value"
+                       t-att-disabled="props.disabled || null"
+                       t-att-readonly="props.readonly || null"
+                       t-att-aria-invalid="row.invalid ? 'true' : undefined"
+                       t-att-aria-describedby="row.describedBy || undefined"
+                       t-on-input="(ev) => this.set(ev.target.value)"
+                       t-on-blur="() => this.check()"/>
+            </t>
+            <t t-set-slot="action"><t t-slot="action"/></t>
+            <t t-set-slot="after"><t t-slot="after"/></t>
+        </SettingRow>
+    </t>
+
+    <t t-name="incubacloud.SettingAdvanced">
+        <div class="ic-set-adv">
+            <button type="button" class="ic-set-adv__toggle"
+                    t-att-aria-expanded="open ? 'true' : 'false'"
+                    t-att-aria-controls="panelId"
+                    t-on-click="() => this.toggle()">
+                <i t-att-class="'fa ' + (open ? 'fa-chevron-down' : 'fa-chevron-right')" aria-hidden="true"/>
+                <span class="ic-set-adv__title">Advanced</span>
+                <span class="ic-set-adv__count" t-esc="countLabel"/>
+                <span t-if="changedCount" class="ic-set-adv__changed"><t t-esc="changedCount"/> changed</span>
+            </button>
+            <div t-att-id="panelId" t-att-hidden="!open">
+                <t t-slot="default"/>
+            </div>
+        </div>
+    </t>
+
+</templates>

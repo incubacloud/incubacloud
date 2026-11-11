@@ -21,7 +21,7 @@
             <div class="rl-saas-fsec">Git providers</div>
             <p class="rl-tabnote">
                 GitLab servers the panel deploys and rebuilds from: gitlab.com or your
-                own. Repositories on GitHub use the GitHub tab.
+                own. Repositories on GitHub use Settings › GitHub.
             </p>
             <p t-if="state.network === 'public'" class="rl-set-warning">
                 <i class="fa fa-globe"/>

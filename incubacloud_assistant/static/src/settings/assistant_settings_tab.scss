@@ -1,20 +1,26 @@
-// Settings → Assistant: what the panel's own tabs do not have.
+// Settings → Assistant: what the panel's own sections do not have.
 // Painted with the --rl-* tokens, like the rest of Settings.
 
 .ic-asst-settings {
-    // The notes under the form's grid do not touch its last row.
-    .rl-fgrid + .rl-tabnote {
-        margin-block-start: 14px;
-    }
-
     // A link in a note looks like one, not only by its colour (WCAG 1.4.1):
     // the panel's base styles paint links as text.
-    .rl-tabnote a {
+    .rl-set-hint a {
         text-decoration: underline;
     }
 
+    .ic-asst-box {
+        inline-size: 18px;
+        block-size: 18px;
+        accent-color: var(--rl-green-dim, #0c7a55);
+    }
+
+    // The usage table scrolls on its own at 390, never the page.
+    .ic-asst-usage-wrap {
+        overflow-x: auto;
+    }
+
     .ic-asst-usage {
-        margin-block-end: 20px;
+        margin-block-end: 8px;
 
         th,
         td {
@@ -26,31 +32,6 @@
         td {
             overflow-wrap: anywhere;
         }
-    }
-
-    // Why the switch cannot go on yet, under it.
-    .ic-asst-hint {
-        margin: 6px 0 0;
-        font-family: var(--rl-fm);
-        font-size: 11px;
-        color: var(--rl-muted);
-    }
-
-    // What a save or a read could not do: in the text colour, not faint.
-    .ic-asst-warning {
-        color: var(--rl-fg2);
-    }
-
-    .ic-asst-read {
-        margin-block-end: 16px;
-    }
-
-    .ic-asst-models {
-        margin-block-end: 20px;
-    }
-
-    .ic-asst-users {
-        margin-block-end: 20px;
     }
 }
 

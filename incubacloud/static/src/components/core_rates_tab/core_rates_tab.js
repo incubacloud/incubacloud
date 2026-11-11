@@ -3,6 +3,7 @@
 import { Component, useState, useEnv, onWillStart, onMounted, onWillUnmount, status } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { SettingAdvanced, SettingField, SettingsBlock } from "../settings_form/settings_form";
 
 export const CORE_RATE_DEFAULTS = Object.freeze({
     rate_limit_webhook_per_min: 300,
@@ -21,6 +22,7 @@ export const CORE_RATE_DEFAULTS = Object.freeze({
 
 export class CoreRatesTab extends Component {
     static template = "incubacloud.CoreRatesTab";
+    static components = { SettingAdvanced, SettingField, SettingsBlock };
     static props = {};
 
     setup() {
@@ -106,7 +108,7 @@ export class CoreRatesTab extends Component {
     _register() {
         if (this.loaded && status(this) === "mounted") {
             this.env.registerSettingsSave?.(
-                "CoreRates", () => this._save(), this.state, [], "rates",
+                "CoreRates", () => this._save(), this.state, [],
             );
         }
     }
@@ -117,15 +119,12 @@ export class CoreRatesTab extends Component {
         this._register();
     }
 
-    onIntInput(field, ev) {
-        const raw = parseInt(ev.target.value || 0, 10);
-        // Clamp to >=1 here so we can't send a value the operator
-        // didn't mean. The backend also clamps negatives to 0 and the
-        // model treats 0 as "use documented default" — belt and
-        // suspenders.
-        this.state.form[field] = Number.isFinite(raw) ? Math.max(1, raw) : 1;
-    }
-
+    /**
+     * Save the limits; Settings checked each against its declaration
+     * (a whole number, 1 or more) first.
+     *
+     * @returns {Promise<object>} the server's answer
+     */
     async _save() {
         return await rpc("/cloud/save_core_rate_limits", {
             vals: {

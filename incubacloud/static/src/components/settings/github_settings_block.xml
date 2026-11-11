@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.GithubSettingsBlock">
+        <t t-if="state.loading or state.loadError">
+            <t t-call="incubacloud.SettingsLoadState"/>
+        </t>
+        <t t-else="">
+            <t t-set="form" t-value="state.form"/>
+
+            <SettingsBlock title.translate="GitHub App">
+                <t t-set-slot="head">
+                    <!-- Connected: say so, and offer the checks -->
+                    <div t-if="currentStep === 3" class="ic-set-block__status">
+                        <span class="ic-set-chip ic-set-chip--ok" t-esc="statusText"/>
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-att-disabled="state.testing || null" t-on-click="testConnection">
+                            <t t-if="state.testing">Testing…</t>
+                            <t t-else="">Test connection</t>
+                        </button>
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                title="Ask GitHub for the installation again, after reinstalling the app"
+                                t-on-click="detectInstallation">Re-detect installation</button>
+                        <button type="button" class="ic-set-danger" t-on-click="disconnectApp">Disconnect</button>
+                    </div>
+                    <p t-if="currentStep === 3" class="rl-set-hint">
+                        The panel acts on the pushes and pull requests of this installation only.
+                        A pull request on another account the App is installed on gets no preview,
+                        and the production it would preview an alert naming that account.
+                    </p>
+
+                    <!-- Step 1: create the App -->
+                    <div t-if="currentStep === 1" class="ic-set-step">
+                        <p class="rl-set-hint">
+                            Step 1 of 2. The panel sends you to GitHub to create an App with the right
+                            permissions and webhook already set. It is created in your GitHub account,
+                            and you can then install it on any organization you manage.
+                        </p>
+                        <p t-if="!state.isHttps" class="rl-set-warning">
+                            <t t-out="env.icon('lock', 15)"/> Automatic setup requires HTTPS. Fill it in by hand under Advanced.
+                        </p>
+                        <div class="rl-set-actions">
+                            <button type="button" class="rl-btn rl-btn-primary"
+                                    t-att-disabled="!state.isHttps || null" t-on-click="createOnGitHub">
+                                <t t-out="env.icon('git', 15)"/> Create App on GitHub
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: install it -->
+                    <div t-if="currentStep === 2" class="ic-set-step">
+                        <p class="rl-set-hint">
+                            Step 2 of 2. Install the App on the GitHub organization that owns your
+                            repositories, then come back and check the installation: the panel asks
+                            GitHub for it and names the account it is installed on.
+                        </p>
+                        <div class="rl-set-actions">
+                            <button type="button" class="rl-btn rl-btn-primary" t-on-click="openInstallUrl">
+                                <t t-out="env.icon('git', 15)"/> Install on organization
+                            </button>
+                            <button type="button" class="rl-btn rl-btn-ghost" t-on-click="refresh">Check installation</button>
+                        </div>
+                    </div>
+
+                    <p t-if="state.actionMsg"
+                       t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.actionMsg.type"
+                       role="status" t-esc="state.actionMsg.message"/>
+                </t>
+                <SettingAdvanced form="form" fields="['app_id', 'installation_id', 'webhook_secret', 'private_key']">
+                    <SettingField id="'app_id'" form="form"/>
+                    <SettingField id="'installation_id'" form="form"/>
+                    <SettingField id="'webhook_secret'" form="form" stored="state.hasWebhookSecret"/>
+                    <SettingField id="'private_key'" form="form" stored="state.hasPrivateKey"/>
+                </SettingAdvanced>
+            </SettingsBlock>
+
+            <SettingsBlock title.translate="Personal access token">
+                <SettingField id="'github_pat'" form="form" stored="state.hasPat"/>
+            </SettingsBlock>
+        </t>
+
+        <IcConfirmDialog t-if="state.confirmDialog"
+                         title="state.confirmDialog.title"
+                         message="state.confirmDialog.message"
+                         confirmLabel="state.confirmDialog.confirmLabel"
+                         isDanger="state.confirmDialog.isDanger"
+                         onConfirm="state.confirmDialog.onConfirm"
+                         onCancel="state.confirmDialog.onCancel"/>
+    </t>
+
+</templates>

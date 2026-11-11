@@ -2,14 +2,9 @@
 <templates xml:space="preserve">
 
 <t t-name="incubacloud_mcp.McpAutoApproval">
-    <div class="ic-mcp-auto">
-        <div class="rl-saas-fsec">Auto-approval</div>
-        <p class="rl-tabnote">
-            An auto-approval rule lets one credential of one person act without asking until
-            a date, or with no end date: an API key, an OAuth client or the panel's assistant. Every other agent
-            keeps asking. Each action run this way is marked auto-approved in the audit log
-            and on its jobs.
-        </p>
+    <SettingsBlock title.translate="Auto-approval"
+                   how.translate="An auto-approval rule lets one credential of one person act without asking until a date, or with no end date: an API key, an OAuth client or the panel's assistant. Every other agent keeps asking. Each action run this way is marked auto-approved in the audit log and on its jobs.">
+    <div class="ic-mcp-auto ic-set-block__body" id="ic-set-mcp_auto_approval" data-field="mcp_auto_approval">
 
         <t t-if="state.loading">
             <div class="ic-detail-loading">Loading…</div>
@@ -253,6 +248,7 @@
             </div>
         </IcModal>
     </div>
+    </SettingsBlock>
 </t>
 
 </templates>

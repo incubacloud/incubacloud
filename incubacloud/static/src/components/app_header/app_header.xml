@@ -83,7 +83,7 @@
             <div class="ic-header-search-wrap">
                 <i class="fa fa-search ic-header-search-icon" aria-hidden="true"/>
                 <input type="text" class="ic-header-search-input"
-                       placeholder="Search instances, hosts, projects…"
+                       placeholder="Search instances, hosts, projects, settings…"
                        t-att-value="state.globalSearch"
                        t-on-input="onGlobalSearch"
                        t-on-focus="onSearchFocus"
@@ -91,10 +91,11 @@
                 <span class="ic-header-search-kbd" aria-hidden="true">Ctrl K</span>
                 <t t-if="state.showSearch">
                     <div class="ic-header-search-dropdown">
-                        <t t-if="state.searchLoading and !state.searchResults.length">
+                        <t t-set="settingHits" t-value="settingsResults"/>
+                        <t t-if="state.searchLoading and !state.searchResults.length and !settingHits.length">
                             <div class="ic-header-search-msg">Searching…</div>
                         </t>
-                        <t t-elif="!state.searchResults.length">
+                        <t t-elif="!state.searchResults.length and !settingHits.length">
                             <div class="ic-header-search-msg">No results</div>
                         </t>
                         <t t-else="">
@@ -105,6 +106,17 @@
                                     <span class="ic-header-search-label" t-esc="r.label"/>
                                     <span class="ic-header-search-sub" t-esc="r.sublabel"/>
                                 </button>
+                            </t>
+                            <t t-if="settingHits.length">
+                                <div class="ic-header-search-group">Settings</div>
+                                <t t-foreach="settingHits" t-as="field" t-key="'setting-' + field.id">
+                                    <button class="ic-header-search-item"
+                                            t-on-click="() => this.goToSetting(field)">
+                                        <t t-out="env.icon('settings', 15)"/>
+                                        <span class="ic-header-search-label" t-esc="field.label"/>
+                                        <span class="ic-header-search-sub"><t t-esc="field.sectionTitle"/> › <t t-esc="field.blockTitle"/></span>
+                                    </button>
+                                </t>
                             </t>
                         </t>
                     </div>

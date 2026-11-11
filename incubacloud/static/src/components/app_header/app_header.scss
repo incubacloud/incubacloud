@@ -110,6 +110,16 @@
   overflow-y: auto;
   padding: 4px;
 }
+// The settings the same search finds, under their own heading.
+.ic-header-search-group {
+  padding: 10px 12px 4px;
+  font-family: var(--rl-fm);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rl-muted);
+  border-top: 1px solid var(--rl-line);
+}
 .ic-header-search-msg {
   padding: 12px;
   color: $text-secondary;

@@ -141,20 +141,6 @@ msgid "Allowed models"
 msgstr "Modelos permitidos"
 
 #. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"An AI assistant inside the panel, with your own AI provider key. It acts\n"
-"                with the role of each user who uses it, and asks them before anything\n"
-"                destructive, sensitive or on production. What it reads is sent to the\n"
-"                provider you choose."
-msgstr ""
-"Un asistente de IA dentro del panel, con su propia clave de un proveedor de "
-"IA. Actúa con el rol de cada usuario que lo usa y le pregunta antes de hacer"
-" algo destructivo, sensible o en producción. Lo que lee se envía al "
-"proveedor que usted elija."
-
-#. module: incubacloud_assistant
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__anthropic
 msgid "Anthropic"
 msgstr "Anthropic"
@@ -758,12 +744,6 @@ msgstr ""
 "desde %(ip)s."
 
 #. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid "Loading…"
-msgstr "Cargando…"
-
-#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/models/assistant_message.py:0
 msgid "Looking at the panel"
@@ -849,18 +829,6 @@ msgstr "No se puede usar con un límite mensual"
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__notice
 msgid "Notice"
 msgstr "Aviso"
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Off, nobody can ask the assistant anything. The button stays for whoever\n"
-"                has conversations, to read or delete them until they expire, 30 days after\n"
-"                their last message."
-msgstr ""
-"Apagado, nadie puede pedirle nada al asistente. El botón sigue para quien "
-"tenga conversaciones, para leerlas o eliminarlas hasta que caduquen, 30 días"
-" después de su último mensaje."
 
 #. module: incubacloud_assistant
 #: model:ir.model.constraint,message:incubacloud_assistant.constraint_incubacloud_assistant_usage_user_month_model
@@ -988,16 +956,6 @@ msgid "Read the provider's models to switch the assistant on."
 msgstr "Para encender el asistente, lea los modelos del proveedor."
 
 #. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Read the provider's models with the saved key, then choose the ones\n"
-"                allowed."
-msgstr ""
-"Lea los modelos del proveedor con la clave guardada y elija después los "
-"permitidos."
-
-#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/models/assistant_message.py:0
 msgid "Reading the documentation"
@@ -1044,16 +1002,6 @@ msgstr "Reconstruyendo"
 #: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
 msgid "Recommended"
 msgstr "Recomendado"
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Recommended: tested with the panel's tools. Untested ones may fail at\n"
-"                    writing modules."
-msgstr ""
-"Recomendado: probado con las herramientas del panel. Los no probados pueden "
-"fallar al escribir módulos."
 
 #. module: incubacloud_assistant
 #. odoo-javascript
@@ -1260,28 +1208,6 @@ msgstr "Detenido. Lo que se hizo queda como está."
 #: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__summary
 msgid "Summary"
 msgstr "Resumen"
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Switching the assistant on needs the Terms accepted, each time: what\n"
-"                is sent to the AI provider, who pays for it, and which actions wait\n"
-"                for confirmation."
-msgstr ""
-"Encender el asistente exige aceptar los Términos del servicio, cada vez: lo "
-"que se envía al proveedor de IA, quién lo paga y qué acciones esperan "
-"confirmación."
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Switching the assistant on needs the acknowledgement box ticked, each\n"
-"                time. The panel records when, by whom and from which address."
-msgstr ""
-"Encender el asistente exige marcar la casilla de reconocimiento, cada vez. El "
-"panel registra cuándo, quién y desde qué dirección."
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1507,20 +1433,6 @@ msgstr ""
 #: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
 msgid "The monthly limit is a number of euros, 0 or more."
 msgstr "El límite mensual es un número de euros, 0 o más."
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"The monthly limit is the same for every user: each one may spend up to it\n"
-"                in a month, and Usage below shows what each one spent. 0 is no limit. A\n"
-"                task that reaches its steps stops and asks whether to go on; a user who\n"
-"                reaches the limit waits for next month."
-msgstr ""
-"El límite mensual es el mismo para cada usuario: cada uno puede gastar hasta"
-" él en un mes, y Uso, más abajo, muestra lo que gastó cada uno. 0 es sin "
-"límite. Una tarea que llega a su número de pasos se detiene y pregunta si "
-"continúa; un usuario que llega al límite espera al mes siguiente."
 
 #. module: incubacloud_assistant
 #. odoo-python
@@ -1797,16 +1709,6 @@ msgid "Type the provider's key first."
 msgstr "Escriba primero la clave del proveedor."
 
 #. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"Type the provider's key, then read its models to choose from them. The key\n"
-"                is kept when you save."
-msgstr ""
-"Escriba la clave del proveedor y lea después sus modelos para elegir entre "
-"ellos. La clave se conserva cuando guarde los cambios."
-
-#. module: incubacloud_assistant
 #. odoo-python
 #: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
 msgid "Unknown AI provider."
@@ -1913,18 +1815,6 @@ msgid ""
 msgstr ""
 "Cuándo un gerente encendió por última vez el asistente y marcó la casilla de"
 " sus términos."
-
-#. module: incubacloud_assistant
-#. odoo-javascript
-#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
-msgid ""
-"With a monthly limit, a model whose price is unknown cannot be used: the\n"
-"                    assistant could not count what it costs. Without a limit it can, as an\n"
-"                    untested one."
-msgstr ""
-"Con un límite mensual, no se puede usar un modelo cuyo precio se desconoce: "
-"el asistente no podría contar lo que cuesta. Sin límite sí se puede, como "
-"uno sin probar."
 
 #. module: incubacloud_assistant
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__working
@@ -2049,3 +1939,148 @@ msgstr "Tipo"
 #: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_mcp_auto_approval__kind__assistant
 msgid "Panel assistant"
 msgstr "Asistente del panel"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "A task that reaches it stops and asks whether to go on."
+msgstr "Una tarea que lo alcanza se detiene y pregunta si seguir."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Acceptance before switching on"
+msgstr "Aceptación antes de encenderlo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"An AI assistant inside the panel, with your own AI provider key. It acts "
+"with the role of each user who uses it, and asks them before anything "
+"destructive, sensitive or on production. What it reads is sent to the "
+"provider you choose. Off, the button stays for whoever has conversations, to"
+" read or delete them until they expire, 30 days after their last message."
+msgstr ""
+"Un asistente de IA dentro del panel, con la clave de su propio proveedor de "
+"IA. Actúa con el rol de cada usuario que lo usa, y le pregunta antes de "
+"cualquier cosa destructiva, sensible o en producción. Lo que lee se envía al"
+" proveedor que elija. Apagado, el botón se queda para quien tenga "
+"conversaciones, para leerlas o borrarlas hasta que caduquen, 30 días después"
+" de su último mensaje."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Monthly limit per user"
+msgstr "Límite mensual por usuario"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Never shown back. Typing one replaces the saved key."
+msgstr "Nunca se vuelve a mostrar. Escribir una sustituye la clave guardada."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "Not set"
+msgstr "No establecida"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Off: nobody can ask the assistant anything."
+msgstr "Apagado: nadie puede preguntar nada al asistente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Read the provider's models with the saved key, then choose the ones\n"
+"                            allowed."
+msgstr ""
+"Lea los modelos del proveedor con la clave guardada y elija después los "
+"permitidos."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Read with the key, typed or saved; then choose the ones allowed."
+msgstr ""
+"Se leen con la clave, escrita o guardada; después elija los permitidos."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Recommended: tested with the panel's tools. Untested ones may fail at\n"
+"                                writing modules."
+msgstr ""
+"Recomendado: probado con las herramientas del panel. Los no probados pueden "
+"fallar al escribir módulos."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Switching the assistant on needs the Terms accepted, each time: what\n"
+"                        is sent to the AI provider, who pays for it, and which actions wait\n"
+"                        for confirmation."
+msgstr ""
+"Encender el asistente exige aceptar los Términos del servicio, cada vez: lo "
+"que se envía al proveedor de IA, quién lo paga y qué acciones esperan "
+"confirmación."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Switching the assistant on needs the acknowledgement box ticked, each\n"
+"                        time. The panel records when, by whom and from which address."
+msgstr ""
+"Encender el asistente exige marcar la casilla de reconocimiento, cada vez. "
+"El panel registra cuándo, quién y desde qué dirección."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "The built-in assistant: its provider, its spending and who may use it."
+msgstr "El asistente integrado: su proveedor, su gasto y quién puede usarlo."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid ""
+"The same for every user, who waits for next month past it. 0 is no limit."
+msgstr ""
+"El mismo para todos los usuarios; quien lo alcanza espera al mes siguiente. "
+"0 es sin límite."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_sections.js:0
+msgid "Tokens and approximate cost of each user, month by month."
+msgstr "Tokens y coste aproximado de cada usuario, mes a mes."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Type the provider's key, then read its models to choose from them. The key\n"
+"                            is kept when you save."
+msgstr ""
+"Escriba la clave del proveedor y lea después sus modelos para elegir entre "
+"ellos. La clave se conserva cuando guarde los cambios."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"With a monthly limit, a model whose price is unknown cannot be used: the\n"
+"                                assistant could not count what it costs. Without a limit it can, as an\n"
+"                                untested one."
+msgstr ""
+"Con un límite mensual, no se puede usar un modelo cuyo precio se desconoce: "
+"el asistente no podría contar lo que cuesta. Sin límite sí se puede, como "
+"uno sin probar."

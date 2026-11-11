@@ -1,15 +1,13 @@
 """The agents' Settings keep what is typed in them until it is saved.
 
-The Agents tab, and the agents' limit on the Rates tab, are components
-with their own forms and save handlers, drawn into core's Settings. As
-core's own Rates tab does (see core's ``test_settings_tabs.py``), the
-Agents tab stays mounted once opened: an edit survives a visit to another
-tab, and Save sends it from any tab. And Settings sends either only when
-it changed, counting the change as unsaved until then. What is saved is
-what was sent: an edit made while the request is out is sent next time.
-A tab that failed to load shows the error and Retry and is never sent,
-and one Settings cancelled while it loaded never stands in for the one
-on screen.
+The Agents (MCP) section, and the agents' limit among the Rate limits, are
+blocks with their own forms and save handlers, drawn into core's Settings
+(see core's ``test_settings_tabs.py``). Settings sends either only when it
+changed, counting the change as unsaved until then, and leaving the page
+with it asks first. What is saved is what was sent: an edit made while the
+request is out is sent next time. A block that failed to load shows the
+error and Retry and is never sent, and one that answers after the page
+moved on never stands in for the one on screen.
 """
 
 from odoo.tests import HttpCase, tagged
@@ -18,7 +16,7 @@ from odoo.addons.incubacloud.tests.test_settings_tabs import SettingsInBrowser
 
 from .common import StandalonePanelMixin
 
-#: The issuer typed in the Agents tab.
+#: The issuer typed in the Agents section.
 ISSUER = "https://login.example.test"
 
 
@@ -26,13 +24,13 @@ ISSUER = "https://login.example.test"
 class TestMcpSettingsTabsKeepTheirEdits(
     StandalonePanelMixin, SettingsInBrowser, HttpCase
 ):
-    """The Agents tab and the agents' limit, edited and saved from elsewhere."""
+    """The Agents (MCP) section and the agents' limit, edited and saved."""
 
     _ISSUER = "Agents' OAuth issuer"
     _LIMIT = "Agent calls (per user, all their agents)"
 
-    def test_an_edit_on_agents_survives_and_is_saved_from_another_tab(self):
-        """Back on Agents, the issuer typed shows; Save on General stores it."""
+    def test_an_edit_on_agents_is_unsaved_until_saved(self):
+        """Leaving with the issuer typed asks; staying, Save stores it."""
         settings = self.env["cloud.settings"]._get_system()
         self.assertNotEqual(settings.mcp_oauth_issuer, ISSUER)
         self._in_settings(
@@ -40,11 +38,9 @@ class TestMcpSettingsTabsKeepTheirEdits(
             f"""
             await type("{self._ISSUER}", "{ISSUER}");
             await expectUnsaved();
-            await openTab("General");
-            expectHidden("{self._ISSUER}");
-            await openTab("Agents");
+            (await menuItem("General")).click();
+            await answerLeave(false);
             await expectValue("{self._ISSUER}", "{ISSUER}");
-            await openTab("General");
             await save();
             await expectAllSaved();
         """,
@@ -53,17 +49,16 @@ class TestMcpSettingsTabsKeepTheirEdits(
         self.assertEqual(settings.mcp_oauth_issuer, ISSUER)
 
     def test_the_agents_limit_is_sent_only_once_changed(self):
-        """Untouched, Save leaves the limit alone; edited, it is unsaved until
-        Save sends it."""
+        """Untouched, Save on Rate limits leaves the limit alone; edited, it is
+        unsaved until Save sends it."""
         settings = self.env["cloud.settings"]._get_system()
         self._in_settings(
             "rates",
             f"""
             await field("{self._LIMIT}");
-            await openTab("General");
+            await type("GitHub webhook (per client IP)", "4321");
             await save();
             expectSent("/cloud/mcp/save_settings", false);
-            await openTab("Rates");
             await type("{self._LIMIT}", "77");
             await expectUnsaved();
             await save();
@@ -75,8 +70,8 @@ class TestMcpSettingsTabsKeepTheirEdits(
         self.assertEqual(settings.rate_limit_mcp_user_per_min, 77)
 
     def test_an_edit_made_while_saving_stays_unsaved(self):
-        """What the Agents tab saved is what it sent: an issuer typed while the
-        request is out stays unsaved, and the next Save sends it."""
+        """What the Agents section saved is what it sent: an issuer typed while
+        the request is out stays unsaved, and the next Save sends it."""
         settings = self.env["cloud.settings"]._get_system()
         self._in_settings(
             "agents",
@@ -102,27 +97,23 @@ class TestMcpSettingsTabsKeepTheirEdits(
         self.env.invalidate_all()
         self.assertEqual(settings.mcp_oauth_issuer, "https://b.example.test")
 
-    def test_a_tab_that_failed_to_load_shows_retry_not_its_form(self):
-        """No form to edit, nothing sent; Retry loads it, and it counts again."""
+    def test_a_block_that_failed_to_load_shows_retry_not_its_form(self):
+        """No form to edit, no bar, nothing sent; Retry loads it, and it counts."""
         settings = self.env["cloud.settings"]._get_system()
         before = settings.mcp_oauth_issuer
         self._in_settings(
             "general",
             f"""
             failRpc("/cloud/mcp/get_settings");
-            await openTab("Agents");
+            await openTab("Agents (MCP)");
             const failed = await until("the load to fail", () => [
                 ...document.querySelectorAll(".rl-stub[role=alert]"),
             ].find((box) => box.textContent.includes(
                 "Failed to load the agents' settings")));
             if (shownRow("{self._ISSUER}")) {{
-                throw new Error("a tab that failed to load shows its form");
+                throw new Error("a block that failed to load shows its form");
             }}
             expectNoSave();
-            await openTab("General");
-            await save();
-            expectSent("/cloud/mcp/save_settings", false);
-            await openTab("Agents");
             delete rpcStubs["/cloud/mcp/get_settings"];
             failed.querySelector("button").click();
             await type("{self._ISSUER}", "{ISSUER}");
@@ -133,7 +124,7 @@ class TestMcpSettingsTabsKeepTheirEdits(
         self.assertEqual(settings.mcp_oauth_issuer, before)
 
     def test_read_only_agents_offer_no_save(self):
-        """Where the platform sets both, the tab shows them and no Save.
+        """Where the platform sets both, the section shows them and no Save.
 
         A managed panel's Agents tab showed "Save changes" under two read-only
         fields (visual pass of the release candidate, 29-oct-2026).
@@ -145,28 +136,20 @@ class TestMcpSettingsTabsKeepTheirEdits(
                 const issuer = await field("{self._ISSUER}");
                 if (!issuer.readOnly) throw new Error("the issuer is editable");
                 expectNoSave();
-                await openTab("General");
-                await until("Save on General", saveButton);
             """,
             )
 
-    def test_a_tab_cancelled_while_loading_does_not_stand_in(self):
-        """Agents left before its first load answers: the tab on screen counts.
-
-        Leaving draws Settings again, which cancels the Agents tab still
-        loading and puts another in its place; the first load answers
-        last, and the cancelled tab must not be the one Settings compares
-        and saves.
-        """
+    def test_a_block_answered_after_its_page_went_does_not_stand_in(self):
+        """Agents left before its first load answers: the block on screen counts."""
         self._in_settings(
             "general",
             f"""
             delayRpc("/cloud/mcp/get_settings", 3000, 0);
-            (await tabButton("Agents")).click();
+            (await menuItem("Agents (MCP)")).click();
             await pause(200);
             await openTab("General");
             await pause(3500);
-            await openTab("Agents");
+            await openTab("Agents (MCP)");
             await type("{self._ISSUER}", "{ISSUER}");
             await expectUnsaved();
             await save();

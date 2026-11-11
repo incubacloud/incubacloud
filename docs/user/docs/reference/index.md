@@ -31,7 +31,7 @@ We're working on screen-by-screen reference pages for:
 - Host detail (probe, full setup, audit logs)
 - Backup backend detail (encryption, notifications, providers)
 - Settings → Users (the 5 roles: Stakeholder, Consultant, PM, Developer, Administrator)
-- Settings → Backups (defaults and inheritance)
+- Settings → General → Default backup destination (defaults and inheritance)
 
 If you need one of these urgently, [drop us a line](https://www.incubacloud.io/contactus)
 and we'll move it up the queue.

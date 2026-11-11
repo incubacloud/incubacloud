@@ -108,7 +108,7 @@ data.
 Otherwise, create a bucket at an S3-compatible storage provider and register it
 under **Backup Destinations → New Backend**, as
 [Backup destinations](../backups/index.md#backup-destinations) explains, and
-choose it in **Settings → General → Default Backup Destination**.
+choose it in **Settings → General → Default backup destination**.
 
 Either way, the backups are encrypted with the destination's **passphrase**,
 and without it nobody can read them ([why](../backups/index.md#encryption)).

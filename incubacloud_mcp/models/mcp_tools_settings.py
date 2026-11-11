@@ -42,10 +42,11 @@ SAVE_GENERAL_PARAMS = (
     "move_frozen_source_hours",
     "move_cut_alert_seconds",
 )
-#: What ``save_general_settings`` writes even when it is not sent, from its
-#: own defaults: sent with the value held. The rest it writes only when
-#: sent, so it is sent only when given — the value held would not always
-#: come back the same (a metrics retention of 0 is saved as 1).
+#: Sent with the value held, as the endpoint once wrote these from its own
+#: defaults when they were missing. It writes only what it is sent now (each
+#: section of Settings saves its own), so sending them again changes nothing.
+#: The rest is sent only when given: the value held would not always come
+#: back the same (a metrics retention of 0 is saved as 1).
 ALWAYS_WRITTEN_GENERAL = (
     "autoassign_enabled",
     "default_backup_backend_id",

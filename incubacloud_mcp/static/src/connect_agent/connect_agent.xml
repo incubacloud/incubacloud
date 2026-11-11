@@ -59,7 +59,7 @@
                         This panel's MCP address is not configured yet, so no agent can
                         connect.
                         <t t-if="view.managed">Ask whoever manages this panel.</t>
-                        <t t-else="">A manager sets it in Settings, on the Agents tab.</t>
+                        <t t-else="">A manager sets it in Settings › Agents (MCP).</t>
                     </div>
                 </t>
                 <t t-elif="view.urlProblem">
@@ -68,7 +68,7 @@
                         This panel's MCP address is not a plain web address, so no command
                         is shown for it.
                         <t t-if="view.managed">Ask whoever manages this panel.</t>
-                        <t t-else="">A manager can correct it in Settings, on the Agents tab.</t>
+                        <t t-else="">A manager can correct it in Settings › Agents (MCP).</t>
                     </div>
                 </t>
                 <t t-elif="view.apiKeysRefused">

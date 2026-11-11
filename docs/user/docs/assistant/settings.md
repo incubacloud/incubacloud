@@ -81,7 +81,7 @@ writes again.
 
 ## Limits
 
-- **Monthly limit per user (EUR)**: one value, the same for every user: what each
+- **Monthly limit per user** (in EUR): one value, the same for every user: what each
   user's conversations may cost per month, in euros, approximately (0: no limit).
   When a user reaches it, the assistant stops for them until next month or until
   you raise it. Each user sees their own spending in the chat.

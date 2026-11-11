@@ -4,6 +4,7 @@ import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { IcModal } from "@incubacloud/components/ic_modal/ic_modal";
+import { SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
 import {
     approvalNote,
     canRevoke,
@@ -137,7 +138,7 @@ function emptyForm() {
  */
 export class McpAutoApproval extends Component {
     static template = "incubacloud_mcp.McpAutoApproval";
-    static components = { IcModal };
+    static components = { IcModal, SettingsBlock };
     static props = {};
 
     /** Load the rules. */

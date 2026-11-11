@@ -1,45 +1,41 @@
-"""What is typed on a Settings tab stays there until it is saved.
+"""Settings: one page per section, and a save bar that covers that page.
 
-The Rates tab — and those a module on top adds — is a component of its
-own: its own form, and a save handler it registers with Settings. The
-tabs were drawn with ``t-if``, so leaving one unmounted it: its edits
-went, and its save handler with them. Back on the tab the stored values
-showed again, and Save pressed on another tab never sent the edits. A
-tab now stays mounted once opened, hidden while another one shows.
-
-Settings did not count those edits as unsaved either: no hint, and
-leaving the screen did not ask. And Save sent every tab whose handler
-was registered, changed or not. A tab now registers its state once
-mounted, if it loaded: Settings sends it only when its form changed,
-and counts the change as unsaved until then. What is saved is what was
-sent: an edit made while the request is out stays unsaved. A tab that
-failed to load shows the error and Retry, not a form of defaults, and
-is never sent; and one cancelled while it loaded — Settings drew again
-meanwhile — never stands in for the one on screen.
+Settings is a menu of sections (/cloud/settings/<section>), each drawn by
+the blocks registered for it, here and in the modules on top. A block has
+its own form and joins the page's save bar once it loaded. The bar shows
+only while something on the page is unsaved, counts it, checks every field
+by its declaration before sending, sends only the blocks that changed and
+puts a server error under its field. Leaving the page with unsaved changes
+asks first, so no other section holds edits. What is saved is what was
+sent: an edit made while the request is out stays unsaved. A block that
+failed to load shows the error and Retry, not a form of defaults, and is
+never sent; one that answers after the page moved on never stands in for
+the one on screen.
 """
 from odoo.tests import HttpCase, new_test_user, tagged
 from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
-#: What the steps of a check can use: wait for something, open a tab,
-#: type into a field as a person does, read one back or check it is
-#: not on screen, press Save once it shows (on a tab with something to
-#: save, once that loaded) and wait for its answer, or check it does not
-#: show, read the "Unsaved changes" hint, leave for another screen, and
-#: the panel's requests from the moment it ran: those it made (``sent``),
-#: and some it can hold back or refuse (``delayRpc``, ``failRpc``,
-#: ``failRpcs`` for every url matching a pattern), through the hook
-#: ``rpc`` keeps for tests.
-#: Fields are found by their label among the rows on screen, since a
-#: tab left behind keeps its rows, hidden.
+#: What the steps of a check can use: wait for something, open a section,
+#: type into a field as a person does, read one back or check it is not
+#: on screen, press Save once the bar shows and wait for its answer, read
+#: the bar, leave for another screen and answer the dialog that asks, and
+#: the panel's requests from the moment it ran: those it made (``sent``,
+#: with their parameters in ``calls``), and some it can hold back or
+#: refuse (``delayRpc``, ``failRpc``, ``failRpcs`` for every url matching
+#: a pattern), through the hook ``rpc`` keeps for tests.
+#: Fields are found by their label among the rows on the page; one folded
+#: under Advanced is unfolded first, as a person would.
 _HELPERS = """
 const sent = [];
+const calls = [];
 const rpcStubs = {};
 const rpcRefused = [];
 const { rpc } = odoo.loader.modules.get('@web/core/network/rpc');
 const realRpc = rpc._rpc;
-rpc._rpc = function (url, ...rest) {
+rpc._rpc = function (url, params, ...rest) {
     sent.push(url);
-    const call = () => realRpc.call(this, url, ...rest);
+    calls.push({ url, params });
+    const call = () => realRpc.call(this, url, params, ...rest);
     if (rpcRefused.some((pattern) => pattern.test(url))) {
         return Promise.reject(new Error(`${url} refused`));
     }
@@ -47,9 +43,9 @@ rpc._rpc = function (url, ...rest) {
 };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const delayRpc = (url, ...delays) => {
-    let calls = 0;
+    let count = 0;
     rpcStubs[url] = (call) => pause(
-        delays[Math.min(calls++, delays.length - 1)],
+        delays[Math.min(count++, delays.length - 1)],
     ).then(call);
 };
 const failRpc = (url) => {
@@ -64,28 +60,51 @@ const until = async (what, check) => {
     }
     throw new Error(`gave up waiting for ${what}`);
 };
-const tabButton = (name) => until(`the ${name} tab`, () => [
-    ...document.querySelectorAll('button.rl-tab'),
-].find((button) => button.textContent.trim() === name));
+const menuItem = (name) => until(`the section ${name}`, () => [
+    ...document.querySelectorAll('.ic-set-menu__item'),
+].find((item) => item.textContent.trim() === name));
 const openTab = async (name) => {
-    const tab = await tabButton(name);
-    tab.click();
-    await until(`the ${name} tab to open`, () => tab.classList.contains('active'));
+    const item = await menuItem(name);
+    item.click();
+    await until(`the section ${name} to open`,
+        () => item.getAttribute('aria-current') === 'page'
+            && document.querySelector('.ic-set-title')?.textContent.trim() === name);
 };
-const shownRow = (label) => [...document.querySelectorAll('.rl-frow')]
-    .find((row) => row.offsetParent !== null
-        && row.querySelector(':scope > label')?.textContent.trim() === label);
-const field = (label) => until(
-    `the field "${label}"`, () => shownRow(label)?.querySelector('input'),
-);
+const openSection = openTab;
+const anyRow = (label) => [...document.querySelectorAll('.ic-set-page .ic-set-row')]
+    .find((row) => row.querySelector('.ic-set-label')?.textContent.trim() === label);
+const shownRow = (label) => {
+    const row = anyRow(label);
+    return row && row.offsetParent !== null ? row : null;
+};
+const control = (row) => document.getElementById(row.querySelector('.ic-set-label').htmlFor)
+    || row.querySelector('input, textarea, select, button');
+const field = async (label) => {
+    const row = await until(`the field "${label}"`, () => anyRow(label));
+    const fold = row.closest('.ic-set-adv');
+    const toggle = fold?.querySelector('.ic-set-adv__toggle');
+    if (toggle && toggle.getAttribute('aria-expanded') !== 'true') {
+        toggle.click();
+    }
+    return until(`the field "${label}" to show`, () => shownRow(label) && control(shownRow(label)));
+};
 const expectHidden = (label) => {
-    if (shownRow(label)) throw new Error(`"${label}" shows on another tab`);
+    if (shownRow(label)) throw new Error(`"${label}" shows on this page`);
 };
 const type = async (label, value) => {
-    const input = await field(label);
+    let input = await field(label);
+    if (input.tagName === 'BUTTON' && input.textContent.trim() === 'Replace') {
+        input.click();
+        input = await until(`"${label}" open for a new value`,
+            () => shownRow(label).querySelector('input, textarea'));
+    }
     input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur'));
+    // As a person between two actions: the page draws what was typed
+    // (a check passing again takes its error away) before the next one.
+    await pause(150);
 };
 const expectValue = async (label, value) => {
     const shown = (await field(label)).value;
@@ -93,52 +112,64 @@ const expectValue = async (label, value) => {
         throw new Error(`"${label}" shows ${shown}, not ${value}`);
     }
 };
-const pressSave = async () => (await until('the Save button', () => [
-    ...document.querySelectorAll('.rl-formfoot button'),
-].find((button) => button.textContent.trim() === 'Save changes'))).click();
+const bar = () => document.querySelector('.ic-set-savebar');
+const hint = bar;
+const saveButton = () => [...document.querySelectorAll('.ic-set-savebar button')]
+    .find((button) => button.textContent.trim() === 'Save changes');
+const pressSave = async () => (await until('the Save button', saveButton)).click();
 const saved = async () => {
     const said = await until('the save to answer', () => [
         ...document.querySelectorAll('.ic-toast-msg'),
-    ].map((msg) => msg.textContent.trim())
-        .find((text) => /^(Changes saved|Failed to save)/.test(text)));
-    if (said !== 'Changes saved') throw new Error(said);
+    ].map((msg) => msg.textContent.trim()).find((text) => text === 'Saved')
+        || document.querySelector('.ic-set-alert')?.textContent.trim()
+        || document.querySelector('.ic-set-err')?.textContent.trim());
+    if (said !== 'Saved') throw new Error(said);
 };
 const save = async () => {
     await pressSave();
     await saved();
 };
-const hint = () => document.querySelector('.rl-formfoot .rl-ff-hint');
-const saveButton = () => document.querySelector('.rl-formfoot button');
 const expectNoSave = () => {
-    if (saveButton()) throw new Error('Save shows on a tab with nothing to save');
+    if (saveButton()) throw new Error('Save shows with nothing to save');
 };
-const expectUnsaved = () => until('the unsaved changes hint', hint);
-const expectAllSaved = () => until('the unsaved changes hint to go', () => !hint());
+const expectUnsaved = () => until('the save bar', bar);
+const expectAllSaved = () => until('the save bar to go', () => !bar());
 const leaveFor = (entry) => [...document.querySelectorAll('.ic-nav-label')]
     .find((label) => label.textContent.trim() === entry)
     .click();
+const leaveDialog = () => until('the dialog asking before leaving', () => [
+    ...document.querySelectorAll('.ic-confirm-box'),
+].find((box) => box.textContent.includes('Leave without saving?')));
+const answerLeave = async (leave) => {
+    const box = await leaveDialog();
+    box.querySelector(leave ? '.ic-confirm-actions button:last-child'
+        : '.ic-confirm-btn-cancel').click();
+};
 const expectSent = (url, expected) => {
     if (sent.some((u) => u.endsWith(url)) !== expected) {
         throw new Error(`${url} ${expected ? 'never' : 'was'} sent`);
     }
 };
+const lastParams = (url) => [...calls].reverse().find((c) => c.url.endsWith(url))?.params;
 """
 
 
 class SettingsInBrowser(ChromeStartRetry):
     """Drive the panel's Settings screen in a headless browser.
 
-    A mixin, not a test case, so a module on top checks its own tabs the same way
-    without collecting these tests twice. Mixed into an ``HttpCase``.
+    A mixin, not a test case, so a module on top checks its own sections the
+    same way without collecting these tests twice. Mixed into an ``HttpCase``.
     """
 
-    def _in_settings(self, tab, steps):
-        """Open Settings on *tab* as an Administrator and run *steps*.
+    def _in_settings(self, section, steps, url=None):
+        """Open Settings on *section* as an Administrator and run *steps*.
 
-        :param str tab: the tab Settings opens on, e.g. ``rates``
+        :param str section: the section Settings opens on, e.g. ``rates``
         :param str steps: JavaScript run once the page is loaded, inside
             an async function with the helpers of ``_HELPERS`` in scope;
             it fails the test by throwing
+        :param str url: another address to open instead, e.g. an old
+            ``?tab=`` link
         """
         login = 'settings-tabs-admin'
         new_test_user(
@@ -156,58 +187,104 @@ class SettingsInBrowser(ChromeStartRetry):
             })();
         """.replace('__STEPS__', steps)
         self.browser_js(
-            f'/cloud/settings?tab={tab}', code, login=login, timeout=120,
+            url or f'/cloud/settings/{section}', code, login=login, timeout=120,
         )
 
 
 @tagged('post_install', '-at_install')
-class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
-    """The core Rates tab, left and come back to, or saved from elsewhere."""
+class TestSettingsSections(SettingsInBrowser, HttpCase):
+    """The core sections, edited, checked, saved and left."""
 
     _FIELD = 'GitHub webhook (per client IP)'
 
-    def test_an_edit_survives_a_visit_to_another_tab(self):
-        """Back on Rates, the field shows what was typed, not what is stored."""
+    def test_an_edit_is_unsaved_and_leaving_asks(self):
+        """The bar shows; leaving the section or Settings asks, and staying keeps it."""
         self._in_settings('rates', f"""
+            if (bar()) throw new Error('the bar shows with nothing changed');
             await type('{self._FIELD}', '4321');
-            await openTab('General');
-            expectHidden('{self._FIELD}');
-            await openTab('Rates');
+            await expectUnsaved();
+            if (!bar().textContent.includes('1 setting')) {{
+                throw new Error('the bar does not count the change: ' + bar().textContent);
+            }}
+            (await menuItem('General')).click();
+            await answerLeave(false);
+            await expectValue('{self._FIELD}', '4321');
+            leaveFor('Hosts');
+            await answerLeave(false);
             await expectValue('{self._FIELD}', '4321');
         """)
 
-    def test_save_on_another_tab_stores_the_edit(self):
-        """Save pressed on General sends what was typed on Rates."""
+    def test_save_sends_the_section_only(self):
+        """Logs & retention saves its fields; a General setting is not sent."""
         settings = self.env['cloud.settings']._get()
-        self.assertNotEqual(settings.rate_limit_webhook_per_min, 4321)
-        self._in_settings('rates', f"""
-            await type('{self._FIELD}', '4321');
-            await openTab('General');
+        self.env['ir.config_parameter'].sudo().set_param(
+            'incubacloud.host_autoassign', '1',
+        )
+        self._in_settings('logs', """
+            await type('Job retention', '45');
+            await save();
+            await expectAllSaved();
+            const params = lastParams('/cloud/save_general_settings');
+            if ('autoassign_enabled' in params || !('job_retention_days' in params)) {
+                throw new Error('the save sent another section: ' + JSON.stringify(params));
+            }
+        """)
+        self.env.invalidate_all()
+        self.assertEqual(settings.job_retention_days, 45)
+        self.assertEqual(
+            self.env['ir.config_parameter'].sudo().get_param(
+                'incubacloud.host_autoassign'),
+            '1',
+        )
+
+    def test_discard_puts_the_page_back(self):
+        """Discard returns every field to what was loaded, and the bar goes."""
+        self._in_settings('instances', """
+            const before = (await field('Keep the old copy')).value;
+            await type('Keep the old copy', '7');
+            await expectUnsaved();
+            [...bar().querySelectorAll('button')]
+                .find((b) => b.textContent.trim() === 'Discard').click();
+            await expectAllSaved();
+            await expectValue('Keep the old copy', before);
+            expectSent('/cloud/save_general_settings', false);
+        """)
+
+    def test_a_wrong_value_stops_the_save_under_its_field(self):
+        """Folded under Advanced: it opens, says how to fix it, nothing is sent."""
+        self._in_settings('logs', """
+            await type('Search timeout', '3');
+            await pressSave();
+            const error = await until('the error under the field', () =>
+                shownRow('Search timeout')?.querySelector('.ic-set-err'));
+            if (!error.textContent.includes('Must be 5 seconds or more.')) {
+                throw new Error('the error says: ' + error.textContent);
+            }
+            if (!bar().textContent.includes('1 field needs attention')) {
+                throw new Error('the bar says: ' + bar().textContent);
+            }
+            if ((await field('Search timeout')).getAttribute('aria-invalid') !== 'true') {
+                throw new Error('the field is not marked invalid');
+            }
+            expectSent('/cloud/save_general_settings', false);
+            await type('Search timeout', '20');
             await save();
             await expectAllSaved();
         """)
+        settings = self.env['cloud.settings']._get()
         self.env.invalidate_all()
-        self.assertEqual(settings.rate_limit_webhook_per_min, 4321)
+        self.assertEqual(settings.log_search_timeout_s, 20)
 
-    def test_an_edit_on_rates_is_an_unsaved_change(self):
-        """The footer says so, and leaving Settings asks first."""
-        self._in_settings('rates', f"""
-            await type('{self._FIELD}', '4321');
+    def test_a_refusal_of_the_server_goes_under_its_field(self):
+        """A range the model refuses is said under the ranges, and kept typed."""
+        self._in_settings('edge', """
+            await type('Trusted proxy ranges (override)', '2001:db8:::1/32');
+            await pressSave();
+            const error = await until('the error under the field', () =>
+                shownRow('Trusted proxy ranges (override)')?.querySelector('.ic-set-err'));
+            if (!error.textContent.trim()) throw new Error('the error is empty');
+            await expectValue('Trusted proxy ranges (override)', '2001:db8:::1/32');
             await expectUnsaved();
-            leaveFor('Hosts');
-            await until('the dialog asking before leaving', () => [
-                ...document.querySelectorAll('.ic-confirm-box'),
-            ].find((box) => box.textContent.includes('Unsaved changes')));
-        """)
-
-    def test_save_leaves_an_untouched_tab_alone(self):
-        """Rates opened but not edited: Save does not send it again."""
-        self._in_settings('rates', f"""
-            await field('{self._FIELD}');
-            await openTab('General');
-            await save();
-            expectSent('/cloud/save_general_settings', true);
-            expectSent('/cloud/save_core_rate_limits', false);
         """)
 
     def test_an_edit_made_while_saving_stays_unsaved(self):
@@ -227,30 +304,22 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
         self.env.invalidate_all()
         self.assertEqual(settings.rate_limit_webhook_per_min, 4321)
 
-    def test_a_tab_that_failed_to_load_shows_retry_not_its_form(self):
-        """No form of defaults to edit, nothing sent; Retry loads it.
-
-        Its form would hold defaults, not what is stored: the tab shows
-        the error and Retry instead, and Save leaves it out. Once a retry
-        loads it, it is a tab like the others.
-        """
+    def test_a_block_that_failed_to_load_shows_retry_not_its_form(self):
+        """No form of defaults to edit, no bar; Retry loads it."""
         settings = self.env['cloud.settings']._get()
         before = settings.rate_limit_webhook_per_min
         self._in_settings('general', f"""
-            failRpc('/cloud/get_core_rate_limits');
-            await openTab('Rates');
+            failRpcs(/\\/get_(core_rate_limits|rate_limit_settings)$|\\/mcp\\/get_settings$/);
+            await openTab('Rate limits');
             const failed = await until('the load to fail', () => [
                 ...document.querySelectorAll('.rl-stub[role=alert]'),
             ].find((box) => box.textContent.includes(
                 'Failed to load rate-limit settings')));
             if (shownRow('{self._FIELD}')) {{
-                throw new Error('a tab that failed to load shows its form');
+                throw new Error('a block that failed to load shows its form');
             }}
-            await openTab('General');
-            await save();
-            expectSent('/cloud/save_core_rate_limits', false);
-            await openTab('Rates');
-            delete rpcStubs['/cloud/get_core_rate_limits'];
+            expectNoSave();
+            rpcRefused.length = 0;
             failed.querySelector('button').click();
             await type('{self._FIELD}', '4321');
             await expectUnsaved();
@@ -258,82 +327,48 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
         self.env.invalidate_all()
         self.assertEqual(settings.rate_limit_webhook_per_min, before)
 
-    def test_a_tab_that_failed_to_load_offers_no_save(self):
-        """Save shows on a tab only while something on it can be saved.
-
-        It showed next to Retry on a tab that failed to load (visual pass
-        of the release candidate, 29-oct-2026). Rates holds the sections
-        of other modules too, which load apart: every one is made to fail
-        here, so nothing on the tab can be saved. Retrying brings Save
-        back, and General keeps it throughout.
-        """
-        self._in_settings('general', """
-            failRpcs(/\\/get_(core_rate_limits|rate_limit_settings)$|\\/mcp\\/get_settings$/);
-            await openTab('Rates');
-            await until('the load to fail', () => document.querySelector(
-                '.rl-stub[role=alert]'));
-            await pause(500);
-            expectNoSave();
-            rpcRefused.length = 0;
-            document.querySelector('.rl-stub[role=alert] button').click();
-            await until('Save, once Rates loads', saveButton);
-            await openTab('General');
-            await until('Save on General', saveButton);
-        """)
-
-    def test_a_tab_cancelled_while_loading_does_not_stand_in(self):
-        """Settings draws again while Rates loads: the tab on screen counts.
-
-        Rates is opened, and left before its first load answers, which
-        draws Settings again: that tab is cancelled and another one takes
-        its place. The first load answers last, and the cancelled tab
-        must not be the one Settings compares and saves.
-        """
+    def test_a_block_answered_after_its_page_went_does_not_stand_in(self):
+        """Rate limits left before it loads: back on it, the block on screen counts."""
         self._in_settings('general', f"""
             delayRpc('/cloud/get_core_rate_limits', 3000, 0);
-            (await tabButton('Rates')).click();
+            (await menuItem('Rate limits')).click();
             await pause(200);
             await openTab('General');
             await pause(3500);
-            await openTab('Rates');
+            await openTab('Rate limits');
             await type('{self._FIELD}', '4321');
             await expectUnsaved();
             await save();
             expectSent('/cloud/save_core_rate_limits', true);
         """)
 
-    def test_a_retry_answered_after_its_tab_went_does_not_register(self):
-        """A retry still out when Settings loads again does not register.
-
-        "Check installation", on the GitHub App's second step, loads
-        Settings again: every tab goes down and comes back as another.
-        The retry of the tab that went answers last, and that tab must
-        not stand in for the one now on screen.
-        """
-        app = self.env['cloud.github.app'].sudo().search([], limit=1)
-        if app:
-            app.installation_id = False
-        else:
-            self.env['cloud.github.app'].sudo().create({
-                'app_id': '12345', 'private_key': 'test-key',
-            })
-        self._in_settings('general', f"""
-            failRpc('/cloud/get_core_rate_limits');
-            await openTab('Rates');
-            const failed = await until('the load to fail', () => [
-                ...document.querySelectorAll('.rl-stub[role=alert]'),
-            ].find((box) => box.textContent.includes(
-                'Failed to load rate-limit settings')));
-            delayRpc('/cloud/get_core_rate_limits', 3000, 0);
-            failed.querySelector('button').click();
-            await pause(200);
-            await openTab('GitHub');
-            (await until('Check installation', () => [
-                ...document.querySelectorAll('.rl-settings-body button'),
-            ].find((button) => button.textContent.includes('Check installation'))))
-                .click();
-            await pause(3500);
-            await openTab('Rates');
-            await type('{self._FIELD}', '4321');
-            await expectUnsaved();
+    def test_the_search_leads_to_the_field(self):
+        """A field folded under Advanced: its section opens on it, marked."""
+        self._in_settings('general', """
+            const box = await until('the search box', () => [
+                ...document.querySelectorAll('.ic-set-search input'),
+            ].find((input) => input.offsetParent !== null));
+            box.focus();
+            box.value = 'timeout';
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            const result = await until('the result', () => [
+                ...document.querySelectorAll('.ic-set-result'),
+            ].find((r) => r.textContent.includes('Search timeout')));
+            result.click();
+            await until('the section to open', () =>
+                location.pathname === '/cloud/settings/logs'
+                && location.hash === '#log_search_timeout_s');
+            const row = await until('the field marked', () =>
+                document.querySelector('#ic-set-log_search_timeout_s.ic-set-row--found'));
+            if (row.offsetParent === null) throw new Error('its Advanced stayed folded');
+            await until('Back to results', () => [
+                ...document.querySelectorAll('.ic-set-resultfor button'),
+            ].find((b) => b.textContent.includes('Back to results')));
         """)
+
+    def test_a_link_to_an_old_tab_opens_its_section(self):
+        """Bookmarks and docs that name a tab land on the section it became."""
+        self._in_settings('', """
+            await until('Rate limits open', () =>
+                document.querySelector('.ic-set-title')?.textContent.trim() === 'Rate limits');
+        """, url='/cloud/settings?tab=rates')

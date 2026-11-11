@@ -47,16 +47,18 @@ class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
                 self.assertEqual(len(cells), 1)
 
     def test_the_menu_the_settings_and_the_shell(self):
-        """The user menu's entry, the Settings tabs and the shell's main area."""
+        """The user menu's entry, Settings' registries and the shell's main area.
+
+        The agents' section and their limit join Settings through its
+        registries, not an xpath: the registries must still be there.
+        """
         self.assertIn(
             't-on-click="openNotifModal"',
             self._text("components/app_header/app_header.xml"),
         )
-        settings = self._text("components/settings/settings.xml")
-        self.assertIn('<div class="rl-tabs">', settings)
-        self.assertIn("<CoreRatesTab/>", settings)
-        self.assertIn("t-if=\"state.tab === 'github'\"", settings)
-        self.assertIn('<div t-if="state.openedTabs.rates"', settings)
+        registry = self._text("components/settings/settings_registry.js")
+        self.assertIn('registry.category("incubacloud.settings_sections")', registry)
+        self.assertIn('registry.category("incubacloud.settings_blocks")', registry)
         self.assertIn('<main class="ic-main" role="main">', self._text("app/app.xml"))
 
 
@@ -194,7 +196,7 @@ _SETTINGS_PAGE = """
 
 @tagged("post_install", "-at_install")
 class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, HttpCase):
-    """The page and the Settings tab, opened by a user of each role."""
+    """The page and the Settings section, opened by a user of each role."""
 
     def setUp(self):
         """This panel's MCP address; agents sign in with API keys only."""
@@ -258,10 +260,10 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
                 )
 
     def test_the_agents_settings_tab_opens(self):
-        """A manager opens Settings on the Agents tab and can edit its fields."""
+        """A manager opens Settings on the Agents section and can edit its fields."""
         self._cloud_user("mcp-spa-mgr", group="group_cloud_manager")
         self._open(
-            "/cloud/settings?tab=agents",
+            "/cloud/settings/agents",
             ".ic-mcp-settings input",
             _SETTINGS_PAGE.format(readonly="false"),
             "mcp-spa-mgr",
@@ -272,7 +274,7 @@ class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, Htt
         self._cloud_user("mcp-spa-mgr2", group="group_cloud_manager")
         with self._managed_panel():
             self._open(
-                "/cloud/settings?tab=agents",
+                "/cloud/settings/agents",
                 ".ic-mcp-settings input",
                 _SETTINGS_PAGE.format(readonly="true"),
                 "mcp-spa-mgr2",

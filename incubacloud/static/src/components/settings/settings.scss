@@ -1,37 +1,385 @@
-// ── Settings Page (Relay) ─────────────────────────────────────────────────────
-// Structure + primitives come from relay.scss (rl-page, rl-tabs, rl-saas-fsec,
-// rl-fgrid, rl-frow, rl-ftoggle, rl-sw, rl-wiz, rl-ghcard, rl-formfoot). Only
-// the screen-specific bits below (GitHub wizard inner content) live here.
+// ── Settings (ESTANDAR-FORMULARIOS §1, §7, §9, §11) ─────────────────────────
+// A menu of sections with the search atop it, one page per section, and a
+// save bar that floats while something on the page is unsaved. At 900 px and
+// under the menu becomes a select with the search under it.
 
 .ic-app {
 
-    .rl-settings-body {
-        // max-width: 860px;
-
-        // Each in-tab section is a clearly delimited block: a prominent heading
-        // with a divider above it, so it's obvious which fields belong to which
-        // section. Scoped to settings so the screens of modules on top that reuse
-        // .rl-saas-fsec keep their compact label style.
-        .rl-saas-fsec {
-            font-family: $font-display;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 0;
-            text-transform: none;
-            color: var(--rl-fg);
-            margin: 26px 0 6px;
-            padding-top: 18px;
-            border-top: 1px solid var(--rl-line);
-
-            &:first-child { margin-top: 0; padding-top: 0; border-top: none; }
-        }
-
-        // A tab kept mounted is hidden, not gone, and can stand before the
-        // one shown: the heading right after it is still the first on screen.
-        > [hidden] + .rl-saas-fsec { margin-top: 0; padding-top: 0; border-top: none; }
+    .ic-set {
+        display: grid;
+        grid-template-columns: 236px minmax(0, 1fr);
+        min-block-size: 100%;
+        // The menu's rule runs the page's whole height, past the sticky menu.
+        background: linear-gradient(to right, transparent 235px, var(--rl-line) 235px,
+            var(--rl-line) 236px, transparent 236px);
     }
 
-    // ── GitHub feature card inner content (extends .rl-ghcard) ────────────────
+    // ── The menu ─────────────────────────────────────────────────────────────
+    .ic-set-menu {
+        padding: 24px 14px 40px 18px;
+        // Sticky, and never a scroll box of its own: the search's results
+        // open over the page from inside it and must not be clipped.
+        position: sticky;
+        inset-block-start: 0;
+        align-self: start;
+        z-index: 5;
+    }
+
+    .ic-set-menu__title {
+        font-family: var(--rl-fd);
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 14px;
+        color: var(--rl-fg);
+    }
+
+    .ic-set-menu__cap {
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--rl-muted);
+        margin: 22px 0 6px 10px;
+    }
+
+    .ic-set-menu__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .ic-set-menu__item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-block-size: 32px;
+        padding: 6px 10px;
+        border-radius: var(--rl-rsm);
+        font-size: 13.5px;
+        color: var(--rl-fg2);
+        text-decoration: none;
+
+        &:hover { background: var(--rl-surf2); color: var(--rl-fg); }
+        &:focus-visible { outline: 2px solid var(--rl-green-dim, #0c7a55); outline-offset: 1px; }
+
+        &--on {
+            background: var(--rl-surf2);
+            color: var(--rl-fg);
+            font-weight: 600;
+        }
+    }
+
+    // ── Search ───────────────────────────────────────────────────────────────
+    .ic-set-search {
+        position: relative;
+    }
+
+    .ic-set-search__box {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        background: var(--rl-bg);
+        padding: 0 8px 0 11px;
+        min-block-size: 38px;
+
+        &:focus-within {
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
+        }
+    }
+
+    .ic-set-search__icon { color: var(--rl-muted); font-size: 13px; }
+
+    .ic-set-search .ic-set-search__input {
+        flex: 1 1 auto;
+        min-inline-size: 0;
+        border: 0;
+        box-shadow: none;
+        outline: none;
+        background: transparent;
+        color: var(--rl-fg);
+        font-family: var(--rl-fb);
+        font-size: 13.5px;
+        padding: 8px 0;
+
+        &::-webkit-search-cancel-button { display: none; }
+    }
+
+    .ic-set-search__clear {
+        border: 0;
+        background: transparent;
+        color: var(--rl-green-text);
+        padding: 4px;
+        cursor: pointer;
+        display: inline-flex;
+    }
+
+    .ic-set-search__kbd,
+    .ic-set-results kbd {
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        color: var(--rl-muted);
+        border: 1px solid var(--rl-line2);
+        border-block-end-width: 2px;
+        border-radius: 4px;
+        padding: 0 5px;
+        background: var(--rl-surf);
+        margin-inline-end: 3px;
+    }
+
+    .ic-set-results {
+        position: absolute;
+        z-index: 30;
+        inset-block-start: calc(100% + 6px);
+        inset-inline-start: 0;
+        inline-size: 520px;
+        max-inline-size: calc(100vw - 32px);
+        background: var(--rl-surf);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-r);
+        box-shadow: 0 12px 32px rgba(var(--rl-fg-rgb), 0.16);
+        overflow: hidden;
+    }
+
+    .ic-set-results__head {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-block-end: 1px solid var(--rl-line);
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--rl-muted);
+    }
+
+    .ic-set-results__body {
+        max-block-size: 62vh;
+        overflow-y: auto;
+    }
+
+    .ic-set-results__group {
+        padding-block: 4px;
+        border-block-end: 1px solid var(--rl-line);
+        &:last-child { border-block-end: 0; }
+    }
+
+    .ic-set-results__cap {
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--rl-muted);
+        padding: 10px 14px 4px;
+    }
+
+    .ic-set-result {
+        padding: 8px 14px 8px 30px;
+        cursor: pointer;
+        border-inline-start: 3px solid transparent;
+
+        &:hover, &--active {
+            background: var(--rl-green-soft);
+        }
+        &--active { border-inline-start-color: var(--rl-green); }
+
+        mark {
+            background: var(--rl-amber-soft);
+            color: inherit;
+            padding: 0 1px;
+            border-radius: 2px;
+        }
+    }
+
+    .ic-set-result__label { font-weight: 600; font-size: 13.5px; color: var(--rl-fg); }
+
+    .ic-set-result__adv {
+        font-family: var(--rl-fm);
+        font-size: 10px;
+        font-weight: 400;
+        color: var(--rl-muted);
+        border: 1px solid var(--rl-line2);
+        border-radius: 4px;
+        padding: 0 5px;
+        margin-inline-start: 6px;
+    }
+
+    .ic-set-result__where { font-size: 12px; color: var(--rl-muted); }
+
+    .ic-set-result__help {
+        font-size: 12px;
+        color: var(--rl-fg2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .ic-set-results__more {
+        font-size: 12px;
+        color: var(--rl-muted);
+        padding: 4px 14px 8px 30px;
+    }
+
+    .ic-set-results__none {
+        padding: 14px 16px 6px;
+        font-size: 13.5px;
+        color: var(--rl-fg2);
+
+        p { margin: 0 0 8px; }
+        ul { margin: 0 0 8px; padding-inline-start: 18px; }
+        li { margin-block-end: 4px; }
+    }
+
+    .ic-set-results__foot {
+        padding: 7px 14px;
+        background: var(--rl-surf2);
+        border-block-start: 1px solid var(--rl-line);
+        font-size: 11.5px;
+        color: var(--rl-muted);
+    }
+
+    .ic-set-link {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--rl-green-text);
+        font: inherit;
+        cursor: pointer;
+        &:hover { text-decoration: underline; }
+    }
+
+    // ── The page ─────────────────────────────────────────────────────────────
+    .ic-set-body {
+        padding: 26px 34px 120px;
+        min-inline-size: 0;
+    }
+
+    .ic-set-col {
+        max-inline-size: 920px;
+    }
+
+    .ic-set-mobile { display: none; }
+
+    .ic-set-crumb {
+        font-family: var(--rl-fm);
+        font-size: 11.5px;
+        color: var(--rl-muted);
+        margin-block-end: 6px;
+    }
+
+    .ic-set-resultfor {
+        font-size: 12.5px;
+        color: var(--rl-fg2);
+        margin: 0 0 8px;
+        .fa { color: var(--rl-muted); margin-inline-end: 4px; }
+    }
+
+    .ic-set-title {
+        font-family: var(--rl-fd);
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 4px;
+        color: var(--rl-fg);
+    }
+
+    .ic-set-desc {
+        font-size: 13.5px;
+        color: var(--rl-fg2);
+        margin: 0 0 22px;
+    }
+
+    .ic-set-alert {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        background: var(--rl-red-soft);
+        color: var(--rl-red-text);
+        border-radius: var(--rl-rsm);
+        padding: 10px 14px;
+        margin-block-end: 18px;
+        font-size: 13px;
+    }
+
+    // ── The save bar ─────────────────────────────────────────────────────────
+    .ic-set-savebar {
+        position: fixed;
+        z-index: 40;
+        inset-block-end: 18px;
+        inset-inline-end: 24px;
+        inline-size: calc(100vw - 48px);
+        max-inline-size: 920px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 10px 12px 10px 16px;
+        border-radius: var(--rl-r);
+        background: #121815;
+        color: #eef4f0;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+
+        .rl-btn-ghost {
+            color: #eef4f0;
+            border-color: rgba(255, 255, 255, 0.28);
+            background: transparent;
+            &:hover { background: rgba(255, 255, 255, 0.08); }
+        }
+    }
+
+    .ic-set-savebar__dot {
+        inline-size: 8px;
+        block-size: 8px;
+        border-radius: 50%;
+        background: #efa53e;
+        &--err { background: #ff8a8c; }
+    }
+
+    .ic-set-savebar__text { font-weight: 600; font-size: 13.5px; }
+    .ic-set-savebar__count { font-size: 12px; color: #b7c3bc; }
+    .ic-set-savebar__gap { flex: 1 1 auto; }
+
+    // ── Phones and narrow windows ────────────────────────────────────────────
+    @media (max-width: 900px) {
+        .ic-set { display: block; background: none; }
+        .ic-set-menu { display: none; }
+        .ic-set-body { padding: 18px 4px 120px; }
+
+        .ic-set-mobile {
+            display: block;
+            margin-block-end: 18px;
+
+            .ic-set-search { margin-block-start: 10px; }
+            .ic-set-results { inline-size: 100%; }
+        }
+
+        .ic-set-msel {
+            inline-size: 100%;
+            min-block-size: 42px;
+            border: 1px solid var(--rl-line2);
+            border-radius: var(--rl-rsm);
+            background: var(--rl-bg);
+            color: var(--rl-fg);
+            font-family: var(--rl-fb);
+            font-size: 14px;
+            padding: 8px 12px;
+        }
+
+        .ic-set-crumb { display: none; }
+
+        .ic-set-savebar {
+            inset-inline: 8px;
+            inset-block-end: 8px;
+            inline-size: auto;
+        }
+        .ic-set-savebar__count { display: none; }
+    }
+
+    // ── What the GitHub App's steps draw inside their block ──────────────────
     .rl-set-actions {
         display: flex;
         gap: 10px;
@@ -54,26 +402,24 @@
 
     .rl-set-hint {
         margin: 8px 0 0;
-        font-size: 11px;
-        color: var(--rl-faint);
-        font-style: italic;
+        font-size: 12.5px;
+        color: var(--rl-muted);
     }
 
     .rl-set-hintbox {
-        font-size: 12px;
+        font-size: 12.5px;
         color: var(--rl-muted);
-        background: var(--rl-surf);
+        background: var(--rl-surf2);
         border-left: 3px solid var(--rl-green);
         padding: 8px 12px;
         border-radius: 0 var(--rl-rsm) var(--rl-rsm) 0;
         margin-bottom: 14px;
         line-height: 1.5;
 
-        .fa { margin-right: 6px; color: var(--rl-green); }
+        .fa { margin-right: 6px; color: var(--rl-green-text); }
         strong { color: var(--rl-fg2); }
     }
 
-    // ── Status grid (connected step) ─────────────────────────────────────────
     .rl-set-status {
         display: grid;
         grid-template-columns: 130px 1fr;
@@ -98,44 +444,12 @@
 
     .rl-set-inline-msg {
         margin: 10px 0 0;
-        font-size: 12px;
+        font-size: 12.5px;
         padding: 6px 10px;
         border-radius: var(--rl-rsm);
 
-        &--success { color: var(--rl-green); background: var(--rl-green-soft); }
+        &--success { color: var(--rl-green-text); background: var(--rl-green-soft); }
         &--info    { color: var(--rl-cyan-text); background: rgba(var(--rl-cyan-rgb), 0.1); }
         &--error   { color: var(--rl-red-text); background: var(--rl-red-soft); }
     }
-
-    // ── Manual configuration (collapsible) ───────────────────────────────────
-    .rl-set-manual-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        color: var(--rl-muted);
-        cursor: pointer;
-        padding: 12px 0 6px;
-        user-select: none;
-        transition: color 0.15s;
-
-        &:hover { color: var(--rl-fg); }
-
-        .fa { font-size: 10px; }
-    }
-
-    .rl-set-manual {
-        margin-top: 12px;
-        padding: 16px;
-        border: 1px solid var(--rl-line);
-        border-radius: var(--rl-r);
-        background: var(--rl-surf);
-    }
-
-    .rl-set-pem {
-        font-family: var(--rl-fm) !important;
-        font-size: 12px;
-        line-height: 1.5;
-    }
-
 }

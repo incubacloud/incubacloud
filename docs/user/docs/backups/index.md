@@ -86,7 +86,7 @@ A MinIO policy that gives a key exactly what backups need, on the bucket
 ### Use it
 
 Choose the destination on an instance, on its project, or for every production
-instance in **Settings → General → Default Backup Destination**. An instance
+instance in **Settings → General → Default backup destination**. An instance
 uses its own if it has one, else its project's, else the default.
 
 ## How long backups are kept
