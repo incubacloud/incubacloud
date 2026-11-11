@@ -218,6 +218,10 @@ is unchanged.
   name its text gives.
   The stored secrets' «Replace» is such a button: its row takes `button`
   while the secret shows as stored, and names the input once replaced.
+  Pressing «Replace» moves the focus to the input that opens, and
+  «Keep stored» returns it to «Replace», so the focus no longer falls to
+  the page when the button it was on goes away. A label that names no
+  control no longer carries `for="null"`, nor every other label `id="null"`.
 - **Connect as user lists the users of an Odoo 8.0 instance.** That
   version's `res_users` has no `share` column (base adds it from 9.0), so
   its internal users are taken from `base.group_user`.

@@ -18,7 +18,7 @@
  * the save bar.
  */
 
-import { Component, useState } from "@odoo/owl";
+import { Component, useEffect, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { RlSelect } from "../rl_select/rl_select";
 import { fieldProblem, settingField } from "../settings/settings_registry";
@@ -173,6 +173,30 @@ export class SettingField extends Component {
         this.api = formApi(this.env);
         this.form = useState(this.props.form);
         this.state = useState({ replacing: false });
+        // Where the focus goes once the control it was on is gone: "edit"
+        // (the input opened) or "stored" (the Replace button), set by the
+        // click and taken on the render that follows.
+        this.focusNext = null;
+        useEffect(() => this.restoreFocus(), () => [this.showsStored]);
+    }
+
+    /**
+     * Give the focus to the control that took the place of the one the
+     * reader pressed, so it does not fall to the page and a screen reader
+     * keeps its place. Runs after each render that flips a secret between
+     * stored and open; does nothing unless a click asked for it.
+     */
+    restoreFocus() {
+        const target = this.focusNext;
+        this.focusNext = null;
+        if (!target) {
+            return;
+        }
+        const row = document.getElementById(`ic-set-${this.props.id}`);
+        const control = target === "edit"
+            ? row?.querySelector(".ic-set-secret-edit .ic-set-input")
+            : row?.querySelector(".ic-set-secret button");
+        control?.focus();
     }
 
     /** @returns {object} the field's declaration */
@@ -255,13 +279,15 @@ export class SettingField extends Component {
         return _t("New value");
     }
 
-    /** Open a stored secret for a new value. */
+    /** Open a stored secret for a new value, and move the focus to the input. */
     replace() {
+        this.focusNext = "edit";
         this.state.replacing = true;
     }
 
-    /** Keep the stored secret: drop what was typed over it. */
+    /** Keep the stored secret: drop what was typed over it, and return the focus to Replace. */
     keep() {
+        this.focusNext = "stored";
         this.state.replacing = false;
         this.set("");
     }
