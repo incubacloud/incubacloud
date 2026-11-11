@@ -430,6 +430,21 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         self.assertLessEqual(rule.expires_at, fields.Datetime.now() + timedelta(days=4))
         self.assertGreater(rule.expires_at, fields.Datetime.now() + timedelta(days=2))
 
+    def test_a_date_past_the_calendar_or_two_periods_are_refused(self):
+        """The last day of year 9999 ends past what a datetime holds in UTC
+        for an Administrator west of it, and a number of days and a date
+        are two periods: both refused, not a server error or one of the
+        two taken."""
+        self.admin.sudo().tz = "America/New_York"
+        soon = fields.Date.to_string(fields.Date.today() + timedelta(days=3))
+        for kwargs in (
+            {"days": None, "expires_on": "9999-12-31"},
+            {"days": 7, "expires_on": soon},
+        ):
+            with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
+                with self.assertRaises(UserError):
+                    self._grant(self.dev, self.credential, **kwargs)
+
     def test_there_is_no_longest_period(self):
         """More than 90 days, as days or as a date, is granted (10-nov-2026)."""
         rule = self._grant(self.dev, self.credential, days=400)
