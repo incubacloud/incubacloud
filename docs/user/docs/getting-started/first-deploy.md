@@ -99,6 +99,8 @@ new tab and follow it live. You'll see the steps in order:
 
 When the job ends in green, your instance is up.
 
+See the boot test stop a broken push while production keeps running: [watch the 98-second video](https://youtu.be/E5u5PfTSKeo).
+
 !!! note "Another action already running?"
     An instance runs one action at a time. If something else is running on it,
     the deploy is not refused: it waits its turn — the panel says *Queued behind
