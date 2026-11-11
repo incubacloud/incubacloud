@@ -17,11 +17,16 @@ attempted; the point of most assertions is precisely that the guard
 short-circuits *before* reaching the remote host.
 """
 import asyncio
+import contextlib
+import io
+import json
 import shlex
 from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 import asyncssh
+import psycopg2
+import psycopg2.extensions
 
 from odoo.exceptions import AccessError
 from odoo.http import Request
@@ -339,6 +344,40 @@ class TestConnectAsScripts(ConnectAsBase):
         # The SQL is interpolated inside a double-quoted literal: a
         # newline there would break the generated script.
         self.assertNotIn('\n', connect_ctl._IS_ADMIN_SQL)
+
+    def _run_get_users(self, has_share_column):
+        """Run the users script with psycopg2 faked; return the SQL it sent.
+
+        :param has_share_column: whether information_schema reports
+            ``res_users.share`` (9.0 on) or not (8.0).
+        :return: list of the SQL strings executed, in order.
+        """
+        cur = MagicMock(spec=psycopg2.extensions.cursor)
+        cur.fetchone.return_value = (1,) if has_share_column else None
+        cur.fetchall.return_value = []
+        conn = MagicMock(spec=psycopg2.extensions.connection)
+        conn.cursor.return_value = cur
+        script = connect_ctl._GET_USERS_SCRIPT.format(
+            db='prod', user='odoo', password='x',
+            is_admin_sql=connect_ctl._IS_ADMIN_SQL,
+        )
+        out = io.StringIO()
+        with patch.object(psycopg2, 'connect', return_value=conn), \
+                contextlib.redirect_stdout(out):
+            exec(compile(script, '<remote>', 'exec'), {})
+        self.assertTrue(json.loads(out.getvalue())['ok'], out.getvalue())
+        return [c.args[0] for c in cur.execute.call_args_list]
+
+    def test_get_users_script_filters_by_share_where_the_column_exists(self):
+        sql = self._run_get_users(has_share_column=True)[-1]
+        self.assertIn('u.share = false', sql)
+        self.assertNotIn('group_user', sql)
+
+    def test_get_users_script_uses_base_group_user_without_share_column(self):
+        """8.0 has no res_users.share: internal users are base.group_user."""
+        sql = self._run_get_users(has_share_column=False)[-1]
+        self.assertNotIn('u.share', sql)
+        self.assertIn("d.name = 'group_user'", sql)
 
     def test_inject_script_refuses_admin_when_not_allowed(self):
         script = connect_ctl._INJECT_SESSION_SCRIPT.format(

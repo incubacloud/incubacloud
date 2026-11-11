@@ -48,10 +48,26 @@ try:
     import psycopg2
     conn = psycopg2.connect(host='db', dbname={db!r}, user={user!r}, password={password!r})
     cur = conn.cursor()
+    # res_users.share is base's from 9.0; on 8.0 only the share module adds
+    # it, and an internal user is one of base.group_user, which is what
+    # share computes later.
+    cur.execute(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'res_users' AND column_name = 'share'"
+    )
+    if cur.fetchone():
+        internal = "u.share = false"
+    else:
+        internal = (
+            "EXISTS (SELECT 1 FROM res_groups_users_rel r "
+            "JOIN ir_model_data d ON d.model = 'res.groups' "
+            "AND d.res_id = r.gid WHERE r.uid = u.id "
+            "AND d.module = 'base' AND d.name = 'group_user')"
+        )
     cur.execute(
         "SELECT u.id, p.name, u.login, {is_admin_sql} FROM res_users u "
         "JOIN res_partner p ON p.id = u.partner_id "
-        "WHERE u.active = true AND u.share = false ORDER BY p.name"
+        "WHERE u.active = true AND " + internal + " ORDER BY p.name"
     )
     print(json.dumps({{'ok': True, 'users': [
         {{'id': r[0], 'name': r[1], 'login': r[2], 'is_admin': bool(r[3])}}
