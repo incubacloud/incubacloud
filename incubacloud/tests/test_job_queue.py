@@ -385,6 +385,38 @@ class TestAdmission(_QueueCase):
         with self.assertRaisesRegex(UserError, "already queued"):
             self._enqueue("restore_instance", payload={"backup": "b"})
 
+    def test_the_refusal_asks_to_cancel_only_who_may_cancel(self):
+        """A restore is a developer's type: a consultant is told to wait."""
+        consultant = new_test_user(
+            self.env, login="queue-consultant",
+            groups="base.group_user,incubacloud.group_cloud_consultant",
+        )
+        developer = new_test_user(
+            self.env, login="queue-developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        self._job("deploy_instance")
+        self._enqueue("restore_instance", payload={"backup": "a"})
+        for user, ending in (
+            (consultant, "wait for it to finish."),
+            (developer, "cancel it first."),
+            (self.env.user, "cancel it first."),
+        ):
+            with self.subTest(user=user.login):
+                # How server code asks on a person's behalf: superuser
+                # rights, the person still the caller.
+                jobs = self.Job.with_user(user).sudo()
+                with self.assertRaises(UserError) as caught:
+                    jobs.enqueue(
+                        self.host.id, self.inst.id, "restore_instance",
+                        payload={"backup": "b"},
+                    )
+                self.assertEqual(
+                    caught.exception.args[0],
+                    "A Restore Database is already queued for this instance; "
+                    + ending,
+                )
+
     def test_an_exclusive_job_only_a_fresh_read_sees_refuses_a_second(self):
         """Committed by another request after this one's snapshot."""
         self._job("deploy_instance")

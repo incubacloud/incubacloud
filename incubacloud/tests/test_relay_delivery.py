@@ -612,6 +612,23 @@ class TestRelayTestMailAsker(_RelayCase):
                 call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted)
         self.assertEqual(enqueue.call_count, RELAY_TEST_MAILS_PER_HOUR)
 
+    def test_the_refusal_of_a_second_test_asks_to_cancel_only_who_may(self):
+        """A consultant cannot cancel the manager's type: told to wait."""
+        waiting = self._job("relay_test_mail", user=self.consultant)
+        waiting.state = "queued"
+        for user, ending in (
+            (self.consultant, "wait for it to finish."),
+            (self.manager, "cancel it first."),
+        ):
+            with self.subTest(user=user.login):
+                with self.assertRaises(UserError) as caught:
+                    self.inst.with_user(user).send_relay_test_mail()
+                self.assertEqual(
+                    caught.exception.args[0],
+                    "A Relay Test Mail is already queued for this instance; "
+                    + ending,
+                )
+
     def test_the_panel_offers_cancel_and_retry_to_who_may_use_them(self):
         """A consultant's own test mail is a manager's type to stop."""
         test_mail = self._job("relay_test_mail", user=self.consultant)
