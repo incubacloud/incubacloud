@@ -37,7 +37,9 @@
 #   stopped   there when ``stop`` signalled it
 #
 # Orders:
-#   start   Under a lock of this account. A step whose ``pid`` is there
+#   start   Under a lock of this account. The step's command runs with
+#           the umask of who starts it, as it would attached; the files
+#           of <dir> are created under 077. A step whose ``pid`` is there
 #           already started (or ended): nothing is done, exit 0. Exit 73
 #           when a step of another directory holds the same scope and
 #           still runs (it says of which job), 74 when something that is
@@ -68,6 +70,9 @@
 # ``start``, ``stop`` and ``clean`` can be repeated; ``read`` and
 # ``result`` change nothing.
 set -eu
+# The caller's, for the step's command (``_run``): a step apart creates
+# files as the same command attached would. Read before the 077 below.
+CALLER_UMASK="$(umask)"
 umask 077
 
 #: Header of ``read``: the version tells a panel what it parses.
@@ -284,7 +289,7 @@ cmd_start() {
         cp -- "${BASH_SOURCE[0]}" "$dir/ctl.sh"
     fi
     # Descriptor 9 holds the lock: the step must not keep it.
-    setsid -f nohup bash "$dir/ctl.sh" _run "$dir" "$cap" \
+    setsid -f nohup bash "$dir/ctl.sh" _run "$dir" "$cap" "$CALLER_UMASK" \
         </dev/null >/dev/null 2>&1 9>&-
     # Held until the step wrote its ``pid``: a second ``start`` then finds
     # it and does nothing.
@@ -299,11 +304,16 @@ cmd_start() {
     die "the step did not start within 10 s: its directory was removed"
 }
 
-# The step's own process: run the command under its cap, then record how
-# it ended. Not an order for the panel.
+# The step's own process: run the command under its cap, with umask $3
+# (022 when it is not one), then record how it ended. Not an order for the
+# panel.
 cmd_run() {
-    local dir="$1" cap="$2" rc deadline
+    local dir="$1" cap="$2" mask="${3:-}" rc deadline
+    [[ "$mask" =~ ^[0-7]{3,4}$ ]] || mask=022
     cd "${HOME:-/}" 2>/dev/null || cd /
+    # Created before the command's umask is set: they stay 0600.
+    : >>"$dir/log"
+    : >>"$dir/out"
     printf '%s %s %s\n' "$$" "$$" "$(starttime "$$")" >"$dir/pid.tmp"
     mv -f "$dir/pid.tmp" "$dir/pid"
     # A handler, not an ignore: ignored signals are inherited, handled ones
@@ -313,8 +323,11 @@ cmd_run() {
     {
         trap ':' TERM
         rc=0
+        # In this subshell only: what the step records below stays 077.
+        umask "$mask"
         timeout --kill-after="$KILL_AFTER_S" "$cap" \
             bash -c "$(cat "$dir/cmd")" 2>>"$dir/log" || rc=$?
+        umask 077
         printf '%s\n' "$rc" >"$dir/rc"
     } </dev/null | (trap '' TERM; exec tee -a "$dir/out") >>"$dir/log"
     rc="$(cat "$dir/rc" 2>/dev/null || printf '143')"
