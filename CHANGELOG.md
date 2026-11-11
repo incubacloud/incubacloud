@@ -35,7 +35,10 @@ next deploy or rebuild, which downloads all its repositories once; a
 server keeps one tree of each commit of Odoo its instances are on, about
 1.2 GB for 19.0.
 The Metrics tab needs no change on the hosts: its charts read the series
-the agents already send.
+the agents already send. The hardening recipe changes (fail2ban, below), so
+every hardened host reads `host_hardening_outdated` at the next hourly
+check until its hardening is re-applied (**Re-apply Hardening**); nothing
+re-runs by itself.
 
 ### Added
 
@@ -283,6 +286,25 @@ the agents already send.
 
 ### Security
 
+- **fail2ban counts the failed SSH logins to accounts that exist.** In the
+  `normal` mode Debian ships, a key login to root that fails logs only
+  `Connection closed by authenticating user root … [preauth]`, which the
+  stock filter does not count: on Debian 13 three such attempts gave no
+  `Found`, and only made-up user names were ever banned. The sshd jail now
+  runs in `aggressive` mode, which also counts disconnections before
+  authentication, a scanner's `[preauth]` close and a malformed banner. Each
+  attempt counts once: the `Invalid user …` and `User … not allowed because …`
+  lines that precede the counted close are ignored (an
+  `/etc/fail2ban/filter.d/sshd.local` on top of the stock filter), and
+  OpenSSH 10's login-grace timeout (`Timeout before authentication for
+  connection from …`), which the stock filter cannot read, counts too. The
+  jail names `sshd-session`, the process OpenSSH 10 logs authentication as,
+  in its `journalmatch` beside `ssh.service` and `sshd`. A login that
+  succeeds never counts, and the addresses the firewall trusts, the panel
+  included, stay exempt. Measured with fail2ban 1.1.0 against OpenSSH 10.0's
+  lines: three attempts as root with a stranger's key, three with a made-up
+  user, one with a user outside `AllowUsers` and one timeout count 3, 3, 1
+  and 1; the panel's and a legitimate user's logins count 0.
 - **No Git credential in a 19.0 image either.** A 19.0 instance deployed
   or rebuilt with this version holds no token in its image, its build, its
   container or the `repos.yaml` on its server. One not rebuilt yet keeps the
