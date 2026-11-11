@@ -2175,19 +2175,57 @@ class CloudJob(models.Model):
             ("job_type_id", "=", job_type.id),
         ]
         if self.sudo().search_count(domain) or self._fresh_only(domain):
-            if scope[0]:
+            may_cancel = self._caller_may_cancel_type(job_type, scope)
+            if scope[0] and may_cancel:
                 message = _(
                     "A %(type)s is already queued for this instance; "
+                    "cancel it first.",
+                    type=job_type.name,
+                )
+            elif scope[0]:
+                message = _(
+                    "A %(type)s is already queued for this instance; "
+                    "wait for it to finish.",
+                    type=job_type.name,
+                )
+            elif may_cancel:
+                message = _(
+                    "A %(type)s is already queued for this host; "
                     "cancel it first.",
                     type=job_type.name,
                 )
             else:
                 message = _(
                     "A %(type)s is already queued for this host; "
-                    "cancel it first.",
+                    "wait for it to finish.",
                     type=job_type.name,
                 )
             raise UserError(message)
+
+    @api.model
+    def _caller_may_cancel_type(self, job_type, scope):
+        """Whether the caller may cancel a waiting job of *job_type* in *scope*.
+
+        The criterion of ``_reader_may_control``: the role the type asks
+        for (``_check_job_type_allowed``). Server code asks for a job on
+        a person's behalf with superuser rights, which that check lets
+        through, so it is put to the person without them; the platform
+        itself (superuser, a cron) may cancel whatever it likes.
+
+        :param job_type: the ``cloud.job.type`` record
+        :param scope: the queue, as ``_scope_of_step`` returns it
+        :return: True when the caller may cancel such a job there
+        :rtype: bool
+        """
+        if self.env.uid == SUPERUSER_ID:
+            return True
+        try:
+            self.with_user(self.env.uid)._check_job_type_allowed(
+                job_type.code, scope[0],
+            )
+        except AccessError:
+            return False
+        return True
 
     @api.model
     def _waiting_entry_keys(self, scope):

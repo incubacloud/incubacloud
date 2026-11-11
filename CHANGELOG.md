@@ -300,6 +300,11 @@ is unchanged.
   job's log held only the exception; it now adds that the restore did not
   start, that the instance stays as it was and to try again or contact
   support.
+- **A refused second exclusive job asks to cancel only who can.** The
+  refusal of a job whose type lets one wait at most (the relay's test
+  mail, a restore, a delete) says «cancel it first» to a reader who may
+  cancel that type, and «wait for it to finish» to one who may not, a
+  consultant on the relay's test mail.
 
 ---
 
