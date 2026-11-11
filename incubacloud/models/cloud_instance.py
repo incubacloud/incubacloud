@@ -1808,7 +1808,7 @@ class CloudInstance(models.Model):
     def _extra_env_files(self):
         """Files shipped into the instance directory on every build.
 
-        Written by deploy, rebuild and warm claim after copier, before
+        Written by deploy and rebuild after copier, before
         the stack starts, readable by their owner only — they hold
         credentials. The content is never logged. A file nobody lists
         any more stays on the host until whoever listed it removes it.

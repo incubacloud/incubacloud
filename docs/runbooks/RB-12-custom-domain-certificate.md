@@ -13,8 +13,8 @@ certificate, or one loaded by hand.
 
 !!! warning "Selecting the option is only half the job"
     The option does not upload anything. Load the certificate on the
-    host *first*, then switch the domain over. Every deploy, rebuild and
-    warm claim checks this before touching the host: if the host holds
+    host *first*, then switch the domain over. Every deploy and rebuild
+    checks this before touching the host: if the host holds
     no certificate at all it **stops** and names the domain; if the
     host's default certificate does not cover the name it logs a
     warning. A certificate loaded by hand (step 2B) cannot be read from

@@ -3263,10 +3263,10 @@ msgstr "Incluir cobros"
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/auto_approval/auto_approval.xml:0
 msgid ""
-"Include charges: orders, purchases and plan changes billed to your account\n"
+"Include charges: orders, purchases and other changes billed to your account\n"
 "                    run without asking too. Unticked, they still ask for approval."
 msgstr ""
-"Incluir cobros: los pedidos, las compras y los cambios de plan que se "
+"Incluir cobros: los pedidos, las compras y otros cambios que se "
 "facturan a su cuenta también se ejecutan sin preguntar. Sin marcar, siguen "
 "pidiendo aprobación."
 

@@ -143,7 +143,7 @@
                 <label class="ic-mcp-auto-charges" t-if="state.data.charges">
                     <input type="checkbox" t-att-checked="state.grant.form.includeCharges"
                            t-on-change="(ev) => this.setField('includeCharges', ev.target.checked)"/>
-                    Include charges: orders, purchases and plan changes billed to your account
+                    Include charges: orders, purchases and other changes billed to your account
                     run without asking too. Unticked, they still ask for approval.
                 </label>
 

@@ -208,7 +208,7 @@ VERSIONS = {
     "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
-    # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the
+    # Offered since core 1.0.198; the run of the
     # series (``qa-run -m versiones``) tests it with the rest. PostgreSQL 16
     # to 18, as the template requires; odoo db, since click-odoo-contrib
     # 1.24 refuses its database commands on 20 (lab of 22-oct-2026);
