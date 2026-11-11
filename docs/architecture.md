@@ -285,7 +285,8 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
   TERM to the session, a wait, KILL; `clean` removes the directory once
   nothing lives. One live step per instance, or per host (exit 73: the job
   waits 30 s). A server whose logind kills an account's processes at
-  logout (exit 78) runs the step attached, and that job never parks.
+  logout (exit 78), or that lacks `flock`, `setsid`, `timeout`, `pgrep` or
+  `pkill` (exit 79), runs the step attached, and that job never parks.
 - **The checkpoint** (`cloud.job.checkpoint`, one row per job, no access
   for any role: `sudo` and SQL only). The step that comes next, the
   running step's start and log offset, the park and when it ends, the
@@ -342,9 +343,16 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
   nor a step of a chain waiting for the one before), with the channels the
   runner reads (`ODOO_QUEUE_JOB_CHANNELS`, else `[queue_job] channels`,
   else `root:1`): the process that dispatches and the runner must see the
-  same string. A job held back stays `queued` with `channel_wait_since`;
-  when a job ends, or one that is not parked sleeps, `_wake_channel_waiters`
-  serves those held by priority and age, and the sweep in the same order.
+  same string. The jobs a transaction dispatched count for its next
+  `enqueue` (`cr.postcommit.data`), which a fresh cursor cannot see yet. A
+  job held back stays `queued` with `channel_wait_since`; when a job ends,
+  or one that is not parked sleeps, `_wake_channel_waiters` serves those
+  held by priority and age once the transaction commits, read on a fresh
+  cursor and before the queue of the job that ended; a channel that
+  refuses one is not tried again for the rest. A chain's step that ends
+  done leaves its slot to the next step and wakes nobody. Held for
+  `CHANNEL_PROBE_PATIENCE_S`, a job stops counting the probes that are due
+  and not started. The sweep serves the held in the same order.
   `[incubacloud] channel_gate = off` turns it off without a deploy. In
   tests the gate is open unless the test asks for it (`ic_channel_gate`).
 - **What a person sees.** A parked job reads *Running · on the server,
@@ -371,6 +379,7 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
 | `DETACHED_RECONNECT_GAP_S`, `DETACHED_CONTACT_GRACE_S` | 30, 600 | The connection retries' own: they cover a host rebooting for its updates |
 | `CANCEL_TERM_WAIT_S`; reconciliation | 60; 20 | The transport's wait for an `EXIT` trap; 20 fits the reconciliation's hook budget |
 | `PARKED_OVERDUE_S` | 600 | Two of Odoo.sh's sweeps; then the job says it waits for a slot |
+| `CHANNEL_PROBE_PATIENCE_S` | 120 | One pass of the sweep: with `root:1`, a person's job does not wait for every batch of probes |
 | Step cap on the server | the step's `timeout`, else 3600 s | As in the request; the panel stops a step still running 120 s past it |
 
 ### Implementing a new executor

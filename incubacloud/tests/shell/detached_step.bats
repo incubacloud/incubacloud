@@ -288,6 +288,24 @@ wait_state() {
     [ ! -e "$D" ]
 }
 
+@test "a server without a tool the orders need refuses: 79" {
+    local tool name bare="$TMP/bare"
+    for tool in flock setsid timeout pgrep pkill; do
+        mkdir -p "$bare"
+        # Every command of the PATH but this one.
+        for name in /usr/bin/* /bin/* "$TMP"/bin/*; do
+            [ "$(basename "$name")" = "$tool" ] && continue
+            [ -d "$name" ] && continue
+            ln -sfn "$name" "$bare/$(basename "$name")"
+        done
+        PATH="$bare" run "$BASH" "$SCRIPT" start "$D" 60 instance:7 41 Build 'true'
+        [ "$status" -eq 79 ]
+        [[ "$output" == *"lacks $tool"* ]]
+        [ ! -e "$D" ]
+        rm -rf "$bare"
+    done
+}
+
 @test "a path that is not this account's directory refuses: 74" {
     ln -s "$TMP/elsewhere" "$D"
     run start "$D" 'true'

@@ -372,6 +372,14 @@ class TestTheLockOutlivesAPark(_HostLockBase):
         row.unlink()
         other.pre_run_checks()  # the parked job ended: must not raise
 
+    def test_the_deferral_names_the_job_that_holds_the_host(self):
+        """The log of the build that waits says which job it waits for."""
+        self._park()
+        other = self._other_build()
+        with self.assertRaises(RetryableJobError) as caught:
+            other.pre_run_checks()
+        self.assertIn(f"(job #{self.parked.job.id})", str(caught.exception))
+
     def test_a_parked_build_waits_for_the_one_about_to_defer(self):
         """It comes back while another build holds the lock for an instant."""
         row = self._park(take_lock=False)

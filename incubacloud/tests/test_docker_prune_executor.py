@@ -32,7 +32,11 @@ from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models import docker_prune_executor
-from odoo.addons.incubacloud.models.abstract_executor import HANDOFF_SWEEP
+from odoo.addons.incubacloud.models.abstract_executor import (
+    DETACHED_GIVE_UP_AFTER_CAP_S,
+    HANDOFF_SWEEP,
+    detached_dir,
+)
 from odoo.addons.incubacloud.models.docker_prune_executor import (
     NETWORK_ALERT_CODE,
     PROTECT_LABEL,
@@ -144,7 +148,8 @@ class TestDockerPruneProtectFilter(TransactionCase):
 
     def test_executor_feeds_the_label_to_the_playbook(self):
         """The values that actually run come from ``PROTECT_LABEL`` and
-        the host's sweep: ``TMP_SWEEP`` while no restore waits there."""
+        the host's sweep: ``TMP_SWEEP`` while no restore waits there, and
+        the step directories no open checkpoint holds."""
         host = self.env["cloud.host"].create({
             "name": "prune-host", "ip_address": "198.51.100.71",
             "user": "root", "wildcard_domain": "prune.example.com",
@@ -166,7 +171,8 @@ class TestDockerPruneProtectFilter(TransactionCase):
         )
         self.assertEqual(
             docker_prune_executor.tmp_sweep(self.env, host),
-            docker_prune_executor.TMP_SWEEP,
+            f"{docker_prune_executor.TMP_SWEEP};"
+            f" {docker_prune_executor.detached_dir_sweep(self.env)}",
         )
 
     def test_the_helper_image_is_prepared_where_an_instance_fetches(self):
@@ -586,6 +592,106 @@ class TestTheDailySweepOfTmp(TransactionCase):
                 check=False, capture_output=True, text=True,
             )
             self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    def _step_job(self, closed=False, next_index=1):
+        """A job with a checkpoint, open or *closed*, at step *next_index*."""
+        host = self.env["cloud.host"].create({
+            "name": "sweep-host", "ip_address": "10.0.0.91", "user": "ubuntu",
+            "wildcard_domain": "sweep.example.com",
+        })
+        job = self.env["cloud.job"].sudo().create({
+            "host_id": host.id,
+            "job_type_id": self.env["cloud.job.type"].search([], limit=1).id,
+            "name": "Rebuild",
+        })
+        self.env["cloud.job.checkpoint"].sudo().create({
+            "job_id": job.id,
+            "queue_job_uuid": f"sweep-qj-{job.id}",
+            "next_index": next_index,
+            "closed": closed,
+        })
+        return job
+
+    def test_the_jobs_sweep_takes_the_step_directories_nobody_follows(self):
+        """``tmp_sweep`` carries the step directories' part."""
+        host = self.env["cloud.host"].create({
+            "name": "sweep-host", "ip_address": "10.0.0.92", "user": "ubuntu",
+            "wildcard_domain": "sweep.example.com",
+        })
+        sweep = docker_prune_executor.tmp_sweep(self.env, host)
+        self.assertTrue(sweep.endswith(
+            docker_prune_executor.detached_dir_sweep(self.env),
+        ))
+        self.assertNotIn(".incubacloud-detached-", docker_prune_executor.TMP_SWEEP)
+
+    def test_lab_a_step_directory_goes_once_nobody_follows_it(self):
+        """Real directories: past its cap and the reconciliation's hour, a
+        step directory of no checkpoint or of a closed one goes; one of an
+        open checkpoint, one whose cap has not ended that long ago, one
+        whose step still runs, another name and a link stay."""
+        script = Path(get_module_path("incubacloud"), "scripts", "detached_step.sh")
+        open_job = self._step_job(next_index=1)
+        closed_job = self._step_job(closed=True, next_index=0)
+        past = int(time.time()) - DETACHED_GIVE_UP_AFTER_CAP_S - 60
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def _step(name, deadline=past, ctl=True):
+                """A step directory as ``start`` leaves it, its step ended."""
+                directory = root / name
+                directory.mkdir(mode=0o700)
+                if deadline is not None:
+                    (directory / "deadline").write_text(f"{deadline}\n")
+                if ctl:
+                    (directory / "ctl.sh").write_bytes(script.read_bytes())
+                return directory
+
+            def _named(job, index):
+                """The name of *job*'s step *index*."""
+                row = job.env["cloud.job.checkpoint"].sudo().search(
+                    [("job_id", "=", job.id)],
+                )
+                return Path(detached_dir(
+                    self.env, job.id, row.queue_job_uuid, index,
+                )).name
+
+            orphan = _step(".incubacloud-detached-00000000000000a1")
+            no_ctl = _step(".incubacloud-detached-00000000000000a2", ctl=False)
+            closed = _step(_named(closed_job, 0))
+            kept = _step(_named(open_job, 1))
+            recent = _step(
+                ".incubacloud-detached-00000000000000a3",
+                deadline=int(time.time()) + 600,
+            )
+            other = _step(".incubacloud-detached-not-hex")
+            link = root / ".incubacloud-detached-00000000000000a4"
+            link.symlink_to(orphan)
+            env = dict(os.environ, HOME=tmp)
+            live = root / ".incubacloud-detached-00000000000000a5"
+            started = subprocess.run(
+                ["bash", str(script), "start", str(live), "600", "host", "9",
+                 "Build", "sleep 60"],
+                check=False, env=env, capture_output=True, text=True,
+            )
+            self.assertEqual(started.returncode, 0, started.stdout)
+            (live / "deadline").write_text(f"{past}\n")
+            try:
+                done = subprocess.run(
+                    ["sh", "-c",
+                     docker_prune_executor.detached_dir_sweep(self.env, tmp)],
+                    check=False, env=env, capture_output=True, text=True,
+                )
+                self.assertEqual((done.returncode, done.stderr), (0, ""))
+                left = {path.name for path in root.iterdir()}
+            finally:
+                subprocess.run(
+                    ["bash", str(live / "ctl.sh"), "stop", str(live), "0"],
+                    check=False, env=env, capture_output=True,
+                )
+            for gone in (orphan, no_ctl, closed):
+                self.assertNotIn(gone.name, left)
+            for stays in (kept, recent, other, link, live):
+                self.assertIn(stays.name, left)
 
     def test_lab_the_leftovers_go_and_nothing_else(self):
         """Real files: what older releases left a day ago goes; what is

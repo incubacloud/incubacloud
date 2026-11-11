@@ -349,6 +349,24 @@ class TestStepsApart(TransactionCase):
             for line in self._log()
         ))
 
+    def test_a_server_without_a_tool_runs_the_step_attached(self):
+        """79: as with 78, the step runs in the request and the log says why."""
+        transport = _local_transport(start_answer=CommandResult(
+            stdout="[incubacloud] ERROR: this server lacks pgrep pkill:"
+                   " the step cannot run apart",
+            exit_status=79,  # DETACHED_EXIT_MISSING_TOOLS
+        ))
+        executor = self._executor(("Apart", _STEP, {"detached": True}))
+        results, _skipped = self._steps(executor, transport)
+        self.assertEqual(results["Apart"], {"stdout": "one\ntwo", "exit_status": 3})
+        transport.execute.assert_called_once()
+        self.assertTrue(executor._detached_attached)
+        executor._flush_logs()
+        self.assertTrue(any(
+            "lacks pgrep pkill" in line and "runs attached" in line
+            for line in self._log()
+        ))
+
     def test_a_start_that_may_have_started_is_stopped_and_removed(self):
         """Any answer of start but 73, 74 and 78: the step may run there."""
         transport = _local_transport()

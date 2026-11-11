@@ -44,7 +44,8 @@
 #           not this account's directory is at <dir>, 78 when the server
 #           kills this account's processes once its SSH session ends
 #           (logind's KillUserProcesses): the step would die with it, and
-#           the panel runs it attached instead.
+#           the panel runs it attached instead; 79, run attached too, when
+#           the server lacks a tool the orders need (``REQUIRED_TOOLS``).
 #   read    One header line, then the bytes [offset, off) of ``log``:
 #             ic-detached v1 state=<running|done|lost|none> exit=<n|-> \
 #               timedout=<0|1> off=<n>
@@ -82,6 +83,9 @@ READ_MAX_BYTES=1048576
 RESULT_TAIL_BYTES=262144
 #: The name every step directory starts with, for the scope check.
 DIR_PREFIX=".incubacloud-detached-"
+#: What the orders run besides coreutils: without one of them a step could
+#: start and never be followed or stopped, so ``start`` refuses (79).
+REQUIRED_TOOLS="flock setsid timeout pgrep pkill"
 
 say() {
     printf '[incubacloud] %s\n' "$*"
@@ -234,12 +238,26 @@ live_scope_holder() {
     return 1
 }
 
+# Print the tools of ``REQUIRED_TOOLS`` this server lacks; fail when it has
+# them all.
+missing_tools() {
+    local tool missing=""
+    for tool in $REQUIRED_TOOLS; do
+        command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+    done
+    [ -n "$missing" ] || return 1
+    printf '%s\n' "${missing# }"
+}
+
 cmd_start() {
     [ "$#" -eq 6 ] || usage
     local dir="$1" cap="$2" scope="$3" job="$4" label="$5" command="$6"
-    local holder
+    local holder missing
     if ! is_count "$cap" || [ "$cap" -eq 0 ]; then
         die "the cap must be a number of seconds: $cap" 2
+    fi
+    if missing="$(missing_tools)"; then
+        die "this server lacks $missing: the step cannot run apart" 79
     fi
     take_lock
     if ours "$dir" && [ -e "$dir/pid" ]; then

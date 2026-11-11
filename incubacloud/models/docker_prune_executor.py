@@ -2,7 +2,14 @@ import contextlib
 import re
 import shlex
 
-from .abstract_executor import HANDOFF_SWEEP, JOB_DIR_PREFIX, handoff_sweep
+from .abstract_executor import (
+    DETACHED_GIVE_UP_AFTER_CAP_S,
+    DETACHED_PREFIX,
+    HANDOFF_SWEEP,
+    JOB_DIR_PREFIX,
+    detached_dir,
+    handoff_sweep,
+)
 from .ansible_executor import AnsibleExecutor
 from .cloud_restore_upload_grant import UPLOAD_ROOT, USED_GRANT_DAYS
 from .host_probe_executor import MIN_DISK_GB
@@ -338,13 +345,58 @@ def upload_dir_sweep(root=UPLOAD_ROOT):
     )
 
 
+def detached_dir_sweep(env, root="/tmp"):
+    """Return the command that removes the step directories nobody follows.
+
+    A step run apart (``detached_step.sh``) leaves its directory until
+    its job records the result, and the reconciliation removes what a job
+    closed without its server left; a checkpoint given up, or deleted
+    with its job, leaves it for good. This takes, in *root*, this
+    account's directories named as a step's whose cap ended
+    ``DETACHED_GIVE_UP_AFTER_CAP_S`` ago (the reconciliation gives up on
+    them then; a directory without a deadline counts from its date),
+    except those of a checkpoint still open — not ``closed`` — on any
+    host: its job may come back for them. Each goes through its own
+    ``ctl.sh clean``, which keeps a step that still runs; a directory
+    without it never started a step. POSIX ``sh``, never through a link.
+
+    :param env: an environment to read the checkpoints with
+    :param str root: the directory to sweep, ``/tmp`` but in tests
+    :rtype: str
+    """
+    spared = set()
+    rows = env["cloud.job.checkpoint"].sudo().search([("closed", "=", False)])
+    for row in rows:
+        for index in range(row.next_index + 1):
+            spared.add(detached_dir(
+                env, row.job_id.id, row.queue_job_uuid, index,
+            ).rsplit("/", 1)[1])
+    keep = "".join(f"{name}) continue ;; " for name in sorted(spared))
+    prefix = DETACHED_PREFIX.rsplit("/", 1)[1]
+    pattern = shlex.quote(f"{root}/{prefix}") + "*"
+    return (
+        f'now=$(date +%s); for d in {pattern}; do'
+        ' [ -d "$d" ] && [ ! -h "$d" ] && [ -O "$d" ] || continue;'
+        f' n="${{d##*/{prefix}}}";'
+        ' case "$n" in ""|*[!0-9a-f]*) continue ;; esac;'
+        f' case "${{d##*/}}" in {keep}esac;'
+        ' t=$(cat "$d/deadline" 2>/dev/null);'
+        ' case "$t" in ""|*[!0-9]*) t=$(stat -c %Y "$d") ;; esac;'
+        f' [ "$now" -ge $((t + {DETACHED_GIVE_UP_AFTER_CAP_S})) ] || continue;'
+        ' if [ -f "$d/ctl.sh" ]; then bash "$d/ctl.sh" clean "$d" >/dev/null 2>&1;'
+        ' else rm -rf -- "$d"; fi;'
+        " done; true"
+    )
+
+
 def tmp_sweep(env, host):
     """Return the day's sweep of /tmp for *host*.
 
     Its handoffs a day old but those a restore still waits for
     (``handoff_sweep``), older releases' leftovers, the directories of
-    jobs whose worker died, and what upload keys left three days ago
-    (``upload_dir_sweep``).
+    jobs whose worker died, what upload keys left three days ago
+    (``upload_dir_sweep``), and the step directories no open checkpoint
+    holds (``detached_dir_sweep``).
 
     :param env: an environment to read the jobs with
     :param host: the ``cloud.host`` it runs on
@@ -352,12 +404,13 @@ def tmp_sweep(env, host):
     """
     return (
         f"{handoff_sweep(env, host)}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
-        f" {upload_dir_sweep()}"
+        f" {upload_dir_sweep()}; {detached_dir_sweep(env)}"
     )
 
 
 #: The day's sweep of /tmp as a playbook run alone has it: with no panel
-#: to ask, it spares no handoff (``tmp_sweep``).
+#: to ask, it spares no handoff and leaves every step directory, which only
+#: the panel can tell from one a job will come back for (``tmp_sweep``).
 TMP_SWEEP = (
     f"{HANDOFF_SWEEP}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
     f" {upload_dir_sweep()}"
