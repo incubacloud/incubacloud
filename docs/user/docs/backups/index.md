@@ -45,7 +45,7 @@ the hosts and from the panel**.
     | **Bucket** | The bucket's name, nothing else. |
     | **Path** | A prefix inside it, `backups` by default. Each instance writes under `<path>/<project folder>/<instance>/`. |
     | **Endpoint URL** | Empty for AWS S3; the provider's S3 endpoint otherwise (below). |
-    | **Access Key ID**, **Secret Access Key** | The key of step 2. |
+    | **Access key ID**, **Secret access key** | The key of step 2. |
     | **Passphrase** | Read [the passphrase](#encryption) first. |
 
 4. **Test Connection**. It names what is wrong: the key (*403*), a bucket that
@@ -59,7 +59,7 @@ you give.
 | Provider | Endpoint URL | The key |
 |---|---|---|
 | **Cloudflare R2** | `https://<account id>.r2.cloudflarestorage.com` | An R2 API token with **Object Read & Write**, limited to the bucket. Its *Access Key ID* and *Secret Access Key* go in the two fields. |
-| **Backblaze B2** | `https://s3.<region>.backblazeb2.com`, as the bucket's page shows it (for instance `https://s3.us-west-004.backblazeb2.com`) | An application key with **Read and Write** access, limited to the bucket: *keyID* is the Access Key ID, *applicationKey* the secret. |
+| **Backblaze B2** | `https://s3.<region>.backblazeb2.com`, as the bucket's page shows it (for instance `https://s3.us-west-004.backblazeb2.com`) | An application key with **Read and Write** access, limited to the bucket: *keyID* is the Access key ID, *applicationKey* the secret. |
 | **MinIO** | The address of its S3 API, for instance `https://minio.example.com:9000` — not its web console's | A user or access key with the policy below. |
 
 A MinIO policy that gives a key exactly what backups need, on the bucket

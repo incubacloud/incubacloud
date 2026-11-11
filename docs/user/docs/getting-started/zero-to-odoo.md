@@ -143,7 +143,7 @@ domain, opens Odoo's sign-in page. Details in
 Every instance starts with the limits of a small team: Odoo with 2 workers,
 2 GB of memory and 2 CPUs, and its database with 1 GB. Two workers serve about
 12 users at once. Above that, raise them: on the instance's **Resources** tab,
-the **Memory Limit** and **CPUs** of Odoo and of the database, and on its
+the **Memory limit** and **CPUs** of Odoo and of the database, and on its
 **Config** tab, `workers` (Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
 **Deploy**. See [Memory and resources](../instances/resources.md).
 
@@ -153,7 +153,7 @@ You can work with the address the panel gave the instance. To use your own,
 such as `erp.example.com`:
 
 1. **Find the server's IP address**: on **Hosts**, open the server; it is its
-   **IP Address**.
+   **IP address**.
 2. **Open your domain's DNS** where it is managed: usually your registrar's
    website, in a section called *DNS*, *DNS zone* or *DNS records*. If your
    domain uses another DNS service, the registrar says which.
@@ -177,7 +177,7 @@ such as `erp.example.com`:
     A server you connect yourself needs one more record before its first
     deploy: a **wildcard** record, `*` (or `*.odoo` for names under
     `odoo.example.com`), pointing to its IP address. It is the domain you give
-    the host in **Wildcard Domain**, and each instance gets a name under it.
+    the host in **Wildcard domain**, and each instance gets a name under it.
 
 More choices, such as certificates you already have, in
 [Custom domains and certificates](../instances/index.md#custom-domains-and-certificates).
@@ -186,8 +186,8 @@ More choices, such as certificates you already have, in
 
 Odoo sends invoices, quotations and password resets by mail. In production, it
 delivers them through the SMTP server you set on the instance: **Networking**,
-fields **SMTP Host**, **SMTP Port**, **SMTP Encryption**, **SMTP User** and
-**SMTP Password**. A staging never sends mail to anybody
+fields **SMTP host**, **SMTP port**, **SMTP encryption**, **SMTP user** and
+**SMTP password**. A staging never sends mail to anybody
 ([why](../instances/index.md#email-on-staging)).
 
 1. **Get the values from your mail provider.** Its help pages give the SMTP

@@ -39,7 +39,7 @@ If you don't have a repo yet, skip this step. You can add it later from
 
 ## 4. Pick a backup destination
 
-**Backup Destination** applies to every production instance of the project,
+**Backup destination** applies to every production instance of the project,
 unless an instance sets its own. A production instance cannot be deployed
 without a destination: choose one here, on the instance, or for every
 production instance in **Settings → General → Default backup destination**.
