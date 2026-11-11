@@ -17287,6 +17287,12 @@ msgstr "cat /opt/odoo/auto/odoo.conf"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "checked"
+msgstr "comprobada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "checked just now"
 msgstr "comprobada ahora mismo"
 
