@@ -232,7 +232,8 @@ class CloudGitLabEvent(models.Model):
         """Route the event to its handler; every path ends ``processed``.
 
         :return: the failures of a handler that keeps its work when some
-            of it failed (a close), the event then not ``processed``
+            of it failed (a close, or a rebuild that could not be queued),
+            the event then not ``processed``
         :rtype: list
         """
         self.ensure_one()
