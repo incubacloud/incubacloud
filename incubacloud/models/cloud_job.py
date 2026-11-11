@@ -1985,6 +1985,12 @@ class CloudJob(models.Model):
         push updates the database and starts Odoo
         (``RebuildInstanceExecutor._supersedes_failure``).
 
+        Not one whose update never answered (``pr_update_cut_off``: the
+        connection dropped or the step ran out of time): ``cron_guard.sh
+        update`` may still run on the host, with no lock a rebuild would
+        wait for, and the rebuild's own update would run beside it. That
+        hold is lifted by a person.
+
         :rtype: bool
         """
         self.ensure_one()
@@ -1992,6 +1998,7 @@ class CloudJob(models.Model):
         return bool(
             self.job_type_id.code == "restore_instance"
             and inst.pr_number and inst.pr_update_error
+            and not inst.pr_update_cut_off
         )
 
     @api.model

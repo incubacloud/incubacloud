@@ -18,6 +18,7 @@ setup() {
     mkdir -p "$TMP/scripts/lib"
     cp "$SRC"/*.sh "$TMP/scripts/"
     cp "${BATS_TEST_DIRNAME}/../../../incubacloud/scripts/lib/common.sh" "$TMP/scripts/lib/"
+    cp "${BATS_TEST_DIRNAME}/../../../incubacloud/scripts/cron_guard.sh" "$TMP/scripts/"
     SCRIPT="$TMP/scripts/pitr.sh"
     AGENT="$TMP/scripts/pitr_agent.sh"
     export HOME="$TMP/home"
@@ -495,6 +496,121 @@ STUB
     execs="$(grep "^docker exec .*pitr-recovery-9 psql" "$CALLS")"
     [ -n "$execs" ]
     if grep -v -- "-e PGOPTIONS=-c search_path=pg_catalog .*-c event_triggers=off" <<<"$execs"; then false; fi
+}
+
+# A docker for a restore that runs to its end: the recovery promotes at
+# once, the files come back. click-odoo-update exits $STUB_UPDATE_STATUS,
+# the files' restore $STUB_FS_STATUS.
+promoting_docker() {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"grep -c"*) echo 0 ;;
+    *"pg_is_in_recovery"*) echo f ;;
+    *"pg_walfile_name"*) echo 00000002 ;;
+    *"PG_VERSION"*) echo 17 ;;
+    *"inspect -f {{.State.Running}}"*) echo true ;;
+    *"click-odoo-update"*) exit "${STUB_UPDATE_STATUS:-0}" ;;
+    *"fs-restore"*) exit "${STUB_FS_STATUS:-0}" ;;
+esac
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+}
+
+# Run a restore to its end, its update asked for ($1, default 1).
+run_restore() {
+    mkdir -p "$DIR/.walg/restore"
+    run bash "$SCRIPT" restore-run "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 prod "${1:-1}" 3>&-
+    echo "$output"
+}
+
+# The line of $CALLS the first call matching $1 is on.
+call_line() { grep -n -- "$1" "$CALLS" | head -n 1 | cut -d: -f1; }
+
+@test "a restore with the update asked for hands the database and the flag to its process, with the guard beside it" {
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 prod 1
+    [ "$status" -eq 0 ]
+    grep -q "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18 prod 1$" "$CALLS"
+    [ -x "$DIR/.walg/restore/bin/cron_guard.sh" ]
+}
+
+@test "a restore refuses an update flag or a database it cannot vouch for" {
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 prod 'yes;id'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad update flag"* ]]
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 'prod;id' 1
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad database"* ]]
+    ! grep -q "setsid" "$CALLS"
+    [ ! -e "$DIR/.walg/restore/lock" ]
+}
+
+@test "the restored database's modules are updated once its files are back, before the stack comes up" {
+    promoting_docker
+    run_restore 1
+    [ "$status" -eq 0 ]
+    fs="$(call_line "fs-restore")"
+    update="$(call_line "click-odoo-update --database prod")"
+    up="$(call_line "docker compose up -d$")"
+    [ -n "$fs" ] && [ -n "$update" ] && [ -n "$up" ]
+    [ "$fs" -lt "$update" ] && [ "$update" -lt "$up" ]
+    # Odoo was not started before the update.
+    ! head -n "$update" "$CALLS" | grep -qE "compose (start|up -d$|up -d odoo)"
+    grep -qx "state=done" "$DIR/.walg/restore/result"
+    grep -qx "modules=updated" "$DIR/.walg/restore/result"
+}
+
+@test "an update that fails leaves the restore done and the instance running, and says so" {
+    promoting_docker
+    STUB_UPDATE_STATUS=1 run_restore 1
+    [ "$status" -eq 0 ]
+    grep -qx "state=done" "$DIR/.walg/restore/result"
+    grep -qx "modules=failed" "$DIR/.walg/restore/result"
+    update="$(call_line "click-odoo-update")"
+    up="$(call_line "docker compose up -d$")"
+    [ -n "$up" ] && [ "$update" -lt "$up" ]
+    [[ "$output" == *"updating the modules failed (exit 1)"* ]]
+}
+
+@test "a database restored without its files is updated all the same" {
+    promoting_docker
+    STUB_FS_STATUS=1 run_restore 1
+    grep -qx "state=db-only" "$DIR/.walg/restore/result"
+    grep -qx "modules=updated" "$DIR/.walg/restore/result"
+}
+
+@test "without the update asked for nothing is updated" {
+    promoting_docker
+    run_restore 0
+    [ "$status" -eq 0 ]
+    ! grep -q "click-odoo-update" "$CALLS"
+    grep -qx "modules=skipped" "$DIR/.walg/restore/result"
+}
+
+@test "a restore that never replaced the database updates nothing" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"grep -c"*) echo 0 ;;
+    *"PG_VERSION"*) echo 17 ;;
+    # The recovery stops at once: nothing was promoted.
+    *"inspect -f {{.State.Running}}"*) echo false ;;
+esac
+exit 0
+STUB
+    run_restore 1
+    grep -qx "state=failed" "$DIR/.walg/restore/result"
+    grep -qx "modules=skipped" "$DIR/.walg/restore/result"
+    ! grep -q "click-odoo-update" "$CALLS"
 }
 
 @test "installing again forgets the marks of a cluster that may be gone" {

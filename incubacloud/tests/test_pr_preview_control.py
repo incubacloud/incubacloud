@@ -637,8 +637,12 @@ class TestPreviewUpdateFailedComment(_CommentCase):
 
     REASON = 'Updating its modules to this code failed (exit status 1).'
 
-    def _restore_fails_in_its_update(self, preview):
-        """Run a restore's ``on_failure`` on *preview*, its update failed."""
+    def _restore_fails_in_its_update(self, preview, status=1):
+        """Run a restore's ``on_failure`` on *preview*, its update failed.
+
+        :param status: the update's exit status, None for one that never
+            answered (the connection dropped, its time ran out)
+        """
         from odoo.addons.incubacloud.models.restore_instance_executor import (
             RestoreInstanceExecutor,
         )
@@ -652,8 +656,8 @@ class TestPreviewUpdateFailedComment(_CommentCase):
         ):
             asyncio.run(ex.on_failure(
                 {'Restore database': {'exit_status': 0, 'stdout': ''},
-                 'Update changed modules': {'exit_status': 1, 'stdout': ''}},
-                ["'Update changed modules' exited with status 1"],
+                 'Update changed modules': {'exit_status': status, 'stdout': ''}},
+                [f"'Update changed modules' exited with status {status}"],
             ))
         return lines
 
@@ -664,6 +668,29 @@ class TestPreviewUpdateFailedComment(_CommentCase):
         self.assertIn('exit status 1', preview.pr_update_error)
         self.assertEqual(len(self._comment_jobs()), 1)
         self.assertTrue(any('Pushing a fix' in line for line in lines))
+
+    def test_an_update_cut_off_is_kept_apart_and_still_said(self):
+        """It may still run on the server: the push of a fix does not pass
+        the hold, and neither the log nor the comment say it does."""
+        preview = self._preview()
+        lines = self._restore_fails_in_its_update(preview, status=None)
+        self.assertTrue(preview.pr_update_cut_off)
+        self.assertIn('did not end', preview.pr_update_error)
+        self.assertEqual(len(self._comment_jobs()), 1)
+        self.assertFalse(any('Pushing a fix' in line for line in lines))
+        self.assertTrue(any('may still be running' in line for line in lines))
+        client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        body = client.post_issue_comment.call_args.args[3]
+        self.assertIn('did not end', body)
+        self.assertIn('may still be running', body)
+        self.assertNotIn('Push a fix', body)
+
+    def test_an_update_that_failed_is_no_cut(self):
+        preview = self._preview(pr_update_cut_off=True)
+        self._restore_fails_in_its_update(preview)
+        self.assertFalse(preview.pr_update_cut_off)
 
     def test_another_failure_queues_nothing(self):
         preview = self._preview()

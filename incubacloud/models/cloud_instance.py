@@ -171,6 +171,7 @@ _PLATFORM_FIELDS = frozenset({
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
     "pr_installation_id", "pr_provider_id", "pr_state", "pr_update_error",
+    "pr_update_cut_off",
     "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
 })
@@ -478,6 +479,15 @@ class CloudInstance(models.Model):
         help="Why the restore of a preview could not update its modules to "
         "the request's code, as its comment or note says; empty once a "
         "restore or a rebuild of it succeeds.",
+    )
+    pr_update_cut_off = fields.Boolean(
+        string="Preview Update Cut Off",
+        copy=False,
+        help="The update of a preview's restore never answered (the "
+        "connection dropped or the step ran out of time) and may still run "
+        "on the server: a push does not rebuild the preview past the "
+        "restore's alert until someone dismisses it. Cleared with the "
+        "update error.",
     )
 
     # ── Copier template parameters ──────────────────────────────────────────
@@ -3394,13 +3404,23 @@ class CloudInstance(models.Model):
         self.ensure_one()
         request = 'merge request' if self.pr_provider_id else 'pull request'
         reason = " ".join((self.pr_update_error or "").replace("`", "").split())
+        if self.pr_update_cut_off:
+            # A push is held until the restore's alert is dismissed: the
+            # update may still be running (``pr_update_cut_off``).
+            then = (
+                f'_The update may still be running on the server: a push to'
+                f' the branch of the {request} rebuilds the preview once its'
+                f' alert is dismissed in the panel._'
+            )
+        else:
+            then = f'_Push a fix to the branch of the {request} to try again._'
         return (
             f'⚠️ **IncubaCloud Preview** — could not be updated\n\n'
             f'| | |\n|---|---|\n'
             f'| **Branch** | `{self.pr_head_branch}` |\n'
             f'| **Instance** | `{self.name}` |\n'
             f'| **Reason** | {reason} |\n\n'
-            f'_Push a fix to the branch of the {request} to try again._'
+            f'{then}'
             f'\n\n{self._pr_note_marker()}'
         )
 
@@ -3483,8 +3503,10 @@ class CloudInstance(models.Model):
                         })
                         for alert in stale:
                             alert._notify_alert_resolved()
-                    # The platform's field (``_PLATFORM_FIELDS``).
-                    self.sudo().write({"pr_update_error": False})
+                    # The platform's fields (``_PLATFORM_FIELDS``).
+                    self.sudo().write({
+                        "pr_update_error": False, "pr_update_cut_off": False,
+                    })
                 self._enqueue_preview_note()
         except Exception as exc:
             if is_concurrency_error(exc):

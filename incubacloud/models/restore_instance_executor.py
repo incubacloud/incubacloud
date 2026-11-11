@@ -28,6 +28,7 @@ from ._concurrency import is_concurrency_error
 from ._odoo_versions import headless_flag, script_env
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
+    UPDATE_RESTORED_MODULES_LABEL,
     AbstractSSHExecutor,
     JobRefused,
     handoff_archive_path,
@@ -1226,9 +1227,11 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         await self._cleanup_cross_host_handoff()
         inst = self._inst()
         inst.write({"status": "ok", **inst._running_confirmed_vals()})
-        if inst.pr_update_error:
-            # The platform's field (``_PLATFORM_FIELDS``).
-            inst.sudo().write({"pr_update_error": False})
+        if inst.pr_update_error or inst.pr_update_cut_off:
+            # The platform's fields (``_PLATFORM_FIELDS``).
+            inst.sudo().write({
+                "pr_update_error": False, "pr_update_cut_off": False,
+            })
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
         self._follow_preview_restore(inst)
 
@@ -1305,11 +1308,25 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             return
         # A preview's request hears why its preview did not come up, and
         # the push of a fix to its branch rebuilds it past the alert
-        # (``cloud.job._supersedes_hold``).
+        # (``cloud.job._supersedes_hold``). Not past an update that never
+        # answered: it may still run on the host, and the rebuild's would
+        # run beside it (``pr_update_cut_off``).
+        update = (results or {}).get(UPDATE_RESTORED_MODULES_LABEL) or {}
+        cut_off = bool(reason) and update.get("exit_status", 0) is None
         inst.write({"status": "error"})
-        # The platform's field (``_PLATFORM_FIELDS``).
-        inst.sudo().write({"pr_update_error": reason or False})
-        if reason:
+        # The platform's fields (``_PLATFORM_FIELDS``).
+        inst.sudo().write({
+            "pr_update_error": reason or False, "pr_update_cut_off": cut_off,
+        })
+        if cut_off:
+            self._sys(
+                "The update may still be running on the server: a push to"
+                " the request's branch rebuilds the preview only once this"
+                " job's alert is dismissed, so that two updates never run on"
+                " its database at once."
+            )
+            self._follow_preview_restore(inst)
+        elif reason:
             self._sys(
                 "Pushing a fix to the request's branch rebuilds the preview"
                 " without dismissing the alert."

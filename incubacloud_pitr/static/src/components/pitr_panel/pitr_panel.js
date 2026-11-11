@@ -50,6 +50,7 @@ export class PitrPanel extends Component {
         instanceId: Number,
         instanceName: { type: String, optional: true },
         environment: { type: String, optional: true },
+        autoUpdate: { type: Boolean, optional: true },
         canManage: { type: Boolean, optional: true },
         enqueue: { type: Function, optional: true },
     };

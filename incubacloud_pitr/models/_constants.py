@@ -12,6 +12,12 @@ import hashlib
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+#: The alert of a restore to a moment whose database could not be updated
+#: to the instance's code (``modules=failed``): raised by the job that
+#: followed it, or the watch; resolved by a restore that updated it, or a
+#: rebuild that updates the modules (``cloud.instance._after_stack_rendered``).
+ALERT_MODULES = "pitr_modules_not_updated"
+
 WALG_VERSION = "v3.0.9"
 #: ``wal-g-pg-20.04-<arch>``: built against glibc 2.29, which every
 #: supported host OS (Ubuntu 22.04+, Debian 12+) exceeds.

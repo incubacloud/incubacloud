@@ -181,7 +181,10 @@ Two data sources:
 scheduled actions and outgoing mail servers disabled and Odoo's test banner
 showing. Leave it on unless you are deliberately testing a cron or a mail flow —
 a staging carrying production's data will otherwise invoice, dun and email your
-real customers.
+real customers. A rebuild that updates the modules of a neutralized staging or
+preview neutralizes it again afterwards, and its mail goes back to the staging's
+mail catcher: the update switches on again the scheduled actions its modules
+ship. A database without Odoo's test banner is left as it is.
 
 The refresh runs as two jobs (a download on the production, a restore on the
 staging) that you can follow in the activity timeline. If the download fails the
@@ -254,7 +257,10 @@ Things worth knowing before switching it on:
   pull request to try again.
 - The copy's modules are updated to the pull request's code before it starts.
   If that update fails, the preview stays stopped and the comment says it could
-  not be updated; push a fix to the branch and its rebuild brings it up.
+  not be updated; push a fix to the branch and its rebuild brings it up. If the
+  update never ended (the connection to the server dropped or it ran out of
+  time), it may still be running: a push rebuilds the preview only once the
+  restore's alert is dismissed.
 - The panel acts on the pull requests of one installation of its GitHub App,
   the one under **Settings → GitHub**. If the App is installed on another
   account too, a pull request there gets no preview: the production that would

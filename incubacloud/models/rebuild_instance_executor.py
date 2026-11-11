@@ -23,7 +23,7 @@ from odoo import fields
 from odoo.addons.queue_job.exception import RetryableJobError
 from .host_build_lock import HostBuildLockMixin
 
-from ._odoo_versions import headless_flag
+from ._odoo_versions import headless_flag, script_env
 from .abstract_executor import CANCELLED_WHILE_RUNNING, sql_escape_literal
 from .deploy_instance_executor import (
     DeployInstanceExecutor,
@@ -31,6 +31,7 @@ from .deploy_instance_executor import (
     _then_context_prune,
 )
 from .docker_prune_executor import build_cache_prune_if_low
+from .restore_instance_executor import LABEL_NEUTRALIZE_AGAIN
 
 # ``cron_guard.sh`` exits with this when the instance still had crons
 # executing after its budget: nothing was updated, so the job is worth
@@ -333,6 +334,28 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 {"stop_on_failure": True},
             ),
             ]
+            # 12a. A staging or a preview neutralized when it was copied
+            #      (``database.is_neutralized``) is neutralized again: the
+            #      update rewrote the records its data files leave
+            #      unprotected, scheduled actions and mail servers among
+            #      them. Its mail goes to the stack's catcher again, which
+            #      on a production would be the real relay: never there.
+            #      The host leaves a database that is not neutralized as
+            #      it is (``restore.sh renew-neutralization``).
+            if inst.environment != "production":
+                cmds.append((
+                    LABEL_NEUTRALIZE_AGAIN,
+                    self.run_script(
+                        "restore.sh",
+                        [
+                            "renew-neutralization", d,
+                            inst.postgres_username or "odoo",
+                            inst.postgres_dbname or "prod",
+                        ],
+                        env=script_env(inst.odoo_version),
+                    ),
+                    {"stop_on_failure": True},
+                ))
         cmds += [
             # 12b. Ensure incubacloud_connect is installed (restored DBs
             #      may not have it; click-odoo-update only updates, not
