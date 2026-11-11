@@ -440,8 +440,11 @@ class McpAutoApproval(models.Model):
         today = now.replace(tzinfo=pytz.utc).astimezone(tz).date()
         if not day or day <= today:
             raise UserError(self.env._("The rule ends on a day after today."))
-        end = tz.localize(datetime.combine(day, time(23, 59, 59)))
-        return end.astimezone(pytz.utc).replace(tzinfo=None)
+        return (
+            tz.localize(datetime.combine(day, time(23, 59, 59)))
+            .astimezone(pytz.utc)
+            .replace(tzinfo=None)
+        )
 
     @api.model
     def _grant(
