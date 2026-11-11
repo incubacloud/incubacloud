@@ -458,6 +458,18 @@ class TestRelayTestMail(_RelayCase):
                 self.assertFalse(self._alert())
                 self.assertEqual(self.inst.smtp_relay_state, "unknown")
 
+    def test_a_deferral_says_the_test_mail_will_not_arrive_later(self):
+        """``relay_test.sh`` takes a deferred test mail out of the queue."""
+        job, _errors = self._run({
+            "status": "deferred", "response": "451 4.3.0 Temporary server error",
+            "token": None,
+        })
+        message = job.result["message"]
+        self.assertIn(f"{HOST} deferred the mail: 451 4.3.0", message)
+        self.assertIn("removed from the relay's queue", message)
+        self.assertIn("will not arrive later", message)
+        self.assertNotIn("keeps watching", message)
+
     def test_only_an_unreachable_relay_fails_the_job(self):
         _job, errors = self._run(None, exit_status=1)
         self.assertTrue(errors)
@@ -573,6 +585,48 @@ class TestRelayTestMailAsker(_RelayCase):
         self.assertEqual(jobs.env.uid, self.consultant.id)
         self.assertEqual(args, [self.host.id, self.inst.id, "relay_test_mail"])
         self.assertNotIn("payload", enqueue.call_args.kwargs)
+
+    def test_a_test_the_queue_refuses_costs_none_of_the_hour(self):
+        """One already waiting refuses the next; that refusal is free."""
+        model = self.env["cloud.instance"].with_user(self.consultant)
+        counted = {"context": {"force_rate_limit": True}}
+        waiting = self._job("relay_test_mail", user=self.consultant)
+        waiting.state = "queued"
+        # Not ``assertRaises``: its savepoint would roll the hour's count
+        # back with the refusal, and the count is what is tested.
+        try:
+            call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted)
+        except UserError as exc:
+            self.assertIn("already queued", exc.args[0])
+        else:
+            self.fail("the queue took a second test mail")
+        waiting.state = "cancelled"
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", autospec=True, return_value=7,
+        ) as enqueue:
+            for _i in range(RELAY_TEST_MAILS_PER_HOUR):
+                self.assertEqual(
+                    call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted), 7,
+                )
+            with self.assertRaisesRegex(UserError, "in the last hour"):
+                call_kw(model, "send_relay_test_mail", [[self.inst.id]], counted)
+        self.assertEqual(enqueue.call_count, RELAY_TEST_MAILS_PER_HOUR)
+
+    def test_the_panel_offers_cancel_and_retry_to_who_may_use_them(self):
+        """A consultant's own test mail is a manager's type to stop."""
+        test_mail = self._job("relay_test_mail", user=self.consultant)
+        deploy = self._job("deploy_instance", user=self.consultant)
+        jobs = test_mail | deploy
+        rows = {
+            row["id"]: row["may_control"]
+            for row in jobs.with_user(self.consultant)._format()
+        }
+        self.assertEqual(rows, {test_mail.id: False, deploy.id: True})
+        rows = {
+            row["id"]: row["may_control"]
+            for row in jobs.with_user(self.manager)._format()
+        }
+        self.assertEqual(rows, {test_mail.id: True, deploy.id: True})
 
     def test_queued_for_a_consultant_it_is_theirs(self):
         job_id = self.inst.with_user(self.consultant).send_relay_test_mail()
