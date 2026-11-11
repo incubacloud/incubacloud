@@ -69,7 +69,7 @@ class CloudRepoEventMixin(models.AbstractModel):
             inst = repo.instance_id
             # Never auto-rebuild an archived instance or one whose host is
             # deactivated/deleted: the repo match can surface archived
-            # instances (e.g. recycled warms) and ``host_id`` may point at
+            # instances (e.g. recycled ones) and ``host_id`` may point at
             # an archived host, both of which would just fail SSH.
             if not (inst.active and inst.auto_rebuild and inst.deployed
                     and inst.host_id and inst.host_id.active):

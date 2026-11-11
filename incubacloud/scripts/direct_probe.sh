@@ -3,7 +3,7 @@
 #
 # Usage: direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>...
 #
-# The probe of the direct path (plan-trafico-interno-directo, piece 3):
+# The probe of the direct path:
 #
 #   DNS     the name resolves to this host's address and nothing else, and
 #           has no AAAA;

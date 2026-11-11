@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
     <!--
-        Keeps every direct port's list applied and its names probed
-        (plan-trafico-interno-directo, piece 2).
+        Keeps every direct port's list applied and its names probed.
 
         The events queue the job the moment a host comes or goes; this
         cron is the net under them. Every 15 minutes it queues the job

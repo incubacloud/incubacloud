@@ -238,7 +238,7 @@ class CloudInstance(models.Model):
         """Return True when metric alerts about this instance are noise.
 
         Core always answers False: it knows of no legitimate reason for a
-        deployed instance to stop reporting. A layer above may — a plan
+        deployed instance to stop reporting. A layer above may — one
         that sleeps an instance on idle stops every container, so cAdvisor
         goes quiet and "down" is precisely what a naive rule concludes.
         That layer overrides this.

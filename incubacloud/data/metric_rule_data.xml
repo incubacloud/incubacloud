@@ -5,8 +5,8 @@
 
         NOT ``noupdate``: these are tuning knobs, not user data. Shipping
         them updatable means a better threshold reaches existing installs
-        on upgrade instead of only new ones — the trap that made the
-        Free-plan sleep timeout stale in production.
+        on upgrade instead of only new ones — the trap that made a
+        sleep timeout stale in production.
 
         Every expression carries ``host_id`` because that is how a sample
         is mapped back to a cloud.host (see cloud_metric_rule.host_label).

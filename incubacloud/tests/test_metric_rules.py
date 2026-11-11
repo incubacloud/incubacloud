@@ -791,9 +791,9 @@ class TestInstanceScopedRules(MetricRuleCase):
     def test_a_suppressed_instance_never_alerts(self):
         """The sleeping-instance trap.
 
-        An instance a plan puts to sleep stops every container on
+        An instance a layer puts to sleep stops every container on
         purpose, so cAdvisor goes quiet and a naive rule concludes it is
-        down. Every Free instance would then raise a critical alert
+        down. Every sleeping instance would then raise a critical alert
         nightly, and operators would learn to ignore the one that
         matters. Core asks the instance; a layer that puts instances to
         sleep is what knows about sleeping.

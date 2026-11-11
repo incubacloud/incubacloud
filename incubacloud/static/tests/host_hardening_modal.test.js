@@ -54,7 +54,7 @@ describe("HostHardeningModal production gate", () => {
 });
 
 /**
- * Who can open SSH after the hardening (plan-lista-ssh-sin-relleno).
+ * Who can open SSH after the hardening.
  *
  * The dialog says it in every mode, and the asker's own address enters
  * the host's list only by its checkbox: nothing is added by itself.

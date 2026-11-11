@@ -391,8 +391,8 @@ class ResUsers(models.Model):
 
         This is the user the scheduled actions already run as. It is
         also the right actor for any unattended work the platform does
-        on its own account outside a cron — building a warm spare while
-        serving a customer's request, say — so ``create_uid`` keeps
+        on its own account outside a cron — preparing an instance ahead
+        of the request that will use it, say — so ``create_uid`` keeps
         meaning "who wanted this" rather than "who happened to be
         logged in when the platform did its housekeeping".
 

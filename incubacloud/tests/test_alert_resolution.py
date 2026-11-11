@@ -3,8 +3,8 @@
 A failed job's alert is dismissed when a later run of the same job on
 the same target succeeds. That dismissal was silent: the failure had
 reached email and Telegram, and the panel, opened later, showed only a
-dismissed row, the same as one a user had silenced (two warm rebuilds
-on 2026-10-08). Now the alert records how it closed, when, and which
+dismissed row, the same as one a user had silenced (two rebuilds on
+2026-10-08). Now the alert records how it closed, when, and which
 job resolved it, and the resolution is announced on the channels that
 announced the failure.
 """

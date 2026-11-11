@@ -910,8 +910,8 @@ print(f'INCUBACLOUD_SECRET_KEY={Fernet.generate_key().decode()}')" \
         # Add ``- .docker/incubacloud.env`` to the env_file block of the
         # given compose files (default prod.yaml + test.yaml; the block
         # lives there, not in common.yaml). Idempotent: skipped when
-        # already present. Callers that only ship prod.yaml (warm claim)
-        # pass it explicitly.
+        # already present. Callers that only ship prod.yaml (a layer's own
+        # builds) pass it explicitly.
         cd "$dir"
         set -- "$@"
         [ "$#" -gt 0 ] || set -- prod.yaml test.yaml

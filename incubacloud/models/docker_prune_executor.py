@@ -159,7 +159,8 @@ NETWORKS_HIGH_RATIO = 0.8
 #: nor one of the host's own stacks (``cloud.host._infra_compose_projects``),
 #: and no container uses it, running or stopped. Never ``docker network
 #: prune``: on 2026-08-20 that took the
-#: networks of stopped warm spares, whose containers then could not start.
+#: networks of instances kept stopped on purpose, whose containers then
+#: could not start.
 #: Written without double braces, so Ansible leaves it as it is.
 _NETWORK_SWEEP = r"""python3 - <<'PY'
 import ipaddress, json, subprocess

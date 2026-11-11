@@ -867,7 +867,7 @@ class TestGraceAfterAConfirmation(InstanceLivenessCase):
         self.assertTrue(self.inst.running)
 
     def test_a_rebuild_whose_stack_may_be_down_confirms_nothing(self):
-        """A layer above may hand the rebuilt stack back stopped — a plan
+        """A layer above may hand the rebuilt stack back stopped — one
         that sleeps an idle instance does — and says so through
         ``_stop_is_expected``."""
         self.inst.write({"running": False})

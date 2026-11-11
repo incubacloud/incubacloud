@@ -400,7 +400,7 @@ class CloudMetricRule(models.Model):
                 target = self._resolve_instance(Instance, labels)
                 if not target:
                     continue
-                # An instance can be legitimately silent — a plan that
+                # An instance can be legitimately silent — a layer that
                 # sleeps it on idle stops every container, so cAdvisor
                 # stops reporting and "down" is exactly what a naive
                 # rule would conclude. Core has no notion of sleeping,

@@ -138,7 +138,7 @@ case "$op" in
     resolve-conflicts)
         # copier update can leave conflict markers; keep the new version
         # (everything after ``=======``). Files default to
-        # prod/test/common; warm claim passes its own subset.
+        # prod/test/common; a layer's own build may pass its subset.
         set -- "$@"
         [ "$#" -gt 0 ] || set -- prod.yaml test.yaml common.yaml
         ic_log "resolving copier merge conflicts"

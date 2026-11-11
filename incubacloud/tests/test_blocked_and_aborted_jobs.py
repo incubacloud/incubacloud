@@ -183,7 +183,7 @@ class TestPreflightBlocks(_DeployJobCase):
             executor.blocking_alert()
 
     def test_an_executor_that_opts_out_does_not_ask_github(self):
-        """A warm claim ships the repositories its warm was built from."""
+        """An executor that ships repositories already checked opts out."""
         executor = DeployInstanceExecutor(self.job, self.host)
         executor._preflight_addons = False
         with patch(_DETECT, autospec=True) as detect:

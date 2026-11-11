@@ -136,7 +136,7 @@ class TestJobHistoryFloor(TransactionCase):
         self.assertTrue(data['preClaim']['showing_all'])
 
     def test_no_notice_when_the_floor_hides_nothing(self):
-        # A warm claimed the instant it was built has a floor but no
+        # An instance claimed the instant it was built has a floor but no
         # earlier history; announcing "0 hidden jobs" would be noise.
         with self._with_floor(self.claim - timedelta(days=30)):
             data = self.env['cloud.job'].get_instance_jobs(

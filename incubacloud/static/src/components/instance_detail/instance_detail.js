@@ -1480,7 +1480,7 @@ export class InstanceDetail extends JobsMixin(
    * has not landed — which is what every dot showed before, so the card
    * degrades to its old behaviour instead of to a wrong one.
    *
-   * Only ``odoo`` can be legitimately stopped: a plan that sleeps an
+   * Only ``odoo`` can be legitimately stopped: a layer that sleeps an
    * instance stops that container and leaves the rest of the stack up.
    *
    * @param {string} svc compose service name, e.g. "odoo" or "db"

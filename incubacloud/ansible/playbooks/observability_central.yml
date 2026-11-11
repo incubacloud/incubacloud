@@ -70,7 +70,7 @@
     # ``acme`` (a certificate of its own) or ``default`` (the host's, when
     # a CDN fronts the name and that certificate covers it).
     ic_public_tls: ""
-    # The central's direct name (plan-trafico-interno-directo): published
+    # The central's direct name: published
     # on the host's ``direct`` entrypoint for the platform's own servers.
     # Empty changes nothing in the compose file.
     ic_direct_host: ""

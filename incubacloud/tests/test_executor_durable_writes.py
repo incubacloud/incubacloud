@@ -15,7 +15,7 @@ other suites use it for their own durable writes.
 One thing a ``TransactionCase`` cannot reproduce: in test mode the
 durable cursor is a pseudo-cursor on the test's own transaction, so the
 job's REPEATABLE READ snapshot never hides anything. That part was
-measured against a real database with two cursors (plan F0, 28-sep);
+measured against a real database with two cursors (28-sep);
 here it is pinned as behaviour — the job reads the new value from its
 cache, without a query.
 """

@@ -29,7 +29,7 @@ _MIB = 1024 * 1024
 
 
 class TestMemoryFormulas(BaseCase):
-    """The formulas, on the sizes the plans and core's defaults use."""
+    """The formulas, on the sizes a layer may ship and core's defaults."""
 
     def test_memory_values_read_as_compose_reads_them(self):
         self.assertEqual(_memory_bytes("1g"), 1024 * _MIB)
@@ -48,7 +48,7 @@ class TestMemoryFormulas(BaseCase):
         )
 
     def test_postgres_takes_a_quarter_a_sixteenth_and_a_half(self):
-        """Every size a plan ships, and core's own default of 1g."""
+        """Every size a layer may ship, and core's own default of 1g."""
         expected = {
             "192m": ("48MB", "12MB", "96MB"),
             "256m": ("64MB", "16MB", "128MB"),

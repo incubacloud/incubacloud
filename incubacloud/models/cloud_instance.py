@@ -1199,8 +1199,8 @@ class CloudInstance(models.Model):
     def _applied_config_vals(self):
         """Write values that anchor this instance's config to right now.
 
-        Every successful deploy / rebuild / warm build stamps through
-        here so the hash and the snapshot behind it can never drift
+        Every successful deploy / rebuild (a layer's own builds too) stamps
+        through here so the hash and the snapshot behind it can never drift
         apart — a stamp that recorded only one of them would leave the
         pill unable to explain itself.
         """
@@ -1263,7 +1263,7 @@ class CloudInstance(models.Model):
     #
     #   draft     → deploying   deploy() enqueues the job
     #   draft     → deployed    ONLY importing an already-running instance
-    #   deploying → deployed    deploy/warm succeeded
+    #   deploying → deployed    deploy (or a layer's build) succeeded
     #   deploying → draft       deploy failed; status carries the error
     #   deployed  → deleting    teardown job enqueued
     #   deleting  → draft       torn down; config kept in the panel
@@ -1301,7 +1301,7 @@ class CloudInstance(models.Model):
         False here, always: base knows of no legitimate reason for a
         deployed instance to have stopped, so anything down is an
         incident and is reported as one. A layer that does know of one —
-        a plan that sleeps an idle instance — overrides this.
+        one that sleeps an idle instance — overrides this.
 
         Asking the instance, rather than testing a field base does not
         have, is what keeps sleeping out of base entirely. Same shape as
@@ -4994,8 +4994,8 @@ class CloudInstance(models.Model):
         Whether an instance is production is chosen when it is created
         and changed by nobody afterwards, an administrator included: it
         decides who may delete the instance, whether its egress is
-        filtered and, on a customer's panel, whether it takes a seat of
-        the plan — relabelled staging, a production was deleted, or freed
+        filtered and, where a layer counts productions, whether it counts
+        as one — relabelled staging, a production was deleted, or freed
         its seat while it went on serving as one. Only the platform still
         may.
 

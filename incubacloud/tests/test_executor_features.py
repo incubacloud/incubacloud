@@ -541,7 +541,7 @@ class TestGitConfigIdempotentGuard(BaseCase):
 
     1. ``full_setup`` seeds the setting once per host, in a serialized
        step that cannot race with itself.
-    2. The deploy / rebuild / warm-claim ``path_prefix`` reads first
+    2. The deploy / rebuild ``path_prefix`` reads first
        (``--get``) and only writes when the value is absent, so a host
        already seeded never touches the lock again.
     """

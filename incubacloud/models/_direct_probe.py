@@ -1,8 +1,8 @@
 """The state of a direct name's probe, and what the hosts' scripts print.
 
 Free of Odoo on purpose: these rules are the whole of when the platform's
-own hosts and panels leave the CDN and when they come back
-(plan-trafico-interno-directo, piece 3), and they are worth reading, and
+own hosts and panels leave the CDN and when they come back, and they
+are worth reading, and
 testing, on their own.
 
 A name starts ``unknown``; one good probe makes it ``ok``. Two failed

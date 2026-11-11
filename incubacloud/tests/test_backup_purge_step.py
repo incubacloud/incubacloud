@@ -310,7 +310,7 @@ class TestPurgeThroughTheRealLoop(_PurgeBase):
     ``TestPurgeOutcomes`` hands ``parse_results`` a purge at 10 *and* a
     teardown that ran — a run the loop never produced, because the purge
     stopped it first. Production, 2026-09-29: nine deletes ended "done"
-    with "removed from host" and left every warm stack running.
+    with "removed from host" and left every stack running.
     """
 
     def test_an_empty_prefix_still_tears_the_instance_down(self):

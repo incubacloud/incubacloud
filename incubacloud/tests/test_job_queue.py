@@ -1278,8 +1278,8 @@ class TestOnlyThePlatform(_QueueCase):
 
     def test_an_instances_environment_is_chosen_once(self):
         """Whether an instance is production decides who may delete it,
-        whether its egress is filtered and, on a customer's panel, whether
-        it takes a seat of the plan: it is chosen when the instance is
+        whether its egress is filtered and, where a layer counts productions,
+        whether it counts as one: it is chosen when the instance is
         created, and nobody changes it afterwards, a manager no more than a
         consultant — a production relabelled staging was deleted, or freed
         its seat while it went on serving. The platform still may; saved as
