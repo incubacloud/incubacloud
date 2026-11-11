@@ -273,7 +273,7 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertIn("docker builder prune -af --filter type=source.local", build[1])
         self.assertNotIn("fetch-repos", build[1])
         self.assertNotIn("record-heads", build[1])
-        self.assertEqual(build[2], {"stop_on_failure": True})
+        self.assertEqual(build[2], {"stop_on_failure": True, "detached": True})
 
     def test_a_rebuild_back_in_the_image_records_the_heads_in_its_build_step(self):
         ex = _in_image(_make_rebuild_executor())
@@ -282,7 +282,7 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         self.assertNotIn("Fetch the repositories", [c[0] for c in cmds])
         build = _find_cmd(cmds, "Rebuild Odoo image")
         self.assertIn("record-heads", build[1])
-        self.assertEqual(build[2], {"stop_on_failure": True})
+        self.assertEqual(build[2], {"stop_on_failure": True, "detached": True})
 
 
 class TestStepTimeout(TransactionCase):
