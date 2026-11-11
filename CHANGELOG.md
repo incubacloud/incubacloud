@@ -305,6 +305,9 @@ re-runs by itself.
   lines: three attempts as root with a stranger's key, three with a made-up
   user, one with a user outside `AllowUsers` and one timeout count 3, 3, 1
   and 1; the panel's and a legitimate user's logins count 0.
+- **A neutralized copy revokes its live auto-approval rules.** An API key
+  is copied with the users: without it, an agent holding a credential of
+  production would act on the copy without asking.
 - **No Git credential in a 19.0 image either.** A 19.0 instance deployed
   or rebuilt with this version holds no token in its image, its build, its
   container or the `repos.yaml` on its server. One not rebuilt yet keeps the

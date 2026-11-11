@@ -4,7 +4,9 @@ The module keeps its HMAC key and the canonical URL of ``/mcp`` as system
 parameters, and the agents' issuer on the settings. A restored copy of
 production must not sign with production's key, nor present itself as
 production's ``/mcp``, nor trust production's issuer: neutralizing a
-database clears the three, and the key is created again on first use.
+database clears the three, and the key is created again on first use. Nor
+may an agent with a credential of production act on the copy without
+asking: its live auto-approval rules are revoked.
 """
 
 from odoo.modules.neutralize import neutralize_database
@@ -14,6 +16,7 @@ from odoo.addons.incubacloud_mcp.models.cloud_settings import (
     RESOURCE_PARAM,
     SECRET_PARAM,
 )
+from odoo.addons.incubacloud_mcp.models.mcp_auto_approval import _INTERNAL
 
 
 @tagged("post_install", "-at_install")
@@ -66,3 +69,31 @@ class TestNeutralizeMcp(TransactionCase):
         self.assertEqual(len(key), 32)
         self.assertNotEqual(key, self.key)
         self.assertEqual(self._params(), [SECRET_PARAM])
+
+    def test_live_auto_approval_rules_are_revoked(self):
+        """A live rule ends, by nobody; one already ended keeps how it ended."""
+        Rule = self.env["incubacloud.mcp.auto.approval"].sudo().with_context(
+            **{_INTERNAL: True}
+        )
+        values = {
+            "user_id": self.env.ref("base.user_admin").id,
+            "kind": "api_key",
+            "role_at_grant": "manager",
+        }
+        live = Rule.create(values | {"credential": "API key #9001"})
+        ended = Rule.create(
+            values
+            | {
+                "credential": "API key #9002",
+                "revoked_at": "2026-11-01 10:00:00",
+                "revoked_reason": "superseded",
+            }
+        )
+        self.env.flush_all()
+        self._neutralize()
+        self.assertTrue(live.revoked_at)
+        self.assertEqual(live.revoked_reason, "manual")
+        self.assertFalse(live.revoked_by_id)
+        self.assertEqual(live._state(), "revoked")
+        self.assertEqual(ended.revoked_reason, "superseded")
+        self.assertEqual(str(ended.revoked_at), "2026-11-01 10:00:00")
