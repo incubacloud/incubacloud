@@ -12,6 +12,7 @@ real VPS, not here — it opens a real asyncssh connection.
 import asyncio
 import importlib.util
 import os
+import re
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -259,6 +260,90 @@ class TestHardeningPreflight(TransactionCase):
         # Whitespace-separated: fail2ban does not split ignoreip on
         # commas, and the allowlist arrives comma-joined for nftables.
         self.assertIn("join(' ')", expr)
+
+    def _copy_content(self, dest):
+        """Return the ``copy`` content the playbook writes to *dest*.
+
+        :param str dest: the file's path on the host
+        :return: the content, unrendered
+        :rtype: str
+        """
+        for task in self._playbook().get("tasks") or []:
+            copy = task.get("ansible.builtin.copy") or {}
+            if copy.get("dest") == dest:
+                return copy["content"]
+        raise AssertionError(f"no task writes {dest}")
+
+    def test_sshd_jail_counts_failures_against_real_accounts(self):
+        """The sshd jail is aggressive and reads OpenSSH 10's process.
+
+        In Debian's ``normal`` mode a failed key login to root logs only
+        ``Connection closed by authenticating user root ... [preauth]``,
+        which counts for nothing: on Debian 13 three such attempts gave no
+        ``Found``, so only made-up user names were banned. OpenSSH 10
+        logs authentication as ``sshd-session``, which Debian 13's default
+        ``journalmatch`` (``_COMM=sshd``) does not name.
+        """
+        jail = self._copy_content("/etc/fail2ban/jail.d/sshd-incubacloud.local")
+        self.assertRegex(jail, r"(?m)^mode\s*=\s*aggressive\s*$")
+        self.assertRegex(
+            jail,
+            r"(?m)^journalmatch\s*=\s*_SYSTEMD_UNIT=ssh\.service \+ "
+            r"_COMM=sshd \+ _COMM=sshd-session\s*$",
+        )
+        # In the jail, a failregex replaces the filter's whole list and
+        # the jail would count only what it names.
+        self.assertNotRegex(jail, r"(?m)^\s*(failregex|ignoreregex)\s*=")
+
+    def test_sshd_filter_counts_one_per_attempt(self):
+        """The filter additions count each attempt once, on real lines.
+
+        Lines as OpenSSH 10.0 writes them on Debian 13. A made-up user, or
+        one AllowUsers leaves out, logs an opening line and then the
+        ``[preauth]`` close that aggressive mode counts: the opening line
+        is ignored so the attempt counts once. The listener's login-grace
+        timeout has a form the stock filter cannot read.
+        """
+        content = self._copy_content("/etc/fail2ban/filter.d/sshd.local")
+        failregex = re.search(
+            r"(?ms)^failregex = (.*?)^ignoreregex = ", content,
+        )[1].split("\n")
+        failregex = [line.strip() for line in failregex if line.strip()]
+        # Ours first (the first rule that matches is the one used), then
+        # every stock rule.
+        self.assertEqual(len(failregex), 2)
+        self.assertEqual(failregex[1], "%(known/failregex)s")
+        match = re.search(
+            failregex[0].replace("<HOST>", r"(?P<host>[0-9A-Fa-f.:]+)"),
+            "Timeout before authentication for connection from 192.0.2.14 "
+            "to 192.0.2.2, pid = 279",
+        )
+        self.assertEqual(match["host"], "192.0.2.14")
+
+        ignore = re.search(r"(?ms)^ignoreregex = (.*)", content)[1]
+        ignore = [
+            re.compile(line.strip()) for line in ignore.split("\n")
+            if line.strip()
+        ]
+        ignored = [
+            "Invalid user invitado from 198.51.100.7 port 53002",
+            "User probador from 192.0.2.14 not allowed because not "
+            "listed in AllowUsers",
+        ]
+        counted = [
+            "Connection closed by invalid user invitado 198.51.100.7 port "
+            "53002 [preauth]",
+            "Connection closed by authenticating user root 198.51.100.7 port "
+            "53008 [preauth]",
+            "Failed password for invalid user invitado from 192.0.2.14 "
+            "port 32834 ssh2",
+            "maximum authentication attempts exceeded for root from "
+            "192.0.2.14 port 53364 ssh2 [preauth]",
+        ]
+        for line in ignored:
+            self.assertTrue(any(r.search(line) for r in ignore), line)
+        for line in counted:
+            self.assertFalse(any(r.search(line) for r in ignore), line)
 
     def test_the_ruleset_replaces_only_our_own_table(self):
         """``flush ruleset`` would take Docker's packet rules with it.
