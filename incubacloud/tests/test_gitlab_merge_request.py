@@ -854,3 +854,84 @@ class TestRestoreQueuesTheNote(_MergeRequestCase):
                 github.assert_not_called()
                 self.assertEqual(len(self._jobs(preview, "delete_instance")), 1)
         self.assertFalse(self._note_jobs())
+
+
+class TestNoteOfAPreviewNotUpdated(_MergeRequestCase):
+    """A merge request preview whose restore could not update its modules.
+
+    The restore failed in «Update changed modules», Odoo stayed stopped,
+    and the merge request heard nothing: its note was queued by the
+    restore's success alone. The failure queues it now, and the note says
+    the preview could not be updated, and why, until a restore or a
+    rebuild of the preview succeeds.
+    """
+
+    REASON = "Updating its modules to this code failed (exit status 1)."
+
+    # The mocked GitLab of ``TestNoteJob``, without its tests.
+    _run = TestNoteJob._run
+    _marker = TestNoteJob._marker
+
+    def setUp(self):
+        """A credential with api acting as ``panel-bot``, and a mocked client."""
+        super().setUp()
+        cred = self.env["cloud.git.credential"].create({
+            "provider_id": self.provider.id, "namespace": "acme",
+            "kind": "group", "token": "glpat-routes12",
+        })
+        cred.sudo().write({"scopes": "api", "token_user": "panel-bot"})
+        self.api = MagicMock(spec=GitLabClient)
+        self.api.create_mr_note.return_value = {"id": 501}
+        self.api.list_mr_notes.return_value = []
+        patcher = patch.object(
+            cloud_gitlab_mr_note, "GitLabClient", autospec=True, return_value=self.api,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.Note = self.env["cloud.gitlab.mr.note"]
+
+    def test_the_note_says_it_could_not_be_updated_and_why(self):
+        self._preview(pr_update_error=self.REASON)
+        self._run()
+        body = self.api.create_mr_note.call_args.args[2]
+        self.assertIn("could not be updated", body)
+        self.assertIn(self.REASON, body)
+        self.assertIn("merge request", body)
+        self.assertIn(self._marker(), body)
+
+    def test_the_restore_s_failure_queues_it(self):
+        preview = self._preview()
+        job = self.env["cloud.job"].sudo().create({
+            "name": "restore", "host_id": self.host.id,
+            "instance_id": preview.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            ).id,
+        })
+        executor = RestoreInstanceExecutor(job, self.host)
+        with patch.object(RestoreInstanceExecutor, "_sys", autospec=True):
+            asyncio.run(executor.on_failure(
+                {"Update changed modules": {"exit_status": 2, "stdout": ""}},
+                ["'Update changed modules' exited with status 2"],
+            ))
+        self.assertEqual(preview.status, "error")
+        self.assertIn("exit status 2", preview.pr_update_error)
+        self.assertEqual(len(self._note_jobs()), 1)
+
+    def test_a_restore_that_succeeds_clears_it(self):
+        preview = self._preview(pr_update_error=self.REASON)
+        job = self.env["cloud.job"].sudo().create({
+            "name": "restore", "host_id": self.host.id,
+            "instance_id": preview.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            ).id,
+        })
+        executor = RestoreInstanceExecutor(job, self.host)
+        with patch.object(
+            RestoreInstanceExecutor, "_cleanup_cross_host_handoff", new=AsyncMock(),
+        ):
+            asyncio.run(executor.on_success({}))
+        self.assertFalse(preview.pr_update_error)
+        self._run()
+        self.assertIn("ready", self.api.create_mr_note.call_args.args[2])

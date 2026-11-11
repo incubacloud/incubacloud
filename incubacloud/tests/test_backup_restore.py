@@ -153,3 +153,113 @@ class TestBackupRestoreUpdatesModules(BaseCase):
         inst.write.assert_called_once_with({'status': 'error'})
         self.assertTrue(any("Odoo was left stopped" in line for line in lines))
         self.assertFalse(any("inconsistent state" in line for line in lines))
+
+
+class TestBackupRestorePointOfNoReturn(BaseCase):
+    """From the drop of the database on, a stop of a backup's restore is refused.
+
+    Stopped there the database is left missing, half loaded or half
+    updated, and the stop only kills the ``docker compose exec`` client:
+    ``psql`` goes on inside the container.
+    """
+
+    def test_the_drop_is_the_point(self):
+        ex = _make_executor()
+        self.assertEqual(ex._no_return_from, "Drop database")
+        labels = [t[0] for t in ex.get_commands()]
+        self.assertIn(ex._no_return_from, labels)
+
+
+class TestBackupRestoreCutOff(BaseCase):
+    """A backup's restore cut off halfway ends in error, saying where.
+
+    A connection that dropped, or a step out of its time, ended the run
+    with no outcome: Odoo stopped, the instance said nothing of it.
+    """
+
+    def _abort(self, ran, running, exc=None):
+        """Run ``on_abort`` after *ran*, with *running* cut off."""
+        from odoo.addons.incubacloud.models.backup_restore_executor import (
+            BackupRestoreExecutor,
+        )
+        from odoo.addons.incubacloud.models.cloud_instance import CloudInstance
+
+        ex = _make_executor()
+        inst = MagicMock(spec=CloudInstance)
+        ex.job.instance_id = inst
+        ex._step_results = ran
+        ex._running_step = running
+        lines = []
+        with patch.object(
+            BackupRestoreExecutor, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(ex.on_abort(exc or TimeoutError("3600 s")))
+        return inst, lines
+
+    def test_an_update_cut_off_leaves_the_instance_in_error(self):
+        inst, lines = self._abort(
+            {"Import SQL": {"exit_status": 0, "stdout": ""}},
+            "Update changed modules",
+        )
+        inst.write.assert_called_once_with({'status': 'error'})
+        self.assertTrue(any("did not end" in line for line in lines))
+        self.assertTrue(any("Odoo was left stopped" in line for line in lines))
+
+    def test_an_import_cut_off_says_the_state_may_be_inconsistent(self):
+        inst, lines = self._abort({}, "Import SQL")
+        inst.write.assert_called_once_with({'status': 'error'})
+        self.assertTrue(any("'Import SQL' did not end" in line for line in lines))
+        self.assertTrue(any("inconsistent state" in line for line in lines))
+
+    def test_a_run_cut_before_its_steps_leaves_the_instance_alone(self):
+        inst, lines = self._abort(None, None, exc=RuntimeError("no host"))
+        inst.write.assert_not_called()
+        self.assertEqual(lines, ["✗ RuntimeError: no host"])
+
+
+class TestBackupRestoreSaysWhichCode(BaseCase):
+    """The log says which code a restored backup's modules are updated to.
+
+    Restoring production to undo a bad deployment, with the code still the
+    deployment's, migrates the database again: the log names the branches
+    and pinned commits before the restore starts.
+    """
+
+    def _said(self, auto_update=True):
+        """Run ``before_execute``; return what it wrote to the log."""
+        from odoo.addons.incubacloud.models.backup_restore_executor import (
+            BackupRestoreExecutor,
+        )
+        ex = _make_executor(auto_update=auto_update)
+        inst = ex.job.instance_id
+        inst.odoo_version = '17.0'
+        inst.odoo_commit_sha = False
+        inst.repo_ids = [
+            SimpleNamespace(
+                url='https://github.com/acme/addons.git', branch='17.0',
+                commit_sha=False,
+            ),
+            SimpleNamespace(
+                url='https://gitlab.example.com/acme/sub/extra', branch='main',
+                commit_sha='0123456789abcdef',
+            ),
+        ]
+        lines = []
+        with patch.object(
+            BackupRestoreExecutor, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(ex.before_execute(None))
+        return lines
+
+    def test_it_names_the_branches_and_pins(self):
+        said = self._said()
+        self.assertEqual(len(said), 1)
+        self.assertIn("Odoo 17.0", said[0])
+        self.assertIn("acme/addons on 17.0", said[0])
+        self.assertIn("acme/sub/extra on main pinned to 0123456789ab", said[0])
+        self.assertIn("revert its code first", said[0])
+
+    def test_without_auto_update_it_says_nothing(self):
+        self.assertEqual(self._said(auto_update=False), [])

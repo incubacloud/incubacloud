@@ -245,6 +245,14 @@ Things worth knowing before switching it on:
 - If a preview cannot be created, the pull request gets a comment saying why and
   the production instance an alert. Fix the cause, then close and reopen the
   pull request to try again.
+- The copy's modules are updated to the pull request's code before it starts.
+  If that update fails, the preview stays stopped and the comment says it could
+  not be updated; push a fix to the branch and its rebuild brings it up.
+- The panel acts on the pull requests of one installation of its GitHub App,
+  the one under **Settings → GitHub**. If the App is installed on another
+  account too, a pull request there gets no preview: the production that would
+  have been copied gets an alert naming the account instead. Choosing that
+  installation resolves it, or dismiss it.
 
 ## Stagings expire when nobody uses them
 

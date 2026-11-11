@@ -20865,3 +20865,85 @@ msgstr ""
 "%(repo)s para la vista previa %(preview)s: %(reason)s La vista previa "
 "funciona sin él; compruebe que la GitHub App del panel sigue instalada en la"
 " cuenta de ese repositorio y puede escribir en sus pull requests."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Its modules are then updated to the code the instance\n"
+"                    runs now. To undo a deployment, revert its code first,\n"
+"                    or its migration runs again."
+msgstr ""
+"Después, sus módulos se actualizan al código que la instancia ejecuta ahora."
+" Para deshacer un despliegue, revierta primero su código, o su migración "
+"volverá a ejecutarse."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s cannot be stopped any more: it has passed '%(step)s', which "
+"removes the instance's database to load the backup in its place and then "
+"updates its modules. Stopped now, the database would be left missing, half "
+"loaded or half updated, and the load would go on inside the server anyway. "
+"Let it end; it takes as long as loading the backup does."
+msgstr ""
+"El trabajo n.º %(job)s ya no se puede detener: ha pasado «%(step)s», que "
+"borra la base de datos de la instancia para cargar la copia de seguridad en "
+"su lugar y después actualiza sus módulos. Si se detuviera ahora, la base de "
+"datos quedaría inexistente, cargada a medias o actualizada a medias, y la "
+"carga seguiría de todos modos dentro del servidor. Deje que termine; tarda "
+"lo que tarde en cargarse la copia de seguridad."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pr_update_error
+msgid "Preview Update Error"
+msgstr "Error de actualización de la vista previa"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_github_event.py:0
+msgid ""
+"Pull request #%(number)s on %(repo)s came through the panel's GitHub App "
+"installed on the account %(account)s, which is not the installation this "
+"panel acts on: no preview of %(instance)s is created for it. The panel acts "
+"on the pull requests of one installation, the one under Settings → GitHub."
+msgstr ""
+"El pull request #%(number)s de %(repo)s llegó por la GitHub App del panel "
+"instalada en la cuenta %(account)s, que no es la instalación con la que "
+"trabaja este panel: no se crea ninguna vista previa de %(instance)s para él."
+" El panel atiende los pull requests de una sola instalación, la que figura "
+"en Ajustes → GitHub."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"The panel acts on the pushes and pull requests of\n"
+"                                    this installation only. If the App is installed on\n"
+"                                    another account too, a pull request there that one\n"
+"                                    of your productions would preview gets no preview,\n"
+"                                    and that production an alert naming the account."
+msgstr ""
+"El panel atiende los pushes y pull requests de esta instalación únicamente. "
+"Si la App está instalada también en otra cuenta, un pull request allí que "
+"una de sus producciones previsualizaría no obtiene vista previa, y esa "
+"producción recibe una alerta que nombra la cuenta."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "The panel failed with %(error)s."
+msgstr "El panel falló con %(error)s."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_update_error
+msgid ""
+"Why the restore of a preview could not update its modules to the request's "
+"code, as its comment or note says; empty once a restore or a rebuild of it "
+"succeeds."
+msgstr ""
+"Por qué la restauración de una vista previa no pudo actualizar sus módulos "
+"al código de la solicitud, tal como lo dice su comentario o nota; se vacía "
+"cuando una restauración o una reconstrucción de la vista previa termina "
+"bien."

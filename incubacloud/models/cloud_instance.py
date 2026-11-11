@@ -35,7 +35,9 @@ from ._repo_requirements import (
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
+from ._concurrency import is_concurrency_error
 from .cloud_gitlab_mr_note import PR_PREVIEW_NOTE_FAILED_CODE
+from .cloud_gitlab_mr_note import MAX_NOTE_PAGES as NOTE_MAX_PAGES
 from .cloud_gitlab_mr_note import RETRY_SECONDS as NOTE_RETRY_SECONDS
 from .cloud_rate_limit import consume_quota
 from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
@@ -168,7 +170,8 @@ _PLATFORM_FIELDS = frozenset({
     "move_rollback_in_progress", "move_frozen_source_host_id",
     "move_frozen_until", "move_cut_started_at", "move_last_cut_seconds",
     "pr_number", "pr_repo", "pr_head_branch", "pr_comment_id",
-    "pr_installation_id", "pr_provider_id", "pr_state", "removal_finalized",
+    "pr_installation_id", "pr_provider_id", "pr_state", "pr_update_error",
+    "removal_finalized",
     "smtp_relay_state", "smtp_relay_checked_at", "smtp_relay_error",
 })
 
@@ -472,6 +475,13 @@ class CloudInstance(models.Model):
         help="Whether the request of a preview is still open. Written "
         "closed when it closes, before the note is taken off the merge "
         "request.",
+    )
+    pr_update_error = fields.Char(
+        string="Preview Update Error",
+        copy=False,
+        help="Why the restore of a preview could not update its modules to "
+        "the request's code, as its comment or note says; empty once a "
+        "restore or a rebuild of it succeeds.",
     )
 
     # ── Copier template parameters ──────────────────────────────────────────
@@ -3354,8 +3364,8 @@ class CloudInstance(models.Model):
 
         Lives here and not inline in the restore executor so what the
         comment promises — a link that opens the preview — can be
-        checked without running a job. A merge request's note ends with
-        the hidden marker the panel finds it by.
+        checked without running a job. It ends with the hidden marker
+        the panel finds it by (:meth:`_pr_note_marker`).
 
         :return: the comment body as :class:`str`
         """
@@ -3365,19 +3375,127 @@ class CloudInstance(models.Model):
             else '_(no domain configured)_'
         )
         request = 'merge request' if self.pr_provider_id else 'PR'
-        body = (
+        return (
             f'✅ **IncubaCloud Preview** — ready!\n\n'
             f'| | |\n|---|---|\n'
             f'| **URL** | {url} |\n'
             f'| **Branch** | `{self.pr_head_branch}` |\n'
             f'| **Instance** | `{self.name}` |\n\n'
             f'_Auto-destroys when the {request} is closed._'
+            f'\n\n{self._pr_note_marker()}'
         )
+
+    def _pr_preview_update_failed_body(self):
+        """Markdown of the request's comment or note for a preview not updated.
+
+        Its database was restored, but updating its modules to the
+        request's code failed (``pr_update_error``, a sentence safe to
+        publish): Odoo was left stopped. A push to the branch rebuilds
+        it.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        request = 'merge request' if self.pr_provider_id else 'pull request'
+        reason = " ".join((self.pr_update_error or "").replace("`", "").split())
+        return (
+            f'⚠️ **IncubaCloud Preview** — could not be updated\n\n'
+            f'| | |\n|---|---|\n'
+            f'| **Branch** | `{self.pr_head_branch}` |\n'
+            f'| **Instance** | `{self.name}` |\n'
+            f'| **Reason** | {reason} |\n\n'
+            f'_Push a fix to the branch of the {request} to try again._'
+            f'\n\n{self._pr_note_marker()}'
+        )
+
+    def _pr_preview_body(self):
+        """Return what the request's comment or note says of its preview now.
+
+        That its modules could not be updated while ``pr_update_error``
+        says so, else that it is ready.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.pr_update_error:
+            return self._pr_preview_update_failed_body()
+        return self._pr_preview_ready_body()
+
+    def _pr_note_marker(self):
+        """Return the hidden marker the panel finds its comment or note by.
+
+        The merge request note's (``cloud.gitlab.mr.note._marker``), for a
+        pull request's comment too: a comment written by a try whose
+        answer never came is found again instead of written twice.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return self.env['cloud.gitlab.mr.note']._marker(
+            self.project_id.id, self.pr_number,
+        )
+
+    def _enqueue_preview_note(self):
+        """Queue the job that makes the request's comment or note say the truth.
+
+        A merge request's note (``cloud.gitlab.mr.note._enqueue``) or a
+        pull request's comment (:meth:`_enqueue_pr_comment`), each a job
+        of its own, queued in the caller's transaction.
+
+        :return: the queued job, or None for no preview of a request
+        """
+        self.ensure_one()
+        if not self.pr_number:
+            return None
         if self.pr_provider_id:
-            body += '\n\n' + self.env['cloud.gitlab.mr.note']._marker(
-                self.project_id.id, self.pr_number,
+            return self.env['cloud.gitlab.mr.note']._enqueue(self)
+        return self._enqueue_pr_comment()
+
+    def _preview_rebuilt(self, job):
+        """What a successful rebuild of a pull or merge request preview settles.
+
+        A preview whose restore failed in its update
+        (``pr_update_error``) is updated and up: the restore's
+        ``job_failed``, which held its queue, is resolved by this
+        rebuild, and the request's comment or note says it is ready.
+        A preview without its comment or note gets it. A request closed,
+        or anything else, has nothing to settle here. Called on the
+        rebuild's durable cursor; what cannot be queued goes to the log,
+        and the rebuild keeps its outcome.
+
+        :param job: the ``cloud.job`` of the rebuild
+        """
+        self.ensure_one()
+        if not self.pr_number or self.pr_state == "closed":
+            return
+        if not (self.pr_update_error or not self.pr_comment_id):
+            return
+        try:
+            with self.env.cr.savepoint():
+                if self.pr_update_error:
+                    stale = self.env["cloud.alert"].sudo().search([
+                        ("code", "=", "job_failed"),
+                        ("state", "=", "active"),
+                        ("instance_id", "=", self.id),
+                        ("job_id.job_type_id.code", "=", "restore_instance"),
+                    ])
+                    if stale:
+                        stale.write({
+                            "state": "dismissed",
+                            "resolution": "auto",
+                            "resolved_by_job_id": job.id,
+                        })
+                        for alert in stale:
+                            alert._notify_alert_resolved()
+                    # The platform's field (``_PLATFORM_FIELDS``).
+                    self.sudo().write({"pr_update_error": False})
+                self._enqueue_preview_note()
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.exception(
+                "Rebuild of the preview %s: its comment was not queued", self.name,
             )
-        return body
 
     def _pr_github_client(self):
         """Return a GitHub client of the installation the request came through.
@@ -3400,10 +3518,51 @@ class CloudInstance(models.Model):
             creds = dataclasses.replace(creds, installation_id=installation)
         return GitHubAppClient(creds)
 
+    def _find_pr_comment(self, client, account, repo):
+        """Return the id of the panel's comment on the pull request, or 0.
+
+        The one carrying :meth:`_pr_note_marker` and written by this App
+        (``performed_via_github_app``, or its bot as the author): anybody
+        can paste the marker in a comment of their own. The comments are
+        read 100 at a time, up to the merge request note's limit of pages.
+
+        :param GitHubAppClient client: the installation's client
+        :param str account: the account part of ``pr_repo``
+        :param str repo: the repository part of ``pr_repo``
+        :rtype: int
+        """
+        marker = self._pr_note_marker()
+        app = self.env["cloud.github.app"].sudo().search([], limit=1)
+        app_id = str(app.app_id or "")
+        bot = f"{app.slug}[bot]" if app.slug else ""
+
+        def _ours(comment):
+            """Return whether *comment* is the panel's, by marker and author."""
+            via = str((comment.get("performed_via_github_app") or {}).get("id") or "")
+            author = (comment.get("user") or {}).get("login") or ""
+            return marker in (comment.get("body") or "") and (
+                (app_id and via == app_id) or (bot and author == bot)
+            )
+
+        for page in range(1, NOTE_MAX_PAGES + 1):
+            comments = client.get(
+                f"/repos/{account}/{repo}/issues/{self.pr_number}/comments"
+                f"?per_page=100&page={page}",
+            ) or []
+            for comment in comments if isinstance(comments, list) else []:
+                if isinstance(comment, dict) and _ours(comment):
+                    return comment.get("id") or 0
+            if len(comments) < 100:
+                break
+        return 0
+
     def _post_or_update_pr_comment(self, body):
         """Post or update the GitHub PR comment for this PR preview instance.
 
-        A comment removed on GitHub is written again.
+        A comment removed on GitHub is written again. One whose id the
+        panel never stored — the answer to its POST did not come, and
+        the job ran again — is found by its marker
+        (:meth:`_find_pr_comment`) and rewritten, not written twice.
 
         :param str body: the comment's Markdown
         :raises GitHubAPIError: when GitHub refuses it
@@ -3411,22 +3570,29 @@ class CloudInstance(models.Model):
         """
         if not self.pr_number or not self.pr_repo:
             return
-        owner, repo = self.pr_repo.split("/", 1)
+        account, repo = self.pr_repo.split("/", 1)
         client = self._pr_github_client()
         if self.pr_comment_id:
             try:
-                client.patch_issue_comment(owner, repo, self.pr_comment_id, body)
+                client.patch_issue_comment(account, repo, self.pr_comment_id, body)
                 return
             except GitHubAPIError as exc:
                 if exc.status_code != 404:
                     raise
-        result = client.post_issue_comment(owner, repo, self.pr_number, body)
-        if result.get("id"):
+        found = self._find_pr_comment(client, account, repo)
+        if found:
+            client.patch_issue_comment(account, repo, found, body)
+            comment_id = found
+        else:
+            comment_id = client.post_issue_comment(
+                account, repo, self.pr_number, body,
+            ).get("id")
+        if comment_id and comment_id != self.pr_comment_id:
             # The platform's field (``_PLATFORM_FIELDS``).
-            self.sudo().write({"pr_comment_id": result["id"]})
+            self.sudo().write({"pr_comment_id": comment_id})
 
     def _enqueue_pr_comment(self):
-        """Queue the job that writes the «ready» comment on the pull request.
+        """Queue the job that writes the preview's comment on the pull request.
 
         Not written in the restore that brings the preview up: GitHub may
         be away then, and a job is tried again (``_job_pr_comment``).
@@ -3444,17 +3610,37 @@ class CloudInstance(models.Model):
             identity_key=f"github-pr-comment:{self.id}",
         )._job_pr_comment()
 
+    @staticmethod
+    def _github_may_answer_later(exc):
+        """Return whether GitHub may take the comment on a later try.
+
+        No answer, a 5xx, a 429, and a 403 of GitHub's secondary rate
+        limit, which it answers with ``Retry-After``.
+
+        :param Exception exc: what the call raised
+        :rtype: bool
+        """
+        status = getattr(exc, "status_code", None)
+        if status is None or status >= 500 or status == 429:
+            return True
+        return status == 403 and "rate limit" in str(exc).lower()
+
     def _job_pr_comment(self):
-        """Write the «ready» comment on the pull request (queued).
+        """Write the preview's comment on the pull request (queued).
 
         Nothing for a preview gone, closed or not deployed: the close
         deletes the comment, and the restore that brings a preview up
-        queues this again. GitHub unreachable, or answering 5xx or 429:
-        tried again after 60, 300 and 900 s, as a merge request's note.
-        Then, or at once on an answer that will not change, the alert
-        ``pr_preview_note_failed`` goes on the production the preview was
-        cloned from: the preview works, but nobody on the pull request
-        hears of it.
+        queues this again. The comment says what is true when it runs:
+        that the preview is ready, or that its modules could not be
+        updated (:meth:`_pr_preview_body`). A 401 is tried once more at
+        once: the client dropped the token it had kept, which GitHub
+        may have revoked. GitHub unreachable, or answering 5xx, 429 or
+        its secondary rate limit: tried again after 60, 300 and 900 s,
+        as a merge request's note. Then, or at once on an answer that
+        will not change or on anything else that went wrong, the alert
+        ``pr_preview_note_failed`` goes on the production the preview
+        was cloned from: the preview works, but nobody on the pull
+        request hears of it.
 
         :raises RetryableJobError: when GitHub may answer on a later try
         """
@@ -3465,11 +3651,15 @@ class CloudInstance(models.Model):
             return
         Note = self.env["cloud.gitlab.mr.note"]
         try:
-            inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
+            try:
+                inst._post_or_update_pr_comment(inst._pr_preview_body())
+            except GitHubAPIError as exc:
+                if exc.status_code != 401:
+                    raise
+                inst._post_or_update_pr_comment(inst._pr_preview_body())
         except (GitHubAPIError, OSError) as exc:
             status = getattr(exc, "status_code", None)
-            if (status is None or status >= 500 or status == 429) \
-                    and not Note._last_attempt():
+            if self._github_may_answer_later(exc) and not Note._last_attempt():
                 raise RetryableJobError(
                     f"GitHub did not take the comment of #{inst.pr_number} "
                     f"of {inst.pr_repo}: {status or type(exc).__name__}",
@@ -3482,9 +3672,33 @@ class CloudInstance(models.Model):
         except UserError as exc:
             inst._report_pr_comment_failure(str(exc))
             return
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.warning(
+                "The comment of pull request #%s of %s failed",
+                inst.pr_number, inst.pr_repo, exc_info=True,
+            )
+            inst._report_pr_comment_failure(
+                _("The panel failed with %(error)s.", error=type(exc).__name__),
+            )
+            return
         Alert = self.env["cloud.alert"].sudo()
+        key = inst._pr_comment_alert_key()
         for target in inst | inst._pr_preview_production():
-            Alert.resolve_alert(PR_PREVIEW_NOTE_FAILED_CODE, instance=target)
+            Alert.resolve_alert(PR_PREVIEW_NOTE_FAILED_CODE, instance=target, key=key)
+
+    def _pr_comment_alert_key(self):
+        """Return the key of the alert about this pull request's comment.
+
+        ``github_pr:<repo>:<number>``: two pull requests previewing one
+        production have an alert each, and the close of one resolves its
+        own (``cloud.github.event``).
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return f"github_pr:{self.pr_repo}:{self.pr_number}"
 
     def _pr_preview_production(self):
         """Return the production this preview was cloned from, or nothing.
@@ -3506,7 +3720,8 @@ class CloudInstance(models.Model):
         """Raise ``pr_preview_note_failed``: the comment could not be written.
 
         On the production the preview was cloned from, where people look,
-        else on the preview.
+        else on the preview, keyed by the pull request
+        (:meth:`_pr_comment_alert_key`).
 
         :param str reason: what failed
         """
@@ -3527,6 +3742,7 @@ class CloudInstance(models.Model):
             ),
             level="warning",
             instance=self._pr_preview_production() or self,
+            key=self._pr_comment_alert_key(),
         )
 
     def _delete_pr_comment(self):
@@ -3534,7 +3750,9 @@ class CloudInstance(models.Model):
 
         With the token of the installation the request came through. A
         comment that could not be deleted only goes to the log, as a
-        merge request's note: an alert nobody can resolve helps no one.
+        warning — the App uninstalled from the account is the usual
+        reason — as a merge request's note: an alert nobody can resolve
+        helps no one.
         """
         if not self.pr_comment_id or not self.pr_repo:
             return
@@ -3544,8 +3762,12 @@ class CloudInstance(models.Model):
                 owner, repo, self.pr_comment_id,
             )
             self.sudo().write({"pr_comment_id": 0})
-        except Exception:
-            _logger.exception("PR comment delete failed for %s", self.name)
+        except Exception as exc:
+            if is_concurrency_error(exc):
+                raise
+            _logger.warning(
+                "PR comment delete failed for %s: %s", self.name, exc,
+            )
 
     def _remove_closed_preview(self):
         """Delete a preview whose pull or merge request closed, whatever it is doing.

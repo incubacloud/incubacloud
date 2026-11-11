@@ -859,13 +859,41 @@ class TestRestoreUpdatesModules(BaseCase):
         self.assertEqual(_argv(step)[-3:], [INSTANCE_DIR, "main", "erp"])
 
     def test_the_update_runs_after_the_copy_is_made_safe(self):
-        # Neutralized, its mail sent to the catcher and its base URL its
-        # own before any Odoo runs on it: an update that sends mail or
-        # calls out must not do it as production.
+        # Neutralized and its base URL its own before any Odoo runs on
+        # it: an update that calls out must not do it as production.
         labels = self._labels(_make_restore_executor(_PREVIEW))
-        for before in ("Restore database", "Route mail to the mail catcher",
-                       "Reset base URL"):
+        for before in ("Restore database", "Reset base URL"):
             self.assertLess(labels.index(before), labels.index(self._LABEL))
+
+    def test_the_copy_is_neutralized_again_after_the_update(self):
+        # The update rewrites what its data files leave unprotected,
+        # scheduled actions and mail servers among them; each
+        # neutralization inserts the placeholder server the mail
+        # catcher's step removes.
+        ex = _make_restore_executor(_PREVIEW)
+        labels = self._labels(ex)
+        again = "Neutralize again after the update"
+        self.assertEqual(labels.index(again), labels.index(self._LABEL) + 1)
+        self.assertLess(
+            labels.index(again), labels.index("Route mail to the mail catcher"),
+        )
+        self.assertLess(
+            labels.index("Route mail to the mail catcher"),
+            labels.index("Start Odoo service"),
+        )
+        step = _find(ex.get_commands(), again)
+        self.assertEqual(_argv(step)[2:], ["neutralize", INSTANCE_DIR, "prod"])
+        self.assertTrue(step[2].get("stop_on_failure"))
+
+    def test_a_copy_not_neutralized_is_not_neutralized_after_either(self):
+        labels = self._labels(_make_restore_executor({"mode": "from_job"}))
+        self.assertIn(self._LABEL, labels)
+        self.assertNotIn("Neutralize again after the update", labels)
+
+    def test_without_the_update_the_copy_is_neutralized_once(self):
+        labels = self._labels(_make_restore_executor(_PREVIEW, auto_update=False))
+        self.assertNotIn("Neutralize again after the update", labels)
+        self.assertIn("Route mail to the mail catcher", labels)
 
     def test_the_update_runs_before_odoo_boots(self):
         labels = self._labels(_make_restore_executor(_PREVIEW))
@@ -927,6 +955,7 @@ class TestRestoreModuleUpdateFailure(BaseCase):
 
         ex = _make_restore_executor({"mode": "from_job"})
         inst = MagicMock(spec=CloudInstance)
+        inst.pr_number = 0
         ex.job.instance_id = inst
         lines = []
         with patch.object(
@@ -935,6 +964,57 @@ class TestRestoreModuleUpdateFailure(BaseCase):
         ):
             asyncio.run(ex.on_failure(results, ["'step' exited with status 1"]))
         return inst, lines
+
+    def test_it_says_what_to_do_about_the_alert_and_auto_update(self):
+        _inst, lines = self._fail({
+            "Update changed modules": {"exit_status": 1, "stdout": ""},
+        })
+        said = next(line for line in lines if "could not be updated" in line)
+        self.assertIn("dismiss this job's alert", said)
+        self.assertIn("rebuild the instance", said)
+        self.assertIn("'Auto-update modules on rebuild' off does not update", said)
+
+    def _abort(self, ran, running, exc=None):
+        """Run ``on_abort`` after the steps in *ran*, *running* cut off.
+
+        :return: the instance and the log
+        """
+        import asyncio
+
+        from odoo.addons.incubacloud.models.cloud_instance import CloudInstance
+        from odoo.addons.incubacloud.models.restore_instance_executor import (
+            RestoreInstanceExecutor,
+        )
+
+        ex = _make_restore_executor({"mode": "from_job"})
+        inst = MagicMock(spec=CloudInstance)
+        inst.pr_number = 0
+        ex.job.instance_id = inst
+        ex._step_results = ran
+        ex._running_step = running
+        lines = []
+        with patch.object(
+            RestoreInstanceExecutor, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(ex.on_abort(exc or TimeoutError("3600 s")))
+        return inst, lines
+
+    def test_an_update_cut_off_fails_the_restore_saying_so(self):
+        inst, lines = self._abort(
+            {"Restore database": {"exit_status": 0, "stdout": ""}},
+            "Update changed modules",
+        )
+        inst.write.assert_called_once_with({"status": "error"})
+        self.assertTrue(any(
+            "'Update changed modules' did not end" in line for line in lines
+        ))
+        self.assertTrue(any("could not be updated" in line for line in lines))
+
+    def test_a_run_cut_before_its_steps_leaves_the_instance_alone(self):
+        inst, lines = self._abort(None, None, exc=RuntimeError("no host"))
+        inst.write.assert_not_called()
+        self.assertEqual(lines, ["✗ RuntimeError: no host"])
 
     def test_a_failed_update_says_odoo_was_left_stopped(self):
         inst, lines = self._fail({

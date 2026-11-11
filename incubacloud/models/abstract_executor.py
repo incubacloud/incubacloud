@@ -503,6 +503,10 @@ class AbstractExecutor(ABC):
     # person cancels is closed by ``on_failure`` with it, or by
     # ``on_abort`` while it is None (``on_cancelled_running``).
     _step_results = None
+    # The label of the step the run gave the host last (``_run_steps``):
+    # one missing from ``_step_results`` never answered, as when the
+    # connection dropped or its time ran out.
+    _running_step = None
 
     # Connection-retry opt-in. When True, a transient connection failure
     # (see ``is_transient_connection_error``) does not fail the job on the
@@ -876,6 +880,7 @@ class AbstractExecutor(ABC):
             logger.debug("[_run_steps] Executing: %s", command)
             if label == self._no_return_from:
                 self._pass_no_return(label)
+            self._running_step = label
             self._sys(f"Running: {label}")
             # ``timeout``: a step that needs longer than the transport's
             # default per command (``fetch-repos``).
@@ -2106,26 +2111,99 @@ class AbstractExecutor(ABC):
             {"stop_on_failure": True},
         )
 
+    def _say_update_target(self, inst):
+        """Say in the job log which code a restored database is updated to.
+
+        The code the instance was last built from, which a restore does
+        not change: a database restored to undo a bad deployment, with
+        the code still the deployment's, is migrated by it again.
+
+        :param inst: the ``cloud.instance`` whose database is restored
+        """
+        def _path(url):
+            """Return the repository's path in *url*, without its server."""
+            url = (url or "").rstrip("/").removesuffix(".git")
+            if "://" in url:
+                return url.split("://", 1)[1].partition("/")[2] or url
+            return url.rpartition(":")[2]
+
+        lines = [
+            f"{_path(line.url)} on {line.branch or 'its default branch'}"
+            + (f" pinned to {line.commit_sha[:12]}" if line.commit_sha else "")
+            for line in inst.repo_ids
+        ]
+        odoo = f"Odoo {inst.odoo_version}" + (
+            f" pinned to {inst.odoo_commit_sha[:12]}"
+            if inst.odoo_commit_sha else ""
+        )
+        self._sys(
+            f"The restored database's modules are updated to the code this"
+            f" instance was last built from: {', '.join([odoo, *lines])}."
+            f" To undo a deployment, revert its code first, or its"
+            f" migration runs again."
+        )
+
     def _report_failed_module_update(self, results):
         """Say in the job log what a failed update of a restored database left.
 
+        A step that never answered (the connection dropped, its time ran
+        out) counts as failed: ``on_abort`` hands it in with no status.
+
         :param dict results: what the steps answered
             (``{label: {'stdout': str, 'exit_status': int}}``)
-        :return: whether the update was the step that failed
-        :rtype: bool
+        :return: what failed, a sentence safe to show on a pull or merge
+            request, or ``""`` when the update was not the step that failed
+        :rtype: str
         """
         step = (results or {}).get(UPDATE_RESTORED_MODULES_LABEL) or {}
-        if step.get('exit_status', 0) == 0:
-            return False
+        status = step.get('exit_status', 0)
+        if status == 0:
+            return ""
+        if status is None:
+            reason = (
+                "Updating its modules to this code did not end: the"
+                " connection to the server dropped or the step ran out of"
+                " time."
+            )
+        else:
+            reason = (
+                f"Updating its modules to this code failed (exit status"
+                f" {status}); the job's log in the panel names the module."
+            )
         self._sys(
             f"✗ The restored database could not be updated to this"
             f" instance's code: the output of '{UPDATE_RESTORED_MODULES_LABEL}'"
             f" above names the module that failed. Odoo was left stopped,"
             f" so it does not serve a database its code cannot read. Fix"
-            f" what it names, in the code or in the data, then rebuild the"
-            f" instance."
+            f" what it names, in the code or in the data. Then dismiss this"
+            f" job's alert, which holds the instance's queue, and rebuild"
+            f" the instance: the rebuild updates the modules and starts"
+            f" Odoo. A rebuild with 'Auto-update modules on rebuild' off"
+            f" does not update them, and Odoo would start on the database"
+            f" as it is."
         )
-        return True
+        return reason
+
+    async def _fail_cut_off_run(self, exc):
+        """Close a run cut off halfway through ``on_failure``, for ``on_abort``.
+
+        What the steps answered goes to ``on_failure``, with the step the
+        host never answered (``_running_step``) counted as failed with no
+        status, and an error naming it. A run cut before its steps only
+        has *exc* written to the log: nothing changed on the host.
+
+        :param Exception exc: what stopped the run
+        """
+        error = f"{type(exc).__name__}: {exc}"
+        if self._step_results is None:
+            self._sys(f"✗ {error}")
+            return
+        results = dict(self._step_results)
+        step = self._running_step
+        if step and step not in results:
+            results[step] = {"stdout": "", "exit_status": None}
+            error = f"'{step}' did not end: {error}"
+        await self.on_failure(results, [error])
 
     async def on_success(self, results):
         """Called when parse_results returns an empty list."""

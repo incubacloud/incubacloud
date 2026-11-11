@@ -1609,6 +1609,11 @@
                 <p class="ic-restore-warning">
                     This action <strong>cannot be undone</strong>.
                 </p>
+                <p class="ic-restore-warning" t-if="state.inst.auto_update !== false">
+                    Its modules are then updated to the code the instance
+                    runs now. To undo a deployment, revert its code first,
+                    or its migration runs again.
+                </p>
                 <div class="ic-restore-confirm-input">
                     <label>Type the instance name to confirm:
                         <strong t-esc="state.inst.name" />

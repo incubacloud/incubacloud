@@ -217,3 +217,84 @@ class TestAPushAfterAFailedRebuild(_PushCase):
                 {"push_sha": ""},
             ],
         }), {"aaa1111", "bbb2222"})
+
+
+class TestAPushAfterAPreviewUpdateFailed(_PushCase):
+    """The push of a fix rebuilds a preview whose restore failed in its update.
+
+    A preview's restore is the last step of its clone's chain. When the
+    update of its modules to the request's code fails, the restore's
+    ``job_failed`` holds the preview's queue, and a failed step of a chain
+    holds against everything: the push with the fix waited for someone to
+    dismiss the alert. The database is loaded and neutralized, and a
+    rebuild is what updates it; any push's rebuild passes that hold now,
+    and its success resolves it.
+    """
+
+    _end_as_the_runner = TestAPushAfterAFailedRebuild._end_as_the_runner
+    _manual_rebuild = TestAPushAfterAFailedRebuild._manual_rebuild
+
+    def setUp(self):
+        """Make the instance a pull request preview."""
+        super().setUp()
+        self.instance.write({
+            "pr_number": 7, "pr_state": "open",
+            "pr_repo": self.REPO_URL.split("github.com/")[1].removesuffix(".git"),
+            "pr_head_branch": self.BRANCH, "pr_comment_id": 31,
+        })
+
+    def _failed_restore(self, update_failed=True):
+        """The preview's restore, a step of a chain, failed with its alert.
+
+        :param bool update_failed: whether the update was what failed
+        """
+        restore = self.Job.create({
+            "name": "restore",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            ).id,
+            "state": "failed",
+            "queue_chain_key": "clone-chain",
+        })
+        if update_failed:
+            self.instance.pr_update_error = "Updating its modules failed."
+        alert = self.Job._create_job_failed_alert(restore, exc_message="boom")
+        return restore, alert
+
+    def test_the_push_of_the_fix_passes_the_restore_s_hold(self):
+        restore, alert = self._failed_restore()
+        fix = self._push("fix0002")
+        self.assertEqual(fix.state, "pending")
+        self.assertEqual(alert.state, "active", "only its success resolves it")
+        self.assertTrue(restore._is_failed_preview_update())
+
+    def test_its_success_resolves_the_restore_s_failure(self):
+        _restore, alert = self._failed_restore()
+        fix = self._push("fix0002")
+        self._end_as_the_runner(fix, "done")
+        self.assertEqual(fix.state, "done")
+        self.instance._preview_rebuilt(fix)
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolved_by_job_id, fix)
+        self.assertFalse(self.instance.pr_update_error)
+        self.assertFalse(self.Job._queue_held_by(self.instance.id, None))
+
+    def test_another_failure_of_the_restore_keeps_holding(self):
+        self._failed_restore(update_failed=False)
+        fix = self._push("fix0002")
+        self.assertEqual(fix.state, "queued")
+        self.assertTrue(fix._format()[0]["queue_held"])
+
+    def test_a_manual_rebuild_still_waits(self):
+        _restore, alert = self._failed_restore()
+        manual = self._manual_rebuild()
+        self.assertEqual(manual.state, "queued")
+        self.assertEqual(manual._format()[0]["queue_held_alert_id"], alert.id)
+
+    def test_a_restore_that_is_no_preview_s_keeps_holding(self):
+        self._failed_restore()
+        self.instance.pr_number = 0
+        fix = self._push("fix0002")
+        self.assertEqual(fix.state, "queued")

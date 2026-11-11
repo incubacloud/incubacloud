@@ -100,6 +100,9 @@ _DOWNLOAD_TOO_LARGE = (63, 23)
 #: stop is refused (``_no_return_from``).
 _LABEL_RESTORE_DB = "Restore database"
 
+#: The step that neutralizes a copy again after its modules were updated.
+LABEL_NEUTRALIZE_AGAIN = "Neutralize again after the update"
+
 
 def rsync_path(instance_id):
     """Return where an ``rsync`` restore of an instance takes its archive.
@@ -959,6 +962,18 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         if payload.get('share_secret_key'):
             await self._take_source_secret_key(transport)
+        inst = self._inst()
+        if self._updates_modules(inst, self._load_as(inst, payload)):
+            self._say_update_target(inst)
+
+    def _load_as(self, inst, payload):
+        """Return how the archive is loaded: ``"move"`` or ``"copy"``.
+
+        :param inst: the instance restored
+        :param dict payload: the job's payload
+        :rtype: str
+        """
+        return "move" if self._loads_as_move(inst, payload) else "copy"
 
     async def _check_upload_digest(self, transport, local, expected):
         """Refuse an archive other than the one whose digest was shown.
@@ -1030,7 +1045,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         dbname = inst.postgres_dbname or 'prod'
         payload = self.job.payload or {}
         neutralize = "1" if payload.get('neutralize') else "0"
-        load_as = "move" if self._loads_as_move(inst, payload) else "copy"
+        load_as = self._load_as(inst, payload)
 
         cmds = []
         if payload.get('mode') == 'from_url':
@@ -1060,21 +1075,6 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # starts: what is compared is what the dump brought.
             *self._verify_step(d, inst, dbname),
         ]
-
-        # Only where ``smtplocal`` is the mail catcher: a production
-        # stack resolves the same name to the real relay.
-        if neutralize == "1" and inst.environment != "production":
-            cmds.append((
-                "Route mail to the mail catcher",
-                self.run_script(
-                    "restore.sh",
-                    [
-                        "use-mail-catcher", d,
-                        inst.postgres_username or "odoo",
-                        dbname,
-                    ],
-                ),
-            ))
 
         # Before "Ensure incubacloud_connect" on purpose: that step boots
         # an Odoo which reads web.base.url. ``db`` stays up throughout the
@@ -1107,6 +1107,34 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # code's modules are applied to it as a rebuild would.
         if self._updates_modules(inst, load_as):
             cmds.append(self._update_restored_modules_step(d, inst))
+            # The update rewrites the records its data files leave
+            # unprotected (``noupdate`` off), scheduled actions and mail
+            # servers among them: the copy is neutralized once more
+            # before anything starts on it.
+            if neutralize == "1":
+                cmds.append((
+                    LABEL_NEUTRALIZE_AGAIN,
+                    self.run_script(
+                        "restore.sh", ["neutralize", d, dbname],
+                        env=script_env(inst.odoo_version),
+                    ),
+                    {"stop_on_failure": True},
+                ))
+        # Only where ``smtplocal`` is the mail catcher: a production
+        # stack resolves the same name to the real relay. After every
+        # neutralization: each inserts the placeholder server it removes.
+        if neutralize == "1" and inst.environment != "production":
+            cmds.append((
+                "Route mail to the mail catcher",
+                self.run_script(
+                    "restore.sh",
+                    [
+                        "use-mail-catcher", d,
+                        inst.postgres_username or "odoo",
+                        dbname,
+                    ],
+                ),
+            ))
         cmds += [
             (
                 "Ensure incubacloud_connect",
@@ -1194,21 +1222,30 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         await self._cleanup_cross_host_handoff()
         inst = self._inst()
         inst.write({"status": "ok", **inst._running_confirmed_vals()})
+        if inst.pr_update_error:
+            # The platform's field (``_PLATFORM_FIELDS``).
+            inst.sudo().write({"pr_update_error": False})
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
-        if inst.pr_number and inst.pr_state == "closed":
-            # The request closed and nothing deletes the preview (its
-            # delete was cancelled, or never queued): it goes now, with
-            # no note saying it is ready.
+        self._follow_preview_restore(inst)
+
+    def _follow_preview_restore(self, inst):
+        """Queue what a preview's request hears after its restore.
+
+        A request closed with nothing deleting its preview (the delete
+        was cancelled, or never queued): the preview goes now, with no
+        note saying it is ready. Otherwise its comment or note, written
+        by a job of its own queued in this transaction (the provider may
+        be away now): «ready», or that its modules could not be updated
+        (``pr_update_error``).
+
+        :param inst: the restored ``cloud.instance``
+        """
+        if not inst.pr_number:
+            return
+        if inst.pr_state == "closed":
             self._queue_preview_follow_up(inst._remove_closed_preview)
-        elif inst.pr_number and inst.pr_provider_id:
-            # A merge request's note is written by a job of its own,
-            # queued in this transaction: no call to GitLab here.
-            self._queue_preview_follow_up(
-                lambda: self.env['cloud.gitlab.mr.note']._enqueue(inst),
-            )
-        elif inst.pr_number:
-            # A pull request's comment too: GitHub may be away now.
-            self._queue_preview_follow_up(inst._enqueue_pr_comment)
+        else:
+            self._queue_preview_follow_up(inst._enqueue_preview_note)
 
     def _queue_preview_follow_up(self, queue):
         """Queue what follows a preview's restore, in a savepoint of its own.
@@ -1257,8 +1294,38 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     async def on_failure(self, results, errors):
         for err in errors:
             self._sys(f"✗ {err}")
-        self._report_failed_module_update(results)
-        self._inst().write({"status": "error"})
+        reason = self._report_failed_module_update(results)
+        inst = self._inst()
+        if not inst.pr_number:
+            inst.write({"status": "error"})
+            return
+        # A preview's request hears why its preview did not come up, and
+        # the push of a fix to its branch rebuilds it past the alert
+        # (``cloud.job._supersedes_hold``).
+        inst.write({"status": "error"})
+        # The platform's field (``_PLATFORM_FIELDS``).
+        inst.sudo().write({"pr_update_error": reason or False})
+        if reason:
+            self._sys(
+                "Pushing a fix to the request's branch rebuilds the preview"
+                " without dismissing the alert."
+            )
+            self._follow_preview_restore(inst)
+
+    async def on_abort(self, exc):
+        """A restore cut off halfway fails as one whose step failed.
+
+        A connection to the host that dropped, or a step out of its time
+        (``DEFAULT_SSH_COMMAND_TIMEOUT``), ends the run with no outcome:
+        the instance stayed as the cut left it, Odoo stopped from the
+        load on, with nothing saying so. Once a step ran the restore
+        closes as ``on_failure`` closes it, the step that never answered
+        counted as failed. Before its steps nothing changed on the host
+        and the instance keeps its status.
+
+        :param Exception exc: what stopped the run
+        """
+        await self._fail_cut_off_run(exc)
 
 
 class DiscardHandoffExecutor(AbstractSSHExecutor):

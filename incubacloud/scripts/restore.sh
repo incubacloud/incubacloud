@@ -4,6 +4,7 @@
 # Usage:
 #   restore.sh verify-file    <dir> <remote_zip>
 #   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize] [copy|move]
+#   restore.sh neutralize     <dir> <dbname>
 #   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   restore.sh use-mail-catcher <dir> <pg_user> <dbname>
 #   restore.sh ensure-connect <dir> <pg_user> <dbname> <headless>
@@ -14,7 +15,16 @@
 # archived, external providers in test mode, database.is_neutralized=true
 # → red banner). Callers that copy a production database into a staging
 # instance MUST pass 1; a move between hosts must not, since that is the
-# same production instance changing machines.
+# same production instance changing machines. A neutralized copy also
+# loses ``incubacloud_cron_pause``: a dump taken while an update of the
+# source had its crons paused (``cron_guard.sh``) carries their list, and
+# the next update of the copy would switch them on again.
+#
+# ``neutralize`` neutralizes a database already loaded, again: an update
+# of its modules rewrites the records their data files do not protect
+# (``noupdate`` off), scheduled actions and mail servers among them, so a
+# copy updated after its load is neutralized once more before it starts.
+# Odoo's own command from 16.0, the panel's SQL before (``IC_NEUTRALIZE``).
 #
 # Its optional 5th argument (copy/move, default copy) says whether the
 # archive is a copy or the database itself: a move loads it with
@@ -100,6 +110,19 @@ case "$op" in
             if [ "${#IC_DB_ARGS[@]}" -gt 0 ]; then
                 ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
             fi
+            ic_compose_run --rm odoo psql -v ON_ERROR_STOP=1 -d "$dbname" \
+                -c "DROP TABLE IF EXISTS incubacloud_cron_pause"
+        fi
+        ;;
+    neutralize)
+        ic_require_args 1 "$#" "restore.sh neutralize <dir> <dbname>"
+        dbname="$1"
+        ic_log "neutralizing $dbname again"
+        if [ "$(ic_neutralizer)" = odoo ]; then
+            ic_compose_run --rm odoo odoo neutralize -d "$dbname"
+        else
+            ic_db_neutralize_args "$dbname"
+            ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
         fi
         ;;
 

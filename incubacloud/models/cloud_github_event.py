@@ -9,6 +9,7 @@ from odoo.exceptions import UserError, ValidationError
 from ..github.client import GitHubAppClient
 from ._concurrency import is_concurrency_error
 from ._repo_requirements import _normalize_url, is_safe_git_ref
+from .cloud_gitlab_mr_note import PR_PREVIEW_NOTE_FAILED_CODE
 from .cloud_repo_mixin import repo_url_key
 from .res_users_ext import as_platform
 
@@ -29,6 +30,12 @@ GITHUB_WEBHOOK_SILENT_CODE = 'github_webhook_silent'
 # preview and none could be created. The pull request gets a comment too,
 # because that is where whoever opened it is looking.
 PR_PREVIEW_FAILED_CODE = 'pr_preview_failed'
+
+# Alert raised on a production when a pull request that would preview it
+# came through an installation of the panel's App other than the one the
+# panel acts on: no preview is created. Keyed by that installation's id,
+# resolved when it is chosen (``cloud.github.app``) or by hand.
+PR_OTHER_INSTALLATION_CODE = 'github_pr_other_installation'
 
 
 class CloudGitHubEvent(models.Model):
@@ -477,8 +484,14 @@ class CloudGitHubEvent(models.Model):
             repo_url_key(self.env, head_url) != repo_url_key(self.env, base_url)
         )
 
-        if not (pr_number and head_ref and repo_norm
-                and self._is_own_pull_request(payload)):
+        if not (pr_number and head_ref and repo_norm):
+            self.write({'processed': True})
+            return
+        if not self._is_own_pull_request(payload):
+            if action in ('opened', 'reopened'):
+                self._report_other_installation(
+                    payload, base_url, from_fork, repo_full, pr_number,
+                )
             self.write({'processed': True})
             return
         # Same defense-in-depth rejection as in _process_push_event:
@@ -593,6 +606,7 @@ class CloudGitHubEvent(models.Model):
                 ('pr_number', '=', pr_number),
                 ('pr_repo', '=', repo_full),
             ])
+            self._resolve_pr_comment_alerts(repo_full, pr_number)
             for inst in instances:
                 inst_name = inst.name
                 if inst.pr_comment_id:
@@ -642,6 +656,74 @@ class CloudGitHubEvent(models.Model):
             (payload.get('installation') or {}).get('id'),
         )
         return False
+
+    def _report_other_installation(self, payload, repo_url, from_fork,
+                                   repo_full, pr_number):
+        """Say on each production a pull request would preview that none comes.
+
+        The pull request came through an installation of the panel's App
+        on another account, which the panel does not act on
+        (``_is_own_pull_request``). Only when a production of the panel
+        follows its repository (``_pr_preview_sources``): an account the
+        panel knows nothing of makes no noise. One ``warning`` per
+        production and installation, keyed by the installation's id;
+        choosing that installation under Settings → GitHub resolves it
+        (``cloud.github.app.write``), as does a person.
+
+        :param dict payload: the decoded webhook body
+        :param str repo_url: the clone URL of the base repository
+        :param bool from_fork: whether the head comes from another repository
+        :param str repo_full: the repository as ``<account>/<name>``
+        :param int pr_number: the pull request's number
+        """
+        installation = str((payload.get('installation') or {}).get('id') or '')
+        if not installation:
+            return
+        account = (repo_full or '').split('/', 1)[0]
+        Alert = self.env['cloud.alert'].sudo()
+        for prod in self._pr_preview_sources(repo_url, from_fork):
+            if not self._pr_preview_allowed(prod):
+                continue
+            Alert.raise_alert(
+                PR_OTHER_INSTALLATION_CODE,
+                _(
+                    "Pull request #%(number)s on %(repo)s came through the "
+                    "panel's GitHub App installed on the account %(account)s, "
+                    "which is not the installation this panel acts on: no "
+                    "preview of %(instance)s is created for it. The panel "
+                    "acts on the pull requests of one installation, the one "
+                    "under Settings → GitHub.",
+                    number=pr_number, repo=repo_full, account=account,
+                    instance=prod.name,
+                ),
+                level='warning',
+                instance=prod,
+                key=installation,
+            )
+
+    def _resolve_pr_comment_alerts(self, repo_full, pr_number):
+        """Resolve the alerts about a closed pull request's comment.
+
+        Wherever they went (``cloud.instance._report_pr_comment_failure``:
+        the production, else the preview), by their key: a closed pull
+        request has no comment to write.
+
+        :param str repo_full: the repository as ``<account>/<name>``
+        :param int pr_number: the pull request's number
+        """
+        Alert = self.env['cloud.alert'].sudo()
+        key = f"github_pr:{repo_full}:{pr_number}"
+        for alert in Alert.search([
+            ('code', '=', PR_PREVIEW_NOTE_FAILED_CODE),
+            ('state', '=', 'active'),
+            ('dedup_key', '=', key),
+        ]):
+            Alert.resolve_alert(
+                PR_PREVIEW_NOTE_FAILED_CODE,
+                host=alert.host_id or None,
+                instance=alert.instance_id or None,
+                key=key,
+            )
 
     def _pr_preview_sources(self, repo_url, from_fork):
         """Return the production instances a pull request may preview.

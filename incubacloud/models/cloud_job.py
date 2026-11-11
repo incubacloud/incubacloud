@@ -1793,7 +1793,10 @@ class CloudJob(models.Model):
         conflict alert open on one of them (``pip_conflict``,
         ``addon_conflict``, or a code a layer adds to
         ``_get_actionable_alert_codes``) asks for a person, and a failed
-        step of a chain left an operation half done.
+        step of a chain left an operation half done — but for the restore
+        of a preview that failed in its update alone
+        (:meth:`_is_failed_preview_update`): its database is loaded and
+        made safe, and a rebuild is what updates it.
 
         :param first: the first step of the waiting entry
         :param holding_jobs: the failed jobs whose alerts hold the queue
@@ -1801,7 +1804,8 @@ class CloudJob(models.Model):
         """
         if not holding_jobs or first.queue_chain_key:
             return False
-        if any(job.queue_chain_key for job in holding_jobs):
+        if any(job.queue_chain_key and not job._is_failed_preview_update()
+               for job in holding_jobs):
             return False
         executor_cls = executor_registry.get(first.job_type_id.code)
         supersedes = getattr(executor_cls, "_supersedes_failure", None)
@@ -1813,6 +1817,26 @@ class CloudJob(models.Model):
             ("state", "=", "active"),
             ("code", "in", list(others)),
         ], limit=1)
+
+    def _is_failed_preview_update(self):
+        """Whether this job is a preview's restore that failed in its update.
+
+        The restore of a pull or merge request preview whose database was
+        loaded, neutralized and left stopped because updating its
+        modules to the request's code failed (``pr_update_error``, which
+        the restore's ``on_failure`` writes and a success clears). The
+        fix is pushed to the request's branch, and the rebuild of that
+        push updates the database and starts Odoo
+        (``RebuildInstanceExecutor._supersedes_failure``).
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        inst = self.instance_id
+        return bool(
+            self.job_type_id.code == "restore_instance"
+            and inst.pr_number and inst.pr_update_error
+        )
 
     @api.model
     def _waiting_domain(self, scope):
@@ -2470,7 +2494,8 @@ class CloudJob(models.Model):
         """Say why this job cannot be stopped at *step*, by its type.
 
         A rebuild's update leaves the database half updated, a restore's
-        load leaves it empty or half loaded. A layer that gives a job
+        load leaves it empty or half loaded, a backup's restore leaves it
+        missing, half loaded or half updated. A layer that gives a job
         type of its own a point of no return adds its reason here.
 
         :param str step: the label of the step the job is at
@@ -2485,6 +2510,18 @@ class CloudJob(models.Model):
                 " database to load the backup in its place. Stopped now,"
                 " the database would be left empty or half loaded. Let it"
                 " end; it takes as long as loading the backup does.",
+                job=self.id,
+                step=step,
+            )
+        if self.job_type_id.code == "backup_restore":
+            return _(
+                "Job #%(job)s cannot be stopped any more: it has passed"
+                " '%(step)s', which removes the instance's database to load"
+                " the backup in its place and then updates its modules."
+                " Stopped now, the database would be left missing, half"
+                " loaded or half updated, and the load would go on inside"
+                " the server anyway. Let it end; it takes as long as"
+                " loading the backup does.",
                 job=self.id,
                 step=step,
             )

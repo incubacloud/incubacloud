@@ -457,6 +457,13 @@
                                     <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.ghActionMsg.type"
                                        t-esc="state.ghActionMsg.message"/>
                                 </t>
+                                <p class="rl-set-hint">
+                                    The panel acts on the pushes and pull requests of
+                                    this installation only. If the App is installed on
+                                    another account too, a pull request there that one
+                                    of your productions would preview gets no preview,
+                                    and that production an alert naming the account.
+                                </p>
                             </div>
                         </div>
                     </t>

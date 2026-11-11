@@ -35,6 +35,14 @@ If you need a forensic copy with original credentials and crons, **download exac
 5. Wait for the restore to finish. The instance is briefly unavailable while
    the database is replaced. When the job ends in green, you're back online with the older data.
 
+Before Odoo starts, the restored database has its modules updated to the code
+the instance runs now, as a rebuild does (unless **Auto-update modules on
+rebuild** is off); the job's log names the branches and pinned commits. A
+restore does not change the code: to undo a deployment, revert its code first,
+or its migration runs again on the restored database. If the update fails, Odoo
+stays stopped and the job says which module failed: fix it, dismiss the job's
+alert and rebuild the instance.
+
 !!! warning "In-place restore is destructive"
     The current database is replaced by the backup. Anything created or modified after
     that backup's timestamp is lost. Take a fresh manual backup first if in doubt.
@@ -146,11 +154,11 @@ does not pass for the source database.
     the same scheduled actions. Stop the source first, or switch them off on
     one side.
 
-The restore does not update modules. If the code in your repositories is newer
-than the one the database last ran, **Rebuild** the instance: a production
-rebuild tries the new code on a copy of the database first, then updates the
-modules whose code changed. Sign in with the users and passwords of the source
-database.
+Before Odoo starts, the modules whose code differs from what the database last
+ran are updated to the instance's code, as a rebuild does, unless **Auto-update
+modules on rebuild** is off. If that update fails, Odoo stays stopped and the
+job names the module: fix it, dismiss the job's alert and rebuild the instance.
+Sign in with the users and passwords of the source database.
 
 ## Verify it worked
 
