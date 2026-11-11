@@ -384,14 +384,28 @@ class TestWaitingDeploy(_DeployJobCase):
         self.assertLessEqual(budget.remaining_seconds(), 12.5)
 
     def test_a_blocked_job_offers_its_cancel_button(self):
-        """The model accepts it; the timelines must show the button."""
+        """The model accepts it; the timelines must show the button.
+
+        The instance's timeline asks ``canCancelJob``, which adds the
+        reader's ``may_control`` to the same states.
+        """
         root = pathlib.Path(__file__).parent.parent / "static" / "src" / "components"
-        for view in ("instance_detail/instance_detail.xml", "host_detail/host_detail.xml"):
+        for view, source, condition in (
+            (
+                "instance_detail/instance_detail.xml",
+                "instance_detail/instance_detail_jobs.js",
+                'this.isActiveJob(job.state) || job.state === "blocked"',
+            ),
+            (
+                "host_detail/host_detail.xml",
+                "host_detail/host_detail.xml",
+                "isActiveJob(job.state) or job.state === 'blocked'",
+            ),
+        ):
             with self.subTest(view=view):
-                self.assertIn(
-                    "isActiveJob(job.state) or job.state === 'blocked'",
-                    (root / view).read_text(),
-                )
+                if source != view:
+                    self.assertIn('t-if="canCancelJob(job)"', (root / view).read_text())
+                self.assertIn(condition, (root / source).read_text())
 
     def test_deploying_once_the_alert_closed_runs_the_waiting_job(self):
         """The waiting job is the deploy; it goes, in 'deploying'."""
