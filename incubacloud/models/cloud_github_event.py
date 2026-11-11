@@ -3,6 +3,8 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from psycopg2 import errors as pg_errors
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
@@ -510,13 +512,11 @@ class CloudGitHubEvent(models.Model):
             for prod in self._pr_preview_sources(base_url, from_fork):
                 if not self._pr_preview_allowed(prod):
                     continue
-                exists = self.env['cloud.instance'].search([
-                    ('pr_provider_id', '=', False),
-                    ('pr_number', '=', pr_number),
-                    ('pr_repo', '=', repo_full),
-                    ('project_id', '=', prod.project_id.id),
-                ], limit=1)
-                if exists:
+                # A closed one still being deleted does not count: closed
+                # and reopened at once, the pull request gets a new preview.
+                if self._pr_previews(repo_full, pr_number, prod.project_id).filtered(
+                    lambda i: i.pr_state != 'closed',
+                ):
                     continue
                 try:
                     # Savepoint: a clone that fails half-way (record
@@ -526,7 +526,9 @@ class CloudGitHubEvent(models.Model):
                     # comment below would be lying.
                     with self.env.cr.savepoint():
                         prod.clone_to_staging(
-                            f'pr-{pr_number}',
+                            self._free_preview_name(
+                                prod.project_id, f'pr-{pr_number}',
+                            ),
                             pr_number=pr_number,
                             pr_repo=repo_full,
                             pr_head_branch=head_ref,
@@ -542,6 +544,26 @@ class CloudGitHubEvent(models.Model):
                     )
                     self._report_pr_preview_failure(
                         prod, repo_full, pr_number, str(exc),
+                    )
+                except pg_errors.UniqueViolation:
+                    if self._open_preview_committed(
+                        False, repo_full, pr_number, prod.project_id,
+                    ):
+                        # The same pull request delivered twice at once:
+                        # the other delivery cloned it.
+                        _logger.info(
+                            "PR preview for PR #%s (%s) created by a concurrent delivery",
+                            pr_number, repo_full,
+                        )
+                        continue
+                    ref = uuid.uuid4().hex[:8]
+                    _logger.exception(
+                        "Failed to create PR preview for PR #%s (ref: %s)",
+                        pr_number, ref,
+                    )
+                    self._report_pr_preview_failure(
+                        prod, repo_full, pr_number,
+                        f'An internal error occurred (ref: {ref}).',
                     )
                 except Exception:
                     ref = uuid.uuid4().hex[:8]
@@ -564,18 +586,11 @@ class CloudGitHubEvent(models.Model):
 
         elif action == 'synchronize':
             # New commit pushed to the PR branch → rebuild existing preview instances
-            # A GitLab merge request's preview may carry the same
-            # repository name and number: never this event's.
-            instances = self.env['cloud.instance'].search([
-                ('pr_provider_id', '=', False),
-                ('pr_number', '=', pr_number),
-                ('pr_repo', '=', repo_full),
-            ])
-            for inst in instances:
-                # Skip archived instances or those on a deactivated/deleted
-                # host — rebuilding them would only fail against a dead
-                # server.
-                if not (inst.active and inst.deployed
+            for inst in self._pr_previews(repo_full, pr_number):
+                # Skip closed ones being deleted, archived instances and
+                # those on a deactivated/deleted host — rebuilding them
+                # would only fail against a dead server.
+                if inst.pr_state == 'closed' or not (inst.active and inst.deployed
                         and inst.host_id and inst.host_id.active):
                     continue
                 job_type = self._rebuild_job_type(inst)
@@ -599,13 +614,7 @@ class CloudGitHubEvent(models.Model):
 
         elif action == 'closed':
             # PR merged or closed → destroy preview instances
-            # A GitLab merge request's preview may carry the same
-            # repository name and number: never this event's.
-            instances = self.env['cloud.instance'].search([
-                ('pr_provider_id', '=', False),
-                ('pr_number', '=', pr_number),
-                ('pr_repo', '=', repo_full),
-            ])
+            instances = self._pr_previews(repo_full, pr_number)
             self._resolve_pr_comment_alerts(repo_full, pr_number)
             for inst in instances:
                 inst_name = inst.name
@@ -634,6 +643,26 @@ class CloudGitHubEvent(models.Model):
                 )
 
         self.write({'processed': True})
+
+    def _pr_previews(self, repo_full, pr_number, project=None):
+        """Return the previews of a pull request, of one project or all.
+
+        A GitLab merge request's preview may carry the same repository
+        name and number: never a pull request's.
+
+        :param str repo_full: the repository as ``<account>/<name>``
+        :param int pr_number: the pull request's number
+        :param project: the ``cloud.project`` to keep to, or None
+        :rtype: cloud.instance
+        """
+        domain = [
+            ('pr_provider_id', '=', False),
+            ('pr_number', '=', pr_number),
+            ('pr_repo', '=', repo_full),
+        ]
+        if project is not None:
+            domain.append(('project_id', '=', project.id))
+        return self.env['cloud.instance'].search(domain)
 
     def _is_own_pull_request(self, payload):
         """Return whether a ``pull_request`` event is the panel's to act on.

@@ -9,7 +9,9 @@ would hide such an override.
 """
 import logging
 
-from odoo import fields, models
+from odoo import SUPERUSER_ID, api, fields, models
+
+from ._concurrency import read_committed_cursor
 
 _logger = logging.getLogger(__name__)
 
@@ -46,6 +48,55 @@ class CloudRepoEventMixin(models.AbstractModel):
         :return: ``True`` to go ahead, falsy to skip it silently
         """
         return True
+
+    def _free_preview_name(self, project, base):
+        """Return the name of a new preview: *base*, or ``<base>-<n>``.
+
+        The suffix only while another instance of the project holds the
+        name — the preview of the same pull or merge request closed a
+        moment ago, still being deleted: a name is unique in a project,
+        and its directory on the host is built from it.
+
+        :param project: the ``cloud.project`` of the preview
+        :param str base: ``pr-<number>`` or ``mr-<iid>``
+        :rtype: str
+        """
+        taken = set(self.env["cloud.instance"].sudo().with_context(
+            active_test=False,
+        ).search([
+            ("project_id", "=", project.id), ("name", "=like", f"{base}%"),
+        ]).mapped("name"))
+        name, n = base, 1
+        while name in taken:
+            n += 1
+            name = f"{base}-{n}"
+        return name
+
+    def _open_preview_committed(self, provider_id, repo, number, project):
+        """Return whether an open preview of the request is committed in *project*.
+
+        Read at READ COMMITTED: what a concurrent delivery committed
+        while this one waited on the unique name is not in this
+        transaction's snapshot.
+
+        :param provider_id: the ``cloud.git.provider`` id of a GitLab
+            merge request, ``False`` for a GitHub pull request
+        :param str repo: the request's repository (``pr_repo``)
+        :param int number: the request's number
+        :param project: the ``cloud.project`` of the preview
+        :rtype: bool
+        """
+        with read_committed_cursor(self.env.registry) as cr:
+            env = api.Environment(cr, SUPERUSER_ID, {})
+            return bool(env["cloud.instance"].with_context(
+                active_test=False,
+            ).search_count([
+                ("pr_provider_id", "=", provider_id),
+                ("pr_repo", "=", repo),
+                ("pr_number", "=", number),
+                ("project_id", "=", project.id),
+                ("pr_state", "!=", "closed"),
+            ], limit=1))
 
     def _rebuild_for_push(self, lines, push_info):
         """Queue the rebuild of every instance a push reaches.

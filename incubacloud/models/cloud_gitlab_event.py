@@ -17,11 +17,12 @@ here: no call to GitLab inside a delivery.
 A lost race (a serialization failure, a deadlock) is never kept as the
 event's error: it reaches Odoo's retry of the whole request. Any other
 failure of one preview is logged and the others are handled. A rebuild
-raises the first at the end, which undoes the ones queued, so the event
-keeps ``error`` and the daily cron dispatches it again whole. A close
-keeps what it did (the preview closed, its note's job, the deletes of
-the others) and returns the failures: the event keeps ``error`` outside
-the dispatch's savepoint, and the cron deletes what is left.
+and a close keep what they did (the rebuilds queued; the preview closed,
+its note's job, the deletes of the others) and return the failures: the
+event keeps ``error`` outside the dispatch's savepoint, and the daily
+cron dispatches it again. Then a rebuild still waiting collapses into
+the one it would queue (``cloud.job.enqueue``), and the close deletes
+what is left.
 """
 import json
 import logging
@@ -30,10 +31,10 @@ from datetime import timedelta
 
 from psycopg2 import errors as pg_errors
 
-from odoo import SUPERUSER_ID, _, api, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
-from ._concurrency import is_concurrency_error, read_committed_cursor
+from ._concurrency import is_concurrency_error
 from ._repo_requirements import is_safe_git_ref
 from .cloud_github_event import PR_PREVIEW_FAILED_CODE
 from .res_users_ext import as_platform
@@ -321,8 +322,8 @@ class CloudGitLabEvent(models.Model):
         GitLab delivers the merge request to both, and each would clone
         and rebuild.
 
-        :return: the failures of a close, none otherwise; the event is
-            ``processed`` only when there are none
+        :return: the failures of a rebuild or a close, none otherwise;
+            the event is ``processed`` only when there are none
         :rtype: list
         """
         self.ensure_one()
@@ -344,14 +345,15 @@ class CloudGitLabEvent(models.Model):
             "branch": branch,
             "from_fork": self._from_fork(summary),
         }
+        failures = []
         if action in MR_OPEN_ACTIONS:
             self._open_mr_previews(review)
         elif action == "update" and summary.get("oldrev"):
-            self._sync_mr_previews(review)
+            failures = self._sync_mr_previews(review)
         elif action in MR_CLOSE_ACTIONS:
             failures = self._close_mr_previews(review)
-            if failures:
-                return failures
+        if failures:
+            return failures
         self.write({"processed": True})
         return []
 
@@ -403,15 +405,6 @@ class CloudGitLabEvent(models.Model):
             if (theirs > mine) if (mine and theirs) else (other.id > event.id):
                 return True
         return False
-
-    @staticmethod
-    def _raise_first(failures):
-        """Raise the first of *failures*, each already logged; nothing when empty.
-
-        :param list failures: the exceptions of the previews that failed
-        """
-        if failures:
-            raise failures[0]
 
     @staticmethod
     def _from_fork(summary):
@@ -559,47 +552,24 @@ class CloudGitLabEvent(models.Model):
     def _mr_preview_name(self, review, project):
         """Return the name of a new preview: ``mr-<iid>``, or ``mr-<iid>-<n>``.
 
-        The suffix only while another instance of the project holds the
-        name — the preview of the same merge request closed a moment ago,
-        still being deleted: a name is unique in a project, and its
-        directory on the host is built from it.
+        See ``cloud.repo.event.mixin._free_preview_name``.
 
         :param dict review: what :meth:`_process_merge_request` read
         :param project: the ``cloud.project`` of the preview
         :rtype: str
         """
-        base = f"mr-{review['iid']}"
-        taken = set(self.env["cloud.instance"].sudo().with_context(
-            active_test=False,
-        ).search([
-            ("project_id", "=", project.id), ("name", "=like", f"{base}%"),
-        ]).mapped("name"))
-        name, n = base, 1
-        while name in taken:
-            n += 1
-            name = f"{base}-{n}"
-        return name
+        return self._free_preview_name(project, f"mr-{review['iid']}")
 
     def _mr_preview_committed(self, review, project):
         """Return whether an open preview of the merge request is committed in *project*.
 
-        Read at READ COMMITTED: what a concurrent delivery committed
-        while this one waited on the unique name is not in this
-        transaction's snapshot.
+        See ``cloud.repo.event.mixin._open_preview_committed``.
 
         :rtype: bool
         """
-        with read_committed_cursor(self.env.registry) as cr:
-            env = api.Environment(cr, SUPERUSER_ID, {})
-            return bool(env["cloud.instance"].with_context(
-                active_test=False,
-            ).search_count([
-                ("pr_provider_id", "=", review["provider"].id),
-                ("pr_repo", "=", review["path"]),
-                ("pr_number", "=", review["iid"]),
-                ("project_id", "=", project.id),
-                ("pr_state", "!=", "closed"),
-            ], limit=1))
+        return self._open_preview_committed(
+            review["provider"].id, review["path"], review["iid"], project,
+        )
 
     def _sync_mr_previews(self, review):
         """Rebuild the merge request's previews after new commits.
@@ -607,10 +577,14 @@ class CloudGitLabEvent(models.Model):
         Each one open, active, deployed and on an active host has its
         line of the merge request's project follow the source branch,
         and its rebuild queued in a savepoint of its own; its note is
-        reconciled. A rebuild that cannot be queued fails the event,
-        once the others are queued.
+        reconciled. A rebuild that cannot be queued is logged and the
+        others go on. The failures are returned, not raised: raising
+        would undo, in the dispatch's savepoint, the rebuilds already
+        queued.
 
         :param dict review: what :meth:`_process_merge_request` read
+        :return: the exceptions of the previews whose rebuild failed
+        :rtype: list
         """
         Note = self.env["cloud.gitlab.mr.note"]
         failures = []
@@ -639,7 +613,7 @@ class CloudGitLabEvent(models.Model):
             _logger.info(
                 "MR preview rebuild triggered for %s (!%s)", inst.name, review["iid"],
             )
-        self._raise_first(failures)
+        return failures
 
     def _close_mr_previews(self, review):
         """Delete the merge request's previews, and take their note off.
