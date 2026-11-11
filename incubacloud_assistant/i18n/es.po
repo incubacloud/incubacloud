@@ -1128,11 +1128,10 @@ msgstr "Buscando en el código del panel"
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
 msgid ""
-"Section 12A of the Terms accepted on %(date)s by %(user)s from %(ip)s (terms"
-" of %(version)s)."
+"Terms accepted on %(date)s by %(user)s from %(ip)s (terms of %(version)s)."
 msgstr ""
-"Sección 12 bis de los Términos aceptada el %(date)s por %(user)s desde "
-"%(ip)s (términos de %(version)s)."
+"Términos aceptados el %(date)s por %(user)s desde %(ip)s (términos de "
+"%(version)s)."
 
 #. module: incubacloud_assistant
 #. odoo-javascript
@@ -1266,13 +1265,13 @@ msgstr "Resumen"
 #. odoo-javascript
 #: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
 msgid ""
-"Switching the assistant on needs section 12A of the Terms accepted, each\n"
-"                time: what is sent to the AI provider, who pays for it, and which actions\n"
-"                wait for confirmation."
+"Switching the assistant on needs the Terms accepted, each time: what\n"
+"                is sent to the AI provider, who pays for it, and which actions wait\n"
+"                for confirmation."
 msgstr ""
-"Encender el asistente exige aceptar la sección 12 bis de los Términos del "
-"servicio, cada vez: lo que se envía al proveedor de IA, quién lo paga y qué "
-"acciones esperan confirmación."
+"Encender el asistente exige aceptar los Términos del servicio, cada vez: lo "
+"que se envía al proveedor de IA, quién lo paga y qué acciones esperan "
+"confirmación."
 
 #. module: incubacloud_assistant
 #. odoo-javascript
@@ -1909,11 +1908,11 @@ msgstr "Lo que la persona tenía abierto."
 #. module: incubacloud_assistant
 #: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_on
 msgid ""
-"When a manager last switched the assistant on and accepted section 12A (AI "
-"features) of the Terms."
+"When a manager last switched the assistant on and ticked the box of its "
+"terms."
 msgstr ""
-"Cuándo un gerente encendió por última vez el asistente y aceptó la sección "
-"12 bis (Funciones de IA) de los Términos del servicio."
+"Cuándo un gerente encendió por última vez el asistente y marcó la casilla de"
+" sus términos."
 
 #. module: incubacloud_assistant
 #. odoo-javascript

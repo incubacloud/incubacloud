@@ -1,8 +1,8 @@
 """Switching the assistant on needs a box ticked, each time (28-oct).
 
 Where a module that extends the panel has Terms, the box accepts a section
-of them, with a link, and that module records it first. On a self-hosted core there are no Terms of
-IncubaCloud's: the box is a plain acknowledgement, without a link. Without
+of them, with a link, and that module records it first. On a self-hosted
+core there are no Terms: the box is a plain acknowledgement, without a link. Without
 it the assistant stays off. The acceptance (date, version, address, user) is
 kept on the settings and shown in the tab.
 """
@@ -157,7 +157,7 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
         self.assertFalse(settings.assistant_terms_accepted_on)
 
     def test_a_database_that_blocks_it_never_asks_for_the_acceptance(self):
-        """IncubaCloud's own panel: the block answers first; nothing is recorded."""
+        """A database that blocks it: the block answers first; nothing is recorded."""
         self.env["ir.config_parameter"].sudo().set_param(BLOCKED_PARAM, "Not here.")
         result = self._rpc(
             "save_settings", vals={"enabled": True, "accept_ai_terms": True}
@@ -219,7 +219,7 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
 
 @tagged("post_install", "-at_install")
 class TestCoreKeepsItOnThePanel(AssistantMixin, TransactionCase):
-    """Core alone: no Terms of IncubaCloud's; the acceptance stays here, no version."""
+    """Core alone: no Terms; the acceptance stays here, no version."""
 
     def setUp(self):
         """Core alone only: a layer with Terms of its own overrides the hooks."""
@@ -228,12 +228,11 @@ class TestCoreKeepsItOnThePanel(AssistantMixin, TransactionCase):
             self.skipTest("a layer installed here has Terms of its own")
 
     def test_the_box_names_no_terms_and_links_nowhere(self):
-        """A self-hosted panel has no contract with IncubaCloud to accept."""
+        """A self-hosted panel has no contract to accept."""
         Settings = self.env["cloud.settings"]
         label = Settings._assistant_terms_label()
         self.assertIn("sent to my AI provider", label)
         self.assertIn("can make mistakes", label)
-        self.assertNotIn("12A", label)
         self.assertNotIn("Terms", label)
         self.assertEqual(Settings._assistant_terms_url(), "")
 
