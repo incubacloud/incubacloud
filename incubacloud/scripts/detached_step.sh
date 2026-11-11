@@ -32,7 +32,8 @@
 #             one may come before a line of the other written just ahead)
 #   out       stdout only, for the step's result
 #   exit      the exit status, moved into place as the process's last act
-#   timedout  there when the cap cut the step (``timeout`` exits 124)
+#   timedout  there when the cap cut the step (``timeout`` exits 124, or
+#             137, past the deadline)
 #   stopped   there when ``stop`` signalled it
 #
 # Orders:
@@ -55,12 +56,13 @@
 #           ``none``: no directory, or no ``pid`` in it.
 #   result  The last 256 KiB of ``out``.
 #   stop    TERM to the step's whole session, a wait of up to <wait_s>,
-#           then KILL to what is left; marks ``stopped``. Exit 0 with
+#           then KILL to what is left; marks ``stopped``. A session whose
+#           leader's pid names another process now is not the step's. Exit 0 with
 #           nothing alive, 1 if something outlived the KILL. What runs in
 #           a container is not in the session: the step's own trap, which
 #           receives the TERM, removes it, as when a job is stopped today.
 #   clean   Removes <dir> once nothing of the step is alive; exit 75 while
-#           something is.
+#           something is, 2 for a path not named .incubacloud-detached-<hex>.
 #
 # ``start``, ``stop`` and ``clean`` can be repeated; ``read`` and
 # ``result`` change nothing.
@@ -156,9 +158,34 @@ session_alive() {
     return 1
 }
 
+# Whether something of the step in $1 still runs. Its session is the one
+# its leader opened, named by the leader's pid: while that pid is another
+# process (a different start time), the session it names is not the
+# step's, and nothing of the step is alive. With the leader gone, what is
+# left in the session is the step's: no pid is given again while a session
+# still bears it.
+step_alive() {
+    local pid sid start state now
+    [ -r "$1/pid" ] || return 1
+    read -r pid sid start <"$1/pid" || return 1
+    if read -r state now < <(proc_stat "$pid"); then
+        [ "$now" = "$start" ] || return 1
+    fi
+    session_alive "$sid"
+}
+
+# Whether $1 is named as a step's directory, the only kind ``clean``
+# removes.
+step_dir_name() {
+    [[ "$(basename -- "$1")" =~ ^\.incubacloud-detached-[0-9a-f]+$ ]]
+}
+
 # Take this account's lock of the step directories, on descriptor 9.
+# In $HOME: a lock in a directory every account writes in could be taken,
+# or replaced, by another one.
 take_lock() {
-    exec 9>>"${HOME:-/tmp}/.incubacloud-detached.lock"
+    [ -n "${HOME:-}" ] || die "HOME is not set: there is no place for the lock of the detached steps"
+    exec 9>>"$HOME/.incubacloud-detached.lock"
     flock -w 60 9 || die "could not take the lock of the detached steps"
 }
 
@@ -248,7 +275,10 @@ cmd_start() {
         [ -e "$dir/pid" ] && exit 0
         sleep 0.1
     done
-    die "the step did not start within 10 s"
+    # Still under the lock: a step that starts after this finds no
+    # directory to write its ``pid`` in, and ends before its command.
+    rm -rf -- "$dir"
+    die "the step did not start within 10 s: its directory was removed"
 }
 
 # The step's own process: run the command under its cap, then record how
@@ -272,10 +302,10 @@ cmd_run() {
     rc="$(cat "$dir/rc" 2>/dev/null || printf '143')"
     rm -f "$dir/rc"
     deadline="$(cat "$dir/deadline")"
-    if [ "$rc" = 124 ] || {
-        [ "$rc" = 137 ] && [ ! -e "$dir/stopped" ] \
-            && [ "$(date +%s)" -ge "$deadline" ]
-    }; then
+    # 124 may be the command's own ``timeout``, 137 a KILL of the step's
+    # own: only past the deadline are they the cap's.
+    if { [ "$rc" = 124 ] || { [ "$rc" = 137 ] && [ ! -e "$dir/stopped" ]; }; } \
+        && [ "$(date +%s)" -ge "$deadline" ]; then
         : >"$dir/timedout"
     fi
     printf '%s\n' "$rc" >"$dir/exit.tmp"
@@ -363,18 +393,18 @@ cmd_stop() {
     is_count "$wait_s" || die "the wait must be a number of seconds: $wait_s" 2
     ours "$dir" || exit 0
     sid="$(session_of "$dir")" || exit 0
-    session_alive "$sid" || exit 0
+    step_alive "$dir" || exit 0
     uid="$(id -u)"
     : >"$dir/stopped"
     say "stopping the step: TERM, then KILL after ${wait_s}s"
     pkill -TERM -s "$sid" -U "$uid" 2>/dev/null || true
     for tries in $(seq 1 $((wait_s * 5))); do
-        session_alive "$sid" || exit 0
+        step_alive "$dir" || exit 0
         sleep 0.2
     done
     pkill -KILL -s "$sid" -U "$uid" 2>/dev/null || true
     for tries in $(seq 1 25); do
-        session_alive "$sid" || exit 0
+        step_alive "$dir" || exit 0
         sleep 0.2
     done
     : "$tries"
@@ -383,11 +413,12 @@ cmd_stop() {
 
 cmd_clean() {
     [ "$#" -eq 1 ] || usage
-    local dir="$1" sid
+    local dir="$1"
+    step_dir_name "$dir" || die "$dir is not named as a step's directory: not removed" 2
     take_lock
     [ -e "$dir" ] || [ -L "$dir" ] || exit 0
     ours "$dir" || die "$dir is not this account's directory: not removed" 74
-    if sid="$(session_of "$dir")" && session_alive "$sid"; then
+    if step_alive "$dir"; then
         die "the step still runs: $dir was not removed" 75
     fi
     rm -rf -- "$dir"

@@ -13,15 +13,18 @@ Contention needs a SECOND real DB connection: ``pg_try_advisory_xact_lock``
 is re-entrant within a session, so two calls on one cursor both succeed
 and a single connection cannot simulate a busy host.
 """
-from unittest.mock import patch
+import asyncio
+from unittest.mock import MagicMock, patch
 
 import odoo
-from odoo.addons.queue_job.exception import RetryableJobError
 from odoo.tests.common import TransactionCase
+
+from odoo.addons.queue_job.exception import RetryableJobError
 
 from ..models.delete_instance_executor import DeleteInstanceExecutor
 from ..models.host_build_lock import _HOST_BUILD_LOCK_NS, HostBuildLockMixin
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
+from ..models.transport import SSHTransport
 
 
 class _HostLockBase(TransactionCase):
@@ -384,6 +387,45 @@ class TestTheLockOutlivesAPark(_HostLockBase):
             cr.close()
         self.assertEqual(caught.exception.seconds, 5)
         self.assertTrue(caught.exception.ignore_retry)
+        row.invalidate_recordset()
+        self.assertTrue(row.parked)
+
+    def test_the_row_holds_the_host_from_its_opening(self):
+        """A worker that dies before any park still left the hold."""
+        self.parked.pre_run_checks()
+
+        async def _no_upload(_self, _transport):
+            """The scripts stay here."""
+
+        with patch.object(RebuildInstanceExecutor, '_upload_scripts', _no_upload):
+            asyncio.run(self.parked._open_checkpoint(
+                MagicMock(spec=SSHTransport), [("Build", "true", {"detached": True})],
+            ))
+        row = self.env['cloud.job.checkpoint'].sudo().search(
+            [('job_id', '=', self.parked.job.id)],
+        )
+        self.assertEqual(row.build_lock_host_id, self.host)
+        self.assertFalse(row.parked)
+        with self.assertRaises(RetryableJobError):
+            self._other_build().pre_run_checks()
+
+    def test_waiting_for_the_lock_marks_the_row_parked(self):
+        """A row an attempt took up and then lost, parked again while it waits."""
+        row = self._park(take_lock=False)
+        row.write({'parked': False})
+        self.env.flush_all()
+        cr = self._hold_lock(self.host.id)
+        # Not ``assertRaises``: it rolls back what the attempt wrote.
+        raised = None
+        try:
+            with patch.object(RebuildInstanceExecutor, 'run', autospec=True):
+                self.parked.job.execute()
+        except RetryableJobError as exc:
+            raised = exc
+        finally:
+            cr.rollback()
+            cr.close()
+        self.assertIsInstance(raised, RetryableJobError)
         row.invalidate_recordset()
         self.assertTrue(row.parked)
 

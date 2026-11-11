@@ -194,6 +194,74 @@ wait_state() {
     [ ! -e "$D/stopped" ]
 }
 
+@test "a command's own timeout is not the cap: 124 before the deadline is no timedout" {
+    start "$D" 'timeout 1 sleep 5'
+    wait_state "$D" done
+    [[ "$header" == "ic-detached v1 state=done exit=124 timedout=0 off="* ]]
+    [ ! -e "$D/timedout" ]
+}
+
+@test "stop and clean leave alone a session whose leader's pid is another process now" {
+    start "$D" 'true'
+    wait_state "$D" done
+    setsid sleep 300 </dev/null >/dev/null 2>&1 &
+    stranger=$!
+    sleep 0.2
+    # The step's leader ended and its pid now names another session's.
+    printf '%s %s 1\n' "$stranger" "$stranger" > "$D/pid"
+    run bash "$D/ctl.sh" stop "$D" 1
+    [ "$status" -eq 0 ]
+    kill -0 "$stranger"
+    [ ! -e "$D/stopped" ]
+    run bash "$D/ctl.sh" clean "$D"
+    [ "$status" -eq 0 ]
+    [ ! -e "$D" ]
+    kill -0 "$stranger"
+    kill "$stranger"
+}
+
+@test "stop takes what is left of a session whose leader is gone" {
+    start "$D" 'sleep 300 & wait'
+    sleep 0.5
+    read -r pid sid _ < "$D/pid"
+    kill -KILL "$pid"
+    sleep 0.2
+    pgrep -s "$sid" >/dev/null
+    run bash "$D/ctl.sh" clean "$D"
+    [ "$status" -eq 75 ]
+    run bash "$D/ctl.sh" stop "$D" 1
+    [ "$status" -eq 0 ]
+    ! pgrep -s "$sid" >/dev/null
+    run bash "$D/ctl.sh" clean "$D"
+    [ "$status" -eq 0 ]
+}
+
+@test "a start whose step does not start within 10 s removes its directory" {
+    # A setsid that launches nothing: the step never writes its pid.
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/bin/setsid"
+    chmod +x "$TMP/bin/setsid"
+    run start "$D" 'echo never'
+    [ "$status" -ne 0 ]
+    [ "$status" -ne 73 ] && [ "$status" -ne 74 ] && [ "$status" -ne 78 ]
+    [[ "$output" == *"did not start"* ]]
+    [ ! -e "$D" ]
+}
+
+@test "a start without HOME is refused rather than locking in /tmp" {
+    run env -u HOME bash "$SCRIPT" start "$D" 60 instance:7 41 Build 'echo never'
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"HOME"* ]]
+    [ ! -e "$D" ]
+}
+
+@test "clean refuses a directory whose name is not a step's" {
+    mkdir -m 700 "$TMP/precious"
+    : > "$TMP/precious/keep"
+    run bash "$SCRIPT" clean "$TMP/precious"
+    [ "$status" -eq 2 ]
+    [ -e "$TMP/precious/keep" ]
+}
+
 @test "a live step of another job on the same scope refuses the start: 73" {
     start "$OTHER" 'sleep 30'
     run start "$D" 'echo should not run'

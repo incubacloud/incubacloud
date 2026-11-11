@@ -434,17 +434,20 @@ _DETACHED_HEADER_RE = re.compile(
 _LOG_OFFSET = "detached_offset"
 
 
-def detached_dir(env, job_id, index):
+def detached_dir(env, job_id, queue_job_uuid, index):
     """Return the directory step *index* of job *job_id* runs apart in.
 
     Named with the panel's ``database.secret``, as a handoff
     (:func:`handoff_dir`): any later attempt of the job, or the
     reconciliation, recomputes it from the job and the step alone, and no
     account on the server can tell it in advance and create it first. One
-    per step: a job may run several long steps one after the other.
+    per step: a job may run several long steps one after the other. The
+    queue job that ran it names it too: a cloud job run again by another
+    queue job never reaches the directories of the first.
 
     :param env: an environment to read the secret with
     :param int job_id: id of the ``cloud.job``
+    :param str queue_job_uuid: the queue job whose attempts run the step
     :param int index: position of the step in the job's plan
     :return: absolute path on the job's host
     :raise RuntimeError: when the database has no secret to name it with
@@ -455,7 +458,8 @@ def detached_dir(env, job_id, index):
             "database.secret is not set: cannot name a step's directory."
         )
     digest = hmac.new(
-        secret.encode(), f"detached:{int(job_id)}:{int(index)}".encode(),
+        secret.encode(),
+        f"detached:{int(job_id)}:{queue_job_uuid or ''}:{int(index)}".encode(),
         hashlib.sha256,
     ).hexdigest()
     return f"{DETACHED_PREFIX}{digest[:16]}"
@@ -784,9 +788,15 @@ class AbstractExecutor(ABC):
     # kills processes at logout (``DETACHED_EXIT_KILLED_AT_LOGOUT``).
     _detached_attached = False
     # The step of the plan whose process may run on the server now, from
-    # just before its start until it is removed or stopped: what a lost
+    # just before its start until it ended or was stopped: what a lost
     # connection leaves running (``_contact_lost``).
     _on_server_index = None
+    # ``(directory, index)`` of a step apart that ended, whose directory
+    # goes once its result is recorded in the checkpoint.
+    _ended_apart = None
+    # Whether what the close of an ended job says on every try is said:
+    # the reconciliation says it the first time and when it gives up.
+    _say_again = True
 
     #: Attributes of the executor its closing hooks read and that are set
     #: before its steps: kept in the checkpoint, and set again on an attempt
@@ -1023,6 +1033,9 @@ class AbstractExecutor(ABC):
                             tuple(step) for step in self._checkpoint_data["plan"]
                         ]
                     else:
+                        # What an earlier run left that this one does not
+                        # take up goes first: its row is not written over.
+                        await self._close_stale_checkpoint(transport)
                         await self.before_execute(transport)
 
                         # Materialise the commands before running any of
@@ -1060,7 +1073,16 @@ class AbstractExecutor(ABC):
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
-            if not isinstance(e, JobParked) and self._contact_lost(e):
+            if not isinstance(e, JobParked) and (
+                self._contact_lost(e)
+                # An attempt that resumes the job and cannot reach its
+                # server: what the job left there waits for it, between
+                # two steps as well as during one.
+                or (
+                    self._resumed and not connected
+                    and is_transient_connection_error(e)
+                )
+            ):
                 parked = self._park_on_lost_contact(e)
                 if parked is not None:
                     logger.info("[_async_entry] Job parked: %s", parked)
@@ -1173,6 +1195,9 @@ class AbstractExecutor(ABC):
         if self._resumed:
             results.update(self._checkpoint_data.get("results") or {})
             first = self._resume_index
+            # The directory of the step apart before this one, recorded and
+            # maybe not removed, and those ``clean`` had to leave.
+            await self._clean_ended_steps(transport, first)
             cut = self._checkpoint_data.get("skipped")
             if cut is not None:
                 # A step stopped the run before the attempt parked.
@@ -1221,6 +1246,9 @@ class AbstractExecutor(ABC):
                 self._save_checkpoint_step(
                     len(commands) if stops else index + 1, skipped,
                 )
+            if self._ended_apart is not None:
+                ended, self._ended_apart = self._ended_apart, None
+                await self._clean_detached(transport, *ended)
             if status == 0:
                 continue
             if status in opts.get('continue_on', ()):
@@ -1386,7 +1414,8 @@ class AbstractExecutor(ABC):
 
         Whichever hook it is, it closes the job: the job's checkpoint goes
         in the same transaction, unless something of a step apart was left
-        on the server (``_detached_left_alive``).
+        on the server (``_detached_left_alive``); then it is marked
+        ``closed`` there instead, so no attempt resumes the job from it.
 
         :param hook: coroutine function to await
         :param args: positional arguments for *hook*
@@ -1406,6 +1435,13 @@ class AbstractExecutor(ABC):
                 env.flush_all()
                 env.cr.execute(
                     "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                    (self.job.id,),
+                )
+            elif self._checkpoint:
+                env.flush_all()
+                env.cr.execute(
+                    "UPDATE cloud_job_checkpoint SET closed = TRUE, parked = FALSE"
+                    " WHERE job_id = %s",
                     (self.job.id,),
                 )
         if forget:
@@ -1992,13 +2028,22 @@ class AbstractExecutor(ABC):
         """Delete this job's checkpoint, unless a step apart was left alive.
 
         For a job that ends without a hook to take the row along, and for
-        an attempt that ends in a retry from the start. Never raises: the
-        row left behind is the reconciliation's, and the job's end stands.
+        an attempt that ends in a retry from the start. A row kept because
+        something was left alive is marked ``closed``: no attempt resumes
+        the job from it. Never raises: the row left behind is the
+        reconciliation's, and the job's end stands.
         """
-        if not self._checkpoint or self._detached_left_alive:
+        if not self._checkpoint:
             return
         try:
             with self._durable_env() as env:
+                if self._detached_left_alive:
+                    env.cr.execute(
+                        "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                        " parked = FALSE WHERE job_id = %s",
+                        (self.job.id,),
+                    )
+                    return
                 env.cr.execute(
                     "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
                     (self.job.id,),
@@ -2023,6 +2068,7 @@ class AbstractExecutor(ABC):
         # Asked for, so the overlay it is part of is uploaded.
         self.run_script("detached_step.sh")
         await self._upload_scripts(transport)
+        self._detached_uuid = self.job.queue_job_uuid or ""
         self._checkpoint_data = {
             "plan": [
                 [item[0], item[1], json.loads(json.dumps(
@@ -2046,6 +2092,10 @@ class AbstractExecutor(ABC):
             "parked_until": False,
             "first_started_at": fields.Datetime.now(),
             "attempts": 1,
+            # From the row's first commit, not from a park: a worker that
+            # dies before any park lets the lock go with its transaction,
+            # and the attempt that resumes the job builds on.
+            "build_lock_host_id": self._held_build_lock_host_id or False,
             "data": json.dumps(self._checkpoint_data),
         })
         self._checkpoint = True
@@ -2149,7 +2199,9 @@ class AbstractExecutor(ABC):
         :rtype: JobParked
         """
         self._flush_logs()
-        self._checkpoint_data["results"] = self._kept_results()
+        if self._step_results is not None:
+            # An attempt that parks before its steps keeps the row's.
+            self._checkpoint_data["results"] = self._kept_results()
         self._checkpoint_data["carried"] = self._carried_state()
         until = fields.Datetime.now() + timedelta(seconds=seconds)
         if self._held_build_lock_host_id:
@@ -2190,13 +2242,14 @@ class AbstractExecutor(ABC):
 
         It is about to defer itself, as it finds this job's checkpoint
         (``HostBuildLockMixin.pre_run_checks``). The checkpoint stays as
-        the last attempt left it, ``parked``; only when the job comes back
+        the last attempt left it, marked ``parked`` again — an attempt that
+        took it up and died left it unmarked — and when the job comes back
         changes.
 
         :return: the ``JobParked`` to raise
         """
         until = fields.Datetime.now() + timedelta(seconds=PARK_GAP_SECONDS)
-        self._write_checkpoint({"parked_until": until})
+        self._write_checkpoint({"parked": True, "parked_until": until})
         self._sys(
             "Another job holds this host's build lock for a moment: the job"
             f" tries again in {PARK_GAP_SECONDS} s."
@@ -2257,17 +2310,37 @@ class AbstractExecutor(ABC):
             self._resumed_log_offset = row.log_offset
         self._lost_contact_since = row.lost_contact_since or None
         self._checkpoint_row = row
+        self._detached_uuid = row.queue_job_uuid or ""
 
     #: The checkpoint adopted (``_adopt_checkpoint``), or None.
     _checkpoint_row = None
+    #: The queue job whose attempts run the steps of the checkpoint's plan.
+    _detached_uuid = None
 
-    async def _close_on_server(self, wait_s):
+    def _detached_dir(self, index):
+        """Return the directory step *index* of the checkpoint's plan runs in.
+
+        Named after the queue job that wrote the checkpoint
+        (:func:`detached_dir`): this one's for a plan it opens, the row's
+        for one it adopts.
+
+        :param int index: position of the step in the plan
+        :rtype: str
+        """
+        uuid = self._detached_uuid
+        if uuid is None:
+            uuid = self.job.queue_job_uuid or ""
+        return detached_dir(self.env, self.job.id, uuid, index)
+
+    async def _close_on_server(self, wait_s, transport=None, say_again=True):
         """Stop and remove what the job left on its server; never raises.
 
         For a job closed without running: a stop that finds it back from
-        a park, the reconciliation of a lost or ended one. Its step apart
+        a park, the reconciliation of a lost or ended one, an attempt that
+        runs the job again over a row it does not take up. Its step apart
         is sent TERM, given *wait_s* for its trap and killed, its last
-        lines reach the job log, and its directory goes; then the job's
+        lines reach the job log, and its directory goes; then those of the
+        steps apart that ended and were not removed; then the job's
         working directory and the secrets it staged. A step past the
         job's point of no return still running is not stopped: it is left
         to end, and the checkpoint stays for a later pass. So does
@@ -2275,27 +2348,36 @@ class AbstractExecutor(ABC):
         (``_detached_left_alive``).
 
         :param int wait_s: how long the step's trap gets after TERM
+        :param transport: a transport to the job's server already open, or
+            None to open one
+        :param bool say_again: write to the job log what is said on every
+            try that fails; the reconciliation says it the first time only
         """
         plan = self._checkpoint_data.get("plan") or []
         index = self._checkpoint_row.next_index if self._checkpoint_row else len(plan)
         apart = index < len(plan) and (plan[index][2] or {}).get("detached")
+        self._say_again = say_again
         try:
-            async with self._host_record.get_transport() as transport:
+            async with self._transport_to_close(transport) as transport:
                 if apart:
-                    directory = detached_dir(self.env, self.job.id, index)
+                    directory = self._detached_dir(index)
                     # Its lines from where the job log has them.
                     self._detached_offset = self._resumed_log_offset
                     if self._past_no_return(index):
                         state = (await self._read_detached(transport, directory))[0]
                         if state == "running":
                             self._detached_left_alive = True
-                            self._sys(
-                                f"'{plan[index][0]}' is past the point of no"
-                                " return and still runs on the server: it is"
-                                " left to end, and removed later."
-                            )
+                            if say_again:
+                                self._sys(
+                                    f"'{plan[index][0]}' is past the point of"
+                                    " no return and still runs on the server:"
+                                    " it is left to end, and removed later."
+                                )
                             return
-                    await self._stop_detached(transport, directory, wait_s=wait_s)
+                    await self._stop_detached(
+                        transport, directory, wait_s=wait_s, index=index,
+                    )
+                await self._clean_ended_steps(transport, index)
                 if self._detached_left_alive:
                     return
                 paths = list(self._private_uploads)
@@ -2311,10 +2393,72 @@ class AbstractExecutor(ABC):
                 "[job %s] could not reach its server to close what it left"
                 " there: %s: %s", self.job.id, type(exc).__name__, exc,
             )
-            self._sys(
-                "The server could not be reached to stop what this job left"
-                " there: it is tried again later."
+            if say_again:
+                self._sys(
+                    "The server could not be reached to stop what this job"
+                    " left there: it is tried again later."
+                )
+        finally:
+            self._say_again = True
+
+    @contextlib.asynccontextmanager
+    async def _transport_to_close(self, transport):
+        """Yield *transport*, or one opened to the job's server for the block.
+
+        :param transport: a transport already open, or None
+        """
+        if transport is not None:
+            yield transport
+            return
+        async with self._host_record.get_transport() as opened:
+            yield opened
+
+    async def _close_stale_checkpoint(self, transport):
+        """Stop and remove what an earlier run left, before this one runs.
+
+        A row this attempt does not take up (``cloud.job.execute``): one a
+        hook closed and kept, the job run again by hand; or one another
+        queue job of the job wrote. It is neither resumed nor written over:
+        what it says runs on the server is stopped and removed through
+        *transport*, and the row goes. When that cannot be done — a step
+        past its point of no return still runs, or something outlived its
+        KILL — the job waits 30 s, as for its host's build lock, and the
+        row stays as it was.
+
+        :param transport: the job's open transport
+        :raise RetryableJobError: when what the row says is still alive
+        """
+        row = self._stale_checkpoint
+        if not row:
+            return
+        host = row.host_id or self._host_record
+        cleaner = type(self)(self.job, host, sleep_interval=self.sleep_interval)
+        cleaner._log_buffer = self._log_buffer
+        cleaner._adopt_checkpoint(row)
+        self._sys(
+            "An earlier run of this job left something on its server: it is"
+            " stopped and removed before the job runs again."
+        )
+        await cleaner._close_on_server(
+            DETACHED_STOP_WAIT_S,
+            transport=transport if host == self._host_record else None,
+        )
+        if cleaner._detached_left_alive:
+            raise RetryableJobError(
+                "What an earlier run of this job left on its server still"
+                f" runs: the job tries again in {DETACHED_BUSY_RETRY_S} s.",
+                seconds=DETACHED_BUSY_RETRY_S,
+                ignore_retry=True,
             )
+        with self._durable_env() as env:
+            env.cr.execute(
+                "DELETE FROM cloud_job_checkpoint WHERE id = %s", (row.id,),
+            )
+        self._stale_checkpoint = None
+
+    #: A checkpoint of the job this attempt does not take up
+    #: (``_close_stale_checkpoint``), or None.
+    _stale_checkpoint = None
 
     def _past_no_return(self, index):
         """Whether step *index* of the adopted plan is past the point of no return.
@@ -2349,26 +2493,33 @@ class AbstractExecutor(ABC):
         leaves its checkpoint, and the step, to the reconciliation
         (``_detached_left_alive``).
 
+        A resumed attempt that could not connect parks at the step it was
+        to go on from, whether or not a step runs on the server.
+
         :param Exception exc: the transient connection error
         :return: the ``JobParked`` to raise, or None to fail
         """
         now = fields.Datetime.now()
         since = self._lost_contact_since or now
         plan = self._checkpoint_data.get("plan") or []
-        label = (
-            plan[self._on_server_index][0]
-            if self._on_server_index < len(plan) else "the step"
+        index = (
+            self._on_server_index if self._on_server_index is not None
+            else self._resume_index
         )
+        label = plan[index][0] if index < len(plan) else "the step"
+        running = self._on_server_index is not None
+        where = f"while '{label}' runs there" if running else f"before '{label}'"
         if (now - since).total_seconds() >= DETACHED_CONTACT_GRACE_S:
             self._detached_left_alive = True
+            left = "the step is" if running else "what the job left there is"
             self._sys(
                 f"✗ The server could not be reached for"
-                f" {DETACHED_CONTACT_GRACE_S} s while '{label}' runs there:"
-                " the job fails, and the step is left to the reconciliation."
+                f" {DETACHED_CONTACT_GRACE_S} s {where}: the job fails, and"
+                f" {left} left to the reconciliation."
             )
             return None
-        return self._park(self._on_server_index, (
-            f"Lost contact with the server while '{label}' runs there"
+        return self._park(index, (
+            f"Lost contact with the server {where}"
             f" ({type(exc).__name__}): the panel connects again in"
             f" {DETACHED_RECONNECT_GAP_S} s."
         ), seconds=DETACHED_RECONNECT_GAP_S, vals={"lost_contact_since": since})
@@ -2428,7 +2579,7 @@ class AbstractExecutor(ABC):
             it a second time)
         :return: the step's ``CommandResult``
         """
-        directory = detached_dir(self.env, self.job.id, index)
+        directory = self._detached_dir(index)
         cap = int(opts.get("timeout") or DEFAULT_SSH_COMMAND_TIMEOUT)
         # From before the start: a stop that comes while it runs finds a
         # step it may have launched already.
@@ -2470,7 +2621,7 @@ class AbstractExecutor(ABC):
             raise
         finally:
             if self._detached_running:
-                await self._stop_detached(transport, directory)
+                await self._stop_detached(transport, directory, index=index)
 
     async def _start_detached(self, transport, index, directory, cap, label, command):
         """Start step *index* apart on the server; return when it started.
@@ -2495,9 +2646,13 @@ class AbstractExecutor(ABC):
             label, command,
         ]) + " 2>&1")
         status = start.exit_status
-        if status != 0:
+        if status in (
+            DETACHED_EXIT_BUSY, DETACHED_EXIT_TAKEN, DETACHED_EXIT_KILLED_AT_LOGOUT,
+        ):
             # Nothing of this step was started, and a path taken by someone
-            # else is not this job's to stop or remove.
+            # else is not this job's to stop or remove. Any other answer
+            # may come from a step that started (a start that waited past
+            # its 10 s): it is stopped and removed with the error.
             self._detached_running = None
             self._on_server_index = None
         if status == DETACHED_EXIT_KILLED_AT_LOGOUT:
@@ -2573,7 +2728,12 @@ class AbstractExecutor(ABC):
                     )
                     raise asyncio.TimeoutError()
                 stdout = await self._detached_stdout(transport, directory)
-                await self._clean_detached(transport, directory)
+                # It ended: nothing of it to stop. Its directory goes once
+                # its result is recorded (``_run_steps``): an attempt that
+                # dies in between finds its end there, not a step gone.
+                self._detached_running = None
+                self._on_server_index = None
+                self._ended_apart = (directory, index)
                 return CommandResult(stdout=stdout, exit_status=exit_status)
             raise RuntimeError(
                 f"'{label}' neither ended nor runs on the server: the server"
@@ -2640,33 +2800,83 @@ class AbstractExecutor(ABC):
             raw = raw.partition(b"\n")[2]
         return "\n".join(_stdout_lines(raw.decode("utf-8", "replace")))
 
-    async def _clean_detached(self, transport, directory):
+    async def _clean_detached(self, transport, directory, index=None):
         """Remove the directory of a step apart that ended.
 
         One that cannot be removed — a process the step left behind still
-        runs in its session — is left, with its checkpoint, to whoever
-        reaches the server next; the step's result stands.
+        runs in its session, or the server cannot be reached — is left,
+        with its checkpoint, to whoever reaches the server next: its index
+        is kept in the checkpoint's ``unclean``, which every later close
+        or resume tries again. The step's result stands.
 
         :param transport: the job's open transport
         :param str directory: :func:`detached_dir`
+        :param int index: position of the step in the plan, to keep
         :return: whether the directory is gone
         :rtype: bool
         """
         self._detached_running = None
-        result = await transport.run(_detached_ctl(directory, "clean") + " 2>&1")
         self._on_server_index = None
+        try:
+            result = await transport.run(
+                _detached_ctl(directory, "clean") + " 2>&1",
+            )
+        except Exception as exc:
+            if not is_transient_connection_error(exc):
+                raise
+            result = CommandResult(
+                stdout=f"{type(exc).__name__}: {exc}", exit_status=-1,
+            )
         if result.exit_status == 0:
+            self._mark_unclean(index, False)
             return True
         self._detached_left_alive = True
-        self._sys(
-            f"⚠ The step's directory {directory} stays on the server"
-            f" (exit {result.exit_status}):"
-            f" {self._script_message(result.stdout)}"
-        )
+        self._mark_unclean(index, True)
+        if self._say_again:
+            self._sys(
+                f"⚠ The step's directory {directory} stays on the server"
+                f" (exit {result.exit_status}):"
+                f" {self._script_message(result.stdout)}"
+            )
         return False
 
+    def _mark_unclean(self, index, unclean):
+        """Keep, or drop, step *index* among the directories left to remove.
+
+        Written at once: the row may be all that is left of the job when
+        someone next reaches the server.
+
+        :param int index: position of the step in the plan, or None
+        :param bool unclean: whether its directory stays
+        """
+        if index is None or not self._checkpoint or self._checkpoint_data is None:
+            return
+        kept = list(self._checkpoint_data.get("unclean") or [])
+        if unclean == (index in kept):
+            return
+        kept = sorted({*kept, index}) if unclean else [i for i in kept if i != index]
+        self._checkpoint_data["unclean"] = kept
+        self._write_checkpoint({"data": json.dumps(self._checkpoint_data)})
+
+    async def _clean_ended_steps(self, transport, upto):
+        """Remove the directories of the steps apart that ended before *upto*.
+
+        The one just before *upto*, whose end was recorded before its
+        directory went (``_run_steps``), and those ``clean`` had to leave
+        (``unclean``). ``clean`` of a directory that is gone does nothing.
+
+        :param transport: the open transport
+        :param int upto: the first step not ended
+        """
+        plan = self._checkpoint_data.get("plan") or []
+        indexes = set(self._checkpoint_data.get("unclean") or ())
+        if 0 < upto <= len(plan) and (plan[upto - 1][2] or {}).get("detached"):
+            indexes.add(upto - 1)
+        for index in sorted(indexes):
+            await self._clean_detached(transport, self._detached_dir(index), index)
+
     async def _stop_detached(
-        self, transport, directory, wait_s=DETACHED_STOP_WAIT_S,
+        self, transport, directory, wait_s=DETACHED_STOP_WAIT_S, index=None,
     ):
         """Stop the step apart in *directory*, keep its last lines, remove it.
 
@@ -2681,6 +2891,7 @@ class AbstractExecutor(ABC):
         :param transport: the job's open transport
         :param str directory: :func:`detached_dir`
         :param int wait_s: how long its trap gets after TERM
+        :param int index: position of the step in the plan
         """
         self._detached_running = None
         self._on_server_index = None
@@ -2700,7 +2911,7 @@ class AbstractExecutor(ABC):
             stopped = stop.exit_status == 0
             if not stopped:
                 self._detached_left_alive = True
-            await self._clean_detached(transport, directory)
+            await self._clean_detached(transport, directory, index)
         except BaseException as exc:
             self._detached_left_alive = True
             logging.getLogger("AbstractExecutor").warning(
