@@ -316,7 +316,7 @@
 
         .fa { font-size: 11px; color: var(--rl-muted); inline-size: 12px; }
         &:hover { background: var(--rl-surf2); }
-        &:focus-visible { outline: 2px solid var(--rl-green-dim, #0c7a55); outline-offset: -2px; }
+        &:focus-visible { outline: 2px solid var(--rl-green-dim); outline-offset: -2px; }
     }
 
     .ic-set-adv__title { font-weight: 600; font-size: 13.5px; }
@@ -340,7 +340,7 @@
     .ic-set-page {
         .ic-set-input:focus-visible, .rl-sw:focus-visible, .rl-btn:focus-visible,
         .rl-sel__trigger:focus-visible, .ic-set-how:focus-visible {
-            outline: 2px solid var(--rl-green-dim, #0c7a55);
+            outline: 2px solid var(--rl-green-dim);
             outline-offset: 2px;
         }
     }
