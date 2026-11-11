@@ -23,9 +23,21 @@ unchanged.
   stdout (the last 256 KiB) are what the job gets. Cancelled, it is sent
   TERM, given 60 s for its trap and killed; its last lines still reach the
   log. One step at a time per instance, or per host: a job that finds
-  another job's step still running there tries again 30 s later. A
+  another job's step still running there waits 30 s for it. A
   server that kills an account's processes when its SSH session ends
   (logind's `KillUserProcesses`) runs the step attached, as before.
+- **A job with a step run apart leaves it to the server and comes back.**
+  Once its attempt's budget is spent, before a step, while it follows the
+  step apart or before its closing hooks, the job parks: its checkpoint
+  says where it is, the step goes on on the server, and queue_job runs
+  the job again 5 s later, first of its channel and without counting the
+  attempt. The next attempt goes on from there with the plan, the
+  working directory and the results of the first: no step runs twice, no
+  line of the log is lost or repeated. A worker that dies is taken up the
+  same way. A server that cannot be reached while the step runs there
+  makes the job wait 30 s and try again, for up to 10 minutes; past them
+  the job fails and the step is left for later. The cloud job stays
+  running all along.
 - **Where a job with a step run apart keeps its place.**
   `cloud.job.checkpoint`, one row per job: the step that comes next, what
   the steps before it answered, how much of the running step's log is in

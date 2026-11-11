@@ -549,6 +549,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: What the last render limited: ``((service, set, given), ...)``,
     #: handed to :meth:`_report_cpu_clamps` by the end hooks.
     _cpu_clamps = ()
+    #: Set before the steps and read by the end hooks: a job that resumes
+    #: from its checkpoint takes them from the attempt that set them.
+    _carried = ("_cpu_clamps", "_host_cpus")
 
     def pre_run_checks(self):
         """Never build a move's destination over the copy a move froze there.

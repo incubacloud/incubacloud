@@ -240,6 +240,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: ``before_execute`` measured free on the host (``restore_space``).
     _download_limit = None
 
+    #: Set before the steps and read by the end hooks: a job that resumes
+    #: from its checkpoint takes them from the attempt that set them.
+    _carried = ("_download_limit", "_writes_secret_key")
+
     @property
     def _no_return_from(self):
         """The step a stop must not cut: the load of the database.
