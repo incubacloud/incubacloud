@@ -331,6 +331,8 @@ and goes no further. That is what makes it safe to restore a copy of production
 and click around in it: the customers in that copy are real, and none of them
 will hear from you.
 
+See a staging copy of production catch every email it sends: [watch it in 90 seconds](https://youtu.be/jcaXDk8nkns).
+
 Open **Instance detail → Mails** to read what was caught. The list shows when
 each message arrived, who it was for and what it said; open one to see the HTML
 as the recipient would have seen it, the plain-text alternative, and what was
