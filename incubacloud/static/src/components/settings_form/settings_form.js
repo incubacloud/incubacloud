@@ -74,6 +74,9 @@ export class SettingRow extends Component {
         // The id of a control the row's slot draws with an id of its own
         // (one a test or a script reaches): the label's ``for`` names it.
         control: { type: String, optional: true },
+        // The row's control is a button, named by its own text: the label
+        // describes it (``aria-describedby``) instead of naming it (``for``).
+        button: { type: Boolean, optional: true },
         slots: { type: Object, optional: true },
     };
 
@@ -104,6 +107,11 @@ export class SettingRow extends Component {
         return `ic-set-${this.props.id}`;
     }
 
+    /** @returns {string} the id of the label, which a button row's control is described by */
+    get labelId() {
+        return `${this.rowId}-label`;
+    }
+
     /** @returns {string} the id the control takes, for the label's ``for`` */
     get inputId() {
         return this.props.control || `ic-set-${this.props.id}-input`;
@@ -128,6 +136,7 @@ export class SettingRow extends Component {
     /** @returns {string} the ids of the help and the error, for the control */
     get describedBy() {
         return [
+            this.props.button && this.labelId,
             this.help && `${this.rowId}-help`,
             this.error && `${this.rowId}-error`,
             this.props.warning && `${this.rowId}-warning`,

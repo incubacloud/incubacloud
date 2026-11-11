@@ -77,10 +77,11 @@
             </SettingsBlock>
 
             <SettingsBlock title.translate="Models">
-                <SettingRow id="'models'" control="'ic_asst_read_models'">
-                    <t t-set-slot="default">
+                <SettingRow id="'models'" button="true">
+                    <t t-set-slot="default" t-slot-scope="row">
                         <div class="ic-asst-read">
                             <button id="ic_asst_read_models" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-aria-describedby="row.describedBy"
                                     t-att-disabled="!canReadModels" t-on-click="readModels">
                                 <t t-if="state.refreshing">Reading the models…</t>
                                 <t t-elif="state.models.length">Update the list</t>
