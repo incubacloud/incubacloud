@@ -198,6 +198,21 @@ is unchanged.
 
 ### Fixed
 
+- **An auto-approval rule without charges asks only for the calls that
+  charge.** A tool can be declared `charges_per_call`: a
+  `_charges_<name>` method of `incubacloud.mcp.tools` says whether a call
+  charges an account, and a call it cannot judge does. Under a rule that
+  does not include charges that call asks and counts no use; the rest of
+  the tool's calls run as any other. The tool's listing and the grant's box
+  follow it. Core declares none: a panel that bills (the hosted platform's)
+  marks the tools whose calls do.
+- **An instance saved from its form shows «Changes not deployed» at
+  once.** `/cloud/save_instance` answers `config_dirty` and the form puts
+  it on the instance, where the pill appeared only after a reload.
+- **The labels of the assistant's provider, models, allowed models and
+  users name their control.** A settings row takes a `control` id for a
+  control whose slot draws an id of its own; the label's `for` pointed to
+  an id that did not exist.
 - **Connect as user lists the users of an Odoo 8.0 instance.** That
   version's `res_users` has no `share` column (base adds it from 9.0), so
   its internal users are taken from `base.group_user`.
