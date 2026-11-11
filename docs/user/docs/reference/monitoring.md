@@ -82,10 +82,8 @@ address the button fills in is only reachable from the central's own
 host. Or give the central a direct name and its host a direct port: your
 hosts then push to it without a CDN in between, on a port only they may open.
 
-## What is not here yet
+## What is not here
 
 Database figures per instance over time (connections, cache hit ratio,
-locks as charts and alerts) and synthetic probes from outside. Both are
-designed and deferred; nothing already collected changes when they land.
-Until then, **Queries now** on the Metrics tab reads the database when you
-ask.
+locks) are not charted or alerted: **Queries now** on the Metrics tab reads
+them when you ask. There are no synthetic probes from outside.

@@ -21,7 +21,7 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 
 ## Near term
 
-- **Monitoring follow-up** — per-instance database metrics (connections, cache hit ratio and locks) and synthetic probes from outside remain designed but deferred; they are not part of the monitoring already shipped. See [what is not here yet](user/docs/reference/monitoring.md#what-is-not-here-yet).
+- **Monitoring follow-up** — per-instance database metrics (connections, cache hit ratio and locks) and synthetic probes from outside remain designed but deferred; they are not part of the monitoring already shipped. See [what is not here](user/docs/reference/monitoring.md#what-is-not-here).
 
 ## Medium term
 
