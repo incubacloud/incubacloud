@@ -62,7 +62,7 @@
         text-decoration: none;
 
         &:hover { background: var(--rl-surf2); color: var(--rl-fg); }
-        &:focus-visible { outline: 2px solid var(--rl-green-dim, #0c7a55); outline-offset: 1px; }
+        &:focus-visible { outline: 2px solid var(--rl-green-dim); outline-offset: 1px; }
 
         &--on {
             background: var(--rl-surf2);
@@ -319,15 +319,15 @@
         flex-wrap: wrap;
         padding: 10px 12px 10px 16px;
         border-radius: var(--rl-r);
-        background: #121815;
-        color: #eef4f0;
+        background: var(--rl-savebar-bg);
+        color: var(--rl-savebar-fg);
         box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
 
         .rl-btn-ghost {
-            color: #eef4f0;
-            border-color: rgba(255, 255, 255, 0.28);
+            color: var(--rl-savebar-fg);
+            border-color: var(--rl-savebar-line);
             background: transparent;
-            &:hover { background: rgba(255, 255, 255, 0.08); }
+            &:hover { background: var(--rl-savebar-hover); }
         }
     }
 
@@ -335,12 +335,12 @@
         inline-size: 8px;
         block-size: 8px;
         border-radius: 50%;
-        background: #efa53e;
-        &--err { background: #ff8a8c; }
+        background: var(--rl-savebar-dirty);
+        &--err { background: var(--rl-savebar-err); }
     }
 
     .ic-set-savebar__text { font-weight: 600; font-size: 13.5px; }
-    .ic-set-savebar__count { font-size: 12px; color: #b7c3bc; }
+    .ic-set-savebar__count { font-size: 12px; color: var(--rl-savebar-muted); }
     .ic-set-savebar__gap { flex: 1 1 auto; }
 
     // ── Phones and narrow windows ────────────────────────────────────────────
