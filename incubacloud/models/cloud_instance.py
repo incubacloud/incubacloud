@@ -39,7 +39,7 @@ from ._concurrency import is_concurrency_error
 from .cloud_gitlab_mr_note import PR_PREVIEW_NOTE_FAILED_CODE
 from .cloud_gitlab_mr_note import MAX_NOTE_PAGES as NOTE_MAX_PAGES
 from .cloud_gitlab_mr_note import RETRY_SECONDS as NOTE_RETRY_SECONDS
-from .cloud_rate_limit import consume_quota
+from .cloud_rate_limit import consume_quota, refund_quota
 from .cloud_repo_mixin import _DERIVED_FROM_URL, repo_url_key
 from .cloud_security_mixin import defaults_as_sent
 from .encrypted_char import EncryptedChar
@@ -1791,7 +1791,8 @@ class CloudInstance(models.Model):
         is checked here, the only way to ask for one: the role, the
         instance as the caller reads it, the refusal, the address and,
         last, :data:`RELAY_TEST_MAILS_PER_HOUR`, so a refused test costs
-        none of the hour's. The job type is the manager's
+        none of the hour's; a test the queue refuses (one already waits)
+        has its hit given back. The job type is the manager's
         (``cloud.job._job_type_min_group``), so the job is queued with
         superuser rights once all of it passed; its creator stays the
         caller. Its type lets one wait at most per instance.
@@ -1816,8 +1817,9 @@ class CloudInstance(models.Model):
                 "Your user has no e-mail address to send the test to. Add "
                 "one to your profile."
             ))
+        bucket = f"relay_test_mail:{self.id}"
         if not consume_quota(
-            self.env, f"relay_test_mail:{self.id}",
+            self.env, bucket,
             max_per_window=RELAY_TEST_MAILS_PER_HOUR, window_seconds=3600,
         ):
             raise UserError(_(
@@ -1825,9 +1827,14 @@ class CloudInstance(models.Model):
                 "Try again later.",
                 count=RELAY_TEST_MAILS_PER_HOUR,
             ))
-        return self.env["cloud.job"].sudo().enqueue(
-            self.host_id.id, self.id, "relay_test_mail",
-        )
+        try:
+            return self.env["cloud.job"].sudo().enqueue(
+                self.host_id.id, self.id, "relay_test_mail",
+            )
+        except Exception:
+            # The hit was committed apart; no mail will leave for it.
+            refund_quota(self.env, bucket)
+            raise
 
     def _extra_env_files(self):
         """Files shipped into the instance directory on every build.

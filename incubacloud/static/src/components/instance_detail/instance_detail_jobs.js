@@ -94,6 +94,31 @@ export const JobsMixin = (Base) =>
       return job.state === "blocked" || Boolean(job.queue_held);
     }
 
+    /**
+     * Whether the timeline offers Cancel on *job*: it is waiting, running
+     * or blocked, and the reader may ask for a job of its type
+     * (``may_control``, as ``cancel_job`` holds them to).
+     *
+     * @param {{state: string, may_control?: boolean}} job
+     * @returns {boolean}
+     */
+    canCancelJob(job) {
+      return Boolean(job.may_control)
+        && (this.isActiveJob(job.state) || job.state === "blocked");
+    }
+
+    /**
+     * Whether the timeline offers Retry on *job*: it failed, and the
+     * reader may ask for a job of its type (``may_control``, as
+     * ``retry_job`` holds them to).
+     *
+     * @param {{state: string, may_control?: boolean}} job
+     * @returns {boolean}
+     */
+    canRetryJob(job) {
+      return Boolean(job.may_control) && job.state === "failed";
+    }
+
     jobIcon(code) {
       const map = {
         deploy_instance: "fa-rocket",

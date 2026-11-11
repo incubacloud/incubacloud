@@ -103,6 +103,25 @@ def consume_quota(env, bucket, **hit_kwargs):
         return allowed
 
 
+def refund_quota(env, bucket):
+    """Give back the hit :func:`consume_quota` counted on *bucket*.
+
+    For a request refused after its hit was counted, by something that
+    is no use of what the quota limits (a queue that already holds the
+    same job, say): the hit was committed at once, so the request's own
+    rollback does not undo it. In a transaction of its own, as the hit
+    was; the count never goes below zero. A hit test mode did not count
+    (:meth:`CloudRateLimit.hit`) leaves no row, and nothing is given back.
+
+    :param env: an Odoo environment, as :func:`consume_quota` takes it
+    :param str bucket: the rate-limit bucket the hit was counted on
+    """
+    with read_committed_cursor(env.registry) as cr:
+        quota_env = api.Environment(cr, env.uid, dict(env.context))
+        quota_env['cloud.rate.limit'].sudo()._unhit(bucket)
+        cr.commit()
+
+
 class CloudRateLimit(models.Model):
     _name = 'cloud.rate.limit'
     _description = 'Cloud Rate Limit Counter'
@@ -192,6 +211,24 @@ class CloudRateLimit(models.Model):
         )
         new_count = self.env.cr.fetchone()[0]
         return new_count <= max_per_window
+
+    @api.model
+    def _unhit(self, bucket):
+        """Take one hit off *bucket*'s count, never below zero.
+
+        :func:`refund_quota`'s statement: one atomic update, as
+        :meth:`hit`'s upsert is, and nothing when the bucket has no row.
+
+        :param str bucket: the rate-limit bucket
+        """
+        self.env.cr.execute(
+            """
+            UPDATE cloud_rate_limit
+               SET count = GREATEST(count - 1, 0), write_date = NOW()
+             WHERE bucket = %s
+            """,
+            (bucket,),
+        )
 
     @api.model
     def _gc(self, older_than_hours=24):

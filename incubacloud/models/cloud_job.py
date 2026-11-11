@@ -4728,6 +4728,9 @@ class CloudJob(models.Model):
                     else None
                 ),
                 "retry_of_id": job.retry_of_id.id if job.retry_of_id else None,
+                # Whether the reader may cancel or retry it: the panel
+                # offers those buttons by it.
+                "may_control": job._reader_may_control(),
                 # Held back by the channel gate: what for, and since when.
                 "channel_wait": waits.get(job.id),
                 **job._parked_fields(parked.get(job.id)),
@@ -4737,6 +4740,28 @@ class CloudJob(models.Model):
             }
             for job in self
         ]
+
+    def _reader_may_control(self):
+        """Whether the caller may cancel or retry this job.
+
+        What ``cancel_job`` and ``retry_job`` hold them to first, as a
+        flag (``_check_job_type_allowed``): a consultant is not offered
+        buttons that end in a refusal, such as on the relay's test mail
+        they asked for, whose type is the manager's. ``cancel_job`` still
+        judges the rest of a chain when asked.
+
+        :return: True when the caller may ask for a job of its type here
+        :rtype: bool
+        """
+        self.ensure_one()
+        try:
+            self._check_job_type_allowed(
+                self.job_type_id.code,
+                self.instance_id.id if self.instance_id else None,
+            )
+        except AccessError:
+            return False
+        return True
 
     def _restore_url_secret(self):
         """Return what a from-URL restore keeps encrypted, as a dict.
