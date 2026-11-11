@@ -30,7 +30,7 @@ reach an agent), and the limits on calls.
 
 !!! info "IncubaCloud SaaS"
     Auto-approval is not available yet on the panels of IncubaCloud SaaS:
-    **Settings**, **Agents (MCP)** says so, and a grant is refused. Once it is,
+    **Settings → Agents (MCP)** says so, and a grant is refused. Once it is,
     charges are the exception you choose: the actions that charge money —
     orders, purchases, plan changes billed to your account — stay out of a
     rule unless you tick **Include charges** when you grant it. Without it
@@ -79,8 +79,8 @@ Also keep in mind:
 - **Revoking does not undo.** What already ran, or is queued, stays.
 - **The audit records actions, not reads.** It says what the agent did, not what
   it had read before doing it.
-- **The audit is not kept for ever.** Its retention (**Settings**, **Logs & retention**,
-  **Audit log retention**), **Purge old logs now** and an agent's `purge_audit_logs` delete
+- **The audit is not kept for ever.** Its retention (**Settings → Logs & retention →
+  Audit log retention**), **Purge old logs now** and an agent's `purge_audit_logs` delete
   old rows, those of what a rule approved included; the rule, its count of
   calls and its last use stay. A rule's **Activity** may then list fewer
   actions than it counts.
@@ -92,7 +92,7 @@ grant, extend or revoke one.
 
 1. Connect the agent first: a rule is granted to a credential that has already
    connected to the panel (the assistant is offered for the people who use it).
-2. Open **Settings**, the **Agents (MCP)** section, and choose **Grant auto-approval…**.
+2. Open **Settings → Agents (MCP)** and choose **Grant auto-approval…**.
 3. Choose the **Person**, their **Credential** (each one shows its id and when
    it last connected, so two keys with the same name are told apart), and how
    long: 7, 30 or 90 days, **No end date**, or until a date. Nothing is chosen
@@ -115,7 +115,7 @@ A rule stops approving at once, at the next call, when:
 
 - its date passes, if it has one;
 - it is revoked: an Administrator revokes any rule, and a person their own,
-  from **Settings**, **Agents (MCP)**, or from **Connect an agent**;
+  from **Settings → Agents (MCP)**, or from **Connect an agent**;
 - the person is archived: their rules end, and stay ended if the person is
   reactivated;
 - the API key is deleted or expires.
@@ -126,7 +126,7 @@ cover the new role.
 
 ## Where you see it
 
-- **Settings**, **Agents (MCP)**: every rule, with its person and role, credential,
+- **Settings → Agents (MCP)**: every rule, with its person and role, credential,
   who granted it and when, its date (or *No end date*), when it was last used,
   how many calls it approved, and its state (active, paused, expired or revoked). **Activity**
   lists what the rule approved, with its grant and its end.

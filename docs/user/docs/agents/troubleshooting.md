@@ -8,10 +8,10 @@
 | *On this panel agents connect with OAuth* | This panel does not accept API keys: connect with OAuth. |
 | The client only offers API keys or headers | Your client does not support OAuth: use another client or, on a self-hosted panel, an API key. |
 | *Agents cannot connect to this panel yet* (on the *Connect an agent* page) | The panel has no OAuth provider for agents and does not accept API keys. On IncubaCloud SaaS, contact support. |
-| *This panel's MCP address is not configured yet* or *is not a plain web address* | The page shows no command. A manager sets or corrects the MCP address in **Settings**, **Agents (MCP)**. On IncubaCloud SaaS, contact support. |
+| *This panel's MCP address is not configured yet* or *is not a plain web address* | The page shows no command. A manager sets or corrects the MCP address in **Settings → Agents (MCP)**. On IncubaCloud SaaS, contact support. |
 | `503` with `Retry-After` | The sign-in service could not be reached, this panel's sign-in for agents is not completely configured or, on IncubaCloud SaaS, the panel was asleep or restarting: the first call wakes it up and may take up to a minute. Try again shortly; if it lasts, contact support or check the OAuth provider. |
 | `429` *Too many failed authentications from this address* | 60 sign-ins from your address failed within a minute. Wait a minute and fix the credential: sign in again, or check the API key. |
-| *Your agents made too many calls in the last minute* | Your agents together passed the per-user limit. Wait a minute; managers can raise it in **Settings**, **Rate limits**. |
+| *Your agents made too many calls in the last minute* | Your agents together passed the per-user limit. Wait a minute; managers can raise it in **Settings → Rate limits**. |
 | *Secrets are changed in the panel* | The agent tried to send a password, key or token: set it in the panel. |
 | *This confirmation has expired* | More than ten minutes passed, or the approval was for another action: ask for the action again. |
 | *This action needs your approval: open … and ask for it again* | Your client cannot show the question itself: open the link, approve, and ask the agent to try again. |

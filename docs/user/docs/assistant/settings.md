@@ -1,6 +1,6 @@
 # Assistant settings
 
-Managers set the assistant up in **Settings**, **Assistant**. It is off until you
+Managers set the assistant up in **Settings → Assistant**. It is off until you
 turn it on. Changes are kept with the page's **Save changes**.
 
 Turned off, nobody can ask it anything. Its users keep their conversations, to read
