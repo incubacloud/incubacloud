@@ -216,6 +216,8 @@ is unchanged.
   «Read the models») takes `button`: its label describes the button
   through `aria-describedby` instead of naming it, so the button keeps the
   name its text gives.
+  The stored secrets' «Replace» is such a button: its row takes `button`
+  while the secret shows as stored, and names the input once replaced.
 - **Connect as user lists the users of an Odoo 8.0 instance.** That
   version's `res_users` has no `share` column (base adds it from 9.0), so
   its internal users are taken from `base.group_user`.

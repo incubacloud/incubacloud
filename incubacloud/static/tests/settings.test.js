@@ -14,7 +14,7 @@ import {
 import {
     coreForm, CORE_PARTS, coreSaveVals,
 } from "@incubacloud/components/settings/core_settings_block";
-import { SettingRow } from "@incubacloud/components/settings_form/settings_form";
+import { SettingField, SettingRow } from "@incubacloud/components/settings_form/settings_form";
 import { GithubSettingsBlock } from "@incubacloud/components/settings/github_settings_block";
 import { logSizeProblem, looksLikeRange, rangesProblem } from "@incubacloud/components/settings/core_sections";
 import {
@@ -401,5 +401,21 @@ describe("Settings — the label of a row names its control", () => {
     test("a button row's control is described by the label, which names it no more", () => {
         expect(rowWith({ id: "read", help: "", button: true }).describedBy).toBe("ic-set-read-label");
         expect(rowWith({ id: "read", help: "" }).describedBy).toBe("");
+    });
+
+    test("a stored secret's row is a button row until it is replaced or typed over", () => {
+        // ``button`` on the row follows ``showsStored``: the Replace button
+        // is described by the label, the input that follows is named by it.
+        const fieldWith = (props, state, value) => {
+            const stand = Object.create(SettingField.prototype);
+            Object.defineProperty(stand, "value", { get: () => value });
+            stand.props = props;
+            stand.state = state;
+            return stand;
+        };
+        expect(fieldWith({ id: "token", stored: true }, { replacing: false }, "").showsStored).toBe(true);
+        expect(fieldWith({ id: "token", stored: true }, { replacing: true }, "").showsStored).toBe(false);
+        expect(fieldWith({ id: "token", stored: true }, { replacing: false }, "new").showsStored).toBe(false);
+        expect(fieldWith({ id: "token", stored: false }, { replacing: false }, "").showsStored).toBe(false);
     });
 });
