@@ -174,6 +174,27 @@ class TestAddonHooks(TransactionCase):
         # Chained, so a failed first move is not hidden by the second.
         self.assertEqual(step.count("; } && { "), 1)
 
+    def test_the_hook_after_a_rebuild_knows_whether_it_updated_the_modules(self):
+        """Only a rebuild whose update ended well says so
+        (``ic_modules_updated``): one without the step, or a move's
+        deploy, renders the stack without updating anything."""
+        import asyncio
+
+        seen = []
+
+        def _record(inst):
+            seen.append(bool(inst.env.context.get("ic_modules_updated")))
+
+        update = {"Update changed modules": {"stdout": "", "exit_status": 0}}
+        with patch.object(
+            self.Instance, "_after_stack_rendered", autospec=True,
+            side_effect=_record,
+        ), patch.object(self.Instance, "_preview_rebuilt", autospec=True):
+            for results in (update, {}):
+                executor = self._executor(RebuildInstanceExecutor, "rebuild_instance")
+                asyncio.run(executor.on_success(results))
+        self.assertEqual(seen, [True, False])
+
     def test_an_addon_hook_that_raises_leaves_the_job_s_outcome(self):
         before = self.inst.apt_dependencies
 

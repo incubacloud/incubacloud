@@ -39,7 +39,8 @@
 # (``database.is_neutralized``), and nothing on any other: for the rebuild
 # of a staging or a preview, whose update rewrites what neutralization
 # switched off, without neutralizing one a person made live on
-# purpose. Never on a production stack (``use-mail-catcher``).
+# purpose. Never on a production stack (``use-mail-catcher``). A database
+# that cannot be asked fails it: no answer is not «not neutralized».
 #
 # ``set-base-url`` overwrites the web.base.url/report.url that travelled
 # inside the restored dump. It also drops web.base.url.freeze: with the
@@ -161,11 +162,24 @@ case "$op" in
         ic_require_args 2 "$#" \
             "restore.sh renew-neutralization <dir> <pg_user> <dbname>"
         pg_user="$1"; dbname="$2"
-        # Odoo writes ``True`` or ``true``, the panel's SQL ``true``; a
-        # database without the table (none loaded) is no neutralized one.
-        flag="$(docker compose exec -T db psql -U "$pg_user" -d "$dbname" -tA -c \
+        # A query that fails is no answer: taken for "not neutralized", it
+        # would start a neutralized copy with what its update switched on
+        # again. The step stops the job instead (11-nov-2026). A database
+        # without the table (none loaded) is no neutralized one.
+        unread="could not read whether $dbname is neutralized: the rebuild stops here"
+        params="$(docker compose exec -T db psql -U "$pg_user" -d "$dbname" \
+            -v ON_ERROR_STOP=1 -tA -c \
+            "SELECT to_regclass('public.ir_config_parameter') IS NOT NULL")" \
+            || ic_die "$unread"
+        flag=""
+        if [ "$(printf '%s' "$params" | tr -d '[:space:]')" = "t" ]; then
+            # Odoo writes ``True`` or ``true``, the panel's SQL ``true``.
+            flag="$(docker compose exec -T db psql -U "$pg_user" -d "$dbname" \
+                -v ON_ERROR_STOP=1 -tA -c \
 "SELECT 1 FROM ir_config_parameter WHERE key = 'database.is_neutralized' \
-AND lower(coalesce(value, '')) NOT IN ('', 'false', '0')" 2>/dev/null || true)"
+AND lower(coalesce(value, '')) NOT IN ('', 'false', '0')")" \
+                || ic_die "$unread"
+        fi
         if [ "$(printf '%s' "$flag" | tr -d '[:space:]')" != "1" ]; then
             ic_log "$dbname is not neutralized: left as it is"
             exit 0

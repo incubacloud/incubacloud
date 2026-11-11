@@ -150,13 +150,19 @@ need nothing either: the scripts travel with each job.
   the instance was last built from (`cron_guard.sh update`, as a rebuild
   does), unless **Auto-update modules on rebuild** is off. `pitr.sh
   restore-start` takes the database and the flag, copies `cron_guard.sh` next
-  to the copy of itself the restore runs from, and records the outcome in
+  to the copy of itself the restore runs from (only then: a caller that asks
+  for no update needs no guard beside `pitr.sh`), and records the outcome in
   the result (`modules=updated|failed|skipped`). The update runs only on a
   database that replaced the previous one, after its promotion: a cancel no
-  longer undoes anything there and does not cut it. One that fails still
-  starts the instance, on the database as it was restored, and raises
+  longer undoes anything there and does not cut it, and the panel says the
+  restore is finishing rather than being undone (`phase=update`). It has an
+  hour, as a rebuild's update does: then its one-off Odoo container is
+  removed (`docker rm -f`; a TERM to the client does not stop an Odoo
+  running as PID 1) and the instance starts. One that fails or is cut still
+  starts the instance, on the database partly updated, and raises
   `pitr_modules_not_updated` (a warning naming what to do); a restore that
-  updates its database, or a rebuild that updates the modules, resolves it.
+  updates its database, or a rebuild whose module update ended well,
+  resolves it, and a flow that skips the update or a move's deploy does not.
   The job log names the code the database is updated to, and the restore
   dialog says that undoing a deployment needs its code reverted first, or
   its migration runs again.
@@ -179,7 +185,8 @@ need nothing either: the scripts travel with each job.
   now runs `restore.sh renew-neutralization` after the update: on a database
   that says it is neutralized (`database.is_neutralized`), Odoo's
   neutralization again (the panel's SQL before 16.0) and the mail catcher's
-  step; any other is left as it is.
+  step; any other is left as it is. A query that fails stops the rebuild
+  rather than pass for «not neutralized».
 
 ---
 

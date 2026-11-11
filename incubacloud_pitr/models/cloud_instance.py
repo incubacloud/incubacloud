@@ -580,13 +580,15 @@ class CloudInstance(models.Model):
         only the database settings are left. Doing it here spares the
         second rebuild the watch would queue.
 
-        A rebuild that updates the modules (``auto_update``) also settles a
-        restore to a moment whose database could not be updated to the
-        code (``ALERT_MODULES``).
+        A rebuild whose update of the modules ended well (the context's
+        ``ic_modules_updated``, set by the rebuild) also settles a restore
+        to a moment whose database could not be updated to the code
+        (``ALERT_MODULES``). A flow that renders the stack without that
+        update (a flow that skips the step, a move's deploy) does not.
         """
         super()._after_stack_rendered()
         self._pitr_reconcile(after_rebuild=True)
-        if self.auto_update:
+        if self.env.context.get("ic_modules_updated"):
             self.env["cloud.alert"].resolve_alert(ALERT_MODULES, instance=self)
 
     def _pitr_failed_lately(self, code, within=_RETRY_AFTER):

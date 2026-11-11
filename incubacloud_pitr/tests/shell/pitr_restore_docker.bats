@@ -490,3 +490,27 @@ assert_as_before() {
     [ "$(rows)" = "1-base,2-before-target" ]
     odoo_runs
 }
+
+@test "an update that outlasts its limit has its one-off removed, its crons put back, and the instance starts" {
+    # The one-off's PID 1 is a shell, which ignores the TERM.
+    echo 300 > "$DIR/marks/delay-update"
+    export IC_PITR_UPDATE_TIMEOUT_S=8
+    run start_restore 1
+    [ "$status" -eq 0 ]
+    wait_mark update 240
+    run bash "$SCRIPT" restore-wait "$DIR" "$JOB" 240
+    echo "$output"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"state=done"* ]]
+    [[ "$output" == *"modules=failed"* ]]
+    [[ "$output" == *"the update ran for 8 s: its Odoo container is removed"* ]]
+    [ ! -e "$DIR/marks/updated" ]
+    # No one-off of odoo is left, and the instance's own runs.
+    [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+        --filter label=com.docker.compose.service=odoo \
+        --filter label=com.docker.compose.oneoff=True)" ]
+    odoo_runs
+    wait_db
+    [ "$(rows)" = "1-base,2-before-target" ]
+    [ "$(sql "SELECT string_agg(cron_name || '=' || active, ',' ORDER BY id) FROM ir_cron")" = "mail queue=true,off=false" ]
+}

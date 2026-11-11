@@ -296,8 +296,9 @@ class _PitrExecutor(AbstractSSHExecutor):
 
         ``pitr.sh`` updates it once its files are back when the job asked
         for it (``auto_update``), and starts the instance however that
-        ended: one that failed runs on the database as restored, under
-        code that may expect a schema it does not have. A warning says so
+        ended: one that failed, or was cut by its time limit, runs on the
+        database partly updated (the modules updated before the failure
+        stay so), under code that may expect a schema it does not have. A warning says so
         and what to do; a restore that updated its database settles it.
         Nothing for a restore that did not update (``skipped``) or a
         result of a script that never did (no ``modules``).
@@ -312,15 +313,16 @@ class _PitrExecutor(AbstractSSHExecutor):
             self._sys(
                 f"✗ The restored database of '{inst.name}' could not be "
                 f"updated to the code the instance runs: the restore's log "
-                f"above names the module. Odoo runs on it as it was restored."
+                f"above names the module, or says the update ran out of "
+                f"time. Odoo runs on it partly updated."
             )
             self._pitr_alert(
                 ALERT_MODULES,
                 f"'{inst.name}' was restored, but its modules could not be "
                 f"updated to the code it runs: Odoo serves that code over "
-                f"the database as it was restored, and screens that read "
-                f"what the code changed may fail. The restore job's log "
-                f"names the module. Fix it, then rebuild the instance with "
+                f"the database partly updated, and screens that read what "
+                f"the code changed may fail. The restore job's log names "
+                f"the module. Fix it, then rebuild the instance with "
                 f"'Auto-update modules on rebuild' on.",
             )
 
@@ -1008,7 +1010,10 @@ class PitrRestoreExecutor(_PitrExecutor):
             self._pitr_alert(
                 ALERT_FAILING,
                 f"The restore of '{inst.name}' has been running for hours; "
-                f"it is still followed. Do not touch the instance meanwhile.",
+                f"it is still followed. Its host's .walg/restore/log names "
+                f"the step it is in: an update of its modules, the last "
+                f"one, is cut after an hour and the instance started. Do "
+                f"not touch the instance meanwhile.",
             )
         payload |= {"follow": self._followed(), "round": rounds, "missed": missed}
         inst = self._inst()
@@ -1216,6 +1221,23 @@ class PitrRestoreExecutor(_PitrExecutor):
                 f"came, but not its files: attachments may be missing. See "
                 f"the job's log.",
                 level="critical",
+            )
+        elif state == "running" and result.get("phase") == "update":
+            # Past the promotion: the restored database stays, and its
+            # update runs to its end or to its time limit (``pitr.sh``).
+            self._follow_on()
+            self._sys(
+                "The restored database is already in place and its modules "
+                "are being updated: the cancel cannot undo it. The next job "
+                "follows the restore to its end."
+            )
+            self._pitr_alert(
+                ALERT_FAILING,
+                f"The restore of '{inst.name}' was cancelled after its "
+                f"database replaced the previous one, which cannot be "
+                f"undone: its modules are being updated on its host, for an "
+                f"hour at most, and the instance starts then. A job follows "
+                f"it to its end. Do not touch the instance meanwhile.",
             )
         elif state == "running":
             self._follow_on()

@@ -391,6 +391,20 @@ STUB
     grep -q "cancel asked (job 9)" "$DIR/.walg/restore/log"
 }
 
+@test "a restore still running while its modules are updated says so, to a wait and to a cancel" {
+    fake_restore 9
+    run bash "$SCRIPT" restore-wait "$DIR" 9 0
+    [[ "$output" == *"IC_PITR_RESTORE state=running"* ]]
+    [[ "$output" != *"phase="* ]]
+    echo "[incubacloud] 10:00:00 updating the restored database's modules to the code the instance runs (for up to 3600 s)" \
+        >> "$DIR/.walg/restore/log"
+    run bash "$SCRIPT" restore-wait "$DIR" 9 0
+    [[ "$output" == *"IC_PITR_RESTORE state=running phase=update"* ]]
+    run bash "$SCRIPT" restore-cancel "$DIR" 9 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE state=running phase=update"* ]]
+}
+
 @test "a cancel whose restore's process died without a word says it is lost" {
     mkdir -p "$DIR/.walg/restore"
     echo 9 > "$DIR/.walg/restore/lock"
@@ -553,6 +567,30 @@ call_line() { grep -n -- "$1" "$CALLS" | head -n 1 | cut -d: -f1; }
     [ ! -e "$DIR/.walg/restore/lock" ]
 }
 
+@test "a restore started with eight arguments needs no guard beside it, and copies none" {
+    # As a caller that stages pitr.sh and lib/ only (an older panel, or a
+    # stack whose task stages them by hand) starts it: no update asked.
+    rm -f "$TMP/scripts/cron_guard.sh"
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_PITR_RESTORE_STARTED 9"* ]]
+    grep -q "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18  0$" "$CALLS"
+    [ ! -e "$DIR/.walg/restore/bin/cron_guard.sh" ]
+}
+
+@test "a restore asked to update refuses to start without the guard beside it" {
+    rm -f "$TMP/scripts/cron_guard.sh"
+    install -m 755 /dev/null "$DIR/.walg/run"
+    run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
+        '2026-10-18 22:30:48+00' 2026-10-18 prod 1
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cron_guard.sh is missing next to pitr.sh"* ]]
+    ! grep -q "setsid" "$CALLS"
+    [ ! -e "$DIR/.walg/restore/lock" ]
+}
+
 @test "the restored database's modules are updated once its files are back, before the stack comes up" {
     promoting_docker
     run_restore 1
@@ -578,6 +616,46 @@ call_line() { grep -n -- "$1" "$CALLS" | head -n 1 | cut -d: -f1; }
     up="$(call_line "docker compose up -d$")"
     [ -n "$up" ] && [ "$update" -lt "$up" ]
     [[ "$output" == *"updating the modules failed (exit 1)"* ]]
+}
+
+@test "an update that outlasts its limit has its Odoo container removed, and the instance starts" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"grep -c"*) echo 0 ;;
+    *"pg_is_in_recovery"*) echo f ;;
+    *"pg_walfile_name"*) echo 00000002 ;;
+    *"PG_VERSION"*) echo 17 ;;
+    *"inspect -f {{.State.Running}}"*) echo true ;;
+    # An Odoo that ignores the TERM, as PID 1 does: it ends once removed.
+    *"click-odoo-update"*)
+        while [ ! -e "$CALLS.removed" ]; do sleep 0.1; done
+        exit 137 ;;
+    *"compose ps -a -q odoo"*) printf 'own\noneoff\n' ;;
+    *"com.docker.compose.oneoff"*) if [ "${*: -1}" = oneoff ]; then echo True; else echo False; fi ;;
+    "rm -f oneoff") touch "$CALLS.removed" ;;
+esac
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+    IC_PITR_UPDATE_TIMEOUT_S=2 run_restore 1
+    [ "$status" -eq 0 ]
+    grep -qx "state=done" "$DIR/.walg/restore/result"
+    grep -qx "modules=failed" "$DIR/.walg/restore/result"
+    # The one-off only: the instance's own odoo is started again.
+    removed="$(call_line "docker rm -f oneoff")"
+    up="$(call_line "docker compose up -d$")"
+    [ -n "$removed" ] && [ -n "$up" ] && [ "$removed" -lt "$up" ]
+    ! grep -q "docker rm -f own" "$CALLS"
+    [[ "$output" == *"the update ran for 2 s: its Odoo container is removed"* ]]
+    [[ "$output" == *"partly updated"* ]]
+}
+
+@test "the update's time limit is a number" {
+    IC_PITR_UPDATE_TIMEOUT_S='1;id' run bash "$SCRIPT" status "$DIR" odoo
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad IC_PITR_UPDATE_TIMEOUT_S"* ]]
 }
 
 @test "a database restored without its files is updated all the same" {

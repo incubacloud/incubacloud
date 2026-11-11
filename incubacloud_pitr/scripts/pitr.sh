@@ -38,9 +38,11 @@
 # With ``update`` 1 the restored database <db> has its modules updated to
 # the code the instance runs, as a rebuild does (``cron_guard.sh update``,
 # copied next to this script for the process): once the files are back,
-# with Odoo still stopped, before the stack comes up. Only a database that
-# replaced the previous one (promoted) is updated; one that failed does
-# not keep the instance down (``modules=failed`` in the result).
+# with Odoo still stopped, before the stack comes up, for an hour at most
+# (``UPDATE_TIMEOUT_S``). Only a database that replaced the previous one
+# (promoted) is updated; one that failed, or ran out of time, does not keep
+# the instance down (``modules=failed`` in the result). The guard is
+# needed beside this script only then.
 #
 # ``restore-cancel`` stops it: a TERM to that process, which puts back what
 # it changed, and a wait for the result. Up to the promotion of the
@@ -77,6 +79,20 @@ ENVF="${IC_PITR_ENV:-.docker/pitr.env}"
 [[ "$W" =~ ^\.[A-Za-z0-9_.-]+$ ]] || ic_die "bad IC_PITR_HOME: $W"
 [[ "$ENVF" =~ ^\.docker/[A-Za-z0-9_.-]+\.env$ ]] || ic_die "bad IC_PITR_ENV: $ENVF"
 RESTORE="$W/restore"
+# How long a restore's update of its database's modules may run: the hour
+# a rebuild's own update has (the panel's limit for one command,
+# DEFAULT_SSH_COMMAND_TIMEOUT). The instance is stopped while it runs and
+# a cancel does not cut it, so one that hangs would keep it down for good.
+# On that hour its one-off Odoo container is removed (``docker rm -f``: a
+# TERM to the compose client does not stop an Odoo running as PID 1, which
+# ignores it), the guard puts the crons back, and the instance starts on
+# the database partly updated (``modules=failed``). IC_PITR_UPDATE_TIMEOUT_S
+# sets another, for the tests (11-nov-2026).
+UPDATE_TIMEOUT_S="${IC_PITR_UPDATE_TIMEOUT_S:-3600}"
+[[ "$UPDATE_TIMEOUT_S" =~ ^[0-9]+$ ]] || ic_die "bad IC_PITR_UPDATE_TIMEOUT_S: $UPDATE_TIMEOUT_S"
+# Once its container is gone, how long the guard has to put the crons back
+# and end before it is killed (11-nov-2026).
+UPDATE_GRACE_S=120
 
 # ``psql`` in the db container, as the instance's database owner.
 #   $1     database user
@@ -103,6 +119,19 @@ running() {
     # The whole list is read: grep -q would stop at the first match and,
     # under pipefail, a docker still writing makes it "not running".
     ic_running_services 2>/dev/null | grep -x "$1" >/dev/null
+}
+
+# Remove the one-off containers of the stack's odoo service (``docker
+# compose run odoo``), running or not. Compose lists a one-off as its
+# service (see ic_running_services); only those whose label says they are
+# one go, the instance's own odoo stays.
+remove_odoo_oneoffs() {
+    local id
+    for id in $(docker compose ps -a -q odoo 2>/dev/null); do
+        if [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.oneoff"}}' "$id" 2>/dev/null)" = True ]; then
+            docker rm -f "$id" >/dev/null 2>&1 || true
+        fi
+    done
 }
 
 # Stop again a database this run started, unless Odoo runs: with Odoo
@@ -210,6 +239,17 @@ follow_restore() {
         sleep 5
         waited=$((waited + 5))
     done
+}
+
+# The ``IC_PITR_RESTORE`` line of a restore still running. ``phase=update``
+# once its log says its modules are being updated: its database is in
+# place, and a cancel no longer undoes anything.
+running_line() {
+    if grep -q "updating the restored database's modules" "$RESTORE/log" 2>/dev/null; then
+        echo "IC_PITR_RESTORE state=running phase=update"
+    else
+        echo "IC_PITR_RESTORE state=running"
+    fi
 }
 
 # The restore's result as one ``IC_PITR_RESTORE`` line.
@@ -473,10 +513,13 @@ EOF
             || ic_die "bad target time: $target"
         [[ "$since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ic_die "bad day: $since"
         [[ "$update" =~ ^[01]$ ]] || ic_die "bad update flag: $update"
+        # The guard is needed, and copied, only for an update: a caller
+        # that stages pitr.sh and lib/ alone and asks for none (eight
+        # arguments) still restores.
         if [ "$update" = 1 ]; then
             [[ "$db" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || ic_die "bad database: $db"
+            [ -f "$here/cron_guard.sh" ] || ic_die "cron_guard.sh is missing next to pitr.sh"
         fi
-        [ -f "$here/cron_guard.sh" ] || ic_die "cron_guard.sh is missing next to pitr.sh"
         mkdir -p "$RESTORE"
         # The same job again (queue_job runs a job that died once more):
         # follow the restore it started, never start a second one.
@@ -505,7 +548,9 @@ EOF
         rm -rf "${RESTORE:?}/bin"
         mkdir -p "$RESTORE/bin/lib"
         install -m 755 "$0" "$RESTORE/bin/pitr.sh"
-        install -m 755 "$here/cron_guard.sh" "$RESTORE/bin/cron_guard.sh"
+        if [ "$update" = 1 ]; then
+            install -m 755 "$here/cron_guard.sh" "$RESTORE/bin/cron_guard.sh"
+        fi
         install -m 644 "$here/lib/common.sh" "$RESTORE/bin/lib/common.sh"
         : > "$RESTORE/log"
         setsid nohup bash "$RESTORE/bin/pitr.sh" restore-run "$dir" "$user" "$job" \
@@ -599,19 +644,40 @@ EOF
         # Update the restored database's modules to the code the instance
         # runs, as a rebuild does, with Odoo stopped: a restore to before
         # a deployment would otherwise serve the deployment's code over
-        # the schema of the moment. Never cut short (``finish`` holds the
-        # signals), and a failure does not keep the instance down: the
-        # result says it (``modules=failed``) and the panel raises it.
+        # the schema of the moment. A cancel does not cut it (``finish``
+        # holds the signals); its time limit does (``UPDATE_TIMEOUT_S``).
+        # A failure does not keep the instance down: the result says it
+        # (``modules=failed``) and the panel raises it.
         update_modules() {
-            local rc=0
-            say "updating the restored database's modules to the code the instance runs"
+            local rc=0 guard waited=0 cut=0
+            say "updating the restored database's modules to the code the instance runs (for up to $UPDATE_TIMEOUT_S s)"
             modules=failed
-            bash "$here/cron_guard.sh" update "$dir" "$db" "$user" || rc=$?
-            if [ "$rc" -eq 0 ]; then
+            # In a process group of its own, which the grace's end kills.
+            set -m
+            bash "$here/cron_guard.sh" update "$dir" "$db" "$user" &
+            guard=$!
+            set +m
+            while kill -0 "$guard" 2>/dev/null; do
+                if [ "$cut" -eq 0 ] && [ "$waited" -ge "$UPDATE_TIMEOUT_S" ]; then
+                    say "the update ran for $UPDATE_TIMEOUT_S s: its Odoo container is removed"
+                    remove_odoo_oneoffs
+                    cut=1; waited=0
+                elif [ "$cut" -eq 1 ] && [ "$waited" -ge "$UPDATE_GRACE_S" ]; then
+                    say "the guard had not ended ${UPDATE_GRACE_S} s later: killed"
+                    kill -KILL -- "-$guard" 2>/dev/null
+                    break
+                fi
+                sleep 1
+                waited=$((waited + 1))
+            done
+            wait "$guard" || rc=$?
+            if [ "$cut" -eq 1 ]; then
+                say "the update was cut after $UPDATE_TIMEOUT_S s: Odoo starts on the restored database, partly updated; the lines above show how far it got"
+            elif [ "$rc" -eq 0 ]; then
                 modules=updated
                 say "modules updated"
             else
-                say "updating the modules failed (exit $rc): Odoo starts on the restored database as it is; the lines above name the module"
+                say "updating the modules failed (exit $rc): Odoo starts on the restored database, partly updated; the lines above name the module"
             fi
         }
         finish() {
@@ -860,7 +926,7 @@ EOF
         case "$rc" in
             3)
                 # Not a failure: the next job follows it.
-                echo "IC_PITR_RESTORE state=running"
+                running_line
                 exit 0 ;;
             4)
                 # Whose lock is left, if any: the job's own is a restore
@@ -931,8 +997,9 @@ EOF
         follow_restore "$job" "$max" "$shown" || rc=$?
         case "$rc" in
             0) result_line ;;
-            # Still undoing when the wait ended: the next job follows it.
-            3) echo "IC_PITR_RESTORE state=running" ;;
+            # Still undoing, or updating, when the wait ended: the next
+            # job follows it.
+            3) running_line ;;
             *)
                 holder="$(cat "$RESTORE/lock" 2>/dev/null || true)"
                 if [ "$holder" = "$job" ]; then

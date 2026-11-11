@@ -501,7 +501,15 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             f"✓ '{inst.name}' rebuilt and restarted"
             f" with updated configuration."
         )
-        self._call_addon_hook(inst, "_after_stack_rendered")
+        # The hook is told whether this rebuild updated the modules
+        # (``ic_modules_updated``): only one whose update ended well may
+        # settle what waits for one. A flow that skips the step, or a
+        # deploy, renders the stack without it.
+        updated = (results.get(_LABEL_UPDATE) or {}).get("exit_status") == 0
+        self._call_addon_hook(
+            inst.with_context(ic_modules_updated=True) if updated else inst,
+            "_after_stack_rendered",
+        )
         inst._preview_rebuilt(self.job)
 
     #: The payload keys that describe one push, of GitHub or GitLab.
