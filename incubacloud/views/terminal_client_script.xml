@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<!--
+    The script of both web terminals, an instance's containers and a host:
+    xterm.js and everything between it and the session on the server.
+    The page that calls it sets ``base_path`` (its routes) and
+    ``cursor_color``, and has the elements #terminal-container,
+    #conn-badge, #status-text and #size-text.
+-->
+<template id="terminal_client_script" name="Web Terminal Client">
+    <script type="text/javascript">
+        var odoo = <t t-out="json.dumps({'csrf_token': csrf_token, '__session_info__': session_info})"/>;
+
+        // xterm measures its cells once, when it opens: it waits for the
+        // brand's mono font, or a font that arrives later leaves the grid
+        // misaligned.
+        document.fonts.load("13px 'JetBrains Mono'").catch(function () {}).then(function () {
+            var SESSION_ID   = '<t t-esc="session_id"/>';
+            var BASE_PATH    = '<t t-esc="base_path"/>';
+            var CSRF         = odoo.csrf_token;
+            var IDLE_WARN_S  = 90;   // show warning this many seconds before timeout
+            var TIMEOUT_S    = 120;  // must match SESSION_TIMEOUT on the server
+
+            // Every request counts against the per-address limit of the
+            // proxy in front of the panel (300 a minute, bursts of 100 by
+            // default). The output used to be read every 80 ms and each
+            // keystroke was one more request: typing went over the limit,
+            // got 429 and lost characters (11-nov-2026). Now the output
+            // is read again soon only while it keeps coming, and less and
+            // less often while nothing happens; the answer to what is
+            // typed already brings its echo.
+            var POLL_FAST_MS   = 100;   // after a read that brought output
+            var POLL_ACTIVE_MS = 300;   // after typing
+            var POLL_IDLE_MS   = 1000;  // the longest, with nothing going on
+            var TYPING_MS      = 2000;  // "after typing" lasts this long
+            // Keys typed within this of each other go in one request.
+            var INPUT_GROUP_MS = 20;
+            // Requests with input start at least this far apart, five a
+            // second at most: what is typed meanwhile goes in the next.
+            var INPUT_GAP_MS   = 200;
+            // Waits before trying a failed request again: doubling from
+            // the first to the last, or what the server's Retry-After says.
+            var RETRY_FIRST_MS = 500;
+            var RETRY_LAST_MS  = 5000;
+
+            var badge      = document.getElementById('conn-badge');
+            var statusText = document.getElementById('status-text');
+            var sizeText   = document.getElementById('size-text');
+
+            // ── xterm.js ──────────────────────────────────────────────────
+            var term = new Terminal({
+                cursorBlink: true,
+                fontSize: 13,
+                fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace",
+                theme: {
+                    background: '#0a0c0d',
+                    foreground: '#c3cad0',
+                    cursor: '<t t-esc="cursor_color"/>',
+                    cursorAccent: '#0a0c0d',
+                    selectionBackground: 'rgba(47,199,140,.3)',
+                    black: '#333a3f', red: '#ff6063', green: '#2fc78c', yellow: '#efa53e',
+                    blue: '#4fb6c6', magenta: '#ff9b9d', cyan: '#9fd6e2', white: '#c3cad0',
+                    brightBlack: '#737d85', brightRed: '#ff9b9d', brightGreen: '#9fe7c4',
+                    brightYellow: '#f0c987', brightBlue: '#9fd6e2', brightMagenta: '#ff9b9d',
+                    brightCyan: '#e4f1f2', brightWhite: '#eef1f3',
+                },
+                allowProposedApi: true,
+            });
+
+            var fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(document.getElementById('terminal-container'));
+            fitAddon.fit();
+
+            function updateSizeText() {
+                sizeText.textContent = term.cols + '×' + term.rows;
+            }
+            updateSizeText();
+
+            // ── JSON-RPC helper ───────────────────────────────────────────
+            // Rejects on anything but a JSON-RPC result: an HTTP error (a
+            // 429 from the proxy is text, not JSON) carries the wait its
+            // Retry-After asks for, in ms; an error of the server, its
+            // message.
+            function rpc(path, params) {
+                return fetch(path, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Csrf-Token': CSRF,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        jsonrpc: '2.0', method: 'call', id: Date.now(), params: params,
+                    }),
+                }).then(function (r) {
+                    if (!r.ok) {
+                        var err = new Error('HTTP ' + r.status);
+                        err.status = r.status;
+                        var after = parseFloat(r.headers.get('Retry-After'));
+                        err.retryAfterMs = isFinite(after) ? after * 1000 : 0;
+                        throw err;
+                    }
+                    return r.json();
+                }).then(function (r) {
+                    if (r.error) {
+                        var err = new Error((r.error.data &amp;&amp; r.error.data.message) || r.error.message);
+                        err.rpc = true;
+                        throw err;
+                    }
+                    return r.result;
+                });
+            }
+
+            // How long to wait before the attempt after *failures* failed
+            // ones, the last of them *err*.
+            function retryDelay(err, failures) {
+                var backoff = Math.min(RETRY_FIRST_MS * Math.pow(2, failures - 1), RETRY_LAST_MS);
+                return Math.max(backoff, (err &amp;&amp; err.retryAfterMs) || 0);
+            }
+
+            // ── Base64 helpers ────────────────────────────────────────────
+            function b64ToUint8(b64) {
+                var bin = atob(b64);
+                var arr = new Uint8Array(bin.length);
+                for (var i = 0; i &lt; bin.length; i++) arr[i] = bin.charCodeAt(i);
+                return arr;
+            }
+
+            function uint8ToB64(arr) {
+                var bin = '';
+                arr.forEach(function (b) { bin += String.fromCharCode(b); });
+                return btoa(bin);
+            }
+
+            // ── Status ────────────────────────────────────────────────────
+            var afterSeq     = 0;      // the last output chunk written
+            var polling      = true;
+            var paused       = false;  // true when the tab is hidden
+            var connError    = false;  // a request is failing and retried
+            var connDropped  = false;  // one failed without an answer
+            var wasConnected = false;
+            var lastTypedAt  = 0;
+
+            function setBadge(cls, text) {
+                badge.className = 'terminal-badge ' + cls;
+                badge.textContent = text;
+            }
+
+            function isOpen() {
+                return badge.className.indexOf('closed') === -1 &amp;&amp;
+                    badge.className.indexOf('error') === -1;
+            }
+
+            // A request failed with *err* and will be sent again: say
+            // so, with what was typed and has not reached the shell yet.
+            function showRetrying(err) {
+                connError = true;
+                // No answer at all, not a 429 or an error of the server:
+                // the connection itself went.
+                if (!err || (!err.status &amp;&amp; !err.rpc)) connDropped = true;
+                if (!isOpen()) return;
+                var waiting = inputWaiting();
+                statusText.textContent = 'Connection error — retrying…' +
+                    (waiting ? ' (' + waiting + ' typed bytes waiting)' : '');
+            }
+
+            // A request went through after failing: clear the message.
+            function showRecovered() {
+                if (!connError) return;
+                connError = false;
+                if (isOpen() &amp;&amp; inputWaiting() === 0) {
+                    statusText.textContent = wasConnected ? 'Connected' : 'Establishing SSH connection…';
+                }
+                // The window may have changed while the connection was
+                // gone: tell the shell its size again.
+                if (connDropped &amp;&amp; wasConnected) sendSize();
+                connDropped = false;
+            }
+
+            // Ends the console's session on the server: its audit row and
+            // route go, and the next console on this host is not refused
+            // as one still open. Once, whether the shell ended or the tab.
+            var sessionClosed = false;
+            function closeSession() {
+                if (sessionClosed) return;
+                sessionClosed = true;
+                polling = false;
+                fetch(BASE_PATH + SESSION_ID + '/close', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF },
+                    keepalive: true,
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: 0, params: {} }),
+                });
+            }
+
+            // What was typed and never reached the shell is said, not
+            // swallowed.
+            function lostInputNote() {
+                dropInput();
+                return lostBytes ? ' ' + lostBytes + ' typed bytes did not reach the shell.' : '';
+            }
+
+            function onClosed(reason) {
+                closeSession();
+                setBadge('closed', 'Closed');
+                if (reason === 'timeout') {
+                    var msg = '\r\n\x1b[33m⏱  Session closed due to inactivity. Open a new terminal to reconnect.\x1b[0m\r\n';
+                    term.write(new TextEncoder().encode(msg));
+                    statusText.textContent = 'Session expired (idle timeout).' + lostInputNote();
+                } else {
+                    statusText.textContent = 'Session closed.' + lostInputNote();
+                }
+            }
+
+            // Writes what an answer of the session brought, from a read of
+            // the output or with the answer to input. Both can bring the
+            // same chunks: only those after the last one written are
+            // written, in order. Returns whether there was any.
+            function applyOutput(result) {
+                if (!result || !polling) return false;
+
+                if (result.connected &amp;&amp; !wasConnected) {
+                    wasConnected = true;
+                    // The shell starts at 80×24: give it the page's size.
+                    sendSize();
+                }
+                if (result.connected &amp;&amp; badge.className.indexOf('connected') === -1 &amp;&amp;
+                        badge.className.indexOf('paused') === -1) {
+                    setBadge('connected', 'Connected');
+                    if (!connError) statusText.textContent = 'Connected';
+                }
+
+                var wrote = false;
+                (result.chunks || []).forEach(function (chunk) {
+                    if (chunk.seq &lt;= afterSeq) return;
+                    afterSeq = chunk.seq;
+                    term.write(b64ToUint8(chunk.data));
+                    wrote = true;
+                });
+
+                var idle = result.idle_seconds || 0;
+                var remaining = TIMEOUT_S - idle;
+                if (!result.closed &amp;&amp; !result.error &amp;&amp; remaining &lt;= IDLE_WARN_S) {
+                    setBadge('idle', 'Idle ' + Math.ceil(remaining) + 's');
+                    statusText.textContent = 'Closing in ' + Math.ceil(remaining) + 's due to inactivity — press any key to reset.';
+                } else if (result.connected &amp;&amp; !result.closed &amp;&amp; !result.error) {
+                    if (badge.className.indexOf('idle') !== -1) {
+                        setBadge('connected', 'Connected');
+                        statusText.textContent = 'Connected';
+                    }
+                }
+
+                if (result.error) {
+                    polling = false;
+                    setBadge('error', 'Error');
+                    statusText.textContent = 'Error: ' + result.error + lostInputNote();
+                } else if (result.closed) {
+                    onClosed(result.close_reason);
+                }
+                return wrote;
+            }
+
+            // ── Input → server ────────────────────────────────────────────
+            // One request at a time, in the order typed: requests sent
+            // side by side reached the shell scrambled ("eco h" for
+            // "echo", 8-oct-2026). Keys typed while one is out wait and go
+            // together in the next. A request that fails is sent again,
+            // the same bytes under the same number, after the wait the
+            // server asks for, until it goes through or the session ends:
+            // the server applies a number once, so a request that did
+            // arrive but whose answer was lost is not typed twice.
+            var inputStream = Date.now().toString(36) + Math.random().toString(36).slice(2);
+            var inputSeq    = 0;
+            var typed       = [];    // Uint8Arrays not in a batch yet
+            var batch       = null;  // {seq, data, size}: sent, not acknowledged
+            var inputOut    = false; // a request with input is out
+            var inputTimer  = null;
+            var inputFailures = 0;
+            var lostBytes   = 0;     // typed and given up on
+            var inputSentAt = 0;     // when the last request with input left
+
+            // How long the next request with input waits, at least *ms*.
+            function inputWait(ms) {
+                return Math.max(ms, inputSentAt + INPUT_GAP_MS - Date.now());
+            }
+
+            function typedSize() {
+                return typed.reduce(function (n, a) { return n + a.length; }, 0);
+            }
+
+            function inputWaiting() {
+                return (batch ? batch.size : 0) + typedSize();
+            }
+
+            // Gives up on what has not reached the shell, counting it.
+            function dropInput() {
+                lostBytes += inputWaiting();
+                typed = [];
+                batch = null;
+                clearTimeout(inputTimer);
+                inputTimer = null;
+            }
+
+            function sendInput(bytes) {
+                if (!polling) {
+                    // The session is over: nothing would take it.
+                    return;
+                }
+                typed.push(bytes);
+                lastTypedAt = Date.now();
+                if (!batch &amp;&amp; !inputTimer) inputTimer = setTimeout(flushInput, inputWait(INPUT_GROUP_MS));
+            }
+
+            function flushInput() {
+                inputTimer = null;
+                if (!polling) return;
+                if (!batch) {
+                    if (!typed.length) return;
+                    var merged = new Uint8Array(typedSize());
+                    var offset = 0;
+                    typed.forEach(function (a) { merged.set(a, offset); offset += a.length; });
+                    typed = [];
+                    batch = { seq: ++inputSeq, data: uint8ToB64(merged), size: merged.length };
+                }
+                var sent = batch;
+                inputOut = true;
+                inputSentAt = Date.now();
+                rpc(BASE_PATH + SESSION_ID + '/input', {
+                    data: sent.data, seq: sent.seq, stream: inputStream, after_seq: afterSeq,
+                }).then(function (result) {
+                    inputOut = false;
+                    if (batch !== sent) return;  // dropped meanwhile: the session ended
+                    inputFailures = 0;
+                    if (!result || !result.ok) {
+                        // The session refused it (closed, or not ours):
+                        // nothing would take it again.
+                        dropInput();
+                        statusText.textContent = 'Input refused: ' + lostBytes +
+                            ' typed bytes did not reach the shell' +
+                            (result &amp;&amp; result.error ? ' (' + result.error + ').' : '.');
+                        schedulePoll(0);
+                        return;
+                    }
+                    batch = null;
+                    showRecovered();
+                    applyOutput(result.output);
+                    // Its answer brought the echo: the next read can wait.
+                    schedulePoll(POLL_ACTIVE_MS);
+                    if (typed.length) inputTimer = setTimeout(flushInput, inputWait(0));
+                }, function (err) {
+                    inputOut = false;
+                    if (batch !== sent) return;
+                    inputFailures++;
+                    showRetrying(err);
+                    inputTimer = setTimeout(flushInput, retryDelay(err, inputFailures));
+                });
+            }
+
+            term.onData(function (data) {
+                sendInput(new TextEncoder().encode(data));
+            });
+
+            term.onBinary(function (data) {
+                var arr = new Uint8Array(data.length);
+                for (var i = 0; i &lt; data.length; i++) arr[i] = data.charCodeAt(i) &amp; 255;
+                sendInput(arr);
+            });
+
+            // ── Size ──────────────────────────────────────────────────────
+            // Sent when the shell connects, after the connection comes
+            // back and when the window changes; a size that fails to go is
+            // sent again, the latest one.
+            var sizeTimer = null;
+            var sizeFailures = 0;
+
+            function sendSize() {
+                clearTimeout(sizeTimer);
+                sizeTimer = null;
+                if (!polling) return;
+                rpc(BASE_PATH + SESSION_ID + '/resize', {
+                    cols: term.cols, rows: term.rows,
+                }).then(function () {
+                    sizeFailures = 0;
+                }, function (err) {
+                    sizeFailures++;
+                    sizeTimer = setTimeout(sendSize, retryDelay(err, sizeFailures));
+                });
+            }
+
+            var _resizeTimer = null;
+            function onResize() {
+                clearTimeout(_resizeTimer);
+                _resizeTimer = setTimeout(function () {
+                    fitAddon.fit();
+                    updateSizeText();
+                    if (wasConnected) sendSize();
+                }, 100);
+            }
+            window.addEventListener('resize', onResize);
+
+            // ── Output ────────────────────────────────────────────────────
+            var pollTimer    = null;
+            var pollOut      = false;
+            var pollDelay    = POLL_FAST_MS;
+            var pollFailures = 0;
+
+            // The next read of the output in *ms*, instead of the one
+            // planned: typing pushes it back, since its answers bring the
+            // echo.
+            function schedulePoll(ms) {
+                clearTimeout(pollTimer);
+                pollTimer = null;
+                if (!polling) return;
+                if (ms === POLL_ACTIVE_MS) pollDelay = POLL_ACTIVE_MS;
+                if (!pollOut) pollTimer = setTimeout(poll, ms);
+            }
+
+            // How long to wait after a read that went through.
+            function nextPollDelay(wrote) {
+                if (wrote) return POLL_FAST_MS;
+                if (!wasConnected) return POLL_ACTIVE_MS;
+                if (Date.now() - lastTypedAt &lt; TYPING_MS) return POLL_ACTIVE_MS;
+                return Math.min(Math.max(pollDelay * 2, POLL_ACTIVE_MS), POLL_IDLE_MS);
+            }
+
+            function poll() {
+                pollTimer = null;
+                if (!polling) return;
+                if (paused || inputOut) {
+                    // Hidden, or a request with input is out and brings
+                    // the output with it.
+                    pollTimer = setTimeout(poll, paused ? 500 : POLL_ACTIVE_MS);
+                    return;
+                }
+                pollOut = true;
+                var next = POLL_IDLE_MS;
+                rpc(BASE_PATH + SESSION_ID + '/output', { after_seq: afterSeq })
+                    .then(function (result) {
+                        pollFailures = 0;
+                        showRecovered();
+                        pollDelay = next = nextPollDelay(applyOutput(result));
+                    }, function (err) {
+                        pollFailures++;
+                        showRetrying(err);
+                        next = retryDelay(err, pollFailures);
+                    })
+                    .finally(function () {
+                        pollOut = false;
+                        if (polling &amp;&amp; !pollTimer) pollTimer = setTimeout(poll, next);
+                    });
+            }
+
+            poll();
+
+            // ── Pause when the tab is hidden, resume when visible ─────────
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) {
+                    paused = true;
+                    if (isOpen()) setBadge('paused', 'Paused');
+                } else {
+                    paused = false;
+                    if (badge.className.indexOf('paused') !== -1) {
+                        setBadge('connected', 'Connected');
+                        statusText.textContent = 'Connected';
+                    }
+                    schedulePoll(0);
+                }
+            });
+
+            // ── Cleanup on page close ─────────────────────────────────────
+            window.addEventListener('beforeunload', closeSession);
+        });
+    </script>
+</template>
+</odoo>

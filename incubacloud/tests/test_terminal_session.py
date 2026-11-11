@@ -29,6 +29,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -168,6 +169,7 @@ class TestPumpEndsWithTheShell(BaseCase):
         s._input_lock = threading.Lock()
         s._output_buffer = []
         s._output_lock = threading.Lock()
+        s._output_cond = threading.Condition(s._output_lock)
         s._output_seq = 0
         return s
 
@@ -181,6 +183,82 @@ class TestPumpEndsWithTheShell(BaseCase):
         self.assertTrue(s.closed)
         self.assertIsNone(s.close_reason)
         self.assertEqual(s._output_buffer, [(1, b'exit\r\n')])
+
+
+class TestSessionBuffers(BaseCase):
+    """What the page reads and writes, without a thread or SSH.
+
+    The page answers what is typed with the echo that follows it, waiting
+    for it on the session, and sends a batch again when it got no answer:
+    the session applies each numbered batch once.
+    """
+
+    def _session(self):
+        """A session built by the base's ``__init__``, never started."""
+        return session_base.BaseTerminalSession('buffers', {'host': '192.0.2.1'})
+
+    def test_a_read_returns_at_once_when_there_is_output(self):
+        s = self._session()
+        s._append_output(b'ready')
+        started = time.monotonic()
+        self.assertEqual(s.read_output(0, wait=0.5), [(1, b'ready')])
+        self.assertLess(time.monotonic() - started, 0.1)
+
+    def test_a_read_waits_for_output_and_returns_when_it_comes(self):
+        s = self._session()
+        threading.Timer(0.05, s._append_output, args=(b'echo',)).start()
+        started = time.monotonic()
+        self.assertEqual(s.read_output(0, wait=0.5), [(1, b'echo')])
+        self.assertLess(time.monotonic() - started, 0.4)
+
+    def test_the_wait_is_capped(self):
+        """It holds an Odoo worker: no caller makes it a long poll."""
+        s = self._session()
+        started = time.monotonic()
+        self.assertEqual(s.read_output(0, wait=30), [])
+        elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, session_base.MAX_OUTPUT_WAIT - 0.05)
+        self.assertLess(elapsed, session_base.MAX_OUTPUT_WAIT + 0.3)
+
+    def test_a_closed_session_does_not_wait(self):
+        s = self._session()
+        s.close()
+        started = time.monotonic()
+        self.assertEqual(s.read_output(0, wait=0.5), [])
+        self.assertLess(time.monotonic() - started, 0.1)
+
+    def test_a_numbered_batch_reaches_the_shell_once(self):
+        s = self._session()
+        self.assertTrue(s.write_input(b'ls', seq=1, stream='page-a'))
+        self.assertFalse(s.write_input(b'ls', seq=1, stream='page-a'))
+        self.assertTrue(s.write_input(b' -l', seq=2, stream='page-a'))
+        self.assertEqual(s._input_queue, [b'ls', b' -l'])
+
+    def test_a_resize_reaches_the_shell(self):
+        """It never did: the method is not a coroutine (11-nov-2026)."""
+        s = self._session()
+        s._process = MagicMock(spec=asyncssh.SSHClientProcess)
+        s._loop = asyncio.new_event_loop()
+        runner = threading.Thread(target=s._loop.run_forever, daemon=True)
+        runner.start()
+        try:
+            s.resize(161, 40)
+            done = threading.Event()
+            s._loop.call_soon_threadsafe(done.set)
+            self.assertTrue(done.wait(5))
+        finally:
+            s._loop.call_soon_threadsafe(s._loop.stop)
+            runner.join(5)
+            s._loop.close()
+        s._process.change_terminal_size.assert_called_once_with(161, 40)
+
+    def test_another_page_numbers_from_the_start(self):
+        """A page opened again starts at 1 and is not taken for a resend."""
+        s = self._session()
+        s.write_input(b'a', seq=5, stream='page-a')
+        self.assertTrue(s.write_input(b'b', seq=1, stream='page-b'))
+        self.assertTrue(s.write_input(b'c'))
+        self.assertEqual(s._input_queue, [b'a', b'b', b'c'])
 
 
 class TestSubprocessHandler(BaseCase):
@@ -268,7 +346,27 @@ class TestSubprocessHandler(BaseCase):
         payload = base64.b64encode(b'ls -la\n').decode()
         status, body = self._call('POST', '/input', body={'data': payload})
         self.assertEqual(status, 200)
-        self.fake.write_input.assert_called_once_with(b'ls -la\n')
+        self.fake.write_input.assert_called_once_with(
+            b'ls -la\n', seq=None, stream=None,
+        )
+
+    def test_numbered_input_says_when_it_was_a_resend(self):
+        """A batch the session already applied is acknowledged as such."""
+        self.fake.write_input.side_effect = [True, False]
+        body = {'data': base64.b64encode(b'x').decode(), 'seq': 7, 'stream': 'p1'}
+        _status, first = self._call('POST', '/input', body=body)
+        _status, again = self._call('POST', '/input', body=body)
+        self.assertEqual((first['ok'], first['duplicate']), (True, False))
+        self.assertEqual((again['ok'], again['duplicate']), (True, True))
+        self.fake.write_input.assert_called_with(b'x', seq=7, stream='p1')
+
+    def test_output_passes_the_wait_in_seconds(self):
+        """``?wait=`` is in ms on the wire, seconds for the session."""
+        self._call('GET', '/output?after=4&wait=200')
+        self.fake.read_output.assert_called_once_with(4, wait=0.2)
+        self.fake.read_output.reset_mock()
+        self._call('GET', '/output?after=4')
+        self.fake.read_output.assert_called_once_with(4, wait=0.0)
 
     def test_resize_forwards_dims(self):
         """``/resize`` forwards the cols/rows to the session."""

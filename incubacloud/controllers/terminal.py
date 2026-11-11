@@ -227,10 +227,15 @@ class TerminalController(TerminalProxyMixin, http.Controller):
         f'/cloud/terminal/{_SID}/input',
         type='json', auth='user', methods=['POST'],
     )
-    def terminal_input(self, session_id, data):
-        """Send base64-encoded bytes to the remote PTY."""
-        return self._proxy(
-            session_id, 'POST', '/input', body={'data': data},
+    def terminal_input(self, session_id, data, seq=None, stream=None,
+                       after_seq=None):
+        """Send base64-encoded bytes to the remote PTY.
+
+        With *after_seq*, the answer carries the output that follows
+        (``TerminalProxyMixin._proxy_input``).
+        """
+        return self._proxy_input(
+            session_id, data, seq=seq, stream=stream, after_seq=after_seq,
         )
 
     # ── Resize ─────────────────────────────────────────────────────────────

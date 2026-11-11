@@ -44,7 +44,7 @@ class TestConsolePagesDrawWithRelay(BaseCase):
 
     def test_the_terminals_open_once_the_mono_font_is_there(self):
         """xterm measures its cells when it opens: a later font misaligns the grid."""
-        for page in ("cloud_terminal_page.xml", "host_terminal_page.xml"):
+        for page in ("terminal_client_script.xml",):
             with self.subTest(page=page):
                 text = (_VIEWS / page).read_text()
                 self.assertLess(

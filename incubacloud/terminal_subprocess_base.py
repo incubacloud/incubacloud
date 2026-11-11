@@ -214,15 +214,16 @@ class _Handler(BaseHTTPRequestHandler):
                 "idle_seconds": 0,
             })
             return
-        # Parse ``?after=N`` from the query string.
-        after = 0
+        # ``?after=N`` (the last chunk the caller has) and ``?wait=MS``
+        # (how long to wait for a new one; the session caps it).
+        query = {"after": 0, "wait": 0}
         if "?" in self.path:
             for pair in self.path.split("?", 1)[1].split("&"):
-                if pair.startswith("after="):
+                key, _sep, value = pair.partition("=")
+                if key in query:
                     with contextlib.suppress(ValueError):
-                        after = int(pair.split("=", 1)[1])
-                    break
-        chunks = s.read_output(after)
+                        query[key] = int(value)
+        chunks = s.read_output(query["after"], wait=query["wait"] / 1000)
         self._write_json(200, {
             "ok": True,
             "chunks": [
@@ -237,18 +238,25 @@ class _Handler(BaseHTTPRequestHandler):
         })
 
     def _handle_input(self):
-        """Feed base64-decoded bytes to the remote PTY."""
+        """Feed base64-decoded bytes to the remote PTY.
+
+        A body with ``seq`` and ``stream`` numbers the batch: a batch the
+        session already applied is acknowledged without reaching the
+        shell again, and ``duplicate`` says so.
+        """
         if _SESSION is None or _SESSION.closed:
             self._write_json(200, {"ok": False, "error": "closed"})
             return
-        data_b64 = self._read_json().get("data", "")
+        body = self._read_json()
         try:
-            data = base64.b64decode(data_b64)
+            data = base64.b64decode(body.get("data", ""))
+            seq = body.get("seq")
+            seq = None if seq is None else int(seq)
         except Exception:
             self._write_json(400, {"ok": False, "error": "bad_data"})
             return
-        _SESSION.write_input(data)
-        self._write_json(200, {"ok": True})
+        applied = _SESSION.write_input(data, seq=seq, stream=body.get("stream"))
+        self._write_json(200, {"ok": True, "duplicate": not applied})
 
     def _handle_resize(self):
         """Resize the remote PTY to the requested cols/rows."""

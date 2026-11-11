@@ -33,6 +33,13 @@ from ..terminal_session_base import SESSION_TIMEOUT
 # subprocess wedge an Odoo worker on every poll.
 PROXY_TIMEOUT = 5.0
 
+# How long a request with input waits, in milliseconds, for the echo of
+# what it carried before answering with the output. It holds the Odoo
+# worker that long at most, and only while someone types; an echo from a
+# host nearby arrives well within it, and one that does not is picked up
+# by the page's next read.
+INPUT_ECHO_WAIT_MS = 200
+
 # How long we wait for the subprocess's first line of stdout (the port
 # number). It only needs to open a socket and print a number; 10 s is
 # plenty and we do not want to hang the UI.
@@ -91,11 +98,56 @@ class TerminalProxyMixin:
                 req, timeout=PROXY_TIMEOUT,
             ) as resp:
                 return json.loads(resp.read().decode('utf-8'))
+        except urllib.error.HTTPError as exc:
+            # The subprocess is alive and answered with an error: report
+            # it. ``HTTPError`` is a ``URLError`` too, and the clause below
+            # took it for a dead subprocess, dropped the route and closed
+            # a live session (a failed resize did, 11-nov-2026).
+            try:
+                answer = json.loads(exc.read().decode('utf-8'))
+            except ValueError:
+                answer = {}
+            return {
+                'ok': False,
+                'error': answer.get('error') or f'HTTP {exc.code}',
+            }
         except urllib.error.URLError:
             # Subprocess just died between _resolve() and urlopen — clean
             # the stale row so the next poll reports closed.
             route.unlink()
             return _closed_sentinel()
+
+    def _proxy_input(self, session_id, data, seq=None, stream=None,
+                     after_seq=None):
+        """Send typed bytes to the session; with *after_seq*, its output too.
+
+        The page used to send what was typed in one request and read the
+        output in others, every 80 ms, which a fast typist turned into
+        more requests than the proxy in front of the panel lets one
+        address make. Answering the input with the output that follows it
+        (the echo, waited for up to ``INPUT_ECHO_WAIT_MS``) halves them.
+
+        :param str session_id: the terminal session.
+        :param str data: the bytes, base64-encoded.
+        :param int seq: the batch's number in *stream*, so a batch sent
+            again after a lost answer reaches the shell once.
+        :param str stream: the page that numbers the batches.
+        :param int after_seq: the last output chunk the page has; ``None``
+            answers the input alone, as before.
+        :return: the subprocess's answer to the input, with the output
+            read after it under ``output`` when *after_seq* was given and
+            the input was taken.
+        """
+        body = {'data': data}
+        if seq is not None:
+            body.update(seq=int(seq), stream=str(stream or ''))
+        result = self._proxy(session_id, 'POST', '/input', body=body)
+        if after_seq is not None and (result or {}).get('ok'):
+            result['output'] = self._proxy(
+                session_id, 'GET', '/output',
+                params={'after': int(after_seq), 'wait': INPUT_ECHO_WAIT_MS},
+            )
+        return result
 
 
 def _readline_with_timeout(proc, timeout):

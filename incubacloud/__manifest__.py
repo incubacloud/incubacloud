@@ -79,6 +79,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "views/cloud_assets_index.xml",
         "views/log_terminal_page.xml",
         "views/github_setup_page.xml",
+        "views/terminal_client_script.xml",
         "views/cloud_terminal_page.xml",
         "views/host_terminal_page.xml",
         "views/cloud_instance_logs.xml",
