@@ -3408,3 +3408,9 @@ msgstr ""
 "cliente OAuth o el asistente del panel. Los demás agentes siguen "
 "preguntando. Cada acción ejecutada así queda marcada como aprobada "
 "automáticamente en el registro de auditoría y en sus trabajos."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_auto_approval.py:0
+msgid "Choose a number of days or a date, not both."
+msgstr "Elija un número de días o una fecha, no ambos."

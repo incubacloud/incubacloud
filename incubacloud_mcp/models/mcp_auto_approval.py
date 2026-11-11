@@ -423,6 +423,8 @@ class McpAutoApproval(models.Model):
             if chosen:
                 raise UserError(self.env._("Choose a period or no end date, not both."))
             return None
+        if len(chosen) > 1:
+            raise UserError(self.env._("Choose a number of days or a date, not both."))
         if days not in (None, False, ""):
             if isinstance(days, bool) or not isinstance(days, int) or days < 1:
                 raise UserError(self.env._("The rule lasts 1 day or more."))
@@ -440,11 +442,15 @@ class McpAutoApproval(models.Model):
         today = now.replace(tzinfo=pytz.utc).astimezone(tz).date()
         if not day or day <= today:
             raise UserError(self.env._("The rule ends on a day after today."))
-        return (
-            tz.localize(datetime.combine(day, time(23, 59, 59)))
-            .astimezone(pytz.utc)
-            .replace(tzinfo=None)
-        )
+        try:
+            return (
+                tz.localize(datetime.combine(day, time(23, 59, 59)))
+                .astimezone(pytz.utc)
+                .replace(tzinfo=None)
+            )
+        except OverflowError:
+            # The last days of year 9999, west of UTC, end past it.
+            raise UserError(self.env._("Choose a nearer end.")) from None
 
     @api.model
     def _grant(
