@@ -12,6 +12,7 @@ four things that make the feature governable:
 """
 import asyncio
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -990,7 +991,7 @@ class TestPreviewOfAClosedPullRequest(_CommentCase):
                 client, patcher = self._client()
                 client.get.side_effect = _github_get(state=error)
                 with patcher, self.assertLogs(
-                    cloud_instance._logger.name, level='INFO',
+                    cloud_instance._logger.name, level=logging.INFO,
                 ) as logs:
                     self.assertFalse(preview._pr_closed_on_github())
                 self.assertEqual([r.levelname for r in logs.records], ['INFO'])
@@ -1001,7 +1002,7 @@ class TestPreviewOfAClosedPullRequest(_CommentCase):
         client, patcher = self._client()
         client.get.side_effect = _github_get(state=RuntimeError('boom'))
         with patcher, self.assertLogs(
-            cloud_instance._logger.name, level='INFO',
+            cloud_instance._logger.name, level=logging.INFO,
         ) as logs:
             self.assertFalse(preview._pr_closed_on_github())
         self.assertEqual([r.levelname for r in logs.records], ['WARNING'])
