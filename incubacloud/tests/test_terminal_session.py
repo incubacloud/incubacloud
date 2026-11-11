@@ -234,6 +234,22 @@ class TestSessionBuffers(BaseCase):
         self.assertTrue(s.write_input(b' -l', seq=2, stream='page-a'))
         self.assertEqual(s._input_queue, [b'ls', b' -l'])
 
+    def test_a_resend_is_known_with_two_pages_taking_turns(self):
+        """Two tabs on one session: a batch resent by the first is not typed twice."""
+        s = self._session()
+        self.assertTrue(s.write_input(b'a', seq=1, stream='tab-a'))
+        self.assertTrue(s.write_input(b'b', seq=1, stream='tab-b'))
+        self.assertFalse(s.write_input(b'a', seq=1, stream='tab-a'))
+        self.assertEqual(s._input_queue, [b'a', b'b'])
+
+    def test_only_the_latest_streams_are_remembered(self):
+        """The memory of resends is bounded."""
+        s = self._session()
+        for n in range(session_base.MAX_INPUT_STREAMS + 3):
+            s.write_input(b'x', seq=1, stream='tab-%d' % n)
+        self.assertEqual(len(s._input_seqs), session_base.MAX_INPUT_STREAMS)
+        self.assertNotIn('tab-0', s._input_seqs)
+
     def test_a_resize_reaches_the_shell(self):
         """It never did: the method is not a coroutine (11-nov-2026)."""
         s = self._session()

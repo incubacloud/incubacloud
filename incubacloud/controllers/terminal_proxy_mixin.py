@@ -136,12 +136,18 @@ class TerminalProxyMixin:
             answers the input alone, as before.
         :return: the subprocess's answer to the input, with the output
             read after it under ``output`` when *after_seq* was given and
-            the input was taken.
+            the input was taken; ``ok`` is false when the session is
+            gone.
         """
         body = {'data': data}
         if seq is not None:
             body.update(seq=int(seq), stream=str(stream or ''))
         result = self._proxy(session_id, 'POST', '/input', body=body)
+        if (result or {}).get('closed'):
+            # The session is gone (the sentinel reads as an answer that
+            # went through): nothing took what was typed, and the page
+            # must not count it as sent.
+            return {**result, 'ok': False}
         if after_seq is not None and (result or {}).get('ok'):
             result['output'] = self._proxy(
                 session_id, 'GET', '/output',

@@ -117,3 +117,20 @@ class TestTerminalInputOrder(BaseCase):
             apply, r"if \(result\.connected && !wasConnected\) \{[^}]*sendSize\(\);",
         )
         self.assertIn("sendSize();", self._function("showRecovered"))
+
+    def test_requests_with_input_stay_under_the_proxy_average(self):
+        """Four a second at most: the proxy lets 300 a minute through."""
+        self.assertRegex(self._script(), r"var INPUT_GAP_MS += 250;")
+
+    def test_a_session_of_the_panel_that_expired_ends_every_request(self):
+        """Trying again never brings it back: the user must sign in."""
+        text = self._script().replace("&amp;", "&")
+        self.assertIn("err.fatal = r.error.code === 100", text)
+        ended = self._function("endedByPanel")
+        self.assertIn("lostInputNote()", ended)
+        self.assertIn("polling = false;", ended)
+        self.assertEqual(text.count("if (endedByPanel(err)) return;"), 3)
+
+    def test_input_to_a_session_that_is_gone_counts_as_lost(self):
+        block = self._input_block().replace("&amp;", "&").replace("&#124;", "|")
+        self.assertIn("!result.ok || result.closed", block)
