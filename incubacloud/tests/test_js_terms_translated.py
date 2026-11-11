@@ -56,7 +56,12 @@ def untranslated_terms(module, root, lang="es"):
         message["id"]
         for message in code_translations.get_web_translations(module, lang)["messages"]
     }
-    terms = script_terms(root / module / "static" / "src")
+    directory = root / module / "static" / "src"
+    if not directory.is_dir():
+        raise FileNotFoundError(directory)
+    terms = script_terms(directory)
+    if not terms:
+        raise AssertionError("no term read in %s" % directory)
     return {term: files for term, files in terms.items() if term not in served}
 
 
