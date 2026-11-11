@@ -262,6 +262,7 @@ from . import test_job_outcome
 from . import test_job_outcome_real_cursors
 from . import test_job_server_limits
 from . import test_job_checkpoint
+from . import test_job_channel_gate
 from . import test_detached_step
 from . import test_job_parking
 from . import test_job_output_by_role

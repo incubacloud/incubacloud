@@ -13,6 +13,7 @@ from odoo.service import server as odoo_server
 from odoo.tools import clean_context
 
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
+from ._job_channels import channel_problems, configured_channels
 from ._job_server_limits import (
     JOB_LIMITS_ALERT_CODE,
     attempt_budget_seconds,
@@ -1158,6 +1159,14 @@ class CloudSettings(models.Model):
             f"{budget} s" if budget else "as long as it needs",
             options.get("limit_time_real") or 0,
         )
+        try:
+            problems = problems + channel_problems(
+                configured_channels(), self._foreign_job_channels(),
+            )
+        except Exception:  # noqa: BLE001 — never block the startup
+            _logger.warning(
+                "Could not read the job queue's channels.", exc_info=True,
+            )
         for problem in problems:
             _logger.warning(problem)
         Alert = self.env["cloud.alert"].sudo()
@@ -1176,6 +1185,26 @@ class CloudSettings(models.Model):
                 "Could not update the alert about the job server's "
                 "limits.", exc_info=True,
             )
+
+    @api.model
+    def _foreign_job_channels(self):
+        """Return the channels other modules' queue jobs ran in lately.
+
+        The last 30 days of queue_job, but the jobs of the panel's own
+        models (``cloud.*``, ``incubacloud.*``): a job parked between two
+        attempts keeps its slot against the panel's jobs only, and may
+        wait for these.
+
+        :rtype: set[str]
+        """
+        self.env.cr.execute(
+            "SELECT DISTINCT channel FROM queue_job"
+            " WHERE date_created > (now() at time zone 'UTC') - interval '30 days'"
+            "   AND channel IS NOT NULL"
+            "   AND model_name NOT LIKE 'cloud.%%'"
+            "   AND model_name NOT LIKE 'incubacloud.%%'"
+        )
+        return {row[0] for row in self.env.cr.fetchall()}
 
     # ── Secret rotation ────────────────────────────────────────────────────
     # Rotation workflow (operator-driven, not time-based):

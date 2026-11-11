@@ -410,6 +410,14 @@ PARK_GAP_SECONDS = 5
 #: slot of its channel before any job pending there (``queue_job_ext``).
 PARKED_RETURN_PRIORITY = 0
 
+#: How long a parked job may be late to come back before it says so, in
+#: seconds (10-nov-2026): two passes of Odoo.sh's crons. Its place in the
+#: channel is kept however late it is, decided that day: no place given
+#: up frees the channel, which only jobs outside the panel can hold. Past it the job log says so, with the channel it waits in,
+#: and the slow job warning counts the wait
+#: (``cloud.job._cron_watch_long_running``).
+PARKED_OVERDUE_S = 600
+
 #: How long a job that cannot reach the server of its running step stays
 #: parked before it connects again, in seconds (10-nov-2026): as long as a
 #: job that cannot reach its host waits (``CONNECTION_RETRY_SECONDS``).
@@ -2277,6 +2285,7 @@ class AbstractExecutor(ABC):
         self._write_checkpoint({
             "parked": False,
             "parked_until": False,
+            "overdue_noted": False,
             "attempts": row.attempts + 1,
         })
 

@@ -3456,11 +3456,11 @@ class TestDispatchAfterCommit(_QueueCase):
         dispatch = Job._dispatch_next
         broken_id = self.inst.id
 
-        def fail_on_one(job_model, instance_id=None, host_id=None):
+        def fail_on_one(job_model, instance_id=None, host_id=None, **kwargs):
             """Raise for the first instance's queue; serve the others."""
             if instance_id == broken_id:
                 raise RuntimeError("this queue is broken")
-            return dispatch(job_model, instance_id, host_id)
+            return dispatch(job_model, instance_id, host_id, **kwargs)
 
         with (
             patch.object(

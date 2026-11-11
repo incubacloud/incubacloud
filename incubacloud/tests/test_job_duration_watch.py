@@ -1,9 +1,11 @@
 """Tier 2 — long-running-job watch (duration ceiling alert, P12.5).
 
-The runner kills jobs at ``limit_time_real`` (60 min); the watch warns
-at 45 so the operator tunes the limit from evidence, not guesses.
+The server cuts a request at ``limit_time_real``; the watch warns at 0.75
+of it (45 min of 60) so the operator tunes the limit from evidence, not
+guesses.
 """
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.tests.common import TransactionCase
@@ -23,6 +25,10 @@ class TestJobDurationWatch(TransactionCase):
         )
         self.Job = self.env["cloud.job"]
         self.Alert = self.env["cloud.alert"].sudo()
+        # A dedicated runner's limit: the watch warns at 0.75 of it, 45 min.
+        self.startPatcher(patch.object(
+            type(self.Job), "_server_limit_time_real", return_value=3600,
+        ))
         # The watch scans every started job; neutralise rows carried by
         # the pre-production snapshot (rolled back with the test).
         self.env.cr.execute(
