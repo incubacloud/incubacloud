@@ -1,17 +1,16 @@
-"""Section 12A of the Terms and the code say the same about what waits (28-oct).
+"""The terms of the assistant and the code say the same about what waits.
 
-«Actions that delete or restore data, incur charges, deploy to production,
+Actions that delete or restore data, incur charges, deploy to production,
 write to an existing branch or change security settings only run after that
-user confirms them in the panel; the AI model cannot confirm them by itself.»
-(terms §12A, approved on 28-oct-2026). Every change asks except
-``_UNASKED`` on a staging: none of those may be of these kinds. Changing
-either one means reviewing the other, and this file.
+user confirms them in the panel; the AI model cannot confirm them by itself.
+Every change asks except ``_UNASKED`` on a staging: none of those may be of
+these kinds. Changing either one means reviewing the other, and this file.
 
 What this checks is what asks without an auto-approval rule
 (``_extra_confirmation``). A rule an Administrator grants to a person's
 assistant lets those changes run without a card (issue #8,
-``test_auto_approval.py``); the Terms' wording of that case is the
-platform's, reviewed with its next update.
+``test_auto_approval.py``); how a layer's terms word that case is for that
+layer to review.
 """
 
 from odoo.tests import tagged
@@ -20,7 +19,7 @@ from odoo.tests.common import TransactionCase
 from ..models.assistant_tools import _UNASKED
 from .common import AssistantMixin
 
-#: The changes that run without a card on a staging, and why none is of §12A.
+#: The changes that run without a card on a staging, and why none is of those kinds.
 _REVIEWED_UNASKED = {
     "deploy_instance": "a staging; production asks",
     "rebuild_instance": "a staging's image; production asks",
@@ -33,7 +32,7 @@ _REVIEWED_UNASKED = {
     "approval",
     "repo_open_pull_request": "opens a pull request: merges nothing",
 }
-#: Tools of the kinds §12A names that always ask, in every mode.
+#: Tools of the kinds above that always ask, in every mode.
 _ALWAYS_ASK = (
     "delete_instance",
     "delete_project",
@@ -46,22 +45,22 @@ _ALWAYS_ASK = (
 
 
 @tagged("post_install", "-at_install")
-class TestSection12aMatchesTheCode(AssistantMixin, TransactionCase):
-    """The few unasked changes are none of §12A's; §12A's kinds ask."""
+class TestTheChangesThatAskMatchTheCode(AssistantMixin, TransactionCase):
+    """The few unasked changes are none of those kinds; those kinds ask."""
 
     def setUp(self):
         """A manager and a developer on the panel's fixture."""
         super().setUp()
         self._panel_fixture()
-        self.manager = self._cloud_user("asis-12a-m", group="group_cloud_manager")
-        self.developer = self._cloud_user("asis-12a-d")
+        self.manager = self._cloud_user("asis-ask-m", group="group_cloud_manager")
+        self.developer = self._cloud_user("asis-ask-d")
         self.project.member_ids = [(4, self.developer.id)]
 
     def test_the_unasked_changes_are_the_reviewed_ones(self):
-        """A tool added to or taken from ``_UNASKED`` is reviewed against §12A."""
+        """A tool added to or taken from ``_UNASKED`` is reviewed against those kinds."""
         self.assertEqual(set(_UNASKED), set(_REVIEWED_UNASKED))
 
-    def test_what_section_12a_names_asks(self):
+    def test_the_kinds_that_always_ask_do(self):
         """Deleting, restoring, emptying a mailbox and the settings: a card."""
         Tools = self.env["incubacloud.assistant.tools"].with_user(self.manager)
         Catalog = self.env["incubacloud.mcp.catalog"]

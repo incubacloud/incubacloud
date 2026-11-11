@@ -96,8 +96,8 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   asks for every tool that is not read-only, except those of `_UNASKED` (deploy and rebuild,
   keep, back up a staging, dismiss one alert, tags, and the code tools, which keep the
   MCP's approvals), and only while every instance their arguments name is a staging.
-  A test lists `_UNASKED` and checks that none is of the kinds section 12A of the
-  Terms names (delete or restore data, incur charges, deploy to production, write to an
+  A test lists `_UNASKED` and checks that none is of the kinds the terms of the assistant
+  name (delete or restore data, incur charges, deploy to production, write to an
   existing branch, change security settings).
 - **Production** is found by any id in the arguments (an instance, an alert, a
   repository line, a server): the card says *This changes production* and names the
@@ -138,7 +138,7 @@ user; their limits by address (`/mcp`, `/health`) are not in play.
   with the notice of untrusted content, as the mark was kept. While the rule is
   active the system prompt gets `AUTO_APPROVAL_RULE` and the tools' descriptions say
   they run without asking. The limits that are not approvals stay: `_MIN_GROUP`, the
-  step cap and the monthly limit. `test_terms_12a.py` checks what asks without a rule.
+  step cap and the monthly limit. `test_changes_that_ask.py` checks what asks without a rule.
 
 ## Jobs
 
@@ -206,7 +206,7 @@ next step's check and says so. A module that extends the panel may block the ass
 by setting `incubacloud_assistant.blocked`: `_assistant_available_for` is then false and
 `save_settings` refuses to switch it on.
 
-## Switching it on: the box, or section 12A
+## Switching it on: the box
 
 `save_settings` moves the assistant from off to on only with `accept_ai_terms: true` in
 the same save: a box asked each time it is switched on. A new provider puts it off
