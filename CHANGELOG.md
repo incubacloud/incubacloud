@@ -43,7 +43,10 @@ step runs as before.
   log. One step at a time per instance, or per host: a job that finds
   another job's step still running there waits 30 s for it. A
   server that kills an account's processes when its SSH session ends
-  (logind's `KillUserProcesses`) runs the step attached, as before.
+  (logind's `KillUserProcesses`), or that lacks `flock`, `setsid`,
+  `timeout`, `pgrep` or `pkill`, runs the step attached, as before. The
+  day's maintenance of a host removes the step directories no open
+  checkpoint holds, an hour past their cap, unless their step still runs.
 - **A job with a step run apart leaves it to the server and comes back.**
   Once its attempt's budget is spent, before a step, while it follows the
   step apart or before its closing hooks, the job parks: its checkpoint
@@ -62,7 +65,8 @@ step runs as before.
 - **A parked build still holds its host.** A rebuild or a teardown takes
   its host's build lock in its transaction, which a park lets go: the
   checkpoint keeps the host from its first write, before any lock can go,
-  and another build or teardown of the host waits 30 s while it is there.
+  and another build or teardown of the host waits 30 s while it is there,
+  its deferral naming the job that holds the host.
   The parked job takes the lock again when it comes back, and waits 5 s
   if another one holds it at that instant.
 - **A parked job is stopped and closed by itself or by the
@@ -92,8 +96,16 @@ step runs as before.
   channels`, else `root:1`). A job held back waits in its queue, saying
   since when, and the channel with its load and capacity; when a job ends,
   or one that is not parked sleeps until later, those held go first, by
-  priority and age. A job asleep until a later time takes no slot, nor
-  does a step of a chain waiting for the one before it. The place is kept
+  priority and age, looked for once that end is committed and served
+  before the next job of the queue it left; once the channel refuses one,
+  the others held in it wait for the next slot. A step of a chain that
+  ends done leaves its slot to the next step and wakes nobody. A job
+  asleep until a later time takes no slot, nor does a step of a chain
+  waiting for the one before it. The jobs a transaction hands to queue_job
+  count for the next one it asks for, before they are committed. A job
+  held two minutes no longer waits for the probes and metrics that are
+  due and have not started: queue_job then orders it among them. The
+  lists read the channels once for all the jobs they show. The place is kept
   however late the parked job is to come back: 600 s late, its log says
   it waits for a free slot and in which channel, and the slow job warning
   is raised. `channel_gate = off` in odoo.conf's `[incubacloud]` section

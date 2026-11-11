@@ -95,21 +95,27 @@ class HostBuildLockMixin:
         host = self._host()
         if not host:
             return
-        busy = RetryableJobError(
-            "Another build is running on this host; deferring.",
-            seconds=30,
-            ignore_retry=True,
-        )
         if not self._try_host_build_lock(host):
-            raise busy
+            raise RetryableJobError(
+                "Another build is running on this host; deferring.",
+                seconds=30,
+                ignore_retry=True,
+            )
         with self.env["cloud.job"]._fresh_env() as env:
             env.cr.execute(
-                "SELECT 1 FROM cloud_job_checkpoint"
-                " WHERE build_lock_host_id = %s AND job_id != %s LIMIT 1",
+                "SELECT job_id FROM cloud_job_checkpoint"
+                " WHERE build_lock_host_id = %s AND job_id != %s"
+                " ORDER BY job_id LIMIT 1",
                 (host.id, self.job.id),
             )
-            if env.cr.fetchone():
-                raise busy
+            row = env.cr.fetchone()
+        if row:
+            raise RetryableJobError(
+                f"Another build is running on this host (job #{row[0]});"
+                " deferring.",
+                seconds=30,
+                ignore_retry=True,
+            )
 
     def _try_host_build_lock(self, host):
         """Try the build lock of *host* in the job's transaction.

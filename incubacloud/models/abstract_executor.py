@@ -381,6 +381,13 @@ DETACHED_EXIT_RUNNING = 75
 #: when its SSH session ends (logind's ``KillUserProcesses``); the step runs
 #: attached to the request instead.
 DETACHED_EXIT_KILLED_AT_LOGOUT = 78
+#: ``detached_step.sh start``: the server lacks a tool the script needs to
+#: follow or stop the step (``flock``, ``setsid``, ``timeout``, ``pgrep``,
+#: ``pkill``); the step runs attached to the request, as with 78.
+DETACHED_EXIT_MISSING_TOOLS = 79
+
+#: The answers of ``detached_step.sh start`` on which the step runs attached.
+DETACHED_EXIT_ATTACHED = (DETACHED_EXIT_KILLED_AT_LOGOUT, DETACHED_EXIT_MISSING_TOOLS)
 
 #: How long a job whose step found another job's step running for the same
 #: target stays parked before it tries again, in seconds (10-nov-2026): as
@@ -413,9 +420,9 @@ PARKED_RETURN_PRIORITY = 0
 #: How long a parked job may be late to come back before it says so, in
 #: seconds (10-nov-2026): two passes of Odoo.sh's crons. Its place in the
 #: channel is kept however late it is, decided that day: no place given
-#: up frees the channel, which only jobs outside the panel can hold. Past it the job log says so, with the channel it waits in,
-#: and the slow job warning counts the wait
-#: (``cloud.job._cron_watch_long_running``).
+#: up frees the channel, which only jobs outside the panel can hold. Past
+#: it the job log says so, with the channel it waits in, and the slow job
+#: warning counts the wait (``cloud.job._cron_watch_long_running``).
 PARKED_OVERDUE_S = 600
 
 #: How long a job that cannot reach the server of its running step stays
@@ -793,7 +800,7 @@ class AbstractExecutor(ABC):
     # for whoever reaches the server next.
     _detached_left_alive = False
     # A step marked ``detached`` ran attached to the request: the server
-    # kills processes at logout (``DETACHED_EXIT_KILLED_AT_LOGOUT``).
+    # kills processes at logout or lacks a tool (``DETACHED_EXIT_ATTACHED``).
     _detached_attached = False
     # The step of the plan whose process may run on the server now, from
     # just before its start until it ended or was stopped: what a lost
@@ -2658,7 +2665,7 @@ class AbstractExecutor(ABC):
         :param str label: the step's label
         :param str command: the step's command
         :return: the start's time, or None when the step is to run attached
-            (the server kills processes at logout)
+            (the server kills processes at logout, or lacks a tool)
         :raise JobParked: when another job's step holds the target
         """
         self._detached_offset = 0
@@ -2667,16 +2674,14 @@ class AbstractExecutor(ABC):
             label, command,
         ]) + " 2>&1")
         status = start.exit_status
-        if status in (
-            DETACHED_EXIT_BUSY, DETACHED_EXIT_TAKEN, DETACHED_EXIT_KILLED_AT_LOGOUT,
-        ):
+        if status in (DETACHED_EXIT_BUSY, DETACHED_EXIT_TAKEN, *DETACHED_EXIT_ATTACHED):
             # Nothing of this step was started, and a path taken by someone
             # else is not this job's to stop or remove. Any other answer
             # may come from a step that started (a start that waited past
             # its 10 s): it is stopped and removed with the error.
             self._detached_running = None
             self._on_server_index = None
-        if status == DETACHED_EXIT_KILLED_AT_LOGOUT:
+        if status in DETACHED_EXIT_ATTACHED:
             self._detached_attached = True
             self._sys(
                 f"⚠ {self._script_message(start.stdout)}. '{label}' runs"
