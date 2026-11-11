@@ -51,10 +51,10 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
     ):
         """Switch the assistant on for *users*; return the settings.
 
-        The parameter that blocks it (IncubaCloud's own panel) goes: these
+        The parameter that blocks it (a layer may set it) goes: these
         tests try the module itself, in every mode its CI installs it.
 
-        *terms*: section 12A accepted, as switching it on in Settings leaves it.
+        *terms*: the box ticked, as switching it on in Settings leaves it.
         """
         self.env["ir.config_parameter"].sudo().set_param(BLOCKED_PARAM, False)
         settings = self.env["cloud.settings"]._assistant_settings()

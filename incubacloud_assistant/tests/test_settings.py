@@ -51,7 +51,7 @@ class TestAssistantSettings(AssistantMixin, TransactionCase):
         self.assertEqual(self.Settings._assistant_key(), KEY)
 
     def test_a_database_that_blocks_it_never_has_it(self):
-        """IncubaCloud's own panel: configured and chosen, still not available."""
+        """A database that blocks it: configured and chosen, still not available."""
         self._configure(users=[self.developer])
         self.env["ir.config_parameter"].sudo().set_param(
             BLOCKED_PARAM, "Not offered on this panel."

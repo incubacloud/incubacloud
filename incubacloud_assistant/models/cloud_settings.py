@@ -53,7 +53,7 @@ class AssistantConfig:
     #: Euros per month, the same for every user; 0 is no limit.
     monthly_limit: float
     step_cap: int
-    #: Section 12A of the Terms accepted: without it nobody has the assistant.
+    #: The box ticked on switching it on: without it nobody has the assistant.
     terms_accepted: bool = False
 
     def listing(self, model_id):
@@ -113,15 +113,16 @@ class CloudSettings(models.Model):
         "whether to go on. Zero or less: 30.",
     )
 
-    # Section 12A of the Terms, accepted on switching the assistant on (28-oct).
+    # The box ticked on switching the assistant on (28-oct): the Terms of a
+    # layer that has some, or the acknowledgement of a self-hosted panel.
     # The system's: a manager writes the settings through the ORM, never these.
     assistant_terms_accepted_on = fields.Datetime(
         string="AI terms accepted on",
         readonly=True,
         copy=False,
         groups="base.group_system",
-        help="When a manager last switched the assistant on and accepted section 12A "
-        "(AI features) of the Terms.",
+        help="When a manager last switched the assistant on and ticked the box of "
+        "its terms.",
     )
     assistant_terms_version = fields.Char(
         string="AI terms version",
@@ -161,7 +162,7 @@ class CloudSettings(models.Model):
     def _assistant_check_write(self, vals):
         """Raise when *vals* changes the assistant outside Settings → Assistant.
 
-        The checks of switching it on (section 12A accepted), of the
+        The checks of switching it on (the box ticked), of the
         provider and its key, of the models and of the limits live in the
         Settings routes: those write in sudo with :data:`SETTINGS_WRITE`
         in the context; a manager's write through the ORM is refused.
@@ -235,7 +236,7 @@ class CloudSettings(models.Model):
 
     @api.model
     def _assistant_terms_acceptance(self):
-        """Return the last acceptance of section 12A kept here, or None.
+        """Return the last acceptance of the box kept here, or None.
 
         :return: ``{accepted_on, version, user, ip}``, the date in UTC as Odoo
             writes it
@@ -282,7 +283,7 @@ class CloudSettings(models.Model):
 
     @api.model
     def _assistant_record_terms_acceptance(self, acceptance):
-        """Record a manager's acceptance of section 12A; return what to keep.
+        """Record a manager's acceptance of the box; return what to keep.
 
         Called on switching the assistant on, before anything is written. A
         module that extends the panel may override it to record it where
@@ -316,8 +317,8 @@ class CloudSettings(models.Model):
         """Return whether *user* may use the assistant now.
 
         On, with a key and a default model, and *user* among those the
-        manager chose (an active internal user), and section 12A of the Terms
-        accepted when it was switched on; never on a database that blocks it
+        manager chose (an active internal user), and the box ticked when it
+        was switched on; never on a database that blocks it
         (:data:`BLOCKED_PARAM`).
         """
         config = self._assistant_config()

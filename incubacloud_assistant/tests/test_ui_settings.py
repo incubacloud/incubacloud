@@ -18,8 +18,8 @@ _LIMIT = "Monthly limit per user (EUR)"
 _KEY_FIELD = "Provider key"
 _ON = "Assistant on"
 #: The box and the Terms of a panel whose layer has Terms of its own.
-_TERMS = "I accept section 12A (AI features) of the Terms of Service"
-_TERMS_URL = "https://www.incubacloud.io/terms"
+_TERMS = "I accept the AI section of the Terms of Service"
+_TERMS_URL = "https://www.example.com/terms"
 #: The options of a selector of the tab, once it is opened: the menu of the
 #: field whose search box has the id given.
 _MENU = """
@@ -128,7 +128,7 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def test_switching_on_needs_section_12a(self):
+    def test_switching_on_needs_the_layers_terms(self):
         """A layer with Terms: the switch waits for the box; the Terms are a link.
 
         Saved, the tab says who accepted, when, and the version.
@@ -160,7 +160,7 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
                 await save();
                 await expectAllSaved();
                 await until("the acceptance shown", () => document.body.textContent
-                    .includes("Section 12A of the Terms accepted on"));
+                    .includes("Terms accepted on"));
                 if (!document.body.textContent.includes("(terms of 2026-11-01)")) {{
                     throw new Error("the line does not name the version");
                 }}
@@ -174,7 +174,7 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         self.assertEqual(settings.assistant_terms_version, "2026-11-01")
 
     def test_a_self_hosted_panel_asks_an_acknowledgement_and_links_nowhere(self):
-        """No Terms of IncubaCloud's on core alone: another box, and no link."""
+        """No Terms on core alone: another box, and no link."""
         if self.env["cloud.settings"]._assistant_terms_url():
             self.skipTest("a layer installed here has Terms of its own")
         self._configure(enabled=False, terms=False)
@@ -188,8 +188,8 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
                 throw new Error("a self-hosted panel links somewhere: "
                     + tab.querySelector("a").href);
             }}
-            if (tab.textContent.includes("12A") || tab.textContent.includes("Terms")) {{
-                throw new Error("a self-hosted panel names IncubaCloud's Terms");
+            if (tab.textContent.includes("Terms")) {{
+                throw new Error("a self-hosted panel names Terms");
             }}
             const on = await field("{_ON}");
             box.click();
@@ -219,7 +219,7 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
             if (!text.includes("Test (asis-test)") || !text.includes("127.0.0.1")) {
                 throw new Error("the line misses who or from where: " + text);
             }
-            if (text.includes("terms of") || text.includes("12A")) {
+            if (text.includes("terms of") || text.includes("Terms")) {
                 throw new Error("the line names Terms there are none of: " + text);
             }
         """,

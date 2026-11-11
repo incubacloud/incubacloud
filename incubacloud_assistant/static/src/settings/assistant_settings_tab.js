@@ -268,7 +268,7 @@ export class AssistantSettingsTab extends Component {
         };
         return accepted.version
             ? _t(
-                  "Section 12A of the Terms accepted on %(date)s by %(user)s from %(ip)s (terms of %(version)s).",
+                  "Terms accepted on %(date)s by %(user)s from %(ip)s (terms of %(version)s).",
                   values
               )
             : _t("Last switched on, with the box ticked, on %(date)s by %(user)s from %(ip)s.", values);
