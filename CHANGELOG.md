@@ -136,6 +136,11 @@ is unchanged.
 
 ### Changed
 
+- **Odoo 9.0 to 15.0 are offered again** for new projects and instances:
+  their run of the series passed on the production image of 9-nov-2026.
+  8.0 stays out until its run is repeated with the fix of Connect as user;
+  7.0 stays retired. The user guide gives the range 9.0 to 20.0 and each
+  series' PostgreSQL range.
 - **From zero to Odoo sizes the users at once leaving a worker for the
   scheduled actions.** The guide's figure is (workers - 1) x 6, as in the
   example of Odoo's deployment guide (owner, 11-nov-2026): 24, 48, 96 and

@@ -43,13 +43,15 @@ or [connect another](../hosts/connect.md).
 
 The instance runs its project's Odoo version, which you pick in the project's form
 (**Odoo Version**, when you create the project or later under its **General** tab):
-the panel offers 18.0, 19.0 and 20.0, and a new project starts on the newest one
-(20.0) unless you pick another. Older series open as they pass their tests. The
+the panel offers 9.0 to 20.0, and a new project starts on the newest one
+(20.0) unless you pick another. The
 deployment form does not ask for it: a new instance takes its project's, and keeps
 it if the project changes later. The version influences which modules are
 available and which Postgres major versions you can pick under the form's
-**Database** tab: 14 to 18 for Odoo 18.0 and 19.0, 16 to 18 for Odoo 20.0, with 17
-by default.
+**Database** tab: 12 alone for Odoo 9.0 and 10.0, 12 to 13 for 11.0 and 12.0 (13 by
+default), 12 to 16 for 13.0 and 14.0 (16 by default), 12 to 17 for 15.0 (17 by
+default), 14 to 18 for 16.0 to 19.0 and 16 to 18 for 20.0, with 17 by default on
+the last two ranges.
 
 If your project has a connected repo with `.copier-answers.yml`, we pre-fill the
 project's version from there; you can still pick another in the project's form.
