@@ -140,6 +140,28 @@ class TestSettingsTools(
         self.assertEqual(self._general(), before | {"job_log_retention_days": 45})
         self.assertEqual(self.settings.metrics_retention_days, 0)
 
+    def test_a_general_change_sends_only_the_values_given(self):
+        """update_settings sends the route only what the agent gave: a value
+        read and sent back could undo one a job wrote in between."""
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        original = Tools._route
+        sent = []
+
+        def route(tools, path, **params):
+            """Note what the general save is sent, then run the route."""
+            if path == "/cloud/save_general_settings":
+                sent.append(params)
+            return original(tools, path, **params)
+
+        with patch.object(Tools, "_route", autospec=True, side_effect=route):
+            result = self._call_tool(
+                self.key,
+                "update_settings",
+                {"section": "general", "values": {"job_log_retention_days": 45}},
+            )
+        self.assertFalse(result["isError"], result)
+        self.assertEqual(sent, [{"job_log_retention_days": 45}])
+
     def test_changing_the_app_id_keeps_the_installation(self):
         """A GitHub App change keeps the fields not given; others are refused."""
         app = self.github_app

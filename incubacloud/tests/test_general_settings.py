@@ -317,3 +317,29 @@ class TestGeneralSettingsSavePerSection(TransactionCase):
         result = self._save(trusted_proxy_ranges='2001:db8:::1/32')
         self.assertFalse(result['ok'])
         self.assertEqual(result['field'], 'trusted_proxy_ranges')
+
+    def test_a_refusal_saves_nothing_of_the_section(self):
+        """A refused value undoes the save: the valid values beside it too.
+
+        Each field was written in its own savepoint and the request
+        committed what came before the refusal, so the page said the save
+        failed while half of it was kept.
+        """
+        self.ICP.set_param('incubacloud.host_autoassign', '1')
+        self.settings.write({
+            'job_retention_days': 180,
+            'container_log_max_size': '30m',
+            'staging_autopurge_days': 90,
+        })
+        result = self._save(
+            autoassign_enabled=False,
+            job_retention_days=40,
+            staging_autopurge_days=120,
+            container_log_max_size='lots',
+        )
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['field'], 'container_log_max_size')
+        self.assertEqual(self.ICP.get_param('incubacloud.host_autoassign'), '1')
+        self.assertEqual(self.settings.job_retention_days, 180)
+        self.assertEqual(self.settings.staging_autopurge_days, 90)
+        self.assertEqual(self.settings.container_log_max_size, '30m')

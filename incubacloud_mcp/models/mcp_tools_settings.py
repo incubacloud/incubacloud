@@ -42,21 +42,6 @@ SAVE_GENERAL_PARAMS = (
     "move_frozen_source_hours",
     "move_cut_alert_seconds",
 )
-#: Sent with the value held, as the endpoint once wrote these from its own
-#: defaults when they were missing. It writes only what it is sent now (each
-#: section of Settings saves its own), so sending them again changes nothing.
-#: The rest is sent only when given: the value held would not always come
-#: back the same (a metrics retention of 0 is saved as 1).
-ALWAYS_WRITTEN_GENERAL = (
-    "autoassign_enabled",
-    "default_backup_backend_id",
-    "audit_log_retention_days",
-    "job_log_retention_days",
-    "job_retention_days",
-    "default_backup_alert_threshold_pct",
-    "github_event_retention_days",
-    "github_event_truncate_days",
-)
 #: What ``save_core_rate_limits`` accepts.
 CORE_RATE_KEYS = (
     "rate_limit_webhook_per_min",
@@ -339,12 +324,10 @@ class McpToolsSettings(models.AbstractModel):
         """Run *action* on *section* with *values*; return the route's answer."""
         if section == "general":
             self._only(section, values, SAVE_GENERAL_PARAMS)
-            current = self._route("/cloud/get_general_settings")
-            params = {
-                key: current[key] for key in ALWAYS_WRITTEN_GENERAL if key in current
-            }
-            params.update(values)
-            return self._route("/cloud/save_general_settings", **params)
+            # Only what the agent gives: the endpoint writes only what it
+            # is sent, and a value read here and sent back could undo one a
+            # job wrote in between.
+            return self._route("/cloud/save_general_settings", **values)
         if section == "rate_limits":
             self._only(section, values, (*CORE_RATE_KEYS, MCP_RATE_KEY))
             core = {
