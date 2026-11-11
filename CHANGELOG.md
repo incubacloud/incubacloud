@@ -273,8 +273,8 @@ is unchanged.
   it.
 - **The relay's test mail.** A test the queue refuses, because one already
   waits, no longer counts among the hour's five; a deferral no cause names
-  says the test mail was taken out of the relay's queue and will not arrive
-  later, instead of that the health probe watches it; and an instance's
+  says the test mail was taken out of the relay's queue and to send another,
+  instead of that the health probe watches it; and an instance's
   job list offers Cancel and Retry only on jobs whose type the reader may
   ask for (`may_control` in the job rows), so a consultant is no longer
   offered them on the test mail, a manager's type.
@@ -305,6 +305,9 @@ is unchanged.
   mail, a restore, a delete) says «cancel it first» to a reader who may
   cancel that type, and «wait for it to finish» to one who may not, a
   consultant on the relay's test mail.
+- **A refund that fails keeps the refusal.** When giving back the hour's hit
+  of a test mail the queue refused fails, the asker still reads the queue's
+  refusal and the failure is logged.
 
 ---
 
