@@ -18,11 +18,15 @@ from odoo.http import Request
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
-from odoo.addons.incubacloud.github.client import GitHubAppClient
+from odoo.addons.incubacloud.github.client import GitHubAPIError, GitHubAppClient
 from odoo.addons.incubacloud.models import cloud_github_event, cloud_instance
 from odoo.addons.incubacloud.models.cloud_github_event import (
     PR_PREVIEW_FAILED_CODE,
 )
+from odoo.addons.incubacloud.models.cloud_gitlab_mr_note import (
+    PR_PREVIEW_NOTE_FAILED_CODE,
+)
+from odoo.addons.queue_job.exception import RetryableJobError
 
 REPO_URL = 'https://github.com/owner/repo.git'
 REPO_FULL = 'owner/repo'
@@ -462,3 +466,133 @@ class TestPreviewCommentId(_PreviewBase):
                AND column_name = 'pr_comment_id'
         """)
         self.assertEqual(self.env.cr.fetchone()[0], 'int8')
+
+
+class TestPreviewCommentInstallation(_PreviewBase):
+    """The comment is the installation's that sent the pull request, and
+    a comment GitHub does not take is seen on the production.
+
+    The App may be installed on more than one account; the panel keeps
+    one installation. A preview's comment was written, and deleted, with
+    that one's token whatever installation sent the request: GitHub
+    refused it, the refusal went to the server's log alone, and the
+    restore ended done with the pull request left without its comment.
+    """
+
+    OTHER_INSTALLATION = '9999'
+
+    def _preview(self, installation=OTHER_INSTALLATION, **vals):
+        """Create the preview of PR 7, deployed, as its clone through
+        *installation* leaves it."""
+        return self.env['cloud.instance'].sudo().create({
+            'name': 'pr-7', 'project_id': self.project.id,
+            'host_id': self.host.id, 'environment': 'staging',
+            'state': 'deployed', 'pr_number': 7, 'pr_repo': REPO_FULL,
+            'pr_head_branch': 'feature-x', 'pr_state': 'open',
+            'pr_installation_id': installation,
+        } | vals)
+
+    def _client(self):
+        """Stand in for the client of the App: return (client, class patch)."""
+        client = MagicMock(spec=GitHubAppClient)
+        client.post_issue_comment.return_value = {'id': 31}
+        return client, patch.object(
+            cloud_instance, 'GitHubAppClient', return_value=client,
+        )
+
+    def _note_alert(self, instance):
+        """Return the active comment alert on *instance*."""
+        return self.env['cloud.alert'].search([
+            ('code', '=', PR_PREVIEW_NOTE_FAILED_CODE),
+            ('instance_id', '=', instance.id),
+            ('state', '=', 'active'),
+        ])
+
+    def test_the_event_s_installation_is_kept_on_the_preview(self):
+        with self._clone_patch(return_value={}) as clone:
+            self._event()._process_pull_request_event()
+        self.assertEqual(
+            clone.call_args.kwargs['pr_installation_id'], str(INSTALLATION_ID),
+        )
+
+    def test_the_comment_is_written_with_the_event_s_installation(self):
+        preview = self._preview()
+        client, patcher = self._client()
+        with patcher as cls:
+            preview._job_pr_comment()
+        creds = cls.call_args.args[0]
+        self.assertEqual(creds.installation_id, self.OTHER_INSTALLATION)
+        self.assertEqual(creds.app_id, '12345')
+        client.post_issue_comment.assert_called_once()
+        self.assertEqual(preview.pr_comment_id, 31)
+
+    def test_the_comment_is_deleted_with_it_too(self):
+        preview = self._preview(pr_comment_id=31)
+        client, patcher = self._client()
+        with patcher as cls:
+            preview._delete_pr_comment()
+        self.assertEqual(cls.call_args.args[0].installation_id, self.OTHER_INSTALLATION)
+        client.delete_issue_comment.assert_called_once_with('owner', 'repo', 31)
+
+    def test_a_preview_without_one_uses_the_panel_s(self):
+        preview = self._preview(installation='')
+        _client, patcher = self._client()
+        with patcher as cls:
+            preview._job_pr_comment()
+        self.assertEqual(cls.call_args.args[0].installation_id, str(INSTALLATION_ID))
+
+    def test_a_refused_comment_raises_an_alert_on_production(self):
+        preview = self._preview()
+        client, patcher = self._client()
+        client.post_issue_comment.side_effect = GitHubAPIError(
+            403, 'Resource not accessible by integration',
+        )
+        with patcher:
+            preview._job_pr_comment()
+        alert = self._note_alert(self.prod)
+        self.assertEqual(len(alert), 1)
+        self.assertIn('#7', alert.message)
+        self.assertIn('403', alert.message)
+
+    def test_github_away_is_tried_again_before_the_alert(self):
+        preview = self._preview()
+        client, patcher = self._client()
+        client.post_issue_comment.side_effect = GitHubAPIError(502, 'Bad gateway')
+        Note = type(self.env['cloud.gitlab.mr.note'])
+        with patcher, patch.object(Note, '_last_attempt', return_value=False), \
+                self.assertRaises(RetryableJobError):
+            preview._job_pr_comment()
+        self.assertFalse(self._note_alert(self.prod))
+        with patcher:
+            preview._job_pr_comment()
+        self.assertTrue(self._note_alert(self.prod), "the last try alerts")
+
+    def test_a_comment_that_goes_through_resolves_the_alert(self):
+        preview = self._preview()
+        self.env['cloud.alert'].sudo().raise_alert(
+            PR_PREVIEW_NOTE_FAILED_CODE, 'x', level='warning', instance=self.prod,
+        )
+        _client, patcher = self._client()
+        with patcher:
+            preview._job_pr_comment()
+        self.assertFalse(self._note_alert(self.prod))
+
+    def test_a_closed_or_undeployed_preview_gets_no_comment(self):
+        for name, vals in (('pr-7-a', {'pr_state': 'closed'}),
+                           ('pr-7-b', {'state': 'deploying'})):
+            with self.subTest(**vals):
+                preview = self._preview(name=name, **vals)
+                client, patcher = self._client()
+                with patcher:
+                    preview._job_pr_comment()
+                client.post_issue_comment.assert_not_called()
+
+    def test_queued_twice_it_is_one_job(self):
+        preview = self._preview()
+        preview._enqueue_pr_comment()
+        preview._enqueue_pr_comment()
+        jobs = self.env['queue.job'].sudo().search([
+            ('model_name', '=', 'cloud.instance'),
+            ('method_name', '=', '_job_pr_comment'),
+        ])
+        self.assertEqual(len(jobs), 1)

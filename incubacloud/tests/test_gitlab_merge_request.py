@@ -814,6 +814,22 @@ class TestRestoreQueuesTheNote(_MergeRequestCase):
         ):
             asyncio.run(executor.on_success({}))
 
+    def test_the_restore_of_a_pull_request_preview_queues_its_comment(self):
+        """GitHub's comment is a job too: written in the restore, a GitHub
+        away for a moment left the pull request without it for good."""
+        preview = self._preview(iid=71, pr_provider_id=False, pr_repo="acme/web")
+        with patch.object(
+            type(self.env["cloud.instance"]), "_post_or_update_pr_comment",
+        ) as github:
+            self._restore(preview)
+        github.assert_not_called()
+        self.assertEqual(preview.status, "ok")
+        self.assertEqual(len(self.env["queue.job"].sudo().search([
+            ("model_name", "=", "cloud.instance"),
+            ("method_name", "=", "_job_pr_comment"),
+        ])), 1)
+        self.assertFalse(self._note_jobs())
+
     def test_a_note_that_cannot_be_queued_does_not_fail_the_restore(self):
         preview = self._preview()
         with patch.object(

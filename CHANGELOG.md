@@ -23,7 +23,7 @@ The update adds two tables, `incubacloud_mcp_auto_approval` and
 `incubacloud_mcp_credential`, and empty columns: `approval` and
 `approval_rule_id` on `cloud_audit_log` and `cloud_job` (rows written
 before it have no approval mark, which the panel does not show), and on
-`cloud_instance` `pr_provider_id`, `pr_state`,
+`cloud_instance` `pr_provider_id`, `pr_state`, `pr_installation_id`,
 `smtp_relay_oauth_directory_id`, `smtp_relay_oauth_client_id`,
 `smtp_relay_oauth_client_secret`, `smtp_relay_state`,
 `smtp_relay_checked_at` and `smtp_relay_error`. It also adds
@@ -264,6 +264,22 @@ the agents already send.
   the update runs after the database is loaded, where a stop of the restore
   is already refused. When it fails, Odoo is left stopped, the instance in
   error, and the job log says so under the update's own output.
+- **A pull request preview's comment is written with the installation the
+  pull request came through, and a comment GitHub refuses is seen.** The
+  panel's GitHub App may be installed on more than one account. The comment
+  that says a preview is ready, and its removal when the pull request
+  closes, used the token of the installation the panel keeps; on a
+  repository of another account GitHub refused it, the refusal went only to
+  the server's log, and the preview ended ready with no comment and no
+  alert. The preview now keeps the installation its pull request's event
+  came through, and writes and deletes its comment with that one's token;
+  GitHub issues it only for an installation of the panel's own App. The
+  comment is written by a job of its own, as a merge request's note: GitHub
+  unreachable or answering 5xx or 429 is tried again after 60, 300 and
+  900 s, and then, or at once on another refusal, the warning
+  `pr_preview_note_failed` goes on the production the preview was cloned
+  from. A comment that cannot be deleted goes to the log, as before. A
+  preview created before this version uses the panel's installation.
 
 ### Security
 
