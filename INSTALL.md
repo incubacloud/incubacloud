@@ -220,7 +220,7 @@ channels = root:3,root.user:2,root.bg:1
 |---|---|---|
 | `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,web`) instead of adding to it. |
 | `workers` | More than the `root` channel's capacity | Each running job holds a worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
-| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | `root` is how many jobs run at once; without the setting `queue_job` runs one at a time. The panel sends what people ask for (deploys, rebuilds, backups) to `root.user`, production first, and its own background work (health checks, metrics, clean-up) to `root.bg`, so background jobs never hold up a deploy. With `incubacloud_assistant`, add `root.assistant:1` or more. The panel reads the same string as the runner (`ODOO_QUEUE_JOB_CHANNELS` in the environment, else this setting) to keep a slot for a job waiting between two attempts: give it to both the same way, and give `root.user` a capacity of its own. `channel_gate = off` in the `[incubacloud]` section stops the panel counting slots. |
+| `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | How many jobs run at once, in all and of each kind: [Job channels](#job-channels). |
 | `limit_time_real` | `3600` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). 3600 lets the longest command finish in one request, and the panel warns below it. A step marked to run apart (a rebuild's image build) goes on on the server when the job's attempt has run for 0.6 of the limit, and the job comes back for it; every other step must end within 0.4 of the limit. Only the rebuild's image build runs apart, so with 900, as on Odoo.sh, a deploy's database initialisation or a long restore can outlast the request and die. |
 | `limit_time_cpu` | `600` | Odoo's default is 60 seconds of CPU per request, enforced on each worker. Jobs mostly wait on SSH; 600 is a margin for the long ones, not a measured need. |
 | `limit_memory_soft`, `limit_memory_hard` | Odoo's defaults, with workers | They are per worker, and a panel worker stays far below them. With `workers = 0` they mean something else: [below](#with-workers--0). |
@@ -228,6 +228,43 @@ channels = root:3,root.user:2,root.bg:1
 | `max_cron_threads` | At least `1` | The panel's scheduled actions start its background work (health checks, metrics), start any job queue left waiting (every 2 minutes) and close the jobs a lost worker left (every 5). |
 | `proxy_mode` | `True` | Behind a proxy, Odoo then believes its `X-Forwarded-*` headers for the scheme, the host name and the visitor's address. |
 | `db_name` or `dbfilter` | The panel's database, by name | Without a session, Odoo picks a database only when exactly one matches, and the agents' endpoint (`/mcp`) answers 404 otherwise. Filter by name (`db_name`, or `dbfilter = ^<name>$`), not by host name: the job runner calls its own Odoo on `http_interface` and `http_port` (`localhost:8069` by default) with the database in a header, and Odoo checks that name against `dbfilter` with that address as the host, so a filter built on `%h` or `%d` rejects it and no job runs. |
+
+### Job channels
+
+`queue_job` runs jobs by channel, each with a capacity: how many of its jobs
+may run at once. `root` caps them all, each sub-channel caps one kind, and the
+sub-channels may add up to more than `root`. Without the setting, every job
+runs one at a time.
+
+The panel uses three:
+
+| Channel | What goes there |
+|---|---|
+| `root.user` | What people ask for: deploys, rebuilds, backups. Production first. |
+| `root.bg` | The panel's own background work: health checks, metrics, clean-up. With a capacity of its own, it never holds up a deploy. |
+| `root.assistant` | The assistant's steps, with `incubacloud_assistant`. |
+
+With `root:3,root.user:2,root.bg:1`, three jobs run at once: up to two that
+people asked for, and one of background work.
+
+**Every Odoo of the panel reads the same channels.** A rebuild can leave its
+image build running on the server and come back for it some minutes later.
+While it is away, `queue_job` counts its slot as free; the panel keeps it, so
+the rebuild finds room when it comes back. The panel decides it where the job
+is created: on the web server when someone presses a button, on the runner for
+the next step of a job and for scheduled work. Both read the channels as
+`queue_job` does, `ODOO_QUEUE_JOB_CHANNELS` from the environment, else
+`[queue_job] channels` from odoo.conf, so give them the same value in the same
+place. A value only in the runner's environment leaves the web server with
+`root:1`, and the panel then holds back jobs that could run.
+
+Give `root.user` a capacity of its own, as above: without it, a rebuild that
+comes back waits behind any other job. The log at startup says so.
+
+If the panel ever holds back jobs that should run, `channel_gate = off` in the
+`[incubacloud]` section of odoo.conf stops it keeping slots until the cause is
+found: jobs then go to `queue_job` as soon as they are asked for, and a rebuild
+that comes back waits its turn.
 
 ### With `workers = 0`
 
