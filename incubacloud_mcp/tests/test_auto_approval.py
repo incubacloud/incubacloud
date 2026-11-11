@@ -27,6 +27,7 @@ from odoo.addons.incubacloud_mcp.protocol.context import (
     CallContext,
     Principal,
 )
+from odoo.addons.incubacloud_mcp.models.mcp_server import APPROVAL_SENTENCE
 from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 from .common import (
@@ -309,10 +310,12 @@ class TestAutoApprovalCalls(
         discover = self._modern("server/discover", credential=self.key).json()
         instructions = discover["result"]["instructions"]
         self.assertIn("auto-approval rule", instructions)
-        self.assertNotIn("wait for the user's approval", instructions)
+        # A module that adds tools charging money adds that they still wait
+        # (the rule leaves charges out): the sentence of no rule is gone.
+        self.assertNotIn(APPROVAL_SENTENCE, instructions)
         other = self._api_key(self.manager, name="other")
         discover = self._modern("server/discover", credential=other).json()
-        self.assertIn("wait for the user's approval", discover["result"]["instructions"])
+        self.assertIn(APPROVAL_SENTENCE, discover["result"]["instructions"])
 
 
 @tagged("post_install", "-at_install")
