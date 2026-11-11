@@ -178,9 +178,9 @@ real customers.
 
 The refresh runs as two jobs (a download on the production, a restore on the
 staging) that you can follow in the activity timeline. If the download fails the
-restore never starts and the staging is left untouched. Refreshing does **not**
-run a module update: if the staging's branch lacks a module the restored database
-has installed, use a rebuild afterwards.
+restore never starts and the staging is left untouched. Refreshing updates the
+modules to the staging's code before it starts, unless **Auto-update modules** is
+off; if that update fails, the staging stays stopped and the job says so.
 
 Cloning a production to a new staging (**Project → Clone to staging**) applies
 the same neutralization, and always takes a live dump: a production created
