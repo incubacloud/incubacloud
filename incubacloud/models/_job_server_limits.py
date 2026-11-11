@@ -22,7 +22,9 @@ A step marked ``detached`` runs on its server apart from the request
 its request before the limit: it runs for ``attempt_budget_seconds``, a
 share of ``limit_time_real``, and the job goes on in a later attempt. The
 limit then needs to fit the steps that still run inside the request, not
-a whole build: ``MIN_LIMIT_TIME_REAL``, the limit Odoo.sh imposes.
+a whole build. Only the rebuild's image build runs apart so far, so the
+warning still asks for ``MIN_LIMIT_TIME_REAL``, an hour, and not for
+Odoo.sh's 900 s.
 """
 import logging
 import os
@@ -38,11 +40,15 @@ ODOO_DEFAULT_MEMORY_HARD = 2560 * 1024 * 1024
 #: The alert the panel shows while the limits are too low.
 JOB_LIMITS_ALERT_CODE = "job_server_limits_too_low"
 
-#: The lowest ``limit_time_real`` the panel's jobs run under, in seconds
-#: (10-nov-2026): the limit of Odoo.sh, which the panel is tested with.
-#: Below it a step that is not run apart, which may start when the
-#: attempt's budget is nearly spent, has too little time left to end.
-MIN_LIMIT_TIME_REAL = 900
+#: The lowest ``limit_time_real`` the startup warning accepts, in seconds
+#: (11-nov-2026): an hour. Only the rebuild's image build runs apart from
+#: the request so far; a deploy's database initialisation or a long
+#: restore still runs in it and may outlast Odoo.sh's 900 s and die. It
+#: goes down to 900 once every long step runs apart. Below the limit a
+#: step that is not run apart, which may start when the attempt's budget
+#: is nearly spent, has too little time left to end. Only the warning
+#: reads it: the budget and a step's share follow the server's limit.
+MIN_LIMIT_TIME_REAL = 3600
 
 #: The share of ``limit_time_real`` an attempt of a job runs for before it
 #: leaves its step to run on the server and the job goes on in a later
