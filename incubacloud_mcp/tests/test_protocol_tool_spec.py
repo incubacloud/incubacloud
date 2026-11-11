@@ -80,6 +80,25 @@ class TestToolSpec(BaseCase):
                 self.assertIn("run it without asking the user, until", described)
                 self.assertNotIn("does not include charges", described)
 
+    def test_a_tool_that_charges_per_call_says_which_calls_ask(self):
+        """Under a rule without charges, a tool that charges for some calls
+        says it runs without asking but for those; with charges, plainly."""
+        spec = self._spec(confirm="always", destructive=True, charges_per_call=True)
+        until = "2026-12-01 00:00:00"
+        without = spec.listed(auto_until=until)["description"]
+        self.assertIn("run it without asking the user, until", without)
+        self.assertIn("but not when it acts on something the platform bills", without)
+        self.assertIn("does not include charges", without)
+        self.assertNotIn("The panel asks the user", without)
+        included = spec.listed(auto_until=until, auto_charges=True)["description"]
+        self.assertIn("run it without asking the user, until", included)
+        self.assertNotIn("does not include charges", included)
+
+    def test_a_tool_cannot_charge_always_and_per_call(self):
+        """The two declarations exclude each other."""
+        with self.assertRaises(ValueError):
+            self._spec(confirm="always", charges=True, charges_per_call=True)
+
     def test_a_read_tool_is_hinted_read_only_and_untrusted_output_is_announced(self):
         """A read tool is hinted read-only; untrusted output is announced."""
         listed = self._spec(read_only=True, untrusted=True).listed()

@@ -56,7 +56,7 @@ class McpConfirm(models.AbstractModel):
         ]
         if not texts:
             return None
-        if self._auto_approved(spec, ctx, ASSISTANT_CREDENTIAL):
+        if self._auto_approved(spec, args, ctx, ASSISTANT_CREDENTIAL):
             return None
         # Bound to whether production is reached too: an approval given
         # while it was not never covers the call once it is.

@@ -260,15 +260,21 @@ class McpAutoApproval(models.Model):
         expires_at = self.sudo().expires_at
         return fields.Datetime.to_string(expires_at) if expires_at else NO_END_DATE
 
-    def _covers(self, spec):
-        """Return whether this rule approves the tool of *spec*: every tool,
-        but one that charges money only when the rule includes charges.
+    def _covers(self, spec, args=None):
+        """Return whether this rule approves this call of the tool of *spec*:
+        every call, but one that charges money only when the rule includes
+        charges.
 
         :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the call's arguments, for a tool that charges only
+            for some (``ToolSpec.charges_per_call``); without them such a
+            call counts as charging
         :rtype: bool
         """
         self.ensure_one()
-        return not spec.charges or self.sudo().include_charges
+        if self.sudo().include_charges:
+            return True
+        return not self.env["incubacloud.mcp.tools"]._charges(spec, args)
 
     def _use(self):
         """Count one call this rule approves; return whether it still approves.

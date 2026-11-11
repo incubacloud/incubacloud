@@ -109,7 +109,7 @@ class McpConfirm(models.AbstractModel):
             return self._resume(spec, digest, ctx, params)
         # Before any approval of the person: one asked for before the rule
         # was granted expires by itself.
-        if self._auto_approved(spec, ctx, ctx.principal.client):
+        if self._auto_approved(spec, args, ctx, ctx.principal.client):
             return None
         if resuming:
             stop = self._resume(spec, digest, ctx, params)
@@ -125,22 +125,23 @@ class McpConfirm(models.AbstractModel):
         return self._ask(spec, digest, message, ctx)
 
     @api.model
-    def _auto_approved(self, spec, ctx, credential):
+    def _auto_approved(self, spec, args, ctx, credential):
         """Return whether a rule of the user and *credential* approves the call.
 
-        A tool that charges money needs a rule that includes charges.
+        A call that charges money needs a rule that includes charges.
         It is counted, and the call marked ``auto``, before the action runs;
         a line in the server's log says so, where it stays even if the
         transaction is rolled back.
 
         :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the call's arguments
         :param ctx: the request's :class:`CallContext`
         :param str credential: the rule's credential key
         :rtype: bool
         """
         Rule = self.env["incubacloud.mcp.auto.approval"]
         rule = Rule._active_for(ctx.principal.uid, credential)
-        if not rule or not rule._covers(spec) or not rule._use():
+        if not rule or not rule._covers(spec, args) or not rule._use():
             return False
         set_approval_mark({"approval": "auto", "rule": rule.id})
         _logger.info(

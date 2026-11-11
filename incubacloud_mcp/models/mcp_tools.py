@@ -197,6 +197,26 @@ class McpTools(models.AbstractModel):
         return self.env._("Run the tool %s with these arguments.", spec.name)
 
     @api.model
+    def _charges(self, spec, args):
+        """Return whether this call changes what an account is billed.
+
+        Always for a tool declared as charging; for one that charges per
+        call, what ``_charges_<tool name>`` says of the arguments, and yes
+        when the group defines none or the arguments are not known (it
+        fails closed, as ``_confirmation`` does).
+
+        :param spec: the tool's :class:`ToolSpec`
+        :param dict args: the validated (and prepared) arguments, or None
+        :rtype: bool
+        """
+        if spec.charges:
+            return True
+        if not spec.charges_per_call:
+            return False
+        method = getattr(self, f"_charges_{spec.name}", None)
+        return True if method is None or args is None else bool(method(args))
+
+    @api.model
     def _writes(self, spec, args):
         """Return whether this call may change something, and so is audited.
 
