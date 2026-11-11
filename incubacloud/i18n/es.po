@@ -14757,6 +14757,19 @@ msgstr ""
 "líneas de repositorio."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/backup_restore_executor.py:0
+msgid ""
+"The restore did not start: no step ran on the server, so the instance stays "
+"as it was. Try the restore again; if it fails again, contact support with "
+"this job's log."
+msgstr ""
+"La restauración no llegó a empezar: no se ejecutó ningún paso en el "
+"servidor, así que la instancia sigue como estaba. Vuelva a intentar la "
+"restauración; si falla de nuevo, contacte con soporte indicando el registro "
+"de este trabajo."
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_gitlab_hook_key_uniq
 msgid "The routing key is unique."
 msgstr "La clave de enrutado es única."

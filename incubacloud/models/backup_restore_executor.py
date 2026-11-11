@@ -1,3 +1,5 @@
+from odoo import _
+
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
@@ -145,6 +147,22 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         :param Exception exc: what stopped the run
         """
         await self._fail_cut_off_run(exc)
+        if self._step_results is None:
+            self._say_restore_not_started()
+
+    def _say_restore_not_started(self):
+        """Say in the job log that the restore never began.
+
+        For a run that ended before its first step (a host that would not
+        connect, a refused check): the exception alone, as the log shows it,
+        does not say that Odoo was not stopped and the database was not
+        touched, nor what to do next. Writes one line; changes nothing else.
+        """
+        self._sys(_(
+            "The restore did not start: no step ran on the server, so the"
+            " instance stays as it was. Try the restore again; if it fails"
+            " again, contact support with this job's log."
+        ))
 
     async def on_failure(self, results, errors):
         for err in errors:

@@ -296,6 +296,10 @@ is unchanged.
   rebuild of one of its previews could not be queued, the others were
   undone with it and waited for the daily retry. They stay queued now,
   the event keeps its error, and the retry queues only what is missing.
+- **A restore of a backup that ends before its first step says so.** The
+  job's log held only the exception; it now adds that the restore did not
+  start, that the instance stays as it was and to try again or contact
+  support.
 
 ---
 
