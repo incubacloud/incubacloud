@@ -21,24 +21,6 @@
         </xpath>
     </t>
 
-    <!-- Settings: an Agents tab, and the agents' limit with the other rates. -->
-    <t t-inherit="incubacloud.Settings" t-inherit-mode="extension">
-        <xpath expr="//div[hasclass('rl-tabs')]/button[last()]" position="after">
-            <button t-att-class="state.tab === 'agents' ? 'rl-tab active' : 'rl-tab'"
-                    t-on-click="() => this.setTab('agents')">Agents</button>
-        </xpath>
-        <!-- Kept mounted once opened, hidden while another tab shows,
-             as core's Rates tab is (``openedTabs`` in settings.js). -->
-        <xpath expr="//t[@t-if=&quot;state.tab === 'github'&quot;]" position="after">
-            <div t-if="state.openedTabs.agents" t-att-hidden="state.tab !== 'agents'">
-                <McpSettingsTab/>
-            </div>
-        </xpath>
-        <xpath expr="//div[@t-if='state.openedTabs.rates']/CoreRatesTab" position="after">
-            <McpRatesSection/>
-        </xpath>
-    </t>
-
     <!-- The audit says when an action came through an agent, which, and
          how its call was approved: by the person, or by a rule. -->
     <t t-inherit="incubacloud.InstanceDetail.tabBody" t-inherit-mode="extension">

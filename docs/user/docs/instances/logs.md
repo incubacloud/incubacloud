@@ -64,8 +64,8 @@ few seconds would bury the entries that matter.
 ## Limits
 
 Reading logs costs the instance's host work, so the platform bounds
-it. Your operator can tune all of these in **Settings → General →
-Instance Logs** and **Settings → Rates**:
+it. Your operator can tune all of these in **Settings → Logs & retention
+→ Instance logs** and **Settings → Rate limits**:
 
 | Limit | Default | What it does |
 |---|---|---|

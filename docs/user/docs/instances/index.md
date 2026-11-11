@@ -12,7 +12,7 @@ one filestore. It belongs to a project and runs on a host.
       refused (*No backup backend configured for this instance*). Register a
       destination first ([Backups](../backups/index.md#backup-destinations))
       and choose it on the instance, on its project, or for every production
-      instance in **Settings → General → Default Backup Destination**.
+      instance in **Settings → General → Default backup destination**.
 
     An instance's environment is chosen when it is created and cannot be
     changed later.
@@ -321,7 +321,7 @@ instance's own header, from the first warning on.
 being deleted when their pull request closes.
 
 Administrators can change the 90 days, or switch the whole thing off, under
-**Settings → General → Staging autopurge**.
+**Settings → Instances → Staging autopurge**.
 
 ## Email on staging
 

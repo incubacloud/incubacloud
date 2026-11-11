@@ -1,303 +1,301 @@
-import { describe, expect, test } from "@odoo/hoot";
-import { OWN_SETTINGS_TABS, Settings } from "@incubacloud/components/settings/settings";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { _buildUrl, _parseRoute } from "@incubacloud/app/app";
+import { changedKeys, Settings, snapshot } from "@incubacloud/components/settings/settings";
+import {
+    blocksOf, fieldProblem, LEGACY_TABS, sectionFor, settingField, settingsIndex, settingsMenu,
+} from "@incubacloud/components/settings/settings_registry";
+import {
+    editDistance, fold, markMatch, scoreField, searchElsewhere, searchSettings, suggestion,
+} from "@incubacloud/components/settings/settings_search";
+import { coreForm, CORE_PARTS } from "@incubacloud/components/settings/core_settings_block";
+import { GithubSettingsBlock } from "@incubacloud/components/settings/github_settings_block";
+import { logSizeProblem, looksLikeRange, rangesProblem } from "@incubacloud/components/settings/core_sections";
 import {
     CORE_RATE_DEFAULTS,
     CoreRatesTab,
 } from "@incubacloud/components/core_rates_tab/core_rates_tab";
 
 /**
- * Settings pure-logic tests.
- *
- * The component uses onWillStart (RPC), onMounted (URL params), and
- * window.location — so we cannot mount it easily. We test the class
- * structure, props, getter logic, and state-manipulation helpers.
+ * Settings (ESTANDAR-FORMULARIOS, option A): a menu of sections, one page
+ * each, a search over one index of declared fields, and a save bar that
+ * covers the page. The pieces are pure enough to test without mounting.
  */
 
-describe("Settings — class structure", () => {
-    test("has the correct template name", () => {
-        expect(Settings.template).toBe("incubacloud.Settings");
+// The labels are lazy translations, read here as text.
+beforeEach(() => allowTranslations());
+
+/** An env as the panel gives one: who may see what. */
+const env = (features = {}) => ({ features, permissions: { can_manage_settings: true } });
+
+describe("Settings — the menu", () => {
+    test("core's groups and sections, in order", () => {
+        const menu = settingsMenu(env());
+        const ids = menu.map((g) => g.id);
+        expect(ids.slice(0, 3)).toEqual(["platform", "integrations", "limits"]);
+        const platform = menu[0].sections.map((s) => s.id);
+        expect(platform).toEqual(["general", "instances", "logs", "edge"]);
+        const integrations = menu[1].sections.map((s) => s.id);
+        expect(integrations.slice(0, 3)).toEqual(["github", "git-providers", "monitoring"]);
+        expect(menu[2].sections.map((s) => s.id)).toEqual(["rates"]);
     });
 
-    test("has no required props", () => {
-        // The component is routed to without arguments, so every prop it
-        // declares must stay optional.
-        for (const def of Object.values(Settings.props)) {
-            expect(def.optional).toBe(true);
+    test("Monitoring hides where the platform runs observability", () => {
+        const ids = (features) => settingsMenu(env(features))
+            .flatMap((g) => g.sections.map((s) => s.id));
+        expect(ids({}).includes("monitoring")).toBe(true);
+        expect(ids({ observability: { configure: false } }).includes("monitoring")).toBe(false);
+    });
+
+    test("a section shows the blocks registered for it", () => {
+        expect(blocksOf("logs", env()).map((b) => b.key)).toEqual(["core-logs"]);
+        expect(blocksOf("rates", env())[0].Component).toBe(CoreRatesTab);
+        expect(blocksOf("github", env())[0].Component).toBe(GithubSettingsBlock);
+    });
+
+    test("the old tabs land on their sections", () => {
+        expect(sectionFor(undefined, undefined)).toBe("general");
+        expect(sectionFor("logs", "github")).toBe("logs");
+        expect(sectionFor(undefined, "git_providers")).toBe("git-providers");
+        expect(sectionFor(undefined, "saas")).toBe("saas-instances");
+        expect(LEGACY_TABS.providers).toBe("saas-providers");
+    });
+});
+
+describe("Settings — the URL", () => {
+    test("a section and a field", () => {
+        expect(_buildUrl("settings", {})).toBe("/cloud/settings");
+        expect(_buildUrl("settings", { section: "logs" })).toBe("/cloud/settings/logs");
+        expect(_buildUrl("settings", { section: "logs", field: "log_search_timeout_s" }))
+            .toBe("/cloud/settings/logs#log_search_timeout_s");
+        expect(_buildUrl("settings", { tab: "github" })).toBe("/cloud/settings/github");
+    });
+
+    test("the path names the section", () => {
+        const { route, params } = _parseRoute("/cloud/settings/edge");
+        expect(route).toBe("settings");
+        expect(params.section).toBe("edge");
+    });
+
+    test("the page takes a section, a field and an old tab", () => {
+        for (const name of ["section", "field", "tab"]) {
+            expect(Settings.props[name].optional).toBe(true);
+        }
+    });
+});
+
+describe("Settings — the fields", () => {
+    test("each is declared once, with a unique label", () => {
+        const index = settingsIndex(env());
+        const ids = index.map((f) => f.id);
+        expect(new Set(ids).size).toBe(ids.length);
+        const labels = index.map((f) => String(f.label));
+        expect(new Set(labels).size).toBe(labels.length);
+    });
+
+    test("the three retentions no longer share a label", () => {
+        expect(String(settingField("audit_log_retention_days").label)).toBe("Audit log retention");
+        expect(String(settingField("job_retention_days").label)).toBe("Job retention");
+        expect(String(settingField("job_log_retention_days").label)).toBe("Job log retention");
+    });
+
+    test("labels are in sentence case and carry no unit", () => {
+        for (const field of settingsIndex(env())) {
+            const label = String(field.label);
+            expect(/\((days|hours|seconds|MB|%|EUR)\)$/.test(label)).toBe(false);
         }
     });
 
-    test("initialTab is an optional String", () => {
-        expect(Settings.props.initialTab.type).toBe(String);
-        expect(Settings.props.initialTab.optional).toBe(true);
+    test("every field the core forms hold is declared", () => {
+        for (const keys of Object.values(CORE_PARTS)) {
+            for (const key of keys) {
+                expect(Boolean(settingField(key))).toBe(true);
+            }
+        }
+        for (const key of Object.keys(CORE_RATE_DEFAULTS)) {
+            expect(Boolean(settingField(key))).toBe(true);
+        }
     });
 
-    test("is a Component subclass", () => {
-        expect(typeof Settings).toBe("function");
-        expect(typeof Settings.prototype.setup).toBe("function");
-    });
-});
-
-describe("Settings — currentStep computation", () => {
-    /**
-     * The getter logic:
-     *   if (!this.state.configured) return 1;
-     *   if (!this.state.form.installation_id) return 2;
-     *   return 3;
-     */
-    function currentStep(configured, installationId) {
-        if (!configured) return 1;
-        if (!installationId) return 2;
-        return 3;
-    }
-
-    test("step 1 when not configured", () => {
-        expect(currentStep(false, "")).toBe(1);
-        expect(currentStep(false, "12345")).toBe(1);
+    test("numbers are checked by their declaration", () => {
+        const timeout = settingField("log_search_timeout_s");
+        expect(fieldProblem(timeout, 3)).toBe("Must be 5 seconds or more.");
+        expect(fieldProblem(timeout, 30)).toBe(null);
+        expect(fieldProblem(timeout, "2.5")).toBe("Use a whole number.");
+        const pct = settingField("default_backup_alert_threshold_pct");
+        expect(fieldProblem(pct, 101)).toBe("Must be 100 or less.");
+        expect(fieldProblem(pct, "")).toBe(null);
     });
 
-    test("step 2 when configured but no installation_id", () => {
-        expect(currentStep(true, "")).toBe(2);
-        expect(currentStep(true, null)).toBe(2);
-    });
-
-    test("step 3 when configured and installation_id present", () => {
-        expect(currentStep(true, "12345")).toBe(3);
-        expect(currentStep(true, "1")).toBe(3);
+    test("ranges and log sizes say how to fix them", () => {
+        expect(looksLikeRange("198.51.100.0/24")).toBe(true);
+        expect(looksLikeRange("2001:db8::/32")).toBe(true);
+        expect(looksLikeRange("300.1.1.1")).toBe(false);
+        expect(rangesProblem("198.51.100.0/24\n10.0.0.1")).toBe(null);
+        expect(rangesProblem("198.51.100.0/24\nproxy")).toInclude("Not a range: proxy.");
+        expect(logSizeProblem("10m")).toBe(null);
+        expect(logSizeProblem("lots")).toInclude("such as 10m");
     });
 });
 
-describe("Settings — tab handling", () => {
-    /**
-     * setTab(tab) sets state.tab, clears footerMsg and banner.
-     * We test the logic without mounting.
-     */
-    test("setTab clears footerMsg and banner", () => {
-        const state = {
-            tab: "backups",
-            ghActionMsg: { type: "success", message: "Connected" },
+describe("Settings — the search", () => {
+    const index = settingsIndex(env());
+
+    test("folds case and accents", () => {
+        expect(fold("  Días  de RETENCIÓN ")).toBe("dias de retencion");
+    });
+
+    test("scores the label first, then synonyms, titles and help", () => {
+        const field = {
+            label: "Default backup destination", synonyms: ["s3"], blockTitle: "Backups",
+            sectionTitle: "General", groupTitle: "Platform", help: "Used by production instances",
         };
-        // Simulate setTab — clears inline feedback
-        function setTab(tab) {
-            state.tab = tab;
-            state.ghActionMsg = null;
-        }
-        setTab("github");
-        expect(state.tab).toBe("github");
-        expect(state.ghActionMsg).toBe(null);
+        expect(scoreField(field, "default")).toBe(120);
+        expect(scoreField(field, "backup")).toBe(100);
+        expect(scoreField(field, "s3")).toBe(70);
+        expect(scoreField(field, "platform")).toBe(50);
+        expect(scoreField(field, "production")).toBe(30);
+        expect(scoreField(field, "nothing")).toBe(0);
     });
 
-    test("default tab is 'backups'", () => {
-        // From setup(): this.state = useState({ tab: "backups", ... })
-        const defaultTab = "backups";
-        expect(defaultTab).toBe("backups");
+    test("needs two characters", () => {
+        expect(searchSettings(index, "b").total).toBe(0);
+    });
+
+    test("groups by section in the menu's order, three each", () => {
+        const { total, groups } = searchSettings(index, "retention");
+        expect(total > 3).toBe(true);
+        const sections = groups.map((g) => g.section);
+        expect(sections.indexOf("logs") >= 0).toBe(true);
+        const logs = groups.find((g) => g.section === "logs");
+        expect(logs.fields.length).toBe(3);
+        expect(logs.fields.length + logs.more >= 3).toBe(true);
+    });
+
+    test("backup finds the default destination first", () => {
+        const { groups } = searchSettings(index, "backup");
+        expect(groups[0].section).toBe("general");
+        expect(groups[0].fields[0].id).toBe("default_backup_backend_id");
+    });
+
+    test("a typo is offered the word it missed", () => {
+        expect(searchSettings(index, "bakcup").total).toBe(0);
+        expect(suggestion(index, "bakcup")).toBe("backup");
+        expect(editDistance("bakcup", "backup")).toBe(2);
+    });
+
+    test("pages outside Settings are found too", () => {
+        const entries = [{ key: "b", label: "Backup destinations", synonyms: ["s3"] }];
+        expect(searchElsewhere(entries, "s3").length).toBe(1);
+        expect(searchElsewhere(entries, "smtp").length).toBe(0);
+    });
+
+    test("marks the match in the label", () => {
+        expect(markMatch("Default backup destination", "backup")).toEqual({
+            before: "Default ", match: "backup", after: " destination",
+        });
     });
 });
 
-describe("Settings — _checkUrlParams logic", () => {
+describe("Settings — unsaved changes", () => {
+    test("a snapshot tells what changed since", () => {
+        const form = { a: 1, b: "x", c: [1] };
+        const saved = snapshot(form);
+        expect(changedKeys(form, saved)).toEqual([]);
+        form.b = "y";
+        form.c = [1, 2];
+        expect(changedKeys(form, saved)).toEqual(["b", "c"]);
+    });
+
+    test("each core section loads its own fields only", () => {
+        const form = coreForm("general", {
+            autoassign_enabled: 1, default_backup_backend_id: 0, job_retention_days: 5,
+        });
+        expect(Object.keys(form)).toEqual(CORE_PARTS.general);
+        expect(form.autoassign_enabled).toBe(true);
+        expect(form.default_backup_backend_id).toBe(null);
+        expect(form.default_backup_alert_threshold_pct).toBe(80);
+    });
+
+    test("a retention of 0 stays 0; a log bound of 0 is its default", () => {
+        const form = coreForm("logs", { audit_log_retention_days: 0, log_search_timeout_s: 0 });
+        expect(form.audit_log_retention_days).toBe(0);
+        expect(form.log_search_timeout_s).toBe(30);
+    });
+
+    test("secrets come back empty", () => {
+        const form = coreForm("monitoring", { metrics_remote_write_token: "x" });
+        expect(form.metrics_remote_write_token).toBe("");
+    });
+});
+
+describe("Settings — GitHub", () => {
     /**
-     * Simulates the URL param checking logic without touching window.location.
-     */
-    function checkUrlParams(params) {
-        let tab = "backups";
-        let banner = null;
-
-        if (params.get("setup_ok") === "1") {
-            tab = "github";
-            banner = {
-                type: "success",
-                message: "GitHub App created! Now install it on your organization to complete the setup.",
-            };
-        } else if (params.has("setup_error")) {
-            const code = params.get("setup_error") || "unknown";
-            const msg = code === "requires_https"
-                ? "Automatic setup requires HTTPS. Please create the GitHub App manually and paste the credentials below."
-                : `GitHub App setup failed (${code}). Please try again or configure manually.`;
-            tab = "github";
-            banner = { type: code === "requires_https" ? "info" : "error", message: msg };
-        }
-        return { tab, banner };
-    }
-
-    test("setup_ok=1 sets success banner and github tab", () => {
-        const params = new URLSearchParams("?setup_ok=1");
-        const { tab, banner } = checkUrlParams(params);
-        expect(tab).toBe("github");
-        expect(banner.type).toBe("success");
-        expect(banner.message).toInclude("GitHub App created");
-    });
-
-    test("setup_error=requires_https sets info banner", () => {
-        const params = new URLSearchParams("?setup_error=requires_https");
-        const { tab, banner } = checkUrlParams(params);
-        expect(tab).toBe("github");
-        expect(banner.type).toBe("info");
-        expect(banner.message).toInclude("HTTPS");
-    });
-
-    test("setup_error with other code sets error banner", () => {
-        const params = new URLSearchParams("?setup_error=timeout");
-        const { tab, banner } = checkUrlParams(params);
-        expect(tab).toBe("github");
-        expect(banner.type).toBe("error");
-        expect(banner.message).toInclude("timeout");
-    });
-
-    test("no params keeps defaults", () => {
-        const params = new URLSearchParams("");
-        const { tab, banner } = checkUrlParams(params);
-        expect(tab).toBe("backups");
-        expect(banner).toBe(null);
-    });
-});
-
-describe("Settings — toggleManual", () => {
-    test("toggleManual flips showManual", () => {
-        let showManual = false;
-        showManual = !showManual;
-        expect(showManual).toBe(true);
-        showManual = !showManual;
-        expect(showManual).toBe(false);
-    });
-});
-
-describe("Settings — method existence", () => {
-    const proto = Settings.prototype;
-
-    test("has loadConfig method", () => {
-        expect(typeof proto.loadConfig).toBe("function");
-    });
-
-    test("has save method", () => {
-        expect(typeof proto.save).toBe("function");
-    });
-
-    test("has toggleAutoassign method", () => {
-        expect(typeof proto.toggleAutoassign).toBe("function");
-    });
-
-    test("has testConnection method", () => {
-        expect(typeof proto.testConnection).toBe("function");
-    });
-
-    test("has disconnectApp method", () => {
-        expect(typeof proto.disconnectApp).toBe("function");
-    });
-
-    test("has refresh method", () => {
-        expect(typeof proto.refresh).toBe("function");
-    });
-
-    test("has detectInstallation method", () => {
-        expect(typeof proto.detectInstallation).toBe("function");
-    });
-
-    test("has _confirm method", () => {
-        expect(typeof proto._confirm).toBe("function");
-    });
-});
-
-describe("Settings — bounded GitHub import rates", () => {
-    test("preview and import defaults are separate hourly caps", () => {
-        expect(CORE_RATE_DEFAULTS.rate_limit_github_previews_per_hour).toBe(10);
-        expect(CORE_RATE_DEFAULTS.rate_limit_github_imports_per_hour).toBe(5);
-    });
-
-    test("rates component keeps load, clamp and save behavior", () => {
-        expect(CoreRatesTab.template).toBe("incubacloud.CoreRatesTab");
-        expect(typeof CoreRatesTab.prototype.load).toBe("function");
-        expect(typeof CoreRatesTab.prototype.onIntInput).toBe("function");
-        expect(typeof CoreRatesTab.prototype._save).toBe("function");
-    });
-});
-
-describe("Settings — the footer shows where something can be saved", () => {
-    /**
-     * Read `canSaveTab` for the tab on screen and the sections registered.
-     *
-     * @param {string} tab the tab on screen
-     * @param {Array<string|null>} tabNames the tab each registered section names
-     * @returns {boolean} whether the footer with Save shows
-     */
-    function canSave(tab, tabNames) {
-        const settings = Object.create(Settings.prototype);
-        settings.state = { tab };
-        settings._saveHandlers = new Map(
-            tabNames.map((tabName, index) => [`section${index}`, { tabName }]),
-        );
-        return settings.canSaveTab;
-    }
-
-    test("Settings' own tabs always offer Save", () => {
-        expect(OWN_SETTINGS_TABS).toEqual(["general", "github", "monitoring"]);
-        for (const tab of OWN_SETTINGS_TABS) {
-            expect(canSave(tab, [])).toBe(true);
-        }
-    });
-
-    test("a tab whose sections failed to load, or are read-only, offers none", () => {
-        // Neither registers: a failed load shows Retry, a read-only tab
-        // has nothing to send.
-        expect(canSave("agents", [])).toBe(false);
-        expect(canSave("billing", ["rates", "agents"])).toBe(false);
-    });
-
-    test("a tab offers Save once one of its sections registered", () => {
-        expect(canSave("rates", ["rates"])).toBe(true);
-        expect(canSave("agents", ["rates", "agents"])).toBe(true);
-    });
-
-    test("a section that names no tab keeps Save on every tab", () => {
-        expect(canSave("providers", [null])).toBe(true);
-    });
-});
-
-describe("Settings — Check installation asks GitHub when the webhook took none", () => {
-    /**
-     * A Settings whose loading and detection only record that they ran.
-     *
-     * The webhook takes an installation by itself only on the App owner's
-     * account: any other is the manager's to take, through the detection.
+     * A GitHub block whose loading and detection only record that they ran.
      *
      * @param {string} afterLoad the installation id the reload finds
      * @param {string} afterDetect the installation id the detection takes
-     * @returns {{settings: object, calls: string[]}}
+     * @returns {{block: object, calls: string[]}}
      */
-    function settingsCalling(afterLoad, afterDetect) {
+    function blockCalling(afterLoad, afterDetect) {
         const calls = [];
-        const settings = Object.create(Settings.prototype);
-        settings.state = { form: { installation_id: "" } };
-        settings.env = {
+        const block = Object.create(GithubSettingsBlock.prototype);
+        block.state = { configured: true, form: { installation_id: "" } };
+        block.env = {
             toast: {
                 success: () => calls.push("success"),
                 info: () => calls.push("info"),
             },
         };
-        settings.loadConfig = async () => {
+        block.load = async () => {
             calls.push("load");
-            settings.state.form.installation_id = afterLoad;
+            block.state.form.installation_id = afterLoad;
         };
-        settings.detectInstallation = async () => {
+        block.detectInstallation = async () => {
             calls.push("detect");
-            settings.state.form.installation_id = afterDetect;
+            block.state.form.installation_id = afterDetect;
         };
-        return { settings, calls };
+        return { block, calls };
     }
 
+    test("the steps follow the App", () => {
+        const { block } = blockCalling("", "");
+        block.state.configured = false;
+        expect(block.currentStep).toBe(1);
+        block.state.configured = true;
+        expect(block.currentStep).toBe(2);
+        block.state.form.installation_id = "77";
+        expect(block.currentStep).toBe(3);
+    });
+
     test("an installation the webhook did not take is detected", async () => {
-        const { settings, calls } = settingsCalling("", "5151");
-        await settings.refresh();
+        const { block, calls } = blockCalling("", "5151");
+        await block.refresh();
         expect(calls).toEqual(["load", "detect", "success"]);
     });
 
     test("one the webhook took needs no detection", async () => {
-        const { settings, calls } = settingsCalling("5151", "");
-        await settings.refresh();
+        const { block, calls } = blockCalling("5151", "");
+        await block.refresh();
         expect(calls).toEqual(["load", "success"]);
     });
 
     test("none anywhere is said", async () => {
-        const { settings, calls } = settingsCalling("", "");
-        await settings.refresh();
+        const { block, calls } = blockCalling("", "");
+        await block.refresh();
         expect(calls).toEqual(["load", "detect", "info"]);
+    });
+});
+
+describe("Settings — rate limits", () => {
+    test("preview and import defaults are separate hourly caps", () => {
+        expect(CORE_RATE_DEFAULTS.rate_limit_github_previews_per_hour).toBe(10);
+        expect(CORE_RATE_DEFAULTS.rate_limit_github_imports_per_hour).toBe(5);
+        expect(String(settingField("rate_limit_github_imports_per_hour").unit)).toBe("/h");
+        expect(settingField("rate_limit_github_imports_per_hour").advanced).toBe(true);
+    });
+
+    test("a limit under 1 is refused before it is sent", () => {
+        expect(fieldProblem(settingField("rate_limit_webhook_per_min"), 0)).toBe("Must be 1 or more.");
     });
 });

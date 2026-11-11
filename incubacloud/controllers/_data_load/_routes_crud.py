@@ -1921,12 +1921,12 @@ class CrudMixin:
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
     def cloud_save_general_settings(
-        self, autoassign_enabled=False, default_backup_backend_id=None,
-        audit_log_retention_days=90, job_log_retention_days=30,
-        job_retention_days=180, staging_autopurge_days=None,
+        self, autoassign_enabled=None, default_backup_backend_id=None,
+        audit_log_retention_days=None, job_log_retention_days=None,
+        job_retention_days=None, staging_autopurge_days=None,
         move_frozen_source_hours=None, move_cut_alert_seconds=None,
-        default_backup_alert_threshold_pct=80,
-        github_event_retention_days=90, github_event_truncate_days=7,
+        default_backup_alert_threshold_pct=None,
+        github_event_retention_days=None, github_event_truncate_days=None,
         metrics_enabled=None, metrics_central_url=None,
         metrics_remote_write_url=None, metrics_remote_write_token=None,
         metrics_retention_days=None, grafana_base_url=None,
@@ -1938,6 +1938,17 @@ class CrudMixin:
         metrics_ship_security_logs=None,
         metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
     ):
+        """Save the settings a Settings section sent, and only those.
+
+        Each section of Settings saves its own fields, so every argument
+        is written only when the client sent it: a section never blanks
+        out, or puts back to its default, a setting of another. A value
+        the model refuses is answered with the name of its field, so the
+        page shows the message under it.
+
+        :returns: ``{'ok': True}``, or ``{'ok': False, 'error': message,
+            'field': name}`` (``field`` when the error is one field's)
+        """
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
         # value reaches the user as a friendly error instead of
@@ -1949,55 +1960,58 @@ class CrudMixin:
             except (TypeError, ValueError):
                 return default
 
-        backend_id = _safe_int(default_backup_backend_id, 0)
-        if backend_id and not request.env['cloud.backup.backend'].sudo().browse(
-            backend_id,
-        ).exists():
-            return {'ok': False, 'error': _('Unknown backup destination.')}
+        def _refused(field, exc):
+            return {
+                'ok': False,
+                'error': exc.args[0] if exc.args else str(exc),
+                'field': field,
+            }
+
         ICP = request.env['ir.config_parameter'].sudo()
-        ICP.set_param(
-            'incubacloud.host_autoassign',
-            '1' if autoassign_enabled else '0',
-        )
-        ICP.set_param(
-            'incubacloud.backup_backend_id',
-            str(backend_id) if backend_id else '0',
-        )
-        ICP.set_param(
-            'incubacloud.audit_log_retention_days',
-            str(max(0, _safe_int(audit_log_retention_days, 90))),
-        )
-        # Clamp to 0–100; 0 falls through to "no alerts by default" in the
-        # backend's threshold-resolution logic so it's a safe lower bound.
-        threshold = max(0, min(100, _safe_int(
-            default_backup_alert_threshold_pct, 80,
-        )))
-        request.env['cloud.settings'].sudo()._get().write({
-            'job_log_retention_days': max(
-                0, _safe_int(job_log_retention_days, 30),
-            ),
-            'job_retention_days': max(
-                0, _safe_int(job_retention_days, 180),
-            ),
-            'default_backup_alert_threshold_pct': threshold,
-            'github_event_retention_days': max(
-                0, _safe_int(github_event_retention_days, 90),
-            ),
-            'github_event_truncate_days': max(
-                0, _safe_int(github_event_truncate_days, 7),
-            ),
-        })
-        # Written only when the client sent them, as the autopurge below.
-        moves = {
-            name: max(0, _safe_int(value, default))
-            for name, value, default in (
-                ('move_frozen_source_hours', move_frozen_source_hours, 48),
-                ('move_cut_alert_seconds', move_cut_alert_seconds, 90),
+        if default_backup_backend_id is not None:
+            # 0 (or an empty value) is "no default destination".
+            backend_id = _safe_int(default_backup_backend_id, 0)
+            if backend_id and not request.env[
+                'cloud.backup.backend'
+            ].sudo().browse(backend_id).exists():
+                return {
+                    'ok': False,
+                    'error': _('Unknown backup destination.'),
+                    'field': 'default_backup_backend_id',
+                }
+            ICP.set_param(
+                'incubacloud.backup_backend_id',
+                str(backend_id) if backend_id else '0',
             )
-            if value is not None
-        }
-        if moves:
-            request.env['cloud.settings'].sudo()._get().write(moves)
+        if autoassign_enabled is not None:
+            ICP.set_param(
+                'incubacloud.host_autoassign',
+                '1' if autoassign_enabled else '0',
+            )
+        if audit_log_retention_days is not None:
+            ICP.set_param(
+                'incubacloud.audit_log_retention_days',
+                str(max(0, _safe_int(audit_log_retention_days, 90))),
+            )
+        retention = {}
+        if default_backup_alert_threshold_pct is not None:
+            # Clamp to 0–100; 0 falls through to "no alerts by default" in
+            # the backend's threshold-resolution logic, a safe lower bound.
+            retention['default_backup_alert_threshold_pct'] = max(0, min(
+                100, _safe_int(default_backup_alert_threshold_pct, 80),
+            ))
+        for name, value, default in (
+            ('job_log_retention_days', job_log_retention_days, 30),
+            ('job_retention_days', job_retention_days, 180),
+            ('github_event_retention_days', github_event_retention_days, 90),
+            ('github_event_truncate_days', github_event_truncate_days, 7),
+            ('move_frozen_source_hours', move_frozen_source_hours, 48),
+            ('move_cut_alert_seconds', move_cut_alert_seconds, 90),
+        ):
+            if value is not None:
+                retention[name] = max(0, _safe_int(value, default))
+        if retention:
+            request.env['cloud.settings'].sudo()._get().write(retention)
 
         # ── Staging autopurge ─────────────────────────────────────────
         # Written only when the client sent it, and through the model so
@@ -2007,16 +2021,14 @@ class CrudMixin:
         # believing a number that is not in force.
         if staging_autopurge_days is not None:
             try:
-                request.env['cloud.settings'].sudo()._get().write({
-                    'staging_autopurge_days': _safe_int(
-                        staging_autopurge_days, 90,
-                    ),
-                })
+                with request.env.cr.savepoint():
+                    request.env['cloud.settings'].sudo()._get().write({
+                        'staging_autopurge_days': _safe_int(
+                            staging_autopurge_days, 90,
+                        ),
+                    })
             except ValidationError as exc:
-                return {
-                    'ok': False,
-                    'error': exc.args[0] if exc.args else str(exc),
-                }
+                return _refused('staging_autopurge_days', exc)
 
         # ── Edge ──────────────────────────────────────────────────────
         # Written only when the client sent them, so a caller that
@@ -2031,9 +2043,12 @@ class CrudMixin:
             ).strip()
         if edge_vals:
             try:
-                request.env['cloud.settings'].sudo()._get().write(edge_vals)
+                with request.env.cr.savepoint():
+                    request.env['cloud.settings'].sudo()._get().write(
+                        edge_vals,
+                    )
             except ValidationError as exc:
-                return {'ok': False, 'error': exc.args[0] if exc.args else str(exc)}
+                return _refused('trusted_proxy_ranges', exc)
 
         # ── Container log rotation ────────────────────────────────────
         # Written only when the client sent them, so a caller that
@@ -2064,8 +2079,15 @@ class CrudMixin:
         ):
             if value is not None:
                 log_vals[field] = _safe_int(value, default)
-        if log_vals:
-            request.env['cloud.settings'].sudo()._get().write(log_vals)
+        # One at a time, so a refusal names the field it is about.
+        for name, value in log_vals.items():
+            try:
+                with request.env.cr.savepoint():
+                    request.env['cloud.settings'].sudo()._get().write({
+                        name: value,
+                    })
+            except ValidationError as exc:
+                return _refused(name, exc)
 
         # ── Observability ─────────────────────────────────────────────
         # Each field is written only when the client actually sent it, so
@@ -2119,14 +2141,14 @@ class CrudMixin:
             central_vals['metrics_central_operator_sources'] = str(
                 metrics_central_operator_sources or '',
             ).strip()
-        if central_vals:
+        for name, value in central_vals.items():
             try:
                 with request.env.cr.savepoint():
-                    request.env['cloud.settings'].sudo()._get().write(
-                        central_vals,
-                    )
+                    request.env['cloud.settings'].sudo()._get().write({
+                        name: value,
+                    })
             except ValidationError as exc:
-                return {'ok': False, 'error': exc.args[0] if exc.args else str(exc)}
+                return _refused(name, exc)
 
         return {'ok': True}
 

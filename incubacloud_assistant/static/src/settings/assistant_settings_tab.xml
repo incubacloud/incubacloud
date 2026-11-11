@@ -3,179 +3,177 @@
 
 <t t-name="incubacloud_assistant.AssistantSettingsTab">
     <div class="ic-asst-settings">
-        <t t-if="state.loading">
-            <div class="ic-detail-loading">Loading…</div>
-        </t>
-        <!-- Failed to load: the error and a way out, never a form of
-             defaults that Save would not send. -->
-        <t t-elif="state.loadError">
-            <div class="rl-stub" role="alert">
-                <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
-                <p t-esc="state.loadError"/>
-                <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
-                        t-on-click="() => this.reload()">Retry</button>
-            </div>
+        <t t-if="state.loading or state.loadError">
+            <t t-call="incubacloud.SettingsLoadState"/>
         </t>
         <t t-else="">
-            <div class="rl-saas-fsec">Assistant</div>
-            <p class="rl-tabnote">
-                An AI assistant inside the panel, with your own AI provider key. It acts
-                with the role of each user who uses it, and asks them before anything
-                destructive, sensitive or on production. What it reads is sent to the
-                provider you choose.
-            </p>
-            <p class="rl-tabnote">
-                Off, nobody can ask the assistant anything. The button stays for whoever
-                has conversations, to read or delete them until they expire, 30 days after
-                their last message.
-            </p>
+            <t t-set="form" t-value="state.form"/>
 
-            <p t-if="state.blocked" class="rl-tabnote" role="note" t-esc="state.blocked"/>
-            <!-- The box first, then the switch: it is accepted before it goes on. -->
-            <div class="rl-fgrid">
-                <div class="rl-frow" t-if="needsTerms">
-                    <label for="ic_asst_terms" t-esc="state.termsLabel"/>
-                    <input id="ic_asst_terms" type="checkbox" t-model="state.form.accept_ai_terms"/>
-                </div>
-                <div class="rl-frow">
-                    <label for="ic_asst_enabled">Assistant on</label>
-                    <input id="ic_asst_enabled" type="checkbox" t-model="state.form.enabled"
-                           t-att-disabled="switchDisabled"
-                           t-att-aria-describedby="switchOnBlocker ? 'ic_asst_switch_hint' : undefined"/>
-                    <p t-if="switchOnBlocker" id="ic_asst_switch_hint" class="ic-asst-hint"
-                       t-esc="switchOnBlocker"/>
-                </div>
-                <div class="rl-frow">
-                    <label for="ic_asst_provider">AI provider</label>
-                    <select id="ic_asst_provider"
-                            t-on-change="(ev) => this.changeProvider(ev.target.value)">
-                        <t t-foreach="state.providers" t-as="provider" t-key="provider.value">
-                            <option t-att-value="provider.value"
-                                    t-att-selected="provider.value === state.form.provider">
-                                <t t-esc="provider.label"/><t t-if="provider.beta"> (beta)</t>
-                            </option>
+            <SettingsBlock title.translate="Assistant"
+                           how.translate="An AI assistant inside the panel, with your own AI provider key. It acts with the role of each user who uses it, and asks them before anything destructive, sensitive or on production. What it reads is sent to the provider you choose. Off, the button stays for whoever has conversations, to read or delete them until they expire, 30 days after their last message.">
+                <t t-set-slot="head">
+                    <p t-if="state.blocked" class="rl-set-hint" role="note" t-esc="state.blocked"/>
+                    <!-- The Terms only where the panel has some to accept (where a
+                         module on top has them); a self-hosted one acknowledges,
+                         and links nowhere. -->
+                    <p class="rl-set-hint" t-if="needsTerms and state.termsUrl">
+                        Switching the assistant on needs the Terms accepted, each time: what
+                        is sent to the AI provider, who pays for it, and which actions wait
+                        for confirmation.
+                        <a t-att-href="state.termsUrl" target="_blank" rel="noopener noreferrer">Read the Terms</a>
+                    </p>
+                    <p class="rl-set-hint" t-elif="needsTerms">
+                        Switching the assistant on needs the acknowledgement box ticked, each
+                        time. The panel records when, by whom and from which address.
+                    </p>
+                    <p class="rl-set-hint" t-if="termsLine" t-esc="termsLine"/>
+                    <p t-if="state.saveWarning" class="rl-set-inline-msg rl-set-inline-msg--error ic-asst-warning"
+                       role="alert" t-esc="state.saveWarning"/>
+                </t>
+                <!-- The box first, then the switch: it is accepted before it goes on. -->
+                <SettingRow t-if="needsTerms" id="'accept_ai_terms'" label="state.termsLabel" help="''" form="form">
+                    <t t-set-slot="default" t-slot-scope="row">
+                        <input t-att-id="row.inputId" type="checkbox" class="ic-asst-box"
+                               t-model="state.form.accept_ai_terms"/>
+                    </t>
+                </SettingRow>
+                <SettingField id="'enabled'" form="form" disabled="switchDisabled">
+                    <t t-set-slot="after">
+                        <p t-if="switchOnBlocker" id="ic_asst_switch_hint" class="ic-set-warn ic-asst-hint"
+                           t-esc="switchOnBlocker"/>
+                    </t>
+                </SettingField>
+                <SettingRow id="'provider'" form="form">
+                    <t t-set-slot="default">
+                        <select id="ic_asst_provider" class="ic-set-input ic-set-w-m"
+                                t-on-change="(ev) => this.changeProvider(ev.target.value)">
+                            <t t-foreach="state.providers" t-as="provider" t-key="provider.value">
+                                <option t-att-value="provider.value"
+                                        t-att-selected="provider.value === state.form.provider">
+                                    <t t-esc="provider.label"/><t t-if="provider.beta"> (beta)</t>
+                                </option>
+                            </t>
+                        </select>
+                    </t>
+                </SettingRow>
+                <SettingRow id="'api_key'" form="form">
+                    <t t-set-slot="default" t-slot-scope="row">
+                        <input t-att-id="row.inputId" type="password" autocomplete="off"
+                               class="ic-set-input ic-set-w-m"
+                               t-att-placeholder="keyPlaceholder || notSetText"
+                               t-model="state.form.api_key"/>
+                    </t>
+                    <t t-set-slot="action">
+                        <button t-if="keySaved" type="button"
+                                class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="removeKey">
+                            Remove the key
+                        </button>
+                    </t>
+                </SettingRow>
+                <SettingField id="'monthly_limit'" form="form"/>
+                <SettingAdvanced form="form" fields="['step_cap']">
+                    <SettingField id="'step_cap'" form="form"/>
+                </SettingAdvanced>
+            </SettingsBlock>
+
+            <SettingsBlock title.translate="Models">
+                <SettingRow id="'models'">
+                    <t t-set-slot="default">
+                        <div class="ic-asst-read">
+                            <button id="ic_asst_read_models" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-disabled="!canReadModels" t-on-click="readModels">
+                                <t t-if="state.refreshing">Reading the models…</t>
+                                <t t-elif="state.models.length">Update the list</t>
+                                <t t-else="">Read the models</t>
+                            </button>
+                        </div>
+                    </t>
+                    <t t-set-slot="after">
+                        <p class="ic-set-note" t-if="!state.models.length and keySaved">
+                            Read the provider's models with the saved key, then choose the ones
+                            allowed.
+                        </p>
+                        <p class="ic-set-note" t-elif="!state.models.length">
+                            Type the provider's key, then read its models to choose from them. The key
+                            is kept when you save.
+                        </p>
+                        <t t-else="">
+                            <p class="ic-set-note">
+                                Recommended: tested with the panel's tools. Untested ones may fail at
+                                writing modules.
+                            </p>
+                            <p class="ic-set-note">
+                                With a monthly limit, a model whose price is unknown cannot be used: the
+                                assistant could not count what it costs. Without a limit it can, as an
+                                untested one.
+                            </p>
                         </t>
-                    </select>
-                </div>
-                <div class="rl-frow">
-                    <label for="ic_asst_key">Provider key</label>
-                    <input id="ic_asst_key" type="password" autocomplete="off"
-                           t-att-placeholder="keyPlaceholder"
-                           t-model="state.form.api_key"/>
-                    <button t-if="keySaved"
-                            class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="removeKey">
-                        Remove the key
-                    </button>
-                </div>
-                <div class="rl-frow">
-                    <label for="ic_asst_limit">Monthly limit per user (EUR)</label>
-                    <input id="ic_asst_limit" type="number" min="0" step="0.5"
-                           t-model.number="state.form.monthly_limit"/>
-                </div>
-                <div class="rl-frow">
-                    <label for="ic_asst_steps">Steps per task</label>
-                    <input id="ic_asst_steps" type="number" min="1" max="200"
-                           t-model.number="state.form.step_cap"/>
-                </div>
-            </div>
-            <!-- The Terms only where the panel has some to accept (where a module
-                 on top has them); a self-hosted one acknowledges, and links nowhere. -->
-            <p class="rl-tabnote" t-if="needsTerms and state.termsUrl">
-                Switching the assistant on needs the Terms accepted, each time: what
-                is sent to the AI provider, who pays for it, and which actions wait
-                for confirmation.
-                <a t-att-href="state.termsUrl" target="_blank" rel="noopener noreferrer">Read the Terms</a>
-            </p>
-            <p class="rl-tabnote" t-elif="needsTerms">
-                Switching the assistant on needs the acknowledgement box ticked, each
-                time. The panel records when, by whom and from which address.
-            </p>
-            <p t-if="state.saveWarning" class="rl-tabnote ic-asst-warning" role="alert"
-               t-esc="state.saveWarning"/>
-            <p class="rl-tabnote" t-if="termsLine" t-esc="termsLine"/>
-            <p class="rl-tabnote">
-                The monthly limit is the same for every user: each one may spend up to it
-                in a month, and Usage below shows what each one spent. 0 is no limit. A
-                task that reaches its steps stops and asks whether to go on; a user who
-                reaches the limit waits for next month.
-            </p>
+                        <p t-if="state.notice" class="ic-set-warn ic-asst-warning" role="alert" t-esc="state.notice.text"/>
+                    </t>
+                </SettingRow>
+                <t t-if="state.models.length">
+                    <SettingRow id="'allowed_models'" form="form">
+                        <t t-set-slot="default">
+                            <div class="ic-set-w-l ic-asst-models">
+                                <MultiSelect id="'ic_asst_allowed'"
+                                             options="allowedModelOptions"
+                                             value="state.form.allowed_models"
+                                             onChange.bind="setAllowedModels"
+                                             placeholder.translate="Search models…"/>
+                            </div>
+                        </t>
+                    </SettingRow>
+                    <SettingRow id="'default_model'" form="form">
+                        <t t-set-slot="default" t-slot-scope="row">
+                            <div class="ic-set-w-m ic-asst-default">
+                                <RlSelect id="row.inputId"
+                                          options="defaultModelOptions"
+                                          value="state.form.default_model"
+                                          onChange="(value) => { state.form.default_model = value; }"
+                                          disabled="!defaultModelOptions.length"
+                                          placeholder.translate="Choose the allowed models first"
+                                          ariaLabel.translate="Default model"/>
+                            </div>
+                        </t>
+                    </SettingRow>
+                </t>
+            </SettingsBlock>
 
-            <div class="rl-saas-fsec">Models</div>
-            <p class="rl-tabnote" t-if="!state.models.length and keySaved">
-                Read the provider's models with the saved key, then choose the ones
-                allowed.
-            </p>
-            <p class="rl-tabnote" t-elif="!state.models.length">
-                Type the provider's key, then read its models to choose from them. The key
-                is kept when you save.
-            </p>
-            <t t-else="">
-                <p class="rl-tabnote">
-                    Recommended: tested with the panel's tools. Untested ones may fail at
-                    writing modules.
-                </p>
-                <p class="rl-tabnote">
-                    With a monthly limit, a model whose price is unknown cannot be used: the
-                    assistant could not count what it costs. Without a limit it can, as an
-                    untested one.
-                </p>
-            </t>
-            <div class="ic-asst-read">
-                <button id="ic_asst_read_models" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
-                        t-att-disabled="!canReadModels" t-on-click="readModels">
-                    <t t-if="state.refreshing">Reading the models…</t>
-                    <t t-elif="state.models.length">Update the list</t>
-                    <t t-else="">Read the models</t>
-                </button>
-            </div>
-            <p t-if="state.notice" class="rl-tabnote ic-asst-warning" role="alert" t-esc="state.notice.text"/>
-            <div class="rl-fgrid ic-asst-models" t-if="state.models.length">
-                <div class="rl-frow">
-                    <label for="ic_asst_allowed">Allowed models</label>
-                    <MultiSelect id="'ic_asst_allowed'"
-                                 options="allowedModelOptions"
-                                 value="state.form.allowed_models"
-                                 onChange.bind="setAllowedModels"
-                                 placeholder.translate="Search models…"/>
-                </div>
-                <div class="rl-frow ic-asst-default">
-                    <label>Default model</label>
-                    <RlSelect options="defaultModelOptions"
-                              value="state.form.default_model"
-                              onChange="(value) => { state.form.default_model = value; }"
-                              disabled="!defaultModelOptions.length"
-                              placeholder.translate="Choose the allowed models first"
-                              ariaLabel.translate="Default model"/>
-                </div>
-            </div>
+            <SettingsBlock title.translate="Users">
+                <SettingRow id="'user_ids'" form="form">
+                    <t t-set-slot="default">
+                        <div class="ic-set-w-l ic-asst-users">
+                            <MultiSelect id="'ic_asst_users'"
+                                         options="userOptions"
+                                         value="state.form.user_ids"
+                                         onChange.bind="setUsers"
+                                         placeholder.translate="Search users…"/>
+                        </div>
+                    </t>
+                </SettingRow>
+            </SettingsBlock>
 
-            <div class="rl-saas-fsec">Users</div>
-            <p class="rl-tabnote">Only the users chosen here see the assistant.</p>
-            <div class="rl-frow ic-asst-users">
-                <label for="ic_asst_users">Users of the assistant</label>
-                <MultiSelect id="'ic_asst_users'"
-                             options="userOptions"
-                             value="state.form.user_ids"
-                             onChange.bind="setUsers"
-                             placeholder.translate="Search users…"/>
-            </div>
-
-            <div class="rl-saas-fsec">Usage</div>
-            <p class="rl-tabnote" t-if="!usageRows.length">Nobody has used the assistant yet.</p>
-            <table t-else="" class="rl-table ic-asst-usage">
-                <thead><tr><th>Month</th><th>User</th><th>Tokens</th><th>Cost (approx.)</th></tr></thead>
-                <tbody>
-                    <tr t-foreach="usageRows" t-as="row" t-key="row.month + '-' + row.user_id">
-                        <td t-esc="row.month"/>
-                        <td t-esc="row.user_name"/>
-                        <td t-esc="row.tokens"/>
-                        <td t-esc="row.costLabel"/>
-                    </tr>
-                </tbody>
-            </table>
-            <p class="rl-tabnote" t-if="usageRows.some((row) => row.unpriced_tokens)">
-                * Includes calls of models whose price is not known: only their tokens count.
-            </p>
+            <SettingsBlock title.translate="Usage">
+                <div class="ic-set-block__body" id="ic-set-assistant_usage" data-field="assistant_usage">
+                    <p class="ic-set-note" t-if="!usageRows.length">Nobody has used the assistant yet.</p>
+                    <div t-else="" class="ic-asst-usage-wrap">
+                        <table class="rl-table ic-asst-usage">
+                            <thead><tr><th>Month</th><th>User</th><th>Tokens</th><th>Cost (approx.)</th></tr></thead>
+                            <tbody>
+                                <tr t-foreach="usageRows" t-as="row" t-key="row.month + '-' + row.user_id">
+                                    <td t-esc="row.month"/>
+                                    <td t-esc="row.user_name"/>
+                                    <td t-esc="row.tokens"/>
+                                    <td t-esc="row.costLabel"/>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="ic-set-note" t-if="usageRows.some((row) => row.unpriced_tokens)">
+                        * Includes calls of models whose price is not known: only their tokens count.
+                    </p>
+                </div>
+            </SettingsBlock>
         </t>
     </div>
 </t>

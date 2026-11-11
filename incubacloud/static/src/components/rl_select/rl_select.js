@@ -39,6 +39,7 @@ const MENU_CHROME_HEIGHT = 12;
  *   placeholder {string}   trigger text when nothing is selected and no emptyLabel
  *   disabled    {boolean}  disable interaction
  *   ariaLabel   {string}   accessible label for the trigger button
+ *   id          {string}   id of the trigger button, for a <label for>
  */
 export class RlSelect extends Component {
     static template = "incubacloud.RlSelect";
@@ -50,6 +51,8 @@ export class RlSelect extends Component {
         placeholder: { type: String, optional: true },
         disabled:    { type: Boolean, optional: true },
         ariaLabel:   { type: String, optional: true },
+        // The trigger's id, so a <label for> names it.
+        id:          { type: String, optional: true },
         // Mirror what a plain <input> exposes when its row is in error,
         // so a screen reader announces the failure on the control the
         // user is standing on — not only in the caption below it.

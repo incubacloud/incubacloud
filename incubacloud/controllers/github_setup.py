@@ -147,7 +147,7 @@ class GitHubSetupController(http.Controller):
         # on their side if the base URL is HTTP (e.g. local development).
         if not base_url.startswith("https://"):
             return request.redirect(
-                "/cloud/settings?setup_error=requires_https"
+                "/cloud/settings/github?setup_error=requires_https"
             )
 
         app_name = self._github_app_name(base_url, host)
@@ -230,7 +230,7 @@ class GitHubSetupController(http.Controller):
                 request.env.uid,
             )
             return request.redirect(
-                f"/cloud/settings?setup_error={problem}"
+                f"/cloud/settings/github?setup_error={problem}"
             )
 
         # Refuse to overwrite an existing app via the manifest callback —
@@ -244,7 +244,7 @@ class GitHubSetupController(http.Controller):
                 "existing app; reset required first"
             )
             return request.redirect(
-                "/cloud/settings?setup_error=app_exists"
+                "/cloud/settings/github?setup_error=app_exists"
             )
 
         # Exchange code for credentials (public GitHub API — no auth needed)
@@ -269,14 +269,14 @@ class GitHubSetupController(http.Controller):
                 body,
             )
             return request.redirect(
-                "/cloud/settings?setup_error=github_api"
+                "/cloud/settings/github?setup_error=github_api"
             )
         except Exception:
             _logger.exception(
                 "GitHub App manifest conversion failed unexpectedly"
             )
             return request.redirect(
-                "/cloud/settings?setup_error=github_api"
+                "/cloud/settings/github?setup_error=github_api"
             )
 
         app_id = str(data.get("id", ""))
@@ -289,7 +289,7 @@ class GitHubSetupController(http.Controller):
                 list(data),
             )
             return request.redirect(
-                "/cloud/settings?setup_error=missing_credentials"
+                "/cloud/settings/github?setup_error=missing_credentials"
             )
 
         slug = data.get("slug", "")
@@ -315,4 +315,4 @@ class GitHubSetupController(http.Controller):
             app_id,
             slug or "?",
         )
-        return request.redirect("/cloud/settings?setup_ok=1")
+        return request.redirect("/cloud/settings/github?setup_ok=1")

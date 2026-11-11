@@ -59,12 +59,12 @@
                 <t t-if="state.branchSettingsHint and env.permissions?.can_manage_settings">
                     <a t-if="state.branchSettingsHint === 'git_providers'"
                        class="ic-repo-fetch-error-link"
-                       t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                       t-on-click.prevent="() => env.navigate('settings', { section: 'git-providers' })">
                         Open Git providers →
                     </a>
                     <a t-else=""
                        class="ic-repo-fetch-error-link"
-                       t-on-click.prevent="() => env.navigate('settings', { tab: 'github' })">
+                       t-on-click.prevent="() => env.navigate('settings', { section: 'github' })">
                         Open GitHub settings →
                     </a>
                 </t>
@@ -98,7 +98,7 @@
                 </button>
                 <a t-if="(push === 'hook_pending' or push === 'hook_failing') and env.permissions?.can_manage_settings"
                    class="ic-repo-fetch-error-link"
-                   t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                   t-on-click.prevent="() => env.navigate('settings', { section: 'git-providers' })">
                     Open Git providers →
                 </a>
             </div>
@@ -109,7 +109,7 @@
                 <span>The panel could not register the webhook: <t t-esc="state.hookManualReason"/> Set it up by hand with the URL and secret in Git providers.</span>
                 <a t-if="env.permissions?.can_manage_settings"
                    class="ic-repo-fetch-error-link"
-                   t-on-click.prevent="() => env.navigate('settings', { tab: 'git_providers' })">
+                   t-on-click.prevent="() => env.navigate('settings', { section: 'git-providers' })">
                     Set up by hand →
                 </a>
             </div>

@@ -2,6 +2,8 @@ import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { session } from "@web/session";
 import { _t } from "@web/core/l10n/translation";
+import { settingsIndex } from "../settings/settings_registry";
+import { searchSettings } from "../settings/settings_search";
 import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
 import { SearchSelect } from "../search_select/search_select";
@@ -148,6 +150,34 @@ export class AppHeader extends Component {
             }
             this.state.searchLoading = false;
         }, 220);
+    }
+
+    /**
+     * The settings that match the global search: the same index as the
+     * box atop Settings, for whoever may open Settings.
+     *
+     * @returns {object[]} up to five fields, best first
+     */
+    get settingsResults() {
+        if (!this.env.permissions?.can_manage_settings) {
+            return [];
+        }
+        const { groups } = searchSettings(settingsIndex(this.env), this.state.globalSearch, {
+            perSection: 2,
+        });
+        return groups.flatMap((group) => group.fields).slice(0, 5);
+    }
+
+    /**
+     * Open a setting the global search found, on its section.
+     *
+     * @param {object} field the index entry
+     */
+    goToSetting(field) {
+        this.state.showSearch = false;
+        this.state.globalSearch = "";
+        this.state.searchResults = [];
+        this.env.navigate("settings", { section: field.section, field: field.id });
     }
 
     searchResultIcon(type) {

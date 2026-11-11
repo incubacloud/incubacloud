@@ -2861,7 +2861,7 @@
                     <div class="ic-backups-info ic-backups-warning">
                         <t t-out="env.icon('alert', 15)" />
                         No backup backend configured. Assign one in this instance's Networking tab,
-                        in the project settings, or set a global default in Settings → Backups.
+                        in the project settings, or set a global default in Settings › General.
                     </div>
                 </t>
 

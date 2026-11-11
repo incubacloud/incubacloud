@@ -19,7 +19,7 @@ log in real time.
       refused (*No backup backend configured for this instance*). Register a
       destination first ([Backups](../backups/index.md#backup-destinations))
       and choose it on the instance, on its project, or for every production
-      instance in **Settings → General → Default Backup Destination**.
+      instance in **Settings → General → Default backup destination**.
 
 ## 1. Open the project and click `Deploy instance`
 

@@ -1,759 +1,477 @@
-import { Component, useState, useSubEnv, onWillStart, onMounted, onWillUnmount, batched, reactive } from "@odoo/owl";
-import { rpc } from "@web/core/network/rpc";
-import { _t } from "@web/core/l10n/translation";
-import { announceJob } from "../../utils/job_queue";
-import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
-import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
-import { GitProvidersTab } from "../git_providers_tab/git_providers_tab";
-import { RlSelect } from "../rl_select/rl_select";
-import { useNavGuard } from "../../utils/use_nav_guard";
-import { useFormValidation } from "../../utils/use_form_validation";
-import { confirmVia } from "../../utils/use_confirm";
+/** @odoo-module **/
 
-/** The tabs whose fields are Settings' own form, always saved. */
-export const OWN_SETTINGS_TABS = Object.freeze(["general", "github", "monitoring"]);
+/**
+ * Settings: a menu of sections, one page each (/cloud/settings/<section>).
+ *
+ * The menu, grouped, with "Search settings" atop it; on a phone, a select of
+ * the section with the search under it. The page shows the blocks registered
+ * for its section (settings_registry.js), and a save bar that floats at the
+ * bottom while something on the page is unsaved. The bar covers the page
+ * only: leaving it with unsaved changes asks first, so another section never
+ * holds edits of its own.
+ *
+ * Each block keeps its own form and joins the bar through
+ * ``env.registerSettingsSave(key, save, state, writeOnly)`` once it loaded:
+ * the bar counts the fields of its form that differ from what was loaded or
+ * last saved, checks them by their declarations before saving, sends only
+ * the blocks that changed, and puts a server error under its field when the
+ * answer names one. ``writeOnly`` are fields the server keeps and never
+ * shows back (secrets), empty again once saved.
+ */
+
+import {
+    Component, onMounted, onPatched, onWillUnmount, onWillUpdateProps, reactive, useState,
+    useSubEnv, batched,
+} from "@odoo/owl";
+import { _t } from "@web/core/l10n/translation";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { confirmVia } from "../../utils/use_confirm";
+import {
+    blocksOf, fieldProblem, sectionFor, settingField, settingsMenu,
+} from "./settings_registry";
+import { SettingsSearch } from "./settings_search_box";
+
+/** How long the field the search led to stays marked, in ms. */
+export const FOUND_MS = 2500;
+
+/**
+ * The fields of a form that differ from a snapshot of it.
+ *
+ * @param {object} form the form as it is
+ * @param {Object<string, string>} saved each field's JSON when last saved
+ * @returns {string[]} the keys that changed
+ */
+export function changedKeys(form, saved) {
+    return Object.keys(form).filter(
+        (key) => JSON.stringify(form[key]) !== (saved || {})[key],
+    );
+}
+
+/**
+ * A snapshot of a form: each field as JSON, to compare with later.
+ *
+ * @param {object} form the form
+ * @returns {Object<string, string>} the snapshot
+ */
+export function snapshot(form) {
+    return Object.fromEntries(
+        Object.entries(form).map(([key, value]) => [key, JSON.stringify(value)]),
+    );
+}
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";
-    static components = { IcConfirmDialog, CoreRatesTab, GitProvidersTab, RlSelect };
+    static components = { IcConfirmDialog, SettingsSearch };
     static props = {
-        initialTab: { type: String, optional: true },
+        // The section the URL names; General when none.
+        section: { type: String, optional: true },
+        // The field the URL's #<field> points at.
+        field: { type: String, optional: true },
+        // The ?tab= of a link from before the sections.
+        tab: { type: String, optional: true },
     };
 
     setup() {
         this.state = useState({
-            tab: this.props.initialTab || "general",
-            // Tabs drawn by a component of their own (Rates, and those
-            // a module on top adds) keep their form in it, and register
-            // its save below. They stay mounted once opened, hidden while
-            // another tab shows: unmounting one dropped what was typed
-            // in it, and its save handler with it.
-            openedTabs: { [this.props.initialTab || "general"]: true },
-            loading: true,
             saving: false,
-            testing: false,
-            hasPrivateKey: false,
-            hasWebhookSecret: false,
-            hasPat: false,
-            configured: false,
-            isHttps: window.location.protocol === "https:",
-            slug: "",
-            installUrl: "",
-            showManual: false,
-            backupBackends: [],
-            // Observability: the token is write-only, so only its
-            // presence is tracked client-side.
-            hasMetricsToken: false,
-            hasAcmeDnsToken: false,
-            centralDirect: null,
-            // Advanced metrics fields stay folded: with the button doing
-            // the wiring, a single-host setup never needs them, and six
-            // visible fields read as six decisions to make.
-            showAdvancedMetrics: false,
-            deployingCentral: false,
-            centralHostId: null,
-            hosts: [],
-            form: {
-                // General
-                autoassign_enabled: false,
-                default_backup_backend_id: null,
-                audit_log_retention_days: 90,
-                job_log_retention_days: 30,
-                job_retention_days: 180,
-                // Moves between hosts
-                move_frozen_source_hours: 48,
-                move_cut_alert_seconds: 90,
-                staging_autopurge_days: 90,
-                default_backup_alert_threshold_pct: 80,
-                github_event_retention_days: 90,
-                github_event_truncate_days: 7,
-                // Container log rotation (per service, in the compose override)
-                container_log_max_size: "10m",
-                container_log_max_file: 3,
-                odoo_log_archive_days: 60,
-                log_download_max_mb: 64,
-                log_search_max_files: 60,
-                log_search_timeout_s: 30,
-                // Edge
-                trusted_proxy_ranges: "",
-                // Where the metrics central is published
-                metrics_central_public_host: "",
-                metrics_central_operator_sources: "",
-                // The platform's own servers' direct path
-                metrics_central_direct_host: "",
-                acme_dns_cloudflare_token: "",
-                // GitHub
-                app_id: "",
-                installation_id: "",
-                webhook_secret: "",
-                private_key: "",
-                github_pat: "",
-            },
-            // Read-only, derived server-side: what the proxy ranges
-            // actually resolve to, and where from. Kept out of `form` so
-            // they are never sent back on save.
-            effectiveProxyRanges: [],
-            trustedProxySource: "none",
-            // Inline feedback for GitHub action buttons (test, detect)
-            ghActionMsg: null,
+            // An error of the save that belongs to no field, atop the page.
+            pageError: null,
+            // What the search was for when it led here ("Back to results").
+            resultFor: null,
             confirmDialog: null,
-            auditPurging: false,
         });
-
-        // Save registry: a tab component registers, once mounted and loaded,
-        // how to save and its state, with the fields it empties once saved
-        // (secrets the server keeps and never shows back). Save sends a tab
-        // only while its form differs from what was loaded or last sent,
-        // and such a difference is an unsaved change here, as one in
-        // Settings' own form is. A tab that gives no state is saved every
-        // time, as before. Each names the tab it is drawn on, so the
-        // footer shows on that tab only while something there can be
-        // saved: not while it shows a load error and Retry, nor when it
-        // is read-only and never registers. One that names none keeps the
-        // footer on every tab, as before.
-        const _saveHandlers = new Map();
-        // The tab's state is read through a proxy of Settings' own, so an
-        // edit there re-renders the footer here. Reading its form once at
-        // registration subscribes to it without rendering anything.
+        // Shared with the rows: what was saved, what is wrong, what the
+        // search found. Rows subscribe to it with useState.
+        this.store = useState(reactive({ saved: {}, errors: {}, found: null }));
+        this._tabs = new Map();
         const rerender = batched(() => this.render());
         useSubEnv({
-            registerSettingsSave: (key, save, state, writeOnly = [], tabName = null) => {
-                const tab = {
-                    save, writeOnly, tabName, state: state && reactive(state, rerender),
-                };
+            registerSettingsSave: (key, save, state, writeOnly = []) => {
+                const tab = { save, writeOnly, state: state && reactive(state, rerender) };
+                this._tabs.set(key, tab);
                 if (tab.state) {
-                    tab.saved = JSON.stringify(tab.state.form);
+                    this.store.saved[key] = snapshot(tab.state.form);
                 }
-                _saveHandlers.set(key, tab);
                 rerender();
             },
             unregisterSettingsSave: (key) => {
-                _saveHandlers.delete(key);
+                this._tabs.delete(key);
+                delete this.store.saved[key];
                 rerender();
             },
+            settingsForm: {
+                store: this.store,
+                isChanged: (id, store) => this.isChanged(id, store),
+                setError: (id, message) => this.setError(id, message),
+            },
         });
-        this._saveHandlers = _saveHandlers;
-        this._savedForm = null;
 
-        // Retention fields are numeric and can reach the controller
-        // as strings from <input type=number>; reject negative/NaN
-        // client-side so the server isn't the one rendering the error.
-        const nonNegativeInt = (msg) => (v) => {
-            if (v == null || String(v).trim() === "") return null;
-            const n = Number(v);
-            return (Number.isInteger(n) && n >= 0) ? null : msg;
-        };
-        this.validator = useFormValidation(() => ({
-            audit_log_retention_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            job_log_retention_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            job_retention_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            move_frozen_source_hours: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            move_cut_alert_seconds: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            staging_autopurge_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            github_event_retention_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            github_event_truncate_days: [
-                nonNegativeInt(_t("Must be a positive integer")),
-            ],
-            // Docker's max-size grammar, one canonical spelling; the
-            // server lower-cases and trims, so "10M " is fine to type.
-            container_log_max_size: [
-                (v) => (/^[1-9]\d*[kmg]$/i.test(String(v ?? "").trim())
-                    ? null
-                    : _t("Use a positive integer followed by k, m or g (e.g. 10m)")),
-            ],
-            container_log_max_file: [
-                (v) => {
-                    const n = Number(v);
-                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1");
-                },
-            ],
-            odoo_log_archive_days: [
-                (v) => {
-                    const n = Number(v);
-                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 day");
-                },
-            ],
-            log_download_max_mb: [
-                (v) => {
-                    const n = Number(v);
-                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 MB");
-                },
-            ],
-            log_search_max_files: [
-                (v) => {
-                    const n = Number(v);
-                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 day");
-                },
-            ],
-            log_search_timeout_s: [
-                (v) => {
-                    const n = Number(v);
-                    return (Number.isInteger(n) && n >= 5) ? null : _t("Must be at least 5 seconds");
-                },
-            ],
-        }));
+        this._pendingField = this.props.field || null;
+        this._foundTimer = null;
+        onWillUpdateProps((nextProps) => this._onWillUpdateProps(nextProps));
+        onMounted(() => this._showPendingField());
+        onPatched(() => this._showPendingField());
+        onWillUnmount(() => clearTimeout(this._foundTimer));
 
-        onWillStart(() => this.loadConfig());
-        onMounted(() => {
-            this._checkUrlParams();
-        });
+        this._onKeydown = (ev) => this.onKeydown(ev);
+        onMounted(() => window.addEventListener("keydown", this._onKeydown));
+        onWillUnmount(() => window.removeEventListener("keydown", this._onKeydown));
+
         useNavGuard(
-            () => this.hasUnsavedChanges,
-            (opts) => this._confirm(opts),
-        );
-    }
-
-    get hasUnsavedChanges() {
-        if (this._savedForm && JSON.stringify(this.state.form) !== this._savedForm) {
-            return true;
-        }
-        return [...this._saveHandlers.values()].some(
-            (tab) => tab.state && this._tabChanged(tab),
+            () => this.isDirty,
+            (opts) => this._confirm({
+                ...opts,
+                title: _t("Leave without saving?"),
+                message: _t("The changes on this page are not saved. Leave it and lose them?"),
+                confirmLabel: _t("Leave without saving"),
+            }),
         );
     }
 
     /**
-     * Whether the tab on screen has something Save would send.
+     * Remember a field the URL now points at, and drop the errors of a
+     * section left behind.
      *
-     * Settings' own tabs always do. Another tab does once a section drawn
-     * on it registered, which it does only when it loaded and can be
-     * edited; a section that names no tab counts for every one.
-     *
-     * @returns {boolean} true when the footer with Save shows
+     * @param {object} nextProps the props the page is about to get
      */
-    get canSaveTab() {
-        if (OWN_SETTINGS_TABS.includes(this.state.tab)) {
-            return true;
+    _onWillUpdateProps(nextProps) {
+        if (nextProps.field && nextProps.field !== this.props.field) {
+            this._pendingField = nextProps.field;
         }
-        return [...this._saveHandlers.values()].some(
-            (tab) => !tab.tabName || tab.tabName === this.state.tab,
-        );
-    }
-
-    /**
-     * Whether a registered tab has something to save.
-     *
-     * @param {{state?: object, saved?: string}} tab a save registry entry
-     * @returns {boolean} true when its form differs from what was loaded
-     *     or last saved, or when the tab gave no state to compare
-     */
-    _tabChanged(tab) {
-        return !tab.state || JSON.stringify(tab.state.form) !== tab.saved;
-    }
-
-    /**
-     * Backup backend options for the RlSelect, derived from loaded backends.
-     * @returns {{value: number, label: string}[]} option list (numeric ids preserved)
-     */
-    get backupBackendOptions() {
-        return this.state.backupBackends.map((bb) => ({ value: bb.id, label: bb.name }));
-    }
-
-    _checkUrlParams() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("setup_ok") === "1") {
-            this.state.tab = "github";
-            this.env.toast?.success(_t("GitHub App created! Now install it on your organization to complete the setup."));
-            history.replaceState(null, "", window.location.pathname);
-        } else if (params.has("setup_error")) {
-            const code = params.get("setup_error") || "unknown";
-            const msg = code === "requires_https"
-                ? _t("Automatic setup requires HTTPS. Please create the GitHub App manually and paste the credentials below.")
-                : _t("GitHub App setup failed (%s). Please try again or configure manually.").replace('%s', code);
-            this.state.tab = "github";
-            this.env.toast?.[code === "requires_https" ? "info" : "error"](msg);
-            history.replaceState(null, "", window.location.pathname);
+        if (nextProps.section !== this.props.section) {
+            this.store.errors = {};
+            this.state.pageError = null;
         }
     }
 
-    /**
-     * Describe where the effective proxy ranges come from.
-     *
-     * @returns {string} a phrase for the read-only line, or "".
-     */
-    proxySourceLabel() {
-        return {
-            settings: _t("the override below"),
-            cloudflare: _t("the platform's CDN, refreshed daily"),
-        }[this.state.trustedProxySource] || "";
+    // ── What is on screen ─────────────────────────────────────────────
+
+    /** @returns {string} the id of the section on screen */
+    get sectionId() {
+        const id = sectionFor(this.props.section, this.props.tab);
+        const all = this.menu.flatMap((group) => group.sections.map((s) => s.id));
+        return all.includes(id) ? id : (all[0] || id);
     }
 
-    /**
-     * What the central's direct name is doing, in a sentence, or "".
-     *
-     * @returns {string} the sentence, empty without a name or a status.
-     */
-    get centralDirectStatus() {
-        const status = this.state.centralDirect;
-        if (!status || !this.state.form.metrics_central_direct_host) {
-            return "";
-        }
-        if (status.state === "ok") {
-            return _t("Working, certificate valid until %s").replace(
-                "%s", (status.cert_expires || "").slice(0, 10));
-        }
-        if (status.state === "failing") {
-            return _t("Failing since %s").replace(
-                "%s", (status.failing_since || "").slice(0, 16));
-        }
-        return _t("Not checked yet");
+    /** @returns {object[]} the groups of the menu, with their sections */
+    get menu() {
+        return settingsMenu(this.env);
     }
 
-    async loadConfig() {
-        this.state.loading = true;
-        try {
-            const [data, general, backends] = await Promise.all([
-                rpc("/cloud/get_github_app", {}),
-                rpc("/cloud/get_general_settings", {}),
-                rpc("/cloud/get_backup_backends", {}),
-            ]);
-            this.state.configured = data.configured || false;
-            this.state.form.app_id = data.app_id || "";
-            this.state.form.installation_id = data.installation_id || "";
-            this.state.form.webhook_secret = "";
-            this.state.form.private_key = "";
-            this.state.form.github_pat = "";
-            this.state.hasPrivateKey = data.has_private_key || false;
-            this.state.form.metrics_enabled = !!general.metrics_enabled;
-            this.state.form.metrics_central_url = general.metrics_central_url || "";
-            this.state.form.metrics_remote_write_url = general.metrics_remote_write_url || "";
-            this.state.form.metrics_remote_write_token = "";
-            this.state.form.metrics_retention_days = general.metrics_retention_days || 90;
-            this.state.form.metrics_ship_security_logs = !!general.metrics_ship_security_logs;
-            this.state.form.grafana_base_url = general.grafana_base_url || "";
-            this.state.form.metrics_central_public_host =
-                general.metrics_central_public_host || "";
-            this.state.form.metrics_central_operator_sources =
-                general.metrics_central_operator_sources || "";
-            this.state.form.metrics_central_direct_host = general.metrics_central_direct_host || "";
-            this.state.form.acme_dns_cloudflare_token = "";
-            this.state.centralDirect = general.metrics_central_direct || null;
-            this.state.hasAcmeDnsToken = !!general.has_acme_dns_token;
-            this.state.hasMetricsToken = !!general.has_metrics_remote_write_token;
-            this.state.form.trusted_proxy_ranges = general.trusted_proxy_ranges || "";
-            this.state.effectiveProxyRanges =
-                general.effective_trusted_proxy_ranges || [];
-            this.state.trustedProxySource = general.trusted_proxy_source || "none";
-            // Hosts for the central's destination picker. Non-fatal: the
-            // rest of Settings must still work if this one call fails.
-            try {
-                const hres = await rpc("/cloud/get_hosts", {});
-                this.state.hosts = hres.hosts || hres || [];
-            } catch {
-                this.state.hosts = [];
+    /** @returns {object|null} the section on screen, with its group's title */
+    get section() {
+        for (const group of this.menu) {
+            const section = group.sections.find((s) => s.id === this.sectionId);
+            if (section) {
+                return { ...section, groupTitle: group.title };
             }
-            this.state.hasWebhookSecret = data.has_webhook_secret || false;
-            this.state.hasPat = data.has_pat || false;
-            this.state.slug = data.slug || "";
-            this.state.installUrl = data.install_url || "";
-            this.state.form.autoassign_enabled = general.autoassign_enabled || false;
-            this.state.form.default_backup_backend_id = general.default_backup_backend_id || null;
-            this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
-            this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
-            this.state.form.job_retention_days = general.job_retention_days ?? 180;
-            this.state.form.move_frozen_source_hours = general.move_frozen_source_hours ?? 48;
-            this.state.form.move_cut_alert_seconds = general.move_cut_alert_seconds ?? 90;
-            this.state.form.staging_autopurge_days = general.staging_autopurge_days ?? 90;
-            this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
-            this.state.form.github_event_retention_days = general.github_event_retention_days ?? 90;
-            this.state.form.github_event_truncate_days = general.github_event_truncate_days ?? 7;
-            this.state.form.container_log_max_size = general.container_log_max_size || "10m";
-            this.state.form.container_log_max_file = general.container_log_max_file || 3;
-            this.state.form.odoo_log_archive_days = general.odoo_log_archive_days || 60;
-            this.state.form.log_download_max_mb = general.log_download_max_mb || 64;
-            this.state.form.log_search_max_files = general.log_search_max_files || 60;
-            this.state.form.log_search_timeout_s = general.log_search_timeout_s || 30;
-            this.state.backupBackends = backends?.items || backends || [];
-            this._savedForm = JSON.stringify(this.state.form);
-        } catch {
-            this.env.toast?.error(_t("Failed to load configuration."));
-        } finally {
-            this.state.loading = false;
         }
+        return null;
     }
 
-    get currentStep() {
-        if (!this.state.configured) return 1;
-        if (!this.state.form.installation_id) return 2;
-        return 3;
+    /** @returns {string} the line that names what the search was for */
+    get resultForText() {
+        return _t("Result for “%s”.", this.state.resultFor || "");
+    }
+
+    /** @returns {object[]} the blocks of the section on screen */
+    get blocks() {
+        return blocksOf(this.sectionId, this.env);
+    }
+
+    // ── Unsaved changes ───────────────────────────────────────────────
+
+    /**
+     * Whether a field differs from what was loaded or last saved.
+     *
+     * @param {string} id the field's id
+     * @param {object} [store] the store as the caller reads it, so the
+     *     caller re-renders when a save moves the snapshot
+     * @returns {boolean}
+     */
+    isChanged(id, store = this.store) {
+        for (const [key, tab] of this._tabs) {
+            if (tab.state && id in tab.state.form) {
+                return JSON.stringify(tab.state.form[id]) !== (store.saved[key] || {})[id];
+            }
+        }
+        return false;
+    }
+
+    /** @returns {number} how many settings on the page are unsaved */
+    get changedCount() {
+        let count = 0;
+        for (const [key, tab] of this._tabs) {
+            if (tab.state) {
+                count += changedKeys(tab.state.form, this.store.saved[key]).length;
+            }
+        }
+        return count;
+    }
+
+    /** @returns {boolean} whether anything on the page is unsaved */
+    get isDirty() {
+        return this.changedCount > 0;
+    }
+
+    /** @returns {number} how many fields show an error */
+    get errorCount() {
+        return Object.values(this.store.errors).filter(Boolean).length;
+    }
+
+    /** @returns {string} what the save bar says */
+    get barText() {
+        const errors = this.errorCount;
+        if (errors) {
+            return errors === 1
+                ? _t("1 field needs attention")
+                : _t("%s fields need attention", errors);
+        }
+        return _t("Unsaved changes");
+    }
+
+    /** @returns {string} how many settings the bar would save */
+    get barCount() {
+        const n = this.changedCount;
+        return n === 1 ? _t("1 setting") : _t("%s settings", n);
     }
 
     /**
-     * "Check installation": reload, and when the webhook took no
-     * installation, ask GitHub for them. The webhook takes one by itself
-     * only on the account that owns the App (the App is public, anyone may
-     * install it); any other is the manager's to take, here, with its
-     * account named.
+     * Show, or clear, what is wrong with a field.
+     *
+     * @param {string} id the field's id
+     * @param {string|null} message how to fix it, or null when it is fine
      */
-    async refresh() {
-        await this.loadConfig();
-        if (!this.state.form.installation_id) {
-            await this.detectInstallation();
-        }
-        if (this.state.form.installation_id) {
-            this.env.toast?.success(_t("Installation detected! Your GitHub App is now fully connected."));
+    setError(id, message) {
+        if (message) {
+            this.store.errors[id] = message;
         } else {
-            this.env.toast?.info(_t("Installation not detected yet. Install the app on your GitHub organization and try again."));
+            delete this.store.errors[id];
         }
-    }
-
-    onInput(field, ev) {
-        this.state.form[field] = ev.target.value;
-    }
-
-    onIntInput(field, ev) {
-        this.state.form[field] = parseInt(ev.target.value, 10) || 0;
-    }
-
-    createOnGitHub() {
-        window.location.href = "/cloud/github/setup";
-    }
-
-    openInstallUrl() {
-        const url = this.state.installUrl || "https://github.com/settings/installations";
-        window.open(url, "_blank");
-    }
-
-    // ── Unified save ────────────────────────────────────────────────────
-
-    /** Options for the central's destination host picker. */
-    get centralHostOptions() {
-        return this.state.hosts.map((h) => ({ value: h.id, label: h.name }));
     }
 
     /**
-     * Queue the metrics central deployment on the chosen host.
+     * Check every field the page's forms hold that Settings declares.
      *
-     * The destination is a parameter rather than a fixed host, which is
-     * what makes "co-locate now, move to its own VPS later" a re-run
-     * instead of a migration.
+     * @returns {Object<string, string>} the problems, by field id
      */
-    /**
-     * One line describing where observability currently stands.
-     *
-     * The form used to show six fields and no answer to "is this
-     * working?". With enrolment automatic, that question is the only one
-     * an operator actually has on this screen.
-     */
-    get observabilityStatus() {
-        if (!this.state.form.metrics_enabled) {
-            return _t("Off. Pick a host above and enable it.");
+    _problems() {
+        const problems = {};
+        for (const [, tab] of this._tabs) {
+            if (!tab.state) {
+                continue;
+            }
+            for (const [id, value] of Object.entries(tab.state.form)) {
+                const field = settingField(id);
+                const problem = field && fieldProblem(field, value, tab.state.form);
+                if (problem) {
+                    problems[id] = problem;
+                }
+            }
         }
-        if (!this.state.form.metrics_central_url) {
-            return _t("On, but no query endpoint is set — nothing can be read back.");
-        }
-        if (!this.state.form.grafana_base_url) {
-            return _t("Collecting. Charts are hidden until a Grafana URL is set.");
-        }
-        return _t("Collecting, with charts available.");
+        return problems;
     }
 
-    async deployCentral() {
-        if (this.state.deployingCentral) return;
-        const hostId = this.state.centralHostId;
-        if (!hostId) {
-            this.env.toast?.error(_t("Pick the host that should run it."));
+    /** Put the focus on the first field in error, in the page's order. */
+    _focusFirstError() {
+        // After the render that opened an Advanced holding it.
+        setTimeout(() => {
+            const row = [...document.querySelectorAll(".ic-set-page .ic-set-row")]
+                .find((el) => this.store.errors[el.dataset.field]);
+            row?.querySelector("input, textarea, button, [tabindex]")?.focus();
+        });
+    }
+
+    /**
+     * Save the page: check it, then send each block that changed.
+     *
+     * What is sent, not what the form holds once the answers are in, is
+     * what counts as saved: an edit made while a request is out stays
+     * unsaved.
+     */
+    async save() {
+        if (this.state.saving) {
             return;
         }
-        this.state.deployingCentral = true;
-        try {
-            const res = await rpc("/cloud/monitoring/deploy_central", {
-                host_id: hostId,
-            });
-            if (res?.ok) {
-                await announceJob(this.env.toast, res.job_id);
-            } else {
-                this.env.toast?.error(res?.error || _t("Could not queue it."));
-            }
-        } catch (e) {
-            this.env.toast?.error(
-                e.data?.message || e.message || _t("Could not queue it."),
-            );
-        } finally {
-            this.state.deployingCentral = false;
-        }
-    }
-
-    async save() {
-        if (this.state.saving) return;
-        const { isValid, firstError } = this.validator.validate(this.state.form);
-        if (!isValid) {
-            this.env.toast?.error(firstError);
+        const problems = this._problems();
+        this.store.errors = problems;
+        if (Object.keys(problems).length) {
+            this._focusFirstError();
             return;
         }
         this.state.saving = true;
-        const errors = [];
-        // What is sent, not what the form holds once the answers are in, is
-        // what gets saved: an edit made while a request is out stays unsaved.
-        const sent = { ...this.state.form };
-
-        // General settings
-        try {
-            const res = await rpc("/cloud/save_general_settings", {
-                autoassign_enabled: this.state.form.autoassign_enabled,
-                default_backup_backend_id: this.state.form.default_backup_backend_id,
-                audit_log_retention_days: this.state.form.audit_log_retention_days,
-                job_log_retention_days: this.state.form.job_log_retention_days,
-                job_retention_days: this.state.form.job_retention_days,
-                move_frozen_source_hours: this.state.form.move_frozen_source_hours,
-                move_cut_alert_seconds: this.state.form.move_cut_alert_seconds,
-                staging_autopurge_days: this.state.form.staging_autopurge_days,
-                default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
-                github_event_retention_days: this.state.form.github_event_retention_days,
-                github_event_truncate_days: this.state.form.github_event_truncate_days,
-                container_log_max_size: this.state.form.container_log_max_size,
-                container_log_max_file: this.state.form.container_log_max_file,
-                odoo_log_archive_days: this.state.form.odoo_log_archive_days,
-                log_download_max_mb: this.state.form.log_download_max_mb,
-                log_search_max_files: this.state.form.log_search_max_files,
-                log_search_timeout_s: this.state.form.log_search_timeout_s,
-                metrics_enabled: this.state.form.metrics_enabled,
-                metrics_central_url: this.state.form.metrics_central_url,
-                metrics_remote_write_url: this.state.form.metrics_remote_write_url,
-                metrics_remote_write_token: this.state.form.metrics_remote_write_token,
-                metrics_retention_days: this.state.form.metrics_retention_days,
-                metrics_ship_security_logs: this.state.form.metrics_ship_security_logs,
-                grafana_base_url: this.state.form.grafana_base_url,
-                trusted_proxy_ranges: this.state.form.trusted_proxy_ranges,
-                metrics_central_public_host: this.state.form.metrics_central_public_host,
-                metrics_central_operator_sources:
-                    this.state.form.metrics_central_operator_sources,
-                metrics_central_direct_host: this.state.form.metrics_central_direct_host,
-                acme_dns_cloudflare_token: this.state.form.acme_dns_cloudflare_token,
-            });
-            if (res && res.ok === false) {
-                // The range lists and the central's name are refused by a
-                // model constraint rather than trimmed, so the message
-                // names what is wrong.
-                this.env.toast?.error(res.error || _t("General settings"));
-                errors.push(_t("General settings"));
-            }
-        } catch {
-            errors.push(_t("General settings"));
-        }
-
-        // GitHub App (only if configured / has app_id)
-        if (this.state.form.app_id) {
-            try {
-                const buildVals = (force) => ({
-                    app_id: this.state.form.app_id,
-                    installation_id: this.state.form.installation_id,
-                    webhook_secret: this.state.form.webhook_secret,
-                    private_key: this.state.form.private_key,
-                    ...(force ? { force: true } : {}),
-                });
-                let result = await rpc("/cloud/save_github_app", { vals: buildVals(false) });
-                if (!result.ok && result.requires_force) {
-                    const confirmed = await this._confirm({
-                        title: _t("Overwrite GitHub App credentials?"),
-                        message: _t(
-                            "You are about to overwrite the existing %s. " +
-                            "This invalidates the previous credentials and " +
-                            "cannot be undone. Continue?"
-                        ).replace('%s', result.requires_force.join(', ')),
-                        confirmLabel: _t("Overwrite"),
-                        isDanger: true,
-                    });
-                    if (!confirmed) {
-                        result = { ok: true, cancelled: true };
-                    } else {
-                        result = await rpc("/cloud/save_github_app", { vals: buildVals(true) });
-                    }
-                }
-                if (result.ok && !result.cancelled) {
-                    this.state.hasPrivateKey = true;
-                    this.state.configured = true;
-                    this.state.form.private_key = "";
-                    sent.private_key = "";
-                } else if (result.error) {
-                    errors.push(result.error);
-                }
-            } catch {
-                errors.push(_t("GitHub App"));
-            }
-        }
-
-        // GitHub PAT (only if a new value was entered)
-        const pat = (this.state.form.github_pat || "").trim();
-        if (pat) {
-            try {
-                await rpc("/cloud/save_github_pat", { pat });
-                this.state.hasPat = true;
-                this.state.form.github_pat = "";
-                sent.github_pat = "";
-            } catch {
-                errors.push(_t("GitHub PAT"));
-            }
-        }
-
-        // Registered tabs, those with something to save: an untouched form
-        // is not sent again, since saving can have effects on the server.
-        for (const [key, tab] of this._saveHandlers) {
-            if (!this._tabChanged(tab)) {
+        this.state.pageError = null;
+        const failures = [];
+        for (const [key, tab] of [...this._tabs]) {
+            if (tab.state && !changedKeys(tab.state.form, this.store.saved[key]).length) {
                 continue;
             }
-            const tabSent = tab.state && { ...tab.state.form };
+            const sent = tab.state && { ...tab.state.form };
             try {
                 const result = await tab.save();
-                if (result && !result.ok && result.error) {
-                    errors.push(result.error);
-                }
-                if (tabSent && result?.ok !== false) {
-                    for (const field of tab.writeOnly) {
-                        tabSent[field] = "";
+                if (result && result.ok === false) {
+                    if (result.field && settingField(result.field)) {
+                        this.setError(result.field, result.error || _t("Not saved."));
+                    } else {
+                        failures.push(result.error || _t("Not saved."));
                     }
-                    tab.saved = JSON.stringify(tabSent);
+                    continue;
                 }
-            } catch {
-                errors.push(key);
+                if (sent && this._tabs.get(key) === tab) {
+                    for (const field of tab.writeOnly) {
+                        sent[field] = "";
+                    }
+                    this.store.saved[key] = snapshot(sent);
+                }
+            } catch (error) {
+                failures.push(error?.data?.message || error?.message || _t("Not saved."));
             }
         }
-
         this.state.saving = false;
-        if (errors.length) {
-            this.env.toast?.error(_t("Failed to save: %s").replace('%s', errors.join(", ")));
-        } else {
-            this.env.toast?.success(_t("Changes saved"));
-            this._savedForm = JSON.stringify(sent);
+        if (failures.length) {
+            this.state.pageError = failures.join(" ");
+        }
+        if (this.errorCount) {
+            this._focusFirstError();
+        }
+        if (!failures.length && !this.errorCount) {
+            this.env.toast?.success(_t("Saved"));
         }
     }
 
-    // ── General tab ─────────────────────────────────────────────────────
-
-    toggleAutoassign() {
-        this.state.form.autoassign_enabled = !this.state.form.autoassign_enabled;
-        this.state.saved = false;
-    }
-
-    onBackendChange(ev) {
-        const val = ev.target.value;
-        this.state.form.default_backup_backend_id = val ? parseInt(val, 10) : null;
-        this.state.saved = false;
-    }
-
-    // ── GitHub tab actions (inline feedback, not save) ──────────────────
-
-    async detectInstallation() {
-        this.state.ghActionMsg = null;
-        try {
-            const result = await rpc("/cloud/detect_github_installation", {});
-            if (result.ok && result.auto_updated) {
-                this.state.form.installation_id = result.installation_id;
-                this.state.ghActionMsg = {
-                    type: "success",
-                    message: _t("Installation detected: %s (%s). Saved automatically.").replace('%s', result.installation_id).replace('%s', result.account),
-                };
-            } else if (result.ok && result.installations) {
-                const list = result.installations
-                    .map(i => `${i.account_login} (ID: ${i.id})`)
-                    .join(", ");
-                this.state.ghActionMsg = {
-                    type: "info",
-                    message: _t("Multiple installations found: %s. Enter the correct ID manually.").replace('%s', list),
-                };
-                this.state.showManual = true;
-            } else {
-                this.state.ghActionMsg = { type: "error", message: result.error || _t("Detection failed.") };
+    /** Put every block back as it was loaded or last saved. */
+    discard() {
+        for (const [key, tab] of this._tabs) {
+            const saved = this.store.saved[key];
+            if (tab.state && saved) {
+                for (const field of changedKeys(tab.state.form, saved)) {
+                    tab.state.form[field] = field in saved ? JSON.parse(saved[field]) : undefined;
+                }
             }
-        } catch {
-            this.state.ghActionMsg = { type: "error", message: _t("Unexpected error during detection.") };
+        }
+        this.store.errors = {};
+        this.state.pageError = null;
+    }
+
+    // ── Moving around ─────────────────────────────────────────────────
+
+    /**
+     * Open a section; the page asks first when something is unsaved.
+     *
+     * @param {string} sectionId the section's id
+     */
+    openSection(sectionId) {
+        this.state.resultFor = null;
+        this.env.navigate("settings", { section: sectionId });
+    }
+
+    /**
+     * The phone's select changed: open that section, or put the select
+     * back when leaving was refused.
+     *
+     * @param {Event} ev the select's change event
+     */
+    async onSelectSection(ev) {
+        const target = ev.target;
+        await this.env.navigate("settings", { section: target.value });
+        target.value = this.sectionId;
+    }
+
+    /**
+     * The search picked a field: open its section on it.
+     *
+     * @param {object} field the index entry
+     * @param {string} query what was typed, for "Back to results"
+     */
+    async onPickField(field, query) {
+        this.state.resultFor = query;
+        this._pendingField = field.id;
+        await this.env.navigate("settings", { section: field.section, field: field.id });
+        this._showPendingField();
+    }
+
+    /**
+     * The search picked a page outside Settings.
+     *
+     * @param {object} entry the elsewhere entry
+     */
+    onPickElsewhere(entry) {
+        this.env.navigate(entry.route, entry.params || {});
+    }
+
+    /** Open the search again on what led here. */
+    backToResults() {
+        const query = this.state.resultFor;
+        this.state.resultFor = null;
+        const box = [...document.querySelectorAll(".ic-set-search input")]
+            .find((input) => input.offsetParent !== null);
+        if (box) {
+            box.value = query;
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+            box.focus();
         }
     }
 
-    async testConnection() {
-        this.state.testing = true;
-        this.state.ghActionMsg = null;
-        try {
-            const result = await rpc("/cloud/test_github_connection", {});
-            if (result.ok) {
-                this.state.ghActionMsg = {
-                    type: "success",
-                    message: _t("Connected — App: %s (ID: %s)").replace('%s', result.app_name || "").replace('%s', result.app_id || ""),
-                };
-            } else {
-                this.state.ghActionMsg = { type: "error", message: result.error || _t("Connection failed.") };
+    /**
+     * Mark, centre and focus the field the URL or the search points at,
+     * once its row is on screen.
+     */
+    _showPendingField() {
+        const id = this._pendingField;
+        if (!id || !document.getElementById(`ic-set-${id}`)) {
+            return;
+        }
+        this._pendingField = null;
+        this.store.found = id;
+        clearTimeout(this._foundTimer);
+        // After the render that opened an Advanced holding it.
+        setTimeout(() => {
+            const row = document.getElementById(`ic-set-${id}`);
+            if (!row) {
+                return;
             }
-        } catch {
-            this.state.ghActionMsg = { type: "error", message: _t("Unexpected error during connection test.") };
-        } finally {
-            this.state.testing = false;
+            row.scrollIntoView?.({ block: "center" });
+            row.querySelector("input, textarea, button")?.focus({ preventScroll: true });
+        });
+        this._foundTimer = setTimeout(() => {
+            if (this.store.found === id) {
+                this.store.found = null;
+            }
+        }, FOUND_MS);
+    }
+
+    /**
+     * ``/`` focuses the search unless typing in a field; ``Ctrl/⌘ S``
+     * saves the page.
+     *
+     * @param {KeyboardEvent} ev
+     */
+    onKeydown(ev) {
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === "s" || ev.key === "S")) {
+            ev.preventDefault();
+            if (this.isDirty) {
+                this.save();
+            }
+            return;
         }
-    }
-
-    // ── Shared utilities ────────────────────────────────────────────────
-
-    setTab(tab) {
-        this.state.tab = tab;
-        this.state.openedTabs[tab] = true;
-        this.state.ghActionMsg = null;
-    }
-
-    toggleManual() {
-        this.state.showManual = !this.state.showManual;
+        if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) {
+            return;
+        }
+        const target = ev.target;
+        if (target?.closest?.("input, textarea, select, [contenteditable='true']")) {
+            return;
+        }
+        const box = [...document.querySelectorAll(".ic-set-search input")]
+            .find((input) => input.offsetParent !== null);
+        if (box) {
+            ev.preventDefault();
+            box.focus();
+        }
     }
 
     /** Open the shared confirmation dialog. See utils/use_confirm.js. */
     _confirm(opts) {
         return confirmVia(this.state, opts);
-    }
-
-    async purgeAuditLogs() {
-        this.state.auditPurging = true;
-        try {
-            const result = await rpc("/cloud/purge_audit_logs", {
-                days: this.state.form.audit_log_retention_days,
-            });
-            if (result.ok) {
-                this.env.toast?.success(
-                    result.deleted
-                        ? _t("Deleted %s old audit log entries").replace('%s', result.deleted)
-                        : _t("No old entries to purge")
-                );
-            }
-        } catch {
-            this.env.toast?.error(_t("Failed to purge audit logs"));
-        } finally {
-            this.state.auditPurging = false;
-        }
-    }
-
-    async disconnectApp() {
-        const ok = await this._confirm({
-            title: _t("Disconnect GitHub App"),
-            message: _t("This will delete the current GitHub App configuration. You will need to create or configure a new app to restore the integration. Continue?"),
-            confirmLabel: _t("Disconnect"),
-            isDanger: true,
-        });
-        if (!ok) return;
-        try {
-            await rpc("/cloud/reset_github_app", {});
-            this.state.configured = false;
-            this.state.hasPrivateKey = false;
-            this.state.hasPat = false;
-            this.state.slug = "";
-            this.state.installUrl = "";
-            this.state.form.app_id = "";
-            this.state.form.installation_id = "";
-            this.state.form.webhook_secret = "";
-            this.state.form.private_key = "";
-            this.state.form.github_pat = "";
-            this.state.showManual = false;
-        } catch {
-            this.state.error = _t("Failed to disconnect the app.");
-        }
     }
 }

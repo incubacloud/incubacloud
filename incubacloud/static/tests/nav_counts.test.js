@@ -59,7 +59,7 @@ function standIn(Component, fields) {
 describe("nav counts — when a move asks them again", () => {
     test("changing section asks", () => {
         expect(_refreshesNavCounts("/cloud/projects/4", "/cloud/hosts/2")).toBe(true);
-        expect(_refreshesNavCounts("/cloud/hosts", "/cloud/settings?tab=general")).toBe(true);
+        expect(_refreshesNavCounts("/cloud/hosts", "/cloud/settings")).toBe(true);
         expect(_refreshesNavCounts("/cloud/settings", "/cloud/backup-backends/3")).toBe(true);
     });
 

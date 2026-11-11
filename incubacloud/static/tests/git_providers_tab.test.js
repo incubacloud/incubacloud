@@ -9,11 +9,12 @@ import {
     GitProvidersTab,
     VERIFY_WAIT_MS,
 } from "@incubacloud/components/git_providers_tab/git_providers_tab";
-import { OWN_SETTINGS_TABS, Settings } from "@incubacloud/components/settings/settings";
+import { GitProvidersBlock } from "@incubacloud/components/settings/core_settings_block";
+import { blocksOf } from "@incubacloud/components/settings/settings_registry";
 
 /**
- * Settings → Git providers: the tab saves each
- * provider on its own, so it is not one of Settings' own tabs, and a new
+ * Settings → Git providers: the section saves each
+ * provider on its own, so it never joins the page's save bar, and a new
  * credential starts as a project token with no token stored.
  */
 
@@ -23,9 +24,10 @@ describe("GitProvidersTab — class structure", () => {
         expect(Object.keys(GitProvidersTab.props)).toEqual([]);
     });
 
-    test("is a component of Settings, saved by itself", () => {
-        expect(Settings.components.GitProvidersTab).toBe(GitProvidersTab);
-        expect(OWN_SETTINGS_TABS.includes("git_providers")).toBe(false);
+    test("is the section Git providers of Settings, saved by itself", () => {
+        const [block] = blocksOf("git-providers", { features: {} });
+        expect(block.Component).toBe(GitProvidersBlock);
+        expect(GitProvidersBlock.components.GitProvidersTab).toBe(GitProvidersTab);
     });
 });
 

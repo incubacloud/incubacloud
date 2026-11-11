@@ -1,779 +1,92 @@
-<templates>
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
 
     <t t-name="incubacloud.Settings">
-        <div class="rl-page">
+        <div class="ic-set">
 
-            <!-- Header -->
-            <div class="rl-phead">
-                <div class="rl-htext">
-                    <h1 class="rl-ptitle">Settings</h1>
+            <!-- The menu of sections, grouped, with the search atop it -->
+            <nav class="ic-set-menu" aria-label="Settings sections">
+                <h1 class="ic-set-menu__title">Settings</h1>
+                <SettingsSearch onPickField.bind="onPickField" onPickElsewhere.bind="onPickElsewhere"/>
+                <t t-foreach="menu" t-as="group" t-key="group.id">
+                    <div class="ic-set-menu__cap" t-esc="group.title"/>
+                    <ul class="ic-set-menu__list">
+                        <li t-foreach="group.sections" t-as="item" t-key="item.id">
+                            <a t-att-href="'/cloud/settings/' + item.id"
+                               t-att-class="'ic-set-menu__item' + (item.id === sectionId ? ' ic-set-menu__item--on' : '')"
+                               t-att-aria-current="item.id === sectionId ? 'page' : undefined"
+                               t-on-click.prevent="() => this.openSection(item.id)">
+                                <t t-esc="item.title"/>
+                                <span t-if="item.id === sectionId and isDirty" class="ic-set-dot"
+                                      role="img" aria-label="Unsaved changes" title="Unsaved changes"/>
+                            </a>
+                        </li>
+                    </ul>
+                </t>
+            </nav>
+
+            <div class="ic-set-body">
+                <div class="ic-set-col">
+
+                    <!-- On a phone: the section as a select, the search under it -->
+                    <div class="ic-set-mobile">
+                        <h1 class="ic-set-menu__title">Settings</h1>
+                        <label class="visually-hidden" for="ic-set-section-select">Section</label>
+                        <select id="ic-set-section-select" class="ic-set-msel" t-on-change="onSelectSection">
+                            <t t-foreach="menu" t-as="group" t-key="group.id">
+                                <optgroup t-att-label="group.title">
+                                    <option t-foreach="group.sections" t-as="item" t-key="item.id"
+                                            t-att-value="item.id"
+                                            t-att-selected="item.id === sectionId">
+                                        <t t-esc="group.title"/> › <t t-esc="item.title"/>
+                                    </option>
+                                </optgroup>
+                            </t>
+                        </select>
+                        <SettingsSearch onPickField.bind="onPickField" onPickElsewhere.bind="onPickElsewhere"/>
+                    </div>
+
+                    <t t-if="section">
+                        <div class="ic-set-crumb">Settings › <t t-esc="section.groupTitle"/></div>
+                        <p t-if="state.resultFor" class="ic-set-resultfor">
+                            <i class="fa fa-search" aria-hidden="true"/>
+                            <t t-esc="resultForText"/>
+                            <button type="button" class="ic-set-link" t-on-click="backToResults">Back to results</button>
+                        </p>
+                        <h2 class="ic-set-title" t-esc="section.title"/>
+                        <p t-if="section.description" class="ic-set-desc" t-esc="section.description"/>
+
+                        <div t-if="state.pageError" class="ic-set-alert" role="alert">
+                            <i class="fa fa-exclamation-circle" aria-hidden="true"/>
+                            <t t-esc="state.pageError"/>
+                        </div>
+
+                        <div class="ic-set-page" t-key="sectionId">
+                            <t t-foreach="blocks" t-as="block" t-key="block.key">
+                                <t t-component="block.Component" t-props="block.props || {}"/>
+                            </t>
+                        </div>
+                    </t>
                 </div>
             </div>
 
-            <!-- Tabs -->
-            <div class="rl-tabs">
-                <button t-att-class="state.tab === 'general' ? 'rl-tab active' : 'rl-tab'"
-                        t-on-click="() => this.setTab('general')">General</button>
-                <button t-att-class="state.tab === 'github' ? 'rl-tab active' : 'rl-tab'"
-                        t-on-click="() => this.setTab('github')">GitHub</button>
-                <button t-att-class="state.tab === 'git_providers' ? 'rl-tab active' : 'rl-tab'"
-                        t-on-click="() => this.setTab('git_providers')">Git providers</button>
-                <button t-att-class="state.tab === 'rates' ? 'rl-tab active' : 'rl-tab'"
-                        t-on-click="() => this.setTab('rates')">Rates</button>
-                <t t-if="env.features?.observability?.configure !== false">
-                    <button t-att-class="state.tab === 'monitoring' ? 'rl-tab active' : 'rl-tab'"
-                        t-on-click="() => this.setTab('monitoring')">Monitoring</button>
-                </t>
+            <!-- The save bar: only with something unsaved on the page -->
+            <div t-if="isDirty or errorCount" class="ic-set-savebar" role="region" aria-label="Unsaved changes">
+                <span t-att-class="'ic-set-savebar__dot' + (errorCount ? ' ic-set-savebar__dot--err' : '')" aria-hidden="true"/>
+                <span class="ic-set-savebar__text" aria-live="polite" t-esc="barText"/>
+                <span class="ic-set-savebar__count"><t t-esc="barCount"/> · Ctrl S saves</span>
+                <span class="ic-set-savebar__gap"/>
+                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-set-savebar__discard"
+                        t-att-disabled="state.saving || null" t-on-click="discard">Discard</button>
+                <button type="button" class="rl-btn rl-btn-primary rl-btn-sm"
+                        t-att-disabled="state.saving || null" t-on-click="save">
+                    <t t-if="state.saving"><i class="fa fa-spinner fa-spin" aria-hidden="true"/> Saving…</t>
+                    <t t-else="">Save changes</t>
+                </button>
             </div>
-
-            <t t-if="state.loading">
-                <div class="ic-detail-loading">Loading…</div>
-            </t>
-
-            <t t-else="">
-                <div class="rl-settings-body">
-
-                <!-- ── General tab ─────────────────────────────────────────── -->
-                <t t-if="state.tab === 'general'">
-
-                    <!-- Host Auto-Assignment -->
-                    <div class="rl-saas-fsec">Host Auto-Assignment</div>
-                    <p class="rl-tabnote">
-                        When enabled, new instances will be automatically placed on the
-                        host with the most available resources. When disabled, a host
-                        must be selected manually.
-                    </p>
-                    <div class="rl-ftoggle">
-                        <div>
-                            <div class="rl-tl-label">Auto-assign hosts</div>
-                            <div class="rl-th">Enable automatic host assignment</div>
-                        </div>
-                        <button type="button"
-                                t-att-class="'rl-sw' + (state.form.autoassign_enabled ? ' on' : '')"
-                                t-on-click="toggleAutoassign"
-                                aria-label="Toggle automatic host assignment"/>
-                    </div>
-
-                    <!-- Default Backup Backend -->
-                    <div class="rl-saas-fsec">Default Backup Destination</div>
-                    <p class="rl-tabnote">
-                        The default backup backend used for production instances when
-                        no specific backend is selected at the project or instance level.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Backup Destination</label>
-                        <RlSelect options="backupBackendOptions"
-                                  value="state.form.default_backup_backend_id"
-                                  emptyLabel.translate="— None —"
-                                  onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
-                    </div>
-
-                    <!-- Audit Log Retention -->
-                    <div class="rl-saas-fsec">Audit Log Retention</div>
-                    <p class="rl-tabnote">
-                        Automatically purge audit log entries older than the specified
-                        number of days. Set to 0 to keep all records indefinitely.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Retention period (days)</label>
-                        <div class="rl-frow-inline">
-                            <input type="number" min="0"
-                                   t-att-value="state.form.audit_log_retention_days"
-                                   t-on-change="(ev) => this.onIntInput('audit_log_retention_days', ev)"/>
-                            <button class="rl-btn rl-btn-ghost rl-btn-sm"
-                                    t-att-disabled="state.auditPurging"
-                                    t-on-click="purgeAuditLogs">
-                                <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
-                                Purge old logs now
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Job Log Retention -->
-                    <div class="rl-saas-fsec">Job Log Retention</div>
-                    <p class="rl-tabnote">
-                        Automatically purge job log chunks (cloud.job.log.chunk) for
-                        terminated jobs older than the specified number of days. Active
-                        jobs are never purged. Set to 0 to keep all chunks indefinitely.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Retention period (days)</label>
-                        <input type="number" min="0"
-                               t-att-value="state.form.job_log_retention_days"
-                               t-on-change="(ev) => this.onIntInput('job_log_retention_days', ev)"/>
-                    </div>
-
-                    <!-- Job Retention -->
-                    <div class="rl-saas-fsec">Job Retention</div>
-                    <p class="rl-tabnote">
-                        Automatically purge finished jobs (done, failed or cancelled)
-                        older than the specified number of days. Active jobs are never
-                        purged. Purged jobs disappear from the instance timeline, so
-                        this window is also how far back the timeline reaches. Set to 0
-                        to keep all jobs indefinitely.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Retention period (days)</label>
-                        <input type="number" min="0"
-                               t-att-value="state.form.job_retention_days"
-                               t-on-change="(ev) => this.onIntInput('job_retention_days', ev)"/>
-                    </div>
-
-                    <!-- Moves between hosts -->
-                    <div class="rl-saas-fsec">Moves between hosts</div>
-                    <p class="rl-tabnote">
-                        After a move, the copy left on the old host is stopped and kept,
-                        data included, so it can still be restored from by hand; then it
-                        is removed. It uses disk on the old host until then. Set to 0 to
-                        remove it at the next hourly pass. A move that keeps the instance
-                        unavailable longer than the alert threshold raises a warning; 0
-                        never raises it.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Keep the old copy (hours)</label>
-                        <input type="number" min="0"
-                               t-att-value="state.form.move_frozen_source_hours"
-                               t-on-change="(ev) => this.onIntInput('move_frozen_source_hours', ev)"/>
-                    </div>
-                    <div class="rl-frow">
-                        <label>Alert when a move's cut exceeds (seconds)</label>
-                        <input type="number" min="0"
-                               t-att-value="state.form.move_cut_alert_seconds"
-                               t-on-change="(ev) => this.onIntInput('move_cut_alert_seconds', ev)"/>
-                    </div>
-
-                    <!-- Staging autopurge -->
-                    <div class="rl-saas-fsec">Staging autopurge</div>
-                    <p class="rl-tabnote">
-                        A staging instance nobody uses for this many days is deleted:
-                        no action on it from the panel, and no login inside it. Two
-                        warnings go out first, 14 and 3 days ahead, and one click on
-                        Keep starts the window over. A staging has no backup, so what
-                        goes with it does not come back — instances that should stay
-                        for good can be marked as never purged, one by one. Production
-                        instances are never touched. Set to 0 to disable.
-                    </p>
-                    <div class="rl-frow">
-                        <label>Delete unused stagings after (days)</label>
-                        <input type="number" min="0"
-                               t-att-value="state.form.staging_autopurge_days"
-                               t-on-change="(ev) => this.onIntInput('staging_autopurge_days', ev)"/>
-                    </div>
-
-                    <!-- Edge -->
-                    <div class="rl-saas-fsec">Edge</div>
-                    <p class="rl-tabnote">
-                        Everything that keys on who is asking — rate limits, allowlists, audit
-                        lines — reads an address that belongs to the proxy, not the caller,
-                        whenever something sits in front. Declaring that proxy is what makes
-                        the forwarded header worth reading: it is believed only on connections
-                        coming from these ranges, and stripped from every other. Leave it empty
-                        when nothing fronts this installation; the connecting address is then
-                        used as-is, which is over-restrictive but never spoofable.
-                    </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow rl-full">
-                            <label>Trusted proxy ranges (override)</label>
-                            <textarea rows="3"
-                                      t-att-value="state.form.trusted_proxy_ranges"
-                                      t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
-                            <span class="ic-form-note">
-                                One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32.
-                                An entry that is not a range is refused on save rather than
-                                dropped quietly.
-                            </span>
-                        </div>
-                        <div class="rl-frow rl-full">
-                            <label>Applied</label>
-                            <div t-if="state.effectiveProxyRanges.length">
-                                <code t-esc="state.effectiveProxyRanges.join(', ')"/>
-                                <span class="ic-form-note">
-                                    Source: <t t-esc="proxySourceLabel()"/>.
-                                </span>
-                            </div>
-                            <div t-else="">
-                                <em>No proxy is trusted. The connecting address is used as-is.</em>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- GitHub Event Retention -->
-                    <div class="rl-saas-fsec">GitHub Event Retention</div>
-                    <p class="rl-tabnote">
-                        Webhook payloads are large (100 KB+ for monorepo pushes).
-                        Two-stage retention: after the truncation period, the raw JSON
-                        payload is replaced by a compact stub; after the retention period,
-                        the row itself is deleted. Unprocessed/error events are never
-                        auto-deleted. Set either to 0 to disable.
-                    </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Payload truncation (days)</label>
-                            <input type="number" min="0"
-                                   t-att-value="state.form.github_event_truncate_days"
-                                   t-on-change="(ev) => this.onIntInput('github_event_truncate_days', ev)"/>
-                        </div>
-                        <div class="rl-frow">
-                            <label>Full row deletion (days)</label>
-                            <input type="number" min="0"
-                                   t-att-value="state.form.github_event_retention_days"
-                                   t-on-change="(ev) => this.onIntInput('github_event_retention_days', ev)"/>
-                        </div>
-                    </div>
-
-                    <!-- Instance Logs -->
-                    <div class="rl-saas-fsec">Instance Logs</div>
-                    <p class="rl-tabnote">
-                        Odoo writes its log to a file on the host, which is rotated daily
-                        into one dated file per day (Instance detail → Logs shows them, and
-                        can download one). That copy survives a rebuild, which recreates the
-                        container and would otherwise discard its history. The other
-                        containers (database, backup, mail) keep logging to Docker's
-                        json-file driver, capped below so they cannot fill the host's disk.
-                        Both settings reach an instance on its next deploy or rebuild.
-                    </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Odoo log archive (days)</label>
-                            <input type="number" min="1"
-                                   t-att-value="state.form.odoo_log_archive_days"
-                                   t-on-change="(ev) => this.onIntInput('odoo_log_archive_days', ev)"/>
-                        </div>
-                        <div class="rl-frow">
-                            <label>Max size per container log</label>
-                            <input type="text" placeholder="10m"
-                                   t-att-value="state.form.container_log_max_size"
-                                   t-on-change="(ev) => this.onInput('container_log_max_size', ev)"/>
-                        </div>
-                        <div class="rl-frow">
-                            <label>Container log files kept</label>
-                            <input type="number" min="1"
-                                   t-att-value="state.form.container_log_max_file"
-                                   t-on-change="(ev) => this.onIntInput('container_log_max_file', ev)"/>
-                        </div>
-                    </div>
-                    <p class="rl-tabnote">
-                        Reading logs back costs the instance's host: a search
-                        decompresses days of them and a download sends one through the
-                        panel. These bound that cost. A search that hits its timeout says
-                        so rather than reporting no matches. How often each operator may
-                        read or search lives on the Rates tab.
-                    </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Download cap (MB)</label>
-                            <input type="number" min="1"
-                                   t-att-value="state.form.log_download_max_mb"
-                                   t-on-change="(ev) => this.onIntInput('log_download_max_mb', ev)"/>
-                        </div>
-                        <div class="rl-frow">
-                            <label>Search: days swept</label>
-                            <input type="number" min="1"
-                                   t-att-value="state.form.log_search_max_files"
-                                   t-on-change="(ev) => this.onIntInput('log_search_max_files', ev)"/>
-                        </div>
-                        <div class="rl-frow">
-                            <label>Search timeout (s)</label>
-                            <input type="number" min="5"
-                                   t-att-value="state.form.log_search_timeout_s"
-                                   t-on-change="(ev) => this.onIntInput('log_search_timeout_s', ev)"/>
-                        </div>
-                    </div>
-
-                    <!-- Backup Usage Alerts -->
-                    <div class="rl-saas-fsec">Backup Usage Alerts</div>
-                    <p class="rl-tabnote">
-                        Default percentage at which an email alert is sent when a
-                        backup backend approaches its quota. Each backend can override
-                        this on its own Usage tab (set the backend's threshold to 0
-                        to inherit this value, -1 to disable, or 1–100 for an explicit
-                        percentage).
-                    </p>
-                    <div class="rl-frow">
-                        <label>Default threshold (%)</label>
-                        <input type="number" min="0" max="100"
-                               t-att-value="state.form.default_backup_alert_threshold_pct"
-                               t-on-change="(ev) => this.onIntInput('default_backup_alert_threshold_pct', ev)"/>
-                    </div>
-
-                </t>
-
-
-                <!-- ── GitHub tab ─────────────────────────────────────────── -->
-                <t t-if="state.tab === 'github'">
-
-                    <div class="rl-saas-fsec">GitHub App</div>
-                    <p class="rl-tabnote">
-                        Connect a GitHub App to enable auto-rebuilds and repository access.
-                    </p>
-
-                    <!-- ── Step indicator (rl-wiz) ── -->
-                    <div class="rl-wiz">
-                        <div t-att-class="'rl-wstep' + (currentStep > 1 ? ' done' : '') + (currentStep === 1 ? ' active' : '')">
-                            <span class="rl-wnum">
-                                <t t-if="currentStep > 1"><t t-out="env.icon('check', 14)"/></t>
-                                <t t-else="">1</t>
-                            </span>
-                            <span class="rl-wlabel">Create App</span>
-                        </div>
-                        <div class="rl-wconn"/>
-                        <div t-att-class="'rl-wstep' + (currentStep > 2 ? ' done' : '') + (currentStep === 2 ? ' active' : '')">
-                            <span class="rl-wnum">
-                                <t t-if="currentStep > 2"><t t-out="env.icon('check', 14)"/></t>
-                                <t t-else="">2</t>
-                            </span>
-                            <span class="rl-wlabel">Install on Org</span>
-                        </div>
-                        <div class="rl-wconn"/>
-                        <div t-att-class="'rl-wstep' + (currentStep === 3 ? ' done active' : '')">
-                            <span class="rl-wnum">
-                                <t t-if="currentStep === 3"><t t-out="env.icon('check', 14)"/></t>
-                                <t t-else="">3</t>
-                            </span>
-                            <span class="rl-wlabel">Connected</span>
-                        </div>
-                    </div>
-
-                    <!-- ── Step 1: Create App ── -->
-                    <t t-if="currentStep === 1">
-                        <div class="rl-ghcard">
-                            <div class="rl-ghi"><t t-out="env.icon('git', 20)"/></div>
-                            <div style="flex:1; min-width:0;">
-                                <h3>Create your GitHub App</h3>
-                                <p>
-                                    IncubaCloud will redirect you to GitHub to create a GitHub App
-                                    pre-configured with the right permissions and webhook URL.
-                                    The app will be created in your GitHub account — you can then
-                                    install it on any organization you manage.
-                                </p>
-                                <t t-if="!state.isHttps">
-                                    <p class="rl-set-warning">
-                                        <t t-out="env.icon('lock', 15)"/> Automatic setup requires HTTPS.
-                                        Configure manually below.
-                                    </p>
-                                </t>
-                                <div class="rl-set-actions">
-                                    <button class="rl-btn rl-btn-primary"
-                                            t-on-click="createOnGitHub"
-                                            t-att-disabled="!state.isHttps">
-                                        <t t-out="env.icon('git', 15)"/> Create App on GitHub →
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- ── Step 2: Install on Org ── -->
-                    <t t-if="currentStep === 2">
-                        <div class="rl-ghcard">
-                            <div class="rl-ghi"><t t-out="env.icon('hosts', 20)"/></div>
-                            <div style="flex:1; min-width:0;">
-                                <h3>Install on your organization</h3>
-                                <p>
-                                    Your GitHub App was created. Now install it on the GitHub
-                                    organization that owns your repositories. Click the button below
-                                    — GitHub will let you choose which organization and repositories
-                                    to grant access.
-                                </p>
-                                <div class="rl-set-hintbox">
-                                    <i class="fa fa-info-circle"/>
-                                    After installing, come back here and click
-                                    <strong>Check installation</strong>. The panel asks
-                                    GitHub for it and names the account it is installed on.
-                                </div>
-                                <div class="rl-set-actions">
-                                    <button class="rl-btn rl-btn-primary"
-                                            t-on-click="openInstallUrl">
-                                        <t t-out="env.icon('git', 15)"/> Install on Organization →
-                                    </button>
-                                    <button class="rl-btn rl-btn-ghost"
-                                            t-on-click="refresh">
-                                        ↻ Check installation
-                                    </button>
-                                </div>
-                                <t t-if="state.ghActionMsg">
-                                    <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.ghActionMsg.type"
-                                       t-esc="state.ghActionMsg.message"/>
-                                </t>
-                                <t t-if="!state.installUrl">
-                                    <p class="rl-set-hint">
-                                        No install URL available — go to
-                                        <strong>github.com → Settings → Applications → GitHub Apps</strong>
-                                        and install your app manually.
-                                    </p>
-                                </t>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- ── Step 3: Connected ── -->
-                    <t t-if="currentStep === 3">
-                        <div class="rl-ghcard">
-                            <div class="rl-ghi" style="color:var(--rl-green)"><t t-out="env.icon('check', 20)"/></div>
-                            <div style="flex:1; min-width:0;">
-                                <h3>GitHub App connected</h3>
-                                <div class="rl-set-status">
-                                    <span class="rl-set-status-k">App ID</span>
-                                    <span class="rl-set-status-v" t-esc="state.form.app_id"/>
-                                    <span class="rl-set-status-k">Installation ID</span>
-                                    <span class="rl-set-status-v" t-esc="state.form.installation_id"/>
-                                    <t t-if="state.slug">
-                                        <span class="rl-set-status-k">App name</span>
-                                        <span class="rl-set-status-v" t-esc="state.slug"/>
-                                    </t>
-                                    <span class="rl-set-status-k">Private key</span>
-                                    <span class="rl-set-status-v">
-                                        <t t-if="state.hasPrivateKey">
-                                            <t t-out="env.icon('lock', 14)"/> Stored
-                                        </t>
-                                        <t t-else="">Not set</t>
-                                    </span>
-                                    <span class="rl-set-status-k">PAT</span>
-                                    <span class="rl-set-status-v">
-                                        <t t-if="state.hasPat">
-                                            <t t-out="env.icon('lock', 14)"/> Stored
-                                        </t>
-                                        <t t-else="">Not configured</t>
-                                    </span>
-                                </div>
-                                <div class="rl-set-actions">
-                                    <button class="rl-btn rl-btn-ghost"
-                                            t-on-click="testConnection"
-                                            t-att-disabled="state.testing">
-                                        <t t-if="state.testing">Testing…</t>
-                                        <t t-else="">Test connection</t>
-                                    </button>
-                                    <button class="rl-btn rl-btn-ghost"
-                                            t-on-click="detectInstallation"
-                                            title="Fetch installation ID from GitHub API — useful if the app was reinstalled">
-                                        ↻ Re-detect installation
-                                    </button>
-                                    <button class="rl-btn rl-btn-danger"
-                                            t-on-click="disconnectApp">
-                                        <i class="fa fa-unlink"/> Disconnect App
-                                    </button>
-                                </div>
-                                <t t-if="state.ghActionMsg">
-                                    <p t-att-class="'rl-set-inline-msg rl-set-inline-msg--' + state.ghActionMsg.type"
-                                       t-esc="state.ghActionMsg.message"/>
-                                </t>
-                                <p class="rl-set-hint">
-                                    The panel acts on the pushes and pull requests of
-                                    this installation only. If the App is installed on
-                                    another account too, a pull request there that one
-                                    of your productions would preview gets no preview,
-                                    and that production an alert naming the account.
-                                </p>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- ── Manual configuration (collapsed) ── -->
-                    <div class="rl-set-manual-toggle" t-on-click="toggleManual">
-                        <i t-att-class="'fa ' + (state.showManual ? 'fa-chevron-down' : 'fa-chevron-right')"/>
-                        Configure manually
-                    </div>
-
-                    <t t-if="state.showManual">
-                        <div class="rl-set-manual">
-                            <div class="rl-fgrid">
-
-                                <div class="rl-frow">
-                                    <label>App ID <span class="rl-req">*</span></label>
-                                    <input type="text"
-                                           placeholder="123456"
-                                           t-att-value="state.form.app_id"
-                                           t-on-input="(ev) => this.onInput('app_id', ev)"/>
-                                </div>
-
-                                <div class="rl-frow">
-                                    <label>Installation ID</label>
-                                    <input type="text"
-                                           placeholder="auto-detected after org install, or enter manually"
-                                           t-att-value="state.form.installation_id"
-                                           t-on-input="(ev) => this.onInput('installation_id', ev)"/>
-                                </div>
-
-                                <div class="rl-frow">
-                                    <label>Webhook Secret</label>
-                                    <input type="password"
-                                           placeholder="auto-filled via Create App"
-                                           t-att-value="state.form.webhook_secret"
-                                           t-on-input="(ev) => this.onInput('webhook_secret', ev)"/>
-                                    <t t-if="state.hasWebhookSecret">
-                                        <span class="rl-th">
-                                            Secret stored. Leave blank to keep, or enter a new secret to replace.
-                                        </span>
-                                    </t>
-                                </div>
-
-                                <div class="rl-frow rl-full">
-                                    <label>Private Key (PEM)</label>
-                                    <textarea rows="6"
-                                              class="rl-set-pem"
-                                              placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
-                                              t-att-value="state.form.private_key"
-                                              t-on-input="(ev) => this.onInput('private_key', ev)"/>
-                                    <t t-if="state.hasPrivateKey">
-                                        <span class="rl-th">
-                                            Key stored. Leave blank to keep, or paste a new key to replace.
-                                        </span>
-                                    </t>
-                                </div>
-
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- PAT — independent of GitHub App -->
-                    <div class="rl-saas-fsec">Personal Access Token (PAT)</div>
-                    <p class="rl-tabnote">
-                        Fallback token for accessing private repositories the GitHub App cannot reach (e.g. odoo/enterprise).
-                    </p>
-                    <div class="rl-frow">
-                        <label>Personal Access Token</label>
-                        <input type="password"
-                               placeholder="ghp_xxxxxxxxxxxx"
-                               t-att-value="state.form.github_pat"
-                               t-on-input="(ev) => this.onInput('github_pat', ev)"/>
-                        <t t-if="state.hasPat">
-                            <span class="rl-th">
-                                PAT stored. Leave blank to keep, or paste a new one to replace.
-                            </span>
-                        </t>
-                    </div>
-
-                </t>
-
-                <!-- ── Git providers tab: each provider saves on its own ───── -->
-                <t t-if="state.tab === 'git_providers'">
-                    <GitProvidersTab/>
-                </t>
-
-                <!-- ── Rates tab (core endpoints) ──────────────────────────── -->
-                <!-- Kept mounted once opened, hidden while another tab
-                     shows, so what was typed in it is not lost (see
-                     ``openedTabs`` in settings.js). -->
-                <div t-if="state.openedTabs.rates" t-att-hidden="state.tab !== 'rates'">
-                    <CoreRatesTab/>
-                </div>
-
-                <t t-if="state.tab === 'monitoring' and env.features?.observability?.configure !== false">
-                    <div class="rl-saas-fsec">Observability</div>
-                    <p class="rl-tabnote">
-                        Agents on every host push metrics to a central stack; the
-                        panel reads it back to evaluate alert rules and embeds the
-                        dashboards. Every host is enrolled automatically — there is
-                        nothing to install by hand.
-                    </p>
-
-                    <!-- ── 1. The one decision ─────────────────────── -->
-                    <div class="rl-frow">
-                        <label>Where the central runs</label>
-                        <div class="rl-th" style="margin-bottom:8px;">
-                            VictoriaMetrics, Grafana and a gateway, deployed as a job
-                            on the host you pick. Co-locating on the panel host is the
-                            usual start; re-run it against another host to move it.
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <RlSelect options="centralHostOptions"
-                                      value="state.centralHostId"
-                                      placeholder.translate="Destination host…"
-                                      onChange="(v) => this.state.centralHostId = v"/>
-                            <button class="rl-btn rl-btn-primary rl-btn-sm"
-                                    t-att-disabled="state.deployingCentral || !state.centralHostId || null"
-                                    t-on-click="deployCentral">
-                                <t t-if="state.deployingCentral">Queueing…</t>
-                                <t t-else="">Enable observability</t>
-                            </button>
-                        </div>
-                        <div class="rl-th" style="margin-top:8px;">
-                            This deploys the stack and, when it comes up, fills in the
-                            endpoints and switches observability on. Nothing below
-                            needs touching for a single-host setup.
-                        </div>
-                    </div>
-
-                    <!-- ── 2. Current state, read-only ─────────────── -->
-                    <div class="rl-ftoggle">
-                        <div>
-                            <div class="rl-tl-label">Status</div>
-                            <div class="rl-th" t-esc="observabilityStatus"/>
-                        </div>
-                    </div>
-
-                    <!-- ── 3. Advanced, folded away ────────────────── -->
-                    <div class="rl-frow">
-                        <button class="rl-btn rl-btn-ghost rl-btn-sm"
-                                t-on-click="() => this.state.showAdvancedMetrics = !this.state.showAdvancedMetrics">
-                            <t t-if="state.showAdvancedMetrics">Hide advanced</t>
-                            <t t-else="">Advanced…</t>
-                        </button>
-                        <div class="rl-th" style="margin-top:6px;">
-                            For a central that lives elsewhere, agents on more than one
-                            host, or an existing Grafana.
-                        </div>
-                    </div>
-
-                    <t t-if="state.showAdvancedMetrics">
-                        <div class="rl-ftoggle">
-                            <div>
-                                <div class="rl-tl-label">Observability</div>
-                                <div class="rl-th">Master switch. Everything is inert while it is off.</div>
-                            </div>
-                            <button type="button"
-                                    t-att-class="'rl-sw' + (state.form.metrics_enabled ? ' on' : '')"
-                                    t-on-click="() => this.state.form.metrics_enabled = !this.state.form.metrics_enabled"
-                                    aria-label="Toggle observability"/>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-metrics-central-url">Query URL</label>
-                            <input id="ic-metrics-central-url" type="text"
-                                   placeholder="http://172.17.0.1:8428/r/"
-                                   t-att-value="state.form.metrics_central_url"
-                                   t-on-change="(ev) => this.state.form.metrics_central_url = ev.target.value"/>
-                            <div class="rl-th">
-                                Queried by the panel, so it must resolve from inside the
-                                panel container — 127.0.0.1 there is the container itself.
-                            </div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-metrics-rw-url">Remote-write URL</label>
-                            <input id="ic-metrics-rw-url" type="text"
-                                   placeholder="https://metrics.example.com/w/"
-                                   t-att-value="state.form.metrics_remote_write_url"
-                                   t-on-change="(ev) => this.state.form.metrics_remote_write_url = ev.target.value"/>
-                            <div class="rl-th">
-                                Where each host's agent pushes. It must resolve from inside
-                                the agent container on every host, so agents on other hosts
-                                need a public HTTPS endpoint here.
-                            </div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-metrics-token">Credential</label>
-                            <input id="ic-metrics-token" type="password"
-                                   t-att-placeholder="state.hasMetricsToken ? 'Stored — type to replace' : 'Generated on enable'"
-                                   t-att-value="state.form.metrics_remote_write_token"
-                                   t-on-change="(ev) => this.state.form.metrics_remote_write_token = ev.target.value"/>
-                            <div class="rl-th">
-                                Generated automatically. Replacing it means redeploying the
-                                central and re-enrolling every host — until both sides
-                                match, pushes are refused.
-                            </div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-metrics-retention">Metrics retention (days)</label>
-                            <input id="ic-metrics-retention" type="number" min="1"
-                                   t-att-value="state.form.metrics_retention_days"
-                                   t-on-change="(ev) => this.onIntInput('metrics_retention_days', ev)"/>
-                        </div>
-
-                        <div class="rl-ftoggle">
-                            <div>
-                                <div class="rl-tl-label">Send hosts' security logs</div>
-                                <div class="rl-th">SSH, sudo, auditd and fail2ban, kept 90 days in the central. A host can add lines there but never delete them. Applies when the agents are next installed.</div>
-                            </div>
-                            <button type="button"
-                                    t-att-class="'rl-sw' + (state.form.metrics_ship_security_logs ? ' on' : '')"
-                                    t-on-click="() => this.state.form.metrics_ship_security_logs = !this.state.form.metrics_ship_security_logs"
-                                    aria-label="Toggle sending hosts' security logs"/>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-grafana-url">Grafana base URL</label>
-                            <input id="ic-grafana-url" type="text"
-                                   placeholder="https://metrics.example.com/grafana/"
-                                   t-att-value="state.form.grafana_base_url"
-                                   t-on-change="(ev) => this.state.form.grafana_base_url = ev.target.value"/>
-                            <div class="rl-th">Empty hides the charts. The dashboards are served under /grafana/ on the gateway.</div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-central-public-host">Central's public name</label>
-                            <input id="ic-central-public-host" type="text"
-                                   placeholder="metrics.example.com"
-                                   t-att-value="state.form.metrics_central_public_host"
-                                   t-on-change="(ev) => this.state.form.metrics_central_public_host = ev.target.value"/>
-                            <div class="rl-th">
-                                For a central on a host of its own. With a name, deploying
-                                the central publishes it there through the host's proxy and
-                                points the panel and every agent at it. Point the name's DNS
-                                at that host first. Empty for a central next to the panel.
-                            </div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-central-direct-host">Central's direct name</label>
-                            <input id="ic-central-direct-host" type="text"
-                                   placeholder="direct.metrics.example.com"
-                                   t-att-value="state.form.metrics_central_direct_host"
-                                   t-on-change="(ev) => this.state.form.metrics_central_direct_host = ev.target.value"/>
-                            <div class="rl-th">
-                                For the platform's own servers, on the direct port of the
-                                central's host, without the CDN. Two levels under the zone,
-                                DNS only, no IPv6 record. Empty: every agent writes to the
-                                remote-write URL.
-                            </div>
-                            <div class="rl-th" t-if="centralDirectStatus" t-esc="centralDirectStatus"/>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-acme-dns-token">DNS token for direct certificates (Cloudflare)</label>
-                            <input id="ic-acme-dns-token" type="password" autocomplete="new-password"
-                                   placeholder="API token"
-                                   t-att-value="state.form.acme_dns_cloudflare_token"
-                                   t-on-change="(ev) => this.state.form.acme_dns_cloudflare_token = ev.target.value"/>
-                            <div class="rl-th" t-if="state.hasAcmeDnsToken">
-                                A token is stored. Leave blank to keep it.
-                            </div>
-                            <div class="rl-th">
-                                Zone read and DNS edit on the zone only, limited to the
-                                addresses of the hosts that publish a direct name. Written to
-                                each host that needs it as a root-only file.
-                            </div>
-                        </div>
-
-                        <div class="rl-frow">
-                            <label for="ic-central-operator-sources">Who may delete series on the central</label>
-                            <textarea id="ic-central-operator-sources" rows="2"
-                                      placeholder="203.0.113.10/32"
-                                      t-att-value="state.form.metrics_central_operator_sources"
-                                      t-on-change="(ev) => this.state.form.metrics_central_operator_sources = ev.target.value"/>
-                            <div class="rl-th">
-                                One range per line: the panel's public address, so removing
-                                a host or an instance clears its series. Only used with a public
-                                name; the central's own host is always allowed.
-                            </div>
-                        </div>
-                    </t>
-                </t>
-
-                </div><!-- /rl-settings-body -->
-
-                <!-- ── Unified footer (on every tab with something to save) ── -->
-                <div class="rl-formfoot" t-if="canSaveTab">
-                    <t t-if="hasUnsavedChanges">
-                        <span class="rl-ff-hint">Unsaved changes</span>
-                    </t>
-                    <button class="rl-btn rl-btn-primary"
-                            t-att-disabled="state.saving"
-                            t-on-click="save">
-                        <t t-if="state.saving">
-                            <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>Saving…
-                        </t>
-                        <t t-else="">Save changes</t>
-                    </button>
-                </div>
-
-            </t>
 
         </div>
 
-        <!-- Confirmation dialog -->
         <IcConfirmDialog t-if="state.confirmDialog"
                          title="state.confirmDialog.title"
                          message="state.confirmDialog.message"
@@ -781,7 +94,6 @@
                          isDanger="state.confirmDialog.isDanger"
                          onConfirm="state.confirmDialog.onConfirm"
                          onCancel="state.confirmDialog.onCancel"/>
-
     </t>
 
 </templates>

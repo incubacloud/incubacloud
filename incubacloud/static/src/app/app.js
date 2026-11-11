@@ -12,6 +12,8 @@ import { HostsDashboard } from "../components/hosts_dashboard/hosts_dashboard";
 import { HostDetail } from "../components/host_detail/host_detail";
 import { InstanceDetail } from "../components/instance_detail/instance_detail";
 import { Settings } from "../components/settings/settings";
+import { LEGACY_TABS } from "../components/settings/settings_registry";
+import "../components/settings/core_sections";
 import { BackupBackendsList } from "../components/backup_backend_detail/backup_backends_list";
 import { BackupBackendDetail } from "../components/backup_backend_detail/backup_backend_detail";
 import { SlideOver } from "../components/slide_over/slide_over";
@@ -78,8 +80,21 @@ export function _parseRoute(pathname) {
         case "monitoring":
             return { route: "monitoring", params: {} };
         case "settings": {
-            const tab = new URLSearchParams(window.location.search).get("tab") || undefined;
-            return { route: "settings", params: tab ? { tab } : {} };
+            // /cloud/settings/<section>#<field>; ?tab= is a link from
+            // before the sections, which Settings maps to one.
+            const section = parts[1] || undefined;
+            const tab = !section
+                ? new URLSearchParams(window.location.search).get("tab") || undefined
+                : undefined;
+            const field = window.location.hash.slice(1) || undefined;
+            return {
+                route: "settings",
+                params: {
+                    ...(section ? { section } : {}),
+                    ...(tab ? { tab } : {}),
+                    ...(field ? { field } : {}),
+                },
+            };
         }
         case "backup-backends": {
             if (parts.length === 1) return { route: "backup_backends", params: {} };
@@ -115,7 +130,11 @@ export function _buildUrl(route, params = {}) {
         case "host_detail":       return `${_BASE}/hosts/${params.host_id}`;
 
         case "monitoring":            return `${_BASE}/monitoring`;
-        case "settings":              return params.tab ? `${_BASE}/settings?tab=${params.tab}` : `${_BASE}/settings`;
+        case "settings": {
+            const section = params.section || LEGACY_TABS[params.tab];
+            const path = section ? `${_BASE}/settings/${section}` : `${_BASE}/settings`;
+            return params.field ? `${path}#${params.field}` : path;
+        }
         case "backup_backends":       return `${_BASE}/backup-backends`;
         case "new_backup_backend":    return `${_BASE}/backup-backends/new`;
         case "backup_backend_detail": return `${_BASE}/backup-backends/${params.backend_id}`;

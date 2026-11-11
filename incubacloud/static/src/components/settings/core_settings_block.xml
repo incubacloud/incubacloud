@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- A block that could not load: the error and a way out, never a
+         form of defaults that Save would send. Shared by the blocks of
+         Settings, here and in the modules on top. -->
+    <t t-name="incubacloud.SettingsLoadState">
+        <div t-if="state.loading" class="ic-detail-loading">Loading…</div>
+        <div t-elif="state.loadError" class="rl-stub" role="alert">
+            <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+            <p t-esc="state.loadError"/>
+            <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                    t-on-click="() => this.reload()">Retry</button>
+        </div>
+    </t>
+
+    <t t-name="incubacloud.CoreSettingsBlock">
+        <t t-if="state.loading or state.loadError">
+            <t t-call="incubacloud.SettingsLoadState"/>
+        </t>
+        <t t-else="">
+            <t t-set="form" t-value="state.form"/>
+
+            <!-- ── General ─────────────────────────────────────────── -->
+            <t t-if="props.part === 'general'">
+                <SettingsBlock title.translate="Placement">
+                    <SettingField id="'autoassign_enabled'" form="form"/>
+                </SettingsBlock>
+                <SettingsBlock title.translate="Backups">
+                    <SettingField id="'default_backup_backend_id'" form="form"
+                                  options="backupBackendOptions" emptyLabel.translate="None"/>
+                    <SettingField id="'default_backup_alert_threshold_pct'" form="form"/>
+                </SettingsBlock>
+            </t>
+
+            <!-- ── Instances ───────────────────────────────────────── -->
+            <t t-if="props.part === 'instances'">
+                <SettingsBlock title.translate="Moves between hosts"
+                               how.translate="After a move, the copy left on the old host is stopped and kept, data included, so it can still be restored from by hand; then it is removed. It uses disk on the old host until then.">
+                    <SettingField id="'move_frozen_source_hours'" form="form"/>
+                    <SettingField id="'move_cut_alert_seconds'" form="form"/>
+                </SettingsBlock>
+                <SettingsBlock title.translate="Staging autopurge"
+                               how.translate="A staging nobody uses is deleted: no action on it from the panel, and no login inside it. Two warnings go out first, 14 and 3 days ahead, and one click on Keep starts the window over. A staging has no backup, so what goes with it does not come back; an instance that should stay for good can be marked as never purged. Production instances are never touched.">
+                    <SettingField id="'staging_autopurge_days'" form="form"/>
+                </SettingsBlock>
+            </t>
+
+            <!-- ── Logs & retention ────────────────────────────────── -->
+            <t t-if="props.part === 'logs'">
+                <SettingsBlock title.translate="Panel records">
+                    <SettingField id="'audit_log_retention_days'" form="form">
+                        <t t-set-slot="action">
+                            <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-disabled="state.auditPurging or auditRetentionUnsaved or null"
+                                    t-att-title="auditRetentionUnsaved ? saveFirstText : undefined"
+                                    t-on-click="purgeAuditLogs">
+                                <t t-if="state.auditPurging"><i class="fa fa-spinner fa-spin" aria-hidden="true"/> Purging…</t>
+                                <t t-else="">Purge old logs now</t>
+                            </button>
+                            <span t-if="auditRetentionUnsaved" class="ic-set-note">Save first</span>
+                        </t>
+                    </SettingField>
+                    <SettingField id="'job_retention_days'" form="form"/>
+                    <SettingField id="'job_log_retention_days'" form="form"/>
+                </SettingsBlock>
+                <SettingsBlock title.translate="GitHub events"
+                               how.translate="Webhook payloads are large (100 KB and more for a monorepo push). After the truncation period the raw payload is replaced by a short stub; after the deletion period the row goes. Unprocessed or failed events are never deleted. 0 turns either off.">
+                    <SettingField id="'github_event_truncate_days'" form="form"/>
+                    <SettingField id="'github_event_retention_days'" form="form"/>
+                </SettingsBlock>
+                <SettingsBlock title.translate="Instance logs"
+                               how.translate="Odoo writes its log to a file on the host, rotated daily into one dated file per day, so the history survives a rebuild. The other containers (database, backup, mail) log to Docker's json-file driver, capped so they cannot fill the disk. Both reach an instance on its next deploy or rebuild. Reading logs back costs the host: the advanced settings bound that cost, and how often each user may read lives in Rate limits.">
+                    <SettingField id="'odoo_log_archive_days'" form="form"/>
+                    <SettingField id="'container_log_max_size'" form="form"/>
+                    <SettingField id="'container_log_max_file'" form="form"/>
+                    <SettingAdvanced fields="['log_download_max_mb', 'log_search_max_files', 'log_search_timeout_s']"
+                                     form="form">
+                        <SettingField id="'log_download_max_mb'" form="form"/>
+                        <SettingField id="'log_search_max_files'" form="form"/>
+                        <SettingField id="'log_search_timeout_s'" form="form"/>
+                    </SettingAdvanced>
+                </SettingsBlock>
+            </t>
+
+            <!-- ── Network edge ────────────────────────────────────── -->
+            <t t-if="props.part === 'edge'">
+                <SettingsBlock title.translate="Trusted proxies"
+                               how.translate="Everything that keys on who is asking (rate limits, allowlists, audit lines) reads an address that belongs to the proxy whenever something sits in front. The forwarded header is believed only on connections from these ranges, and stripped from every other. With none, the connecting address is used as it is: too strict, but never spoofable.">
+                    <SettingField id="'trusted_proxy_ranges'" form="form"/>
+                    <SettingRow id="'effective_proxy_ranges'" help="proxySourceLabel">
+                        <div t-if="state.effectiveProxyRanges.length" class="ic-set-chips">
+                            <code t-foreach="state.effectiveProxyRanges" t-as="range" t-key="range"
+                                  class="ic-set-chip" t-esc="range"/>
+                        </div>
+                        <span t-else="" class="ic-set-ro">No proxy is trusted. The connecting address is used as it is.</span>
+                    </SettingRow>
+                </SettingsBlock>
+            </t>
+
+            <!-- ── Monitoring ──────────────────────────────────────── -->
+            <t t-if="props.part === 'monitoring'">
+                <SettingsBlock title.translate="Observability"
+                               how.translate="Agents on every host push metrics to a central stack; the panel reads it back to evaluate alert rules and embeds the dashboards. Every host is enrolled by itself: there is nothing to install by hand. Enabling it deploys the stack and, once it is up, fills in the endpoints and switches observability on. A single-host setup needs nothing under Advanced.">
+                    <SettingRow id="'central_host'">
+                        <t t-set-slot="default" t-slot-scope="row">
+                            <div class="ic-set-w-m">
+                                <RlSelect id="row.inputId"
+                                          options="centralHostOptions"
+                                          value="state.centralHostId"
+                                          placeholder.translate="Destination host…"
+                                          onChange="(v) => this.state.centralHostId = v"/>
+                            </div>
+                        </t>
+                        <t t-set-slot="action">
+                            <button type="button" class="rl-btn rl-btn-primary rl-btn-sm"
+                                    t-att-disabled="state.deployingCentral || !state.centralHostId || null"
+                                    t-on-click="deployCentral">
+                                <t t-if="state.deployingCentral">Queueing…</t>
+                                <t t-else="">Enable observability</t>
+                            </button>
+                        </t>
+                    </SettingRow>
+                    <SettingRow id="'observability_status'">
+                        <span class="ic-set-ro" t-esc="observabilityStatus"/>
+                    </SettingRow>
+                    <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_ship_security_logs', 'grafana_base_url', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
+                        <SettingField id="'metrics_enabled'" form="form"/>
+                        <SettingField id="'metrics_central_url'" form="form"/>
+                        <SettingField id="'metrics_remote_write_url'" form="form"/>
+                        <SettingField id="'metrics_remote_write_token'" form="form"
+                                      stored="state.hasMetricsToken"
+                                      placeholder="state.hasMetricsToken ? undefined : generatedText"/>
+                        <SettingField id="'metrics_retention_days'" form="form"/>
+                        <SettingField id="'metrics_ship_security_logs'" form="form"/>
+                        <SettingField id="'grafana_base_url'" form="form"/>
+                        <SettingField id="'metrics_central_public_host'" form="form"/>
+                        <SettingField id="'metrics_central_direct_host'" form="form">
+                            <t t-set-slot="after">
+                                <p t-if="centralDirectStatus" class="ic-set-note" t-esc="centralDirectStatus"/>
+                            </t>
+                        </SettingField>
+                        <SettingField id="'acme_dns_cloudflare_token'" form="form"
+                                      stored="state.hasAcmeDnsToken"/>
+                        <SettingField id="'metrics_central_operator_sources'" form="form"/>
+                    </SettingAdvanced>
+                </SettingsBlock>
+            </t>
+        </t>
+    </t>
+
+    <t t-name="incubacloud.GitProvidersBlock">
+        <div id="ic-set-git_providers" data-field="git_providers" class="ic-set-gitp">
+            <GitProvidersTab/>
+        </div>
+    </t>
+
+</templates>

@@ -1,4 +1,4 @@
-"""Settings → Assistant in a browser: it keeps its edits, saves, never shows the key."""
+"""Settings → Assistant in a browser: it saves its edits, never shows the key."""
 
 import pathlib
 from unittest.mock import MagicMock, patch
@@ -14,7 +14,7 @@ from ..connectors.base import ModelInfo
 from ..controllers import assistant_settings
 from .common import KEY, MODELS, AssistantMixin
 
-_LIMIT = "Monthly limit per user (EUR)"
+_LIMIT = "Monthly limit per user"
 _KEY_FIELD = "Provider key"
 _ON = "Assistant on"
 #: The box and the Terms of a panel whose layer has Terms of its own.
@@ -45,7 +45,7 @@ const pick = async (id, label) => {
 
 @tagged("post_install", "-at_install")
 class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
-    """The tab, edited and saved like core's own tabs."""
+    """The section, edited and saved like core's own sections."""
 
     def setUp(self):
         """The assistant configured; the provider answering a listing."""
@@ -61,14 +61,13 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_the_limit_is_saved_from_another_tab(self):
-        """Typed on Assistant, saved from General."""
+    def test_the_limit_is_saved_with_the_save_bar(self):
+        """Typed on Assistant, it is unsaved until the bar saves it."""
         self._in_settings(
             "assistant",
             f"""
             await type("{_LIMIT}", "30");
             await expectUnsaved();
-            await openTab("General");
             await save();
             await expectAllSaved();
             expectSent("/cloud/assistant/save_settings", true);
@@ -315,8 +314,8 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
 class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
     """Each xpath of ``assistant_templates.xml`` targets something core still has."""
 
-    def test_the_header_and_the_settings(self):
-        """The user menu's wrapper once; the Settings tabs and the GitHub tab."""
+    def test_the_header(self):
+        """The user menu's wrapper once; Settings takes the section by registry."""
         src = (
             pathlib.Path(get_module_path("incubacloud"))
             / "static"
@@ -325,6 +324,6 @@ class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
         )
         header = (src / "app_header" / "app_header.xml").read_text()
         self.assertEqual(header.count('<div class="ic-header-user-wrap">'), 1)
-        settings = (src / "settings" / "settings.xml").read_text()
-        self.assertIn('<div class="rl-tabs">', settings)
-        self.assertIn("t-if=\"state.tab === 'github'\"", settings)
+        registry = (src / "settings" / "settings_registry.js").read_text()
+        self.assertIn('registry.category("incubacloud.settings_sections")', registry)
+        self.assertIn('registry.category("incubacloud.settings_blocks")', registry)

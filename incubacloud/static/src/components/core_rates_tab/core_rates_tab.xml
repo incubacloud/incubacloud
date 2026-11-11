@@ -2,109 +2,28 @@
 <templates xml:space="preserve">
 
 <t t-name="incubacloud.CoreRatesTab">
-    <t t-if="state.loading">
-        <div class="ic-detail-loading">Loading…</div>
-    </t>
-    <!-- Failed to load: the error and a way out, never a form of
-         defaults that Save would not send. -->
-    <t t-elif="state.loadError">
-        <div class="rl-stub" role="alert">
-            <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
-            <p t-esc="state.loadError"/>
-            <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
-                    t-on-click="() => this.reload()">
-                Retry
-            </button>
-        </div>
+    <t t-if="state.loading or state.loadError">
+        <t t-call="incubacloud.SettingsLoadState"/>
     </t>
     <t t-else="">
-
-        <div class="rl-saas-fsec">Rate limits for core endpoints</div>
-        <p class="rl-tabnote">
-            Protect the GitHub webhook, the terminal opener and
-            connect-as and GitHub imports against CPU DoS and resource
-            exhaustion. Unless a field says "per hour", values are requests
-            per minute in a tumbling window. Changes
-            apply immediately — no redeploy needed. Set any
-            field to a non-positive number and the model will
-            fall back to the documented default.
-        </p>
-
-        <div class="rl-fgrid">
-            <div class="rl-frow">
-                <label>GitHub webhook (per client IP)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_webhook_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_webhook_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Terminal open (per instance)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_terminal_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_terminal_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Terminal open (per user)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_terminal_user_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_terminal_user_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Host console sessions (per user, per host)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_host_console_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_host_console_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Connect as user (per instance)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_connect_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_connect_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Connect as user (per user)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_connect_user_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_connect_user_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Log reads (per user)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_logs_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_logs_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Mailbox reads on staging (per user)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_mail_reads_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_mail_reads_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Log searches and downloads (per user)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_log_search_per_min"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_log_search_per_min', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>GitHub import previews (per user, per hour)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_github_previews_per_hour"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_github_previews_per_hour', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>GitHub project imports (per user, per hour)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_github_imports_per_hour"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_github_imports_per_hour', ev)"/>
-            </div>
-            <div class="rl-frow">
-                <label>Git provider reads (per user, per hour)</label>
-                <input type="number" min="1"
-                       t-att-value="state.form.rate_limit_git_reads_per_hour"
-                       t-on-change="(ev) => this.onIntInput('rate_limit_git_reads_per_hour', ev)"/>
-            </div>
-        </div>
-
+        <t t-set="form" t-value="state.form"/>
+        <SettingsBlock title.translate="Core endpoints"
+                       how.translate="Protects the GitHub webhook, the terminal, connect as user, the logs and GitHub imports against CPU exhaustion. Past a limit the panel refuses until the window ends. A value of 0 or less falls back to the documented default.">
+            <SettingField id="'rate_limit_webhook_per_min'" form="form"/>
+            <SettingField id="'rate_limit_terminal_per_min'" form="form"/>
+            <SettingField id="'rate_limit_terminal_user_per_min'" form="form"/>
+            <SettingField id="'rate_limit_host_console_per_min'" form="form"/>
+            <SettingField id="'rate_limit_connect_per_min'" form="form"/>
+            <SettingField id="'rate_limit_connect_user_per_min'" form="form"/>
+            <SettingField id="'rate_limit_logs_per_min'" form="form"/>
+            <SettingField id="'rate_limit_mail_reads_per_min'" form="form"/>
+            <SettingField id="'rate_limit_log_search_per_min'" form="form"/>
+            <SettingAdvanced form="form" fields="['rate_limit_github_previews_per_hour', 'rate_limit_github_imports_per_hour', 'rate_limit_git_reads_per_hour']">
+                <SettingField id="'rate_limit_github_previews_per_hour'" form="form"/>
+                <SettingField id="'rate_limit_github_imports_per_hour'" form="form"/>
+                <SettingField id="'rate_limit_git_reads_per_hour'" form="form"/>
+            </SettingAdvanced>
+        </SettingsBlock>
     </t>
 </t>
 

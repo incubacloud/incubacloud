@@ -31,7 +31,7 @@ If you don't have a repo yet, skip this step. You can add it later from
 
 !!! warning "Private repositories"
     For private GitHub repos, install the platform's **GitHub App**
-    (`Settings → GitHub App`) — it grants repository access without sharing
+    (`Settings → GitHub`) — it grants repository access without sharing
     credentials — or store a personal access token in `Settings → GitHub`.
     A URL with a token inside it
     (`https://<token>@github.com/your-org/your-repo.git`) is refused:
@@ -42,7 +42,7 @@ If you don't have a repo yet, skip this step. You can add it later from
 **Backup Destination** applies to every production instance of the project,
 unless an instance sets its own. A production instance cannot be deployed
 without a destination: choose one here, on the instance, or for every
-production instance in **Settings → General → Default Backup Destination**.
+production instance in **Settings → General → Default backup destination**.
 See [Set up backups](../backups/index.md) for the full walkthrough, and
 [Before you create the first instance](../instances/index.md) for what the
 first deploy needs.

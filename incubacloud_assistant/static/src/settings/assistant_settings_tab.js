@@ -6,12 +6,17 @@ import { _t } from "@web/core/l10n/translation";
 import { user } from "@web/core/user";
 import { MultiSelect } from "@incubacloud/components/multi_select/multi_select";
 import { RlSelect } from "@incubacloud/components/rl_select/rl_select";
+import {
+    SettingAdvanced, SettingField, SettingRow, SettingsBlock,
+} from "@incubacloud/components/settings_form/settings_form";
 import { modelOptions, money, roleLabel, settingsChanges } from "../assistant_format";
 
 /** Settings → Assistant: provider, key, models, users, limits and usage. */
 export class AssistantSettingsTab extends Component {
     static template = "incubacloud_assistant.AssistantSettingsTab";
-    static components = { MultiSelect, RlSelect };
+    static components = {
+        MultiSelect, RlSelect, SettingAdvanced, SettingField, SettingRow, SettingsBlock,
+    };
     static props = {};
 
     /** Read the settings and the usage; save them with the page's Save button. */
@@ -107,7 +112,7 @@ export class AssistantSettingsTab extends Component {
                 "api_key",
                 "clear_api_key",
                 "accept_ai_terms",
-            ], "assistant");
+            ]);
         }
     }
 
@@ -201,6 +206,11 @@ export class AssistantSettingsTab extends Component {
     /** Whether a key is typed in the form, to be tried and kept on Save. */
     get keyTyped() {
         return Boolean(String(this.state.form.api_key || "").trim());
+    }
+
+    /** @returns {string} what the key field says when no key is saved */
+    get notSetText() {
+        return _t("Not set");
     }
 
     /** The key field's hint: a key is saved, typing replaces it. */

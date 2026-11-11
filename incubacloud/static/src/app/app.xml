@@ -143,7 +143,7 @@
                         <Monitoring/>
                     </t>
                     <t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
-                        <Settings initialTab="state.params.tab"/>
+                        <Settings section="state.params.section" field="state.params.field" tab="state.params.tab"/>
                     </t>
                     <t t-if="state.route === 'backup_backends' and env.permissions?.can_manage_settings">
                         <BackupBackendsList/>
