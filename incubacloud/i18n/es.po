@@ -6099,13 +6099,11 @@ msgstr "Instancias en marcha"
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
-"Job #%(job)s (%(type)s) was cancelled, and server %(host)s has not answered "
-"since: the panel stopped trying to clean up after it. On the server, "
-"%(left)s."
+"Job #%(job)s (%(type)s) was cancelled, and %(why)s: the panel stopped trying"
+" to clean up after it. On the server, %(left)s."
 msgstr ""
-"El trabajo #%(job)s (%(type)s) se canceló y el servidor %(host)s no ha "
-"respondido desde entonces: el panel ha dejado de intentar limpiar lo que "
-"dejó. En el servidor, %(left)s."
+"El trabajo #%(job)s (%(type)s) se canceló y %(why)s: el panel ha dejado de "
+"intentar limpiar lo que dejó. En el servidor, %(left)s."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18768,6 +18766,16 @@ msgid "its domain"
 msgstr "su dominio"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"its step '%(step)s' on server %(host)s was past the point of no return and "
+"still ran"
+msgstr ""
+"su paso «%(step)s» en el servidor %(host)s había pasado el punto sin retorno"
+" y seguía en marcha"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "job"
@@ -19195,6 +19203,12 @@ msgid "sent"
 msgstr "enviado"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "server %(host)s has not answered since"
+msgstr "el servidor %(host)s no ha respondido desde entonces"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "set up by hand"
@@ -19314,6 +19328,12 @@ msgstr ""
 "                    y reemplazarla con el backup de"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "the files it left on server %(host)s could not be removed"
+msgstr "no se pudieron eliminar los archivos que dejó en el servidor %(host)s"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "the general settings"
@@ -19336,11 +19356,11 @@ msgstr "el CDN de la plataforma, refrescado a diario"
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
-"the step '%(step)s' may still run in %(dir)s; stop it with `%(dir)s/ctl.sh "
-"stop %(dir)s 20`, then remove the directory"
+"the step '%(step)s' may still run in %(dir)s; stop it with `bash "
+"%(dir)s/ctl.sh stop %(dir)s 20`, then remove the directory"
 msgstr ""
-"puede que el paso «%(step)s» siga en marcha en %(dir)s; deténgalo con "
-"`%(dir)s/ctl.sh stop %(dir)s 20` y luego elimine el directorio"
+"puede que el paso «%(step)s» siga en marcha en %(dir)s; deténgalo con `bash "
+"%(dir)s/ctl.sh stop %(dir)s 20` y luego elimine el directorio"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19394,6 +19414,13 @@ msgstr "uptime"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid "waits for %s"
 msgstr "espera a %s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "what it left on server %(host)s could not all be stopped or removed"
+msgstr ""
+"no se pudo detener o eliminar todo lo que dejó en el servidor %(host)s"
 
 #. module: incubacloud
 #. odoo-javascript
