@@ -292,7 +292,7 @@ attempt. An executor with no step marked runs as before: no checkpoint, no
 park, a dead worker repeats it from the start. Steps are marked one by one,
 each with its own review and QA.
 
-- **What is marked** (1.0.225, 11/12-nov-2026). A step that, with a large
+- **What is marked** (1.0.226, 11/12-nov-2026). A step that, with a large
   database or a slow server, may last more than 0.4 × `limit_time_real`
   (360 s with 900): what a step run in the request may start with once the
   attempt's budget is nearly spent. Not what lasts seconds by nature (a
