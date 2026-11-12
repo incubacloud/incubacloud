@@ -335,6 +335,36 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
         page = self._tools(self.outsider)._tool_list_jobs({"category": "all"})
         self.assertNotIn(job.id, [row["id"] for row in page["items"]])
 
+    def test_a_cancelled_job_is_listed_stopping_while_its_queue_job_runs(self):
+        """list_jobs reads stopping=true for a cancelled job whose queue
+        job still runs, and false for one that ended."""
+        qjob = (
+            self.env["queue.job"]
+            .sudo()
+            .create(
+                {
+                    "uuid": "mcp-list-stopping",
+                    "name": "stopping",
+                    "state": "started",
+                    "method_name": "execute",
+                    "model_name": "cloud.job",
+                    "func_string": "execute()",
+                }
+            )
+        )
+        stopping = self._job("deploy_instance", "pending", instance=self.staging)
+        stopping.sudo().with_context(ic_skip_state_hook=True).write(
+            {"queue_job_uuid": qjob.uuid, "state": "cancelled"}
+        )
+        ended = self._job("deploy_instance", "cancelled", instance=self.staging)
+        self.env.flush_all()
+        page = self._tools(self.consultant)._tool_list_jobs(
+            {"instance_id": self.staging.id}
+        )
+        rows = {row["id"]: row for row in page["items"]}
+        self.assertIs(rows[stopping.id]["stopping"], True)
+        self.assertIs(rows[ended.id]["stopping"], False)
+
     # ── clean_frozen_copy ─────────────────────────────────────────────────
 
     def test_cleaning_a_frozen_copy_names_its_server_and_is_a_manager_s(self):
