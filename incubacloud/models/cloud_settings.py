@@ -678,8 +678,9 @@ class CloudSettings(models.Model):
              'the Traefik of the host it runs on, with a certificate, e.g. '
              'metrics.example.com; its DNS record must point at that host. '
              'The panel then reaches the central, and every agent writes '
-             'to it, under that name. Empty: the central is used from the '
-             "panel's own host, on its docker bridge, as before.",
+             'to it, under that name. Empty: nothing is published, so only '
+             "agents on the central's own server can write to it and the "
+             'panel cannot read it from another server.',
     )
     metrics_central_operator_sources = fields.Text(
         string='Who may delete series and read the fleet on the central',
