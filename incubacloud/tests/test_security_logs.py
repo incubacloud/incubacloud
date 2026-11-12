@@ -191,6 +191,12 @@ class TestTheRenderedCollector(TransactionCase):
         )
         self.assertFalse({"security", "security-agent"} & set(jobs(ic_fluent_bit=False)))
 
+    def test_vmagent_reads_a_new_scrape_config_whatever_else_changed(self):
+        """Fluent Bit added changes the compose file but not vmagent's
+        definition: ``up -d`` leaves vmagent on the old scrape config."""
+        task = playbook.task("Restart vmagent when its configuration changed")
+        self.assertEqual(task["when"], "ic_scrape_cfg is changed")
+
     def test_switched_off_its_cursors_go_with_it(self):
         """M2: back on, it must not send what happened while off."""
         task = playbook.task("Remove the security log collector, switched off")

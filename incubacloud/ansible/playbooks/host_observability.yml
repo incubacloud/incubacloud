@@ -1048,14 +1048,17 @@
       until: ic_agents_up.rc == 0
       changed_when: true
 
-    - name: Restart vmagent when its configuration changed
+    - name: Restart vmagent when its configuration changed  # noqa: no-handler
       # ``up -d`` does not restart a container whose image and compose
       # definition are unchanged, so a new scrape config alone would not
-      # be picked up.
+      # be picked up. Whether the compose file changed too says nothing:
+      # Fluent Bit added or removed changes it and leaves vmagent's own
+      # definition, so vmagent kept scraping without the security jobs
+      # (measured on a server, 12-nov-2026).
       ansible.builtin.command:
         cmd: docker compose -p incubacloud-observability -f docker-compose.yaml restart vmagent
         chdir: "{{ ic_obs_dir }}"
-      when: ic_scrape_cfg is changed and ic_agents_compose is not changed
+      when: ic_scrape_cfg is changed
       changed_when: true
 
     - name: Restart Fluent Bit when its configuration changed  # noqa: no-handler
