@@ -29,12 +29,18 @@ you connect yourself, so it never adds an extra host
 
 In your control plane, go to `/cloud/hosts` and click **Order VPS**.
 
-### 2. Pick size and location
+### 2. Pick provider, location and size
 
-The catalog (sizes, locations, live availability) comes straight from Hetzner.
-Each size shows the exact hourly and monthly price for the location you pick,
-before VAT, and that is what you will pay. Pick a region close to your users —
-EU (Helsinki, Nuremberg, Falkenstein) or US (Ashburn, Hillsboro).
+The form goes in that order. The provider comes first, with Hetzner chosen by
+default; change it if another is listed. The locations and sizes then are
+those the provider has in stock right now, read from it when the form opens
+and each time you change provider, so nothing you pick is already out of stock.
+Choose a location in the region you want, close to your users. Each size shows
+the exact hourly and monthly price for that location, before VAT, and that is
+what you will pay.
+
+If the provider has nothing in stock, the form says so in plain words and
+orders nothing; try again later or choose another provider.
 
 Each size also says how many users at once it is **recommended for**, or that
 it is for tests only. Type the number of people who will work in Odoo at the
@@ -86,9 +92,12 @@ more than the monthly cap).
     `My account → IncubaCloud → Payment method`, or pay the invoice under
     `My account → Invoices`, and order again.
 
-??? note "Provisioning failed: out of capacity"
-    Hetzner sometimes runs out of stock in a specific region for a specific size.
-    Retry with a different region — failed provisions are not billed.
+??? note "The order is refused: out of stock"
+    The provider ran out of a size in that location after the form read its
+    stock. The form reads it again and offers only what is left; pick another
+    location or size and order again. A failed provision offers **Retry in
+    another location**, listing only locations in stock for that size. Failed
+    provisions are not billed.
 
 ??? note "Provisioning failed: rate limit"
     Hetzner enforces creation rate limits. Wait 5 minutes and retry.
