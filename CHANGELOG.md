@@ -148,15 +148,22 @@ next deploy when its host is behind Cloudflare.
   up, with one `session_guard_antiloop` alert per user and pair. Rows are
   kept 90 days.
 - **What the guard writes never stops a request.** Every row goes on a
-  database connection of its own, and a write that collides with a
-  parallel request of the same page is tried again on a new one, eight
-  times in all, after a pause of 10 to 50 ms at random: without it, a user whose signal only logs (the anti-loop)
-  was closed by the second request of a page. Any failure of the guard
-  but a close is logged and the request is served, where Odoo would
-  answer 403 on every route, the sign-out included, a database not yet
-  updated among them. A close waits three seconds at most for
-  another close of the same user, and a failure of what a layer does on a
-  close keeps the close's row.
+  database connection of its own, in READ COMMITTED, so the parallel
+  requests of a page see what the one before committed: in Odoo's
+  REPEATABLE READ, a user whose signal only logs (the anti-loop) was
+  closed by the second request of a page, and two sessions closing at
+  once missed each other in the anti-loop's count. A write that still
+  collides is tried again on a new connection, eight times in all, after
+  a pause of 10 to 50 ms at random, with one line at INFO and no `bad
+  query` ERROR. Any failure of the guard but a close is logged and the
+  request is served, where Odoo would answer 403 on every route, the
+  sign-out included, a database not yet updated among them. A close waits
+  three seconds at most for another close of the same user; the
+  anti-loop's alert, which can page somebody over HTTP, is raised once
+  the hold is committed and outside that wait, so the other requests of
+  the page are held and not closed. A failure of what a layer does on a
+  close keeps the close's row, and a session whose files cannot be
+  deleted is closed anyway.
 - **A closed session on a page open to visitors** (the sign-in, the
   website) is served as a visitor, as Odoo serves a session it no longer
   accepts there, instead of being sent to the sign-in.

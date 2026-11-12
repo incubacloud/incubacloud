@@ -143,14 +143,23 @@ user's connection or someone else using their sessions. The hold is per
 database: a user with an alternating connection learns it separately on
 the master and on each panel.
 
+The alert is raised once the hold is committed, on a connection of its
+own and outside the user's lock (re-review of 12-nov-2026, M-a): it can
+page somebody over Telegram or a webhook, which may take seconds, and the
+other requests of the same page wait for that lock. Raised under it, they
+waited past `LOCK_TIMEOUT` and closed the user the hold was for. If
+raising it fails (`could not raise the anti-loop alert`), the hold stays
+and that pair is not alerted again.
+
 ## Writes and failures
 
 Every row is written on a database connection of its own, never on the
 request's, and committed before the request is refused or served.
 
-| Value (in code) | Value | Why (12-nov-2026, review of the result) |
+| Value (in code) | Value | Why (12-nov-2026, review of the result and its re-review) |
 |---|---|---|
-| `WRITE_ATTEMPTS` | 8 | Odoo's transactions are REPEATABLE READ: the parallel requests of one page write the same row at the same moment, and all but the first fail to serialize. A new connection sees what the first committed. Queued on the user's lock, the n-th request of a burst can need n connections. Odoo 19's web client opens a page with more than three calls at once, and behind the CDN over HTTP/2 the browser does not hold them to six, so three was not enough. Past eight the request closes the session, even for a user in a hold (A1). |
+| `READ_COMMITTED` | on | The guard's connection is switched from Odoo's REPEATABLE READ to READ COMMITTED before anything runs on it. In REPEATABLE READ the snapshot is taken when the user's lock is asked for, before the wait: the parallel requests of one page then failed to write the rows the first had written, and two sessions of the user closing at once both missed the other's close in the anti-loop's count, so the hold came a close later. In READ COMMITTED each statement sees what was committed when it starts. Not on a test's connection, which is one transaction already begun. |
+| `WRITE_ATTEMPTS` | 8 | In READ COMMITTED the requests of a page do not collide; the attempts stay for a connection left in REPEATABLE READ and for a deadlock. There, queued on the user's lock, the n-th request of a burst can need n connections, and Odoo 19's web client opens a page with more than three calls at once (behind the CDN, over HTTP/2, the browser does not hold them to six). Past eight the request closes the session, even for a user in a hold (A1). |
 | `RETRY_PAUSE` | 10–50 ms, at random | The pause before trying again, so the requests that collided do not collide again together. |
 | `LOCK_TIMEOUT` | 3 s | A close waits for another close of the same user under a lock and holds a second connection meanwhile. Past three seconds it closes without recording. |
 
@@ -161,7 +170,12 @@ with the traceback and the request is served. A row that cannot be
 written (`could not log`, `could not record the re-entry`) is logged the
 same way. A close whose row cannot be written still closes (`closing it
 anyway`). What a layer does on a close (`_session_guard_closed`) failing
-keeps the row (`what a close does beyond this database failed`).
+keeps the row (`what a close does beyond this database failed`). A
+session whose files cannot be deleted is closed anyway (`could not delete
+the files of a closed session; closing it anyway`): the request is still
+refused. A write that collides is one line at INFO, `a write collided
+with a parallel request (<error>); trying again (n of 8)`, without
+Odoo's `bad query` ERROR.
 
 New code serving before its update has run has no `cloud_session_closure`
 table: every pin and log fails and is logged, and the requests are served;
