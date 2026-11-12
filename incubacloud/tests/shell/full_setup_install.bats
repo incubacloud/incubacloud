@@ -125,3 +125,25 @@ teardown() {
     [ "$status" -eq 0 ]
     ! grep -q pull "$TMP/docker_calls" 2>/dev/null
 }
+
+# Full Setup runs the install apart on the server (detached_step.sh, phase 3):
+# with the umask of the session that starts it, as attached, no terminal and
+# no input. A user that is not root writes /etc through sudo, whose files
+# take that umask: 0644, readable by whoever reads them, not the 0600 of the
+# script's own files.
+@test "run apart as a user that is not root, what it writes through sudo has the session's umask" {
+    _stub python3 'exec /usr/bin/python3 "$@"'
+    _stub busctl 'case "$*" in *KillUserProcesses*) echo "b false" ;; *) echo "as 0" ;; esac'
+    local step="$TMP/.incubacloud-detached-0123456789abcdef" i header=""
+    run bash -c "umask 022; bash '${BATS_TEST_DIRNAME}/../../scripts/detached_step.sh' start '$step' 60 host 41 'Install host tools' 'bash $SCRIPT'"
+    [ "$status" -eq 0 ]
+    for i in $(seq 1 100); do
+        header="$(bash "$step/ctl.sh" read "$step" 0 | head -n 1)"
+        [[ "$header" == *"state=done "* ]] && break
+        sleep 0.1
+    done
+    [[ "$header" == *"state=done exit=0 "* ]]
+    [ "$(stat -c %a "$IC_DOCKER_DAEMON_JSON")" = 644 ]
+    [ "$(stat -c %a "$step")" = 700 ]
+    bash "$step/ctl.sh" clean "$step"
+}
