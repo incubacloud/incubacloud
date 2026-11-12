@@ -570,6 +570,18 @@ class TestTheDirectDeployment(ObservabilityExecutorCase):
         with self.assertRaisesRegex(JobRefused, "no direct port applied"):
             self._refusal(ObservabilityCentralExecutor)
 
+    def test_a_public_name_without_full_setup_is_refused(self):
+        self.settings.write({"metrics_central_public_host": PUBLIC})
+        self.host.traefik_deployed = False
+        with self.assertRaisesRegex(JobRefused, "press Full Setup"):
+            self._refusal(ObservabilityCentralExecutor)
+
+    def test_a_public_name_with_full_setup_is_not_refused_for_it(self):
+        self.settings.write({"metrics_central_public_host": PUBLIC})
+        self.settings.metrics_central_direct_host = False
+        self.host.traefik_deployed = True
+        self._refusal(ObservabilityCentralExecutor)
+
     def test_the_account_sync_is_never_refused_for_it(self):
         self._refusal(MetricsAclSyncExecutor)
 

@@ -352,6 +352,34 @@ silence come first, twenty at most.
 The three routes share one budget per user (20 boards a minute,
 `_BOARD_READS_PER_MIN`).
 
+## Where the central runs
+
+**Recommended: a server of its own.** It can be hardened and does not
+compete with Odoo for memory. A server dedicated to the central is added
+to the panel like any other and goes through Full Setup *before*
+*Enable observability*: the central installs no Traefik, and with
+`metrics_central_public_host` set it joins the one Full Setup leaves on
+every managed server (network `inverseproxy_shared`). Without it the job
+is refused before it starts, with "This server does not have the proxy
+that Full Setup installs: press Full Setup on the server and activate
+observability again". `cloud.host.traefik_deployed`, set when Full Setup
+ends, is what the check reads.
+
+**Allowed: the panel's own server.** Register it in the panel over SSH,
+pick it in Settings → Monitoring → *Where the central runs* and press
+*Enable observability*; the panel reads the central over the Docker
+network. Costs and limits:
+
+- the two compete for memory, and the central needs about 1–2 GB
+  depending on the number of servers (see Costs and sizing);
+- never run *Harden* or *Full Setup* on the panel's own server: it can
+  cut the panel's access to its own machine;
+- one server down takes both with it.
+
+**Odoo.sh and self-hosted panels that cannot run the central** need a
+metrics server of their own, as above: Odoo.sh does not let the central
+run. On IncubaCloud's SaaS the central is part of the service.
+
 ## Moving the central to its own VPS
 
 The destination is a parameter, not a hard-coded host. A central on a

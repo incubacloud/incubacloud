@@ -15255,6 +15255,16 @@ msgstr ""
 " el host y pulse «Configuración completa»."
 
 #. module: incubacloud
+#: code:addons/incubacloud/models/observability_central_executor.py:0
+msgid ""
+"This server does not have the proxy that Full Setup installs: press Full "
+"Setup on the server and activate observability again."
+msgstr ""
+"Este servidor no tiene el proxy que instala la Configuración completa: pulse"
+" «Configuración completa» en el servidor y vuelva a activar la "
+"observabilidad."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_settings_direct.py:0
 msgid "The certificate of the direct path %(name)s expires on %(date)s."

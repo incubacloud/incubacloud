@@ -177,6 +177,11 @@ database of the copy, archives the hosts and cancels the pending jobs, but it
 does not protect the key: the key is as protected as the access to the
 project.
 
+A panel on Odoo.sh cannot run the metrics central: Odoo.sh does not let it.
+Give the central a server of its own, registered in the panel and prepared
+with Full Setup, and choose it in Settings → Monitoring → *Where the central
+runs*. See [Monitoring](https://docs.incubacloud.io/reference/monitoring/#where-to-run-the-central).
+
 > **Keep a copy of the encryption key somewhere else.** Every secret the
 > panel stores is encrypted with it: the hosts' SSH keys and passwords, GitHub
 > tokens, the backup destinations' keys and passphrases. A copy of the panel's

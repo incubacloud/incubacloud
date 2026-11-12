@@ -81,8 +81,39 @@ matters.
 your panel is created, and hosts you add later are enrolled on their own.
 
 **Self-hosted** — one decision: which of your hosts runs the central
-stack. Settings → Monitoring, pick the host, press *Enable observability*.
-The endpoints and credentials are filled in for you.
+stack. Settings → Monitoring, pick the host under *Where the central
+runs*, press *Enable observability*. The endpoints and credentials are
+filled in for you.
+
+### Where to run the central
+
+**We recommend a server of its own for the central.** It can be hardened
+without touching anything else, and it does not compete with Odoo for
+resources. Add the server to the panel like any other, run Full Setup on
+it, then enable observability against it. The central installs no proxy
+of its own: when you publish it under a public name, it uses the one
+that Full Setup leaves on every managed server, so a server that has not
+been through Full Setup refuses the job and says so.
+
+**It can also run on the same server as the panel**, with these
+conditions:
+
+- Register that server in the panel over SSH, choose it under
+  *Settings → Monitoring → Where the central runs* and press *Enable
+  observability*. The panel reads the central over Docker's network.
+- The panel and the central compete for memory. The central asks for
+  roughly 1 to 2 GB, depending on how many servers report to it.
+- **Do not run *Harden* or *Full Setup* on the panel's own server.** They
+  can cut the panel's access to its own machine.
+- If that server goes down, so do both.
+
+### Hosted on Odoo.sh
+
+Odoo.sh does not let you run the central, so a panel installed there
+needs a metrics server of its own: a separate server, registered and
+prepared as described above, chosen under *Where the central runs*. The
+same holds for any self-hosted panel that cannot run the central beside
+it. On IncubaCloud's SaaS the central is included for your tenants.
 
 If you have hosts other than the one running the central, they need a
 public HTTPS address to push to; set it under *Advanced*. The local

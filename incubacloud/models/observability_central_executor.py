@@ -409,10 +409,29 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         :raises JobRefused: saying what to do.
         """
         super().pre_run_checks()
-        problem = self._direct_port_problem()
+        problem = self._public_proxy_problem() or self._direct_port_problem()
         if problem:
             self._write_system_direct(f"⚠ {problem}")
             raise JobRefused(problem)
+
+    def _public_proxy_problem(self):
+        """Return why this run cannot publish the central under a name, or ''.
+
+        The central installs no Traefik: under a public name it joins the
+        one Full Setup leaves on every managed host (``traefik_deployed``
+        is set when Full Setup ends).
+
+        :rtype: str
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not (settings.metrics_central_public_host or "").strip():
+            return ""
+        if self._host().traefik_deployed:
+            return ""
+        return _(
+            "This server does not have the proxy that Full Setup installs: "
+            "press Full Setup on the server and activate observability again."
+        )
 
     def _direct_port_problem(self):
         """Return why this run cannot publish the central's direct name, or ''.
