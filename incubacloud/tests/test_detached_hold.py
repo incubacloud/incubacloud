@@ -177,6 +177,19 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.assertTrue(row.holds_queue_since)
         self.assertTrue(row.reconcile_tried_at)
         self.assertTrue(self._busy())
+        # A second pass that cannot reach it either keeps the first mark:
+        # the expiry counts from it.
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " holds_queue_since - interval '100 seconds' WHERE job_id = %s",
+            (self.job.id,),
+        )
+        self.env.invalidate_all()
+        first = self._row().holds_queue_since
+        self._retry_due()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        self.assertEqual(self._row().holds_queue_since, first)
         self.env.cr.execute(
             "UPDATE cloud_job_checkpoint SET holds_queue_since ="
             " holds_queue_since - make_interval(secs => %s) WHERE job_id = %s",
@@ -258,6 +271,45 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.assertTrue(row)
         self.assertFalse(row.holds_queue_since)
         self.assertFalse(self._busy())
+
+    def test_a_requeue_that_resumes_the_job_drops_the_mark(self):
+        """A row marked and not closed, taken up again: it holds nothing now."""
+        cls = self._parked(_no_return_from="Apart")
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " now() at time zone 'UTC' WHERE job_id = %s", (self.job.id,),
+        )
+        self.env.invalidate_all()
+        self.assertTrue(self._row().holds_queue_since)
+        cls(self.job, self.host)._resume(self._row())
+        self.assertFalse(self._row().holds_queue_since)
+
+    def test_a_mark_set_by_the_pass_that_gives_up_serves_the_queue(self):
+        """The row marked and deleted in one pass: the queue is served."""
+        cls = self._lost(_no_return_from="Apart")
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        # A row not marked yet, well past its cap.
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since = NULL,"
+            " step_started_at = (now() at time zone 'UTC') - interval '3 hours',"
+            " lost_contact_since = NULL WHERE job_id = %s", (self.job.id,),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '3 hours'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self._retry_due()
+        Job = type(self.env["cloud.job"])
+        with patch.object(
+            Job, "_schedule_dispatch", autospec=True,
+        ) as dispatch, mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        self.assertFalse(self._row())
+        self.assertTrue(any(
+            {tuple(scope) for scope in call.args[1]} == {self._scope()}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
 
 
 class TestAMoveRestoreUndoneDoesNotHoldItsQueue(_HoldCase):
@@ -612,6 +664,18 @@ class TestARowThatHoldsTheQueue(TransactionCase):
         self.assertFalse(self.Job._server_holder(self.inst.id, None))
         self.assertFalse(self.Job._scope_busy(self.inst.id, None))
 
+    def test_the_reconciliation_looks_at_rows_that_hold_first(self):
+        """Before the rows of servers that do not answer, whatever their ids."""
+        unheld = self._ended("deploy_instance", self.inst, holds=False)
+        held = self._ended("deploy_instance", self.other)
+        self.assertLess(unheld.id, held.id)
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '10 minutes'"
+            " WHERE id IN %s", ((unheld.id, held.id),),
+        )
+        ids = self.Job._lost_job_ids()
+        self.assertLess(ids.index(held.id), ids.index(unheld.id))
+
     def test_a_row_without_the_mark_holds_nothing(self):
         """A directory left, a staging not removed: the queue goes on."""
         self._ended("deploy_instance", self.inst, holds=False)
@@ -733,10 +797,10 @@ class _Room(_Parking):
 class TestTheOutcomeGetsAFreshAttempt(_ParkingCase):
     """A job whose hooks fetch through the panel starts them with time."""
 
-    def _room(self, elapsed_s, limit_s, needs_room=True):
+    def _room(self, elapsed_s, limit_s, needs_room=True, plan=None, spend_at=None):
         """Return an executor class whose attempts have run *elapsed_s*."""
         return type("_TestRoom", (_Room,), {
-            "plan": self._plan(), "spend_at": None, "instances": (),
+            "plan": plan or self._plan(), "spend_at": spend_at, "instances": (),
             "prepared": 0, "busy_once": False, "spent": False,
             "elapsed_s": elapsed_s, "limit_s": limit_s,
             "_outcome_needs_room": needs_room,
@@ -780,3 +844,29 @@ class TestTheOutcomeGetsAFreshAttempt(_ParkingCase):
     def test_a_job_whose_hooks_need_no_room_does_not_park(self):
         """The default."""
         self._in_one_attempt(self._room(200, 900, needs_room=False))
+
+    def test_a_plan_without_a_step_apart_does_not_park(self):
+        """No checkpoint: the hooks run in the attempt, however long it ran."""
+        plan = tuple(step for step in self._plan() if step[0] != "Apart")
+        self._in_one_attempt(self._room(200, 900, plan=plan))
+        self.assertFalse(self._row())
+
+    def test_a_run_a_step_cut_short_closes_in_its_attempt(self):
+        """A failed step stopped the run: no closing hook fetches anything."""
+        cls = self._room(200, 900, plan=self._plan(stop_first=True))
+        self.assertIsInstance(self._execute(cls), JobError)
+        self.assertEqual(len(cls.instances), 1)
+        self.assertEqual(cls.instances[0].closed[0], "failure")
+        self.assertEqual(self._runs(), ["First"])
+
+    def test_an_attempt_resumed_halfway_still_leaves_it_to_a_fresh_one(self):
+        """Resumed before its last steps, it is not the fresh attempt."""
+        cls = self._room(200, 900, spend_at="step:1")
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertEqual(self._row().next_index, 1)
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertEqual(self._row().next_index, 3)
+        self.assertIsNone(cls.instances[1].closed)
+        self.assertIsNone(self._execute(cls))
+        self.assertEqual(cls.instances[2].closed[0], "success")
+        self.assertEqual(self._runs(), ["First", "Apart", "Last"])

@@ -860,7 +860,11 @@ class AbstractExecutor(ABC):
     #: The closing hooks fetch through the panel what the steps made (a
     #: download to an attachment, over SFTP): they cannot run apart on the
     #: server, and need the request's time. An attempt that has run long
-    #: leaves them to a fresh one (``OUTCOME_ROOM_FACTOR``).
+    #: leaves them to a fresh one (``OUTCOME_ROOM_FACTOR``), only for a
+    #: plan with a step marked ``detached``: no other keeps a checkpoint
+    #: to park on (``_may_park``). The fresh attempt calls neither
+    #: ``before_execute`` nor ``get_commands``: what the hooks read of
+    #: theirs goes in ``_carried``.
     _outcome_needs_room = False
     # ``time.monotonic()`` when this attempt started (``_start_clock``).
     _attempt_started = None
@@ -1112,7 +1116,11 @@ class AbstractExecutor(ABC):
                             "This attempt's time is up: the job closes in"
                             " a few seconds."
                         ))
-                    if self._outcome_wants_fresh_attempt(len(commands)):
+                    # A step that failed and stopped the run leaves the
+                    # hooks nothing to fetch.
+                    if not skipped and self._outcome_wants_fresh_attempt(
+                        len(commands),
+                    ):
                         raise self._park(len(commands), (
                             "The result is fetched in a fresh attempt, with"
                             " all of its time: the job goes on in a few"
@@ -2376,7 +2384,7 @@ class AbstractExecutor(ABC):
         step: ``before_execute`` and ``get_commands()`` are not called
         again. A step that was started on the server is followed from the
         offset its log had reached. The row is marked as taken up,
-        ``parked`` cleared.
+        ``parked`` and ``holds_queue_since`` cleared.
 
         :param row: the job's ``cloud.job.checkpoint``
         """
@@ -2385,6 +2393,9 @@ class AbstractExecutor(ABC):
             "parked": False,
             "parked_until": False,
             "overdue_noted": False,
+            # A mark a closed run left, which a later close would take for
+            # its own (``_hold_queue`` keeps the first one).
+            "holds_queue_since": False,
             "attempts": row.attempts + 1,
         })
 
