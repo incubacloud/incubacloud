@@ -196,11 +196,29 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             accounts = self._accounts_for_deployment(settings)
             operator_token = settings._ensure_operator_credential()
             admin_password = settings._ensure_grafana_admin_password()
-            delete_key = (
-                self._delete_key_for_deployment(env, settings)
-                if mint_delete_key
-                else settings.metrics_delete_auth_key or ""
-            )
+            if mint_delete_key:
+                # Minted once and then kept, except for a key recorded
+                # before the backend read it from a file: that one was a
+                # flag of the container, readable with ``docker inspect``
+                # by anyone in the host's docker group, so it is replaced
+                # the first time. The mark is written with the key, on
+                # this durable cursor (written here, not in a helper, so
+                # the executor write rule sees the durable block): a
+                # deployment that fails afterwards leaves the new key for
+                # the next one, as it always left a freshly minted one.
+                params = env["ir.config_parameter"].sudo()
+                if (
+                    settings.metrics_delete_auth_key
+                    and not params.get_param(_DELETE_KEY_IN_FILE_PARAM)
+                ):
+                    settings.write({"metrics_delete_auth_key": False})
+                    self._sys("Replacing the metrics deletion key: the "
+                              "backend received the old one as a visible "
+                              "flag.")
+                delete_key = settings._ensure_metrics_delete_key()
+                params.set_param(_DELETE_KEY_IN_FILE_PARAM, "1")
+            else:
+                delete_key = settings.metrics_delete_auth_key or ""
             values, volatile = self._durable_values(
                 settings, _CENTRAL_SECRET_FIELDS,
             )
@@ -210,35 +228,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             values, volatile,
         )
         return accounts, operator_token, admin_password, delete_key
-
-    def _delete_key_for_deployment(self, env, settings):
-        """Return the deletion key this deployment hands the backend.
-
-        Minted once and then kept, except for a key recorded before the
-        backend read it from a file: that one was a flag of the
-        container, readable with ``docker inspect`` by anyone in the
-        host's docker group, so it is replaced the first time. The mark
-        is written with the key, on the same durable cursor: a deployment
-        that fails afterwards leaves the new key for the next one, as it
-        always left a freshly minted one.
-
-        :param env: the durable environment of
-            :meth:`_ensure_central_secrets`.
-        :param settings: the ``cloud.settings`` record, in that environment.
-        :return: the plaintext key.
-        :rtype: str
-        """
-        params = env["ir.config_parameter"].sudo()
-        if (
-            settings.metrics_delete_auth_key
-            and not params.get_param(_DELETE_KEY_IN_FILE_PARAM)
-        ):
-            settings.write({"metrics_delete_auth_key": False})
-            self._sys("Replacing the metrics deletion key: the backend "
-                      "received the old one as a visible flag.")
-        key = settings._ensure_metrics_delete_key()
-        params.set_param(_DELETE_KEY_IN_FILE_PARAM, "1")
-        return key
 
     def _record_shipped_accounts(self):
         """Write down the access-control list this run put in force.
