@@ -2123,8 +2123,11 @@ class AbstractExecutor(ABC):
 
         For a plan with a step marked ``detached``: the plan as it was
         materialised, no result yet, the job's working directory and the
-        secrets it staged. The script that runs the steps apart goes with
-        the job's other scripts, uploaded now if none was asked for.
+        secrets it staged, and the step of the plan a stop must not cut
+        (``_no_return_from``) as it was then: whoever closes the job later
+        reads it there (``_past_no_return``), not from the instance as it
+        is by then. The script that runs the steps apart goes with the
+        job's other scripts, uploaded now if none was asked for.
 
         :param transport: the job's open transport
         :param list commands: the materialised ``get_commands()`` output
@@ -2144,6 +2147,7 @@ class AbstractExecutor(ABC):
             "job_dir": self._job_dir() if self._job_dir_created else None,
             "private_uploads": list(self._private_uploads),
             "carried": self._carried_state(),
+            "no_return_from": self._no_return_from,
         }
         self._write_checkpoint({
             "queue_job_uuid": self.job.queue_job_uuid or False,
@@ -2675,10 +2679,19 @@ class AbstractExecutor(ABC):
     def _past_no_return(self, index):
         """Whether step *index* of the adopted plan is past the point of no return.
 
+        The point as the plan was materialised (``_open_checkpoint``): a
+        move's restore has none, and the rollback that removes the move's
+        marks does not give the load that ran one. A row written by a
+        version that did not keep it there falls back to the executor's.
+
         :param int index: a position in the plan
         :rtype: bool
         """
-        label = self._no_return_from
+        data = self._checkpoint_data or {}
+        label = (
+            data["no_return_from"] if "no_return_from" in data
+            else self._no_return_from
+        )
         if not label:
             return False
         labels = [step[0] for step in self._checkpoint_data.get("plan") or []]

@@ -21,6 +21,7 @@ The steps run for real, on this machine, as in ``test_job_parking``.
 """
 import contextlib
 import os
+import subprocess
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -36,8 +37,9 @@ from odoo.addons.queue_job.exception import JobError
 
 from ..models import abstract_executor
 from ..models.abstract_executor import DETACHED_HOLDS_QUEUE_MAX_S
+from ..models.restore_instance_executor import RestoreInstanceExecutor
 from .test_detached_step import _Apart, _local_transport
-from .test_job_parking import _Parking, _ParkingCase, _StopCase
+from .test_job_parking import _TRAPPED, _Parking, _ParkingCase, _StopCase
 
 
 @contextlib.asynccontextmanager
@@ -182,7 +184,7 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.assertFalse(self._busy())
 
     def test_a_step_before_the_point_of_no_return_never_holds_it(self):
-        """A move's restore: its server gone, the rollback goes on."""
+        """Its server gone, the queue goes on (a move's restore: below)."""
         cls = self._lost()
         with mute_logger("AbstractExecutor"):
             self._reconcile(cls, connect=_refused)
@@ -199,6 +201,112 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self._reconcile(cls)
         self.assertFalse(self._row())
         self.assertFalse(self._busy())
+        self.assertIn("trapped", self._log())
+
+
+class TestAMoveRestoreUndoneDoesNotHoldItsQueue(_HoldCase):
+    """A move's restore cut with its new server gone, the move then undone.
+
+    The restore loads a copy nothing uses yet: its load is before any
+    point of no return while the instance moves (``_loads_as_move``).
+    The rollback removes the move's marks, but the step that ran is the
+    same: the reconciliation that comes back to it later neither holds
+    the queue of the instance, now in production on its source, nor
+    leaves the load running.
+    """
+
+    def setUp(self):
+        """The instance on its source, moving to the job's host."""
+        super().setUp()
+        self.source = self.env["cloud.host"].create({
+            "name": "move-source",
+            "ip_address": "192.0.2.98",
+            "user": "odoo",
+            "wildcard_domain": "source.example.com",
+        })
+        project = self.env["cloud.project"].create({"name": "Move hold"})
+        self.inst = self.env["cloud.instance"].create({
+            "name": "move-hold",
+            "project_id": project.id,
+            "environment": "production",
+            "host_id": self.source.id,
+        })
+        self.inst.sudo().write({"move_target_host_id": self.host.id})
+        self.job.write({
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "restore_instance")], limit=1,
+            ).id,
+            "instance_id": self.inst.id,
+            "payload": {"mode": "from_host", "as_move": True},
+        })
+        self.env.flush_all()
+
+    def _scope(self):
+        """The instance's queue."""
+        return (self.inst.id, None)
+
+    def _cut_then_undone(self):
+        """The restore parks with its load running and is lost; then the
+        reconciliation cannot reach the target, and the move is undone."""
+        plan = [
+            ("Stop Odoo service", f"echo Stop >> {self.runs}"),
+            ("Restore database", _TRAPPED.format(runs=self.runs), {"detached": True}),
+            ("Start Odoo service", f"echo Start >> {self.runs}"),
+        ]
+
+        def _spent(executor):
+            """Spent once it follows the load."""
+            return (
+                executor._on_server_index is not None
+                and executor._detached_offset > 0
+            )
+
+        with patch.object(
+            RestoreInstanceExecutor, "before_execute", autospec=True,
+        ), patch.object(
+            RestoreInstanceExecutor, "get_commands", autospec=True,
+            return_value=plan,
+        ), patch.object(
+            RestoreInstanceExecutor, "_budget_spent", autospec=True,
+            side_effect=_spent,
+        ):
+            self.assertIsInstance(
+                self._execute(RestoreInstanceExecutor),
+                abstract_executor.JobParked,
+            )
+        self.assertTrue(Path(self.directory).exists())
+        job_dir = self._row()._data().get("job_dir")
+        if job_dir:
+            self.addCleanup(subprocess.run, ["rm", "-rf", job_dir], check=False)
+        self._postponed()
+        self.qjob.unlink()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(RestoreInstanceExecutor, connect=_refused)
+        self.assertEqual(self.job.state, "failed")
+        self.assertTrue(self._row())
+        self.assertFalse(self._row().holds_queue_since)
+        # The rollback's clean-up of the target removes the move's marks.
+        self.inst.sudo().write({"move_target_host_id": False})
+        self.env.flush_all()
+        self._retry_due()
+
+    def test_the_target_still_gone(self):
+        """Another pass that cannot reach it: no mark, the queue free."""
+        self._cut_then_undone()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(RestoreInstanceExecutor, connect=_refused)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+
+    def test_the_target_back(self):
+        """A pass that reaches it: the load is stopped, the row gone."""
+        self._cut_then_undone()
+        self._reconcile(RestoreInstanceExecutor)
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        self.assertFalse(Path(self.directory).exists())
         self.assertIn("trapped", self._log())
 
 
@@ -387,6 +495,23 @@ class TestARowThatHoldsTheQueue(TransactionCase):
         """Not the queue of an instance on that host."""
         self._ended("host_probe")
         self.assertTrue(self.Job._scope_busy(None, self.host.id))
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+
+    def test_a_row_of_another_server_holds_nothing(self):
+        """Not the server the instance lives on: a move's target, or the
+        server it was recovered from."""
+        job = self._ended("deploy_instance", self.inst)
+        target = self.env["cloud.host"].create({
+            "name": "hold-target",
+            "ip_address": "192.0.2.99",
+            "user": "odoo",
+            "wildcard_domain": "hold-target.example.com",
+        })
+        self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", job.id)],
+        ).write({"host_id": target.id})
+        self.env.flush_all()
+        self.assertFalse(self.Job._server_holder(self.inst.id, None))
         self.assertFalse(self.Job._scope_busy(self.inst.id, None))
 
     def test_a_row_without_the_mark_holds_nothing(self):

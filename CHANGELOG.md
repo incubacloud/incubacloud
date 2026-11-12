@@ -110,7 +110,10 @@ is unchanged.
   serves the queue; a server that cannot be reached holds it two hours
   and ten minutes at most. A step before the point of no return never
   holds it, so the rollback of a move whose new server is gone starts at
-  once. A step found ended when the job is closed is said in its log with
+  once; the point is the one the plan had when it ran, so a move's
+  restore does not gain one once the rollback removes the move's marks,
+  and a step on a server the instance does not live on holds nothing.
+  A step found ended when the job is closed is said in its log with
   its exit status, which the closing hook gets as the step's result
   instead of a step that did not end. A job run
   again over a checkpoint it does not take up — kept by the hook that
