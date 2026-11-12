@@ -14,6 +14,7 @@ collision is driven apart, on connections of their own
 (:class:`TestParallelClosesOnRealConnections`).
 """
 import json
+import logging
 import threading
 import time
 from datetime import timedelta
@@ -961,12 +962,16 @@ class TestParallelClosesOnRealConnections(TransactionCase):
         """What the attempts are kept for, on a cursor left in REPEATABLE
         READ: the queued request collides with what the first committed
         and holds on a second cursor. Re-review, low: the collision is
-        one line of the guard's at INFO, and no ``bad query`` ERROR."""
+        one line of the guard's at INFO, and no ``bad query`` ERROR.
+
+        The level goes as a number: Odoo names its level 25 ``INFO`` too,
+        and wherever that name resolves to 25, ``assertLogs`` given
+        ``"INFO"`` drops the line, as core's CI on Python 3.10 did."""
         with patch.object(guard_module, "READ_COMMITTED", False), \
                 self.assertNoLogs("odoo.sql_db", "ERROR"), \
                 self.assertLogs(
                     "odoo.addons.incubacloud.models.cloud_session_guard",
-                    "INFO",
+                    logging.INFO,
                 ) as logged:
             action, outcome, cursors = self._requests_after_the_first(1, 2)
         self.assertEqual(action, "held")
