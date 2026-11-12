@@ -522,7 +522,8 @@ class TestFullSetupConverges(AcmePruneCase):
             FullSetupExecutor, "full_setup", "", exit_status=1,
         )
         self.assertNotIn(executor._acme_local_path(), files)
-        self.assertNotIn(self._STEP, dict(executor.get_commands()))
+        labels = [label for label, *_ in executor.get_commands()]
+        self.assertNotIn(self._STEP, labels)
 
 
 class TestTheJobChecksItsOwnWork(AcmePruneCase):
