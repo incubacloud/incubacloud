@@ -1011,7 +1011,7 @@ class TestObservabilityCapabilities(TransactionCase):
 
     def test_a_central_is_all_the_charts_need(self):
         """The panel draws its own charts: no Grafana URL is asked for
-        (12-nov-2026), so a tenant's panel, which never had one, shows
+        (12-nov-2026), so a managed panel, which never had one, shows
         its own servers."""
         self.settings.write({
             "metrics_enabled": True,
