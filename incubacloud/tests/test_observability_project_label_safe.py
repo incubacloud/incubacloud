@@ -98,7 +98,7 @@ class TestProjectNameIsData(ObservabilityExecutorCase):
         instance |= dict.fromkeys(free, odd)
         rendered = env.from_string(content).render(
             ic_host_name="h", ic_host_id="1", ic_account="a",
-            ic_has_traefik=True, ic_instances=[instance],
+            ic_has_traefik=True, ic_instances=[instance], ic_fluent_bit=False,
         )
         doc = yaml.safe_load(rendered)
         labels = [

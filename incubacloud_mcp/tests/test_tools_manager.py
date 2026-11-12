@@ -93,9 +93,9 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
         """Turning a server's security logs off waits for approval; turning
         them on, or leaving them off, does not (review of 12-nov-2026).
 
-        The panel may send them here, as on core alone: a layer that
-        withholds them (the tenant's) would refuse the switch on before
-        the approval is asked.
+        The panel may send them here, as on core alone: a module that
+        extends the panel and withholds them would refuse the switch on
+        before the approval is asked.
         """
         allowed = patch.object(
             type(self.env["cloud.host"]), "_security_logs_available",
