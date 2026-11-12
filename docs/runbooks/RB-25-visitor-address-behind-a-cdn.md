@@ -20,6 +20,7 @@ when its options are set in the Odoo configuration file:
 | `x_real_ip_header` | the CDN's header, e.g. `CF-Connecting-IP` | nothing is corrected |
 | `x_real_ip_trusted` | the CDN's published ranges, commas or spaces | nothing is corrected |
 | `x_real_ip_proxy` | the reverse proxy's container name or address | see below |
+| `x_real_ip_country_header` | the CDN's country header, e.g. `CF-IPCountry` | no country is carried to the session guard ([RB-33](RB-33-session-guard.md)) |
 
 The header is believed only when the reverse proxy connected to Odoo and
 the last entry of the chain — the one the proxy appends from the
