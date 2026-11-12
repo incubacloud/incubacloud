@@ -922,6 +922,58 @@ class TestAParkedJobIsStopped(_StopCase):
         self.assertEqual(len(unreachable), 2)
 
 
+class TestADeployStoppedWhileParkedInItsInitialization(_StopCase):
+    """The deploy's own hooks close it in the attempt that comes back.
+
+    «Initialize database» runs apart (phase 3, 12-nov-2026). Stopped while
+    the job is parked in it, the attempt that comes back runs no
+    ``before_execute``: it stops the step and closes the deploy as a
+    failure, which puts its new instance back in ``draft``.
+    """
+
+    def test_the_instance_goes_back_to_draft(self):
+        from ..models.deploy_instance_executor import DeployInstanceExecutor
+
+        project = self.env["cloud.project"].create({
+            "name": "parked-deploy", "remote_folder": "parkeddeploy",
+        })
+        instance = self.env["cloud.instance"].create({
+            "name": "parked-deploy", "project_id": project.id,
+            "host_id": self.host.id, "environment": "production",
+            "state": "deploying",
+        })
+        self.job.instance_id = instance
+        self.env.flush_all()
+        plan = list(self._plan(apart=_TRAPPED.format(runs=self.runs)))
+        plan[1] = ("Initialize database", plan[1][1], {
+            "stop_on_failure": True, "detached": True,
+        })
+        cls = type("_ParkedDeploy", (_Parking, DeployInstanceExecutor), {
+            "_job_type": None, "plan": tuple(plan), "spend_at": "follow",
+            "instances": (), "prepared": 0, "busy_once": False, "spent": False,
+            "on_failure": DeployInstanceExecutor.on_failure,
+        })
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertTrue(Path(self.directory).exists())
+        self.job.cancel_job()
+        self.env.flush_all()
+        self._postponed()
+        self.qjob.write({"state": "started"})
+        self.env["cloud.job"].invalidate_model(["state"])
+        with self._connected(cls):
+            self.assertEqual(
+                self.job.execute(), abstract_executor.CANCELLED_WHILE_RUNNING,
+            )
+        self.assertEqual(cls.prepared, 1)
+        instance.invalidate_recordset()
+        self.assertEqual(instance.state, "draft")
+        self.assertEqual(instance.status, "error")
+        self.assertFalse(Path(self.directory).exists())
+        self.assertIn("trapped", self._log())
+        self.assertFalse(self._row())
+        self.assertEqual(self._runs(), ["First", "Apart"])
+
+
 class TestTheReconciliationReachesTheServer(_StopCase):
     """A parked job's queue.job ended or deleted by hand: the cron closes it."""
 

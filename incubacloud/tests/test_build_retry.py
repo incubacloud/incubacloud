@@ -366,7 +366,8 @@ class TestTheDeployBuildsInAStepOfItsOwn(BaseCase):
     def test_the_step_repeats_a_cached_build_and_stops_the_deploy(self):
         steps = {c[0]: c for c in _make_deploy_executor().get_commands()}
         _label, command, opts = steps[_BUILD]
-        self.assertEqual(opts, {"stop_on_failure": True})
+        # Run apart (phase 3, 12-nov-2026), as the rebuild's.
+        self.assertEqual(opts, {"stop_on_failure": True, "detached": True})
         self.assertEqual(command.count(_COMPOSE_BUILD), 2)
         self.assertIn(f"sleep {_BUILD_RETRY_WAIT_S}", command)
         # The build of today's first ``compose run``: cached, no pull.
