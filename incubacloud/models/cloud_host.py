@@ -455,6 +455,35 @@ class CloudHost(models.Model):
     disk_free_gb = fields.Float(string="Free Disk (GB)", default=0)
     last_probed = fields.Datetime(string="Last Specs Probe")
 
+    # ── Live usage (from metrics only; the SSH fallback does not read it) ──
+    # What the server is really using, as opposed to ``allocated_*``,
+    # which add up the limits of its instances. Both are written together
+    # by the specs cron, and only when both came back: ``usage_last_seen``
+    # says when, and a card shows them only while that is recent.
+    cpu_usage = fields.Float(
+        string="CPU Usage %",
+        default=0,
+        copy=False,
+        readonly=True,
+        help="Share of all the host's cores in use, averaged over the "
+             "last five minutes. Read from the metrics agents.",
+    )
+    ram_usage = fields.Float(
+        string="RAM Usage %",
+        default=0,
+        copy=False,
+        readonly=True,
+        help="Share of the host's memory in use (total minus available). "
+             "Read from the metrics agents.",
+    )
+    usage_last_seen = fields.Datetime(
+        string="Usage last read",
+        copy=False,
+        readonly=True,
+        help="When CPU and RAM usage were last read from the metrics "
+             "agents. Empty when they never were.",
+    )
+
     # ── Observability enrolment ───────────────────────────────────────────
     # Two separate facts that used to be conflated into ``last_probed``,
     # with two bugs as a result. ``last_probed`` means "somebody read this

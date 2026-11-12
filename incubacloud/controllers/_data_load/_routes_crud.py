@@ -374,6 +374,11 @@ class CrudMixin:
         # caller manages hosts, so a stakeholder cannot enumerate every
         # host's SSH endpoint.
         is_manager = self._sec()._has_cloud_group('group_cloud_manager')
+        # Read once: whether a card can show live CPU and RAM at all.
+        metrics_enabled = (
+            request.env['cloud.settings'].sudo()._get_system().metrics_enabled
+        )
+        now = fields.Datetime.now()
         return {
             'autoassign_enabled': autoassign,
             'total': total,
@@ -424,6 +429,9 @@ class CrudMixin:
                     'available_cpus': round(host.available_cpus, 2),
                     'available_ram_gb': round(host.available_ram_gb, 2),
                     'usage_ratio': round(host.usage_ratio or 0.0, 4),
+                    # What the host really uses, beside what its
+                    # instances are allowed (``allocated_*``).
+                    **host._usage_for_card(metrics_enabled, now),
                     'alerts': [
                         {
                             'code': a.code,

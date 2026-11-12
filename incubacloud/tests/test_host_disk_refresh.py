@@ -113,7 +113,7 @@ class TestOneHostIsReadNow(HostMetricsHandoverCase):
                    side_effect=self._backend({self.host: 60})) as promql:
             self.host._refresh_specs_from_metrics_now()
         expressions = [call.args[1] for call in promql.call_args_list]
-        self.assertEqual(len(expressions), 4)
+        self.assertEqual(len(expressions), 6)
         for expression in expressions:
             self.assertIn(f'host_id=~"{self.host.id}"', expression)
         self.assertIn(

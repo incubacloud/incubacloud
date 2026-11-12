@@ -248,6 +248,18 @@ msgstr ""
 "restaurar. Sus datos se destruyeron junto con los contenedores."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "%(used)s of %(total)s GB"
+msgstr "%(used)s de %(total)s GB"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "%(used)s of %(total)s cores"
+msgstr "%(used)s de %(total)s núcleos"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "%s (archived)"
@@ -949,6 +961,12 @@ msgstr "Se pidió una prueba hace un momento: espere unos segundos."
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Age"
 msgstr "Antigüedad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "Allocated: %(cpu)s vCPU · %(ram)s GB"
+msgstr "Asignado: %(cpu)s vCPU · %(ram)s GB"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2183,6 +2201,11 @@ msgstr "CPU / RAM"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__cpu_cores
 msgid "CPU Cores"
 msgstr "Núcleos CPU"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__cpu_usage
+msgid "CPU Usage %"
+msgstr "Uso de CPU %"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5850,6 +5873,37 @@ msgid "HTTP Routing"
 msgstr "Enrutamiento HTTP"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "Metrics are off. Turn them on in Settings to see live usage."
+msgstr ""
+"Las métricas están desactivadas. Actívelas en Configuración para ver el uso "
+"real."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+msgid "No data"
+msgstr "Sin datos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "No reading in the last 15 minutes (last: %s)."
+msgstr "Sin lecturas en los últimos 15 minutos (la última, %s)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "No reading yet."
+msgstr "Aún no hay lecturas."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__ram_usage
+msgid "RAM Usage %"
+msgstr "Uso de RAM %"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_repo
 msgid ""
 "Repository of the request: owner/repo on GitHub, the project's path on "
@@ -6512,6 +6566,24 @@ msgstr ""
 "a quién. Se lee del servidor cuando lo pide; no se guarda nada."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__cpu_usage
+msgid ""
+"Share of all the host's cores in use, averaged over the last five minutes. "
+"Read from the metrics agents."
+msgstr ""
+"Proporción de todos los núcleos del host en uso, como media de los últimos "
+"cinco minutos. Se lee de los agentes de métricas."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__ram_usage
+msgid ""
+"Share of the host's memory in use (total minus available). Read from the "
+"metrics agents."
+msgstr ""
+"Proporción de la memoria del host en uso (total menos disponible). Se lee de"
+" los agentes de métricas."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Share of time each container was held back by its CPU quota"
@@ -6587,6 +6659,12 @@ msgstr "No se pudo leer la base de datos de esta instancia. ¿Está en marcha?"
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "The log of this instance could not be read."
 msgstr "No se pudo leer el log de esta instancia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "The metrics agents are not installed on this host."
+msgstr "Los agentes de métricas no están instalados en este host."
 
 #. module: incubacloud
 #. odoo-python
@@ -16298,6 +16376,11 @@ msgid "Usage Ratio"
 msgstr "Ratio de uso"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__usage_last_seen
+msgid "Usage last read"
+msgstr "Última lectura de uso"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "Usage measurement failed"
@@ -16810,6 +16893,15 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "What to receive"
 msgstr "Qué recibir"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__usage_last_seen
+msgid ""
+"When CPU and RAM usage were last read from the metrics agents. Empty when "
+"they never were."
+msgstr ""
+"Cuándo se leyó por última vez el uso de CPU y RAM de los agentes de "
+"métricas. Vacío si nunca se leyó."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_type__failure_holds_queue
@@ -17441,6 +17533,18 @@ msgstr "addons --help"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "admin@example.com"
 msgstr "admin@example.com"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "allocated: %s GB"
+msgstr "asignado: %s GB"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "allocated: %s vCPU"
+msgstr "asignado: %s vCPU"
 
 #. module: incubacloud
 #. odoo-javascript

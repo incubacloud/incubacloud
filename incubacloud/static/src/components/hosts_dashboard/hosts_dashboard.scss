@@ -43,11 +43,28 @@
         margin-top: 4px;
     }
 
+    // --rl-muted, not --rl-faint: the line carries figures (the
+    // allocation among them) and --rl-faint is 3.3:1 on the light theme.
     .ic-mbar-extra {
         font-family: var(--rl-fm);
         font-size: 10px;
-        color: var(--rl-faint);
+        color: var(--rl-muted);
         margin-top: 3px;
+    }
+
+    // No live CPU/RAM reading: the reason in words, no bar.
+    .ic-usage-reason {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--rl-muted);
+
+        .ic-svg {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
     }
 
     .ic-metrics-placeholder {

@@ -99,20 +99,52 @@
                                 </div>
                             </t>
 
-                            <!-- Metric bars: CPU/RAM usage + Disk -->
+                            <!-- Metric bars: live CPU and RAM, then Disk. The
+                                 allocation (the instances' limits) is the
+                                 secondary line, never the bar. -->
                             <t t-if="hasMetrics(host)">
                                 <div class="ic-host-mbars">
-                                    <div class="rl-mbar">
+                                    <t t-if="hasLiveUsage(host)">
+                                        <div class="rl-mbar ic-mbar-cpu">
+                                            <div class="rl-mbar-top">
+                                                <span>CPU</span>
+                                                <span><t t-esc="pct(host.cpu_usage)"/>%</span>
+                                            </div>
+                                            <div class="rl-mbar-track">
+                                                <div t-att-class="'rl-mbar-fill ' + mbarClass(pct(host.cpu_usage))"
+                                                     t-att-style="'width:' + pct(host.cpu_usage) + '%'"/>
+                                            </div>
+                                            <t t-if="cpuExtra(host)">
+                                                <div class="ic-mbar-extra" t-esc="cpuExtra(host)"/>
+                                            </t>
+                                        </div>
+                                        <div class="rl-mbar ic-mbar-ram">
+                                            <div class="rl-mbar-top">
+                                                <span>RAM</span>
+                                                <span><t t-esc="pct(host.ram_usage)"/>%</span>
+                                            </div>
+                                            <div class="rl-mbar-track">
+                                                <div t-att-class="'rl-mbar-fill ' + mbarClass(pct(host.ram_usage))"
+                                                     t-att-style="'width:' + pct(host.ram_usage) + '%'"/>
+                                            </div>
+                                            <t t-if="ramExtra(host)">
+                                                <div class="ic-mbar-extra" t-esc="ramExtra(host)"/>
+                                            </t>
+                                        </div>
+                                    </t>
+                                    <!-- No live reading: say why, with no bar,
+                                         so nothing reads as an idle host. -->
+                                    <div t-else="" class="rl-mbar ic-usage-none">
                                         <div class="rl-mbar-top">
                                             <span>CPU / RAM</span>
-                                            <span><t t-esc="usagePct(host)"/>%</span>
+                                            <span>No data</span>
                                         </div>
-                                        <div class="rl-mbar-track">
-                                            <div t-att-class="'rl-mbar-fill ' + mbarClass(usagePct(host))"
-                                                 t-att-style="'width:' + usagePct(host) + '%'"/>
+                                        <div class="ic-usage-reason">
+                                            <t t-out="env.icon(usageIcon(host), 12)"/>
+                                            <span t-esc="usageMissing(host)"/>
                                         </div>
-                                        <t t-if="usageExtra(host)">
-                                            <div class="ic-mbar-extra" t-esc="usageExtra(host)"/>
+                                        <t t-if="allocatedText(host)">
+                                            <div class="ic-mbar-extra" t-esc="allocatedText(host)"/>
                                         </t>
                                     </div>
                                     <div class="rl-mbar">
