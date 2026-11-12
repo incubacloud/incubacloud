@@ -1184,17 +1184,15 @@ msgid ""
 "Address ranges, one per line (e.g. 198.51.100.7/32), allowed to reach the "
 "central's series-deletion route under its public name: the panel's own "
 "public address. They may also read every account's series there, through the"
-" operator's read-only route. Grafana's admin route stays reachable from the "
-"central host only. Empty: only the central's host itself, which is right "
-"while the panel runs there."
+" operator's read-only route. Empty: only the central's host itself, which is"
+" right while the panel runs there."
 msgstr ""
 "Rangos de direcciones, uno por línea (p. ej. 198.51.100.7/32), a los que se "
 "permite llegar a la ruta de borrado de series de la central bajo su nombre "
 "público: la dirección pública del propio panel. También pueden leer allí las"
-" series de todas las cuentas, por la ruta de lectura del operador. La ruta "
-"de administración de Grafana solo es accesible desde el host de la central. "
-"Vacío: solo el propio host de la central, que es lo correcto mientras el "
-"panel corre allí."
+" series de todas las cuentas, por la ruta de lectura del operador. Vacío: "
+"solo el propio host de la central, que es lo correcto mientras el panel "
+"corre allí."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_allowlist_shipped
@@ -1476,20 +1474,6 @@ msgstr "Ya importada"
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
 msgid "Also allow my IP (%(ip)s)"
 msgstr "Permitir también mi IP (%(ip)s)"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_ship_security_logs
-msgid ""
-"Also send each host's security logs to the central: SSH and sudo from the "
-"journal, auditd and fail2ban. Kept 90 days there, where a host's own "
-"credentials can add lines but never delete them, so the record outlives the "
-"host. Off by default: a panel turns it on for hosts that are its own."
-msgstr ""
-"Enviar también a la central los logs de seguridad de cada host: SSH y sudo "
-"del journal, auditd y fail2ban. Allí se guardan 90 días, y las credenciales "
-"del propio host pueden añadir líneas pero nunca borrarlas, así que el "
-"registro sobrevive al host. Desactivado por defecto: un panel lo activa para"
-" los hosts que son suyos."
 
 #. module: incubacloud
 #. odoo-python
@@ -4528,13 +4512,13 @@ msgstr "Despliega una instancia doodba con copier en el host de destino."
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.deploy_metrics_central
 msgid ""
-"Deploys the central metrics stack (VictoriaMetrics + Grafana with "
-"provisioned dashboards) on the target host. Run it against the panel host to"
-" co-locate, or against a dedicated VPS to move it."
+"Deploys the central metrics stack on the target host: VictoriaMetrics, "
+"vmauth and Loki, the store of the hosts' security logs. Run it again against"
+" another host to move it."
 msgstr ""
-"Despliega la pila central de métricas (VictoriaMetrics + Grafana con paneles"
-" aprovisionados) en el host de destino. Ejecútelo en el host del panel para "
-"tenerlo todo junto, o en un VPS dedicado para llevar allí la pila."
+"Despliega la pila central de métricas en el host de destino: "
+"VictoriaMetrics, vmauth y Loki, que guarda los registros de seguridad de los"
+" hosts. Ejecútelo de nuevo contra otro host para moverla."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7408,31 +7392,6 @@ msgid "Go to instance"
 msgstr "Ir a instancia"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__grafana_admin_password
-msgid "Grafana admin password"
-msgstr "Contraseña de administración de Grafana"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__grafana_base_url
-msgid "Grafana base URL"
-msgstr "URL base de Grafana"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_admin_password
-msgid ""
-"Grafana's own administrative credential. Never leaves the central: the "
-"gateway authenticates callers with the operator credential and swaps this "
-"one in before proxying, so rotating it is a redeploy rather than a change in"
-" every place that talks to Grafana."
-msgstr ""
-"Credencial de administración propia de Grafana. Nunca sale de la central: la"
-" pasarela autentica al llamante con la credencial del operador y sustituye "
-"por ésta antes de reenviar, así que rotarla es un redespliegue y no un "
-"cambio en todo lo que habla con Grafana."
-
-#. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.grant_restore_upload_key
 msgid "Grant Restore Upload Key"
 msgstr "Conceder clave de subida para restaurar"
@@ -7876,8 +7835,8 @@ msgid ""
 "the host it runs on, with a certificate, e.g. metrics.example.com; its DNS "
 "record must point at that host. The panel then reaches the central, and "
 "every agent writes to it, under that name. Empty: nothing is published, so "
-"only agents on the central's own server can write to it and the panel cannot "
-"read it from another server."
+"only agents on the central's own server can write to it and the panel cannot"
+" read it from another server."
 msgstr ""
 "Nombre de host bajo el que la central se publica, con certificado, a través "
 "del Traefik del host en el que corre, p. ej. metrics.example.com; su "
@@ -8487,14 +8446,16 @@ msgstr ""
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.install_observability
 msgid ""
-"Installs the metrics agents (node_exporter, cAdvisor, vmagent) on the host "
-"and labels every container with its instance/project so the panel can "
-"attribute metrics. Push-only: no inbound port is opened."
+"Installs the metrics agents (node_exporter, cAdvisor, vmagent, and Fluent "
+"Bit where the host sends its security logs) on the host and labels every "
+"container with its instance/project so the panel can attribute metrics. "
+"Push-only: no inbound port is opened."
 msgstr ""
 "Instala en el host los agentes de métricas (node_exporter, cAdvisor, "
-"vmagent) y etiqueta cada contenedor con su instancia y su proyecto para que "
-"el panel pueda atribuir las métricas. Solo envía datos: no abre ningún "
-"puerto de entrada."
+"vmagent, y Fluent Bit donde el host envía sus registros de seguridad) y "
+"etiqueta cada contenedor con su instancia y su proyecto para que el panel "
+"pueda atribuir las métricas. Solo envía datos: no abre ningún puerto de "
+"entrada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13580,16 +13541,14 @@ msgstr "Clave revocada"
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.sync_metrics_accounts
 msgid ""
-"Rewrites the gateway's access-control list on an already-deployed central "
-"and provisions the Grafana organisations of any new accounts. Granting an "
-"account is a sub-second reload of the proxy — it never touches the compose "
-"file, so it cannot recreate VictoriaMetrics, Loki or Grafana."
+"Rewrites the gateway's access-control list on an already-deployed central. "
+"Granting an account is a sub-second reload of the proxy — it never touches "
+"the compose file, so it cannot recreate VictoriaMetrics or Loki."
 msgstr ""
 "Reescribe la lista de control de acceso de la pasarela en una central ya "
-"desplegada y aprovisiona las organizaciones de Grafana de las cuentas "
-"nuevas. Dar acceso a una cuenta es una recarga del proxy de menos de un "
-"segundo: nunca toca el archivo compose, así que no puede recrear "
-"VictoriaMetrics, Loki ni Grafana."
+"desplegada. Conceder una cuenta es una recarga del proxy de menos de un "
+"segundo: nunca toca el fichero compose, así que no puede recrear "
+"VictoriaMetrics ni Loki."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14097,15 +14056,15 @@ msgstr "Buscar…"
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_operator_token
 msgid ""
-"Second credential, for the UNFILTERED read used by the operator's own "
-"Grafana organisation. Only meaningful on the panel that owns the central, "
-"and deliberately never written to any host — that is the whole point of "
-"keeping it apart from the account credential above."
+"Second credential, for the UNFILTERED read of every account's series (the "
+"fleet's board) and for deleting series. Only meaningful on the panel that "
+"owns the central, and deliberately never written to any host — that is the "
+"whole point of keeping it apart from the account credential above."
 msgstr ""
-"Segunda credencial, para la lectura SIN FILTRAR que usa la organización de "
-"Grafana del operador. Solo tiene sentido en el panel dueño de la central, y "
-"deliberadamente nunca se escribe en ningún host — que es justo el motivo de "
-"mantenerla separada de la credencial de cuenta de arriba."
+"Segunda credencial, para la lectura SIN FILTRAR de las series de todas las "
+"cuentas (el tablero de la flota) y para borrar series. Solo tiene sentido en"
+" el panel dueño de la central, y a propósito nunca se escribe en ningún "
+"host: para eso se mantiene separada de la credencial de la cuenta de arriba."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_search_timeout_s
@@ -14220,13 +14179,6 @@ msgstr "Enviar notificación por correo en backup exitoso"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Send email notifications"
 msgstr "Enviar notificaciones por correo"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_ship_security_logs
-msgid "Send hosts' security logs"
-msgstr "Enviar los logs de seguridad de los hosts"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -22460,16 +22412,6 @@ msgstr "Host SMTP de una instancia"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
-msgid ""
-"SSH, sudo, auditd and fail2ban, kept 90 days in the central. Applies on the "
-"next agent install."
-msgstr ""
-"SSH, sudo, auditd y fail2ban, conservados 90 días en la central. Se aplica "
-"en la siguiente instalación de los agentes."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
 msgid "Save first"
 msgstr "Guarde antes"
@@ -22715,11 +22657,11 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
-"VictoriaMetrics, Grafana and a gateway, deployed as a job on this host. Run "
-"it again to move it."
+"VictoriaMetrics, Loki and a gateway, deployed as a job on this host. Run it "
+"again to move it."
 msgstr ""
-"VictoriaMetrics, Grafana y una pasarela, desplegados como trabajo en este "
-"host. Vuelva a lanzarlo para moverlo."
+"VictoriaMetrics, Loki y una pasarela, desplegados como trabajo en este host."
+" Ejecútelo de nuevo para moverlos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -22970,16 +22912,6 @@ msgstr "La instalación de los agentes de métricas en este host falló."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
-msgid ""
-"Where the central's Grafana answers, for its own links. The charts do not "
-"need it."
-msgstr ""
-"Dónde responde el Grafana de la central, para sus propios enlaces. Los "
-"gráficos no lo necesitan."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
 msgid "Who may delete series and read the fleet on the central"
 msgstr "Quién puede borrar series y leer la flota en la central"
@@ -22993,17 +22925,6 @@ msgid ""
 msgstr ""
 "Un rango por línea: la dirección pública del panel, que borra series y lee "
 "las de todas las cuentas. Solo se usa con un nombre público."
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_base_url
-msgid ""
-"Base URL where the central's Grafana answers, e.g. "
-"https://grafana.example.com; Grafana builds its own links from it. The "
-"panel's charts read the central and do not need it."
-msgstr ""
-"URL base en la que responde el Grafana de la central, p. ej. "
-"https://grafana.example.com; Grafana construye con ella sus propios enlaces."
-" Los gráficos del panel leen la central y no la necesitan."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -23021,3 +22942,63 @@ msgid ""
 msgstr ""
 "La central de métricas está ocupada: estos gráficos son de la última lectura"
 " y volverán a consultarla en breve."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_logs_enabled
+msgid "Send security logs"
+msgstr "Enviar registros de seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_logs_enabled
+msgid ""
+"SSH sign-ins and failed attempts (address, user, key), sudo commands, "
+"fail2ban's blocks and changes to passwd, shadow, sudoers and the SSH "
+"configuration, sent to the metrics central and kept there 90 days. This "
+"server can add to them but cannot delete them. Off stops sending; what was "
+"sent expires on its own."
+msgstr ""
+"Accesos SSH e intentos fallidos (dirección, usuario, clave), órdenes con "
+"sudo, bloqueos de fail2ban y cambios en passwd, shadow, sudoers y la "
+"configuración de SSH, enviados a la central y guardados allí 90 días. Este "
+"servidor puede añadirlos, pero no borrarlos. Apagado, deja de enviarlos; lo "
+"ya enviado caduca solo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Coming soon."
+msgstr "Disponible próximamente."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Observability is off on this panel, so nothing is sent."
+msgstr ""
+"La observabilidad está apagada en este panel, así que no se envía nada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_observability.py:0
+msgid "Security logs are not available on this panel yet."
+msgstr ""
+"Los registros de seguridad todavía no están disponibles en este panel."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_revision
+msgid "Central revision"
+msgstr "Revisión de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_revision
+msgid ""
+"Which version of the central's deployment last ended well on its server. The"
+" reconciliation cron deploys the central again while it is behind the "
+"panel's."
+msgstr ""
+"Qué versión del despliegue de la central terminó bien por última vez en su "
+"servidor. La tarea programada de reconciliación vuelve a desplegar la "
+"central mientras vaya por detrás de la del panel."
