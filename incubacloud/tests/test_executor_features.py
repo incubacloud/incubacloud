@@ -453,6 +453,45 @@ class TestDeployCommandsChecksums(BaseCase):
         self.assertEqual(len(cmd), 3)
         self.assertTrue(cmd[2].get("stop_on_failure"))
 
+    def test_the_long_steps_run_apart_with_their_options(self):
+        """Phase 3 (12-nov-2026): the download, the pull, the build and
+        the two runs of Odoo on the new database run apart; the pull with
+        a cap of its own, as it had none but the default. The steps that
+        take seconds by nature stay attached."""
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            _PULL_STEP_TIMEOUT_S,
+        )
+
+        self.assertEqual(_PULL_STEP_TIMEOUT_S, 900)
+        self.assertEqual(
+            [
+                (c[0], c[2]) for c in self.cmds
+                if len(c) == 3 and c[2].get("detached")
+            ],
+            [
+                ("Fetch the repositories", {
+                    "stop_on_failure": True, "timeout": 1260, "detached": True,
+                }),
+                ("Pull images", {"timeout": 900, "detached": True}),
+                ("Build Odoo image", {"stop_on_failure": True, "detached": True}),
+                ("Initialize database", {
+                    "stop_on_failure": True, "detached": True,
+                }),
+                ("Initialize module checksums", {"detached": True}),
+            ],
+        )
+        for label in ("Start database", "Set system parameters", "Start instance"):
+            self.assertEqual(len(_find_cmd(self.cmds, label)), 2, label)
+
+    def test_a_moves_deploy_keeps_its_steps_apart_but_the_initialization(self):
+        """A move's destination initializes nothing, yet still downloads,
+        pulls and builds apart: it keeps a checkpoint."""
+        cmds = _make_deploy_executor(move_origin_host_id=7).get_commands()
+        self.assertEqual(
+            [c[0] for c in cmds if len(c) == 3 and c[2].get("detached")],
+            ["Fetch the repositories", "Pull images", "Build Odoo image"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Class 5: TestSmtpStripping
