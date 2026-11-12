@@ -211,6 +211,66 @@ class TestTheStepsAroundThePointOfNoReturn(TransactionCase):
             [call.args[0] for call in transport.execute.call_args_list], ["true"],
         )
 
+    def _rebuild_steps(self, resume_at=None):
+        """Run a rebuild's real plan, its steps apart answered at once.
+
+        :param str resume_at: the label of the step an earlier attempt
+            started apart, where this attempt resumes; None for a first
+            attempt
+        :return: ``(pass_no_return mock, run_detached mock, plan)``
+        """
+        from .test_executor_features import _make_rebuild_executor
+
+        executor = _make_rebuild_executor()
+        plan = executor.get_commands()
+        transport = MagicMock(spec=SSHTransport)
+
+        async def _answer(*_args, **_kwargs):
+            return CommandResult(stdout="", exit_status=0)
+
+        transport.execute.side_effect = _answer
+        if resume_at is not None:
+            executor._resumed = True
+            executor._resume_index = [c[0] for c in plan].index(resume_at)
+            executor._checkpoint_data = {"results": {}}
+            executor._resumed_step_started_at = "2026-11-12 08:00:00"
+        with patch.object(
+            RebuildInstanceExecutor, "_pass_no_return", autospec=True,
+        ) as passing, patch.object(
+            RebuildInstanceExecutor, "_run_detached", autospec=True,
+            side_effect=_answer,
+        ) as apart, patch.object(
+            RebuildInstanceExecutor, "_open_checkpoint", autospec=True,
+        ), patch.object(
+            RebuildInstanceExecutor, "_clean_ended_steps", autospec=True,
+        ):
+            asyncio.run(executor._run_steps(transport, plan))
+        return passing, apart, plan
+
+    def test_a_rebuild_marks_its_update_once_before_starting_it_apart(self):
+        """Phase 3 (12-nov-2026): the update runs apart, after the mark."""
+        passing, apart, _plan = self._rebuild_steps()
+        self.assertEqual([c.args[1] for c in passing.call_args_list], [_STEP])
+        started = {c.args[3]: c.kwargs["resume"] for c in apart.call_args_list}
+        self.assertEqual(started[_STEP], False)
+
+    def test_a_rebuild_back_from_a_park_in_its_update_does_not_mark_it_again(self):
+        """The step runs on the server already: it is followed, and the
+        stop, refused since the mark, is not decided a second time."""
+        passing, apart, _plan = self._rebuild_steps(resume_at=_STEP)
+        passing.assert_not_called()
+        first = apart.call_args_list[0]
+        self.assertEqual(first.args[3], _STEP)
+        self.assertTrue(first.kwargs["resume"])
+
+    def test_a_rebuild_parked_before_its_update_decides_it_on_its_return(self):
+        """Parked in the boot test: the update had not started, a stop
+        asked for meanwhile still ends the job before it."""
+        passing, _apart, _plan = self._rebuild_steps(
+            resume_at="Test new image (safe boot check)",
+        )
+        self.assertEqual([c.args[1] for c in passing.call_args_list], [_STEP])
+
     def test_a_rebuild_has_its_update_as_the_point_and_a_deploy_none(self):
         """A rebuild cannot undo its database update; a new instance
         stopped halfway is removed, so a deploy has no such step."""

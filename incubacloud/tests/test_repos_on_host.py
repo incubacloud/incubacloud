@@ -90,8 +90,11 @@ class TestEverySeriesFetchesOnTheHost(BaseCase):
                 self.assertNotIn("Record repository heads", labels)
                 self.assertNotIn("Trust the Git servers", labels)
                 _label, command, opts = _find_cmd(cmds, _FETCH)
+                # Run apart (phase 3, 12-nov-2026): the same step as the
+                # rebuild's, from the same helper.
                 self.assertEqual(
-                    opts, {"stop_on_failure": True, "timeout": 1260},
+                    opts,
+                    {"stop_on_failure": True, "timeout": 1260, "detached": True},
                 )
                 argv = shlex.split(command)
                 self.assertEqual(argv[2:5], [
