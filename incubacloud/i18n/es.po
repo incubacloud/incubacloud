@@ -2432,6 +2432,12 @@ msgstr ""
 "%(reason)s"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Cancelling…"
+msgstr "Cancelando…"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid ""
@@ -6088,6 +6094,18 @@ msgstr "Instancias desplegadas"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "Instances running"
 msgstr "Instancias en marcha"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s (%(type)s) was cancelled, and server %(host)s has not answered "
+"since: the panel stopped trying to clean up after it. On the server, "
+"%(left)s."
+msgstr ""
+"El trabajo #%(job)s (%(type)s) se canceló y el servidor %(host)s no ha "
+"respondido desde entonces: el panel ha dejado de intentar limpiar lo que "
+"dejó. En el servidor, %(left)s."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18817,6 +18835,12 @@ msgid "logged before this instance was handed over on"
 msgstr "de antes de que esta instancia se entregara el"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "look for what the job left in /tmp"
+msgstr "busque en /tmp lo que dejó el trabajo"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "memory"
@@ -19088,6 +19112,12 @@ msgid "redirect to (optional)"
 msgstr "redirigir a (opcional)"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "remove %(paths)s"
+msgstr "elimine %(paths)s"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid "reporting"
@@ -19301,6 +19331,16 @@ msgstr "la IP del nuevo host"
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "the platform's CDN, refreshed daily"
 msgstr "el CDN de la plataforma, refrescado a diario"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"the step '%(step)s' may still run in %(dir)s; stop it with `%(dir)s/ctl.sh "
+"stop %(dir)s 20`, then remove the directory"
+msgstr ""
+"puede que el paso «%(step)s» siga en marcha en %(dir)s; deténgalo con "
+"`%(dir)s/ctl.sh stop %(dir)s 20` y luego elimine el directorio"
 
 #. module: incubacloud
 #. odoo-javascript
