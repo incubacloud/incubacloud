@@ -404,6 +404,17 @@ DETACHED_RECONCILE_WAIT_S = 20
 #: the step long before, and the checkpoint is then given up.
 DETACHED_GIVE_UP_AFTER_CAP_S = 3600
 
+#: How long the checkpoint a step past its job's point of no return left
+#: running keeps the job's queue busy, in seconds, counted from when it
+#: began to (12-nov-2026): a step's default cap
+#: (``DEFAULT_SSH_COMMAND_TIMEOUT``), the reconciliation's give-up after
+#: it (``DETACHED_GIVE_UP_AFTER_CAP_S``) and ten minutes of its passes.
+#: Past it the queue goes on even with the row still there: a stopped
+#: cron, or an executor no longer installed, must not hold it for good.
+DETACHED_HOLDS_QUEUE_MAX_S = (
+    DEFAULT_SSH_COMMAND_TIMEOUT + DETACHED_GIVE_UP_AFTER_CAP_S + 600
+)
+
 #: How long a parked job waits for its next attempt, in seconds (9-nov-2026).
 #: queue_job's runner wakes at the job's ``eta`` exactly, so the gap is not
 #: rounded up to any cycle; the attempt's budget, not the gap, sets how
@@ -812,6 +823,10 @@ class AbstractExecutor(ABC):
     # Whether what the close of an ended job says on every try is said:
     # the reconciliation says it the first time and when it gives up.
     _say_again = True
+    # The close left a step past the point of no return running on a
+    # server that answered (``_close_on_server``): the reconciliation looks
+    # at it again at its next pass, not ten minutes later.
+    _left_running = False
 
     #: Attributes of the executor its closing hooks read and that are set
     #: before its steps: kept in the checkpoint, and set again on an attempt
@@ -2336,6 +2351,13 @@ class AbstractExecutor(ABC):
             self._on_server_index = row.next_index
             self._resumed_step_started_at = row.step_started_at
             self._resumed_log_offset = row.log_offset
+        plan = data.get("plan") or []
+        if row.next_index < len(plan) and (row.detached_started or not row.parked):
+            # The step an attempt ran when it ended: started apart, or an
+            # attempt that died with it running (between its start and the
+            # record of it, or attached). Unless its end is learnt, it did
+            # not end (``_fail_cut_off_run``).
+            self._running_step = plan[row.next_index][0]
         self._lost_contact_since = row.lost_contact_since or None
         self._checkpoint_row = row
         self._detached_uuid = row.queue_job_uuid or ""
@@ -2366,14 +2388,18 @@ class AbstractExecutor(ABC):
         For a job closed without running: a stop that finds it back from
         a park, the reconciliation of a lost or ended one, an attempt that
         runs the job again over a row it does not take up. Its step apart
-        is sent TERM, given *wait_s* for its trap and killed, its last
-        lines reach the job log, and its directory goes; then those of the
-        steps apart that ended and were not removed; then the job's
-        working directory and the secrets it staged. A step past the
-        job's point of no return still running is not stopped: it is left
-        to end, and the checkpoint stays for a later pass. So does
-        everything when the server cannot be reached
-        (``_detached_left_alive``).
+        is read first: one that ended is said in the job log with its
+        exit status, which the closing hook gets as the step's result
+        (``_record_ended_apart``). One still running is sent TERM, given
+        *wait_s* for its trap and killed, its last lines reach the job
+        log, and its directory goes; then those of the steps apart that
+        ended and were not removed; then the job's working directory and
+        the secrets it staged. A step past the job's point of no return
+        still running is not stopped: it is left to end, the checkpoint
+        stays for a later pass, and it keeps the job's queue busy
+        (``_hold_queue``). So does everything when the server cannot be
+        reached (``_detached_left_alive``), and such a step keeps the
+        queue busy then too.
 
         :param int wait_s: how long the step's trap gets after TERM
         :param transport: a transport to the job's server already open, or
@@ -2384,6 +2410,10 @@ class AbstractExecutor(ABC):
         plan = self._checkpoint_data.get("plan") or []
         index = self._checkpoint_row.next_index if self._checkpoint_row else len(plan)
         apart = index < len(plan) and (plan[index][2] or {}).get("detached")
+        past = apart and self._past_no_return(index)
+        # Whether the step is known not to run any more: it ended, or was
+        # stopped.
+        settled = not apart
         self._say_again = say_again
         try:
             async with self._transport_to_close(transport) as transport:
@@ -2391,20 +2421,29 @@ class AbstractExecutor(ABC):
                     directory = self._detached_dir(index)
                     # Its lines from where the job log has them.
                     self._detached_offset = self._resumed_log_offset
-                    if self._past_no_return(index):
-                        state = (await self._read_detached(transport, directory))[0]
-                        if state == "running":
-                            self._detached_left_alive = True
-                            if say_again:
-                                self._sys(
-                                    f"'{plan[index][0]}' is past the point of"
-                                    " no return and still runs on the server:"
-                                    " it is left to end, and removed later."
-                                )
-                            return
+                    state, exit_status, timedout = await self._read_to_end(
+                        transport, directory,
+                    )
+                    if state == "running" and past:
+                        self._detached_left_alive = True
+                        self._left_running = True
+                        self._hold_queue()
+                        if say_again:
+                            self._sys(
+                                f"'{plan[index][0]}' is past the point of"
+                                " no return and still runs on the server:"
+                                " it is left to end, and removed later."
+                            )
+                        return
+                    settled = state != "running"
+                    if state == "done":
+                        await self._record_ended_apart(
+                            transport, directory, index, exit_status, timedout,
+                        )
                     await self._stop_detached(
                         transport, directory, wait_s=wait_s, index=index,
                     )
+                    settled = True
                 await self._clean_ended_steps(transport, index)
                 if self._detached_left_alive:
                     return
@@ -2417,6 +2456,8 @@ class AbstractExecutor(ABC):
                         self._detached_left_alive = True
         except Exception as exc:  # noqa: BLE001 — the row stays for later
             self._detached_left_alive = True
+            if past and not settled and self._step_may_run():
+                self._hold_queue()
             logging.getLogger("AbstractExecutor").warning(
                 "[job %s] could not reach its server to close what it left"
                 " there: %s: %s", self.job.id, type(exc).__name__, exc,
@@ -2428,6 +2469,88 @@ class AbstractExecutor(ABC):
                 )
         finally:
             self._say_again = True
+
+    async def _read_to_end(self, transport, directory):
+        """Read the step apart in *directory* up to the end of its log.
+
+        Its lines go to the job log; a log longer than one read is read
+        on, at most eight times: the state says ``done`` or ``lost`` only
+        once the bytes reach the end.
+
+        :param transport: an open transport to the step's server
+        :param str directory: :func:`detached_dir`
+        :return: ``(state, exit_status, timedout)`` as the last read said
+        """
+        for _read in range(8):
+            state, exit_status, timedout, more = await self._read_detached(
+                transport, directory,
+            )
+            if state != "running" or not more:
+                break
+        return state, exit_status, timedout
+
+    async def _record_ended_apart(
+        self, transport, directory, index, exit_status, timedout,
+    ):
+        """Say how the step apart at *index* ended, and give it to the hook.
+
+        Found ended by whoever closes the job: the job log says its exit
+        status, and the step's result — that status and its stdout — goes
+        among the steps' results the closing hook gets, so it does not
+        read "did not end" into a step that did. Not said again for a step
+        whose directory a process kept (``unclean``): an earlier close
+        said it.
+
+        :param transport: an open transport to the step's server
+        :param str directory: :func:`detached_dir`
+        :param int index: position of the step in the plan
+        :param int exit_status: the step's exit status
+        :param bool timedout: whether its cap cut it
+        """
+        label = self._checkpoint_data["plan"][index][0]
+        if index not in (self._checkpoint_data.get("unclean") or ()):
+            cut = " (its cap cut it)" if timedout else ""
+            self._sys(
+                f"'{label}' ended on the server with exit status"
+                f" {exit_status}{cut}."
+            )
+        if self._step_results is not None and label not in self._step_results:
+            self._step_results[label] = {
+                "stdout": await self._detached_stdout(transport, directory),
+                "exit_status": exit_status,
+            }
+
+    def _step_may_run(self):
+        """Whether the adopted checkpoint's step at ``next_index`` may run.
+
+        Started apart, or the row of an attempt that ended while it ran
+        (not parked): unknown otherwise only for a step never started.
+
+        :rtype: bool
+        """
+        row = self._checkpoint_row
+        return bool(row) and bool(row.detached_started or not row.parked)
+
+    def _hold_queue(self):
+        """Mark the job's checkpoint as keeping the job's queue busy.
+
+        For a step past the point of no return left running, or that
+        could not be asked: ``cloud.job._scope_busy`` counts the row until
+        it goes or ``DETACHED_HOLDS_QUEUE_MAX_S`` pass from the first
+        mark. A mark already there is kept. Never raises.
+        """
+        try:
+            with self._durable_env() as env:
+                env.cr.execute(
+                    "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+                    " COALESCE(holds_queue_since, %s) WHERE job_id = %s",
+                    (fields.Datetime.now(), self.job.id),
+                )
+        except Exception as exc:  # noqa: BLE001 — the 73 of start remains
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not mark its checkpoint as holding its queue:"
+                " %s", self.job.id, exc,
+            )
 
     @contextlib.asynccontextmanager
     async def _transport_to_close(self, transport):
@@ -2539,6 +2662,10 @@ class AbstractExecutor(ABC):
         where = f"while '{label}' runs there" if running else f"before '{label}'"
         if (now - since).total_seconds() >= DETACHED_CONTACT_GRACE_S:
             self._detached_left_alive = True
+            if running and self._past_no_return(index):
+                # It may still run, past the point of no return: the next
+                # job of the queue must not start beside it.
+                self._hold_queue()
             left = "the step is" if running else "what the job left there is"
             self._sys(
                 f"✗ The server could not be reached for"

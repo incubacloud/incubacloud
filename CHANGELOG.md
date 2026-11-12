@@ -102,7 +102,17 @@ is unchanged.
   given up an hour past the step's cap, counted from the job's close; its
   log says so the first time and when it gives up. A step past the job's
   point of no return is never stopped: it is left to end and removed
-  afterwards, as is a step's directory a process of it kept. A job run
+  afterwards, as is a step's directory a process of it kept. Meanwhile
+  the queue of its instance, or of its host, waits for it as for a
+  running job, and the job first in it reads «Queued · waiting for job #N
+  to end on the server»: the reconciliation looks at the step at every
+  pass, says in the closed job's log the exit status it ended with, and
+  serves the queue; a server that cannot be reached holds it two hours
+  and ten minutes at most. A step before the point of no return never
+  holds it, so the rollback of a move whose new server is gone starts at
+  once. A step found ended when the job is closed is said in its log with
+  its exit status, which the closing hook gets as the step's result
+  instead of a step that did not end. A job run
   again over a checkpoint it does not take up — kept by the hook that
   closed it, or written by another queue job — stops and removes what
   that checkpoint says first, and waits 30 s while it cannot.

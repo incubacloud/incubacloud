@@ -20172,6 +20172,12 @@ msgid "Queued · waiting for a free slot (%s)"
 msgstr "En cola · esperando hueco (%s)"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Queued · waiting for job #%s to end on the server"
+msgstr "En cola · esperando a que el trabajo #%s acabe en el servidor"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__reconcile_tried_at
 msgid "Reconcile Tried At"
 msgstr "Último intento de conciliación"
