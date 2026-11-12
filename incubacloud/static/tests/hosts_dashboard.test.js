@@ -263,6 +263,8 @@ describe("HostsDashboard — silent vs. visible refresh", () => {
 describe("HostsDashboard — live usage", () => {
     beforeEach(() => allowTranslations());
     const card = Object.create(HostsDashboard.prototype);
+    // A panel that can turn metrics on, as core's.
+    card.env = { features: {} };
     const live = {
         usage_state: "live", cpu_usage: 23.4, ram_usage: 62.5,
         cpu_cores: 4, ram_total_gb: 16,
