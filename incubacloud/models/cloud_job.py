@@ -35,6 +35,7 @@ from .abstract_executor import (
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
     DETACHED_GIVE_UP_AFTER_CAP_S,
+    DETACHED_HOLDS_QUEUE_MAX_S,
     DETACHED_RECONCILE_WAIT_S,
     DETACHED_STOP_WAIT_S,
     PARKED_OVERDUE_S,
@@ -1824,7 +1825,9 @@ class CloudJob(models.Model):
         cancelled). A chain counts on every target it touches until its
         last step ends: the running step of a staging's clone may be the
         download on production while the staging waits for its restore.
-        Hidden background types never count.
+        A job already ended counts while its checkpoint holds the queue: a
+        step past its point of no return still runs on the server
+        (``_server_holder``). Hidden background types never count.
 
         :rtype: bool
         """
@@ -1865,7 +1868,53 @@ class CloudJob(models.Model):
             f" AND {scope_sql.format(j='s')} LIMIT 1",
             (running, running, *params),
         )
-        return bool(self.env.cr.fetchone())
+        if self.env.cr.fetchone():
+            return True
+        return bool(self._server_holder(instance_id, host_id))
+
+    @api.model
+    def _server_holder(self, instance_id, host_id):
+        """Return the ended job whose step on the server holds one queue.
+
+        A job closed while a step past its point of no return was left
+        running, or could not be asked (``holds_queue_since``,
+        ``AbstractExecutor._hold_queue``): its queue waits for that step
+        as for a running job, until the reconciliation finds it ended and
+        deletes the row, or ``DETACHED_HOLDS_QUEUE_MAX_S`` after the mark,
+        so that a row nobody removes (a stopped cron, an executor gone)
+        does not hold it for good. A step before the point of no return
+        never holds: it is stopped, and a move's rollback must not wait
+        for a server that is gone. Hidden background types never hold.
+
+        :param int instance_id: the instance whose queue to look at, or
+        :param int host_id: the host whose host-level queue to look at
+        :return: the id of the ended job, or 0
+        :rtype: int
+        """
+        hidden = tuple(self._get_hidden_job_types()) or ("",)
+        self.env["cloud.job.checkpoint"].sudo().flush_model(
+            ["job_id", "holds_queue_since"],
+        )
+        if instance_id:
+            scope_sql, params = "j.instance_id = %s", [instance_id]
+        else:
+            scope_sql, params = (
+                "j.host_id = %s AND j.instance_id IS NULL", [host_id],
+            )
+        since = fields.Datetime.now() - timedelta(
+            seconds=DETACHED_HOLDS_QUEUE_MAX_S,
+        )
+        self.env.cr.execute(
+            "SELECT j.id FROM cloud_job_checkpoint k"
+            " JOIN cloud_job j ON j.id = k.job_id"
+            " JOIN cloud_job_type t ON t.id = j.job_type_id"
+            f" WHERE {scope_sql} AND t.code NOT IN %s"
+            " AND j.state NOT IN %s AND k.holds_queue_since > %s"
+            " ORDER BY k.holds_queue_since, j.id LIMIT 1",
+            (*params, hidden, tuple(self._running_states), since),
+        )
+        row = self.env.cr.fetchone()
+        return row[0] if row else 0
 
     @api.model
     def _queue_held_by(self, instance_id, host_id):
@@ -2525,6 +2574,28 @@ class CloudJob(models.Model):
                 "capacity": capacity,
                 "since": fields.Datetime.to_string(job.channel_wait_since),
             }
+        return waits
+
+    def _server_waits(self, places):
+        """Say which ended job each first waiting job of *self* waits for.
+
+        The first entry of a queue held by a job closed with its step
+        still on the server (``_server_holder``) waits for that step as it
+        would for a running job; the lists name the job. Each queue is
+        read once.
+
+        :param dict places: ``_queue_places`` of *self*
+        :return: ``{job id: id of the ended job}``, for those jobs only
+        :rtype: dict
+        """
+        holders, waits = {}, {}
+        for job_id, (scope, position, _entry) in places.items():
+            if position:
+                continue
+            if scope not in holders:
+                holders[scope] = self._server_holder(*scope)
+            if holders[scope]:
+                waits[job_id] = holders[scope]
         return waits
 
     def _channel_wait(self):
@@ -3927,8 +3998,11 @@ class CloudJob(models.Model):
                     [("job_id", "=", job_id)], limit=1,
                 )
                 # Only a server to clean: said the first time it is tried,
-                # and when it is given up (``_forget_or_give_up``).
-                say = case != "checkpoint" or not row.reconcile_tried_at
+                # and when it ends or is given up (``_forget_or_give_up``).
+                # A step left running holds the queue from the first try.
+                say = case != "checkpoint" or not (
+                    row.reconcile_tried_at or row.holds_queue_since
+                )
                 if say:
                     executor._sys(note)
                 if row:
@@ -3944,7 +4018,10 @@ class CloudJob(models.Model):
                     asyncio.run(executor._close_on_server(
                         DETACHED_RECONCILE_WAIT_S, say_again=say,
                     ))
-                    if executor._detached_left_alive:
+                    if executor._detached_left_alive and not executor._left_running:
+                        # A server that answered, its step past the point
+                        # of no return still running, is looked at again
+                        # at the next pass: the queue waits for it.
                         executor._write_checkpoint(
                             {"reconcile_tried_at": fields.Datetime.now()},
                         )
@@ -3990,12 +4067,28 @@ class CloudJob(models.Model):
         ``timeout`` killed it long before, and the row is given up, with a
         line in the job log.
 
+        A row that held the job's queue (``holds_queue_since``) serves the
+        queue once it is gone, as the end of a job does.
+
         :param executor: the job's executor, with the row adopted
         :param row: the job's ``cloud.job.checkpoint``
         """
+        held = bool(row.holds_queue_since)
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
-            return
+        else:
+            self._give_up_if_past_cap(executor, row)
+        if held and not executor._checkpoint:
+            job = executor.job.sudo()
+            job._schedule_dispatch({job._scope_of()})
+
+    @api.model
+    def _give_up_if_past_cap(self, executor, row):
+        """Delete a row whose server was not reached, once well past its cap.
+
+        :param executor: the job's executor, with the row adopted
+        :param row: the job's ``cloud.job.checkpoint``
+        """
         plan = executor._checkpoint_data.get("plan") or []
         index = row.next_index
         opts = plan[index][2] if index < len(plan) else {}
@@ -4733,6 +4826,7 @@ class CloudJob(models.Model):
 
         parked = self._parked_rows()
         waits = self._channel_waits()
+        server_waits = self._server_waits(places)
 
         return [
             {
@@ -4771,6 +4865,9 @@ class CloudJob(models.Model):
                 "may_control": job._reader_may_control(),
                 # Held back by the channel gate: what for, and since when.
                 "channel_wait": waits.get(job.id),
+                # First in a queue that waits for an ended job's step on
+                # the server: that job's id.
+                "server_wait": server_waits.get(job.id),
                 **job._parked_fields(parked.get(job.id)),
                 "user_id": job.create_uid.id,
                 "user_name": job.create_uid.name or "",
@@ -5005,6 +5102,7 @@ class CloudJob(models.Model):
         places = self._queue_places()
         parked = self._parked_rows()
         waits = self._channel_waits()
+        server_waits = self._server_waits(places)
         result = []
         for job in self:
             start = job.create_date
@@ -5040,6 +5138,7 @@ class CloudJob(models.Model):
                     # What a held or a parked job waits for, as in
                     # ``_format``.
                     "channel_wait": waits.get(job.id),
+                    "server_wait": server_waits.get(job.id),
                     **job._parked_fields(parked.get(job.id)),
                     "create_date": job.create_date,
                     "write_date": job.write_date,

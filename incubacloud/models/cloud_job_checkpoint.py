@@ -17,7 +17,10 @@ covers (``AbstractExecutor._flush_logs``), so an attempt that dies loses
 no line and repeats none.
 
 The rule: **while the row exists, the job may have something on a
-server that nobody has closed.** It goes in the durable transaction of
+server that nobody has closed.** A row whose step is past the job's point
+of no return and may still run keeps the job's queue busy
+(``holds_queue_since``): the next job of the instance, or of the host,
+does not start beside it. It goes in the durable transaction of
 the hook that closes the job, unless something was left alive that could
 not be stopped, and when an attempt ends in a retry from the start. A row
 kept that way is marked ``closed`` in that transaction: no attempt
@@ -104,6 +107,13 @@ class CloudJobCheckpoint(models.Model):
     reconcile_tried_at = fields.Datetime(
         help="When the reconciliation last tried to reach the server to"
              " clean up after the ended job, and could not.",
+    )
+    holds_queue_since = fields.Datetime(
+        help="Since when the row keeps its job's queue busy: a step past"
+             " the job's point of no return was left running, or could not"
+             " be asked, when the job was closed. Counted by"
+             " cloud.job._scope_busy until the row goes or"
+             " DETACHED_HOLDS_QUEUE_MAX_S pass.",
     )
     build_lock_host_id = fields.Many2one(
         "cloud.host",

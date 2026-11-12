@@ -12,6 +12,7 @@ import {
     jobStateText,
     jobTone,
     queuedLabel,
+    serverWaitLabel,
     stateLabel,
 } from "@incubacloud/utils/job_queue";
 import { parseUTC, userLocale } from "@incubacloud/utils/dates";
@@ -201,6 +202,29 @@ describe("job queue — labels", () => {
         );
         expect(String(jobStateText({ state: "queued", queue_position: 2, channel_wait: null })))
             .toBe("Queued · 2 ahead");
+    });
+
+    test("a job queued behind a step left on the server names the job it waits for", () => {
+        expect(String(serverWaitLabel(41))).toBe(
+            "Queued · waiting for job #41 to end on the server",
+        );
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            const comp = Object.create(proto);
+            expect(String(comp.jobStateText({
+                state: "queued", queue_position: 0, server_wait: 41,
+            }))).toBe("Queued · waiting for job #41 to end on the server");
+        }
+        const history = Object.create(JobHistory.prototype);
+        expect(String(history.rowStateText({
+            state: "queued", queue_position: 0, server_wait: 41,
+        }))).toBe("Queued · waiting for job #41 to end on the server");
+        // A job the gate holds is past its queue: the slot is what it waits for.
+        const wait = { channel: "root.user", load: 1, capacity: 1, since: "2026-11-11 10:00:00" };
+        expect(String(jobStateText({
+            state: "queued", queue_position: 0, server_wait: 41, channel_wait: wait,
+        }))).toBe("Queued · waiting for a free slot (root.user 1/1)");
+        expect(String(jobStateText({ state: "queued", queue_position: 0, server_wait: null })))
+            .toBe("Queued · 0 ahead");
     });
 
     test("a parked job runs on its server and says when the panel reconnects", () => {

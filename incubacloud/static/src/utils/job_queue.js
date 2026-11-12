@@ -47,6 +47,18 @@ export function channelWaitLabel(wait) {
 }
 
 /**
+ * Label of a job first in a queue that waits for a step an ended job left
+ * running on its server (``server_wait`` of ``_format``): past its point
+ * of no return, the step is let end before the next job starts.
+ *
+ * @param {number} jobId the ended job's id
+ * @returns {string} "Queued · waiting for job #41 to end on the server"
+ */
+export function serverWaitLabel(jobId) {
+    return _t("Queued · waiting for job #%s to end on the server", jobId);
+}
+
+/**
  * Label of a job parked between two attempts: it runs, its step may go
  * on on its server (``on_server``), and the panel connects again at
  * ``parked_until``, written in the reader's time.
@@ -107,19 +119,24 @@ export function jobTone(state) {
 
 /**
  * Text of a job's state in the job lists and the history: its label;
- * for a job waiting in its queue how many entries go before it, or the
- * channel slot it waits for when the gate holds it; for a job parked
+ * for a job waiting in its queue how many entries go before it, the
+ * channel slot it waits for when the gate holds it, or the ended job whose
+ * step on the server its queue waits for; for a job parked
  * between two attempts, when the panel connects again.
  *
  * @param {{state: string, queue_position?: number, channel_wait?: object|null,
- *     on_server?: boolean, parked_until?: string|null}} job a ``_format``
+ *     server_wait?: number|null, on_server?: boolean,
+ *     parked_until?: string|null}} job a ``_format``
  *     or ``_format_history`` row
  * @returns {string}
  */
 export function jobStateText(job) {
     if (job.state === "queued") {
-        return job.channel_wait
-            ? channelWaitLabel(job.channel_wait)
+        if (job.channel_wait) {
+            return channelWaitLabel(job.channel_wait);
+        }
+        return job.server_wait
+            ? serverWaitLabel(job.server_wait)
             : queuedLabel(job.queue_position);
     }
     if (job.state === "started" && job.parked_until) {
