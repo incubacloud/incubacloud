@@ -627,8 +627,8 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
 
 @tagged("-at_install", "post_install")
 class TestParallelClosesOnRealConnections(TransactionCase):
-    """Review of the result, A1: two requests of one page, each on a
-    connection of its own, as in production.
+    """Review of the result, A1: parallel requests of one page, each on
+    a connection of its own, as in production.
 
     Odoo's cursors are REPEATABLE READ. The second request takes its
     snapshot when it asks for the user's lock, before it waits; once the
@@ -676,47 +676,51 @@ class TestParallelClosesOnRealConnections(TransactionCase):
         return api.Environment(cr, SUPERUSER_ID, {})["cloud.session.guard"]
 
     def _waiting_for_the_lock(self):
-        """Return whether a connection waits for the user's lock."""
+        """Return how many connections wait for the user's lock."""
         with self._connect() as cr:
             cr.execute("""
                 SELECT count(*) FROM pg_locks
                  WHERE locktype = 'advisory' AND NOT granted
                    AND classid = %s AND objid = %s
             """, (LOCK_CLASS, self.uid))
-            return bool(cr.fetchone()[0])
+            return cr.fetchone()[0]
 
-    def _second_request_after_the_first(self):
+    def _requests_after_the_first(self, count, cursors):
         """Hold the user's lock with the first request's writes, start
-        the second, commit the first once the second waits for the lock.
+        *count* more requests of the same session, commit the first once
+        they all wait for the lock.
 
-        :return: what the second request came to (``'held'``,
-            ``'closed'`` or the exception), and how many cursors it took
+        :param int count: the parallel requests after the first
+        :param int cursors: how many cursors to have ready for them
+        :return: what each came to (``'held'``, ``'closed'`` or the
+            exception), and how many cursors they took in all
         :rtype: tuple
         """
         outcome = []
         # The cursors are bound to the registry here: a thread that asks
         # for the registry waits for the lock the module loading, which
         # runs these tests, holds until it ends.
-        ready = [self._connect() for _ in range(guard_module.WRITE_ATTEMPTS)]
-        for cr in ready:
+        ready = [self._connect() for _ in range(cursors)]
+        bases = [self._connect() for _ in range(count)]
+        for cr in ready + bases:
             self._guard(cr)
         handed = []
+        handing = threading.Lock()
 
         def new_cursor(guard):
             """A cursor on a connection of its own, as in production."""
-            handed.append(ready[len(handed)])
-            return handed[-1]
+            with handing:
+                handed.append(ready[len(handed)])
+                return handed[-1]
 
         session = odoo.http.Session({"uid": self.uid}, self.IDENTIFIER * 2)
-        request = MagicMock(spec=odoo.http.Request)
-        request.session = session
-        base = self._connect()
-        guard_b = self._guard(base)
 
-        def second():
-            """The second request of the page."""
+        def another(base):
+            """One more request of the page, on its own request cursor."""
+            request = MagicMock(spec=odoo.http.Request)
+            request.session = session
             try:
-                guard_b._session_guard_act(
+                self._guard(base)._session_guard_act(
                     request, "country", "close", *self.PAIR,
                 )
                 outcome.append("held")
@@ -738,30 +742,49 @@ class TestParallelClosesOnRealConnections(TransactionCase):
             with patch.object(Guard, "_session_guard_new_cursor",
                               autospec=True, side_effect=new_cursor), \
                     patch.object(Guard, "_session_guard_destroy", autospec=True):
-                thread = threading.Thread(target=second)
-                thread.start()
+                threads = [
+                    threading.Thread(target=another, args=(base,))
+                    for base in bases
+                ]
+                for thread in threads:
+                    thread.start()
                 deadline = time.monotonic() + 2
-                while (not self._waiting_for_the_lock()
+                while (self._waiting_for_the_lock() < count
                        and time.monotonic() < deadline):
                     time.sleep(0.02)
                 first.commit()
-                thread.join(30)
+                for thread in threads:
+                    thread.join(30)
         finally:
-            for cr in (first, base, *ready):
+            for cr in (first, *bases, *ready):
                 if not cr.closed:
                     cr.close()
         return outcome, len(handed)
 
-    def test_a_held_user_s_parallel_request_is_held_too(self):
-        outcome, cursors = self._second_request_after_the_first()
-        self.assertEqual(outcome, ["held"])
-        self.assertEqual(cursors, 2)
+    def _closure(self):
+        """Return the action and hits of the session's row, committed."""
         with self._connect() as cr:
             cr.execute(
                 "SELECT action, hits FROM cloud_session_closure "
                 "WHERE session_identifier = %s", (self.IDENTIFIER,),
             )
-            self.assertEqual(cr.fetchall(), [("held", 2)])
+            return cr.fetchall()
+
+    def test_a_held_user_s_parallel_request_is_held_too(self):
+        outcome, cursors = self._requests_after_the_first(1, 2)
+        self.assertEqual(outcome, ["held"])
+        self.assertEqual(cursors, 2)
+        self.assertEqual(self._closure(), [("held", 2)])
+
+    def test_a_page_s_burst_is_held_as_a_whole(self):
+        """Five requests of one page at once, as Odoo 19's web client
+        opens a page over HTTP/2: each of the four queued behind the first
+        collides with the ones before it, and every one is held."""
+        outcome, cursors = self._requests_after_the_first(4, 16)
+        self.assertEqual(outcome, ["held"] * 4)
+        # Each collided at least once.
+        self.assertGreaterEqual(cursors, 8)
+        self.assertEqual(self._closure(), [("held", 5)])
 
     def test_on_one_cursor_the_collision_would_close(self):
         """What the second cursor is for: the same collision, tried once,
@@ -771,7 +794,7 @@ class TestParallelClosesOnRealConnections(TransactionCase):
                     "odoo.addons.incubacloud.models.cloud_session_guard",
                     "ERROR",
                 ) as logged:
-            outcome, cursors = self._second_request_after_the_first()
+            outcome, cursors = self._requests_after_the_first(1, 1)
         self.assertEqual(outcome, ["closed"])
         self.assertEqual(cursors, 1)
         self.assertIsInstance(
