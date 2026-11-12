@@ -87,25 +87,18 @@ filled in for you.
 
 ### Where to run the central
 
-**We recommend a server of its own for the central.** It can be hardened
-without touching anything else, and it does not compete with Odoo for
-resources. Add the server to the panel like any other, run Full Setup on
-it, then enable observability against it. The central installs no proxy
-of its own: when you publish it under a public name, it uses the one
-that Full Setup leaves on every managed server, so a server that has not
-been through Full Setup refuses the job and says so.
+The central is always installed on a server the panel manages: added to
+the panel, with Full Setup run on it. **We recommend a server of its
+own**: it can be hardened without touching anything else, and it does not
+compete with Odoo for resources. A server shared with Odoo instances the
+panel manages also works. The server where the panel itself runs is not
+supported.
 
-**It can also run on the same server as the panel**, with these
-conditions:
-
-- Register that server in the panel over SSH, choose it under
-  *Settings → Monitoring → Where the central runs* and press *Enable
-  observability*. The panel reads the central over Docker's network.
-- The panel and the central compete for memory. The central asks for
-  roughly 1 to 2 GB, depending on how many servers report to it.
-- **Do not run *Harden* or *Full Setup* on the panel's own server.** They
-  can cut the panel's access to its own machine.
-- If that server goes down, so do both.
+Add the server to the panel like any other, run Full Setup on it, then
+enable observability against it. The central installs no proxy of its
+own: when you publish it under a public name, it uses the one that Full
+Setup leaves on every managed server, so a server that has not been
+through Full Setup refuses the job and says so.
 
 ### Hosted on Odoo.sh
 

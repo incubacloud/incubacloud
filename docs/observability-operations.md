@@ -354,31 +354,25 @@ The three routes share one budget per user (20 boards a minute,
 
 ## Where the central runs
 
-**Recommended: a server of its own.** It can be hardened and does not
-compete with Odoo for memory. A server dedicated to the central is added
-to the panel like any other and goes through Full Setup *before*
-*Enable observability*: the central installs no Traefik, and with
-`metrics_central_public_host` set it joins the one Full Setup leaves on
-every managed server (network `inverseproxy_shared`). Without it the job
-is refused before it starts, with "This server does not have the proxy
-that Full Setup installs: press Full Setup on the server and activate
-observability again". `cloud.host.traefik_deployed`, set when Full Setup
-ends, is what the check reads.
+The central is always installed on a server the panel manages: added to
+the panel and through Full Setup *before* *Enable observability*. **A
+server of its own is recommended**: it can be hardened and does not
+compete with Odoo for memory. A server shared with Odoo instances the
+panel manages also works. The panel's own server is not supported: the
+panel does not manage it, so the job cannot assume Docker, its proxy or
+its configuration.
 
-**Allowed: the panel's own server.** Register it in the panel over SSH,
-pick it in Settings → Monitoring → *Where the central runs* and press
-*Enable observability*; the panel reads the central over the Docker
-network. Costs and limits:
+The central installs no Traefik: with `metrics_central_public_host` set
+it joins the one Full Setup leaves on every managed server (network
+`inverseproxy_shared`). A server that has not been through Full Setup
+refuses the job before it starts, with "Full Setup has not been run on
+this server: run it and enable observability again."
+`cloud.host.traefik_deployed`, set when Full Setup ends, is what the
+check reads. The central needs about 1–2 GB depending on the number of
+servers (see Costs and sizing).
 
-- the two compete for memory, and the central needs about 1–2 GB
-  depending on the number of servers (see Costs and sizing);
-- never run *Harden* or *Full Setup* on the panel's own server: it can
-  cut the panel's access to its own machine;
-- one server down takes both with it.
-
-**Odoo.sh and self-hosted panels that cannot run the central** need a
-metrics server of their own, as above: Odoo.sh does not let the central
-run. On IncubaCloud's SaaS the central is part of the service.
+**Odoo.sh** does not let the central run, so a panel there needs a
+metrics server of its own, prepared as above.
 
 ## Moving the central to its own VPS
 

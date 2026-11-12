@@ -429,8 +429,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         if self._host().traefik_deployed:
             return ""
         return _(
-            "This server does not have the proxy that Full Setup installs: "
-            "press Full Setup on the server and activate observability again."
+            "Full Setup has not been run on this server: run it and enable "
+            "observability again."
         )
 
     def _direct_port_problem(self):
