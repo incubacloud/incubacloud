@@ -201,7 +201,8 @@ TOOLS = (
         "Cancel a job that waits or runs. A job of a chain ends with the rest "
         "of its chain; the approval lists every job it ends. A running "
         "restore or move stopped half-way may leave its instance to be "
-        "repaired.",
+        "repaired. A running job reads cancelled at once, with stopping=true "
+        "until what it left on its server is stopped (get_job).",
         _CONSULTANT,
         obj({"job_id": _JOB}, required=("job_id",)),
         handler="_tool_cancel_job",
@@ -558,10 +559,20 @@ class McpToolsJobs(models.AbstractModel):
 
     @api.model
     def _tool_cancel_job(self, args):
-        """Cancel the job as the panel's Cancel does."""
+        """Cancel the job as the panel's Cancel does.
+
+        ``stopping`` says whether the job, cancelled, still stops what it
+        left on its server (``cloud.job._stopping_ids``): get_job reads it
+        until it turns false.
+        """
         job = self._job(args["job_id"])
         job.cancel_job()
-        return {"ok": True, "job_id": job.id, "state": job.state}
+        return {
+            "ok": True,
+            "job_id": job.id,
+            "state": job.state,
+            "stopping": bool(job._stopping_ids([("id", "=", job.id)])),
+        }
 
     @api.model
     def _retry_asks_types(self):

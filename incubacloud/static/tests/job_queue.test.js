@@ -248,6 +248,24 @@ describe("job queue — labels", () => {
         expect(jobTone("started")).toBe("running");
     });
 
+    test("a cancelled job still stopping on its server reads Cancelling… and runs", () => {
+        const stopping = { state: "cancelled", stopping: true };
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            expect(String(Object.create(proto).jobStateText(stopping))).toBe("Cancelling…");
+            expect(proto.jobTone("cancelled", true)).toBe("running");
+            expect(proto.jobTone("cancelled", false)).toBe("");
+        }
+        const history = Object.create(JobHistory.prototype);
+        expect(String(history.rowStateText(stopping))).toBe("Cancelling…");
+        expect(history.ganttDotClass("cancelled", true)).toBe("running");
+        expect(history.ganttDotClass("cancelled")).toBe("failed");
+        // Once it stopped, or for any other state, the flag says nothing.
+        expect(String(jobStateText({ state: "cancelled", stopping: false }))).toBe("Cancelled");
+        expect(String(jobStateText({ state: "started", stopping: true }))).toBe("Running");
+        expect(jobTone("cancelled")).toBe("");
+        expect(jobTone("done", true)).toBe("done");
+    });
+
     test("a queued job counts as active and has its own state class", () => {
         for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
             expect(proto.isActiveJob("queued")).toBe(true);

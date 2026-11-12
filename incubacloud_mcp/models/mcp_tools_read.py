@@ -147,7 +147,9 @@ TOOLS = (
     ),
     ToolSpec(
         "get_job",
-        "A job: its state, what it waits behind and its log, in pages. The log "
+        "A job: its state, what it waits behind and its log, in pages. A "
+        "cancelled job reads stopping=true while what it left on its server "
+        "is still being stopped. The log "
         "is a clean view of the panel's: terminal colour codes are taken out, "
         "and consecutive lines that differ only in their numbers (download or "
         "extraction progress) show as the first and the last of them, with "

@@ -193,7 +193,7 @@
                     <t t-foreach="ganttJobs" t-as="job" t-key="job.id">
                         <div class="jh-gantt-row">
                             <div class="jh-gantt-label" t-att-title="job.name + ' · ' + job.host">
-                                <span t-att-class="'rl-tl-dot ' + ganttDotClass(job.state)"/>
+                                <span t-att-class="'rl-tl-dot ' + ganttDotClass(job.state, job.stopping)"/>
                                 <div class="jh-gantt-label-lines">
                                     <span class="jh-gantt-label-name" t-esc="job.name"/>
                                     <t t-if="job.trigger === 'webhook'">
@@ -281,7 +281,7 @@
                                 t-att-data-job-id="job.id"
                                 t-on-click="() => this.openLog(job)">
                                 <td>
-                                    <span t-att-class="'rl-pill rl-pill--bare rl-pill--job ' + ganttDotClass(job.state)">
+                                    <span t-att-class="'rl-pill rl-pill--bare rl-pill--job ' + ganttDotClass(job.state, job.stopping)">
                                         <span class="rl-d"/>
                                         <t t-esc="rowStateText(job)"/>
                                     </span>

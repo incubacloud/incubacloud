@@ -34,10 +34,11 @@ export const JobsMixin = (Base) =>
      * Colour of a job's state in the recent activity (``job_queue.jobTone``).
      *
      * @param {string} state
+     * @param {boolean} [stopping] cancelled and still stopping
      * @returns {string}
      */
-    jobTone(state) {
-      return jobTone(state);
+    jobTone(state, stopping = false) {
+      return jobTone(state, stopping);
     }
 
     /**
