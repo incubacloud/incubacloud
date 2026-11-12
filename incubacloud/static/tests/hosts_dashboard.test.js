@@ -322,11 +322,11 @@ describe("HostsDashboard — live usage", () => {
     });
 
     test("on a panel that cannot turn metrics on, off gives no instruction", () => {
-        const tenant = Object.create(HostsDashboard.prototype);
-        tenant.env = { features: { observability: { configure: false } } };
-        expect(String(tenant.usageMissing({ usage_state: "off" })))
+        const managed = Object.create(HostsDashboard.prototype);
+        managed.env = { features: { observability: { configure: false } } };
+        expect(String(managed.usageMissing({ usage_state: "off" })))
             .toBe("Live usage is not available on this panel.");
-        expect(tenant.usageIcon({ usage_state: "off" })).toBe("lock");
+        expect(managed.usageIcon({ usage_state: "off" })).toBe("lock");
         const core = Object.create(HostsDashboard.prototype);
         core.env = { features: { observability: { configure: true } } };
         expect(String(core.usageMissing({ usage_state: "off" })))
@@ -433,7 +433,7 @@ describe("HostsDashboard — what a card paints", () => {
         expect(`${cardOf("stale-host")} .ic-mbar-cpu`).toHaveCount(0);
     });
 
-    test("a tenant's panel gives no instruction for off", async () => {
+    test("a managed panel gives no instruction for off", async () => {
         const off = { ...stale, usage_state: "off" };
         await mountWith([off], { observability: { configure: false } });
         expect(".ic-usage-reason").toHaveText("Live usage is not available on this panel.");

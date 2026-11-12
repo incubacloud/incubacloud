@@ -104,7 +104,7 @@ file.
   in cores or GB, and what the instances are allocated as a second line:
   *0.9 of 4 cores · allocated: 11.3 vCPU*. Without a reading of the last
   15 minutes the card shows no bar and says why: metrics off (on a
-  tenant's panel, which cannot turn them on, not available there), agents
+  managed panel, which cannot turn them on, not available there), agents
   not installed, their installation failed, or no recent reading and when
   the last one was. The specs cron reads both with two more queries and
   writes them only together; `/cloud/get_hosts` gives `usage_state`,
