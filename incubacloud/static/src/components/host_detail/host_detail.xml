@@ -685,6 +685,22 @@
                                         <span class="ic-form-note" t-else="">Generating a key…</span>
                                     </div>
                                 </t>
+                                <div class="rl-frow rl-full" t-if="!isNew">
+                                    <label for="host-security-logs">Send security logs</label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input id="host-security-logs" type="checkbox"
+                                               t-att-checked="state.form.security_logs_enabled"
+                                               t-att-disabled="!securityLogsSwitchable"
+                                               t-on-change="(ev) => { this.state.form.security_logs_enabled = ev.target.checked; }"/>
+                                        <span>SSH sign-ins and failed attempts (address, user, key), sudo commands, fail2ban's blocks and changes to passwd, shadow, sudoers and the SSH configuration, sent to the metrics central and kept there 90 days. This server can add to them but cannot delete them. Off stops sending; what was sent expires on its own.</span>
+                                    </div>
+                                    <span class="ic-form-note" t-if="state.securityLogsAvailable === false">
+                                        Coming soon.
+                                    </span>
+                                    <span class="ic-form-note" t-elif="!observabilityCollects">
+                                        Observability is off on this panel, so nothing is sent.
+                                    </span>
+                                </div>
                             </div>
                         </t>
 

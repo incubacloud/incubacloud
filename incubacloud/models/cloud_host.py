@@ -2267,6 +2267,8 @@ class CloudHost(models.Model):
             "active",
             "login_type",
             "traefik_deployed",
+            # Turning it off stops a defence: who did it stays on record.
+            "security_logs_enabled",
         }
     )
 

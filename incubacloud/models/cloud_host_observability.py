@@ -22,7 +22,10 @@ observability on is itself the instruction to enrol everything pending.
 """
 import logging
 
-from odoo import api, fields, models
+import asyncssh
+
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 from .observability_agents_executor import AGENTS_REVISION
 
@@ -48,8 +51,150 @@ _REAPPLY_PER_PASS = 5
 _UNFINISHED_JOB_STATES = ("queued", "pending", "enqueued", "wait_dependencies", "started")
 
 
+#: What the agents' install reads from a host besides its instances: the
+#: switch, and the key and user that tell the panel's own sign-ins and
+#: sudo from anyone else's. A change re-applies that host's agents.
+_AGENTS_HOST_FIELDS = ("security_logs_enabled", "key_file", "user", "login_type")
+
+
 class CloudHost(models.Model):
     _inherit = "cloud.host"
+
+    security_logs_enabled = fields.Boolean(
+        string="Send security logs",
+        default=lambda self: self._security_logs_default(),
+        help="SSH sign-ins and failed attempts (address, user, key), sudo "
+             "commands, fail2ban's blocks and changes to passwd, shadow, "
+             "sudoers and the SSH configuration, sent to the metrics central "
+             "and kept there 90 days. This server can add to them but cannot "
+             "delete them. Off stops sending; what was sent expires on its "
+             "own.",
+    )
+
+    @api.model
+    def _security_logs_default(self):
+        """Return the value Send security logs starts with on a new server.
+
+        On: a panel's servers are its own, and their security logs are
+        what an incident is read from (plan of 9-nov-2026). A layer whose
+        panels belong to others may start them off until it may receive
+        them.
+
+        :rtype: bool
+        """
+        return True
+
+    @api.model
+    def _security_logs_available(self):
+        """Return whether this panel's servers may send their security logs.
+
+        Always here. A layer whose panels belong to others withholds it
+        until it may receive them: the switch is then off on every server
+        and cannot be turned on, by the form, the route or an agent.
+
+        :rtype: bool
+        """
+        return True
+
+    def _check_security_logs_available(self, vals):
+        """Refuse to turn a server's security logs on where they are withheld.
+
+        Run by ``create`` and ``write``. Turning them off, or writing them
+        off, is always allowed.
+
+        :param dict vals: the values being written.
+        :raise UserError: when *vals* turn them on and this panel may not.
+        """
+        if vals.get("security_logs_enabled") and not self._security_logs_available():
+            raise UserError(_(
+                "Security logs are not available on this panel yet."
+            ))
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Refuse a server created sending security logs where they are withheld."""
+        for vals in vals_list:
+            self._check_security_logs_available(vals)
+        return super().create(vals_list)
+
+    @api.model
+    def _security_logs_after_upgrade(self, shipped_before):
+        """Return the value every server takes when the switch moves to them.
+
+        Called once, by the update that replaced the panel-wide *Send
+        hosts' security logs* with the switch of each server. On, also
+        where the panel-wide setting was off: the owner's decision of
+        10-nov-2026, said in the changelog. A layer whose panels belong
+        to others keeps what they had.
+
+        :param bool shipped_before: the panel-wide setting before the
+            update.
+        :rtype: bool
+        """
+        return True
+
+    def _panel_key_fingerprints(self):
+        """Return the SHA256 fingerprints of the panel's key for this host.
+
+        In the form ``ssh-keygen -lf`` prints and sshd logs them
+        (``SHA256:…``), so a sign-in with it counts as the panel's. Empty
+        for a host that logs in with a password, or whose key cannot be
+        read (a passphrase): every sign-in then counts as another's.
+
+        :return: zero or one fingerprint.
+        :rtype: list[str]
+        """
+        self.ensure_one()
+        if self.login_type != "ssh_key":
+            return []
+        try:
+            raw = self._get_ssh_private_key_bytes()
+            if not raw:
+                return []
+            key = asyncssh.import_private_key(raw)
+            return [key.get_fingerprint("sha256")]
+        except Exception as exc:  # noqa: BLE001 — the install goes on without it
+            _logger.warning(
+                "[metrics] cannot read the key of cloud.host(id=%s) for its "
+                "fingerprint: %s", self.id, exc,
+            )
+            return []
+
+    def write(self, vals):
+        """Re-apply a host's agents when what they read from it changes.
+
+        Send security logs, the key and the user: the playbook renders
+        them, so a change applies now rather than at the next install. A
+        host whose last install failed is re-applied too: turning the
+        switch off is how a Fluent Bit that does not start is removed, and
+        the reconciliation would wait out its back-off (review of
+        12-nov-2026).
+        """
+        self._check_security_logs_available(vals)
+        watched = [f for f in _AGENTS_HOST_FIELDS if f in vals]
+        before = {}
+        if watched:
+            before = {
+                host.id: tuple(host.sudo()[f] for f in watched) for host in self
+            }
+        result = super().write(vals)
+        for host in self.filtered(lambda h: h.id in before):
+            if tuple(host.sudo()[f] for f in watched) != before[host.id]:
+                host._reapply_observability_now("server settings changed")
+        return result
+
+    def _reapply_observability_now(self, reason):
+        """Queue this host's agents' install now, installed or failed.
+
+        :param str reason: short free text for the log.
+        :return: the queued job id, or ``False`` when nothing was queued.
+        """
+        self.ensure_one()
+        if not self._observability_target():
+            return False
+        if self.metrics_agents_state not in ("installed", "failed"):
+            return False
+        return self._enqueue_observability(reason)
 
     # ── Label refresh ─────────────────────────────────────────────────────
 

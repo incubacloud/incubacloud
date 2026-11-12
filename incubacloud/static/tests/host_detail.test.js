@@ -40,6 +40,27 @@ describe("HostDetail — class structure", () => {
     });
 });
 
+describe("HostDetail — Send security logs", () => {
+    function make({ collect = true, available = true } = {}) {
+        const comp = Object.create(HostDetail.prototype);
+        comp.env = { features: { observability: { collect } } };
+        comp.state = { securityLogsAvailable: available };
+        return comp;
+    }
+
+    test("can be changed where the panel collects and may send them", () => {
+        expect(make().securityLogsSwitchable).toBe(true);
+    });
+
+    test("is locked where the panel may not send them yet", () => {
+        expect(make({ available: false }).securityLogsSwitchable).toBe(false);
+    });
+
+    test("is locked where the panel collects nothing", () => {
+        expect(make({ collect: false }).securityLogsSwitchable).toBe(false);
+    });
+});
+
 describe("HostDetail — statusLabel helper", () => {
     function statusLabel(status) {
         return {

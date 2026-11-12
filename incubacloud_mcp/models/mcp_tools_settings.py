@@ -38,7 +38,6 @@ SAVE_GENERAL_PARAMS = (
     "metrics_central_public_host",
     "metrics_central_direct_host",
     "metrics_central_operator_sources",
-    "metrics_ship_security_logs",
     "move_frozen_source_hours",
     "move_cut_alert_seconds",
 )
@@ -72,7 +71,6 @@ OBSERVABILITY_FIELDS = (
     "metrics_central_url",
     "metrics_remote_write_url",
     "metrics_retention_days",
-    "metrics_ship_security_logs",
     "grafana_base_url",
     "metrics_central_public_host",
     "metrics_central_direct_host",

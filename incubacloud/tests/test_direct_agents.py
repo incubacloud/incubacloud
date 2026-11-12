@@ -193,17 +193,17 @@ class TestThePlaybookTriesBeforeItWrites(ObservabilityExecutorCase):
         )
         self.assertLess(
             tried,
-            self.names.index("Write the access-log collector configuration"),
+            self.names.index("Write the security log collector"),
         )
         task = self.tasks[tried]["ansible.builtin.uri"]
         self.assertIs(task["validate_certs"], True)
 
     def test_the_agents_write_where_the_try_said(self):
         self.assertIn("-remoteWrite.url={{ ic_write_url }}", self.text)
-        self.assertIn("- url: {{ ic_logs_url }}", self.text)
+        self.assertIn("host: {{ ic_logs_url | urlsplit('hostname') | to_json }}", self.text)
         self.assertNotIn("-remoteWrite.url={{ ic_remote_write_url }}", self.text)
 
-    def test_promtail_takes_a_new_configuration(self):
-        self.assertIn("Restart promtail when its configuration changed", self.names)
+    def test_fluent_bit_takes_a_new_configuration(self):
+        self.assertIn("Restart Fluent Bit when its configuration changed", self.names)
         self.assertIn("ic_write_url_installed", self.text)
         self.assertIn("ic_direct_report", self.text)

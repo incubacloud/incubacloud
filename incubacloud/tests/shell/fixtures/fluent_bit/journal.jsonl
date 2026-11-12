@@ -1,0 +1,11 @@
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Accepted publickey for root from 203.0.113.10 port 60560 ssh2: ED25519 SHA256:aya+WZfI0ITp74XMk0+4tbzGPANSnRr7f4Xa1l6JSCQ"}
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Accepted publickey for incubacloud from 127.0.0.1 port 55722 ssh2: ED25519 SHA256:UCjCc0gMRE5lSQ7xQXTn+efUUYHvSob6Kx+Y8kL9fp0"}
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Invalid user invitado from 172.31.0.2 port 53002"}
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Connection closed by invalid user invitado 172.31.0.2 port 53002 [preauth]"}
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Connection closed by authenticating user root 172.31.0.2 port 53008 [preauth]"}
+{"SYSLOG_IDENTIFIER": "sshd-session", "MESSAGE": "Disconnected from invalid user admin 172.31.0.3 port 40000 [preauth]"}
+{"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "incubacloud : PWD=/home/incubacloud ; USER=root ; COMMAND=/usr/bin/true"}
+{"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "incubacloud : PWD=/home/incubacloud ; USER=root ; COMMAND=/bin/sh -c 'echo BECOME-SUCCESS-abcdefghijklmnop ; true'"}
+{"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "pam_unix(sudo:auth): authentication failure; logname=root uid=1001 euid=0 tty= ruser=probador rhost=  user=probador"}
+{"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "probador : 1 incorrect password attempt ; PWD=/home/probador ; USER=root ; COMMAND=/usr/bin/true"}
+{"SYSLOG_IDENTIFIER": "sudo", "MESSAGE": "probador : PWD=/home/probador ; USER=root ; COMMAND=/usr/bin/id"}

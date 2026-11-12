@@ -951,6 +951,10 @@ class CrudMixin:
             'direct_port': host.direct_port or 0,
             'direct_port_shipped': host.direct_port_shipped or 0,
             'direct_path_opt_out': host.direct_path_opt_out,
+            # This server's security logs: sent to the central, or not.
+            'security_logs_enabled': host.security_logs_enabled,
+            # Whether this panel may turn them on at all.
+            'security_logs_available': host._security_logs_available(),
             'direct_allowlist_shipped': (
                 host.direct_allowlist_shipped or ''
             ).split(),
@@ -986,6 +990,7 @@ class CrudMixin:
         'exclude_from_autoassign', 'http_conn_rate',
         'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
         'cdn_client_ca', 'direct_port', 'direct_path_opt_out',
+        'security_logs_enabled',
         # The key is write-only: the model ignores an empty one, so a
         # save that does not paste a new key keeps the stored one.
         'tls_default_cert', 'tls_default_key',
@@ -1916,9 +1921,7 @@ class CrudMixin:
                 settings.metrics_remote_write_token
             ),
             'metrics_retention_days': settings.metrics_retention_days or 0,
-            'metrics_ship_security_logs': bool(settings.metrics_ship_security_logs),
             'metrics_collect_pg': bool(settings.metrics_collect_pg),
-            'grafana_base_url': settings.grafana_base_url or '',
             'metrics_central_public_host':
                 settings.metrics_central_public_host or '',
             'metrics_central_operator_sources':
@@ -1955,13 +1958,13 @@ class CrudMixin:
         github_event_retention_days=None, github_event_truncate_days=None,
         metrics_enabled=None, metrics_central_url=None,
         metrics_remote_write_url=None, metrics_remote_write_token=None,
-        metrics_retention_days=None, grafana_base_url=None,
+        metrics_retention_days=None,
         container_log_max_size=None, container_log_max_file=None,
         odoo_log_archive_days=None, log_download_max_mb=None,
         log_search_max_files=None, log_search_timeout_s=None,
         trusted_proxy_ranges=None, metrics_central_public_host=None,
         metrics_central_operator_sources=None,
-        metrics_ship_security_logs=None, metrics_collect_pg=None,
+        metrics_collect_pg=None,
         metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
     ):
         """Save the settings a Settings section sent, and only those.
@@ -2118,16 +2121,11 @@ class CrudMixin:
                 metrics_vals = {}
                 if metrics_enabled is not None:
                     metrics_vals['metrics_enabled'] = bool(metrics_enabled)
-                if metrics_ship_security_logs is not None:
-                    metrics_vals['metrics_ship_security_logs'] = bool(
-                        metrics_ship_security_logs,
-                    )
                 if metrics_collect_pg is not None:
                     metrics_vals['metrics_collect_pg'] = bool(metrics_collect_pg)
                 for field, value in (
                     ('metrics_central_url', metrics_central_url),
                     ('metrics_remote_write_url', metrics_remote_write_url),
-                    ('grafana_base_url', grafana_base_url),
                 ):
                     if value is not None:
                         metrics_vals[field] = (value or '').strip()

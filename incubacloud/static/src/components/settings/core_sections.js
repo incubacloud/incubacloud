@@ -340,12 +340,6 @@ settingsBlocks.add("core-monitoring", {
             synonyms: ["retention", "metrics"],
         },
         {
-            id: "metrics_ship_security_logs", type: "toggle", advanced: true, block: _t("Observability"),
-            label: _t("Send hosts' security logs"),
-            help: _t("SSH, sudo, auditd and fail2ban, kept 90 days in the central. Applies on the next agent install."),
-            synonyms: ["ssh", "fail2ban", "auditd", "security"],
-        },
-        {
             id: "metrics_collect_pg", type: "toggle", advanced: true, block: _t("Observability"),
             label: _t("Collect database figures"),
             help: _t("Each instance's connections, queries and lock waits, every minute, read on its server as root. Applies to every server within hours."),
