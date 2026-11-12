@@ -234,6 +234,14 @@ _FETCH_RETRY_WAIT_S = 60
 #: itself with its traps, and a minute more as a second barrier.
 _FETCH_STEP_TIMEOUT_S = _FETCH_BUDGET_S + 60
 
+#: «Pull images»'s cap, in seconds (12-nov-2026, Fable's review of phase
+#: 3): the step runs apart, and without one it had the default 3 600 s.
+#: Measured 2/13/36 s (p50/p90/max) on 18 warm deploys; a new server or a
+#: slow registry takes minutes. Past it the deploy fails, as with any step
+#: its cap cuts, instead of waiting up to an hour for a registry that does
+#: not answer.
+_PULL_STEP_TIMEOUT_S = 900
+
 #: Where ``fetch-repos`` writes the seconds it took, relative to the
 #: instance's directory, for the build's repetition rule. Under
 #: ``custom/src/.ic-*``: out of the build context and of the history.
@@ -3066,9 +3074,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #    actual start step is always fast).
             #    Non-fatal: if a service uses a local build or the registry is
             #    unavailable, docker compose up will still use cached images.
+            #    Run apart (phase 3, 12-nov-2026), capped by
+            #    ``_PULL_STEP_TIMEOUT_S``: nothing else bounds it.
             (
                 "Pull images",
                 f"cd {d} && docker compose pull --ignore-pull-failures || true",
+                {"timeout": _PULL_STEP_TIMEOUT_S, "detached": True},
             ),
             # 9b. Build the image in a step of its own, repeated once if
             #     it fails. The first ``compose run`` or ``up`` that found
@@ -3076,10 +3087,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     of GitHub failed a deploy in «Start instance» (QA,
             #     8-nov-2026). Cached and without a pull, as that build
             #     was; with the image there, nothing after it builds.
+            #     Run apart (phase 3, 12-nov-2026), as the rebuild's: up
+            #     to 300 s measured, 540 s in a rebuild.
             (
                 _LABEL_BUILD_DEPLOY,
                 self._build_step_command(d),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
             # 10. Start the database service first so it is ready for init.
             (
@@ -3089,11 +3102,16 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # 11. Initialize the Odoo database.
             #     docker compose run --rm honours depends_on health checks,
             #     so it waits for the db to be healthy before running.
+            #     Run apart (phase 3, 12-nov-2026): 390 to 650 s measured.
+            #     No point of no return: a deploy stopped here goes back to
+            #     draft, and its next run tears down what is left. Stopping
+            #     the ``compose run`` client may leave its container, as
+            #     attached; the next deploy removes it.
             (
                 "Initialize database",
                 f"cd {d} && {COMPOSE_RUN} --rm odoo "
                 f"odoo --stop-after-init -i base,incubacloud_connect --load-language {lang}",
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
             # 12. Store module checksums baseline so future rebuilds
             #     can detect which modules changed via click-odoo-update.
@@ -3101,7 +3119,8 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     last on Python 2) has no ``--only-compute-hashes``: there
             #     a plain run stores them, after updating the modules of a
             #     database that has just been created (QA of the series,
-            #     7-nov-2026).
+            #     7-nov-2026). Run apart (phase 3, 12-nov-2026): seconds on
+            #     19.0, but on 8.0 to 10.0 it updates every module.
             (
                 "Initialize module checksums",
                 f"cd {d} && {COMPOSE_RUN} --rm odoo sh -c"
@@ -3109,6 +3128,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ' then exec click-odoo-update --only-compute-hashes --database "$0";'
                 ' fi; exec click-odoo-update --database "$0"\''
                 f" {shlex.quote(inst.postgres_dbname or 'prod')}",
+                {"detached": True},
             ),
             # 13. Set web.base.url and report.url before the stack starts so
             #     any post-init steps and Odoo itself see the correct public
