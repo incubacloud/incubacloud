@@ -110,6 +110,48 @@
         <field name="message">The proxy on %(host)s is not running: no instance on it answers.</field>
     </record>
 
+    <!-- Waits measured by the kernel (PSI, node_exporter's pressure
+         collector): the share of the time tasks of the whole server
+         stalled for the disk or for memory. A load or a percentage
+         says how busy a server is; these say that it is too busy for
+         its instances, which is what makes them slow. Added
+         12-nov-2026 with the server's Metrics tab (plan of observability,
+         section 2.6), thresholds to tune in QA with real data. -->
+    <record id="metric_rule_host_io_pressure" model="cloud.metric.rule">
+        <field name="name">Disk saturated</field>
+        <field name="sequence">32</field>
+        <field name="code">metrics_host_io_pressure</field>
+        <!-- Three evaluations, fifteen minutes: a backup or a rebuild
+             saturates a disk for a few minutes and is not a fault. -->
+        <field name="confirm_cycles">3</field>
+        <!-- "some": at least one task waited for the disk. -->
+        <field name="expression">round(100 * max by (host_id, host) (rate(node_pressure_io_waiting_seconds_total[5m])))</field>
+        <field name="comparator">gt</field>
+        <!-- A fifth of the time: every instance of the server feels it
+             (the same threshold as the boards' diagnosis). -->
+        <field name="threshold">20</field>
+        <field name="level">warning</field>
+        <field name="message">The disk of %(host)s has been saturated for 15 minutes: tasks waited for it %(value)s%% of the time, so every instance on it is slow. If a backup or a migration is running, wait for it to end; otherwise the server needs a faster disk.</field>
+    </record>
+
+    <record id="metric_rule_host_memory_pressure" model="cloud.metric.rule">
+        <field name="name">Server out of memory</field>
+        <field name="sequence">33</field>
+        <field name="code">metrics_host_memory_pressure</field>
+        <!-- An instant reading over five minutes: a lone spike must not
+             page anyone. -->
+        <field name="confirm_cycles">2</field>
+        <!-- "full": every task that was not idle stalled for memory at
+             once, the kernel reclaiming pages instead of running them. -->
+        <field name="expression">round(100 * max by (host_id, host) (rate(node_pressure_memory_stalled_seconds_total[5m])))</field>
+        <field name="comparator">gt</field>
+        <!-- A tenth of the time with nothing running for lack of memory:
+             the server is evicting the pages of every instance. -->
+        <field name="threshold">10</field>
+        <field name="level">critical</field>
+        <field name="message">%(host)s has run out of memory: its tasks all stalled waiting for it %(value)s%% of the time, so every instance on it slows down. Move an instance to another server or give this one more memory.</field>
+    </record>
+
     <!-- ── Instance-scoped rules ──────────────────────────────────────
          These raise against the instance, so the alert lands on its own
          page instead of being buried in its host's. All depend on the
@@ -197,6 +239,27 @@
         <field name="threshold">0</field>
         <field name="level">critical</field>
         <field name="message">Instance %(host)s ran out of memory: the kernel killed %(value)s process(es) of its odoo, db or smtp container in the last 15 minutes.</field>
+    </record>
+
+    <record id="metric_rule_instance_cpu_throttled" model="cloud.metric.rule">
+        <field name="name">Instance held back by its CPU quota</field>
+        <field name="sequence">70</field>
+        <field name="code">metrics_instance_cpu_throttled</field>
+        <!-- Three evaluations, fifteen minutes: an import or a report
+             takes the quota for a while, and that is what it is for. -->
+        <field name="confirm_cycles">3</field>
+        <field name="scope">instance</field>
+        <!-- Share of the scheduler's periods in which the odoo container
+             wanted CPU and its quota (cpus) said no, its one-off runs
+             left out. Added 12-nov-2026 (plan of observability, section
+             2.6); the instance board's diagnosis reads the same share. -->
+        <field name="expression">round(100 * sum by (instance_id, instance) (rate(container_cpu_cfs_throttled_periods_total{instance_id!="", container_label_com_docker_compose_service="odoo", name!~".+-run-[0-9a-f]{12}|ic_boot_odoo_[0-9]+"}[5m])) / sum by (instance_id, instance) (rate(container_cpu_cfs_periods_total{instance_id!="", container_label_com_docker_compose_service="odoo", name!~".+-run-[0-9a-f]{12}|ic_boot_odoo_[0-9]+"}[5m])))</field>
+        <field name="comparator">gt</field>
+        <!-- A quarter of the time: requests queue behind the quota most
+             of the time (the instance board's threshold, 10-nov-2026). -->
+        <field name="threshold">25</field>
+        <field name="level">warning</field>
+        <field name="message">Instance %(host)s has been held back by its CPU quota for 15 minutes (%(value)s%% of the time): its requests wait. Raise the quota in Resources or spread the instances over more servers.</field>
     </record>
 
     <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">

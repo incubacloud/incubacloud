@@ -226,6 +226,43 @@ that the remote shell removes when it ends, and runs it with its own
 standard input closed (`OpsMixin._read_with_script`). The scripts source
 nothing for that reason.
 
+### A server's board and the fleet's
+
+A server's **Metrics** tab and Monitoring's **Hosts** view draw
+`PANELS["host"]` from `/cloud/host/resource_series`, the same way and
+with the same gate as an instance's board (the `developer` role and the
+record rules on the host), with the panel's account credential. Every
+expression selects by the host's `host_id`; the stacked panels (CPU,
+memory and directory per instance) keep the nine largest instances and
+add the rest up as `others`, so the stack still reaches the server's
+total. The "who uses it" table (`kind: "table"`, instant queries over the
+last five minutes) is matched to the instances the caller can read, which
+are the ones it links to. Its diagnosis (`diagnose_host`) reads the same
+board: memory over 92 % and the root disk over 90 % (the thresholds of
+`metrics_memory_high` and `metrics_disk_critical`), load per core over 2,
+and the kernel's waits for memory over 10 % and for the disk over 20 % of
+the time.
+
+Monitoring's **Fleet** view draws `PANELS["fleet"]` from
+`/cloud/fleet/resource_series`. Its expressions select no record: read
+with the account credential they are that account's servers, which is
+what a tenant's panel sees. The panel that holds the operator credential
+(`metrics_operator_token`, the one that deployed the central) reads the
+central's operator route instead, `metrics_central_url` with `/r`
+replaced by `/admin-r`, and sees every account; its aggregations keep
+`ic_account` beside `host_id` because `host_id` repeats across accounts.
+The answer's `scope` says which (`operator` or `account`), and each
+server says whether it is this panel's (`own`), the only ones that link
+to a board. A central whose gateway does not let the panel's address
+read `/admin-r` answers 403 to every panel; the board then reads the
+account route and says *Your servers*. The ingestion line (`kind:
+"state"`) is `count_over_time(up{job="node"}[window])` per server: a step
+with a sample is reporting, one without is silent; servers with a
+silence come first, twenty at most.
+
+The three routes share one budget per user (20 boards a minute,
+`_BOARD_READS_PER_MIN`).
+
 ## Moving the central to its own VPS
 
 The destination is a parameter, not a hard-coded host. A central on a
@@ -355,6 +392,18 @@ existing installs on upgrade.
 
 A rule whose expression uses `absent(...)` is a presence check — that is
 how "this host stopped reporting" is expressed.
+
+Rules added with the server's board (12-nov-2026), whose thresholds are
+to be tuned in QA with real data:
+
+| Code | Reads | Threshold | Confirm | Why |
+| --- | --- | --- | --- | --- |
+| `metrics_host_io_pressure` | PSI I/O "some", % of the last 5 min | > 20 | 3 cycles (15 min) | A fifth of the time is where every instance of the server feels the disk; a backup saturates it for minutes, not for fifteen |
+| `metrics_host_memory_pressure` | PSI memory "full", % of the last 5 min | > 10, critical | 2 cycles | A tenth of the time with nothing running for lack of memory: the kernel is evicting every instance's pages |
+| `metrics_instance_cpu_throttled` | CFS periods the `odoo` container was throttled, % of the last 5 min, one-off runs left out | > 25 | 3 cycles (15 min) | A quarter: requests queue behind the quota most of the time (the instance board's threshold, 10-nov-2026) |
+
+The two database rules of the plan (a lock wait held, connections near
+their ceiling) arrive with the collector that measures them.
 
 ## URLs: which one must resolve from where
 
@@ -613,7 +662,7 @@ rather than reading fields. They are:
 | Axis | True when | Owned by |
 |---|---|---|
 | `collect` | `metrics_enabled` — agents enrol, rules evaluate, PromQL is queried | the panel's own settings |
-| `dashboards` | `collect` **and** a non-blank `grafana_base_url` | the panel's own settings |
+| `dashboards` | `collect` **and** a non-blank `metrics_central_url` (the panel draws its own charts; until 12-nov-2026 it asked for a Grafana URL) | the panel's own settings |
 | `configure` | this panel's operator edits those settings | core says `True`; a layer above says otherwise |
 
 Core publishes `configure: True` because it has no notion of a panel
@@ -628,10 +677,13 @@ possible message is an instruction the viewer cannot act on. Concretely:
 - The **Monitoring nav entry** appears when `dashboards` is true, or when
   it is false and `configure` is true (so the empty state is a prompt the
   operator can act on). A panel with neither gets no entry.
-- The **Monitoring page** states what is missing when `configure` is
-  true, and states plainly that dashboards are unavailable when it is
-  false. That branch is reachable only by typing the URL, and exists so
-  that doing so is honest rather than misleading.
+- The **Monitoring page** draws the fleet's board and one server's. Its
+  boards state what is missing when `configure` is true (observability
+  off, or on without a central), and state plainly that charts are
+  unavailable when it is false. That branch is reachable only by typing
+  the URL, and exists so that doing so is honest rather than misleading.
+- A **server's Metrics tab** follows the instance's: its board whenever
+  `collect` is true, the same prompts otherwise.
 - The **instance Metrics tab** draws its own board (no embed) whenever
   `collect` is true: it reads the central with the panel's own account
   credential, so it needs no Grafana. With `collect` false it shows the
@@ -649,10 +701,10 @@ make sense together" is a reading, not an assertion.
 
 | Deployment | C | D | F | Nav entry | Monitoring page | Instance Metrics | Settings→Monitoring |
 |---|---|---|---|---|---|---|---|
-| Partner, observability off | ✗ | ✗ | ✓ | shown | "Enable observability in Settings" | prompt + readings + recent requests | shown |
-| Partner, no Grafana URL | ✓ | ✗ | ✓ | shown | "Set the Grafana base URL" | board + readings + recent requests | shown |
-| Partner, fully configured | ✓ | ✓ | ✓ | shown | dashboards | board + readings + recent requests | shown |
-| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | dashboards | board + readings + recent requests | shown |
-| Managed panel, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | board + readings + recent requests | hidden |
-| Managed panel, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | board + readings + recent requests | hidden |
-| Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no board; readings + recent requests | hidden |
+| Partner, observability off | ✗ | ✗ | ✓ | hidden | (typed URL) "Observability is not enabled" | prompt + readings + recent requests | shown |
+| Partner, on without a central | ✓ | ✗ | ✓ | shown | "there is no metrics central" | "there is no metrics central" + readings + recent requests | shown |
+| Partner, with its central | ✓ | ✓ | ✓ | shown | fleet (every account) and hosts boards | board + readings + recent requests | shown |
+| Panel that pushes settings to others | ✓ | ✓ | ✓ | shown | fleet (every account) and hosts boards | board + readings + recent requests | shown |
+| Managed panel, granted | ✓ | ✓ | ✗ | shown | fleet and hosts boards of its account | board + readings + recent requests | hidden |
+| Managed panel, granted, no central pushed yet | ✓ | ✗ | ✗ | **hidden** | (typed URL) "Charts are not available on this panel" | "not available" + readings + recent requests | hidden |
+| Managed panel, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "Charts are not available on this panel" | no board; readings + recent requests | hidden |

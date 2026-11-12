@@ -7,8 +7,10 @@ until it succeeds.
 
 ## What is measured
 
-**Per host** — CPU, memory, disk usage and free space, load, and whether
-the host is reporting at all.
+**Per host** — load, CPU, memory and swap, how long its tasks waited for
+CPU, memory or the disk, its disks' activity and throughput, network
+traffic, each instance's share of all of it, and whether the host is
+reporting at all.
 
 **Per instance** — CPU and memory of each container with their limits,
 how often the CPU quota held it back, restarts and processes killed for
@@ -33,8 +35,12 @@ resource is short, shows since when, compares the instance with its
 neighbours on the same server, reads on demand what its database and its
 Odoo log are doing, and underneath lists the requests hitting it right now.
 
+**One server** → open it under **Hosts** and go to its **Metrics** tab:
+what is short, which instance uses it, its disks, network and requests.
+
 **The whole fleet** → the **Monitoring** entry in the sidebar, next to
-Hosts. It appears only when observability is enabled.
+Hosts: **Fleet** for every server at once, **Hosts** for one server's board.
+It appears once observability is enabled and has a central.
 
 For what each individual chart means, what a healthy one looks like and what to
 check when it does not, see [Monitoring panels](monitoring-panels.md).
@@ -49,10 +55,12 @@ Both views need the `developer` role or above.
 
 Rules are data, not code: thresholds can be tuned without a release.
 Shipped rules cover a host that stopped reporting, a disk almost full,
-memory nearly exhausted, sustained CPU saturation, an instance that
-stopped reporting containers, an instance returning server errors, and
-a process of an instance's Odoo, database or mail container killed for
-lack of memory. The last one is critical.
+memory nearly exhausted, sustained CPU saturation, a host whose disk or
+memory makes its tasks wait, an instance that stopped reporting
+containers, an instance returning server errors, an instance held back by
+its CPU quota, and a process of an instance's Odoo, database or mail
+container killed for lack of memory. A host out of memory and a killed
+process are critical.
 
 Each instance is also checked every five minutes: its Odoo above 95 %
 of its memory limit for thirty minutes raises a warning, and so do more
