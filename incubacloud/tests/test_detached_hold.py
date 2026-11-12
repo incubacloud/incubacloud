@@ -487,3 +487,73 @@ class TestTheScopeOfAStepApart(TransactionCase):
         )
         self.assertEqual(scope("host_probe"), "host")
         self.assertEqual(scope("docker_prune"), "host:docker_prune")
+
+
+class _Room(_Parking):
+    """Its closing hooks fetch through the panel: they want room.
+
+    ``elapsed_s`` of the attempt have gone by when its steps end, of a
+    request cut at ``limit_s`` (None: no limit).
+    """
+
+    _outcome_needs_room = True
+    elapsed_s = 0
+    limit_s = None
+
+    def _start_clock(self):
+        """The attempt started ``elapsed_s`` ago, under ``limit_s``."""
+        super()._start_clock()
+        self._attempt_started = time.monotonic() - self.elapsed_s
+        self._attempt_limit = self.limit_s
+
+
+class TestTheOutcomeGetsAFreshAttempt(_ParkingCase):
+    """A job whose hooks fetch through the panel starts them with time."""
+
+    def _room(self, elapsed_s, limit_s, needs_room=True):
+        """Return an executor class whose attempts have run *elapsed_s*."""
+        return type("_TestRoom", (_Room,), {
+            "plan": self._plan(), "spend_at": None, "instances": (),
+            "prepared": 0, "busy_once": False, "spent": False,
+            "elapsed_s": elapsed_s, "limit_s": limit_s,
+            "_outcome_needs_room": needs_room,
+        })
+
+    def _in_one_attempt(self, cls):
+        """The job ends in its first attempt, with no park."""
+        self.assertIsNone(self._execute(cls))
+        self.assertEqual(len(cls.instances), 1)
+        self.assertEqual(cls.instances[0].closed[0], "success")
+
+    def test_an_attempt_that_ran_long_leaves_the_outcome_to_a_fresh_one(self):
+        """200 s of 900: parked after the steps; the next one does not park."""
+        cls = self._room(200, 900)
+        parked = self._execute(cls)
+        self.assertIsInstance(parked, abstract_executor.JobParked)
+        self.assertIsNone(cls.instances[0].closed)
+        self.assertEqual(self._row().next_index, 3)
+        self.assertTrue(any(
+            "The result is fetched in a fresh attempt" in line
+            for line in self._log()
+        ))
+        # It ran as long by the hooks: it resumed there, and goes on.
+        self.assertIsNone(self._execute(cls))
+        self.assertEqual(cls.instances[1].closed[0], "success")
+        self.assertEqual(self._runs(), ["First", "Apart", "Last"])
+        self.assertFalse(self._row())
+
+    def test_an_attempt_with_room_enough_does_not_park(self):
+        """100 s of 900: more than 0.85 of the limit is left."""
+        self._in_one_attempt(self._room(100, 900))
+
+    def test_a_short_attempt_does_not_park(self):
+        """50 s of 300: past 0.15 of it, but under a minute."""
+        self._in_one_attempt(self._room(50, 300))
+
+    def test_a_server_without_a_limit_does_not_park(self):
+        """No limit, no budget: nothing cuts the hooks."""
+        self._in_one_attempt(self._room(5000, None))
+
+    def test_a_job_whose_hooks_need_no_room_does_not_park(self):
+        """The default."""
+        self._in_one_attempt(self._room(200, 900, needs_room=False))
