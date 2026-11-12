@@ -15,8 +15,9 @@ from psycopg2 import OperationalError
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, UserError
+from odoo.fields import Domain
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
-from odoo.tools import clean_context
+from odoo.tools import SQL, clean_context
 from odoo.tools import config as odoo_config
 
 from odoo.addons.queue_job.delay import chain as delay_chain
@@ -4152,7 +4153,8 @@ class CloudJob(models.Model):
         counted from the job's close — the latest of the step's start, the
         loss of contact and the job's last write: the step's own
         ``timeout`` killed it long before, and the row is given up, with a
-        line in the job log.
+        line in the job log and, for a cancelled job, an alert
+        (``_alert_cleanup_given_up``).
 
         A row that held the job's queue (``holds_queue_since``) serves the
         queue once it is gone, as the end of a job does, or once the close
@@ -4198,8 +4200,85 @@ class CloudJob(models.Model):
                 " what this job left there: the reconciliation gives up on"
                 " it. Check the server's /tmp by hand."
             ))
+            try:
+                self._alert_cleanup_given_up(executor, row, plan)
+            except Exception:
+                # The row goes all the same: kept, it would be given up
+                # again at every pass.
+                _logger.exception(
+                    "cloud.job %s: the alert of its given-up clean-up failed",
+                    executor.job.id,
+                )
             executor._detached_left_alive = False
             executor._forget_checkpoint()
+
+    @api.model
+    def _alert_cleanup_given_up(self, executor, row, plan):
+        """Tell the operator what a cancelled job left on a server nobody reached.
+
+        A person cancelled the job and its server never answered again:
+        the reconciliation gives its checkpoint up, and what it named may
+        still be there — the step apart, maybe still running, its
+        directory, the job's working directory and the secrets it staged.
+        Its log said so; a cancelled job's log is one nobody reads again,
+        so the operator of the server gets a ``job_cleanup_given_up``
+        alert, one per job (12-nov-2026), saying what to stop and remove.
+        A job that ended any other way raises none here: its failure
+        already has its own alert.
+
+        :param executor: the job's executor, with the row adopted
+        :param row: the job's ``cloud.job.checkpoint``
+        :param list plan: the checkpoint's plan, ``[label, command, opts]``
+        """
+        job = executor.job.sudo()
+        if job.state != "cancelled":
+            return
+        env = executor.env
+        index = row.next_index
+        step = plan[index] if index < len(plan) else None
+        directory = (
+            executor._detached_dir(index)
+            if step and (step[2] or {}).get("detached") else None
+        )
+        paths = list(executor._private_uploads)
+        if executor._job_dir_created:
+            paths.append(executor._job_dir())
+        left = []
+        if directory:
+            left.append(env._(
+                "the step '%(step)s' may still run in %(dir)s; stop it with"
+                " `%(dir)s/ctl.sh stop %(dir)s 20`, then remove the directory",
+                step=step[0], dir=directory,
+            ))
+        if paths:
+            left.append(env._(
+                "remove %(paths)s", paths=" ".join(paths),
+            ))
+        host = row.host_id or job.host_id
+        env["cloud.alert"].with_context(ic_job_cancelled=False).raise_alert(
+            "job_cleanup_given_up",
+            env._(
+                "Job #%(job)s (%(type)s) was cancelled, and server %(host)s"
+                " has not answered since: the panel stopped trying to clean"
+                " up after it. On the server, %(left)s.",
+                job=job.id,
+                type=job.job_type_id.name or job.name,
+                host=host.name or "",
+                left="; ".join(left) or env._(
+                    "look for what the job left in /tmp"
+                ),
+            ),
+            level="warning",
+            host=host,
+            instance=job.instance_id or None,
+            job=job,
+            key=str(job.id),
+            payload={
+                "step": step[0] if step else None,
+                "directory": directory,
+                "paths": paths,
+            },
+        )
 
     @api.model
     def _close_lost_job(self, job_id, claimed=None):
@@ -4920,6 +4999,7 @@ class CloudJob(models.Model):
         parked = self._parked_rows()
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
+        stopping = self._stopping_ids([("id", "in", self.ids)])
 
         return [
             {
@@ -4932,6 +5012,9 @@ class CloudJob(models.Model):
                 "job_type_code": job.job_type_id.code,
                 "instance_id": job.instance_id.id if job.instance_id else None,
                 "state": "blocked" if job.blocked_alert_id else job.state,
+                # Cancelled, and what it left on its server not stopped
+                # yet (``_stopping_ids``): the lists say "Cancelling…".
+                "stopping": job.id in stopping,
                 "requires_action": (
                     bool(job.blocked_alert_id)
                     or job.id in action_job_ids
@@ -5190,12 +5273,47 @@ class CloudJob(models.Model):
             "parked_until": fields.Datetime.to_string(row.parked_until) or None,
         }
 
+    @api.model
+    def _stopping_ids(self, domain):
+        """Return the ids of the jobs of *domain* cancelled and still stopping.
+
+        ``cancelled`` is the order to stop and the end at once
+        (``cancel_job``): written while the job runs or is parked, it is
+        on the job before its executor has stopped what it left on the
+        server. Until then the job stops: its queue.job has not ended —
+        the run winds down, or the parked job comes back to close itself —
+        or its checkpoint is not closed (a worker found dead before the
+        reconciliation closes it). The lists say *Cancelling…* and name
+        it as what a queued job waits behind; ``_scope_busy`` keeps its
+        target busy for the same queue.job. A checkpoint a hook closed and
+        kept is the reconciliation's, which alerts if it gives up.
+
+        :param list domain: the ``cloud.job`` records to look at
+        :return: the ids
+        :rtype: set
+        """
+        Job = self.sudo()
+        Job.flush_model(["state", "queue_job_uuid"])
+        self.env["queue.job"].sudo().flush_model(["state", "uuid"])
+        self.env["cloud.job.checkpoint"].sudo().flush_model(["job_id", "closed"])
+        query = Job._search(Domain.AND([domain, [("state", "=", "cancelled")]]))
+        self.env.cr.execute(SQL(
+            "SELECT j.id FROM cloud_job j WHERE j.id IN %s AND ("
+            " EXISTS (SELECT 1 FROM queue_job q"
+            "  WHERE q.uuid = j.queue_job_uuid AND q.state IN %s)"
+            " OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
+            "  WHERE k.job_id = j.id AND k.closed IS NOT TRUE))",
+            query.subselect(), tuple(self._running_states),
+        ))
+        return {row[0] for row in self.env.cr.fetchall()}
+
     def _format_history(self):
         now = fields.Datetime.now()
         places = self._queue_places()
         parked = self._parked_rows()
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
+        stopping = self._stopping_ids([("id", "in", self.ids)])
         result = []
         for job in self:
             start = job.create_date
@@ -5223,6 +5341,8 @@ class CloudJob(models.Model):
                     "instance_id": (job.instance_id.id if job.instance_id else None),
                     "job_type": job.job_type_id.name,
                     "state": job.state,
+                    # Cancelled and still stopping, as in ``_format``.
+                    "stopping": job.id in stopping,
                     # How many entries go before a waiting job, as in
                     # ``_format``: the history says it as the lists do.
                     "queue_position": (

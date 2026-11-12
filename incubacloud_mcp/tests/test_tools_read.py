@@ -273,6 +273,41 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(payload["log"]["next_offset"], 2)
         self.assertIn("[secreto]", payload["log"]["items"][0])
 
+    def test_a_cancelled_job_says_whether_it_still_stops(self):
+        """get_job reads stopping=true while a cancelled job's queue job
+        runs on, and false once it ended."""
+        qjob = (
+            self.env["queue.job"]
+            .sudo()
+            .create(
+                {
+                    "uuid": "mcp-read-stopping",
+                    "name": "stopping",
+                    "state": "started",
+                    "method_name": "execute",
+                    "model_name": "cloud.job",
+                    "func_string": "execute()",
+                }
+            )
+        )
+        self.job.sudo().with_context(ic_skip_state_hook=True).write(
+            {"queue_job_uuid": qjob.uuid, "state": "cancelled"}
+        )
+        self.env.flush_all()
+        payload = self._payload(
+            self._call_tool(self.key, "get_job", {"job_id": self.job.id})
+        )
+        self.assertEqual(payload["state"], "cancelled")
+        self.assertIs(payload["stopping"], True)
+        self.env.cr.execute(
+            "UPDATE queue_job SET state = 'done' WHERE id = %s", (qjob.id,)
+        )
+        self.env.invalidate_all()
+        payload = self._payload(
+            self._call_tool(self.key, "get_job", {"job_id": self.job.id})
+        )
+        self.assertIs(payload["stopping"], False)
+
     def test_a_job_s_raw_output_is_for_the_technical_roles(self):
         """A project manager reads the panel's own lines of a job's log, and
         not its raw output; a developer reads both."""

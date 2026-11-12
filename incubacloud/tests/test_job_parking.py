@@ -832,6 +832,52 @@ class _StopCase(_ParkingCase):
 class TestAParkedJobIsStopped(_StopCase):
     """Windows 2 and 3: a stop while it is parked closes it when it is back."""
 
+    def _given_up_alert(self):
+        """The alert the reconciliation raises when it gives the job up."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_cleanup_given_up"), ("job_id", "=", self.job.id),
+        ])
+
+    def _stopping(self):
+        """What the lists and the history say: whether the job still stops."""
+        self.env.invalidate_all()
+        rows = self.job._format() + self.job._format_history()
+        return {row["stopping"] for row in rows}
+
+    def test_a_job_cancelled_while_parked_reads_stopping_until_it_closed(self):
+        """Cancelled while parked, the job stops until it comes back and
+        closes; a worker found dead before that leaves it stopping until
+        its checkpoint is closed."""
+        cls = self._parked()
+        self.assertEqual(self._stopping(), {False})
+        self.job.cancel_job()
+        self.env.flush_all()
+        self._postponed()
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertEqual(self._stopping(), {True})
+        # Its worker found dead three times: queue_job fails it by SQL,
+        # and its checkpoint still says what runs on the server.
+        self.env.cr.execute(
+            "UPDATE queue_job SET state = 'failed' WHERE id = %s", (self.qjob.id,),
+        )
+        self.assertFalse(self._row().closed)
+        self.assertEqual(self._stopping(), {True})
+        self.env.cr.execute(
+            "UPDATE queue_job SET state = 'started' WHERE id = %s", (self.qjob.id,),
+        )
+        self.env.invalidate_all()
+        with self._connected(cls):
+            self.assertEqual(
+                self.job.execute(), abstract_executor.CANCELLED_WHILE_RUNNING,
+            )
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self.assertFalse(self._row())
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertEqual(self._stopping(), {False})
+        self.assertFalse(self._given_up_alert())
+
     def test_a_stop_while_parked_stops_the_step_when_the_job_is_back(self):
         """The flag, the postpone kept, then the next attempt closes it."""
         cls = self._parked()
@@ -906,6 +952,7 @@ class TestAParkedJobIsStopped(_StopCase):
         self._reconcile(cls, connect=TestLostContact._refused)
         self.assertTrue(self._row())
         self.assertFalse(any("gives up on it" in line for line in self._log()))
+        self.assertFalse(self._given_up_alert())
         self.env.cr.execute(
             "UPDATE cloud_job SET write_date = write_date - interval '3 hours'"
             " WHERE id = %s", (self.job.id,),
@@ -914,6 +961,18 @@ class TestAParkedJobIsStopped(_StopCase):
         self._reconcile(cls, connect=TestLostContact._refused)
         self.assertFalse(self._row())
         self.assertTrue(any("gives up on it" in line for line in self._log()))
+        # The operator is told what may still be on the server, and how
+        # to stop it: the job's log is one nobody reads again.
+        alert = self._given_up_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.host_id, self.host)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn(f"#{self.job.id}", alert.message)
+        self.assertIn(self.host.name, alert.message)
+        self.assertIn(f"{self.directory}/ctl.sh stop {self.directory} 20", alert.message)
+        self.assertIn(cls.instances[0]._job_dir_path, alert.message)
+        self.assertEqual(alert.payload["directory"], self.directory)
+        self.assertIn(cls.instances[0]._job_dir_path, alert.payload["paths"])
         # Said the first time and when it gave up, not at every pass.
         unreachable = [
             line for line in self._log()

@@ -3582,6 +3582,49 @@ class TestEnqueueAnswer(_QueueCase):
         self.assertEqual(restart.state, "queued")
         self.assertIs(_job_response(self.env, restart.id)["queued_behind"], False)
 
+    def test_a_job_cancelled_while_it_runs_reads_stopping_until_it_stopped(self):
+        """Cancelled, it is still what the queue waits behind, and the
+        lists, the history and the answer say it stops, until its
+        queue.job ends."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        rebuild.cancel_job()
+        self.env.flush_all()
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        self.assertEqual(
+            _job_response(self.env, restart.id)["queued_behind"],
+            self._name("rebuild_instance"),
+        )
+        answer = _job_response(self.env, rebuild.id)
+        self.assertEqual(answer["state"], "cancelled")
+        self.assertIs(answer["stopping"], True)
+        self.assertIs(_job_response(self.env, restart.id)["stopping"], False)
+        self.assertIs(rebuild._format()[0]["stopping"], True)
+        rows = {
+            row["id"]: row
+            for row in self.Job.load_history({"instance_id": self.inst.id})["jobs"]
+        }
+        self.assertIs(rows[rebuild.id]["stopping"], True)
+        self.assertIs(rows[restart.id]["stopping"], False)
+        rebuild.queue_job_id.write({
+            "state": "done", "result": CANCELLED_WHILE_RUNNING,
+        })
+        self.assertEqual(rebuild.state, "cancelled")
+        self.assertIs(_job_response(self.env, rebuild.id)["stopping"], False)
+        self.assertIs(rebuild._format()[0]["stopping"], False)
+        # The dispatch after the commit has not run: nothing is ahead now.
+        self.assertIs(_job_response(self.env, restart.id)["queued_behind"], False)
+
+    def test_a_job_cancelled_before_it_started_does_not_stop(self):
+        """Cancelled through queue_job before it ran: it left nothing."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.cancel_job()
+        self.env.flush_all()
+        self.assertEqual(rebuild.state, "cancelled")
+        self.assertIs(_job_response(self.env, rebuild.id)["stopping"], False)
+        self.assertIs(rebuild._format()[0]["stopping"], False)
+
     def test_the_history_says_where_a_queued_job_is(self):
         """The history's rows carry a waiting job's place, none for a running one."""
         rebuild = self._job("rebuild_instance")

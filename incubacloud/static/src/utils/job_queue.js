@@ -105,12 +105,17 @@ export function stateLabel(state) {
  * Green when done, red when failed, cyan (``running``, pulsing) while
  * it runs, amber while it waits: ``waiting`` in its target's queue,
  * ``queued`` for the rest (dispatched to a runner, or blocked on an
- * alert). A cancelled job has no colour.
+ * alert). A cancelled job has no colour, unless it still stops what it
+ * left on its server (``stopping``): it runs until then.
  *
  * @param {string} state a ``cloud.job`` state, as ``_format`` gives it
+ * @param {boolean} [stopping] ``stopping`` of the same row
  * @returns {string} "done" | "failed" | "running" | "waiting" | "queued" | ""
  */
-export function jobTone(state) {
+export function jobTone(state, stopping = false) {
+    if (state === "cancelled" && stopping) {
+        return "running";
+    }
     return {
         done: "done", failed: "failed", started: "running",
         queued: "waiting", cancelled: "",
@@ -122,15 +127,20 @@ export function jobTone(state) {
  * for a job waiting in its queue how many entries go before it, the
  * channel slot it waits for when the gate holds it, or the ended job whose
  * step on the server its queue waits for; for a job parked
- * between two attempts, when the panel connects again.
+ * between two attempts, when the panel connects again; for a job
+ * cancelled that still stops what it left on its server (``stopping``),
+ * "Cancelling…" until it has.
  *
  * @param {{state: string, queue_position?: number, channel_wait?: object|null,
  *     server_wait?: number|null, on_server?: boolean,
- *     parked_until?: string|null}} job a ``_format``
+ *     parked_until?: string|null, stopping?: boolean}} job a ``_format``
  *     or ``_format_history`` row
  * @returns {string}
  */
 export function jobStateText(job) {
+    if (job.state === "cancelled" && job.stopping) {
+        return _t("Cancelling…");
+    }
     if (job.state === "queued") {
         if (job.channel_wait) {
             return channelWaitLabel(job.channel_wait);

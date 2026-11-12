@@ -405,12 +405,17 @@ export class JobHistory extends Component {
      * the timeline dot (``rl-tl-dot``) and the bare status pill (``rl-pill``):
      * ``done`` / ``failed`` / ``queued`` (amber, waiting on a runner) /
      * ``running`` (cyan, pulsing), and ``waiting`` (amber) for a job
-     * waiting in its queue.
+     * waiting in its queue; ``running`` too for a job cancelled that still
+     * stops what it left on its server (``stopping``).
      * No business logic — purely picks the CSS modifier for the chosen state.
      * @param {string} state raw cloud.job state
+     * @param {boolean} [stopping] ``stopping`` of the same row
      * @returns {string} one of "done" | "failed" | "queued" | "running" | "waiting"
      */
-    ganttDotClass(state) {
+    ganttDotClass(state, stopping = false) {
+        if (state === "cancelled" && stopping) {
+            return "running";
+        }
         return {
             done: "done",
             failed: "failed",

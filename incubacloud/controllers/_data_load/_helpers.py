@@ -459,11 +459,14 @@ def _queued_behind(env, job):
 
     The type of the visible job dispatched on the same target — the
     instance, or the host for a host-level job — and not ended yet:
-    the one started, when a chain has several steps there. Its visible
-    name, never its code: ``cloud.job.type.name`` is translated, and is
-    read in the language of *env* (``sudo`` keeps it). Read as the
-    superuser: the job on the same target is one the caller may see,
-    and only its type's name leaves here.
+    the one started, when a chain has several steps there. A job
+    cancelled that still stops what it left on the server
+    (``cloud.job._stopping_ids``) has not ended either: the lists show
+    it "Cancelling…", and the queue waits for it, so it is named first.
+    Its visible name, never its code: ``cloud.job.type.name`` is
+    translated, and is read in the language of *env* (``sudo`` keeps
+    it). Read as the superuser: the job on the same target is one the
+    caller may see, and only its type's name leaves here.
 
     :param env: the request's environment
     :param job: the ``cloud.job`` record that waits
@@ -471,12 +474,14 @@ def _queued_behind(env, job):
         queue is held by a failure, or the job ahead has just ended)
     """
     Job = env['cloud.job'].sudo()
+    target = Job._scope_domain(*job._scope_of()) + [
+        ('job_type_id.code', 'not in', Job._get_hidden_job_types()),
+    ]
+    stopping = Job._stopping_ids(target)
+    if stopping:
+        return Job.browse(min(stopping)).job_type_id.name
     running = Job.search(
-        Job._scope_domain(*job._scope_of()) + [
-            ('state', 'in', Job._running_states),
-            ('job_type_id.code', 'not in', Job._get_hidden_job_types()),
-        ],
-        order='id asc',
+        target + [('state', 'in', Job._running_states)], order='id asc',
     )
     if not running:
         return False
@@ -489,7 +494,8 @@ def _job_response(env, job_id):
 
     ``state`` says whether the job started (``pending``, or whatever
     its queue.job reached) or waits in its target's queue (``queued``),
-    so the frontend can say which: ``job_type`` names the job's type, in
+    and ``stopping`` whether a cancelled one still stops what it left
+    on its server, so the frontend can say which: ``job_type`` names the job's type, in
     the language of *env*, and ``queued_behind`` what it waits behind
     (``_queued_behind``; ``False`` for a job that started, or when
     nothing visible runs). If the job is blocked by a pip-conflict
@@ -502,6 +508,9 @@ def _job_response(env, job_id):
         return {
             'job_id': job_id,
             'state': job.state,
+            # Cancelled, and still stopping what it left on its server
+            # (``cloud.job._stopping_ids``): the panel says "Cancelling…".
+            'stopping': bool(job._stopping_ids([('id', '=', job.id)])),
             'job_type': job.job_type_id.name,
             'queued_behind': (
                 _queued_behind(env, job) if job.state == 'queued' else False
