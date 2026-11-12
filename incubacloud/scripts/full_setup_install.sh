@@ -115,13 +115,20 @@ ic_log "Installing logrotate..."
 command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
     || ic_warn "logrotate install failed: instance logs will not be archived"
 
+# cron runs the observability agents' collectors, and Debian 13 no
+# longer installs it.
+ic_log "Installing cron..."
+command -v crontab >/dev/null 2>&1 || $APT install -y -qq cron \
+    || ic_warn "cron install failed: the agents' install tries again"
+
 # The client the observability agents' database collector (collect_pg.sh)
 # reads each instance's PostgreSQL with, through the socket of its db
 # container. Installed here so the agents' install, which runs at the end
 # of every deploy, never waits on apt; it installs it itself only on a
-# server set up before this.
+# server set up before this. Asked to run, not looked up: Debian's
+# wrapper stays at /usr/bin/psql when the client itself is removed.
 ic_log "Installing the PostgreSQL client..."
-command -v psql >/dev/null 2>&1 || $APT install -y -qq postgresql-client \
+psql --version >/dev/null 2>&1 || $APT install -y -qq postgresql-client \
     || ic_warn "postgresql-client install failed: the agents' install tries again"
 
 if [ -n "${1:-}" ]; then

@@ -70,8 +70,8 @@ file.
   of CPU per instance, 2.8 % of a core with twenty. Every ten minutes the
   disk collector adds each database's size (`ic_pg_db_size_bytes`) and
   each filestore's (`ic_instance_filestore_bytes`, once an hour on a
-  server under 6 GB). Full Setup installs `postgresql-client`; the
-  agents' install puts it in only when missing, and a collector that
+  server under 6 GB). Full Setup installs `postgresql-client` and `cron`;
+  the agents' install puts each in only when missing, and a collector that
   cannot be installed (no passwordless sudo, apt busy) leaves the agents
   installed and the job successful, says why in its log and shows as
   *Database collector not installed* on the server's board.
@@ -120,6 +120,12 @@ file.
   a second, the rule cron skips the run without raising
   `metrics_backend_unreachable` or resolving anything, and a board says
   *The metrics central is busy* and asks again.
+
+### Fixed
+
+- **The agents install on a server without cron.** Debian 13 no longer
+  installs it, and the disk collector's schedule failed the whole
+  install there; Full Setup and the agents' install now put it in.
 
 ### Security
 

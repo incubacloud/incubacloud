@@ -33,6 +33,7 @@ setup() {
     _stub zip 'exit 0'
     _stub logrotate 'exit 0'
     _stub psql 'exit 0'
+    _stub crontab 'exit 0'
     _stub systemctl 'echo "systemctl $*" >> "$TMP/systemctl_calls"'
     _stub groups 'echo "cloud docker"'
     _stub docker 'case "$*" in "--version") echo "Docker version 27";; "compose version") exit 0;; *) exit 0;; esac'
@@ -80,6 +81,13 @@ _path_without() {
     PATH="$(_path_without psql)" run bash "$SCRIPT"
     [ "$status" -eq 0 ]
     grep -q "apt-get install -y -qq postgresql-client" "$APT_CALLS"
+}
+
+@test "installs cron, which runs the agents' collectors, when it is missing" {
+    rm "$TMP/bin/crontab"
+    PATH="$(_path_without crontab)" run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    grep -q "apt-get install -y -qq cron" "$APT_CALLS"
 }
 
 @test "a PostgreSQL client that will not install only warns" {
