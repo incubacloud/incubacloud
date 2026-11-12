@@ -10,6 +10,11 @@ and request HTTPS automatically.
   or a user prepared as in [The user the panel connects as](#the-user-the-panel-connects-as).
 - Ports **80 and 443 free**: Full Setup puts the proxy there
   ([what it changes](#what-full-setup-changes-on-the-host)).
+- `cron`, which runs the metrics collectors. Debian 13 no longer installs
+  it: Full Setup puts it in, and so does the metrics agents' install, when
+  it can; when it cannot, that install fails saying so. Install it
+  yourself with `sudo apt install cron` if `sudo` or `apt` are not
+  available to the panel.
 - Outbound HTTPS from the VPS to Docker Hub, `ghcr.io`, GitHub and PyPI, and
   during Full Setup to Docker's and the distribution's package servers:
   [the full list](internal-network.md#what-needs-the-internet).
@@ -133,7 +138,7 @@ repair, not a reinstall.
 
 | Where | What |
 |---|---|
-| Packages | Installs git, Docker CE (through `get.docker.com`), the Compose plugin, `python3-pip`, `python3-venv`, pipx, zip and logrotate, when missing. |
+| Packages | Installs git, Docker CE (through `get.docker.com`), the Compose plugin, `python3-pip`, `python3-venv`, pipx, zip, logrotate, cron and `postgresql-client`, when missing. |
 | The user | pipx installs copier (pinned), invoke and pre-commit in `~/.local/bin`, added to `PATH` in `~/.bashrc`; `git config --global init.defaultBranch master` if unset; the user joins the `docker` group. |
 | `/etc/docker/daemon.json` | Only while no container exists: Docker's bridge at 172.17.0.1/16 and an address pool of 10.200.0.0/14 in /24 networks, so the host can hold many instances (each takes a network). Docker restarts. With containers running, it is left alone. |
 | `~/traefik/` | The proxy: Traefik and a read-only proxy of the Docker socket, Compose project `inverseproxy`, publishing **ports 80 and 443** (and 8082 on the loopback, for metrics). Its settings are the host's **Traefik** tab. |

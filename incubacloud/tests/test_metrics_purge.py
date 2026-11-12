@@ -29,6 +29,7 @@ from ..models.cloud_settings_metrics_purge import (
 
 _JOB_METHOD = "_job_purge_metrics"
 _POST = "odoo.addons.incubacloud.models.cloud_settings_metrics_purge.requests.post"
+_SLEEP = "odoo.addons.incubacloud.models.cloud_settings_metrics_purge.time.sleep"
 
 
 class TestSeriesSelector(BaseCase):
@@ -251,6 +252,39 @@ class TestThePurgeJob(_PurgeCase):
         with patch(_POST, return_value=refused):
             self.settings._job_purge_metrics(self._SELECTORS)
         self.assertTrue(self._alert())
+
+    def _busy(self):
+        """Return a response the central's cap answered 429."""
+        response = MagicMock(spec=requests.Response)
+        response.status_code = 429
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "429 Too Many Requests", response=response,
+        )
+        return response
+
+    def test_a_busy_central_is_asked_again(self):
+        """B-a of the final review (12-nov-2026): the operator's cap on
+        reads in flight covers the deletion route too."""
+        with patch(_POST, side_effect=[self._busy(), self._response()]) as post, \
+                patch(_SLEEP) as sleep:
+            self.settings._job_purge_metrics(self._SELECTORS)
+        self.assertEqual(post.call_count, 2)
+        sleep.assert_called_once()
+        self.assertFalse(self._alert())
+
+    def test_a_central_busy_for_good_warns(self):
+        with patch(_POST, side_effect=lambda *a, **k: self._busy()) as post, \
+                patch(_SLEEP):
+            self.settings._job_purge_metrics(self._SELECTORS)
+        self.assertEqual(post.call_count, 4)
+        self.assertTrue(self._alert())
+
+    def test_a_refusal_is_not_asked_again(self):
+        refused = self._response(requests.HTTPError("401 Unauthorized"))
+        with patch(_POST, return_value=refused) as post, patch(_SLEEP) as sleep:
+            self.settings._job_purge_metrics(self._SELECTORS)
+        post.assert_called_once()
+        sleep.assert_not_called()
 
     def test_a_successful_deletion_clears_the_warning(self):
         with patch(_POST, side_effect=requests.ConnectionError("down")):

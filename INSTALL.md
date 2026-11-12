@@ -190,7 +190,9 @@ project.
   `encryption key is missing or invalid` or naming a `limit_` setting.
 - `/cloud` opens on the empty projects list.
 
-Next: [connect a host](https://docs.incubacloud.io/hosts/connect/).
+Next: [connect a host](https://docs.incubacloud.io/hosts/connect/). A host
+needs `cron` for its metrics collectors; Debian 13 no longer installs it, and
+Full Setup puts it in.
 
 ## The Odoo settings that matter
 

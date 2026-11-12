@@ -196,6 +196,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         # Kept for on_success: what the host tried is judged against them.
         self._direct_probes = host._direct_reach_probes(offer) if offer else []
         account, token = settings._metrics_auth()
+        # Kept for on_success: a switch moved meanwhile is applied again.
+        self._sent_collect_pg = bool(settings.metrics_collect_pg)
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
@@ -213,7 +215,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             # where the panel says so: the hosts have to be its own.
             "ic_ship_security_logs": bool(settings.metrics_ship_security_logs),
             # The per-minute database collector, root's; off removes it.
-            "ic_collect_pg": bool(settings.metrics_collect_pg),
+            "ic_collect_pg": self._sent_collect_pg,
             # User half of the credential. It is also the label the
             # central forces on everything this agent writes, so the copy
             # the agent sends is only a hint — the gateway overwrites it
@@ -245,7 +247,47 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 f"Only {running}/3 agent containers came up "
                 f"(node-exporter, cadvisor, vmagent)."
             )
+        errors.extend(self._collector_errors(facts))
         return errors
+
+    def _collector_errors(self, facts):
+        """Return the job's errors for a collector the playbook could not set up.
+
+        The playbook goes on past them, so the agents come up and the
+        server's board says what is missing; the job still fails, with
+        what to do, so that it is fixed now and not found a month later
+        without the figures (the owner's decision, 12-nov-2026). Without
+        cron neither collector can run: that is said once.
+
+        :param dict facts: what the playbook exported.
+        :return: the error lines, empty when both collectors are in place.
+        :rtype: list[str]
+        """
+        if str(facts.get("ic_disk_collector") or "") == "failed":
+            reason = str(facts.get("ic_cron_error") or "").strip()
+            return [
+                "cron is not installed on the server and could not be "
+                "installed: install it (apt install cron) or use the "
+                "IncubaCloud image."
+                + (f" Reason: {reason}" if reason else "")
+            ]
+        if str(facts.get("ic_pg_collector") or "") != "failed":
+            return []
+        reason = str(facts.get("ic_pg_collector_error") or "").strip()
+        if getattr(self, "_sent_collect_pg", True):
+            what = (
+                "The database collector could not be installed on the "
+                "server: check that sudo asks no password and that apt is "
+                "free, then run the agents' install again, or turn off "
+                "Collect database figures in Settings → Monitoring."
+            )
+        else:
+            what = (
+                "The database collector, switched off, could not be "
+                "removed from the server: check that sudo asks no "
+                "password, then run the agents' install again."
+            )
+        return [what + (f" Reason: {reason}" if reason else "")]
 
     async def on_success(self, results):
         """Report the outcome, record enrolment and clear the alert."""
@@ -256,7 +298,9 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         )
         host = self._host()
         host._mark_observability_installed()
-        host.sudo().write({"metrics_agents_revision": AGENTS_REVISION})
+        revision = self._revision_to_record(host, facts)
+        if revision is not None:
+            host.sudo().write({"metrics_agents_revision": revision})
         self._resolve_alert("observability_agents_failed")
         self._report_pg_collector(facts)
         installed = str(facts.get("ic_write_url_installed") or "")
@@ -280,9 +324,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
     def _report_pg_collector(self, facts):
         """Say in the job's log what became of the database collector.
 
-        Its failure is not the job's: the agents are installed, the
-        server's board says the collector is missing, and the next run
-        of this job tries again.
+        A collector that failed fails the job instead
+        (:meth:`_collector_errors`).
 
         :param dict facts: what the playbook exported.
         """
@@ -291,12 +334,29 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             self._sys("Database collector installed (every minute, as root).")
         elif state == "off":
             self._sys("Database collector switched off in Settings: removed.")
-        elif state == "failed":
+
+    def _revision_to_record(self, host, facts):
+        """Return the revision this install leaves on *host*, or None for none.
+
+        None when the database collector's switch moved while the install
+        ran: the install applied the old value, and the switch already
+        asked the reconciliation cron to re-apply every server; recording
+        the current revision would cancel that for this one.
+
+        :param host: the ``cloud.host`` the install ran on.
+        :param dict facts: what the playbook exported.
+        :return: the revision to write, or None to leave the host's.
+        :rtype: int | None
+        """
+        sent = getattr(self, "_sent_collect_pg", None)
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if sent is not None and sent != bool(settings.metrics_collect_pg):
             self._sys(
-                "⚠ Database collector not installed; the agents are. "
-                f"{facts.get('ic_pg_collector_error') or ''}".strip()
-                + " The next install of the agents tries again."
+                "The database collector's switch moved during this install: "
+                "the reconciliation cron applies it again."
             )
+            return None
+        return AGENTS_REVISION
 
     async def on_cancelled_running(self, results, exc):
         """A stop is not a failed install: the host's agent state stays as it was.

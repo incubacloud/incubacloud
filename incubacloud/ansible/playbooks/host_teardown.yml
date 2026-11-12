@@ -36,10 +36,25 @@
       when: ic_agents_compose.stat.exists
       changed_when: true
 
+    - name: Look for cron
+      # Debian 13 ships without it, and the cron module fails without
+      # crontab even to remove an entry: a server set up before the
+      # agents' install put cron in failed its whole teardown. Without
+      # cron there is no schedule to remove, and the log says so.
+      ansible.builtin.stat:
+        path: /usr/bin/crontab
+      register: ic_crontab
+
     - name: Remove the disk usage collector
+      when: ic_crontab.stat.exists
       ansible.builtin.cron:
         name: "incubacloud instance disk usage"
         state: absent
+
+    - name: Say there is no schedule to remove
+      when: not ic_crontab.stat.exists
+      ansible.builtin.debug:
+        msg: "cron is not installed: there is no scheduled task to remove."
 
     # Root's: the user's crontab above does not hold it. Looked for
     # first, so a host where it never ran needs no sudo here.
@@ -51,15 +66,27 @@
         - "{{ ic_lib_dir }}"
       register: ic_pg_collector_files
 
-    - name: Remove the database collector, its schedule first
-      become: "{{ ansible_user_id != 'root' }}"
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ ic_pg_cron_file }}"
-        - "{{ ic_lib_dir }}"
+    - name: Remove the database collector
+      # A sudo that no longer works must not stop the removal of the
+      # host: what is left is said in the job's log.
       when: ic_pg_collector_files.results | selectattr('stat.exists') | list | length > 0
+      block:
+        - name: Remove the database collector, its schedule first
+          become: "{{ ansible_user_id != 'root' }}"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ ic_pg_cron_file }}"
+            - "{{ ic_lib_dir }}"
+      rescue:
+        - name: Say the database collector was left on the server
+          ansible.builtin.debug:
+            msg: >-
+              The database collector could not be removed
+              ({{ (ansible_failed_result.msg | default('') | string)[:300] }}).
+              Remove {{ ic_pg_cron_file }} and {{ ic_lib_dir }} as root on
+              this server.
 
     - name: Remove the agents' directory
       # It holds this panel's metrics credential in clear.

@@ -518,17 +518,20 @@
     # and its schedule live in ``ic_lib_dir`` and /etc/cron.d, never in
     # that user's home.
     #
-    # This job runs at the end of every deploy, move and removal, and a
-    # failed one marks the host failed, retries and alerts. So nothing of
-    # the collector may fail it: whatever goes wrong here (no passwordless
-    # sudo, apt's lock held by an upgrade, no package) leaves the agents
-    # installed, says so in the job's log and on the server's board, and
-    # the next run of this job tries again.
+    # Whatever goes wrong here (no cron, no passwordless sudo, apt's lock
+    # held by an upgrade, no package) does not stop the playbook: the
+    # agents still come up and the server's board says the collector is
+    # missing. The facts exported at the end say what failed and why, and
+    # the executor fails the job with what to do about it, so that it is
+    # fixed now rather than found a month later without the figures (the
+    # owner's decision, 12-nov-2026).
     - name: Note whether this run connects as root
       ansible.builtin.set_fact:
         ic_as_root: "{{ ansible_user_id == 'root' }}"
         ic_pg_collector: "off"
         ic_pg_collector_error: ""
+        ic_disk_collector: installed
+        ic_cron_error: ""
 
     - name: Look for cron
       # Both collectors are scheduled with cron, and Debian 13 no longer
@@ -552,7 +555,7 @@
       rescue:
         - name: Note cron not installed, and why
           ansible.builtin.set_fact:
-            ic_pg_collector_error: >-
+            ic_cron_error: >-
               {{ ansible_failed_task.name | default('') }}:
               {{ (ansible_failed_result.msg | default('') | string)[:300] }}
 
@@ -816,11 +819,26 @@
             mv "$fs_tmp" "$fs_out"
           fi
 
+    - name: Look for cron before scheduling the disk collector
+      # Installing it above may have failed (apt's lock held, sudo asking
+      # a password), and the cron module fails without crontab. Without
+      # cron the disk collector counts as not installed, and the executor
+      # fails the job saying to install cron.
+      ansible.builtin.stat:
+        path: /usr/bin/crontab
+      register: ic_crontab_disk
+
     - name: Schedule the disk collector
+      when: ic_crontab_disk.stat.exists
       ansible.builtin.cron:
         name: "incubacloud instance disk usage"
         minute: "*/10"
         job: "{{ ic_obs_dir }}/collect_disk.sh >/dev/null 2>&1"
+
+    - name: Note the disk collector not scheduled
+      when: not ic_crontab_disk.stat.exists
+      ansible.builtin.set_fact:
+        ic_disk_collector: failed
 
     - name: Bring the agents up
       # Retried on purpose. Compose pulls the three images concurrently,
@@ -877,6 +895,10 @@
           # installed, failed or off, and what failed.
           ic_pg_collector: "{{ ic_pg_collector }}"
           ic_pg_collector_error: "{{ ic_pg_collector_error }}"
+          # installed, or failed when the server has no cron, and why
+          # cron could not be installed.
+          ic_disk_collector: "{{ ic_disk_collector }}"
+          ic_cron_error: "{{ ic_cron_error }}"
           ic_direct_report:
             "{{ ic_direct_report if ic_direct_report is string else (ic_direct_report | to_json)
             }}"
