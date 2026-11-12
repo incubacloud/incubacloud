@@ -3463,3 +3463,13 @@ msgstr ""
 "Sin emisor, los agentes solo se conectan con claves API. Con uno, el panel "
 "acepta sus tokens para los usuarios vinculados a un proveedor OAuth activo "
 "con el mismo emisor."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_manager.py:0
+msgid ""
+"Stop sending this server's security logs (SSH sign-ins, sudo, fail2ban and "
+"changes to sensitive files) to the metrics central."
+msgstr ""
+"Dejar de enviar a la central los registros de seguridad de este servidor "
+"(accesos SSH, sudo, fail2ban y cambios en ficheros sensibles)."
