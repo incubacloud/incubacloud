@@ -34,6 +34,7 @@ from ..models.abstract_executor import (
     detached_dir,
 )
 from ..models.cloud_host import CloudHost
+from ..models.rebuild_instance_executor import RebuildInstanceExecutor
 from .test_detached_step import _Apart, _local_transport
 
 
@@ -751,6 +752,13 @@ class TestAParkedPostponeIsNotMirrored(TransactionCase):
         self.assertEqual(self.cjob.state, "pending")
 
 
+#: What the log of a job whose type has no executor any more says.
+_NO_EXECUTOR = (
+    "This job's type has no executor in this server any more: nothing can"
+    " stop or remove what it left on its server. Check the server's /tmp by"
+    " hand."
+)
+
 #: A step apart that says when it started, then waits for its stop and
 #: says it trapped it.
 _TRAPPED = (
@@ -828,15 +836,15 @@ class _StopCase(_ParkingCase):
             self.env["cloud.job"]._cron_reconcile_lost_jobs()
         self.env.invalidate_all()
 
-
-class TestAParkedJobIsStopped(_StopCase):
-    """Windows 2 and 3: a stop while it is parked closes it when it is back."""
-
     def _given_up_alert(self):
         """The alert the reconciliation raises when it gives the job up."""
         return self.env["cloud.alert"].sudo().search([
             ("code", "=", "job_cleanup_given_up"), ("job_id", "=", self.job.id),
         ])
+
+
+class TestAParkedJobIsStopped(_StopCase):
+    """Windows 2 and 3: a stop while it is parked closes it when it is back."""
 
     def _stopping(self):
         """What the lists and the history say: whether the job still stops."""
@@ -1031,13 +1039,10 @@ class TestAParkedJobIsStopped(_StopCase):
         """A pass whose commit failed gives the row up again: one alert."""
         cls = self._due_to_give_up()
         row = self._row()
-        executor = cls(job_record=self.job, host_record=self.host)
-        executor._adopt_checkpoint(row)
-        executor._left_alive_why = "unreachable"
-        plan = executor._checkpoint_data["plan"]
+        plan = row._data()["plan"]
         Job = self.env["cloud.job"]
-        Job._alert_cleanup_given_up(executor, row, plan)
-        Job._alert_cleanup_given_up(executor, row, plan)
+        Job._alert_cleanup_given_up(self.job, row, plan, "unreachable")
+        Job._alert_cleanup_given_up(self.job, row, plan, "unreachable")
         self.assertEqual(len(self._given_up_alert()), 1)
         self._reconcile(cls, connect=TestLostContact._refused)
         self.assertFalse(self._row())
@@ -1048,19 +1053,19 @@ class TestAParkedJobIsStopped(_StopCase):
         unanswered server; cancelled between two steps, no directory."""
         cls = self._due_to_give_up()
         row = self._row()
-        executor = cls(job_record=self.job, host_record=self.host)
-        executor._adopt_checkpoint(row)
-        executor._left_alive_why = "past_no_return"
-        plan = executor._checkpoint_data["plan"]
-        self.env["cloud.job"]._alert_cleanup_given_up(executor, row, plan)
+        plan = row._data()["plan"]
+        self.env["cloud.job"]._alert_cleanup_given_up(
+            self.job, row, plan, "past_no_return",
+        )
         alert = self._given_up_alert()
         self.assertIn("past the point of no return", alert.message)
         self.assertNotIn("has not answered", alert.message)
         self.assertEqual(alert.payload["directory"], self.directory)
         alert.unlink()
         row.write({"detached_started": False})
-        executor._left_alive_why = "not_removed"
-        self.env["cloud.job"]._alert_cleanup_given_up(executor, row, plan)
+        self.env["cloud.job"]._alert_cleanup_given_up(
+            self.job, row, plan, "not_removed",
+        )
         alert = self._given_up_alert()
         self.assertIn("could not be removed", alert.message)
         self.assertNotIn("ctl.sh", alert.message)
@@ -1308,8 +1313,12 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         original = Job._on_state_changed
 
         def _recorded(records, new_state, after_commit=False):
-            """Note the end acted on."""
-            ends.append((records.ids, new_state))
+            """Note the end acted on, and whether the checkpoint was there."""
+            records.env.cr.execute(
+                "SELECT 1 FROM cloud_job_checkpoint WHERE job_id = %s",
+                (self.job.id,),
+            )
+            ends.append((records.ids, new_state, bool(records.env.cr.fetchone())))
             return original(records, new_state, after_commit=after_commit)
 
         with patch.object(
@@ -1324,7 +1333,8 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         self.assertIn("trapped", self._log())
         self.assertFalse(Path(self.directory).exists())
         self.assertFalse(self._row())
-        self.assertIn(([self.job.id], "cancelled"), ends)
+        # The end, and the dispatch it sets off, read the row let go.
+        self.assertIn(([self.job.id], "cancelled", False), ends)
 
     def test_cancelled_by_hand(self):
         """queue_job's own Cancel button."""
@@ -1363,7 +1373,8 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
 
     def test_a_pass_cut_off_before_the_close_lets_the_row_go_next(self):
         """The cron died between the claim and the close: the next pass
-        stops what the job left, lets its row go and closes it, once."""
+        stops what the job left and closes it, once, letting its row go
+        with the close."""
         cls = self._stopped_and_cancelled_by_hand()
         with patch.object(
             type(self.env["cloud.job"]), "_clean_up_lost_job", autospec=True,
@@ -1383,7 +1394,7 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
 
     def test_a_job_whose_type_has_no_executor_lets_its_row_go(self):
         """Nothing can stop what it left: its row goes, or every pass
-        would take it up again."""
+        would take it up again; its log says what to look at."""
         self._stopped_and_cancelled_by_hand()
         self._age()
         with patch.object(
@@ -1392,6 +1403,324 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
             self.env["cloud.job"]._cron_reconcile_lost_jobs()
         self.env.invalidate_all()
         self._assert_let_go()
+        self.assertIn(_NO_EXECUTOR, self._log())
+
+    @contextlib.contextmanager
+    def _closes(self, held=False):
+        """Note what each close of the job returns; *held*, it finds its rows held.
+
+        Registry test mode runs every cursor in the test's transaction, so
+        no other connection can hold a row of the job: held, the close's
+        ``_lock_lost_job`` answers as ``SKIP LOCKED`` does on a row taken
+        (``TestALockedJobIsSkipped`` takes one for real).
+
+        :param bool held: whether the close finds the job's rows held
+        :return: (yielded) what each close of the job returned, in order
+        """
+        Job = type(self.env["cloud.job"])
+        real_close, real_lock = Job._close_lost_job, Job._lock_lost_job
+        closes, closing = [], []
+
+        def _close(model, job_id, **kwargs):
+            """The real close, noted."""
+            closing.append(job_id)
+            try:
+                closed = real_close(model, job_id, **kwargs)
+            finally:
+                closing.pop()
+            if job_id == self.job.id:
+                closes.append(closed)
+            return closed
+
+        def _lock(model, cr, job_id):
+            """The real lock, but held for the job's close when told so."""
+            if held and closing and job_id == self.job.id:
+                return None
+            return real_lock(model, cr, job_id)
+
+        with patch.object(
+            Job, "_close_lost_job", autospec=True, side_effect=_close,
+        ), patch.object(
+            Job, "_lock_lost_job", autospec=True, side_effect=_lock,
+        ):
+            yield closes
+
+    def _chained(self):
+        """A step waiting on the job in its graph.
+
+        :return: the step's ``cloud.job``
+        """
+        qjob = self.env["queue.job"].sudo().create({
+            "uuid": "parking-tail",
+            "name": "tail",
+            "state": "wait_dependencies",
+            "method_name": "execute",
+            "model_name": "cloud.job",
+            "func_string": "execute()",
+        })
+        tail = self.env["cloud.job"].sudo().create({
+            "host_id": self.host.id,
+            "job_type_id": self.job.job_type_id.id,
+            "name": "Tail",
+            "queue_job_uuid": qjob.uuid,
+            "queue_job_id": qjob.id,
+        })
+        tail.with_context(ic_skip_state_hook=True).write(
+            {"state": "wait_dependencies"},
+        )
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE queue_job SET graph_uuid = 'graph-parked' WHERE id IN %s",
+            ((self.qjob.id, qjob.id),),
+        )
+        self.env.invalidate_all()
+        return tail
+
+    def _hooks(self, cls):
+        """How many executors of *cls* ran a closing hook."""
+        return len([e for e in cls.instances if e.closed])
+
+    def _closed_on_the_second_pass(self, first_pass):
+        """The first pass's close does not happen; the second's does.
+
+        :param first_pass: the context the first pass runs in
+        """
+        cls = self._stopped_and_cancelled_by_hand()
+        tail = self._chained()
+        with first_pass:
+            self._reconcile(cls)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.closed)
+        self.assertEqual(self._hooks(cls), 1)
+        self.assertEqual(tail.state, "wait_dependencies")
+        self._age()
+        self.assertIn(self.job.id, self.env["cloud.job"]._lost_job_ids())
+        with self._closes() as closes:
+            self._reconcile(cls)
+        self.assertEqual(closes, [True])
+        self.assertEqual(self._hooks(cls), 1)
+        self.assertNotEqual(tail.state, "wait_dependencies")
+        self._assert_let_go()
+
+    def test_a_close_that_finds_its_rows_held_is_done_next_pass(self):
+        """The row is the one mark of the job to close: kept until then."""
+        self._closed_on_the_second_pass(self._closes(held=True))
+
+    def test_a_close_that_raises_is_done_next_pass(self):
+        """The same, when the close raised."""
+        first = contextlib.ExitStack()
+        first.enter_context(patch.object(
+            type(self.env["cloud.job"]), "_close_lost_job", autospec=True,
+            side_effect=RuntimeError("the close broke"),
+        ))
+        first.enter_context(
+            mute_logger("odoo.addons.incubacloud.models.cloud_job"),
+        )
+        self._closed_on_the_second_pass(first)
+
+    def test_an_end_that_cannot_be_written_keeps_the_row(self):
+        """The row and the end go together, or neither does."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self._postponed()
+        self.qjob.unlink()
+        self.env["cloud.job"].invalidate_model(["state"])
+        with patch.object(
+            type(self.env["cloud.job"]), "_close_lost_job_without_queue",
+            autospec=True, side_effect=RuntimeError("the end broke"),
+        ), mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(cls)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.closed)
+        self._reconcile(cls)
+        self.assertEqual(self._hooks(cls), 1)
+        self._assert_let_go()
+
+    def test_a_job_taken_up_again_whose_server_does_not_answer(self):
+        """Its row is closed with its end, and later passes only try to
+        clean its server: no new line, no second close."""
+        cls = self._stopped_and_cancelled_by_hand()
+        with patch.object(
+            type(self.env["cloud.job"]), "_clean_up_lost_job", autospec=True,
+            side_effect=RuntimeError("the cron died"),
+        ), mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(cls)
+        with self._closes() as closes:
+            self._reconcile(cls, connect=TestLostContact._refused)
+            row = self._row()
+            self.assertTrue(row.closed)
+            self.assertFalse(row.parked)
+            self.assertEqual(self.job.state, "cancelled")
+            self.assertEqual(closes, [True])
+            log = self._log()
+            self._retry_due()
+            self._age()
+            self.assertEqual(
+                self.env["cloud.job"]._claim_lost_job(self.job.id),
+                ("checkpoint", False),
+            )
+            self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertEqual(closes, [True, False])
+        self.assertEqual(self._log(), log)
+        self.assertTrue(self._row())
+        self.assertEqual(self._hooks(cls), 0)
+
+    def test_a_clean_up_that_always_raises_closes_the_job_once(self):
+        """Its creator gone, say: the job is closed and its row closed."""
+        cls = self._stopped_and_cancelled_by_hand()
+        Job = type(self.env["cloud.job"])
+        real = Job._as_its_creator
+
+        def _gone(records):
+            """The job's creator cannot be read."""
+            if self.job.id in records.ids:
+                raise RuntimeError("its creator is gone")
+            return real(records)
+
+        with patch.object(
+            Job, "_as_its_creator", autospec=True, side_effect=_gone,
+        ), self._closes() as closes, mute_logger(
+            "odoo.addons.incubacloud.models.cloud_job",
+        ):
+            self._reconcile(cls)
+            self.assertTrue(self._row().closed)
+            self._reconcile(cls)
+        self.assertEqual(closes, [True, False])
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertTrue(self._row().closed)
+        self.assertEqual(
+            self.env["cloud.job"]._stopping_ids([("id", "=", self.job.id)]), set(),
+        )
+
+    def test_no_executor_says_so_and_alerts_once(self):
+        """Its log, the server's log and one alert; the row goes with the
+        close."""
+        self._stopped_and_cancelled_by_hand()
+        logger = "odoo.addons.incubacloud.models.cloud_job"
+        with self._closes(held=True), self.assertLogs(logger, "WARNING") as logs:
+            self._reconcile(None)
+        self.assertTrue(any(
+            f"cloud.job {self.job.id}: its type host_probe has no executor"
+            in line for line in logs.output
+        ))
+        self.assertTrue(self._row())
+        self.assertIn(_NO_EXECUTOR, self._log())
+        alert = self._given_up_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertIn("has no executor in this server any more", alert.message)
+        self.assertEqual(alert.payload["directory"], self.directory)
+        with self._closes() as closes:
+            self._reconcile(None)
+        self.assertEqual(closes, [True])
+        self.assertEqual(len(self._given_up_alert()), 1)
+        self._assert_let_go()
+
+    def test_no_executor_for_a_job_not_cancelled_raises_no_alert(self):
+        """Its failure has its own alert."""
+        self._parked()
+        self._postponed()
+        self.qjob.unlink()
+        with mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(None)
+        self.assertEqual(self.job.state, "failed")
+        self.assertFalse(self._row())
+        self.assertIn(_NO_EXECUTOR, self._log())
+        self.assertFalse(self._given_up_alert())
+
+    def test_no_executor_for_an_ended_job_lets_its_row_go_at_once(self):
+        """Nothing to close: its row goes in the clean-up."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=TestLostContact._refused):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self.assertTrue(self._row().closed)
+        with self._closes(held=True), mute_logger(
+            "odoo.addons.incubacloud.models.cloud_job",
+        ):
+            self._reconcile(None)
+        self.assertFalse(self._row())
+        self.assertIn(_NO_EXECUTOR, self._log())
+        self.assertEqual(len(self._given_up_alert()), 1)
+
+    def test_a_close_that_never_happens_lets_the_row_go_after_30_minutes(self):
+        """Closed on the claim, with an error: no longer a job to close."""
+        cls = self._stopped_and_cancelled_by_hand()
+        with self._closes(held=True):
+            self._reconcile(cls)
+        self.assertFalse(self._row().closed)
+        self.env.cr.execute(
+            "UPDATE cloud_job SET worker_lost_at = worker_lost_at"
+            " - interval '31 minutes' WHERE id = %s", (self.job.id,),
+        )
+        logger = "odoo.addons.incubacloud.models.cloud_job"
+        with self._closes(held=True) as closes, self.assertLogs(
+            logger, "ERROR",
+        ) as logs:
+            self._reconcile(cls)
+        self.assertEqual(closes, [])
+        self.assertTrue(any(
+            "could not be closed in 30 minutes" in line for line in logs.output
+        ))
+        row = self._row()
+        self.assertTrue(row.closed)
+        self.assertFalse(row.parked)
+        self._age()
+        self.assertEqual(
+            self.env["cloud.job"]._claim_lost_job(self.job.id),
+            ("checkpoint", False),
+        )
+        self.assertEqual(self._hooks(cls), 1)
+
+    def test_the_row_holds_the_host_until_the_close(self):
+        """A build on the host waits for the close, not for the clean-up."""
+        cls = self._stopped_and_cancelled_by_hand()
+        self._row().write({"build_lock_host_id": self.host.id})
+        self.env.flush_all()
+        other = self._other_build()
+        with self.assertRaises(RetryableJobError):
+            other.pre_run_checks()
+        with self._closes(held=True):
+            self._reconcile(cls)
+        with self.assertRaises(RetryableJobError):
+            other.pre_run_checks()
+        self._reconcile(cls)
+        other.pre_run_checks()  # the job closed: must not raise
+
+    def _other_build(self):
+        """A rebuild of an instance of the job's host.
+
+        :return: its executor
+        """
+        project = self.env["cloud.project"].create({"name": "parked-host-build"})
+        instance = self.env["cloud.instance"].create({
+            "name": "parked-host-build",
+            "project_id": project.id,
+            "environment": "staging",
+            "host_id": self.host.id,
+        })
+        JobType = self.env["cloud.job.type"]
+        job_type = JobType.search(
+            [("code", "=", "rebuild_instance")], limit=1,
+        ) or JobType.create({
+            "name": "rebuild_instance",
+            "code": "rebuild_instance",
+            "apply_to": "instance",
+        })
+        job = self.env["cloud.job"].create({
+            "host_id": self.host.id,
+            "instance_id": instance.id,
+            "job_type_id": job_type.id,
+            "name": "Rebuild Instance",
+        })
+        return RebuildInstanceExecutor(job, self.host)
 
 
 class TestTheReconciliationServesClosesFirst(_StopCase):
@@ -1451,7 +1780,7 @@ class TestTheReconciliationServesClosesFirst(_StopCase):
         cls = self._left_unreached()
         Job = type(self.env["cloud.job"])
         with patch.object(Job, "_RECONCILE_HOOK_BUDGET_S", 0), patch.object(
-            Job, "_clean_up_lost_job", autospec=True, return_value=False,
+            Job, "_clean_up_lost_job", autospec=True, return_value=(False, None),
         ) as clean_up:
             self._reconcile(cls)
         clean_up.assert_not_called()

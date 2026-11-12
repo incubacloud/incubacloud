@@ -838,6 +838,14 @@ class AbstractExecutor(ABC):
     # ``not_stopped`` (a step or a directory could not be stopped or
     # removed) or ``not_removed`` (``rm`` of the job's files failed).
     _left_alive_why = None
+    # Set by the reconciliation for a job stopped while it was parked:
+    # ``_forget_checkpoint`` only notes what to do with the row
+    # (``_checkpoint_release``), and the close lets it go in the
+    # transaction that writes the job's end (13-nov-2026).
+    _checkpoint_release_deferred = False
+    # What ``_forget_checkpoint`` left to the close: ``delete``, ``close``
+    # (something was left alive) or None (it did not get there).
+    _checkpoint_release = None
     # A step marked ``detached`` ran attached to the request: the server
     # kills processes at logout or lacks a tool (``DETACHED_EXIT_ATTACHED``).
     _detached_attached = False
@@ -2121,8 +2129,20 @@ class AbstractExecutor(ABC):
         something was left alive is marked ``closed``: no attempt resumes
         the job from it. Never raises: the row left behind is the
         reconciliation's, and the job's end stands.
+
+        With ``_checkpoint_release_deferred`` (the reconciliation, for a
+        job stopped while it was parked) nothing is written: what to do
+        with the row is noted in ``_checkpoint_release``, ``delete`` or
+        ``close``, and the close does it with the job's end. The row is
+        all that names such a job to close: let go before, a close that
+        did not happen left nothing for the next pass to find.
         """
         if not self._checkpoint:
+            return
+        if self._checkpoint_release_deferred:
+            self._checkpoint_release = (
+                "close" if self._detached_left_alive else "delete"
+            )
             return
         try:
             with self._durable_env() as env:

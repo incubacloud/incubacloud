@@ -44,6 +44,7 @@ from .abstract_executor import (
     JobRefused,
     JobWorkerLost,
     _is_refusal,
+    detached_dir,
     is_transient_connection_error,
 )
 from ._job_channels import (
@@ -3625,6 +3626,13 @@ class CloudJob(models.Model):
     #: the jobs to close come first; a server back from a reboot is
     #: reached within one more pass of Odoo.sh's cron.
     _RECONCILE_CHECKPOINT_RETRY_MINUTES = 10
+    #: Minutes from its claim after which a job stopped while it was
+    #: parked whose close never happens has its checkpoint let go
+    #: (``_claim_lost_job``): six passes of 5 minutes. The row is all that
+    #: names it to close, and kept unclosed it read *Cancelling…*, held
+    #: its host's build lock and was cleaned up again at every pass
+    #: (13-nov-2026).
+    _RECONCILE_CLOSE_PATIENCE_MINUTES = 30
 
     @staticmethod
     def _worker_lost_message(env):
@@ -3677,8 +3685,11 @@ class CloudJob(models.Model):
 
         A job claimed whose close did not happen (the cron died between
         the two) is only closed on the next pass, and its log says the
-        clean-up may have stopped half way. A pass starts no clean-up
-        once ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
+        clean-up may have stopped half way. The checkpoint of a job
+        stopped while it was parked, the one mark of a job to close, is
+        let go by step 3, in the transaction that writes the end: step 2
+        only says what to do with it. A pass starts no clean-up once
+        ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
 
         Assumes the database lets idle transactions be
         (``idle_in_transaction_session_timeout`` off): cut off, a live
@@ -3714,11 +3725,16 @@ class CloudJob(models.Model):
                         len(job_ids) - position,
                     )
                     break
-                cleaned |= self._clean_up_lost_job(job_id, case, resumed)
-                closed += self._close_lost_job(job_id, claimed=case)
+                hooked, release = self._clean_up_lost_job(job_id, case, resumed)
+                cleaned |= hooked
+                closed += self._close_lost_job(
+                    job_id, claimed=case, release=release,
+                )
             except Exception:
                 # One job that cannot be dealt with must not hold the
-                # others: its claim stands and the next pass closes it.
+                # others: its claim stands, and so does the checkpoint of
+                # one stopped while parked (only its close lets it go),
+                # and the next pass closes it.
                 _logger.exception(
                     "cloud.job %s: the reconciliation of its lost worker failed",
                     job_id,
@@ -3742,7 +3758,9 @@ class CloudJob(models.Model):
         (``checkpoint``), not tried in the last
         ``_RECONCILE_CHECKPOINT_RETRY_MINUTES``. Those come last, but a
         job stopped while it was parked and never closed
-        (``stopped_parked``), which is one to close; and of those, first
+        (``stopped_parked``), which is one to close: its row, the one mark
+        of it, is let go only by the close (``_close_lost_job``), so one
+        whose close did not happen is found again. Of the others, first
         the rows that hold their queue (``holds_queue_since``): rows of
         servers that do not answer must not spend the pass before them.
 
@@ -3943,6 +3961,13 @@ class CloudJob(models.Model):
         committed before anything is cleaned up. A job already claimed
         is taken up again for its close alone.
 
+        A job stopped while it was parked (``stopped_parked``) claimed
+        more than ``_RECONCILE_CLOSE_PATIENCE_MINUTES`` ago has its
+        checkpoint closed here, on the claim's cursor, and is left alone:
+        a close that never happens would otherwise clean it up again at
+        every pass. Nothing of the row's data nor of its creator is read,
+        so nothing of theirs can stop it.
+
         :param int job_id: the ``cloud.job``
         :return: ``(case, resumed)`` — *resumed* when an earlier pass
             had claimed it — or None to leave it alone
@@ -3965,6 +3990,23 @@ class CloudJob(models.Model):
                 # every pass until it is reached.
                 return "checkpoint", False
             if job_row["worker_lost_at"]:
+                patience = fields.Datetime.now() - timedelta(
+                    minutes=self._RECONCILE_CLOSE_PATIENCE_MINUTES,
+                )
+                if case == "stopped_parked" and (
+                    job_row["worker_lost_at"] < patience
+                ):
+                    cr.execute(
+                        "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                        " parked = FALSE WHERE job_id = %s",
+                        (job_id,),
+                    )
+                    _logger.error(
+                        "cloud.job %s: could not be closed in %d minutes:"
+                        " its checkpoint is let go; the steps after it may"
+                        " wait", job_id, self._RECONCILE_CLOSE_PATIENCE_MINUTES,
+                    )
+                    return None
                 return case, True
             if (job_row["write_date"] or cutoff) >= cutoff or (
                 queue_row and (queue_row["moved"] or cutoff) >= cutoff
@@ -4065,19 +4107,35 @@ class CloudJob(models.Model):
         its log says the clean-up may have stopped half way, and its
         checkpoint, which no hook takes along now, is let go
         (``_forget_checkpoint``: deleted, or closed for a later pass when
-        the server was not reached). So is the checkpoint of a job whose
-        type has no executor any more, which nothing can clean: kept
-        unclosed, either would read as a ``stopped_parked`` job to close
-        at every pass, and its job as *Cancelling…* for good (12-nov-2026).
+        the server was not reached).
+
+        The checkpoint of a job stopped while it was parked
+        (``stopped_parked``, or ``succeeded`` for a cancelled job whose
+        row is not closed) is not let go here: it is all that names the
+        job to close, and let go before a close that did not happen, the
+        next pass found nothing. ``_forget_checkpoint`` only notes what to
+        do with it, and ``_close_lost_job`` does it with the job's end
+        (13-nov-2026).
+
+        A job whose type has no executor any more: nothing can stop or
+        remove what it left on its server. When it has a checkpoint, its
+        log and the server's log say so, and so does a
+        ``job_cleanup_given_up`` alert for a cancelled job. The row is
+        deleted at once for an ended job (``checkpoint``), by the close
+        for the others: kept, either would read as a job to close at
+        every pass, and its job as *Cancelling…* for good (12-nov-2026).
         Never raises: the job is closed next whatever happens here.
 
         :param int job_id: the ``cloud.job``
         :param str case: as ``_lost_job_case`` names it
         :param bool resumed: whether an earlier pass claimed it
-        :return: whether a hook was run, which may have waited on a host
-        :rtype: bool
+        :return: ``(hooked, release)``: whether a hook was run, which may
+            have waited on a host; and what the close does with the
+            checkpoint, ``delete``, ``close`` or None (nothing noted)
+        :rtype: tuple
         """
         hooked = False
+        release = None
         try:
             with self.env.registry.cursor() as cr:
                 job = self.env(cr=cr)["cloud.job"].browse(job_id)
@@ -4085,22 +4143,59 @@ class CloudJob(models.Model):
                 note = self._lost_job_note(
                     runner.env, case, not runner.sudo().queue_job_id,
                 )
-                executor_cls = executor_registry.get(job.sudo().job_type_id.code)
-                if not executor_cls:
-                    job.env["cloud.job.log.chunk"].sudo().create({
-                        "job_id": job_id, "content": note, "source": "system",
-                    })
-                    cr.execute(
-                        "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
-                        (job_id,),
-                    )
-                    return hooked
-                executor = executor_cls(
-                    job_record=runner, host_record=runner.sudo().host_id,
-                )
                 row = job.env["cloud.job.checkpoint"].sudo().search(
                     [("job_id", "=", job_id)], limit=1,
                 )
+                executor_cls = executor_registry.get(job.sudo().job_type_id.code)
+                if not executor_cls:
+                    Chunk = job.env["cloud.job.log.chunk"].sudo()
+                    Chunk.create({
+                        "job_id": job_id, "content": note, "source": "system",
+                    })
+                    if row:
+                        Chunk.create({
+                            "job_id": job_id, "source": "system",
+                            "content": runner.env._(
+                                "This job's type has no executor in this"
+                                " server any more: nothing can stop or remove"
+                                " what it left on its server. Check the"
+                                " server's /tmp by hand."
+                            ),
+                        })
+                        _logger.warning(
+                            "cloud.job %s: its type %s has no executor any"
+                            " more: what it left on its server is not"
+                            " cleaned up", job_id, job.sudo().job_type_id.code,
+                        )
+                        try:
+                            with cr.savepoint():
+                                self.with_env(runner.env)._alert_cleanup_given_up(
+                                    runner, row.with_env(runner.env),
+                                    row._data().get("plan") or [], "no_executor",
+                                )
+                        except Exception:
+                            # The row goes all the same: the log said it.
+                            _logger.exception(
+                                "cloud.job %s: the alert of its given-up"
+                                " clean-up failed", job_id,
+                            )
+                    if case == "checkpoint":
+                        cr.execute(
+                            "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                            (job_id,),
+                        )
+                    else:
+                        # Let go by the close, with the job's end.
+                        release = "delete"
+                    return hooked, release
+                executor = executor_cls(
+                    job_record=runner, host_record=runner.sudo().host_id,
+                )
+                if case == "stopped_parked" or (
+                    case == "succeeded" and job.sudo().state == "cancelled"
+                    and row and not row.closed
+                ):
+                    executor._checkpoint_release_deferred = True
                 # Only a server to clean: said the first time it is tried,
                 # and when it ends or is given up (``_forget_or_give_up``).
                 # A step left running holds the queue from the first try.
@@ -4155,11 +4250,13 @@ class CloudJob(models.Model):
                     executor._forget_checkpoint()
                 executor._flush_logs()
                 executor._publish_bus()
+                release = executor._checkpoint_release
         except Exception:
             _logger.exception(
                 "cloud.job %s: the clean-up of its lost run failed", job_id,
             )
-        return hooked
+            return hooked, None
+        return hooked, release
 
     @api.model
     def _forget_or_give_up(self, executor, row):
@@ -4228,7 +4325,8 @@ class CloudJob(models.Model):
                     try:
                         with env.cr.savepoint():
                             self.with_env(env)._alert_cleanup_given_up(
-                                executor, row.with_env(env), plan,
+                                executor.job, row.with_env(env), plan,
+                                executor._left_alive_why,
                             )
                     except Exception:
                         # The row goes all the same: kept, it would be
@@ -4252,7 +4350,7 @@ class CloudJob(models.Model):
             executor._checkpoint = False
 
     @api.model
-    def _alert_cleanup_given_up(self, executor, row, plan):
+    def _alert_cleanup_given_up(self, job, row, plan, reason):
         """Tell the operator what a cancelled job left on a server nobody reached.
 
         A person cancelled the job and its server never answered again:
@@ -4265,32 +4363,39 @@ class CloudJob(models.Model):
         A job that ended any other way raises none here: its failure
         already has its own alert.
 
-        The alert says why the panel gave up, as ``_close_on_server`` left
-        it on its last try (``_left_alive_why``), and names the step's
-        directory only when the step had started on the server
-        (``detached_started``): cancelled between two steps, there is none.
+        The alert says why the panel gave up: as ``_close_on_server`` left
+        it on its last try (``_left_alive_why``), or ``no_executor`` when
+        the job's type has no executor any more (``_clean_up_lost_job``).
+        It names the step's directory only when the step had started on
+        the server (``detached_started``): cancelled between two steps,
+        there is none. What it names is read from the row alone, so a job
+        without an executor gets the same alert.
 
         Written with ``self.env``: ``_give_up_if_past_cap`` calls it on the
         durable cursor that deletes the row.
 
-        :param executor: the job's executor, with the row adopted
+        :param job: the ``cloud.job``
         :param row: the job's ``cloud.job.checkpoint``
         :param list plan: the checkpoint's plan, ``[label, command, opts]``
+        :param reason: why the panel gave up: ``unreachable``,
+            ``past_no_return``, ``not_stopped``, ``not_removed`` or
+            ``no_executor``
         """
         env = self.env
-        job = executor.job.with_env(env).sudo()
+        job = job.with_env(env).sudo()
         if job.state != "cancelled":
             return
         index = row.next_index
         step = plan[index] if index < len(plan) else None
         directory = (
-            executor._detached_dir(index)
+            detached_dir(env, job.id, row.queue_job_uuid or "", index)
             if step and (step[2] or {}).get("detached") and row.detached_started
             else None
         )
-        paths = list(executor._private_uploads)
-        if executor._job_dir_created:
-            paths.append(executor._job_dir())
+        data = row._data()
+        paths = list(data.get("private_uploads") or ())
+        if data.get("job_dir"):
+            paths.append(data["job_dir"])
         left = []
         if directory:
             left.append(env._(
@@ -4304,7 +4409,6 @@ class CloudJob(models.Model):
                 "remove %(paths)s", paths=" ".join(paths),
             ))
         host = row.host_id or job.host_id
-        reason = executor._left_alive_why
         if reason == "past_no_return":
             why = env._(
                 "its step '%(step)s' on server %(host)s was past the point of"
@@ -4322,6 +4426,8 @@ class CloudJob(models.Model):
                 "the files it left on server %(host)s could not be removed",
                 host=host.name or "",
             )
+        elif reason == "no_executor":
+            why = env._("its type has no executor in this server any more")
         else:
             why = env._(
                 "server %(host)s has not answered since",
@@ -4353,7 +4459,7 @@ class CloudJob(models.Model):
         )
 
     @api.model
-    def _close_lost_job(self, job_id, claimed=None):
+    def _close_lost_job(self, job_id, claimed=None, release=None):
         """Step 3 of the reconciliation: write the end the ORM never saw.
 
         Locked again without waiting, and closed only if the job is still
@@ -4361,12 +4467,21 @@ class CloudJob(models.Model):
         through ``queue.job.write``, or the job's own for a queue.job
         that is gone — so it is acted on as every end is.
 
+        The checkpoint step 2 left to it is let go first, on this cursor:
+        deleted (*release* ``delete``), or, for a job claimed
+        ``stopped_parked``, closed — its server not reached, or step 2
+        did not get there — so that it reads as a ``checkpoint`` from then
+        on. The row and the end go together or neither does, and the
+        dispatch the end sets off reads the row already let go.
+
         A job claimed ``stopped_parked`` is read so again without its
-        checkpoint, which its hook took along: still cancelled, its
-        queue.job still ended or gone.
+        checkpoint, should another have deleted it between the steps:
+        still cancelled, its queue.job still ended or gone.
 
         :param int job_id: the ``cloud.job``
         :param claimed: the case step 1 claimed it as, if known
+        :param release: what step 2 left to do with the checkpoint:
+            ``delete``, ``close`` or None
         :return: whether the job was closed
         :rtype: bool
         """
@@ -4383,6 +4498,19 @@ class CloudJob(models.Model):
                 case = self._lost_job_succeeded(cr, job_row, claimed)
             if case is None or not job_row["worker_lost_at"]:
                 return False
+            if release == "delete":
+                cr.execute(
+                    "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                    (job_id,),
+                )
+            elif claimed == "stopped_parked" or (
+                claimed == "succeeded" and job_row["state"] == "cancelled"
+            ):
+                cr.execute(
+                    "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                    " parked = FALSE WHERE job_id = %s AND closed IS NOT TRUE",
+                    (job_id,),
+                )
             env = self.env(cr=cr)
             if queue_row is None:
                 self._close_lost_job_without_queue(
