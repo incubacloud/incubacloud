@@ -365,7 +365,7 @@ class TestTheDiskCollectorMeasuresDatabaseAndFilestore(BaseCase):
         log = self.tmp / "docker.log"
         if log.exists():
             log.unlink()
-        env = dict(os.environ, PATH=f"{self.tmp / 'bin'}:{os.environ['PATH']}", STUB_LOG=str(log))
+        env = os.environ | {"PATH": f"{self.tmp / 'bin'}:{os.environ['PATH']}", "STUB_LOG": str(log)}
         subprocess.run(["bash", str(self.script)], check=True, env=env, timeout=60)  # noqa: S603,S607 — a fixed local script
         return log.read_text() if log.exists() else ""
 
@@ -467,7 +467,7 @@ class TestTheInstallRecordsItsRevision(ObservabilityExecutorCase):
         executor = self._make(ObservabilityAgentsExecutor)
         lines = []
         executor._sys = lines.append
-        executor._facts = {"ic_agents_running": "3", "ic_instances_labelled": "0", **facts}
+        executor._facts = {"ic_agents_running": "3", "ic_instances_labelled": "0"} | facts
         asyncio.run(executor.on_success({}))
         return "\n".join(lines)
 
@@ -481,7 +481,7 @@ class TestTheInstallRecordsItsRevision(ObservabilityExecutorCase):
         """Return what ``parse_results`` makes of a playbook that ended
         well and exported *facts*."""
         executor = self._make(ObservabilityAgentsExecutor)
-        executor._facts = {"ic_agents_running": "3", **facts}
+        executor._facts = {"ic_agents_running": "3"} | facts
         return executor.parse_results({executor._playbook: {"exit_status": 0}})
 
     def test_a_collector_that_failed_fails_the_job_with_what_to_do(self):
