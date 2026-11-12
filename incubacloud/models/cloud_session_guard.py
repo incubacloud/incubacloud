@@ -691,6 +691,7 @@ class CloudSessionGuard(models.AbstractModel):
         :param str seen: the other
         """
         user = self.env["res.users"].browse(uid)
+        what = _("country") if signal == "country" else _("browser family")
         self.env["cloud.alert"].raise_alert(
             "session_guard_antiloop",
             _(
@@ -698,7 +699,7 @@ class CloudSessionGuard(models.AbstractModel):
                 "%(signal)s (%(first)s and %(second)s): that check only logs "
                 "for them for a while. Look at whether it is their connection "
                 "or somebody else using their session.",
-                user=user.login, signal=signal, first=pinned, second=seen,
+                user=user.login, signal=what, first=pinned, second=seen,
             ),
             level="warning",
             key=f"{uid}:{signal}:{'|'.join(sorted((pinned, seen)))}",

@@ -986,6 +986,7 @@ msgstr "Cuentas en el central"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__action
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__action
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__action
 msgid "Action"
 msgstr "Acción"
 
@@ -2078,6 +2079,12 @@ msgid "Branch to use for deployments."
 msgstr "Rama a usar para despliegues."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__browser
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_hold__signal__browser
+msgid "Browser"
+msgstr "Navegador"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_bucket
@@ -2766,6 +2773,7 @@ msgstr "Cerrar panel"
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host_session__state__closed
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__closed
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__action__closed
 msgid "Closed"
 msgstr "Cerrado"
 
@@ -2787,6 +2795,17 @@ msgstr "Cerrada por un usuario"
 #: code:addons/incubacloud/models/cloud_host_session.py:0
 msgid "Closed host sessions are immutable."
 msgstr "Las sesiones de host cerradas son inmutables."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_closure__action
+msgid ""
+"Closed: the session was destroyed. Logged only: the signal is set to log. "
+"Logged: anti-loop: it would have closed, but the user had too many closes by"
+" this signal lately."
+msgstr ""
+"Cerrado: la sesión se destruyó. Solo registrado: la señal está en «solo "
+"registrar». Registrado: antibucle: se habría cerrado, pero el usuario "
+"acumulaba demasiados cierres recientes por esta señal."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3571,6 +3590,12 @@ msgid "Count"
 msgstr "Cantidad"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__country
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_hold__signal__country
+msgid "Country"
+msgstr "País"
+
+#. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.move_fingerprint
 msgid ""
 "Counts the rows of a few tables and the filestore's files on the source of a"
@@ -3727,6 +3752,8 @@ msgstr "Cree su primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_uid
@@ -3764,6 +3791,8 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
@@ -4640,6 +4669,9 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_guard__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__display_name
@@ -6953,6 +6985,11 @@ msgid "High"
 msgstr "Alta"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__hits
+msgid "Hits"
+msgstr "Repeticiones"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__hook_id
 msgid "Hook"
 msgstr "Webhook"
@@ -7394,6 +7431,9 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_guard__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__id
@@ -7624,6 +7664,11 @@ msgstr ""
 "secreto, marque Push events y Merge request events, deje Enable SSL "
 "verification y guarde. Después pulse Test → Tag push events, nunca Push "
 "events, que reconstruiría."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__inactivity
+msgid "Inactivity"
+msgstr "Inactividad"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8467,6 +8512,7 @@ msgstr "Última huella de reconstrucción"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__last_raised_at
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__last_seen
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__last_seen
 msgid "Last Seen"
@@ -8524,6 +8570,8 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_uid
@@ -8562,6 +8610,8 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_key__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_date
@@ -8954,6 +9004,16 @@ msgstr "Búsquedas de logs por minuto (por usuario)"
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
 msgid "Log →"
 msgstr "Registro →"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__action__logged
+msgid "Logged only"
+msgstr "Solo registrado"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__action__held
+msgid "Logged: anti-loop"
+msgstr "Registrado: antibucle"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__login_type
@@ -11030,6 +11090,11 @@ msgstr ""
 "tokens ni logs) y la deja lista para descargar."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__pair
+msgid "Pair"
+msgstr "Par de valores"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Panel password"
@@ -11243,6 +11308,11 @@ msgstr "Commit fijado"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__odoo_commit_sha
 msgid "Pinned Odoo Commit"
 msgstr "Commit de Odoo fijado"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__pinned_value
+msgid "Pinned Value"
+msgstr "Valor anotado"
 
 #. module: incubacloud
 #. odoo-python
@@ -12052,6 +12122,21 @@ msgstr "Redirigir a"
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_domain__redirect_to
 msgid "Redirect this hostname to another (e.g. example.com → www.example.com)"
 msgstr "Redirigir este hostname a otro (ej. example.com → www.example.com)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__reentry_browser
+msgid "Reentry Browser"
+msgstr "Navegador al volver a entrar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__reentry_country
+msgid "Reentry Country"
+msgstr "País al volver a entrar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__reentry_seconds
+msgid "Reentry Seconds"
+msgstr "Segundos hasta volver a entrar"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13299,6 +13384,13 @@ msgstr ""
 "coincidencias."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_closure__reentry_seconds
+msgid "Seconds until the user signed in again, if within the re-entry window."
+msgstr ""
+"Segundos hasta que el usuario volvió a entrar, si fue dentro del plazo de "
+"reentrada."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_hook__secret
 msgid "Secret"
 msgstr "Secreto"
@@ -13338,6 +13430,11 @@ msgid ""
 msgstr ""
 "Ver todos los proyectos y crear proyectos. Igual que Consultor pero sin "
 "restricción de ámbito."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__seen_value
+msgid "Seen Value"
+msgstr "Valor visto"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13476,16 +13573,49 @@ msgid "Session ID"
 msgstr "ID de sesión"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__session_identifier
+msgid "Session Identifier"
+msgstr "Identificador de sesión"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_session_closure
+msgid "Session closed by the guard"
+msgstr "Sesión cerrada por la protección de sesiones"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid "Session expired. Please reload and try again."
 msgstr "Sesión caducada. Recargue e intente de nuevo."
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_session_guard
+msgid "Session guard"
+msgstr "Protección de sesiones"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_session_hold
+msgid "Session guard anti-loop hold"
+msgstr "Pausa antibucle de la protección de sesiones"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal_proxy_mixin.py:0
 msgid "Session not found"
 msgstr "Sesión no encontrada"
+
+#. module: incubacloud
+#: code:addons/incubacloud/models/cloud_session_guard.py:0
+#, python-format
+msgid ""
+"Sessions of %(user)s were closed too often for a change of %(signal)s "
+"(%(first)s and %(second)s): that check only logs for them for a while. Look "
+"at whether it is their connection or somebody else using their session."
+msgstr ""
+"Las sesiones de %(user)s se cerraron demasiadas veces por un cambio de "
+"%(signal)s (%(first)s y %(second)s): esa comprobación solo registra para "
+"este usuario durante un tiempo. Revise si es su conexión o si otra persona "
+"está usando su sesión."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__hardened
@@ -13679,6 +13809,12 @@ msgstr ""
 "Observaciones seguidas, cada una dentro de la ventana de la anterior, antes "
 "de que la alerta exista y se avise a alguien. Con 1 se levanta en la primera"
 " observación."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__signal
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__signal
+msgid "Signal"
+msgstr "Señal"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14665,6 +14801,15 @@ msgid "The panel could not register the webhook:"
 msgstr "El panel no pudo registrar el webhook:"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_closure__session_identifier
+msgid ""
+"The part of the session id that survives Odoo's rotation, as res.device.log "
+"keeps it."
+msgstr ""
+"La parte del identificador de sesión que sobrevive a la rotación de Odoo, "
+"tal como la guarda res.device.log."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__port
 msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
@@ -14957,6 +15102,11 @@ msgstr ""
 "ejecuta una vez confirmada la transacción del propio job (véase "
 "AbstractExecutor._unlink_after_job_commit). Una repetición del desmontaje "
 "que encuentre esto marcado no tiene nada más que hacer en el host."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_hold__pair
+msgid "The two values the sessions went between, sorted."
+msgstr "Los dos valores entre los que alternaron las sesiones, en orden."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16091,6 +16241,11 @@ msgid "Unsupported repository content encoding."
 msgstr "La codificación del contenido del repositorio no es compatible."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__until
+msgid "Until"
+msgstr "Hasta"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
 msgid "Unused"
@@ -16219,6 +16374,8 @@ msgstr "Comandos útiles:"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__user_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__user_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__user_id
 msgid "User"
@@ -21545,6 +21702,24 @@ msgstr ""
 "stagings sin uso."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_closure__seen_value
+msgid ""
+"What the request showed: a country, a browser family, 'direct' for a request"
+" that skipped the CDN, or the idle time in hours."
+msgstr ""
+"Lo que mostró la petición: un país, una familia de navegador, «direct» si no"
+" pasó por la CDN, o el tiempo de inactividad en horas."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_closure__pinned_value
+msgid ""
+"What the session was opened with: a country, a browser family, or the idle "
+"limit in hours."
+msgstr ""
+"Con qué se abrió la sesión: un país, una familia de navegador o el límite de"
+" inactividad en horas."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
@@ -21585,6 +21760,11 @@ msgid "Zone read and DNS edit on the zone only."
 msgstr "Lectura de la zona y edición del DNS, solo en la zona."
 
 #. module: incubacloud
+#: code:addons/incubacloud/models/cloud_session_guard.py:0
+msgid "browser family"
+msgstr "familia de navegador"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
 msgid "changed"
@@ -21595,6 +21775,11 @@ msgstr "cambiados"
 #: code:addons/incubacloud/static/src/components/settings/settings_search_box.xml:0
 msgid "close"
 msgstr "cerrar"
+
+#. module: incubacloud
+#: code:addons/incubacloud/models/cloud_session_guard.py:0
+msgid "country"
+msgstr "país"
 
 #. module: incubacloud
 #. odoo-javascript
