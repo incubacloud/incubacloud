@@ -332,6 +332,7 @@ class TestDispatch(_QueueCase):
         self.assertEqual(restart.state, "queued")
 
 
+@tagged("-at_install", "post_install")
 class TestAdmission(_QueueCase):
     """What the type says: collapse, exclusive, the cap."""
 
