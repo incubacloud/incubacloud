@@ -1,4 +1,4 @@
-"""End-migrate for 1.0.229 — security logs per server, a central without Grafana.
+"""End-migrate for 1.0.227 — security logs per server, a central without Grafana.
 
 **Send security logs.**
 The panel-wide *Send hosts' security logs* (``metrics_ship_security_logs``)
