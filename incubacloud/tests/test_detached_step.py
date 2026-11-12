@@ -495,10 +495,10 @@ class TestAPlanWithoutStepsApart(BaseCase):
         The first, the rebuild's image build (decided on 10-nov-2026),
         marked in core's rebuild and inherited by every rebuild built on
         it; then the deploy's and the rebuild's long steps (phase 3,
-        12-nov-2026), inherited the same way, and the restores: the
-        restore of an archive, and the restore from the backup store; the
-        update both share is marked where they build it, in
-        ``abstract_executor``. No other module of an executor marks one.
+        12-nov-2026), inherited the same way, the restores (the restore of
+        an archive, and the restore from the backup store; the update both
+        share is marked where they build it, in ``abstract_executor``), and
+        the copies and downloads. No other module of an executor marks one.
         """
         marked = re.compile(r"""["']detached["']\s*:""")
         found = sorted({
@@ -507,7 +507,9 @@ class TestAPlanWithoutStepsApart(BaseCase):
             if marked.search(inspect.getsource(inspect.getmodule(cls)))
         })
         self.assertEqual(found, [
-            "backup_restore_executor", "deploy_instance_executor",
+            "backup_create_executor", "backup_download_executor",
+            "backup_download_neutralized_executor", "backup_restore_executor",
+            "deploy_instance_executor",
             "rebuild_instance_executor", "restore_instance_executor",
         ])
 

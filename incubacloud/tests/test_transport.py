@@ -811,8 +811,10 @@ class TestBackupCreateGetCommands(BaseCase):
         self.assertEqual(label, "Create backup")
         # Stop the chain on failure so we don't try to download a ZIP
         # that was never created (the historical bug that surfaced
-        # ``Could not find the file …`` on top of the real error).
-        self.assertEqual(opts, {"stop_on_failure": True})
+        # ``Could not find the file …`` on top of the real error). Apart
+        # on the server (12-nov-2026): a large database dumps for longer
+        # than a request is given.
+        self.assertEqual(opts, {"stop_on_failure": True, "detached": True})
         env, argv = _split_env(shlex.split(cmd))
         self.assertEqual(argv[0], "bash")
         self.assertTrue(argv[1].endswith("/backup_download.sh"), argv[1])
@@ -1085,8 +1087,9 @@ class TestBackupDownloadGetCommands(BaseCase):
         )
         # Stop the chain on failure so after_commands does not try to
         # download a zip that was never created — same defensive
-        # pattern as BackupCreateExecutor.
-        self.assertEqual(cmds[0][2], {"stop_on_failure": True})
+        # pattern as BackupCreateExecutor. Apart on the server, as the
+        # copy's dump (12-nov-2026).
+        self.assertEqual(cmds[0][2], {"stop_on_failure": True, "detached": True})
 
     def test_non_prod_all_includes_the_filestore(self):
         ex = self._make_executor("staging", mode="all")
