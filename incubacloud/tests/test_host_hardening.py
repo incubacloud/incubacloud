@@ -82,7 +82,20 @@ class TestHardeningPreflight(TransactionCase):
             "ansible", "playbooks", "host_hardening.yml",
         )
         with open(path, encoding="utf-8") as fh:
-            return yaml.safe_load(fh)[0]
+            play = yaml.safe_load(fh)[0]
+        # The tasks of a block and of its rescue, in place of the block,
+        # so a task is found by its name wherever it sits; the block
+        # itself is kept in ``_blocks``.
+        play["_blocks"] = [t for t in play.get("tasks") or [] if "block" in t]
+        play["tasks"] = [
+            inner
+            for task in play.get("tasks") or []
+            for inner in (
+                task["block"] + (task.get("rescue") or [])
+                if "block" in task else [task]
+            )
+        ]
+        return play
 
     def test_preflight_runs_before_any_privileged_task(self):
         """Facts are gathered unprivileged and the gate lives in pre_tasks."""
@@ -179,6 +192,22 @@ class TestHardeningPreflight(TransactionCase):
             content.index("ListenStream={{ ssh_port }}"),
             "the reset must precede the port or 22 stays open",
         )
+        # One socket for both families: Ubuntu 24.04's unit says
+        # ``BindIPv6Only=ipv6-only``, under which a bare port is IPv6 alone.
+        self.assertIn("BindIPv6Only=both", content)
+        # Read after the file 24.04's sshd-socket-generator writes, whose
+        # two sockets would otherwise take the same port as ours.
+        dest = overrides[0]["ansible.builtin.copy"]["dest"]
+        self.assertGreater(dest.rsplit("/", 1)[1], "addresses.conf")
+        removed = [
+            t["ansible.builtin.file"] for t in tasks
+            if t.get("ansible.builtin.file", {}).get("path")
+            == "/etc/systemd/system/ssh.socket.d/10-incubacloud-port.conf"
+        ]
+        self.assertEqual(removed, [{
+            "path": "/etc/systemd/system/ssh.socket.d/10-incubacloud-port.conf",
+            "state": "absent",
+        }])
         # And the socket stays enabled — disabling it is the fragile path.
         sockets = [
             t for t in tasks
@@ -192,6 +221,72 @@ class TestHardeningPreflight(TransactionCase):
                 "ssh.socket must not be disabled: that is the path that "
                 "silently reverts to port 22 on the next reboot",
             )
+
+    def test_sshd_moves_inside_a_block_that_puts_it_back(self):
+        """A run that stops while moving sshd must not leave a host no one
+        can reach (12-nov-2026: an Ubuntu 24.04 server came up with sshd on
+        IPv6 only and had to be rebuilt). Everything from keeping the
+        current files to proving the new port sits in one block; its rescue
+        restores, waits for the port sshd had, says so to the panel, and
+        fails the play."""
+        play = self._playbook()
+        blocks = [
+            b for b in play["_blocks"]
+            if any(t.get("name") == "Wait for sshd to listen on the new port"
+                   for t in b["block"])
+        ]
+        self.assertEqual(len(blocks), 1)
+        block = [t["name"] for t in blocks[0]["block"]]
+        self.assertEqual(block[0], "Keep the SSH configuration as it is")
+        for name in (
+            "Write the sshd hardening drop-in",
+            "Pin the ssh socket to the rotated port",
+            "Enable and (re)start the ssh socket on the rotated port",
+            "Enable and (re)start ssh.service when sshd is not socket-activated",
+        ):
+            self.assertIn(name, block)
+        self.assertEqual(block[-1], "Drop the kept copy of the SSH configuration")
+        self.assertLess(
+            block.index("Wait for sshd to listen on the new port"), len(block) - 1,
+        )
+        keep = blocks[0]["block"][0]["ansible.builtin.shell"]
+        for kept in (
+            "00-incubacloud-hardening.conf", "99-incubacloud-hardening.conf",
+            "/etc/systemd/system/ssh.socket.d", "is-enabled", "is-active",
+        ):
+            self.assertIn(kept, keep)
+
+        rescue = blocks[0]["rescue"]
+        names = [t["name"] for t in rescue]
+        self.assertEqual(names[0], "Put the SSH configuration back as it was")
+        restore = rescue[0]["ansible.builtin.shell"]
+        self.assertIn("systemctl daemon-reload", restore)
+        self.assertIn("systemctl restart ssh.socket", restore)
+        self.assertIn("systemctl restart ssh.service", restore)
+        # The restore's own failure must not skip the wait and the message.
+        self.assertIs(rescue[0]["failed_when"], False)
+        wait = rescue[names.index("Wait for sshd on the port it had before")]
+        self.assertEqual(
+            wait["ansible.builtin.wait_for"]["port"],
+            "{{ ansible_port | default(22) }}",
+        )
+        stats = next(t for t in rescue if "ansible.builtin.set_stats" in t)
+        self.assertIs(stats["ansible.builtin.set_stats"]["data"]["ic_ssh_rolled_back"], True)
+        self.assertIn("ansible.builtin.fail", rescue[-1])
+        self.assertIn("ansible_failed_task.name", rescue[-1]["ansible.builtin.fail"]["msg"])
+
+    def test_the_new_port_must_answer_as_sshd(self):
+        """An open port is not enough: under socket activation systemd
+        accepts the connection whether or not sshd starts. The wait reads
+        sshd's greeting, on IPv4, where the panel comes from."""
+        tasks = self._playbook()["tasks"]
+        wait = next(
+            t for t in tasks
+            if t.get("name") == "Wait for sshd to listen on the new port"
+        )["ansible.builtin.wait_for"]
+        self.assertEqual(wait["host"], "127.0.0.1")
+        self.assertEqual(wait["port"], "{{ ssh_port }}")
+        self.assertEqual(wait["search_regex"], "SSH-2.0-")
 
     def test_fail2ban_never_bans_the_panel(self):
         """The sshd jail must exempt the addresses the firewall allows.
@@ -1196,6 +1291,32 @@ class TestHardeningExecutorWiring(TransactionCase):
 
         ex._facts = {"ic_port_listening": "True"}
         self.assertTrue(ex.parse_results({playbook: {"exit_status": 1}}))
+
+    def test_parse_results_says_the_ssh_setup_was_put_back(self):
+        """When the playbook's rescue restored sshd, the job's error says
+        so, and whether sshd answers again, instead of a bare rc."""
+        ex = self._make()
+        ex._new_port = 22345
+        failed = {ex._playbook: {"exit_status": 2}}
+
+        ex._facts = {
+            "ic_ssh_rolled_back": True,
+            "ic_ssh_restored_port": 22,
+            "ic_ssh_restored_answers": True,
+        }
+        [error] = ex.parse_results(failed)
+        self.assertIn("moving sshd to its new port", error)
+        self.assertIn("put back", error)
+        self.assertIn("sshd answers on port 22 again", error)
+
+        ex._facts["ic_ssh_restored_answers"] = False
+        [error] = ex.parse_results(failed)
+        self.assertIn("does not answer on port 22", error)
+        self.assertIn("console", error)
+
+        ex._facts = {}
+        [error] = ex.parse_results(failed)
+        self.assertIn("rc=2", error)
 
     def test_core_edge_firewall_hook_is_noop(self):
         """Core carries no edge firewall — the hook is a no-op."""

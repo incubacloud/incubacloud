@@ -106,6 +106,34 @@ def _recipe_fingerprint_of(text):
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:12]
 
 
+def _ssh_rollback_error(facts):
+    """Return the job's error when the playbook put the SSH setup back.
+
+    The playbook's SSH phase runs in a block whose rescue restores the
+    files and units it found, waits for sshd on the port it had, and
+    exports what it saw (``ic_ssh_rolled_back``, ``ic_ssh_restored_port``,
+    ``ic_ssh_restored_answers``) before failing the play.
+
+    :param dict facts: the playbook's exported stats
+    :return: the error to show, or ``""`` when the play did not reach the
+        rescue
+    :rtype: str
+    """
+    if str(facts.get("ic_ssh_rolled_back", "")).lower() not in ("true", "1"):
+        return ""
+    port = facts.get("ic_ssh_restored_port") or 22
+    head = (
+        "Hardening stopped while moving sshd to its new port (see the "
+        "log); the previous SSH configuration was put back"
+    )
+    if str(facts.get("ic_ssh_restored_answers", "")).lower() in ("true", "1"):
+        return f"{head} and sshd answers on port {port} again."
+    return (
+        f"{head}, but sshd does not answer on port {port}: reach the "
+        f"server through the provider's console."
+    )
+
+
 def _build_ssh_allowlist(primary_ip, extra_ips):
     """Build the nftables set of source IPs allowed to reach SSH.
 
@@ -300,9 +328,9 @@ class HostHardeningExecutor(AnsibleExecutor):
         facts = self.playbook_facts()
         rc = results.get(self._playbook, {}).get("exit_status", 1)
         if rc != 0:
-            errors.append(
+            errors.append(_ssh_rollback_error(facts) or (
                 f"Hardening playbook failed (rc={rc}) — see the log."
-            )
+            ))
             return errors
         port_listening = str(facts.get("ic_port_listening", "")).lower()
         if port_listening not in ("true", "1"):
