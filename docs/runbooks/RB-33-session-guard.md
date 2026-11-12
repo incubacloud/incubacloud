@@ -20,7 +20,10 @@ when it turns up:
 Closing destroys the session for whoever holds it — the owner and the
 thief alike, since nothing tells them apart — and refuses the request
 that showed the change. To the user it is an expired session: they sign
-in again. Nothing is shown about why, so as not to teach the rule to
+in again. On a page open to visitors (the sign-in, the website's home
+or pricing) the request is served instead, signed out, as Odoo serves a
+session it no longer accepts there (review of the result, 12-nov-2026,
+M1). Nothing is shown about why, so as not to teach the rule to
 whoever is being shut out. No question, no second factor, no
 confirmation is ever asked (the platform owner's decision, 11-nov-2026).
 
@@ -110,6 +113,13 @@ fall up to an hour short. The limit is written into the session when it
 is opened: a change of the parameter, or of the user's role, reaches the
 sessions opened afterwards.
 
+Lowering the guard's limit leaves the cookie at Odoo's lifetime: whoever
+comes back after the guard's limit and before the cookie's brings a
+session that is closed. Set `sessions.max_inactivity_seconds` to the same
+value. The platform's master and panels set it to 2 days on every update
+(12-nov-2026); operators of the master, at 12 hours, keep the 2-day
+cookie.
+
 ## The anti-loop
 
 Some connections change country without the user doing anything: IPv4
@@ -132,6 +142,29 @@ per user and pair of values**. It means: look at whether it is the
 user's connection or someone else using their sessions. The hold is per
 database: a user with an alternating connection learns it separately on
 the master and on each panel.
+
+## Writes and failures
+
+Every row is written on a database connection of its own, never on the
+request's, and committed before the request is refused or served.
+
+| Value (in code) | Value | Why (12-nov-2026, review of the result) |
+|---|---|---|
+| `WRITE_ATTEMPTS` | 3 | Odoo's transactions are REPEATABLE READ: the parallel requests of one page write the same row at the same moment, and all but the first fail to serialize. A new connection sees what the first committed. Three covers the usual burst of a page; past that the request closes the session, even for a user in a hold (A1). |
+| `LOCK_TIMEOUT` | 3 s | A close waits for another close of the same user under a lock and holds a second connection meanwhile. Past three seconds it closes without recording. |
+
+**A failure of the guard lets the request through.** Odoo turns anything
+raised while it checks a session into a 403 on every route, the sign-out
+included; the guard logs `[session-guard] the guard failed on a request`
+with the traceback and the request is served. A row that cannot be
+written (`could not log`, `could not record the re-entry`) is logged the
+same way. A close whose row cannot be written still closes (`closing it
+anyway`). What a layer does on a close (`_session_guard_closed`) failing
+keeps the row (`what a close does beyond this database failed`).
+
+New code serving before its update has run has no `cloud_session_closure`
+table: every pin and log fails and is logged, and the requests are served;
+only a close still closes. Updating the module ends it.
 
 ## The log
 
@@ -188,6 +221,15 @@ SELECT signal, count(*) FROM cloud_session_closure
 - **Odoo 18** has the same trace and the same hook, but no rotation of
   the session id every 3 hours: an active session there has no other
   absolute limit than this inactivity.
+- **Cloudflare's ranges out of date.** The proof of the country is the
+  proof of the address (`x_real_ip_trusted`, [RB-25](RB-25-visitor-address-behind-a-cdn.md)).
+  A request through an edge whose range is not listed counts as one that
+  skipped the CDN: on a session with a country it closes, with
+  `seen_value` `direct`. The anti-loop stops it after three closes per
+  user. Symptom: closes `→ direct` from users who signed in again at once.
+  Remedy: set `incubacloud.session_guard.country` to `log`, then bring the
+  ranges up to date (managed hosts get them daily; the master's are in its
+  production configuration).
 
 ## Rollback
 
