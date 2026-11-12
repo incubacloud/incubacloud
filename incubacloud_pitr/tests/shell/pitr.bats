@@ -63,6 +63,19 @@ teardown() {
     rm -rf "$TMP"
 }
 
+# Wait for a line of $CALLS that matches the grep pattern $1: restore-start
+# launches setsid in the background, and the stub writes its line a moment
+# after the command returns. Polls up to 50 times, 0.1 s apart; returns 0 at
+# the first match and 1 when none shows up.
+wait_call() {
+    local i
+    for i in $(seq 1 50); do
+        grep -q "$1" "$CALLS" && return 0
+        sleep 0.1
+    done
+    return 1
+}
+
 # A process standing for a restore's: it notes each TERM in $TMP/term and
 # goes on, as restore-run does once its database is promoted. Its pid is
 # in .walg/restore/pid, the lock names job $1.
@@ -270,7 +283,7 @@ STUB
     [ "$status" -eq 0 ]
     [[ "$output" == *"IC_PITR_RESTORE_STARTED 9"* ]]
     [ "$(cat "$DIR/.walg/restore/lock")" = "9" ]
-    grep -q "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 " "$CALLS"
+    wait_call "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 "
     [ -f "$DIR/.walg/restore/bin/lib/common.sh" ]
 }
 
@@ -368,7 +381,7 @@ STUB
     run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
         '2026-10-18 22:30:48+00' 2026-10-18
     [ "$status" -eq 0 ]
-    grep -q "setsid" "$CALLS"
+    wait_call "setsid"
 }
 
 @test "a cancel of a restore that ended reports how it ended" {
@@ -549,7 +562,7 @@ call_line() { grep -n -- "$1" "$CALLS" | head -n 1 | cut -d: -f1; }
     run bash "$SCRIPT" restore-start "$DIR" odoo 9 7698 base_000000010000000000000005 1 \
         '2026-10-18 22:30:48+00' 2026-10-18 prod 1
     [ "$status" -eq 0 ]
-    grep -q "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18 prod 1$" "$CALLS"
+    wait_call "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18 prod 1$"
     [ -x "$DIR/.walg/restore/bin/cron_guard.sh" ]
 }
 
@@ -576,7 +589,7 @@ call_line() { grep -n -- "$1" "$CALLS" | head -n 1 | cut -d: -f1; }
         '2026-10-18 22:30:48+00' 2026-10-18
     [ "$status" -eq 0 ]
     [[ "$output" == *"IC_PITR_RESTORE_STARTED 9"* ]]
-    grep -q "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18  0$" "$CALLS"
+    wait_call "setsid nohup bash .walg/restore/bin/pitr.sh restore-run $DIR odoo 9 .* 2026-10-18  0$"
     [ ! -e "$DIR/.walg/restore/bin/cron_guard.sh" ]
 }
 

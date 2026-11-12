@@ -91,6 +91,11 @@ DIR_PREFIX=".incubacloud-detached-"
 #: What the orders run besides coreutils: without one of them a step could
 #: start and never be followed or stopped, so ``start`` refuses (79).
 REQUIRED_TOOLS="flock setsid timeout pgrep pkill"
+#: The ``timeout`` that runs a step. The uutils one of Ubuntu 26.04 answers a
+#: TERM from outside with 124 whatever the child did, and the status of a
+#: stopped step's trap would be lost; the GNU one, kept there as
+#: ``gnutimeout``, passes the child's status on.
+TIMEOUT="$(command -v gnutimeout || printf timeout)"
 
 say() {
     printf '[incubacloud] %s\n' "$*"
@@ -325,7 +330,7 @@ cmd_run() {
         rc=0
         # In this subshell only: what the step records below stays 077.
         umask "$mask"
-        timeout --kill-after="$KILL_AFTER_S" "$cap" \
+        "$TIMEOUT" --kill-after="$KILL_AFTER_S" "$cap" \
             bash -c "$(cat "$dir/cmd")" 2>>"$dir/log" || rc=$?
         umask 077
         printf '%s\n' "$rc" >"$dir/rc"
