@@ -23,7 +23,7 @@ its request before the limit: it runs for ``attempt_budget_seconds``, a
 share of ``limit_time_real``, and the job goes on in a later attempt. The
 limit then needs to fit the steps that still run inside the request, not
 a whole build. Every long step of a job runs apart since phase 3
-(1.0.225), so the warning asks for ``MIN_LIMIT_TIME_REAL``, Odoo.sh's
+(1.0.226), so the warning asks for ``MIN_LIMIT_TIME_REAL``, Odoo.sh's
 900 s. What still runs inside the request, and so has what is left of it,
 is in ``docs/architecture.md`` («Steps run apart on the server»).
 """

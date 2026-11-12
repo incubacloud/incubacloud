@@ -6,56 +6,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.225] — 2026-11-11
+## [1.0.226] — 2026-11-12
 
-Jobs that outlive the request that runs them, as on Odoo.sh, where a
-request is cut at 900 s: every step that may run long goes on on its
-server apart from the request (the download of the repositories, the pull
-and build of the image, the initialization of a new database, the boot
-test, the module updates, the restores' downloads and loads, the copies
-and downloads and their packaging, Full Setup's install of the host's
-tools, and continuous recovery's base copies and its wait for a restore),
-and the job comes back for it; every other step runs as before, and the
-startup warning now accepts Odoo.sh's 900 s. The relays through the panel
-by SFTP and the playbooks still run within the request. A step left
-running past its job's point of no return holds the instance's queue
-until it ends. Settings is a menu of sections, one page each, with a
-search over every setting (issue #3). A restore to a moment updates its
-database to the code the instance runs, as every other restore does since
-1.0.224; a stopped update of a preview no longer lets a push start a second
-one beside it; the rebuild of a neutralized staging or preview neutralizes
-it again after its update; and the web terminals, a host's shell and an
-instance's, keep what is typed when the proxy in front of the panel answers
-429, make about half the requests, and take the page's size.
-`incubacloud_pitr` 1.0.13 comes with it.
+Every step of a job that may run long now goes on on its server apart from
+the request, as the rebuild's image build did since 1.0.225 (the download
+of the repositories, the pull and build of the image, the initialization of
+a new database, the boot test, the module updates, the restores' downloads
+and loads, the copies and downloads and their packaging, Full Setup's
+install of the host's tools, and continuous recovery's base copies and its
+wait for a restore), and the job comes back for it; every other step runs
+as before, and the startup warning now accepts Odoo.sh's 900 s. The relays
+through the panel by SFTP and the playbooks still run within the request.
+A step left running past its job's point of no return holds the instance's
+queue until it ends. A step run apart keeps its exit status when stopped on
+a server whose `timeout` is uutils', as on Ubuntu 26.04.
+`incubacloud_pitr` 1.0.14 comes with it.
 
-The update adds one empty table, `cloud_job_checkpoint`, and six empty
-columns, `cloud_job.channel_wait_since`, `slot_wait_s`, `slot_load`,
-`slot_channel` and `return_wait_s`, and `cloud_instance.pr_update_cut_off`,
-and needs no data migration. It changes
-the terminal pages' templates and adds one, `terminal_client_script`. The
-hosts need nothing: the scripts travel with each job, and the proxy's limit
-is unchanged.
+The update adds five empty columns, `cloud_job.slot_wait_s`, `slot_load`,
+`slot_channel` and `return_wait_s`, and
+`cloud_job_checkpoint.holds_queue_since`, and needs no data migration. The
+hosts need nothing: the scripts travel with each job.
 
 ### Added
 
 - **A rebuild's long steps run apart on its server.** «Fetch the
-  repositories», «Rebuild Odoo image», «Test new image (safe boot check)»
-  and «Update changed modules» are marked `detached`, with the options
-  they had, in core's rebuild and in every rebuild that inherits it (a
-  plan change skips them all, and keeps no checkpoint). A rebuild whose
-  step outlasts the attempt's budget leaves it to the server and comes
-  back for it. Cancelled before its update, the step is stopped and the
-  rebuild closes as it does today, leaving the instance on its previous
-  image; from the update on, a stop is refused as before, and an attempt
-  that takes the update up after a park follows it without deciding the
-  stop again. An update the instance's crons hold back (75) starts the
-  rebuild over five minutes later, as before, its checkpoint and step
-  directory removed. «Ensure incubacloud_connect» stays attached: a
-  rebuild's database nearly always has the module. What an
-  executor's hooks read that is set before the steps (`_carried`) now adds
-  up over its classes, so a mixin declares its own without hiding its
-  bases'.
+  repositories», «Test new image (safe boot check)» and «Update changed
+  modules» are marked `detached` besides «Rebuild Odoo image», with the
+  options they had, in core's rebuild and in every rebuild that inherits
+  it (a plan change skips them all, and keeps no checkpoint). A rebuild
+  whose step outlasts the attempt's budget leaves it to the server and
+  comes back for it. Cancelled before its update, the step is stopped and
+  the rebuild closes as it does today, leaving the instance on its
+  previous image; from the update on, a stop is refused as before, and an
+  attempt that takes the update up after a park follows it without
+  deciding the stop again. An update the instance's crons hold back (75)
+  starts the rebuild over five minutes later, as before, its checkpoint
+  and step directory removed. «Ensure incubacloud_connect» stays attached:
+  a rebuild's database nearly always has the module.
 - **A deploy's long steps run apart on its server.** «Fetch the
   repositories», «Pull images», «Build Odoo image», «Initialize database»
   and «Initialize module checksums» are marked `detached`, with the
@@ -97,15 +84,15 @@ is unchanged.
   runs apart in a scope of its own, beside a rebuild or a restore of the
   same instance, and so does the switch on's «First base copy», in the
   same scope, so two copies of an instance never run at once; and so
-  does «Wait for the restore», the job parking
-  while the restore runs on the host; a stop of the restore waits on the
-  host within what a step in the request may last (240 s with a limit of
-  900, 300 as before with 3600), the next job following one not undone
-  by then. A restore taken up after a park
-  keeps the base copy it chose and whether it only followed one already
-  there, so a stop then hands the restore to the next job instead of
-  asking the host again. What each reads last, the copies' window and
-  the restore's result, comes in the tail of the output the step keeps.
+  does «Wait for the restore», the job parking while the restore runs on
+  the host; a stop of the restore waits on the host within what a step in
+  the request may last (240 s with a limit of 900, 300 as before with
+  3600), the next job following one not undone by then. A restore taken
+  up after a park keeps the base copy it chose and whether it only
+  followed one already there, so a stop then hands the restore to the
+  next job instead of asking the host again. What each reads last, the
+  copies' window and the restore's result, comes in the tail of the
+  output the step keeps.
 - **Each job keeps how long it waited for a slot.** `slot_wait_s`, the
   seconds the channel gate held it back, written as it is handed to
   queue_job; `slot_load` and `slot_channel`, how many of the panel's jobs
@@ -115,6 +102,101 @@ is unchanged.
   Hidden types keep none; a job that did not wait keeps 0. The query that
   reads them by week, and when they call for following jobs without a
   thread each, is in `docs/architecture.md` («The job queue»).
+- **A step left past the point of no return holds its queue.** A step
+  past the job's point of no return is never stopped, as before: it is
+  left to end. Meanwhile the queue of its instance, or of its host, waits
+  for it as for a running job, and the job first in it reads «Queued ·
+  waiting for job #N to end on the server»: the reconciliation looks at
+  the step at every pass, says in the closed job's log the exit status it
+  ended with, and serves the queue; a server that cannot be reached holds
+  it two hours and ten minutes at most. A step found ended, or stopped,
+  lets go of the queue though its row stays for a directory it could not
+  remove. A step before the point of no return never holds it, so the
+  rollback of a move whose new server is gone starts at once; the point is
+  the one the plan had when it ran, so a move's restore does not gain one
+  once the rollback removes the move's marks, and a step on a server the
+  instance does not live on holds nothing. A job whose own stop of such a
+  step fails holds its queue as it ends, a step that never started holds
+  nothing, and a job taken up again drops the hold its row kept.
+
+### Changed
+
+- **The startup warning about `limit_time_real` starts below 900 s**,
+  Odoo.sh's limit, instead of 3600: every step that may outlast 0.4 of
+  900 s runs apart now. What is not a step on the server, the relays
+  through the panel by SFTP (an upload to restore, an archive handed
+  between servers, a copy fetched into the panel) and the playbooks, still
+  runs within the request, and a higher limit gives it more room;
+  `INSTALL.md` keeps 3600 in its example, and it and the READMEs ask for
+  900 at least.
+- **A step run apart runs its command with the umask of the session that
+  starts it**, so what it creates on the server has the modes it would
+  have attached, instead of the 077 the script keeps for its own directory
+  and files, which stay `0700` and `0600`.
+- **A hidden job's step run apart holds a scope of its own on its server**,
+  per type: a base copy of PITR never makes a visible job of the same
+  instance wait for it, nor waits for one.
+- **A job cut by a restart resumes at the step it was in.** A worker that
+  dies is taken up from the checkpoint, the step apart going on on the
+  server and not run again, and the step it ran within the request, if
+  any, running again. `INSTALL.md` says so for a job running during an
+  upgrade, where it said the job ran again from the start; any other job
+  still runs again from the start.
+
+### Fixed
+
+- **A step run apart keeps its exit status when it is stopped on Ubuntu
+  26.04.** There `timeout` is uutils', which answers a TERM from outside
+  with 124 whatever the step's trap exited with, so a stopped step read as
+  cut by its cap. `detached_step.sh` runs the step under GNU's
+  `gnutimeout` where the server has it, and `timeout` elsewhere; so do
+  the calls of `deploy.sh` and `lib/common.sh` that tell a call out of
+  time from a stopped one (the git helper's container, the query of the
+  heads and the helper's pull).
+- **A close reads a long log to its end.** A close reads the step's log
+  for up to 30 s, where it read it eight times, before it takes the step
+  for running, and a step found ended when the job is closed is said in
+  its log with its exit status, which the closing hook gets as the step's
+  result instead of a step that did not end.
+- **A row a closed job kept between two steps no longer holds its host's
+  build lock.** Only a row whose step apart was left started there holds
+  it, not one kept for a directory it could not remove.
+
+---
+
+## [1.0.225] — 2026-11-11
+
+Jobs that outlive the request that runs them, as on Odoo.sh, where a
+request is cut at 900 s: one step runs apart from its request so far, the
+image build of a rebuild, before its point of no return, and every other
+step runs as before. Settings is a menu of sections, one page each, with a
+search over every setting (issue #3). A restore to a moment updates its
+database to the code the instance runs, as every other restore does since
+1.0.224; a stopped update of a preview no longer lets a push start a second
+one beside it; the rebuild of a neutralized staging or preview neutralizes
+it again after its update; and the web terminals, a host's shell and an
+instance's, keep what is typed when the proxy in front of the panel answers
+429, make about half the requests, and take the page's size.
+`incubacloud_pitr` 1.0.13 comes with it.
+
+The update adds one empty table, `cloud_job_checkpoint`, and two empty
+columns, `cloud_job.channel_wait_since` and
+`cloud_instance.pr_update_cut_off`, and needs no data migration. It changes
+the terminal pages' templates and adds one, `terminal_client_script`. The
+hosts need nothing: the scripts travel with each job, and the proxy's limit
+is unchanged.
+
+### Added
+
+- **A rebuild's image build runs apart on its server.** «Rebuild Odoo
+  image» is the first step marked `detached`, in core's rebuild and in
+  every rebuild that inherits it. A rebuild whose build outlasts the
+  attempt's budget leaves the build to the server and comes back for it;
+  cancelled meanwhile, the build is stopped and the rebuild closes as it
+  does today, leaving the instance on its previous image. What an
+  executor's hooks read that is set before the steps (`_carried`) now adds
+  up over its classes, so a mixin declares its own without hiding its
+  bases'.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the
@@ -127,16 +209,10 @@ is unchanged.
   `detached` runs in a session of its own (`scripts/detached_step.sh`),
   capped on the server by its timeout, and is read every second: its lines
   reach the job log as an attached step's do, and its exit status and
-  stdout (the last 256 KiB) are what the job gets. Its command runs with
-  the umask of the session that starts it, so what it creates on the
-  server has the modes it would have attached; the step's own directory
-  and files stay `0700` and `0600`. Cancelled, it is sent
+  stdout (the last 256 KiB) are what the job gets. Cancelled, it is sent
   TERM, given 60 s for its trap and killed; its last lines still reach the
   log. One step at a time per instance, or per host: a job that finds
-  another job's step still running there waits 30 s for it. A hidden
-  job's step (a base copy of PITR) holds a scope of its own, and never
-  makes a visible job of the same instance wait for it, nor waits for
-  one. A
+  another job's step still running there waits 30 s for it. A
   server that kills an account's processes when its SSH session ends
   (logind's `KillUserProcesses`), or that lacks `flock`, `setsid`,
   `timeout`, `pgrep` or `pkill`, runs the step attached, as before. The
@@ -150,14 +226,10 @@ is unchanged.
   attempt. The next attempt goes on from there with the plan, the
   working directory and the results of the first: no step runs twice, no
   line of the log is lost or repeated. A worker that dies is taken up the
-  same way, except that the step it ran within the request, if any, runs
-  again; a step apart goes on on the server and is not run again.
-  `INSTALL.md` says so for a job running during an upgrade, where it said
-  the job ran again from the start. A server that cannot be reached while
-  the step runs there makes the job wait 30 s and try again, for up to 10
-  minutes; past them the job fails and the step is left for later. The
-  same holds between two steps, for an attempt that comes back and cannot
-  connect. A step's
+  same way. A server that cannot be reached while the step runs there
+  makes the job wait 30 s and try again, for up to 10 minutes; past them
+  the job fails and the step is left for later. The same holds between
+  two steps, for an attempt that comes back and cannot connect. A step's
   directory goes only once its result is recorded, so an attempt that
   dies in between finds the step's end there. The cloud job stays
   running all along.
@@ -167,9 +239,7 @@ is unchanged.
   and another build or teardown of the host waits 30 s while it is there,
   its deferral naming the job that holds the host.
   The parked job takes the lock again when it comes back, and waits 5 s
-  if another one holds it at that instant. A row its job kept once closed
-  holds the host only while a step apart of it was left started there,
-  not one kept between two steps (a directory it could not remove).
+  if another one holds it at that instant.
 - **A parked job is stopped and closed by itself or by the
   reconciliation.** Cancelled while parked, it comes back within seconds,
   stops its step (TERM, 60 s for its trap, KILL), removes its working
@@ -184,25 +254,7 @@ is unchanged.
   given up an hour past the step's cap, counted from the job's close; its
   log says so the first time and when it gives up. A step past the job's
   point of no return is never stopped: it is left to end and removed
-  afterwards, as is a step's directory a process of it kept. Meanwhile
-  the queue of its instance, or of its host, waits for it as for a
-  running job, and the job first in it reads «Queued · waiting for job #N
-  to end on the server»: the reconciliation looks at the step at every
-  pass, says in the closed job's log the exit status it ended with, and
-  serves the queue; a server that cannot be reached holds it two hours
-  and ten minutes at most. A step found ended, or stopped, lets go of the
-  queue though its row stays for a directory it could not remove, and a
-  close reads a long log to its end, for up to 30 s, before it takes the
-  step for running. A step before the point of no return never
-  holds it, so the rollback of a move whose new server is gone starts at
-  once; the point is the one the plan had when it ran, so a move's
-  restore does not gain one once the rollback removes the move's marks,
-  and a step on a server the instance does not live on holds nothing.
-  A job whose own stop of such a step fails holds its queue as it ends,
-  a step that never started holds nothing, and a job taken up again
-  drops the hold its row kept. A step found ended when the job is closed is said in its log with
-  its exit status, which the closing hook gets as the step's result
-  instead of a step that did not end. A job run
+  afterwards, as is a step's directory a process of it kept. A job run
   again over a checkpoint it does not take up — kept by the hook that
   closed it, or written by another queue job — stops and removes what
   that checkpoint says first, and waits 30 s while it cannot.
@@ -254,14 +306,11 @@ is unchanged.
   workers were counted before (30, 54, 102, 198). An instance's default 2
   workers still serve about 12 users at once: its configuration sets
   `max_cron_threads` apart, so both workers answer people.
-- **The startup warning about `limit_time_real` starts below 900 s**,
-  Odoo.sh's limit, instead of 3600, and says the attempt's budget and what
-  a step in the request has left: every step that may outlast 0.4 of 900 s
-  runs apart now. What is not a step on the server, the relays through the
-  panel by SFTP (an upload to restore, an archive handed between servers, a
-  copy fetched into the panel) and the playbooks, still runs within the
-  request, and a higher limit gives it more room; `INSTALL.md` keeps 3600 in
-  its example. The log says the budget at every start. It also says
+- **The startup warning about `limit_time_real` says the attempt's
+  budget** and what a step in the request has left. It still starts below
+  3600 s: only the rebuild's image build runs apart so far, and with 900 s
+  a deploy's database initialisation or a long restore can outlast the
+  request and die. The log says the budget at every start. It also says
   when `root.user` has no capacity of its own among queue_job's channels,
   and which channels other modules' jobs ran in over the last 30 days: a
   parked job may wait for those. These two are only logged, never part of
