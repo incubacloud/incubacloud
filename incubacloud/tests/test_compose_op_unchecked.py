@@ -93,7 +93,14 @@ class _UncheckedCase(TransactionCase):
         :param dict exits: ``{label: exit_status}`` for the non-zero steps
         :return: the error the dispatch raised, or None
         """
-        commands = list(ex.get_commands())
+        # Attached, every one: what is checked is how an exit status is
+        # read, not where a step marked ``detached`` runs.
+        commands = [
+            (step[0], step[1], {
+                key: value for key, value in step[2].items() if key != "detached"
+            }) if len(step) == 3 else step
+            for step in ex.get_commands()
+        ]
         labels = {step[0] for step in commands}
         self.assertFalse(
             set(exits) - labels, f"no such step; the steps are {sorted(labels)}",

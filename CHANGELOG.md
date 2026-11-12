@@ -55,6 +55,21 @@ is unchanged.
   before, gets 900 s. A move's deploy, which initializes nothing, keeps
   the others. A deploy stopped during one of them, parked or not, stops
   the step and its instance goes back to draft, as it does today.
+- **The restores run their long steps apart on their server.** A restore
+  of an archive runs apart its download from a link, the check of the
+  archive, the load of the database, the update of its modules and the
+  install of `incubacloud_connect`, which boots an Odoo when the module is
+  missing; a restore from the backup store runs apart duplicity's restore,
+  the import of the SQL and the update. The load, the import and the
+  update are past the point of no return: a job closed while one runs
+  leaves it to end, and its queue waits for it. A move's restore has no
+  such point, so its load is stopped like any other step; the job decides
+  that once and keeps it, so the move's rollback, which clears the move's
+  target, does not make a later close read it otherwise, and it gives up on
+  a server it cannot reach after 120 s instead of 600, as the instance is
+  down meanwhile. The relays through the panel (an upload, an archive of
+  another job, one handed over from another server) still run within the
+  request, before the steps.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the

@@ -104,6 +104,18 @@ _LABEL_RESTORE_DB = "Restore database"
 #: The step that neutralizes a copy again after its modules were updated.
 LABEL_NEUTRALIZE_AGAIN = "Neutralize again after the update"
 
+#: How long a move's restore waits for its server once it cannot reach it
+#: while a step runs there, in seconds, instead of
+#: ``DETACHED_CONTACT_GRACE_S`` (12-nov-2026, Fable's review of phase 3):
+#: the instance is down on its old server while it waits, and the move's
+#: rollback starts only once it failed. Two minutes still ride out a
+#: short cut of the network.
+MOVE_CONTACT_GRACE_S = 120
+
+#: What every step marked ``detached`` of a restore runs with: apart on the
+#: server, the run stopped when it fails.
+_APART = {"stop_on_failure": True, "detached": True}
+
 
 def rsync_path(instance_id):
     """Return where an ``rsync`` restore of an instance takes its archive.
@@ -241,9 +253,15 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     #: ``before_execute`` measured free on the host (``restore_space``).
     _download_limit = None
 
+    #: Whether the archive is loaded as moved (``_as_move``), decided once
+    #: per job, or None before that.
+    _moved = None
+
     #: Set before the steps and read by the end hooks: a job that resumes
     #: from its checkpoint takes them from the attempt that set them.
-    _carried = ("_download_limit", "_writes_secret_key")
+    #: ``_moved`` too, for whoever closes the job later: a move's rollback
+    #: clears the target ``_loads_as_move`` reads.
+    _carried = ("_download_limit", "_writes_secret_key", "_moved")
 
     @property
     def _no_return_from(self):
@@ -256,10 +274,35 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
         :rtype: str | None
         """
-        inst = self._inst()
-        if self._loads_as_move(inst, self.job.payload or {}):
+        if self._as_move():
             return None
         return _LABEL_RESTORE_DB
+
+    def _as_move(self):
+        """Return whether this job loads its archive as moved, decided once.
+
+        ``_loads_as_move`` the first time it is asked; then what it said,
+        which the checkpoint carries (``_moved``): the attempt that resumes
+        the job and whoever closes it later decide as the job ran, even
+        once a rollback of the move cleared its target.
+
+        :rtype: bool
+        """
+        if self._moved is None:
+            self._moved = self._loads_as_move(self._inst(), self.job.payload or {})
+        return self._moved
+
+    def _contact_grace_s(self):
+        """Return how long the job waits for the server of its running step.
+
+        ``MOVE_CONTACT_GRACE_S`` for a move's restore, whose instance is
+        down meanwhile; the default otherwise.
+
+        :rtype: int
+        """
+        if self._as_move():
+            return MOVE_CONTACT_GRACE_S
+        return super()._contact_grace_s()
 
     def _inst(self):
         return self.job.instance_id
@@ -667,11 +710,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         command = (
             f"{shlex.join(args)}; rc=$?; rm -f {shlex.quote(config)}; exit $rc"
         )
-        return (
-            "Download the archive",
-            command,
-            {"stop_on_failure": True},
-        )
+        # Apart on the server: an archive of several GB downloads past the
+        # time a request is given. Its command names the config file, never
+        # the link nor its credential (12-nov-2026).
+        return ("Download the archive", command, _APART.copy())
 
     def _grant(self):
         """Return the upload grant this job consumes, if it names one."""
@@ -968,17 +1010,15 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if payload.get('share_secret_key'):
             await self._take_source_secret_key(transport)
         inst = self._inst()
-        if self._updates_modules(inst, self._load_as(inst, payload)):
+        if self._updates_modules(inst, self._load_as()):
             self._say_update_target(inst)
 
-    def _load_as(self, inst, payload):
+    def _load_as(self):
         """Return how the archive is loaded: ``"move"`` or ``"copy"``.
 
-        :param inst: the instance restored
-        :param dict payload: the job's payload
         :rtype: str
         """
-        return "move" if self._loads_as_move(inst, payload) else "copy"
+        return "move" if self._as_move() else "copy"
 
     async def _check_upload_digest(self, transport, local, expected):
         """Refuse an archive other than the one whose digest was shown.
@@ -1050,16 +1090,20 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         dbname = inst.postgres_dbname or 'prod'
         payload = self.job.payload or {}
         neutralize = "1" if payload.get('neutralize') else "0"
-        load_as = self._load_as(inst, payload)
+        load_as = self._load_as()
 
         cmds = []
         if payload.get('mode') == 'from_url':
             cmds.append(self._download_command(remote))
+        # Apart on the server (12-nov-2026): the check of the archive, its
+        # load, the update and the connector's install, each of which may
+        # outlast a request with a large archive or a database from
+        # elsewhere. The other steps take seconds.
         cmds += [
             (
                 "Verify backup file",
                 self.run_script("restore.sh", ["verify-file", d, remote]),
-                {"stop_on_failure": True},
+                _APART.copy(),
             ),
             (
                 "Stop Odoo service",
@@ -1073,7 +1117,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     ["restore-db", d, dbname, remote, neutralize, load_as],
                     env=script_env(inst.odoo_version),
                 ),
-                {"stop_on_failure": True},
+                _APART.copy(),
             ),
             # Right after the restore, before anything writes to the
             # database (the base URL, the connector) and before Odoo
@@ -1150,6 +1194,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                         dbname, headless_flag(inst.odoo_version),
                     ],
                 ),
+                # Boots an Odoo on the database when the module is
+                # missing, minutes on one from elsewhere (Fable's review,
+                # 12-nov-2026); its result is not read.
+                {"detached": True},
             ),
             (
                 "Start Odoo service",

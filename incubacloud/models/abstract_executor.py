@@ -2731,10 +2731,10 @@ class AbstractExecutor(ABC):
         """Park a job cut off the server of its running step, or let it fail.
 
         The step goes on there, and the job connects again in
-        ``DETACHED_RECONNECT_GAP_S``. Once ``DETACHED_CONTACT_GRACE_S``
-        have gone by since contact was lost, the job fails instead and
-        leaves its checkpoint, and the step, to the reconciliation
-        (``_detached_left_alive``).
+        ``DETACHED_RECONNECT_GAP_S``. Once the seconds of
+        ``_contact_grace_s`` have gone by since contact was lost, the job
+        fails instead and leaves its checkpoint, and the step, to the
+        reconciliation (``_detached_left_alive``).
 
         A resumed attempt that could not connect parks at the step it was
         to go on from, whether or not a step runs on the server.
@@ -2752,7 +2752,8 @@ class AbstractExecutor(ABC):
         label = plan[index][0] if index < len(plan) else "the step"
         running = self._on_server_index is not None
         where = f"while '{label}' runs there" if running else f"before '{label}'"
-        if (now - since).total_seconds() >= DETACHED_CONTACT_GRACE_S:
+        grace = self._contact_grace_s()
+        if (now - since).total_seconds() >= grace:
             self._detached_left_alive = True
             if running and self._past_no_return(index):
                 # It may still run, past the point of no return: the next
@@ -2761,7 +2762,7 @@ class AbstractExecutor(ABC):
             left = "the step is" if running else "what the job left there is"
             self._sys(
                 f"✗ The server could not be reached for"
-                f" {DETACHED_CONTACT_GRACE_S} s {where}: the job fails, and"
+                f" {grace} s {where}: the job fails, and"
                 f" {left} left to the reconciliation."
             )
             return None
@@ -2770,6 +2771,17 @@ class AbstractExecutor(ABC):
             f" ({type(exc).__name__}): the panel connects again in"
             f" {DETACHED_RECONNECT_GAP_S} s."
         ), seconds=DETACHED_RECONNECT_GAP_S, vals={"lost_contact_since": since})
+
+    def _contact_grace_s(self):
+        """Return how long the job waits for the server of its running step.
+
+        ``DETACHED_CONTACT_GRACE_S``; an executor whose wait keeps
+        something down returns less (a move's restore).
+
+        :return: seconds since contact was lost after which the job fails
+        :rtype: int
+        """
+        return DETACHED_CONTACT_GRACE_S
 
     def _detached_scope(self):
         """Return what a step apart of this job holds on its server.
@@ -3681,6 +3693,9 @@ class AbstractExecutor(ABC):
         cron, within the time limit of one command
         (``DEFAULT_SSH_COMMAND_TIMEOUT``). It stops the job when it
         fails: Odoo is not started over a database its code cannot read.
+        It runs apart on the server (``detached``, 12-nov-2026): on a
+        database from elsewhere it may update every module, past the
+        time a request is given.
 
         :param str d: the instance's directory on its host
         :param inst: the ``cloud.instance`` whose database was restored
@@ -3698,7 +3713,7 @@ class AbstractExecutor(ABC):
                     inst.postgres_username or "odoo",
                 ],
             ),
-            {"stop_on_failure": True},
+            {"stop_on_failure": True, "detached": True},
         )
 
     def _say_update_target(self, inst):
