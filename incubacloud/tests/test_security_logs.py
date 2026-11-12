@@ -175,9 +175,9 @@ class TestTheRenderedCollector(TransactionCase):
 
     def test_a_server_name_with_spaces_and_quotes_is_one_lua_string(self):
         panel = playbook.fluent_bit_files(
-            ic_host_name='Cloud 1 "año"', ic_panel_key_fingerprints=[],
+            ic_host_name='Server 1 "año"', ic_panel_key_fingerprints=[],
         )["panel.lua"]
-        self.assertIn('host = "Cloud 1 \\"año\\""', panel)
+        self.assertIn('host = "Server 1 \\"año\\""', panel)
         self.assertIn('uid = "1000"', panel)
 
     def test_vmagent_scrapes_the_counters_only_with_fluent_bit(self):
@@ -242,11 +242,11 @@ class TestTheRenderedCollector(TransactionCase):
 
 
 class CorePermissionMixin:
-    """Core's own answers to the permission's hooks, with any layer installed.
+    """Core's own answers to the permission's hooks, whatever extends the panel.
 
-    The tenant's module withholds the security logs until the manager
-    allows them; core's suite runs with it installed too (the saas CI's
-    ``core-with-tenant``), and these tests are about core's switch.
+    A module that extends the panel may withhold the security logs until
+    whoever manages it allows them, and core's suite also runs with such
+    a module installed; these tests are about core's switch.
     """
 
     def setUp(self):
