@@ -222,7 +222,7 @@ channels = root:3,root.user:2,root.bg:1
 | `server_wide_modules` | Odoo's default plus `queue_job` | `queue_job` here is what starts the job runner. The setting replaces Odoo's default list (`base,web`) instead of adding to it. |
 | `workers` | More than the `root` channel's capacity | Each running job holds a worker for its whole run. With `root:3`, three jobs at once hold three workers; `workers = 5` leaves two for the people using the panel. Equal numbers freeze the panel while jobs run. |
 | `[queue_job] channels` | `root:3,root.user:2,root.bg:1` | How many jobs run at once, in all and of each kind: [Job channels](#job-channels). |
-| `limit_time_real` | `3600`, at least `900` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried from the start, and after its third death it fails for good (`JobFoundDead`). The panel warns below 900, Odoo.sh's limit. The steps that may run long (downloading the repositories, building the image, initializing, loading or updating a database, the copies and their packaging, a server's tools) go on on the server when the job's attempt has run for 0.6 of the limit, and the job comes back for them; every other step must end within 0.4 of the limit. What is not a step on the server still runs within the request: the relays through the panel by SFTP (a backup uploaded to restore, an archive handed from one server to another, a copy or a download fetched into the panel) and the playbooks (a host's hardening, maintenance and observability). A higher limit gives them more room, which is why we use 3600. |
+| `limit_time_real` | `3600`, at least `900` | Odoo's default, 120 seconds, kills any job longer than two minutes. The job is retried, from the start or, if it runs steps apart on its server, from the step it was in ([below](#what-happens-to-a-job-running-during-the-restart)), and after its third death it fails for good (`JobFoundDead`). The panel warns below 900, Odoo.sh's limit. The steps that may run long (downloading the repositories, building the image, initializing, loading or updating a database, the copies and their packaging, a server's tools) go on on the server when the job's attempt has run for 0.6 of the limit, and the job comes back for them; every other step must end within 0.4 of the limit. What is not a step on the server still runs within the request: the relays through the panel by SFTP (a backup uploaded to restore, an archive handed from one server to another, a copy or a download fetched into the panel) and the playbooks (a host's hardening, maintenance and observability). A higher limit gives them more room, which is why we use 3600. |
 | `limit_time_cpu` | `600` | Odoo's default is 60 seconds of CPU per request, enforced on each worker. Jobs mostly wait on SSH; 600 is a margin for the long ones, not a measured need. |
 | `limit_memory_soft`, `limit_memory_hard` | Odoo's defaults, with workers | They are per worker, and a panel worker stays far below them. With `workers = 0` they mean something else: [below](#with-workers--0). |
 | `limit_time_real_cron` | Default, or `0` | The panel's scheduled checks visit every host in one run ([RB-18](docs/runbooks/RB-18-tune-host-edge-protection.md)). Its default follows `limit_time_real`, which is enough at 3600; `0` removes the limit. |
@@ -417,12 +417,16 @@ under it. List in `-u` every IncubaCloud module you installed.
 
 The restart ends the worker that runs it, and with it the job's SSH session.
 
-1. `queue_job` sees the job's worker gone and puts the job back in the queue:
-   once the panel is back, **the job runs again from the start**. A job whose
-   worker dies a third time fails for good (`JobFoundDead`). A job that runs
-   a step apart on its server (a rebuild building its image) is the
-   exception: the step goes on through the restart, and the job **resumes**
-   where it was, with no step done twice.
+1. `queue_job` sees the job's worker gone and puts the job back in the queue,
+   and it runs again once the panel is back. A job whose worker dies a third
+   time fails for good (`JobFoundDead`).
+   - A job that runs steps apart on its server (deploys, rebuilds, restores,
+     backups and downloads, Full Setup, and with `incubacloud_pitr` its base
+     copies and restores) **resumes at the step it was in**. A step running
+     apart goes on through the restart and is not run again: the job follows
+     it or takes its result. The step that was running within the request
+     when the worker died runs again.
+   - Any other job **runs again from the start**.
 2. Every 5 minutes the panel closes the jobs a lost worker left behind (still
    shown running while `queue_job` has failed or removed them) and undoes what
    they leave: a deploy that never finished puts its instance back to draft
@@ -430,9 +434,9 @@ The restart ends the worker that runs it, and with it the job's SSH session.
 3. Jobs waiting in an instance's or a host's queue keep their place; a sweep
    every 2 minutes starts any queue left waiting with nothing running.
 
-Running a step twice is not always harmless (a restore half way through starts
-over), which is why step 1 comes first. How jobs are queued, run and recovered:
-[architecture](docs/architecture.md#the-job-queue).
+Running a step again is not always harmless (one cut just as it ended may find
+its own work done and fail), which is why step 1 comes first. How jobs are
+queued, run and recovered: [architecture](docs/architecture.md#the-job-queue).
 
 ---
 
