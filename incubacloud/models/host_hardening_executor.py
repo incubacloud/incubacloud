@@ -134,6 +134,43 @@ def _ssh_rollback_error(facts):
     )
 
 
+def _moved_ssh_port(facts, panel_port):
+    """Return the port sshd was moved to, when the panel does not use it.
+
+    The playbook exports ``ic_ssh_moved_port`` once sshd answers on its new
+    port, before the firewall and everything after it. A run that fails
+    after that leaves sshd there alone, while the panel still has the port
+    it reached the host on.
+
+    :param dict facts: the playbook's exported stats
+    :param int panel_port: the port the panel has for the host
+    :return: the new port; ``0`` when sshd was not moved, or was moved to
+        the port the panel already has
+    :rtype: int
+    """
+    try:
+        moved = int(facts.get("ic_ssh_moved_port") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return moved if moved and moved != panel_port else 0
+
+
+def _ssh_moved_error(moved, panel_port):
+    """Return the job's error when the playbook failed after moving sshd.
+
+    :param int moved: the port sshd listens on now (see
+        :func:`_moved_ssh_port`)
+    :param int panel_port: the port the panel had for the host
+    :rtype: str
+    """
+    return (
+        f"Hardening failed after moving sshd (see the log for the step): "
+        f"sshd already listens on port {moved}, no longer on {panel_port}, "
+        f"so the panel now reaches the host on port {moved}. Re-run the "
+        f"hardening, or reach the server through the provider's console."
+    )
+
+
 def _build_ssh_allowlist(primary_ip, extra_ips):
     """Build the nftables set of source IPs allowed to reach SSH.
 
@@ -328,9 +365,13 @@ class HostHardeningExecutor(AnsibleExecutor):
         facts = self.playbook_facts()
         rc = results.get(self._playbook, {}).get("exit_status", 1)
         if rc != 0:
-            errors.append(_ssh_rollback_error(facts) or (
-                f"Hardening playbook failed (rc={rc}) — see the log."
-            ))
+            panel_port = self._host().port
+            moved = _moved_ssh_port(facts, panel_port)
+            errors.append(
+                _ssh_rollback_error(facts)
+                or (moved and _ssh_moved_error(moved, panel_port))
+                or f"Hardening playbook failed (rc={rc}) — see the log."
+            )
             return errors
         port_listening = str(facts.get("ic_port_listening", "")).lower()
         if port_listening not in ("true", "1"):
@@ -397,8 +438,13 @@ class HostHardeningExecutor(AnsibleExecutor):
 
         The one alert of the failure: it says what failed, which only
         ``job_failed`` used to, and that one is no longer raised beside
-        it (``_failure_alert_code``).
+        it (``_failure_alert_code``). When the playbook failed after
+        moving sshd, the panel takes the new port first
+        (``_adopt_moved_ssh_port``), so a retry reaches the host.
         """
+        moved = _moved_ssh_port(self.playbook_facts(), self._host().port)
+        if moved:
+            await self._adopt_moved_ssh_port(moved)
         for err in errors:
             self._sys(f"✗ {err}")
         detail = " ".join(errors) or "Check the job log for details."
@@ -408,6 +454,29 @@ class HostHardeningExecutor(AnsibleExecutor):
             f"Root SSH was preserved so you can recover; re-run to retry.",
             level="critical",
         )
+
+    async def _adopt_moved_ssh_port(self, port):
+        """Make the panel reach the host on *port*, where sshd now listens.
+
+        For a run that failed after moving sshd: nothing answers on the
+        port the panel had, and a retry that knocked on it would never
+        reach the host; with the new port on the record, the retry also
+        keeps it (``_pick_new_ssh_port`` keeps any but 22). The edge
+        firewall is opened on *port*, as ``on_success`` does before its
+        login proof, the host record takes it, and the trusted key is
+        filed under it. Root and the user are left as they are: the
+        retry's own ``on_success`` settles them.
+
+        :param int port: the port sshd listens on
+        """
+        self._prepare()
+        host = self._host()
+        await self._open_edge_firewall_port(port)
+        host.sudo().with_context(skip_endpoint_change_guard=True).write(
+            {"port": port},
+        )
+        host._relabel_known_hosts_entry()
+        self._sys(f"⚠ sshd listens on port {port} now: the panel uses it.")
 
     # ── Layer-2 edge firewall hook (overridden by a layer) ───────────────────
 
