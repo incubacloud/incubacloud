@@ -9,7 +9,8 @@ one with OAuth2 alike.
 A mail the server did not take is an answer, not a failed job: the job
 ends ``done`` with ``delivered`` false and the server's reply. It fails
 only when the relay could not be asked (no connection to the host, the
-``smtp`` container not answering). Its answer is evidence about the
+``smtp`` container not answering on its port 25 after 45 s, which the job
+says in words). Its answer is evidence about the
 relay, so it updates the relay's state and alert as the health probe
 does, at once: the person who asked has just seen the result.
 """
@@ -35,9 +36,24 @@ _ANSWER_RE = re.compile(r"^IC_RELAY_TEST (\{.*\})\s*$", re.MULTILINE)
 #: Amavis adds a few seconds before. Two minutes covers all of it with
 #: room, and is what a person waits for at most.
 WAIT_SECONDS = 120
-#: The step's own timeout: the wait plus the mail's way in and the
-#: clean-up after it.
-STEP_TIMEOUT = WAIT_SECONDS + 30
+#: How long the script keeps trying while the relay's port 25 does not
+#: answer, in seconds. 45 s (12-nov-2026): just after a rebuild the
+#: relay's container may not accept connections yet, and the QA's first
+#: test mail after one failed 7 s later; docker-mailserver takes up to
+#: about half a minute to start, so 45 s covers it with margin.
+#: ``relay_test.sh`` has the same default.
+CONNECT_WAIT_SECONDS = 45
+#: The most one attempt to connect can take before the script looks at the
+#: clock again: swaks's own timeout on a silent port.
+CONNECT_ATTEMPT_SECONDS = 30
+#: The script's exit status when port 25 never answered (EX_TEMPFAIL).
+EXIT_PORT_SILENT = 75
+#: The step's own timeout: the wait to connect, one last attempt past it,
+#: the wait for the verdict, and the mail's way in and the clean-up after
+#: it (30 s): 225 s.
+STEP_TIMEOUT = (
+    CONNECT_WAIT_SECONDS + CONNECT_ATTEMPT_SECONDS + WAIT_SECONDS + 30
+)
 
 
 class RelayTestMailExecutor(AbstractSSHExecutor):
@@ -78,6 +94,7 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
                     uuid.uuid4().hex,
                     oauth,
                     WAIT_SECONDS,
+                    CONNECT_WAIT_SECONDS,
                 ]),
                 {"timeout": STEP_TIMEOUT},
             ),
@@ -91,6 +108,11 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
         :rtype: list
         """
         step = results.get(_LABEL) or {}
+        if step.get("exit_status") == EXIT_PORT_SILENT:
+            return [
+                "The relay is not accepting mail on its port 25 yet; "
+                "try again in a minute."
+            ]
         if step.get("exit_status") != 0:
             return [f"'{_LABEL}' exited with status {step.get('exit_status')}"]
         if self._parse_answer(step.get("stdout")) is None:

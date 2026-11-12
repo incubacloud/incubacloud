@@ -23,7 +23,13 @@ shift 4
 echo "$*" >> "$CALLS"
 case "$1" in
     ic-relay-oauth) [ -n "${TOKEN_JSON:-}" ] && printf '%s\n' "$TOKEN_JSON"; exit "${TOKEN_RC:-0}" ;;
-    swaks) exit "${SWAKS_RC:-0}" ;;
+    swaks)
+        # The first SWAKS_FAIL_FIRST calls fail with SWAKS_FAIL_RC (a port
+        # that is not open yet); then SWAKS_RC.
+        n=$(($(grep -c '^swaks ' "$CALLS")))
+        if [ "$n" -le "${SWAKS_FAIL_FIRST:-0}" ]; then exit "${SWAKS_FAIL_RC:-2}"; fi
+        exit "${SWAKS_RC:-0}"
+        ;;
     grep)
         shift
         args=()
@@ -143,6 +149,40 @@ run_test() {
     run_test t9 0 5
     [ "$status" -ne 0 ]
     [[ "$output" == *"did not take the test mail"* ]]
+}
+
+@test "a port that opens late is retried until the mail goes in" {
+    log_mail t11 AAAAAA1 BBBBBB2 "relay=h[1.2.3.4]:587, dsn=2.0.0, status=sent (250 ok)"
+    export SWAKS_FAIL_FIRST=3 SWAKS_FAIL_RC=2
+    run_test t11 0 5 30
+    [ "$status" -eq 0 ]
+    [ "${lines[-1]}" = 'IC_RELAY_TEST {"status": "sent", "response": "250 ok", "token": null}' ]
+    [ "$(grep -c '^swaks ' "$CALLS")" -eq 4 ]
+}
+
+@test "a container that is not up yet (docker compose exec fails) is retried too" {
+    log_mail t12 AAAAAA1 BBBBBB2 "relay=h[1.2.3.4]:587, dsn=2.0.0, status=sent (250 ok)"
+    export SWAKS_FAIL_FIRST=1 SWAKS_FAIL_RC=1
+    run_test t12 0 5 30
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^swaks ' "$CALLS")" -eq 2 ]
+}
+
+@test "a port that never answers within the wait fails with a message that says why" {
+    export SWAKS_FAIL_FIRST=1000 SWAKS_FAIL_RC=2
+    run_test t13 0 5 1
+    [ "$status" -eq 75 ]
+    [[ "$output" == *"the relay is not accepting mail on its port 25 yet; try again in a minute"* ]]
+    [ "$(grep -c '^swaks ' "$CALLS")" -ge 1 ]
+    ! grep -q '^postsuper' "$CALLS"
+}
+
+@test "a relay that answered and refused is not retried" {
+    export SWAKS_FAIL_FIRST=1000 SWAKS_FAIL_RC=26
+    run_test t14 0 5 30
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"did not take the test mail"* ]]
+    [ "$(grep -c '^swaks ' "$CALLS")" -eq 1 ]
 }
 
 @test "a tag outside letters, digits and dashes is refused" {

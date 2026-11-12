@@ -28,6 +28,9 @@ from odoo.addons.incubacloud.models.instance_health_executor import (
     InstanceHealthExecutor,
 )
 from odoo.addons.incubacloud.models.relay_test_mail_executor import (
+    CONNECT_ATTEMPT_SECONDS,
+    CONNECT_WAIT_SECONDS,
+    WAIT_SECONDS,
     RelayTestMailExecutor,
 )
 
@@ -475,6 +478,27 @@ class TestRelayTestMail(_RelayCase):
         self.assertTrue(errors)
         _job, errors = self._run(None)
         self.assertEqual(errors, ["The relay's test gave no answer."])
+
+    def test_a_silent_port_25_fails_the_job_in_words(self):
+        """The script's exit 75 reads as what it means, not as a status."""
+        _job, errors = self._run(None, exit_status=75)
+        self.assertEqual(errors, [
+            "The relay is not accepting mail on its port 25 yet; "
+            "try again in a minute."
+        ])
+
+    def test_the_step_timeout_leaves_room_for_the_wait_to_connect(self):
+        """Connecting 45 s, one last attempt, the 120 s verdict and the clean-up."""
+        self.env.user.email = "asker@example.org"
+        job = self._job("relay_test_mail")
+        (_label, command, opts), = RelayTestMailExecutor(
+            job, self.host,
+        ).get_commands()
+        self.assertTrue(command.rstrip().endswith(" 0 120 45"), command)
+        self.assertGreaterEqual(
+            opts["timeout"],
+            CONNECT_WAIT_SECONDS + CONNECT_ATTEMPT_SECONDS + WAIT_SECONDS,
+        )
 
 
 class TestRelayTestMailRequest(_RelayCase):
