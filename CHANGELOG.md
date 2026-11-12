@@ -157,6 +157,23 @@ before updating (`docs/observability-operations.md`, "Undo").
   cron deploys the central again while it is behind, not while a
   deployment waits or runs and with a growing wait after a failure. Not
   with observability off.
+- **A cancelled job reads *Cancelling…* until it has stopped.** Cancel
+  marks the job cancelled at once, before its run has stopped what it
+  left on the server. While its queue job has not ended, or its
+  checkpoint is not closed, the job lists and the history say
+  *Cancelling…* in the colour of a running job, and a job queued behind
+  it names it as what it waits for. `/cloud/get_job_state`, and the MCP's
+  `get_job`, `list_jobs` and `cancel_job`, answer `stopping`. Spanish
+  translation included.
+- **Alert `job_cleanup_given_up`.** When the reconciliation gives up on
+  the server of a cancelled job, an hour past the cap of the step it
+  ran, the server gets a warning, one per job: why the panel gave up
+  (the server did not answer, a step past the point of no return still
+  ran, something could not be stopped or removed), the step that may
+  still run with its directory and the command that stops it
+  (`bash <dir>/ctl.sh stop <dir> 20`) once it had started there, and the
+  paths left to remove. It is raised with the deletion of the
+  checkpoint: an alert that fails lets the row go all the same.
 
 ### Changed
 
@@ -265,6 +282,13 @@ before updating (`docs/observability-operations.md`, "Undo").
   `docker inspect` time out, the database collector counts every
   instance in `ic_pg_scrape_errors` instead of leaving them out as
   stopped.
+- **A job taken up by a pass that did not close it lets its checkpoint
+  go (#66).** The next pass closes the job without cleaning up again,
+  and now also deletes its checkpoint, or closes it for a later pass when
+  the server was not reached; so does a job whose type has no executor
+  any more. Kept unclosed, a job cancelled while parked was taken up at
+  every pass of 5 minutes, its server cleaned again and a line added to
+  its log each time, and it read *Cancelling…* for good.
 - The Spanish texts call the metrics central *la central* throughout.
 
 ### Security
