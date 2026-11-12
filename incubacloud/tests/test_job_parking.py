@@ -969,7 +969,11 @@ class TestAParkedJobIsStopped(_StopCase):
         self.assertEqual(alert.level, "warning")
         self.assertIn(f"#{self.job.id}", alert.message)
         self.assertIn(self.host.name, alert.message)
-        self.assertIn(f"{self.directory}/ctl.sh stop {self.directory} 20", alert.message)
+        self.assertIn("has not answered since", alert.message)
+        self.assertIn(
+            f"`bash {self.directory}/ctl.sh stop {self.directory} 20`",
+            alert.message,
+        )
         self.assertIn(cls.instances[0]._job_dir_path, alert.message)
         self.assertEqual(alert.payload["directory"], self.directory)
         self.assertIn(cls.instances[0]._job_dir_path, alert.payload["paths"])
@@ -979,6 +983,103 @@ class TestAParkedJobIsStopped(_StopCase):
             if line.startswith("The server could not be reached to stop")
         ]
         self.assertEqual(len(unreachable), 2)
+
+    def _due_to_give_up(self):
+        """Cancelled, closed without reaching its server, an hour past the cap.
+
+        :return: the executor class; the next pass gives the row up
+        """
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=TestLostContact._refused):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self._past_the_cap()
+        return cls
+
+    def _past_the_cap(self):
+        """Put the step's start and the job's close three hours back."""
+        self._row().write({
+            "step_started_at": fields.Datetime.now() - timedelta(hours=3),
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '3 hours'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self._retry_due()
+
+    def test_an_alert_that_fails_lets_the_row_go(self):
+        """Kept, the row would be given up again at every pass."""
+        cls = self._due_to_give_up()
+        with patch.object(
+            type(self.env["cloud.alert"]), "raise_alert", autospec=True,
+            side_effect=RuntimeError("the alert broke"),
+        ) as raise_alert, mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(cls, connect=TestLostContact._refused)
+        raise_alert.assert_called_once()
+        self.assertFalse(self._row())
+        self.assertTrue(any("gives up on it" in line for line in self._log()))
+        self.assertFalse(self._given_up_alert())
+        self.assertEqual(self.job.state, "cancelled")
+
+    def test_the_alert_raised_again_is_the_same_one(self):
+        """A pass whose commit failed gives the row up again: one alert."""
+        cls = self._due_to_give_up()
+        row = self._row()
+        executor = cls(job_record=self.job, host_record=self.host)
+        executor._adopt_checkpoint(row)
+        executor._left_alive_why = "unreachable"
+        plan = executor._checkpoint_data["plan"]
+        Job = self.env["cloud.job"]
+        Job._alert_cleanup_given_up(executor, row, plan)
+        Job._alert_cleanup_given_up(executor, row, plan)
+        self.assertEqual(len(self._given_up_alert()), 1)
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertFalse(self._row())
+        self.assertEqual(len(self._given_up_alert()), 1)
+
+    def test_the_alert_says_why_and_names_a_directory_only_once_started(self):
+        """A step left to end past the point of no return is not an
+        unanswered server; cancelled between two steps, no directory."""
+        cls = self._due_to_give_up()
+        row = self._row()
+        executor = cls(job_record=self.job, host_record=self.host)
+        executor._adopt_checkpoint(row)
+        executor._left_alive_why = "past_no_return"
+        plan = executor._checkpoint_data["plan"]
+        self.env["cloud.job"]._alert_cleanup_given_up(executor, row, plan)
+        alert = self._given_up_alert()
+        self.assertIn("past the point of no return", alert.message)
+        self.assertNotIn("has not answered", alert.message)
+        self.assertEqual(alert.payload["directory"], self.directory)
+        alert.unlink()
+        row.write({"detached_started": False})
+        executor._left_alive_why = "not_removed"
+        self.env["cloud.job"]._alert_cleanup_given_up(executor, row, plan)
+        alert = self._given_up_alert()
+        self.assertIn("could not be removed", alert.message)
+        self.assertNotIn("ctl.sh", alert.message)
+        self.assertIsNone(alert.payload["directory"])
+        self.assertIn(cls.instances[0]._job_dir_path, alert.message)
+
+    def test_a_job_not_cancelled_given_up_raises_no_alert(self):
+        """Its failure has its own alert."""
+        cls = self._parked()
+        self._postponed()
+        self.qjob.unlink()
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertEqual(self.job.state, "failed")
+        self.assertTrue(self._row())
+        self._past_the_cap()
+        self._reconcile(cls, connect=TestLostContact._refused)
+        self.assertFalse(self._row())
+        self.assertTrue(any("gives up on it" in line for line in self._log()))
+        self.assertFalse(self._given_up_alert())
 
 
 class TestADeployStoppedWhileParkedInItsInitialization(_StopCase):

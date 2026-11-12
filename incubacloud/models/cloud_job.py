@@ -4181,6 +4181,12 @@ class CloudJob(models.Model):
     def _give_up_if_past_cap(self, executor, row):
         """Delete a row whose server was not reached, once well past its cap.
 
+        The alert is raised on the durable cursor that deletes the row,
+        in a savepoint: an alert that fails lets the row go all the same
+        (kept, it would be given up again at every pass), and a commit
+        that fails keeps both, so the next pass gives the row up again and
+        raises the alert then, once (``raise_alert`` by the job's key).
+
         :param executor: the job's executor, with the row adopted
         :param row: the job's ``cloud.job.checkpoint``
         """
@@ -4201,16 +4207,32 @@ class CloudJob(models.Model):
                 " it. Check the server's /tmp by hand."
             ))
             try:
-                self._alert_cleanup_given_up(executor, row, plan)
+                with executor._durable_env() as env:
+                    try:
+                        with env.cr.savepoint():
+                            self.with_env(env)._alert_cleanup_given_up(
+                                executor, row.with_env(env), plan,
+                            )
+                    except Exception:
+                        # The row goes all the same: kept, it would be
+                        # given up again at every pass.
+                        _logger.exception(
+                            "cloud.job %s: the alert of its given-up"
+                            " clean-up failed", executor.job.id,
+                        )
+                    env.cr.execute(
+                        "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                        (executor.job.id,),
+                    )
             except Exception:
-                # The row goes all the same: kept, it would be given up
-                # again at every pass.
+                # Neither went: the next pass gives the row up again.
                 _logger.exception(
-                    "cloud.job %s: the alert of its given-up clean-up failed",
-                    executor.job.id,
+                    "cloud.job %s: its given-up checkpoint could not be"
+                    " deleted", executor.job.id,
                 )
+                return
             executor._detached_left_alive = False
-            executor._forget_checkpoint()
+            executor._checkpoint = False
 
     @api.model
     def _alert_cleanup_given_up(self, executor, row, plan):
@@ -4226,19 +4248,28 @@ class CloudJob(models.Model):
         A job that ended any other way raises none here: its failure
         already has its own alert.
 
+        The alert says why the panel gave up, as ``_close_on_server`` left
+        it on its last try (``_left_alive_why``), and names the step's
+        directory only when the step had started on the server
+        (``detached_started``): cancelled between two steps, there is none.
+
+        Written with ``self.env``: ``_give_up_if_past_cap`` calls it on the
+        durable cursor that deletes the row.
+
         :param executor: the job's executor, with the row adopted
         :param row: the job's ``cloud.job.checkpoint``
         :param list plan: the checkpoint's plan, ``[label, command, opts]``
         """
-        job = executor.job.sudo()
+        env = self.env
+        job = executor.job.with_env(env).sudo()
         if job.state != "cancelled":
             return
-        env = executor.env
         index = row.next_index
         step = plan[index] if index < len(plan) else None
         directory = (
             executor._detached_dir(index)
-            if step and (step[2] or {}).get("detached") else None
+            if step and (step[2] or {}).get("detached") and row.detached_started
+            else None
         )
         paths = list(executor._private_uploads)
         if executor._job_dir_created:
@@ -4247,7 +4278,8 @@ class CloudJob(models.Model):
         if directory:
             left.append(env._(
                 "the step '%(step)s' may still run in %(dir)s; stop it with"
-                " `%(dir)s/ctl.sh stop %(dir)s 20`, then remove the directory",
+                " `bash %(dir)s/ctl.sh stop %(dir)s 20`, then remove the"
+                " directory",
                 step=step[0], dir=directory,
             ))
         if paths:
@@ -4255,15 +4287,38 @@ class CloudJob(models.Model):
                 "remove %(paths)s", paths=" ".join(paths),
             ))
         host = row.host_id or job.host_id
+        reason = executor._left_alive_why
+        if reason == "past_no_return":
+            why = env._(
+                "its step '%(step)s' on server %(host)s was past the point of"
+                " no return and still ran",
+                step=step[0] if step else "", host=host.name or "",
+            )
+        elif reason == "not_stopped":
+            why = env._(
+                "what it left on server %(host)s could not all be stopped"
+                " or removed",
+                host=host.name or "",
+            )
+        elif reason == "not_removed":
+            why = env._(
+                "the files it left on server %(host)s could not be removed",
+                host=host.name or "",
+            )
+        else:
+            why = env._(
+                "server %(host)s has not answered since",
+                host=host.name or "",
+            )
         env["cloud.alert"].with_context(ic_job_cancelled=False).raise_alert(
             "job_cleanup_given_up",
             env._(
-                "Job #%(job)s (%(type)s) was cancelled, and server %(host)s"
-                " has not answered since: the panel stopped trying to clean"
-                " up after it. On the server, %(left)s.",
+                "Job #%(job)s (%(type)s) was cancelled, and %(why)s: the"
+                " panel stopped trying to clean up after it. On the server,"
+                " %(left)s.",
                 job=job.id,
                 type=job.job_type_id.name or job.name,
-                host=host.name or "",
+                why=why,
                 left="; ".join(left) or env._(
                     "look for what the job left in /tmp"
                 ),
@@ -5287,6 +5342,12 @@ class CloudJob(models.Model):
         it as what a queued job waits behind; ``_scope_busy`` keeps its
         target busy for the same queue.job. A checkpoint a hook closed and
         kept is the reconciliation's, which alerts if it gives up.
+
+        The checkpoint, and so its half of this and the alert, exists only
+        for a job whose plan has a ``detached`` step: a job without one
+        whose worker is found dead three times reads false before the
+        reconciliation runs its hook, and its server unreachable when it
+        closes raises no alert.
 
         :param list domain: the ``cloud.job`` records to look at
         :return: the ids

@@ -832,6 +832,12 @@ class AbstractExecutor(ABC):
     # could not be reached, or a process outlived its KILL. The row stays,
     # for whoever reaches the server next.
     _detached_left_alive = False
+    # Why ``_close_on_server`` left something there, for the alert of a
+    # clean-up given up: ``unreachable`` (the server did not answer),
+    # ``past_no_return`` (a step past the point of no return still ran),
+    # ``not_stopped`` (a step or a directory could not be stopped or
+    # removed) or ``not_removed`` (``rm`` of the job's files failed).
+    _left_alive_why = None
     # A step marked ``detached`` ran attached to the request: the server
     # kills processes at logout or lacks a tool (``DETACHED_EXIT_ATTACHED``).
     _detached_attached = False
@@ -2485,8 +2491,9 @@ class AbstractExecutor(ABC):
         still running is not stopped: it is left to end, the checkpoint
         stays for a later pass, and it keeps the job's queue busy
         (``_hold_queue``). So does everything when the server cannot be
-        reached (``_detached_left_alive``), and such a step keeps the
-        queue busy then too.
+        reached (``_detached_left_alive``, and why in
+        ``_left_alive_why``), and such a step keeps the queue busy then
+        too.
 
         :param int wait_s: how long the step's trap gets after TERM
         :param transport: a transport to the job's server already open, or
@@ -2514,6 +2521,7 @@ class AbstractExecutor(ABC):
                     if state == "running" and past:
                         self._detached_left_alive = True
                         self._left_running = True
+                        self._left_alive_why = "past_no_return"
                         self._hold_queue()
                         if say_again:
                             self._sys(
@@ -2537,6 +2545,7 @@ class AbstractExecutor(ABC):
                     settled = True
                 await self._clean_ended_steps(transport, index)
                 if self._detached_left_alive:
+                    self._left_alive_why = "not_stopped"
                     return
                 paths = list(self._private_uploads)
                 if self._job_dir_created:
@@ -2545,8 +2554,10 @@ class AbstractExecutor(ABC):
                     result = await transport.run(f"rm -rf {shlex.join(paths)}")
                     if result.exit_status != 0:
                         self._detached_left_alive = True
+                        self._left_alive_why = "not_removed"
         except Exception as exc:  # noqa: BLE001 — the row stays for later
             self._detached_left_alive = True
+            self._left_alive_why = "unreachable"
             if past and not settled and self._step_may_run():
                 self._hold_queue()
             logging.getLogger("AbstractExecutor").warning(
