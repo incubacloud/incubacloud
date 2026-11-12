@@ -1513,6 +1513,12 @@ class AbstractExecutor(ABC):
         in the same transaction, unless something of a step apart was left
         on the server (``_detached_left_alive``); then it is marked
         ``closed`` there instead, so no attempt resumes the job from it.
+        With ``_checkpoint_release_deferred`` (the reconciliation of a job
+        stopped while it was parked) the row goes in neither: what to do
+        with it is noted in ``_checkpoint_release``, as
+        ``_forget_checkpoint`` notes it, and the close lets it go in the
+        transaction of the job's end. Nobody resumes such a job: it is
+        cancelled and its queue job ended (13-nov-2026).
 
         :param hook: coroutine function to await
         :param args: positional arguments for *hook*
@@ -1520,7 +1526,8 @@ class AbstractExecutor(ABC):
             hook's last statement and on its cursor
             (``_outcome_mark_vals``): for ``on_success`` only
         """
-        forget = self._checkpoint and not self._detached_left_alive
+        deferred = self._checkpoint_release_deferred
+        forget = self._checkpoint and not self._detached_left_alive and not deferred
         with self._as_durable() as env:
             await hook(*args)
             if record_outcome and self.job.queue_job_uuid:
@@ -1528,7 +1535,14 @@ class AbstractExecutor(ABC):
                 env["cloud.job.outcome"].sudo().create(
                     self._outcome_mark_vals(),
                 ).flush_recordset()
-            if forget:
+            if deferred:
+                # ``_checkpoint`` stays set: the ``_forget_checkpoint``
+                # that follows notes the same.
+                if self._checkpoint:
+                    self._checkpoint_release = (
+                        "close" if self._detached_left_alive else "delete"
+                    )
+            elif forget:
                 env.flush_all()
                 env.cr.execute(
                     "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",

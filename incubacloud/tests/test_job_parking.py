@@ -1517,6 +1517,36 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         )
         self._closed_on_the_second_pass(first)
 
+    def test_a_hook_that_raises_leaves_the_row_to_the_close(self):
+        """Neither the hook's transaction nor its failure lets the row go:
+        the close deletes it, as ``_forget_checkpoint`` noted."""
+        cls = self._stopped_and_cancelled_by_hand()
+        Job = type(self.env["cloud.job"])
+        real_close = Job._close_lost_job
+        seen = []
+
+        def _close(model, job_id, **kwargs):
+            """Note the row and what step 2 left to do with it."""
+            if job_id == self.job.id:
+                model.env.cr.execute(
+                    "SELECT closed FROM cloud_job_checkpoint WHERE job_id = %s",
+                    (job_id,),
+                )
+                closed = [bool(row[0]) for row in model.env.cr.fetchall()]
+                seen.append((closed, kwargs.get("release")))
+            return real_close(model, job_id, **kwargs)
+
+        with patch.object(
+            cls, "on_cancelled_running", autospec=True,
+            side_effect=RuntimeError("the hook broke"),
+        ) as hook, patch.object(
+            Job, "_close_lost_job", autospec=True, side_effect=_close,
+        ), mute_logger("AbstractExecutor"):
+            self._reconcile(cls)
+        hook.assert_called_once()
+        self.assertEqual(seen, [([False], "delete")])
+        self._assert_let_go()
+
     def test_an_end_that_cannot_be_written_keeps_the_row(self):
         """The row and the end go together, or neither does."""
         cls = self._parked()
