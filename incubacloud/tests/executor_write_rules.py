@@ -89,6 +89,8 @@ HOOK_HELPERS = {
                     "instance row its hook already wrote",
     "_record_state": "the state-only health probe's reading of the instance",
     "_report_cpu_clamps": "tells the operator what the render limited to the host",
+    "_adopt_moved_ssh_port": "the port a failed hardening left sshd on, "
+                             "which the job's rollback must not take back",
 }
 
 #: Calls named like a write that do not touch the database, keyed by

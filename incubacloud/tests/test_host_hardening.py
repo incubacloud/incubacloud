@@ -37,6 +37,8 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
 )
 from odoo.addons.incubacloud.models.registry import executor_registry
 
+from .test_executor_durable_writes import JobEndAssertions, make_probe_job
+
 
 class TestHardeningHelpers(TransactionCase):
     """Pure port/allowlist helpers."""
@@ -1841,3 +1843,47 @@ class TestTheNewPortGetsAFreshConnection(TransactionCase):
         self.assertEqual(self.connect.call_count, 1)
         self.assertEqual([c.args[0] for c in conn.run.call_args_list], ["id"])
         self.sleep.assert_not_awaited()
+
+
+class TestTheMovedPortOutlivesTheFailedJob(JobEndAssertions, TransactionCase):
+    """A hardening that fails after moving sshd leaves the panel on the new port.
+
+    The failed job's transaction is rolled back; what ``on_failure`` adopts
+    (``_adopt_moved_ssh_port``) is written on its durable cursor, so it is
+    still in the database once the runner ends the job, and a retry
+    reaches the host where sshd listens. Read by SQL after the runner's
+    ``env.clear()``, as ``test_executor_durable_writes`` explains.
+    """
+
+    def setUp(self):
+        """A real host on port 22 with a trusted key, and its job."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.host, self.job = make_probe_job(self.env, name="moved")
+        self.host.sudo().known_hosts_key = (
+            "192.0.2.77 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMovedPortKey"
+        )
+        # The durable cursor reads the database, not this env's cache.
+        self.env.flush_all()
+
+    def test_the_new_port_is_in_the_database_after_the_failed_job(self):
+        """The job fails after sshd moved; the port and the key's label stay."""
+        ex = HostHardeningExecutor(self.job, self.host)
+        ex._sys = lambda *a, **k: None
+        ex._facts = {"ic_ssh_moved_port": "22345"}
+        # Not Odoo's assertRaises: it rolls back a savepoint around its
+        # block, and in test mode the hook's cursor rides on this test's
+        # transaction, so that rollback would undo what the hook wrote.
+        try:
+            asyncio.run(ex._dispatch_outcome({ex._playbook: {"exit_status": 2}}))
+        except RuntimeError as exc:
+            error = str(exc)
+        else:
+            self.fail("the failed run did not fail the job")
+        self.assertIn("listens on port 22345", error)
+        self.end_job()
+        self.assertEqual(self.stored(self.host, "port"), 22345)
+        self.assertEqual(
+            self.stored(self.host, "known_hosts_key"),
+            "[192.0.2.77]:22345 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMovedPortKey",
+        )

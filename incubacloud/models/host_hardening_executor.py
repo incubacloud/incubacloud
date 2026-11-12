@@ -472,6 +472,8 @@ class HostHardeningExecutor(AnsibleExecutor):
         self._prepare()
         host = self._host()
         await self._open_edge_firewall_port(port)
+        # On on_failure's durable cursor, its only caller: the port
+        # outlives the rollback of the failed job's transaction.
         host.sudo().with_context(skip_endpoint_change_guard=True).write(
             {"port": port},
         )
