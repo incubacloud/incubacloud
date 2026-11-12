@@ -74,12 +74,13 @@
     # on the host's ``direct`` entrypoint for the platform's own servers.
     # Empty changes nothing in the compose file.
     ic_direct_host: ""
-    # Who may reach the series-deletion route under the public name; the
-    # other operator routes answer this host only.
+    # Who may reach the operator's read and series-deletion routes under
+    # the public name; Grafana's admin route answers this host only.
     ic_operator_sources: []
     # The public name reaches this host through a CDN, whose edge opens
     # the connection: the deletion route then checks the address the CDN
-    # forwards (the rightmost X-Forwarded-For entry), not the edge's.
+    # forwards (the rightmost X-Forwarded-For entry), not the edge's; so
+    # does the read route, which shares its list.
     # Traefik only keeps that header from the ranges it trusts, so a
     # caller reaching the host directly cannot hand it the address.
     ic_public_forwarded: false
@@ -326,8 +327,9 @@
               # as the hand-written gateway of a central next to its panel
               # (docs/observability-operations.md, «Publishing the central»): the
               # account prefixes for everyone (vmauth asks each for its
-              # credential), the deletion route for the panel only, the
-              # rest of the operator routes for nobody off this host.
+              # credential), the operator's read and deletion routes for
+              # the addresses in ``ic_operator_sources`` only, Grafana's
+              # admin route for nobody off this host.
               networks:
                 - default
                 - inverseproxy_shared
@@ -351,13 +353,21 @@
           {% if ic_public_forwarded %}
                 traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.ipstrategy.depth: "1"
           {% endif %}
-                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))"
+                # The cross-account read, behind the same list as the
+                # deletion: vmauth serves only the accounts' read
+                # endpoints and health there. Empty list: this host only.
+                traefik.http.routers.ic-central-read.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/admin-r/`)"
+                traefik.http.routers.ic-central-read.entrypoints: https
+                traefik.http.routers.ic-central-read.service: ic-central-gateway
+                traefik.http.routers.ic-central-read.priority: "30"
+                traefik.http.routers.ic-central-read.middlewares: ic-central-delete-sources
+                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/gadmin/`)"
                 traefik.http.routers.ic-central-operator.entrypoints: https
                 traefik.http.routers.ic-central-operator.service: ic-central-gateway
                 traefik.http.routers.ic-central-operator.priority: "30"
                 traefik.http.routers.ic-central-operator.middlewares: ic-central-host-only
                 traefik.http.middlewares.ic-central-host-only.ipwhitelist.sourcerange: "127.0.0.1/32"
-          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-operator'] %}
+          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-read', 'ic-central-operator'] %}
           {% if ic_public_tls == 'default' %}
                 traefik.http.routers.{{ router }}.tls: "true"
           {% else %}

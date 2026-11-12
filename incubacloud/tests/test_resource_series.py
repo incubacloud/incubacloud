@@ -39,7 +39,7 @@ def _response(payload):
 def _refusal(status):
     """Return a response double the central sends to a credential it refuses.
 
-    :param int status: 401 or 403.
+    :param int status: 401 or 403; 429, the central busy.
     """
     resp = MagicMock(spec=requests.Response)
     resp.status_code = status
@@ -225,6 +225,42 @@ class TestResourceSeries(HttpCase):
             self.assertIn("since", res)
             # Refused once is refused: no panel is asked twice.
             self.assertEqual(get.call_count, len(PANELS["instance"]))
+
+    def test_a_busy_central_is_neither_down_nor_refused(self):
+        """A 429 to every panel: busy, with no since (Fable A1, 12-nov-2026)."""
+        self.env["cloud.alert"].sudo().raise_alert(
+            BACKEND_UNREACHABLE_CODE, "unreachable", level="critical",
+            confirm_after=1, confirm_window=900,
+        )
+        self.authenticate("charts-dev", "charts-dev")
+        with patch(f"{_MODULE}.requests.get",
+                   side_effect=lambda url, params, **kw: _refusal(429)) as get:
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertEqual(res["ok"], False)
+        self.assertEqual(res["reason"], "busy")
+        self.assertEqual(
+            res["error"],
+            "The metrics central is busy. The charts will ask again shortly.",
+        )
+        self.assertIsNone(res["since"])
+        # The board asks again on its own: no panel waits for a retry.
+        self.assertEqual(get.call_count, len(PANELS["instance"]))
+
+    def test_one_busy_panel_says_busy(self):
+        self.authenticate("charts-dev", "charts-dev")
+
+        def answer(url, params, **kw):
+            if "node_pressure" in params["query"]:
+                return _refusal(429)
+            return _central(params)
+
+        with patch(f"{_MODULE}.requests.get", side_effect=answer):
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(
+            res["panels"]["pressure"]["error"], "The metrics central is busy.",
+        )
+        self.assertTrue(res["panels"]["cpu"]["series"])
 
     def test_a_panel_without_a_credential_says_so(self):
         self.env["cloud.settings"].sudo()._get_system().metrics_remote_write_token = False

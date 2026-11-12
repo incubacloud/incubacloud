@@ -1171,15 +1171,18 @@ msgstr "Módulos"
 msgid ""
 "Address ranges, one per line (e.g. 198.51.100.7/32), allowed to reach the "
 "central's series-deletion route under its public name: the panel's own "
-"public address. Every other operator route stays reachable from the central "
-"host only. Empty: only the central's host itself, which is right while the "
-"panel runs there."
+"public address. They may also read every account's series there, through the"
+" operator's read-only route. Grafana's admin route stays reachable from the "
+"central host only. Empty: only the central's host itself, which is right "
+"while the panel runs there."
 msgstr ""
 "Rangos de direcciones, uno por línea (p. ej. 198.51.100.7/32), a los que se "
 "permite llegar a la ruta de borrado de series del central bajo su nombre "
-"público: la dirección pública del propio panel. Las demás rutas de operador "
-"solo son accesibles desde el host del central. Vacío: solo el propio host "
-"del central, que es lo correcto mientras el panel corre allí."
+"público: la dirección pública del propio panel. También pueden leer allí las"
+" series de todas las cuentas, por la ruta de lectura del operador. La ruta "
+"de administración de Grafana solo es accesible desde el host del central. "
+"Vacío: solo el propio host del central, que es lo correcto mientras el panel"
+" corre allí."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_allowlist_shipped
@@ -7185,6 +7188,20 @@ msgstr ""
 #: code:addons/incubacloud/models/metrics_charts.py:0
 msgid "The metrics central could not answer."
 msgstr "La central de métricas no pudo responder."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "The metrics central is busy."
+msgstr "La central de métricas está ocupada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "The metrics central is busy. The charts will ask again shortly."
+msgstr ""
+"La central de métricas está ocupada. Los gráficos volverán a consultarla en "
+"breve."
 
 #. module: incubacloud
 #. odoo-python

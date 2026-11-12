@@ -16,6 +16,7 @@ covers "this host stopped reporting", which is what replaces the SSH
 probe's implicit liveness signal once the telemetry jobs retire.
 """
 import logging
+import time
 
 import requests
 
@@ -31,6 +32,27 @@ _QUERY_TIMEOUT = 10
 # Alert raised when the metrics backend itself cannot be reached.
 BACKEND_UNREACHABLE_CODE = "metrics_backend_unreachable"
 
+# Seconds to wait before asking again a central that answered 429.
+_BUSY_PAUSE = 1
+
+
+def central_busy(exc):
+    """Whether *exc* is the central answering 429: busy, not down.
+
+    vmauth answers 429 at once, without a queue, to a user over its cap
+    on requests in flight (the operator's, 16) or over its own global
+    limits. The central is up and answering, so callers do not count it
+    as a failure: no ``metrics_backend_unreachable``, no chart saying
+    the central cannot be reached.
+
+    :param Exception exc: what a query raised.
+    :rtype: bool
+    """
+    return (
+        isinstance(exc, requests.HTTPError)
+        and getattr(exc.response, "status_code", None) == 429
+    )
+
 
 def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
     """GET ``/api/v1/<endpoint>`` on the metrics backend and return its payload.
@@ -38,8 +60,8 @@ def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
     The transport half shared by :func:`promql_query` and
     :func:`promql_query_range`: one retry policy, one way to
     authenticate, one check of the PromQL envelope. See
-    :func:`promql_query` for why a transport failure or a 5xx is asked
-    once more and a 4xx is not.
+    :func:`promql_query` for why a transport failure, a 5xx or a 429 is
+    asked once more and another 4xx is not.
 
     :param str base_url: metrics backend root.
     :param str endpoint: ``query`` or ``query_range``.
@@ -65,8 +87,10 @@ def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
             continue
         except requests.HTTPError as exc:
             status = getattr(exc.response, "status_code", 0) or 0
-            if attempt > retries or status < 500:
+            if attempt > retries or (status < 500 and status != 429):
                 raise
+            if status == 429:
+                time.sleep(_BUSY_PAUSE)
             continue
         break
     payload = response.json()
@@ -95,7 +119,8 @@ def promql_query_range(
     :param int step: seconds between evaluations.
     :param token: password half of this panel's metrics credential.
     :param user: user half — see :func:`promql_query`.
-    :param int retries: extra attempts after a transport failure or 5xx.
+    :param int retries: extra attempts after a transport failure, a 5xx
+        or a 429.
     :rtype: list[tuple[dict, list[tuple[float, float]]]]
     """
     payload = _promql_get(
@@ -134,9 +159,10 @@ def promql_query(
     more on a fresh connection before it counts: a panel may reach
     its central through a CDN, and on 2026-10-13 one edge delivered a
     request 9 s late while the next connection, through another edge,
-    was answered in milliseconds. A 4xx or a PromQL error is not
-    retried — it would answer the same twice, and retrying would only
-    hide it.
+    was answered in milliseconds. A 429 is asked again after
+    ``_BUSY_PAUSE``: the central is busy, not wrong (see
+    :func:`central_busy`). Another 4xx or a PromQL error is not retried —
+    it would answer the same twice, and retrying would only hide it.
 
     :param token: password half of this panel's metrics credential.
     :param user: user half — the panel's metrics account. It is not
@@ -146,7 +172,8 @@ def promql_query(
         a fixed literal before per-account credentials existed; callers
         that omit it send no credentials at all rather than guessing, so
         a misconfiguration fails loudly instead of reading nothing.
-    :param int retries: extra attempts after a transport failure or 5xx.
+    :param int retries: extra attempts after a transport failure, a 5xx
+        or a 429.
     """
     payload = _promql_get(
         base_url, "query", {"query": expression},
@@ -289,7 +316,9 @@ class CloudMetricRule(models.Model):
         and **return without resolving anything**. Resolving on silence
         would turn an outage of the metrics stack into a screen full of
         green — the worst possible failure mode for an alerting system,
-        and the easy mistake to make here.
+        and the easy mistake to make here. A central that answers 429
+        after the retry is busy, not down: the run returns without
+        raising or resolving anything.
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
         if not settings.metrics_enabled:
@@ -314,6 +343,15 @@ class CloudMetricRule(models.Model):
                 for rule in rules
             }
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            if central_busy(exc):
+                # Up and answering, only full: neither an outage to
+                # alert on nor an answer to resolve anything with. The
+                # next run evaluates again.
+                _logger.warning(
+                    "[metrics] central busy (429); rules not evaluated "
+                    "this run: %s", exc,
+                )
+                return
             _logger.warning("[metrics] backend unreachable: %s", exc)
             # Not on the first evaluation: ``cloud.alert.policy`` holds
             # how many in a row (two, shipped), and the retry inside

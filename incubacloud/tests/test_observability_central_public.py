@@ -152,18 +152,66 @@ class TestTheComposeFile(BaseCase):
         self.assertEqual(
             labels[f"{prefix}.sourcerange"], "127.0.0.1/32,198.51.100.7/32",
         )
-        # Only the deletion route: the others answer the host alone.
+        # The deletion and read routes share the list; Grafana's admin
+        # route answers the host alone.
         self.assertNotIn(
             "traefik.http.middlewares.ic-central-host-only.ipwhitelist"
             ".ipstrategy.depth",
             labels,
         )
 
-    def test_the_other_operator_routes_answer_the_host_only(self):
+    def test_the_cross_account_read_answers_the_named_sources_only(self):
+        """Its own router, behind the deletion's list (Fable M2, 12-nov-2026).
+
+        vmauth serves only the accounts' read endpoints and health there,
+        so opening it to the panel's address opens nothing else.
+        """
+        labels = _published()["services"]["vmauth"]["labels"]
+        router = "traefik.http.routers.ic-central-read"
+        self.assertEqual(
+            labels[f"{router}.rule"], f"Host(`{PUBLIC}`) && PathPrefix(`/admin-r/`)",
+        )
+        self.assertEqual(labels[f"{router}.middlewares"], "ic-central-delete-sources")
+        self.assertEqual(labels[f"{router}.entrypoints"], "https")
+        self.assertEqual(labels[f"{router}.service"], "ic-central-gateway")
+        self.assertGreater(
+            int(labels[f"{router}.priority"]),
+            int(labels["traefik.http.routers.ic-central-data.priority"]),
+        )
+
+    def test_behind_a_cdn_the_read_checks_the_forwarded_address(self):
+        labels = _published(tls="default", forwarded=True)["services"]["vmauth"][
+            "labels"
+        ]
+        self.assertEqual(
+            labels["traefik.http.routers.ic-central-read.middlewares"],
+            "ic-central-delete-sources",
+        )
+        self.assertEqual(
+            labels[
+                "traefik.http.middlewares.ic-central-delete-sources"
+                ".ipwhitelist.ipstrategy.depth"
+            ],
+            "1",
+        )
+
+    def test_with_no_source_named_the_read_answers_the_host_only(self):
+        """The setting empty: the read reaches no one new, as before."""
+        labels = _published(sources=("127.0.0.1/32",))["services"]["vmauth"][
+            "labels"
+        ]
+        self.assertEqual(
+            labels[
+                "traefik.http.middlewares.ic-central-delete-sources"
+                ".ipwhitelist.sourcerange"
+            ],
+            "127.0.0.1/32",
+        )
+
+    def test_grafana_s_admin_route_answers_the_host_only(self):
         labels = _published()["services"]["vmauth"]["labels"]
         rule = labels["traefik.http.routers.ic-central-operator.rule"]
-        self.assertIn("PathPrefix(`/admin-r/`)", rule)
-        self.assertIn("PathPrefix(`/gadmin/`)", rule)
+        self.assertEqual(rule, f"Host(`{PUBLIC}`) && PathPrefix(`/gadmin/`)")
         self.assertEqual(
             labels[
                 "traefik.http.middlewares.ic-central-host-only"

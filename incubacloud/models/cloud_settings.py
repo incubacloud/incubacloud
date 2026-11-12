@@ -674,10 +674,11 @@ class CloudSettings(models.Model):
         string='Who may delete series on the central',
         help='Address ranges, one per line (e.g. 198.51.100.7/32), allowed '
              "to reach the central's series-deletion route under its "
-             "public name: the panel's own public address. Every other "
-             'operator route stays reachable from the central host only. '
-             "Empty: only the central's host itself, which is right while "
-             'the panel runs there.',
+             "public name: the panel's own public address. They may also "
+             "read every account's series there, through the operator's "
+             'read-only route. Grafana\'s admin route stays reachable from '
+             "the central host only. Empty: only the central's host itself, "
+             'which is right while the panel runs there.',
     )
 
     # ── Metrics account helpers ────────────────────────────────────────────

@@ -57,19 +57,39 @@ _GRAFANA_URL = "http://grafana:3000/"
 # a label is picked. Nothing in the panel reads logs through here today;
 # the log read route is kept, read-only, for the datasource that will.
 _ACCOUNT_WRITE_PATH = "/w/api/v1/write"
-_ACCOUNT_READ_PATHS = (
-    "/r/api/v1/(query|query_range|query_exemplars|series|labels"
-    "|label/[^/]+/values|metadata|rules|status/buildinfo)"
+_READ_ENDPOINTS = (
+    "query|query_range|query_exemplars|series|labels"
+    "|label/[^/]+/values|metadata|rules|status/buildinfo"
 )
+_ACCOUNT_READ_PATHS = f"/r/api/v1/({_READ_ENDPOINTS})"
 _ACCOUNT_LOG_WRITE_PATH = "/lw/loki/api/v1/push"
 _ACCOUNT_LOG_READ_PATHS = (
     "/lr/loki/api/v1/(query|query_range|series|labels"
     "|label/[^/]+/values|index/stats|index/volume|index/volume_range)"
 )
 
+#: The operator's cross-account read: the accounts' read endpoints and
+#: ``health``. It was ``/admin-r/.*``, the whole backend: imports,
+#: snapshots, flags. Closed (12-nov-2026) before the route can be opened
+#: under the public name to the addresses in
+#: ``metrics_central_operator_sources``. ``health`` reveals nothing and
+#: is what the deployment, the account sync and RB-11 probe.
+_OPERATOR_READ_PATHS = f"/admin-r/(health|api/v1/({_READ_ENDPOINTS}))"
+
 #: The operator's deletion route. Exact, so the key it carries opens
 #: ``delete_series`` and no other endpoint that honours ``authKey``.
 _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
+
+#: Requests the operator may have in flight at once; vmauth answers the
+#: next one 429 at once, without a queue. Only the operator has a cap
+#: (12-nov-2026): vmauth counts per user, not per route, and an account's
+#: user is shared by its agents' writes, its logs, its Grafana datasource
+#: and its panel, so a cap there refused writes while reads ran — and
+#: after an outage every host empties its queue at once. The operator
+#: never writes; 16 covers four fleet boards at four queries each plus
+#: Grafana's admin calls. VictoriaMetrics queues the reads themselves
+#: (``-search.maxConcurrentRequests``, twice the cores, 10 s wait).
+_OPERATOR_MAX_CONCURRENT = 16
 
 #: The ``cloud.settings`` credentials a run may mint. Minted on a durable
 #: cursor, then copied into the job's cache so the rest of the run reads
@@ -273,9 +293,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """Render the vmauth ``-auth.config`` YAML for the whole central.
 
         One vmauth ``user`` per account (writes and reads only its own
-        series and logs) plus one operator (the cross-account read, the
-        Grafana admin API used to provision organisations, and series
-        deletion). There is deliberately NO ``unauthorized_user`` section:
+        series and logs) plus one operator (the cross-account read of the
+        same endpoints, the Grafana admin API used to provision
+        organisations, and series deletion), the only user with a cap on
+        concurrent requests (see ``_OPERATOR_MAX_CONCURRENT``). There is
+        deliberately NO ``unauthorized_user`` section:
         its absence is what makes a credential-less request 401 rather
         than proxied.
 
@@ -314,7 +336,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         ]
         operator_map = [
             {
-                "src_paths": ["/admin-r/.*"],
+                "src_paths": [_OPERATOR_READ_PATHS],
                 "url_prefix": _VM_URL,
                 "drop_src_path_prefix_parts": 1,
             },
@@ -338,6 +360,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         users.append({
             "username": "operator",
             "password": operator_token,
+            "max_concurrent_requests": _OPERATOR_MAX_CONCURRENT,
             "url_map": operator_map,
         })
         return yaml.safe_dump({"users": users}, sort_keys=False)

@@ -17,7 +17,10 @@ CPU quota.
 
 The update adds no table or column and needs no data migration; the
 module has to be updated, which loads the three rules. The hosts need
-nothing: every chart reads series the agents already send.
+nothing: every chart reads series the agents already send. The panel
+that owns the central runs **Enable observability** once afterwards: it
+closes the operator's read route and caps the operator's requests in
+flight.
 
 ### Added
 
@@ -64,6 +67,23 @@ nothing: every chart reads series the agents already send.
   nothing to draw; the instance's board, the server's and the fleet's
   extend it. The three routes share one budget of 20 boards a minute per
   user.
+- **The operator's read route names its endpoints.** On the central,
+  `/admin-r/` serves `/health` and the read endpoints an account's `/r/`
+  serves (`_OPERATOR_READ_PATHS`); it served the whole of VictoriaMetrics,
+  imports, exports, snapshots and flags included, and those now answer
+  400. Under the central's public name it has a router of its own,
+  `ic-central-read`, behind the same list as the series deletion: **Who
+  may delete series on the central** now also opens the cross-account
+  read to those addresses, as its help says. Empty, it answers the
+  central's host only, as before. Grafana's admin route still answers
+  the host only.
+- **Only the operator has a cap on requests in flight: 16.** vmauth
+  counts per user and answers the next request 429 at once; an account's
+  user is shared by its agents' writes and its reads, so accounts have
+  none. A 429 is "busy", not "down": `promql_query` asks once more after
+  a second, the rule cron skips the run without raising
+  `metrics_backend_unreachable` or resolving anything, and a board says
+  *The metrics central is busy* and asks again.
 
 ---
 
