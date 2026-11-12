@@ -16172,6 +16172,17 @@ msgstr ""
 "Este trabajo se canceló antes de que empezara este intento: no se ejecuta."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"This job's type has no executor in this server any more: nothing can stop or"
+" remove what it left on its server. Check the server's /tmp by hand."
+msgstr ""
+"El tipo de este trabajo ya no tiene ejecutor en este servidor: nada puede "
+"detener ni eliminar lo que dejó en su servidor. Revise a mano el /tmp del "
+"servidor."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid ""
@@ -18774,6 +18785,12 @@ msgid ""
 msgstr ""
 "su paso «%(step)s» en el servidor %(host)s había pasado el punto sin retorno"
 " y seguía en marcha"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "its type has no executor in this server any more"
+msgstr "su tipo ya no tiene ejecutor en este servidor"
 
 #. module: incubacloud
 #. odoo-javascript
