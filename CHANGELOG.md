@@ -147,6 +147,19 @@ next deploy when its host is behind Cloudflare.
   for them for 7 days, renewed while the same pair of values keeps showing
   up, with one `session_guard_antiloop` alert per user and pair. Rows are
   kept 90 days.
+- **What the guard writes never stops a request.** Every row goes on a
+  database connection of its own, and a write that collides with a
+  parallel request of the same page is tried again on a new one, three
+  times in all: without it, a user whose signal only logs (the anti-loop)
+  was closed by the second request of a page. Any failure of the guard
+  but a close is logged and the request is served, where Odoo would
+  answer 403 on every route, the sign-out included, a database not yet
+  updated among them. A close waits three seconds at most for
+  another close of the same user, and a failure of what a layer does on a
+  close keeps the close's row.
+- **A closed session on a page open to visitors** (the sign-in, the
+  website) is served as a visitor, as Odoo serves a session it no longer
+  accepts there, instead of being sent to the sign-in.
 - **The visitor's country behind a CDN.** `x_real_ip_country_header`
   (`CF-IPCountry` on Cloudflare) is believed only on the proof the visitor's
   address is, and each request the correction saw says whether the CDN
