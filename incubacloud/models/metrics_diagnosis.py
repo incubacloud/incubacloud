@@ -1,7 +1,8 @@
-"""What an instance's board says in plain words: which resource is short.
+"""What a board says in plain words: which resource is short.
 
 Fixed rules, evaluated on the panels the board has just read
-(``metrics_charts.PANELS["instance"]``) over the last 15 minutes of its
+(``metrics_charts.PANELS["instance"]`` for an instance,
+``PANELS["host"]`` for a server) over the last 15 minutes of its
 window: a condition and a sentence each, no model and no opaque
 heuristic. Each threshold carries its reason and the date it was set;
 they are tuned against real data in QA, so change them here and in
@@ -12,6 +13,10 @@ near its connection ceiling) need the per-instance PostgreSQL series of
 a later collector; until those exist the board's "Queries now" reading
 answers that question on demand.
 """
+from operator import itemgetter
+
+from odoo.tools.misc import formatLang
+
 
 #: Seconds of the window the diagnosis reads: the last quarter of an hour.
 DIAGNOSIS_SECONDS = 900
@@ -47,11 +52,24 @@ SLOW_P95_SECONDS = 2.0
 #: a slow request is not spending its time on them (10-nov-2026).
 IDLE_CPU_PERCENT = 30
 
+#: Memory in use on a server, in percent, above which its board names
+#: the instance that uses most: the threshold of the
+#: ``metrics_memory_high`` rule, so the board and the alert agree
+#: (12-nov-2026).
+HOST_MEMORY_PERCENT = 92
+
+#: Root disk use of a server, in percent, above which its board names
+#: the largest instance directory: the threshold of the
+#: ``metrics_disk_critical`` rule (12-nov-2026).
+HOST_ROOT_PERCENT = 90
+
 #: Window end this close to now (seconds) counts as "now": a board zoomed
 #: into the past describes the past and gets no diagnosis.
 _NOW_SLACK_SECONDS = 300
 
 _TONES = ("ok", "info", "warn", "bad")
+
+_GIB = 1024 ** 3
 
 
 def _recent(points, since):
@@ -226,4 +244,140 @@ def diagnose_instance(board, instance, workers, now):
         "tone": tone,
         "findings": [{"code": c, "tone": t, "text": x} for c, t, x in found],
         "facts": {k: v for k, v in facts.items() if k != "since"},
+    }
+
+
+def _top(rows, key):
+    """Return the row with the largest *key*, or None when none has it."""
+    rows = [row for row in rows if row.get(key) is not None]
+    return max(rows, key=itemgetter(key)) if rows else None
+
+
+def host_facts(board):
+    """Reduce a server's board to the numbers its rules read.
+
+    :param dict board: ``run_board``'s answer for the host scope, its
+        ``consumers`` rows already matched to instances.
+    :rtype: dict
+    """
+    since = board["end"] - DIAGNOSIS_SECONDS
+    host = board["panels"].get("host", {}).get("value") or {}
+    rows = board["panels"].get("consumers", {}).get("rows") or []
+    return {
+        "memory": _recent_mean(board, "memory", since, "used"),
+        "memory_total": host.get("memory_total"),
+        "root": _recent_mean(board, "root", since, "used"),
+        "load_per_core": _recent_mean(board, "load", since, "load15"),
+        "cores": host.get("cores") or 0,
+        "memory_pressure": _recent_mean(board, "pressure", since, "memory"),
+        "io_pressure": _recent_mean(board, "pressure", since, "io"),
+        "top_memory": _top(rows, "memory"),
+        "top_cpu": _top(rows, "cpu"),
+        "top_disk": _top(rows, "disk"),
+    }
+
+
+def _gib(env, value):
+    """Return bytes as GB with one decimal, in the reader's language."""
+    return formatLang(env, (value or 0) / _GIB, digits=1)
+
+
+def _host_findings(env, facts):
+    """Return ``[(code, tone, text)]`` for every server rule that holds."""
+    found = []
+    memory = facts["memory"]
+    if memory is not None and memory > HOST_MEMORY_PERCENT:
+        top = facts["top_memory"]
+        if top and facts["memory_total"]:
+            text = env._(
+                "Memory is at %(pct)s%%: %(name)s uses the most, %(used)s GB "
+                "of %(total)s GB. Lower its workers, give it less memory or "
+                "move an instance to another server.",
+                pct=round(memory), name=top["name"],
+                used=_gib(env, top["memory"]),
+                total=_gib(env, facts["memory_total"]),
+            )
+        else:
+            text = env._(
+                "Memory is at %(pct)s%%. Lower the workers of its instances "
+                "or move one to another server.",
+                pct=round(memory),
+            )
+        found.append(("memory_high", "warn", text))
+    pressure = facts["memory_pressure"]
+    if pressure is not None and pressure > MEMORY_PRESSURE_PERCENT:
+        found.append(("memory_short", "bad", env._(
+            "Tasks wait for memory %(pct)s%% of the time: the server is "
+            "evicting pages from every instance. Move an instance to another "
+            "server or give this one more memory.",
+            pct=round(pressure),
+        )))
+    root = facts["root"]
+    if root is not None and root > HOST_ROOT_PERCENT:
+        top = facts["top_disk"]
+        if top:
+            text = env._(
+                "The root disk is %(pct)s%% full; the largest instance "
+                "directory is %(name)s (%(size)s GB). Free space or grow the "
+                "disk before it fills up: a full disk stops every instance.",
+                pct=round(root), name=top["name"], size=_gib(env, top["disk"]),
+            )
+        else:
+            text = env._(
+                "The root disk is %(pct)s%% full. Free space or grow the disk "
+                "before it fills up: a full disk stops every instance.",
+                pct=round(root),
+            )
+        found.append(("root_full", "bad", text))
+    load = facts["load_per_core"]
+    if load is not None and load > HOST_LOAD_PER_CORE:
+        top = facts["top_cpu"]
+        if top and facts["cores"]:
+            text = env._(
+                "The server is saturated (load %(load)s per core); %(name)s "
+                "uses the most CPU, %(pct)s%% of the server.",
+                load=formatLang(env, load, digits=1), name=top["name"],
+                pct=round(top["cpu"] / facts["cores"]),
+            )
+        else:
+            text = env._(
+                "The server is saturated (load %(load)s per core).",
+                load=formatLang(env, load, digits=1),
+            )
+        found.append(("cpu_saturated", "warn", text))
+    io = facts["io_pressure"]
+    if io is not None and io > IO_PRESSURE_PERCENT:
+        found.append(("io_pressure", "warn", env._(
+            "The disk is the bottleneck: tasks wait for it %(pct)s%% of the "
+            "time. A backup or a migration running explains it; otherwise "
+            "the server needs a faster disk.",
+            pct=round(io),
+        )))
+    return found
+
+
+def diagnose_host(board, host, now):
+    """Return a server board's diagnosis: an overall tone and its sentences.
+
+    :param dict board: ``run_board``'s answer for the host scope.
+    :param host: the ``cloud.host`` record (its env translates).
+    :param float now: current time, unix seconds.
+    :returns: ``{"current": bool, "tone", "findings": [{code, tone,
+        text}]}``; ``current`` is False, with no findings, when the
+        window ends in the past.
+    :rtype: dict
+    """
+    window = max(_NOW_SLACK_SECONDS, 2 * board["step"])
+    if now - board["end"] > window:
+        return {"current": False, "tone": "ok", "findings": []}
+    found = _host_findings(host.env, host_facts(board))
+    if not found:
+        found.append(("normal", "ok", host.env._(
+            "Normal: no resource of this server looks saturated.",
+        )))
+    tone = max((f[1] for f in found), key=_TONES.index)
+    return {
+        "current": True,
+        "tone": tone,
+        "findings": [{"code": c, "tone": t, "text": x} for c, t, x in found],
     }

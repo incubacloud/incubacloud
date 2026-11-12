@@ -38,12 +38,31 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "% of the root file system"
+msgstr "% del sistema de archivos raíz"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "% of the server's memory · and of its swap"
+msgstr "% de la memoria del servidor · y de su swap"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "% of the time"
 msgstr "% del tiempo"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "% of the time each disk had work"
+msgstr "% del tiempo que cada disco tuvo trabajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "% of the time some task waited"
 msgstr "% del tiempo que alguna tarea esperó"
@@ -294,6 +313,7 @@ msgstr "%s completado"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 msgid "%s cores"
 msgstr "%s núcleos"
 
@@ -332,6 +352,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "%s more servers reported throughout the window."
+msgstr "Otros %s servidores informaron durante todo el intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "%s of memory"
+msgstr "%s de memoria"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.js:0
 msgid "%s on %s failed"
 msgstr "%s en %s falló"
@@ -356,6 +388,12 @@ msgstr "%s pet./s"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "%s root disk"
+msgstr "%s de disco raíz"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/formatters.js:0
 msgid "%s s"
 msgstr "%s s"
@@ -365,6 +403,12 @@ msgstr "%s s"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid "%s workers configured."
 msgstr "%s workers configurados."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/formatters.js:0
+msgid "%s/s"
+msgstr "%s/s"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -535,7 +579,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "1 h"
 msgstr "1 h"
 
@@ -584,7 +628,7 @@ msgstr "1h"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "24 h"
 msgstr "24 h"
 
@@ -620,7 +664,7 @@ msgstr "512m"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "6 h"
 msgstr "6 h"
 
@@ -632,7 +676,7 @@ msgstr "6h"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "7 d"
 msgstr "7 d"
 
@@ -930,6 +974,12 @@ msgid "A rule must confirm after at least one evaluation."
 msgstr "Una regla debe confirmarse tras al menos una evaluación."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "A sample at each step of the window"
+msgstr "Una muestra en cada paso del intervalo"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -955,6 +1005,18 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
 msgid "A test was asked for a moment ago: wait a few seconds."
 msgstr "Se pidió una prueba hace un momento: espere unos segundos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Active alerts"
+msgstr "Alertas activas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Active security alerts"
+msgstr "Alertas de seguridad activas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1655,6 +1717,12 @@ msgstr "Imagen de purga de archivadas"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "Are the servers reporting?"
+msgstr "¿Informan los servidores?"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "Are you sure you want to delete \"%s\"? This action cannot be undone."
 msgstr "¿Seguro que quiere eliminar \"%s\"? Esta acción no se puede deshacer."
@@ -2134,9 +2202,28 @@ msgid "Building..."
 msgstr "Construyendo..."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "Busiest servers"
+msgstr "Servidores más cargados"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__action_icon
 msgid "Button Icon"
 msgstr "Icono del botón"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Bytes this server received and sent per second"
+msgstr "Bytes por segundo que este servidor recibió y envió"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Bytes this server's disks read and wrote per second"
+msgstr ""
+"Bytes por segundo que leyeron y escribieron los discos de este servidor"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__cdn_client_ca
@@ -2188,6 +2275,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 msgid "CPU"
 msgstr "CPU"
 
@@ -2215,6 +2304,13 @@ msgstr "CPU por contenedor"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "CPU per instance"
+msgstr "CPU por instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "CPU use of every instance on this server over time"
 msgstr "Uso de CPU de cada instancia de este servidor en el tiempo"
@@ -2539,6 +2635,7 @@ msgstr "Cambios guardados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Charts are not available on this panel"
 msgstr "Los gráficos no están disponibles en este panel"
@@ -3505,15 +3602,22 @@ msgstr "No se pudieron cargar los proyectos"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Could not load the charts"
 msgstr "No se pudieron cargar los gráficos"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "Could not load the charts."
 msgstr "No se pudieron cargar los gráficos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.js:0
+msgid "Could not load the monitoring configuration."
+msgstr "No se pudo cargar la configuración de la monitorización."
 
 #. module: incubacloud
 #. odoo-python
@@ -4022,18 +4126,6 @@ msgstr "Tema oscuro"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Dashboards"
-msgstr "Paneles"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Dashboards are not available on this panel"
-msgstr "Los paneles no están disponibles aquí"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Data as of right now; runs a dump on the live database"
 msgstr ""
@@ -4535,9 +4627,21 @@ msgstr "Puerto directo aplicado"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Directory"
+msgstr "Directorio"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Directory on the server"
 msgstr "Directorio en el servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Directory per instance"
+msgstr "Directorio por instancia"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4588,6 +4692,7 @@ msgstr "Desconectar aplicación GitHub"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 msgid "Disk"
 msgstr "Disco"
 
@@ -4595,6 +4700,19 @@ msgstr "Disco"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__disk_usage
 msgid "Disk Usage %"
 msgstr "Uso de disco %"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Disk busy"
+msgstr "Disco ocupado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Disk throughput"
+msgstr "Caudal del disco"
 
 #. module: incubacloud
 #. odoo-python
@@ -4852,6 +4970,8 @@ msgstr "Borrador"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Drag across a chart to zoom."
 msgstr "Arrastre sobre un gráfico para ampliar."
@@ -4944,17 +5064,6 @@ msgstr "Directorio vacío"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_enabled
 msgid "Enable observability"
 msgstr "Activar la observabilidad"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid ""
-"Enable observability in Settings. Every host is then\n"
-"                            enrolled automatically — there is nothing to install\n"
-"                            by hand."
-msgstr ""
-"Active la observabilidad en Ajustes. Cada host queda inscrito\n"
-"                            automáticamente — no hay nada que instalar a mano."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__auto_security_updates
@@ -5076,6 +5185,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_gitlab_event__event_type
 msgid "Event Type"
 msgstr "Tipo de evento"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Every account on the central"
+msgstr "Todas las cuentas de la central"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5574,7 +5689,7 @@ msgstr "Falla desde %s"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "Failing since %s."
 msgstr "Falla desde %s."
 
@@ -5748,9 +5863,9 @@ msgstr "Primera ejecución."
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Fleet metrics collected from your hosts."
-msgstr "Métricas de la flota recogidas de sus hosts."
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.js:0
+msgid "Fleet"
+msgstr "Flota"
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__audience__fleet
@@ -5914,6 +6029,210 @@ msgstr "Aún no hay lecturas."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__ram_usage
 msgid "RAM Usage %"
 msgstr "Uso de RAM %"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Instances deployed"
+msgstr "Instancias desplegadas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Instances running"
+msgstr "Instancias en marcha"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Last sample from this server %s ago."
+msgstr "Última muestra de este servidor hace %s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Load and memory"
+msgstr "Carga y memoria"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Load per core"
+msgstr "Carga por núcleo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Load per core of the ten busiest servers over time"
+msgstr "Carga por núcleo de los diez servidores más cargados en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Load per core of this server over time"
+msgstr "Carga por núcleo de este servidor en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Memory"
+msgstr "Memoria"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Memory in use"
+msgstr "Memoria en uso"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"Memory is at %(pct)s%%. Lower the workers of its instances or move one to "
+"another server."
+msgstr ""
+"La memoria está al %(pct)s%%. Reduzca los workers de sus instancias o mueva "
+"una a otro servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"Memory is at %(pct)s%%: %(name)s uses the most, %(used)s GB of %(total)s GB."
+" Lower its workers, give it less memory or move an instance to another "
+"server."
+msgstr ""
+"La memoria está al %(pct)s%%: %(name)s es la que más usa, %(used)s GB de "
+"%(total)s GB. Reduzca sus workers, asígnele menos memoria o mueva una "
+"instancia a otro servidor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Memory over 92 %"
+msgstr "Memoria por encima del 92 %"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Memory per instance"
+msgstr "Memoria por instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Memory use of every instance on this server over time"
+msgstr "Uso de memoria de cada instancia de este servidor en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
+msgid "Metrics are managed by your provider."
+msgstr "Las métricas las gestiona su proveedor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "Monitoring views"
+msgstr "Vistas de Monitorización"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Network"
+msgstr "Red"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Network and requests"
+msgstr "Red y peticiones"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No disk activity readings from this server in this window."
+msgstr ""
+"No hay lecturas de actividad del disco de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No disk readings from this server in this window."
+msgstr "No hay lecturas del disco de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No instance of this server answered requests in this window."
+msgstr ""
+"Ninguna instancia de este servidor respondió peticiones en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "No instance of this server has reported in the last 5 minutes."
+msgstr ""
+"Ninguna instancia de este servidor ha informado en los últimos 5 minutos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No instance of this server has reported in this window."
+msgstr "Ninguna instancia de este servidor ha informado en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No load readings from this server in this window."
+msgstr "No hay lecturas de carga de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No memory readings from this server in this window."
+msgstr "No hay lecturas de memoria de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No network readings from this server in this window."
+msgstr "No hay lecturas de red de este servidor en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No pressure readings from this server. Its kernel may not report them."
+msgstr ""
+"No hay lecturas de presión de este servidor. Puede que su kernel no las "
+"ofrezca."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "No sample from this server in the last hour."
+msgstr "Ninguna muestra de este servidor en la última hora."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "No server reported in this window."
+msgstr "Ningún servidor informó en este intervalo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid "Normal: no resource of this server looks saturated."
+msgstr "Normal: ningún recurso de este servidor parece saturado."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Reporting from %(from)s to %(to)s"
+msgstr "Informando de %(from)s a %(to)s"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_repo
@@ -6483,12 +6802,24 @@ msgstr "Tiempo de petición en el tiempo"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Request time per instance"
+msgstr "Tiempo de petición por instancia"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "Requests for other software's files (WordPress, .env, .git…) answered 404:"
 msgstr ""
 "Peticiones de archivos de otro software (WordPress, .env, .git…) respondidas"
 " con 404:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Requests per instance"
+msgstr "Peticiones por instancia"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6501,6 +6832,12 @@ msgstr "Peticiones por minuto"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Requests per minute in the requests read"
 msgstr "Peticiones por minuto en las peticiones leídas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Requests per second each instance on this server answered"
+msgstr "Peticiones por segundo que respondió cada instancia de este servidor"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6521,9 +6858,29 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Reset zoom"
 msgstr "Quitar el zoom"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Right now"
+msgstr "Ahora mismo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Root disk in use"
+msgstr "Disco raíz en uso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Root disk over 90 %"
+msgstr "Disco raíz por encima del 90 %"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6557,6 +6914,12 @@ msgstr "Servidor: espera por recursos"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers reporting"
+msgstr "Servidores que informan"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid ""
 "Sessions of this instance's database, what they wait for and who blocks "
@@ -6585,6 +6948,46 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Share of memory in use of the ten fullest servers over time"
+msgstr ""
+"Parte de la memoria en uso de los diez servidores más llenos en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Share of the root disk in use of the ten fullest servers over time"
+msgstr ""
+"Parte del disco raíz en uso de los diez servidores más llenos en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Share of the time each disk of this server was busy"
+msgstr "Parte del tiempo que cada disco de este servidor estuvo ocupado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Share of the time the busiest disk of the ten busiest servers had work"
+msgstr ""
+"Parte del tiempo que el disco más ocupado de los diez servidores más "
+"cargados tuvo trabajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Share of this server's memory and swap in use over time"
+msgstr "Parte de la memoria y la swap de este servidor en uso en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Share of this server's root disk in use over time"
+msgstr "Parte del disco raíz de este servidor en uso en el tiempo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Share of time each container was held back by its CPU quota"
 msgstr ""
@@ -6592,9 +6995,21 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Silent from %(from)s to %(to)s"
+msgstr "En silencio de %(from)s a %(to)s"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Since when?"
 msgstr "¿Desde cuándo?"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Size of every instance's directory on this server over time"
+msgstr "Tamaño del directorio de cada instancia de este servidor en el tiempo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6620,6 +7035,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid "Something is short"
 msgstr "Falta algo"
@@ -6635,6 +7051,28 @@ msgstr "Tabla"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Tables with most dead rows"
 msgstr "Tablas con más filas muertas"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"Tasks wait for memory %(pct)s%% of the time: the server is evicting pages "
+"from every instance. Move an instance to another server or give this one "
+"more memory."
+msgstr ""
+"Las tareas esperan memoria el %(pct)s%% del tiempo: el servidor está "
+"expulsando páginas de todas sus instancias. Mueva una instancia a otro "
+"servidor o dé más memoria a este."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid ""
+"The agents on this server are installed but have not sent anything yet. The "
+"first readings arrive within a few minutes."
+msgstr ""
+"Los agentes de este servidor están instalados, pero aún no han enviado nada."
+" Las primeras lecturas llegan en pocos minutos."
 
 #. module: incubacloud
 #. odoo-python
@@ -6656,6 +7094,32 @@ msgstr "No se pudo leer la base de datos de esta instancia. ¿Está en marcha?"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"The disk is the bottleneck: tasks wait for it %(pct)s%% of the time. A "
+"backup or a migration running explains it; otherwise the server needs a "
+"faster disk."
+msgstr ""
+"El disco es el cuello de botella: las tareas lo esperan el %(pct)s%% del "
+"tiempo. Una copia de seguridad o una migración en marcha lo explica; si no, "
+"el servidor necesita un disco más rápido."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "The fleet now"
+msgstr "La flota ahora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "The fleet's metrics and each server's, drawn from the metrics central."
+msgstr ""
+"Las métricas de la flota y de cada servidor, leídas de la central de "
+"métricas."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "The log of this instance could not be read."
 msgstr "No se pudo leer el log de esta instancia."
@@ -6665,6 +7129,16 @@ msgstr "No se pudo leer el log de esta instancia."
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
 msgid "The metrics agents are not installed on this host."
 msgstr "Los agentes de métricas no están instalados en este host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid ""
+"The metrics agents are not installed on any server yet. The panel installs "
+"them on its own."
+msgstr ""
+"Los agentes de métricas aún no están instalados en ningún servidor. El panel"
+" los instala por sí solo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6678,6 +7152,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid ""
+"The metrics agents are not installed on this server yet. The panel installs "
+"them on its own."
+msgstr ""
+"Los agentes de métricas aún no están instalados en este servidor. El panel "
+"los instala por sí solo."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid ""
 "The metrics agents could not be installed on this instance's server. The "
@@ -6685,6 +7169,16 @@ msgid ""
 msgstr ""
 "No se pudieron instalar los agentes de métricas en el servidor de esta "
 "instancia. El panel sigue intentándolo por sí solo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid ""
+"The metrics agents could not be installed on this server. The panel keeps "
+"trying on its own."
+msgstr ""
+"No se pudieron instalar los agentes de métricas en este servidor. El panel "
+"sigue intentándolo por sí solo."
 
 #. module: incubacloud
 #. odoo-python
@@ -7409,6 +7903,8 @@ msgstr ""
 #: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.js:0
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "Hosts"
 msgstr "Hosts"
 
@@ -7780,6 +8276,7 @@ msgstr "Inactividad"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid ""
 "In Settings › Monitoring, pick a host under Where the central runs and press"
@@ -9419,6 +9916,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Metrics"
 msgstr "Métricas"
@@ -9474,7 +9972,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "Metrics are managed by your provider. Let them know if this persists."
 msgstr "Su proveedor gestiona las métricas. Avísele si esto continúa."
 
@@ -9553,22 +10051,6 @@ msgstr "Módulos"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Monitoring"
 msgstr "Monitorización"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid ""
-"Monitoring is managed for you. Host and instance\n"
-"                            health is shown on their own pages."
-msgstr ""
-"La monitorización está gestionada por nosotros. La salud de los\n"
-"                            hosts e instancias se muestra en sus propias páginas."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Monitoring is not set up yet"
-msgstr "La monitorización aún no está configurada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9905,6 +10387,8 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "No data for this period."
 msgstr "Sin datos en este periodo."
@@ -10403,6 +10887,8 @@ msgstr "Nada que mostrar para el filtro actual."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid ""
 "Nothing was reported in the selected window. Pick a longer range or reset "
@@ -10565,12 +11051,14 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Observability is not enabled"
 msgstr "La observabilidad no está activada"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Observability is on, but there is no metrics central"
 msgstr "La observabilidad está activada, pero no hay central de métricas"
@@ -10993,6 +11481,7 @@ msgstr "Abrir shell del host"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Open Settings › Monitoring"
 msgstr "Abrir Configuración › Monitorización"
@@ -12757,6 +13246,8 @@ msgstr "Reprocesar y purgar los eventos de webhooks de GitLab"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Requests"
 msgstr "Peticiones"
 
@@ -13623,12 +14114,6 @@ msgid "Select all changes"
 msgstr "Seleccionar todos los cambios"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Select an instance"
-msgstr "Seleccione una instancia"
-
-#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__type__self_hosted
 msgid "Self-hosted"
 msgstr "Auto-alojado"
@@ -13794,13 +14279,6 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "Set it up by hand with the URL and secret in Git providers."
 msgstr "Configúrelo a mano con la URL y el secreto de Proveedores Git."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
-msgid "Set the Grafana base URL in Settings to embed the dashboards here."
-msgstr ""
-"Configure la URL base de Grafana en Ajustes para embeber aquí los paneles."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__processed
@@ -14617,6 +15095,28 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"The root disk is %(pct)s%% full. Free space or grow the disk before it fills"
+" up: a full disk stops every instance."
+msgstr ""
+"El disco raíz está lleno al %(pct)s%%. Libere espacio o amplíe el disco "
+"antes de que se llene: un disco lleno detiene todas las instancias."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"The root disk is %(pct)s%% full; the largest instance directory is %(name)s "
+"(%(size)s GB). Free space or grow the disk before it fills up: a full disk "
+"stops every instance."
+msgstr ""
+"El disco raíz está lleno al %(pct)s%%; el directorio de instancia más grande"
+" es el de %(name)s (%(size)s GB). Libere espacio o amplíe el disco antes de "
+"que se llene: un disco lleno detiene todas las instancias."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "The series of .copier-answers.yml is not understood: %s."
 msgstr "La serie de .copier-answers.yml no se entiende: %s."
@@ -14682,6 +15182,7 @@ msgstr "El certificado del camino directo %(name)s caduca el %(date)s."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid ""
 "The charts are read from a central. In Settings › Monitoring, pick a host "
@@ -15178,12 +15679,38 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid "The server is saturated (load %(load)s per core)."
+msgstr "El servidor está saturado (carga de %(load)s por núcleo)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
+msgid ""
+"The server is saturated (load %(load)s per core); %(name)s uses the most "
+"CPU, %(pct)s%% of the server."
+msgstr ""
+"El servidor está saturado (carga de %(load)s por núcleo); %(name)s es la que"
+" más CPU usa, el %(pct)s%% del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_diagnosis.py:0
 msgid ""
 "The server is saturated and most of it goes to another instance (%(name)s, "
 "%(pct)s%%). This instance is not the cause."
 msgstr ""
 "El servidor está saturado y la mayor parte la consume otra instancia "
 "(%(name)s, %(pct)s%%). Esta instancia no es la causa."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid ""
+"The server measures the directories every 10 minutes; nothing has been "
+"reported in this window."
+msgstr ""
+"El servidor mide los directorios cada 10 minutos; no se ha informado nada en"
+" este intervalo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15310,6 +15837,7 @@ msgstr "El secreto del webhook puede tener como máximo %(max)s caracteres."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid ""
 "The window shown ends in the past: the diagnosis reads only the last 15 "
@@ -15737,6 +16265,16 @@ msgstr "El servidor ya es accesible."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid ""
+"This server stopped sending metrics on %s. Check that it is on and "
+"reachable."
+msgstr ""
+"Este servidor dejó de enviar métricas el %s. Compruebe que está encendido y "
+"accesible."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "This staging has had no activity for a while and will be deleted. Nothing in"
@@ -15822,6 +16360,7 @@ msgstr "Hora"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Time range"
 msgstr "Intervalo de tiempo"
@@ -15831,6 +16370,12 @@ msgstr "Intervalo de tiempo"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Time the server's tasks waited for CPU, memory or disk"
 msgstr "Tiempo que las tareas del servidor esperaron por CPU, memoria o disco"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Time this server's tasks waited for CPU, memory or disk"
+msgstr "Tiempo que las tareas de este servidor esperaron CPU, memoria o disco"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16203,6 +16748,8 @@ msgstr "Rangos de proxy de confianza (excepción)"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Try again"
 msgstr "Intentar de nuevo"
@@ -16456,13 +17003,13 @@ msgstr "Sin uso"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "Updated %(at)s · step %(step)s s"
 msgstr "Actualizado a las %(at)s · paso %(step)s s"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "Updated %(at)s · step %(step)s s · refreshes every 45 s"
 msgstr "Actualizado a las %(at)s · paso %(step)s s · se actualiza cada 45 s"
 
@@ -16770,6 +17317,12 @@ msgstr ""
 "Esperando a un servidor con código más reciente que retome este trabajo."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "Waiting for resources"
+msgstr "Espera por recursos"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Waiting for the alert to be resolved: %s"
@@ -16785,6 +17338,12 @@ msgstr "Esperando la entrega…"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__wait_dependencies
 msgid "Waiting on Dependencies"
 msgstr "Esperando dependencias"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Waiting over 20 % of the time"
+msgstr "Esperando más del 20 % del tiempo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16940,6 +17499,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "What is happening now?"
 msgstr "¿Qué está pasando ahora?"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "What is happening?"
+msgstr "¿Qué está pasando?"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_gitlab_event__summary
@@ -17333,6 +17898,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Which instance uses it?"
+msgstr "¿Qué instancia lo usa?"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Which process or query?"
 msgstr "¿Qué proceso o consulta?"
@@ -17600,6 +18171,15 @@ msgstr "No puede editar ningún proyecto al que sirva este webhook."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid ""
+"You have no server yet. Add a VPS or connect a server of your own to start."
+msgstr ""
+"Aún no tiene ningún servidor. Añada un VPS o conecte un servidor propio para"
+" empezar."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/use_nav_guard.js:0
 msgid "You have unsaved changes. Leave this page without saving?"
 msgstr "Tiene cambios sin guardar. ¿Salir de esta página sin guardar?"
@@ -17633,6 +18213,14 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Your servers"
+msgstr "Sus servidores"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Zoomed window."
 msgstr "Intervalo ampliado."
@@ -17856,7 +18444,7 @@ msgstr "difiere"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "directory"
 msgstr "directorio"
 
@@ -17868,7 +18456,7 @@ msgstr "desactivado"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "disk I/O"
 msgstr "E/S de disco"
 
@@ -17929,7 +18517,7 @@ msgstr "activado"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "errors (5xx)"
 msgstr "errores (5xx)"
 
@@ -18068,6 +18656,12 @@ msgstr "en el contenedor de odoo. El ZIP se adjunta a esta lista y"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "in use"
+msgstr "en uso"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
@@ -18150,9 +18744,23 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "last 15 minutes"
 msgstr "últimos 15 minutos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "last 5 minutes · busiest first"
+msgstr "últimos 5 minutos · los más cargados primero"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "last minute"
+msgstr "último minuto"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18174,7 +18782,7 @@ msgstr "de antes de que esta instancia se entregara el"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "memory"
 msgstr "memoria"
 
@@ -18251,13 +18859,19 @@ msgstr "ops@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "others"
+msgstr "otras"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "out of memory"
 msgstr "sin memoria"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "p50"
 msgstr "p50"
 
@@ -18269,10 +18883,22 @@ msgstr "p50 y p95, en el proxy"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "p95"
 msgstr "p95"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "p95 of the request time of every instance on this server"
+msgstr "p95 del tiempo de petición de cada instancia de este servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "p95, at the proxy"
+msgstr "p95, en el proxy"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18385,9 +19011,21 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "read"
+msgstr "leído"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/on_demand_panel.js:0
 msgid "read %s"
 msgstr "leído %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "read and written per second"
+msgstr "leído y escrito por segundo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18397,13 +19035,31 @@ msgstr "reconstruir al hacer push a repos no congelados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "received"
+msgstr "recibido"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "received and sent per second"
+msgstr "recibido y enviado por segundo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "redirect to (optional)"
 msgstr "redirigir a (opcional)"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "reporting"
+msgstr "informando"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid "requests"
 msgstr "peticiones"
 
@@ -18412,6 +19068,12 @@ msgstr "peticiones"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "restart"
 msgstr "reinicio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "running"
+msgstr "en marcha"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18462,6 +19124,12 @@ msgstr "scopes sin leer"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "sent"
+msgstr "enviado"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "set up by hand"
 msgstr "configurado a mano"
@@ -18471,6 +19139,12 @@ msgstr "configurado a mano"
 #: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "set up by the panel"
 msgstr "configurado por el panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "silent"
+msgstr "en silencio"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18492,15 +19166,76 @@ msgstr "origen"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "stacked · 100 % = one core"
+msgstr "apilado · 100 % = un núcleo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "stacked · measured every 10 minutes"
+msgstr "apilado · medido cada 10 minutos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "stacked · per second, at the proxy"
+msgstr "apilado · por segundo, en el proxy"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "stacked · working set"
+msgstr "apilado · memoria en uso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "stopped"
+msgstr "parada"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "succeeded"
 msgstr "terminó bien"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "swap"
+msgstr "swap"
 
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/host_terminal.py:0
 msgid "systemctl status"
 msgstr "systemctl status"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "tasks waiting or running, per core · above 1 they queue"
+msgstr ""
+"tareas esperando o en ejecución, por núcleo · por encima de 1 hacen cola"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "ten busiest servers · above 1 they queue"
+msgstr "los diez servidores más cargados · por encima de 1 hacen cola"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "ten busiest servers · busiest disk of each"
+msgstr "los diez servidores más cargados · el disco más ocupado de cada uno"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "ten fullest servers"
+msgstr "los diez servidores más llenos"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18589,6 +19324,12 @@ msgstr "espera a %s"
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "working set · dashed: limit"
 msgstr "memoria en uso · discontinua: límite"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
+msgid "written"
+msgstr "escrito"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19125,7 +19866,7 @@ msgstr "Huellas de la CA"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.js:0
 msgid ""
 "Check Credential in Settings › Monitoring › Advanced: it must be the one the"
 " central was deployed with."

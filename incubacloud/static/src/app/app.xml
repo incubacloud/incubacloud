@@ -120,7 +120,7 @@
                         <HostsDashboard/>
                     </t>
                     <t t-if="state.route === 'host_detail' and env.permissions?.can_manage_hosts">
-                        <HostDetail host_id="state.params.host_id"/>
+                        <HostDetail host_id="state.params.host_id" tab="state.params.tab"/>
                     </t>
                     <t t-if="state.route === 'new_host' and env.permissions?.can_manage_hosts">
                         <HostDetail/>

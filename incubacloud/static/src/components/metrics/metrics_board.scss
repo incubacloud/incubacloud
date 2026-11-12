@@ -1,5 +1,7 @@
-// The panel's own metric charts (metrics_board.js, time_series_chart.js,
-// on_demand_panel.js): an instance's Metrics tab as a diagnosis.
+// The panel's own metric charts (metrics_board.js, host_board.js,
+// fleet_board.js, time_series_chart.js, on_demand_panel.js): an
+// instance's Metrics tab as a diagnosis, a server's Metrics tab and
+// Monitoring's fleet.
 
 .ic-mb {
   display: flex;
@@ -282,6 +284,145 @@
   color: var(--rl-faint);
   font-family: var(--rl-fm);
   font-size: 11px;
+}
+
+// ── A server's board ─────────────────────────────────────────────────
+.ic-hb-ingest {
+  margin-block: 10px 0;
+  color: var(--rl-muted);
+  font-family: var(--rl-fm);
+  font-size: 11.5px;
+
+  &.is-late {
+    color: var(--rl-amber-text);
+  }
+}
+
+.ic-hb-link {
+  color: var(--rl-fg);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--rl-line2);
+  text-underline-offset: 3px;
+
+  &:hover,
+  &:focus-visible {
+    text-decoration-color: currentColor;
+  }
+}
+
+// ── The fleet's board ────────────────────────────────────────────────
+.ic-fb-tiles {
+  display: grid;
+  grid-template-columns: #{"repeat(auto-fill, minmax(min(100%, 150px), 1fr))"};
+  gap: 10px;
+}
+
+.ic-fb-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  min-inline-size: 0;
+}
+
+.ic-fb-tile-value {
+  color: var(--rl-fg);
+  font-family: var(--rl-fm);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.ic-fb-tile-label {
+  color: var(--rl-muted);
+  font-size: 12px;
+}
+
+.ic-fb-tile.is-warn .ic-fb-tile-value {
+  color: var(--rl-amber-text);
+}
+
+.ic-fb-tile.is-bad .ic-fb-tile-value {
+  color: var(--rl-red-text);
+}
+
+.ic-fb-scope {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--rl-surf2);
+  color: var(--rl-fg2);
+  font-size: 11.5px;
+}
+
+// The ingestion line: one row per host, its window in segments.
+.ic-fb-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ic-fb-tl-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 200px) 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.ic-fb-tl-name {
+  overflow: hidden;
+  color: var(--rl-fg2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ic-fb-tl-bar {
+  position: relative;
+  block-size: 12px;
+  border-radius: var(--rl-rsm);
+  background: var(--rl-surf2);
+  overflow: hidden;
+}
+
+.ic-fb-tl-seg {
+  position: absolute;
+  inset-block: 0;
+
+  &.is-ok {
+    background: var(--rl-green);
+  }
+
+  &.is-silent {
+    background: var(--rl-red);
+  }
+}
+
+.ic-fb-legend-ok,
+.ic-fb-legend-silent {
+  display: inline-block;
+  inline-size: 10px;
+  block-size: 10px;
+  margin-inline: 8px 4px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.ic-fb-legend-ok {
+  background: var(--rl-green);
+}
+
+.ic-fb-legend-silent {
+  background: var(--rl-red);
+}
+
+@media (max-width: 480px) {
+  .ic-fb-tl-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 
 // ── Readings on demand ───────────────────────────────────────────────

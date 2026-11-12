@@ -103,6 +103,10 @@ describe("_buildUrl", () => {
         expect(_buildUrl("host_detail", { host_id: 10 })).toBe("/cloud/hosts/10");
     });
 
+    test("host_detail opens a tab by ?tab=", () => {
+        expect(_buildUrl("host_detail", { host_id: 10, tab: "metrics" })).toBe("/cloud/hosts/10?tab=metrics");
+    });
+
     test("settings route builds /cloud/settings", () => {
         expect(_buildUrl("settings", {})).toBe("/cloud/settings");
     });

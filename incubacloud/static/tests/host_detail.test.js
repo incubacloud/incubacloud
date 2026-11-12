@@ -24,6 +24,20 @@ describe("HostDetail — class structure", () => {
     test("components includes PasswordInput", () => {
         expect("PasswordInput" in HostDetail.components).toBe(true);
     });
+
+    test("draws the server's board in a Metrics tab, for whoever reads metrics", () => {
+        expect("HostBoard" in HostDetail.components).toBe(true);
+        expect(HostDetail.props.tab.optional).toBe(true);
+        const comp = Object.create(HostDetail.prototype);
+        comp.isNew = false;
+        comp.env = { permissions: { can_view_metrics: true } };
+        expect(comp.canViewMetrics).toBe(true);
+        comp.env = { permissions: {} };
+        expect(comp.canViewMetrics).toBe(false);
+        comp.isNew = true;
+        comp.env = { permissions: { can_view_metrics: true } };
+        expect(comp.canViewMetrics).toBe(false);
+    });
 });
 
 describe("HostDetail — statusLabel helper", () => {

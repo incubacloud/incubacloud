@@ -6,7 +6,7 @@
             <div class="rl-phead">
                 <div>
                     <h1 class="rl-ptitle">Monitoring</h1>
-                    <p class="rl-psub">Fleet metrics collected from your hosts.</p>
+                    <p class="rl-psub">The fleet's metrics and each server's, drawn from the metrics central.</p>
                 </div>
             </div>
 
@@ -30,42 +30,9 @@
                 </div>
             </t>
 
-            <!-- Not configured yet: say what is missing, do not fake a
-                 chart. Which of these is reachable depends on the panel:
-                 an operator who owns the settings gets an instruction,
-                 while a panel whose settings are injected gets a plain
-                 statement of fact. Telling the second one to visit a tab
-                 it does not have is the dead end this replaces; the nav
-                 entry is already hidden there, so this is what a typed
-                 URL lands on. -->
-            <t t-elif="!state.enabled or !state.baseUrl">
-                <div class="rl-stub">
-                    <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
-                    <t t-if="!canConfigure">
-                        <h3>Dashboards are not available on this panel</h3>
-                        <p>
-                            Monitoring is managed for you. Host and instance
-                            health is shown on their own pages.
-                        </p>
-                    </t>
-                    <t t-else="">
-                        <h3>Monitoring is not set up yet</h3>
-                        <p t-if="!state.enabled">
-                            Enable observability in Settings. Every host is then
-                            enrolled automatically — there is nothing to install
-                            by hand.
-                        </p>
-                        <p t-else="">
-                            Set the Grafana base URL in Settings to embed the dashboards here.
-                        </p>
-                    </t>
-                </div>
-            </t>
-
             <!-- No server in the fleet: nothing can report metrics yet.
-                 Every chart would read "No data", which looks broken; a
-                 managed panel itself runs on servers it does not manage,
-                 and those are not part of its fleet. -->
+                 A managed panel itself runs on servers it does not
+                 manage, and those are not part of its fleet. -->
             <t t-elif="!hasHosts">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
@@ -74,43 +41,34 @@
                 </div>
             </t>
 
-            <!-- Embedded dashboards -->
             <t t-else="">
-                <div class="rl-tabs" role="tablist" aria-label="Dashboards">
-                    <t t-foreach="dashboards" t-as="dash" t-key="dash.uid">
-                        <button class="rl-tab" role="tab"
-                                t-att-class="{ active: state.current === dash.uid }"
-                                t-att-aria-selected="state.current === dash.uid ? 'true' : 'false'"
-                                t-on-click="() => this.select(dash.uid)">
-                            <t t-esc="dash.label"/>
+                <div class="rl-tabs" role="tablist" aria-label="Monitoring views">
+                    <t t-foreach="views" t-as="v" t-key="v.key">
+                        <button class="rl-tab" role="tab" t-att-data-view="v.key"
+                                t-att-class="{ active: state.view === v.key }"
+                                t-att-aria-selected="state.view === v.key ? 'true' : 'false'"
+                                t-on-click="() => this.select(v.key)">
+                            <t t-esc="v.label"/>
                         </button>
                     </t>
                 </div>
-                <!-- Which host/instance is on screen. Kiosk mode hides
-                     Grafana's own picker, so without this the embed showed
-                     one arbitrary subject and never said which. -->
-                <div class="ic-monitoring-subject" t-if="needsHost or needsInstance">
-                    <t t-if="needsHost">
-                        <span class="ic-monitoring-subject-label">Host</span>
-                        <SearchSelect options="hostOptions"
-                                      value="state.host"
-                                      onChange.bind="setHost"
-                                      placeholder.translate="Select a host"
-                                      emptyLabel.translate="Select a host"/>
+                <div class="ic-monitoring-view">
+                    <t t-if="state.view === 'fleet'">
+                        <FleetBoard canConfigure="canConfigure" onOpenHost.bind="openHost"/>
                     </t>
                     <t t-else="">
-                        <span class="ic-monitoring-subject-label">Instance</span>
-                        <SearchSelect options="instanceOptions"
-                                      value="state.instance"
-                                      onChange.bind="setInstance"
-                                      placeholder.translate="Select an instance"
-                                      emptyLabel.translate="Select an instance"/>
+                        <div class="ic-monitoring-subject">
+                            <span class="ic-monitoring-subject-label">Host</span>
+                            <SearchSelect options="hostOptions"
+                                          value="state.host"
+                                          onChange.bind="setHost"
+                                          placeholder.translate="Select a host"
+                                          emptyLabel.translate="Select a host"/>
+                        </div>
+                        <t t-if="hostId">
+                            <HostBoard t-key="hostId" hostId="hostId" canConfigure="canConfigure"/>
+                        </t>
                     </t>
-                </div>
-                <div class="rl-card ic-monitoring-frame">
-                    <iframe t-att-src="currentUrl"
-                            t-att-title="'Monitoring dashboard: ' + state.current"
-                            loading="lazy"/>
                 </div>
             </t>
         </div>

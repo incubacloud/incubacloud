@@ -3,61 +3,17 @@ import { Component } from "@odoo/owl";
 import { Monitoring } from "@incubacloud/components/monitoring/monitoring";
 
 /**
- * The embed URL is the part worth pinning: it is built by string
- * concatenation from an operator-supplied base URL, so a trailing slash
- * or a renamed dashboard silently produces a blank iframe rather than an
- * error anyone would notice.
+ * Monitoring draws the fleet's board and one server's, as the panel's
+ * own charts (no frame of another tool since 12-nov-2026). The mounted
+ * page is tested with the boards, in host_fleet_board.test.js.
  */
 describe("Monitoring — class structure", () => {
-    test("is a Component with the right template and no props", () => {
+    test("is a Component with the right template, no props and its two boards", () => {
         expect(Monitoring.prototype).toBeInstanceOf(Component);
         expect(Monitoring.template).toBe("incubacloud.Monitoring");
         expect(Monitoring.props).toEqual({});
-    });
-
-    test("declares the dashboards provisioned by the central playbook", () => {
-        // The uids must match ansible/files/dashboards/*.json — a
-        // mismatch renders an empty Grafana page with no error.
-        const uids = Monitoring.DASHBOARDS.map((d) => d.uid);
-        expect(uids).toEqual(["ic-fleet", "ic-host", "ic-instance"]);
-        for (const dash of Monitoring.DASHBOARDS) {
-            expect(dash.slug).not.toBe("");
-            expect(dash.label).not.toBe("");
-        }
-    });
-});
-
-describe("Monitoring — embed URL", () => {
-    const build = (baseUrl, uid = "ic-host") => {
-        const cmp = Object.create(Monitoring.prototype);
-        cmp.state = { baseUrl, current: uid };
-        return cmp.embedUrl(uid);
-    };
-
-    test("points at the dashboard and strips Grafana's chrome", () => {
-        const url = build("https://grafana.example.com");
-        expect(url).toInclude("/d/ic-host/incubacloud-host");
-        // kiosk: the panel supplies navigation; without it the embed
-        // shows a second, conflicting menu bar.
-        expect(url).toInclude("kiosk");
-    });
-
-    test("tolerates a trailing slash in the configured base URL", () => {
-        // Operators paste URLs with and without it; a double slash breaks
-        // the route on some reverse proxies.
-        expect(build("https://grafana.example.com/")).not.toInclude(".com//d/");
-    });
-
-    test("is empty when no base URL is configured", () => {
-        // Guards the template: an empty src renders the page's own URL
-        // inside the iframe, which looks like a broken recursive panel.
-        expect(build("")).toBe("");
-    });
-
-    test("is empty for an unknown dashboard", () => {
-        const cmp = Object.create(Monitoring.prototype);
-        cmp.state = { baseUrl: "https://g.example.com", current: "nope" };
-        expect(cmp.embedUrl("nope")).toBe("");
+        expect(Object.keys(Monitoring.components)).toEqual(["SearchSelect", "FleetBoard", "HostBoard"]);
+        expect(Monitoring.DASHBOARDS).toBe(undefined);
     });
 });
 
@@ -93,22 +49,23 @@ describe("Monitoring — who may configure it", () => {
     });
 });
 
-describe("Monitoring — instance picker", () => {
-    /**
-     * Grafana filters on the compose name, which means nothing on its
-     * own (``ic-acme-034a549f``). The picker shows the label the
-     * server built and must keep sending the name.
-     */
-    test("shows the label and sends the name Grafana filters on", () => {
+describe("Monitoring — host picker", () => {
+    test("shows the name and sends the id", () => {
         const cmp = Object.create(Monitoring.prototype);
-        cmp.state = {
-            instances: [
-                { name: "ic-acme-1", label: "Acme · acme.example.com", running: true },
-            ],
-        };
-        expect(cmp.instanceOptions).toEqual([
-            { value: "ic-acme-1", label: "Acme · acme.example.com" },
-        ]);
+        cmp.state = { hosts: [{ id: 3, name: "srv-01" }], host: "3" };
+        expect(cmp.hostOptions).toEqual([{ value: "3", label: "srv-01" }]);
+        expect(cmp.hostId).toBe(3);
+        cmp.state.host = "";
+        expect(cmp.hostId).toBe(0);
+    });
+
+    test("a server of the fleet opens in the Hosts view, if the panel lists it", () => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.state = { hosts: [{ id: 3, name: "srv-01" }], host: "", view: "fleet" };
+        cmp.openHost(7);
+        expect(cmp.state.view).toBe("fleet");
+        cmp.openHost(3);
+        expect(cmp.state).toEqual({ hosts: [{ id: 3, name: "srv-01" }], host: "3", view: "hosts" });
     });
 });
 
@@ -116,7 +73,7 @@ describe("Monitoring — a fleet with no server", () => {
     /**
      * With no server nothing can report, and every chart read "No data"
      * as if the page were broken (2-nov-2026, a managed panel without a server).
-     * The page says why instead of embedding empty dashboards.
+     * The page says why instead of drawing empty boards.
      */
     const withHosts = (hosts) => {
         const cmp = Object.create(Monitoring.prototype);
@@ -126,6 +83,6 @@ describe("Monitoring — a fleet with no server", () => {
 
     test("is told apart from a fleet that has one", () => {
         expect(withHosts([]).hasHosts).toBe(false);
-        expect(withHosts([{ name: "vps-1" }]).hasHosts).toBe(true);
+        expect(withHosts([{ id: 1, name: "vps-1" }]).hasHosts).toBe(true);
     });
 });

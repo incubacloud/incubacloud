@@ -785,9 +785,12 @@ class CloudSettings(models.Model):
             The data layer is on: agents enrol, rules evaluate, the panel
             queries the backend. Everything else is inert without it.
         ``dashboards``
-            There is something to *look at* — collection plus a Grafana
-            to embed. Collecting without a Grafana URL is a perfectly
-            valid state; offering dashboards in it is not.
+            There is something to *look at* — collection plus a central
+            to read the panel's own charts from. Collecting without a
+            central URL is a valid state for a moment (the central is
+            being deployed); offering charts in it is not. Until
+            12-nov-2026 this asked for a Grafana URL, which the charts no
+            longer need.
         ``configure``
             This panel's own operator edits these settings. False where
             they are injected from above, which core never does itself:
@@ -807,7 +810,7 @@ class CloudSettings(models.Model):
         return {
             'collect': collect,
             'dashboards': collect and bool(
-                (settings.grafana_base_url or '').strip()
+                (settings.metrics_central_url or '').strip()
             ),
             'configure': True,
         }

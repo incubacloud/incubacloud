@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- What a board of a server or of the fleet shows instead of its
+         charts: loading, observability off or without a central (the
+         same words as an instance's board), or a central that fails.
+         Called from a ChartBoard's template; it reads that board. -->
+    <t t-name="incubacloud.ChartBoardStates">
+        <t t-if="state.loading and !state.board and !state.error">
+            <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
+                <div class="ic-skeleton-line ic-skeleton-title"/>
+                <div class="ic-skeleton-line"/>
+            </div>
+        </t>
+        <t t-elif="state.reason === 'disabled' or state.reason === 'unconfigured'">
+            <div class="rl-stub ic-mb-stub" t-att-data-reason="state.reason">
+                <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                <t t-if="!props.canConfigure">
+                    <h3>Charts are not available on this panel</h3>
+                    <p>Metrics are managed by your provider.</p>
+                </t>
+                <t t-elif="state.reason === 'disabled'">
+                    <h3>Observability is not enabled</h3>
+                    <p>In Settings › Monitoring, pick a host under Where the central runs and press Enable observability. Every host is then enrolled on its own.</p>
+                </t>
+                <t t-else="">
+                    <h3>Observability is on, but there is no metrics central</h3>
+                    <p>The charts are read from a central. In Settings › Monitoring, pick a host under Where the central runs and press Enable observability.</p>
+                </t>
+                <button t-if="canOpenSettings" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                        t-on-click="openSettings">Open Settings › Monitoring</button>
+            </div>
+        </t>
+        <t t-elif="state.error">
+            <div class="rl-card rl-stub ic-mb-stub" role="alert" t-att-data-reason="state.reason">
+                <span class="rl-si"><t t-out="env.icon('alert', 40)"/></span>
+                <h3>Could not load the charts</h3>
+                <p t-esc="state.error"/>
+                <p t-if="sinceText" class="ic-mb-since" t-esc="sinceText"/>
+                <p t-if="state.reason === 'credential'" t-esc="credentialHint"/>
+                <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.load()">Try again</button>
+            </div>
+        </t>
+    </t>
+
+    <!-- The range of a board and the way back from a zoom. -->
+    <t t-name="incubacloud.ChartBoardRange">
+        <div class="ic-mb-controls">
+            <t t-if="isZoomed">
+                <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetZoom">Reset zoom</button>
+            </t>
+            <div class="ic-mb-seg" role="group" aria-label="Time range">
+                <t t-foreach="ranges" t-as="r" t-key="r.key">
+                    <button t-att-class="'ic-mb-segbtn' + (state.range === r.key and !isZoomed ? ' active' : '')"
+                            t-att-aria-pressed="state.range === r.key and !isZoomed ? 'true' : 'false'"
+                            t-on-click="() => this.setRange(r.key)"
+                            t-esc="r.label"/>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <!-- One chart card of a board: its title and hint, the panel's
+         error in words when the central failed it alone, the chart, or
+         what to say when it has no line. Called with ``c``, a card of
+         the board (``{key, title, hint, unit, label, empty, palette,
+         stacked, highlight, wide}``, its words translated in JS). -->
+    <t t-name="incubacloud.ChartBoardCard">
+        <div t-att-class="'rl-card ic-mb-card' + (c.wide ? ' ic-mb-wide' : '')" t-att-data-panel="c.key">
+            <div class="ic-mb-cardhead"><span class="rl-ovtitle" t-esc="c.title"/><span class="ic-mb-hint" t-esc="c.hint"/></div>
+            <p t-if="panelError(c.key)" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError(c.key)"/>
+            <t t-elif="hasSeries(c.key)">
+                <TimeSeriesChart series="series(c.key)" window="window" step="state.board.step"
+                                 unit="c.unit || undefined" palette="c.palette || 'service'" stacked="!!c.stacked"
+                                 highlightId="c.highlight || ''" label="c.label" onZoom.bind="zoomTo"/>
+            </t>
+            <p t-else="" class="ic-mb-empty" t-esc="c.empty"/>
+        </div>
+    </t>
+
+</templates>

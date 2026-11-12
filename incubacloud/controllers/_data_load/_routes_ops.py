@@ -56,11 +56,12 @@ _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts"
 #: person who pressed the button.
 _READ_TIMEOUT = 20
 
-#: Boards of an instance's Metrics tab one user may ask for in a minute.
-#: The board refreshes itself every 45 s and a person changing the range
-#: or zooming asks a few times a minute; each board is about ten queries
-#: to the central, so this bounds what one user, or one script with a
-#: session, costs it (10-nov-2026).
+#: Boards one user may ask for in a minute, an instance's, a server's and
+#: the fleet's together. A board refreshes itself every 45 s and a person
+#: changing the range or zooming asks a few times a minute; each board is
+#: six to fourteen queries to the central, so this bounds what one user,
+#: or one script with a session, costs it (10-nov-2026; shared by the
+#: server and fleet boards since 12-nov-2026).
 _BOARD_READS_PER_MIN = 20
 
 #: The user and token of an https remote (``https://oauth2:<token>@host/…``),
@@ -394,6 +395,21 @@ class OpsMixin:
         instance = self._metrics_instance(instance_id)
         if not instance:
             return {"ok": False, "error": _("Instance not found")}
+        return self._board_answer(
+            began, lambda: instance._metrics_board(range_key, start, end),
+        )
+
+    def _board_answer(self, began, read):
+        """Read a board within the caller's budget and time the whole route.
+
+        :param float began: ``time.monotonic()`` when the route started.
+        :param read: a callable returning the board (``_metrics_board``
+            of a record, or of the fleet).
+        :returns: the board with ``timing.total_ms``; the rate gate's
+            answer when the caller asked too often; ``{"ok": False,
+            "error"}`` on a window that is not valid.
+        :rtype: dict
+        """
         limited = rate_gate_json(Rule(
             f"metrics_board_user:{request.env.uid}",
             _("Too many chart reads recently. Try again in a minute."),
@@ -403,7 +419,7 @@ class OpsMixin:
         if limited:
             return limited
         try:
-            result = instance._metrics_board(range_key, start, end)
+            result = read()
         except UserError as exc:
             return {"ok": False, "error": str(exc)}
         if result.get("ok"):
@@ -411,6 +427,59 @@ class OpsMixin:
                 (time.monotonic() - began) * 1000, 1,
             )
         return result
+
+    @http.route(["/cloud/host/resource_series"], type="jsonrpc", auth="user")
+    def cloud_host_resource_series(self, host_id, range_key="1h",
+                                   start=None, end=None):
+        """Return the board of a server's Metrics tab, diagnosed.
+
+        Every panel of ``metrics_charts.PANELS["host"]`` read from the
+        central with this panel's own credential, the "who uses it"
+        table and the plain-words diagnosis of its last 15 minutes
+        (``cloud.host._metrics_board``). Gated as the instance's board:
+        the Developer role and the record rules on the host; a host the
+        caller cannot read is answered as one that does not exist.
+
+        :param int host_id: the server to chart.
+        :param str range_key: ``1h``, ``6h``, ``24h`` or ``7d``.
+        :param start: zoom window start, unix seconds.
+        :param end: zoom window end, unix seconds.
+        """
+        began = time.monotonic()
+        self._sec()._check_can_view_metrics()
+        host = request.env["cloud.host"].browse(host_id)
+        try:
+            if not host.exists():
+                return {"ok": False, "error": _("Host not found")}
+            host.check_access("read")
+        except AccessError:
+            return {"ok": False, "error": _("Host not found")}
+        return self._board_answer(
+            began, lambda: host._metrics_board(range_key, start, end),
+        )
+
+    @http.route(["/cloud/fleet/resource_series"], type="jsonrpc", auth="user")
+    def cloud_fleet_resource_series(self, range_key="1h", start=None, end=None):
+        """Return the fleet's board of Monitoring.
+
+        The panel that deployed the central sees every account's
+        servers through the operator's read-only route; any other panel
+        sees its own (``scope``). The browser names only a range or a
+        window; which credential reads is decided here
+        (``cloud.host._fleet_metrics_board``).
+
+        :param str range_key: ``1h``, ``6h``, ``24h`` or ``7d``.
+        :param start: zoom window start, unix seconds.
+        :param end: zoom window end, unix seconds.
+        """
+        began = time.monotonic()
+        self._sec()._check_can_view_metrics()
+        return self._board_answer(
+            began,
+            lambda: request.env["cloud.host"]._fleet_metrics_board(
+                range_key, start, end,
+            ),
+        )
 
     @http.route(["/cloud/instance/db_activity"], type="jsonrpc", auth="user")
     def cloud_instance_db_activity(self, instance_id):
@@ -1815,19 +1884,18 @@ class OpsMixin:
 
     @http.route(["/cloud/monitoring/config"], type="jsonrpc", auth="user")
     def cloud_monitoring_config(self):
-        """Return what the Monitoring tab needs to embed Grafana.
+        """Return what the Monitoring page and ``get_monitoring`` read.
 
         Deliberately narrow: the master switch, the public Grafana URL,
-        and the two picklists the embed has to fill in. The metrics
-        backend URL and the remote-write token stay server-side — the
-        browser has no business knowing either, and the token is a write
-        credential for the whole fleet.
+        the hosts and the instances. The metrics backend URL and the
+        remote-write token stay server-side — the browser has no
+        business knowing either, and the token is a write credential for
+        the whole fleet.
 
-        The picklists are names, not records: they exist only to build
-        ``var-host=``/``var-instance=`` for the iframe. Without them
-        Grafana falls back to the first value its own variable query
-        returns, so every host and instance but one was unreachable from
-        this tab, with nothing on screen saying so.
+        The page draws its own boards: its Hosts view picks a host by
+        ``id`` from ``hosts``, the hosts the caller can read, and asks
+        ``/cloud/host/resource_series`` for it. The names and the
+        instances' picklist are what the MCP tool reports.
 
         Instances come from ``cloud.instance._monitoring_picklist``,
         which skips drafts (nothing of theirs runs on a host yet, so no
@@ -1841,6 +1909,6 @@ class OpsMixin:
             "ok": True,
             "enabled": bool(settings.metrics_enabled),
             "grafana_base_url": settings.grafana_base_url or "",
-            "hosts": [{"name": h.name} for h in hosts],
+            "hosts": [{"id": h.id, "name": h.name} for h in hosts],
             "instances": request.env["cloud.instance"]._monitoring_picklist(),
         }
