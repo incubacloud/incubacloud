@@ -165,7 +165,7 @@ See [docs/architecture.md](docs/architecture.md) for the full module structure a
 
 ## Installation
 
-Standard Odoo 18.0 modules, for an Odoo 18.0 you already run or a new one; Community is enough. Add this repository and OCA's `queue_job` ([OCA/queue](https://github.com/OCA/queue) 18.0, at the commit [INSTALL.md](INSTALL.md#what-the-panel-needs) names) to your `addons_path`. Install the Python packages of this repository's [`requirements.txt`](requirements.txt) and of OCA/queue's (`requests`), and `ssh` and `sshpass`. Run Odoo with a UTF-8 locale and `INCUBACLOUD_SECRET_KEY` in its environment, and give it the settings the panel's jobs need: `queue_job` in `server_wide_modules`, `limit_time_real = 3600`, more workers than jobs running at once, and the panel's database selected by name.
+Standard Odoo 18.0 modules, for an Odoo 18.0 you already run or a new one; Community is enough. Add this repository and OCA's `queue_job` ([OCA/queue](https://github.com/OCA/queue) 18.0, at the commit [INSTALL.md](INSTALL.md#what-the-panel-needs) names) to your `addons_path`. Install the Python packages of this repository's [`requirements.txt`](requirements.txt) and of OCA/queue's (`requests`), and `ssh` and `sshpass`. Run Odoo with a UTF-8 locale and `INCUBACLOUD_SECRET_KEY` in its environment, and give it the settings the panel's jobs need: `queue_job` in `server_wide_modules`, `limit_time_real` of at least 900 (we use 3600), more workers than jobs running at once, and the panel's database selected by name.
 
 This branch is a port of the 19.0 branch and follows it, one batch per release. It starts clean: a database with the June 2026 snapshot of this branch (core 1.0.6) cannot be upgraded to it. Install it on a new database.
 

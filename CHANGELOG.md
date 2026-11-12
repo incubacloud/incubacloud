@@ -9,10 +9,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.225] — 2026-11-11
 
 Jobs that outlive the request that runs them, as on Odoo.sh, where a
-request is cut at 900 s: a deploy and a rebuild run apart from their
-request their long steps (the download of the repositories, the pull and
-build of the image, the initialization of a new database, the boot test
-and the module update), and every other step runs as before. Settings is a menu of sections, one page each, with a
+request is cut at 900 s: every step that may run long goes on on its
+server apart from the request (the download of the repositories, the pull
+and build of the image, the initialization of a new database, the boot
+test, the module updates, the restores' downloads and loads, the copies
+and downloads and their packaging, Full Setup's install of the host's
+tools, and continuous recovery's base copies and its wait for a restore),
+and the job comes back for it; every other step runs as before, and the
+startup warning now accepts Odoo.sh's 900 s. The relays through the panel
+by SFTP and the playbooks still run within the request. A step left
+running past its job's point of no return holds the instance's queue
+until it ends. Settings is a menu of sections, one page each, with a
 search over every setting (issue #3). A restore to a moment updates its
 database to the code the instance runs, as every other restore does since
 1.0.224; a stopped update of a preview no longer lets a push start a second
@@ -235,11 +242,14 @@ is unchanged.
   workers were counted before (30, 54, 102, 198). An instance's default 2
   workers still serve about 12 users at once: its configuration sets
   `max_cron_threads` apart, so both workers answer people.
-- **The startup warning about `limit_time_real` says the attempt's
-  budget** and what a step in the request has left. It still starts below
-  3600 s: only the rebuild's image build runs apart so far, and with 900 s
-  a deploy's database initialisation or a long restore can outlast the
-  request and die. The log says the budget at every start. It also says
+- **The startup warning about `limit_time_real` starts below 900 s**,
+  Odoo.sh's limit, instead of 3600, and says the attempt's budget and what
+  a step in the request has left: every step that may outlast 0.4 of 900 s
+  runs apart now. What is not a step on the server, the relays through the
+  panel by SFTP (an upload to restore, an archive handed between servers, a
+  copy fetched into the panel) and the playbooks, still runs within the
+  request, and a higher limit gives it more room; `INSTALL.md` keeps 3600 in
+  its example. The log says the budget at every start. It also says
   when `root.user` has no capacity of its own among queue_job's channels,
   and which channels other modules' jobs ran in over the last 30 days: a
   parked job may wait for those. These two are only logged, never part of
