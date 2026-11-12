@@ -68,6 +68,17 @@ Until 2026-10-27 the proof was the connection to Odoo being the CDN's.
 It never is with a proxy in between — it is the proxy's container — so
 nothing was ever corrected, on any panel.
 
+The same proof carries the visitor's country, when the CDN states one
+and ``x_real_ip_country_header`` names the header: the proxy passes the
+CDN's headers through from anybody, so a country is only as good as the
+proof that the CDN said it. Each request that went through the rewrite
+says, in its environment, whether the CDN was proven to speak
+(:data:`VIA_CDN_KEY`) and which country it gave (:data:`COUNTRY_KEY`);
+the session guard (``models/cloud_session_guard``) reads both. A request
+the rewrite never saw — one that reached Odoo without the proxy's
+forwarded host, which is when Odoo skips ``ProxyFix`` — carries neither,
+and counts as not having come through the CDN.
+
 Deliberately free of any particular CDN or proxy: the header name, the
 addresses to believe and the proxy's name are given by the caller.
 """
@@ -89,6 +100,25 @@ TRUSTED_OPTION = "x_real_ip_trusted"
 #: does not try it under any search domain. Optional; see
 #: :class:`OwnProxy` for what leaving it out means.
 PROXY_OPTION = "x_real_ip_proxy"
+#: The header the CDN states the visitor's country in, e.g.
+#: ``CF-IPCountry``. Optional: without it no country is carried, and the
+#: session guard's country signal has nothing to compare.
+COUNTRY_OPTION = "x_real_ip_country_header"
+
+#: Keys this module leaves in the WSGI environment of a request it
+#: rewrote. Not ``HTTP_*``: no header a caller sends can arrive under
+#: them, and Odoo keeps both in the environment it hands to the request
+#: (it drops only ``werkzeug.*``, ``wsgi.*`` and ``socket*``).
+#: Whether the CDN was proven to be the one speaking.
+VIA_CDN_KEY = "incubacloud.real_ip.via_cdn"
+#: The country the CDN stated, two capital letters, or ``''``.
+COUNTRY_KEY = "incubacloud.real_ip.country"
+
+#: What :func:`install` set up in this process: the country header, when
+#: one is configured. Read by :func:`country_header`; empty until a
+#: correction is installed, so an installation not behind a CDN carries
+#: no country of the CDN's.
+_INSTALLED = {}
 
 #: Seconds an answer for the proxy's name is reused. Docker answers from
 #: memory, but this sits on the path of every proxied request.
@@ -481,6 +511,27 @@ def _claim(environ, header, networks, speaker):
     return str(ip) if ip is not None else None
 
 
+def _country(environ, country_header):
+    """Return the country the CDN states in *country_header*, or ``''``.
+
+    Two letters, written in capitals. Anything else — the header absent,
+    empty, longer, or not letters — is ``''``: the CDN said nothing that
+    can be compared. The CDN's own codes for "unknown" (``XX``) and for
+    Tor (``T1``) are two characters and are returned as they are, for
+    the caller to tell apart.
+
+    :param dict environ: the WSGI environment
+    :param str country_header: the header the CDN states it in
+    :rtype: str
+    """
+    if not country_header:
+        return ""
+    value = (environ.get(environ_key(country_header)) or "").strip().upper()
+    if len(value) == 2 and value.isascii() and value.isalnum():
+        return value
+    return ""
+
+
 def asserted_client(environ, header, networks, proxy=None):
     """Return the visitor address the CDN claims, or ``None``.
 
@@ -508,7 +559,7 @@ def asserted_client(environ, header, networks, proxy=None):
     return _claim(environ, header, networks, speaker)
 
 
-def rewrite(environ, header, networks, proxy=None):
+def rewrite(environ, header, networks, proxy=None, country_header=""):
     """Leave in the forwarded chain only what Odoo may believe.
 
     When the CDN is proven to speak, the visitor it names becomes the
@@ -526,7 +577,13 @@ def rewrite(environ, header, networks, proxy=None):
     :param dict environ: the WSGI environment, changed in place
     :param str header: header the CDN states the visitor in
     :param networks: the CDN's networks
+    The country goes with the visitor: written under
+    :data:`COUNTRY_KEY` only when the visitor was, and
+    :data:`VIA_CDN_KEY` says which of the two happened.
+
     :param OwnProxy proxy: who our proxy is; unnamed when not given
+    :param str country_header: header the CDN states the country in;
+        empty to carry none
     :return: the visitor written, or ``None`` when none was
     :rtype: str | None
     """
@@ -534,12 +591,33 @@ def rewrite(environ, header, networks, proxy=None):
         return None
     speaker = _speaker(environ, networks, proxy or _UNNAMED)
     client = _claim(environ, header, networks, speaker)
+    environ[VIA_CDN_KEY] = bool(client)
     if client:
         environ["HTTP_X_FORWARDED_FOR"] = client
+        environ[COUNTRY_KEY] = _country(environ, country_header)
         return client
     if speaker is None and "HTTP_X_FORWARDED_FOR" in environ:
         environ["HTTP_X_FORWARDED_FOR"] = environ.get("REMOTE_ADDR") or ""
     return None
+
+
+def country_header():
+    """Return the country header this process believes from the CDN.
+
+    ``''`` when no correction is installed, or one is without
+    ``x_real_ip_country_header``.
+
+    :rtype: str
+    """
+    return _INSTALLED.get("country_header", "")
+
+
+def installed():
+    """Return whether this process corrects the visitor from a CDN.
+
+    :rtype: bool
+    """
+    return bool(_INSTALLED)
 
 
 def uninstalled(proxy_fix):
@@ -592,6 +670,7 @@ def install(config, http_module):
             )
     proxy = OwnProxy(config.get(PROXY_OPTION))
     proxy.look_up()
+    country = (config.get(COUNTRY_OPTION) or "").strip()
 
     original = http_module.ProxyFix
 
@@ -600,7 +679,7 @@ def install(config, http_module):
         inner = original(app)
 
         def apply(environ, start_response):
-            rewrite(environ, header, networks, proxy)
+            rewrite(environ, header, networks, proxy, country)
             return inner(environ, start_response)
 
         return apply
@@ -613,6 +692,8 @@ def install(config, http_module):
     # drift the day Odoo changes it.
     proxy_fix_reading_the_real_client._incubacloud_wrapped = original
     http_module.ProxyFix = proxy_fix_reading_the_real_client
+    _INSTALLED.clear()
+    _INSTALLED["country_header"] = country
     _logger.info(
         "[real-ip] honouring %s from %d trusted network(s), through %s",
         header, len(networks), proxy,

@@ -52,6 +52,7 @@ proxy_mode = True
 x_real_ip_header = CF-Connecting-IP
 x_real_ip_trusted = 173.245.48.0/20
 x_real_ip_proxy = inverseproxy-proxy-1
+x_real_ip_country_header = CF-IPCountry
 CONF
     cat > "$INST/odoo/custom/src/repos.yaml" <<'YAML'
 ./odoo:
