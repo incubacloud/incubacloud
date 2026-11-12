@@ -258,22 +258,102 @@ class TestHardeningPreflight(TransactionCase):
 
         rescue = blocks[0]["rescue"]
         names = [t["name"] for t in rescue]
-        self.assertEqual(names[0], "Put the SSH configuration back as it was")
-        restore = rescue[0]["ansible.builtin.shell"]
-        self.assertIn("systemctl daemon-reload", restore)
-        self.assertIn("systemctl restart ssh.socket", restore)
-        self.assertIn("systemctl restart ssh.service", restore)
+        restore = rescue[names.index("Put the SSH configuration back as it was")]
+        # The same script the timer runs, tested in ssh_put_back.bats.
+        self.assertEqual(
+            restore["ansible.builtin.command"]["argv"],
+            ["/bin/sh", "{{ ssh_keep_dir }}/ssh_put_back.sh", "{{ ssh_keep_dir }}"],
+        )
         # The restore's own failure must not skip the wait and the message.
-        self.assertIs(rescue[0]["failed_when"], False)
+        self.assertIs(restore["failed_when"], False)
         wait = rescue[names.index("Wait for sshd on the port it had before")]
         self.assertEqual(
-            wait["ansible.builtin.wait_for"]["port"],
-            "{{ ansible_port | default(22) }}",
+            wait["ansible.builtin.wait_for"]["port"], "{{ ic_ssh_port_before }}",
         )
+        self.assertEqual(wait["ansible.builtin.wait_for"]["search_regex"], "SSH-2.0-")
         stats = next(t for t in rescue if "ansible.builtin.set_stats" in t)
         self.assertIs(stats["ansible.builtin.set_stats"]["data"]["ic_ssh_rolled_back"], True)
         self.assertIn("ansible.builtin.fail", rescue[-1])
         self.assertIn("ansible_failed_task.name", rescue[-1]["ansible.builtin.fail"]["msg"])
+
+    def _ssh_block(self):
+        """Return the block that moves sshd, with its rescue."""
+        return next(
+            b for b in self._playbook()["_blocks"]
+            if any(t.get("name") == "Wait for sshd to listen on the new port"
+                   for t in b["block"])
+        )
+
+    def test_the_rescue_waits_on_the_port_sshd_had(self):
+        """A host of the customer's may be reached through a port forward:
+        the rescue waits on the port ``sshd -T`` gave when the
+        configuration was kept, and on the play's own only without it."""
+        block = self._ssh_block()
+        keep = block["block"][0]
+        self.assertIn("sshd -T", keep["ansible.builtin.shell"])
+        self.assertEqual(keep["register"], "ic_ssh_kept")
+        before = next(
+            t for t in block["rescue"]
+            if t["name"] == "Take the port sshd had before"
+        )["ansible.builtin.set_fact"]["ic_ssh_port_before"]
+        self.assertIn("ic_ssh_kept.stdout", before)
+        self.assertIn("ansible_port | default(22)", before)
+
+    def test_a_timer_puts_ssh_back_if_the_play_is_cut_off(self):
+        """Ansible runs no rescue for a host it no longer reaches. Once the
+        configuration is kept, a timer on the host runs the rescue's script
+        three minutes later; the play stops it once sshd answers on the new
+        port, and goes no further if it already ran."""
+        block = self._ssh_block()
+        names = [t["name"] for t in block["block"]]
+        self.assertEqual(names[1], "Copy the script that puts SSH back")
+        self.assertEqual(block["block"][1]["ansible.builtin.copy"]["src"], "ssh_put_back.sh")
+        arm = block["block"][2]
+        self.assertEqual(
+            arm["name"], "Arm the timer that puts SSH back if the play is cut off",
+        )
+        for needle in (
+            "systemd-run", "--on-active=180", "--collect",
+            "{{ ssh_keep_dir }}/ssh_put_back.sh {{ ssh_keep_dir }}",
+        ):
+            self.assertIn(needle, arm["ansible.builtin.shell"])
+        disarm = "Disarm the timer once sshd answers on the new port"
+        self.assertEqual(
+            names.index(disarm),
+            names.index("Wait for sshd to listen on the new port") + 1,
+        )
+        self.assertEqual(names[-1], "Drop the kept copy of the SSH configuration")
+        check = block["block"][names.index(disarm)]["ansible.builtin.shell"]
+        self.assertIn("put-back-ran", check)
+        self.assertIn("exit 1", check)
+        self.assertEqual(
+            block["rescue"][0]["name"], "Disarm the timer before putting SSH back",
+        )
+        script = os.path.join(
+            get_module_path("incubacloud"),
+            "ansible", "playbooks", "files", "ssh_put_back.sh",
+        )
+        with open(script, encoding="utf-8") as fh:
+            self.assertIn('"$keep/put-back-ran"', fh.read())
+
+    def test_the_panel_learns_where_sshd_moved(self):
+        """Right after the block, before the firewall: a later step that
+        fails leaves sshd on the new port alone, and the panel must know."""
+        import yaml
+
+        path = os.path.join(
+            get_module_path("incubacloud"),
+            "ansible", "playbooks", "host_hardening.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            tasks = yaml.safe_load(fh)[0]["tasks"]
+        at = next(i for i, t in enumerate(tasks) if "block" in t and any(
+            b.get("name") == "Wait for sshd to listen on the new port"
+            for b in t["block"]
+        ))
+        stats = tasks[at + 1]["ansible.builtin.set_stats"]
+        self.assertEqual(stats["data"], {"ic_ssh_moved_port": "{{ ssh_port }}"})
+        self.assertIs(stats["aggregate"], False)
 
     def test_the_new_port_must_answer_as_sshd(self):
         """An open port is not enough: under socket activation systemd
@@ -1317,6 +1397,56 @@ class TestHardeningExecutorWiring(TransactionCase):
         ex._facts = {}
         [error] = ex.parse_results(failed)
         self.assertIn("rc=2", error)
+
+    def test_a_failure_after_moving_sshd_names_the_new_port(self):
+        """12-nov-2026 review: a run that fails after sshd moved (the
+        firewall's check failed so on 29-sep and 27-oct) left sshd on the
+        new port alone and the panel on 22, with a bare rc as its error."""
+        ex = self._make(port=22)
+        ex._new_port = 22345
+        failed = {ex._playbook: {"exit_status": 2}}
+        ex._facts = {"ic_ssh_moved_port": "22345"}
+        [error] = ex.parse_results(failed)
+        self.assertIn("listens on port 22345, no longer on 22", error)
+        self.assertIn("console", error)
+
+        # Hardened again on the port it had: nothing moved.
+        ex = self._make(port=22345)
+        ex._new_port = 22345
+        ex._facts = {"ic_ssh_moved_port": 22345}
+        [error] = ex.parse_results(failed)
+        self.assertIn("rc=2", error)
+
+    def test_the_panel_takes_the_port_sshd_was_moved_to(self):
+        """So a retry reaches the host, and keeps that port instead of
+        drawing another: the edge firewall opens it, the host takes it and
+        the trusted key is filed under it."""
+        ex = self._make(port=22)
+        ex._alert = MagicMock(spec=ex._alert)
+        ex._open_edge_firewall_port = AsyncMock(
+            spec=ex._open_edge_firewall_port,
+        )
+        ex._facts = {"ic_ssh_moved_port": "22345"}
+        host = ex.job.host_id
+        asyncio.run(ex.on_failure({}, ["failed"]))
+        ex._open_edge_firewall_port.assert_awaited_once_with(22345)
+        host.sudo.return_value.with_context.assert_called_once_with(
+            skip_endpoint_change_guard=True,
+        )
+        host.sudo.return_value.with_context.return_value.write.assert_called_once_with(
+            {"port": 22345},
+        )
+        host._relabel_known_hosts_entry.assert_called_once_with()
+
+        # A failure before sshd moved touches neither.
+        ex = self._make(port=22)
+        ex._alert = MagicMock(spec=ex._alert)
+        ex._open_edge_firewall_port = AsyncMock(
+            spec=ex._open_edge_firewall_port,
+        )
+        asyncio.run(ex.on_failure({}, ["failed"]))
+        ex._open_edge_firewall_port.assert_not_awaited()
+        ex.job.host_id.sudo.assert_not_called()
 
     def test_core_edge_firewall_hook_is_noop(self):
         """Core carries no edge firewall — the hook is a no-op."""

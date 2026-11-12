@@ -29,6 +29,9 @@
     # Where phase 3 keeps the SSH configuration it found, to put it back
     # if sshd does not answer once it has been changed.
     ssh_keep_dir: /var/lib/incubacloud/ssh-before-hardening
+    # The transient timer and service that put it back if the play's own
+    # connection is lost while sshd moves.
+    ssh_put_back_unit: incubacloud-ssh-put-back
     # OS support matrix. Kept as a var so the gate below and any future
     # caller read the same list.
     supported_ubuntu: ["22.04", "24.04"]
@@ -214,10 +217,14 @@
     # 24.04 server had to be rebuilt.
     - name: Move sshd to the hardened settings, or put it back as it was
       block:
-        - name: Keep the SSH configuration as it is
+        - name: Keep the SSH configuration as it is  # noqa: risky-shell-pipe
           # What the rescue restores: our sshd drop-in under both its
           # names, the ssh.socket drop-in directory, and whether each unit
           # was enabled and running. A unit the host lacks reads ``none``.
+          # It prints the port sshd uses now, which the rescue waits on:
+          # the play may reach the host on another one, through a port
+          # forward in front of a host of the customer's. With no port
+          # printed, the rescue falls back to the play's own.
           ansible.builtin.shell: |
             set -eu
             keep={{ ssh_keep_dir }}
@@ -235,7 +242,31 @@
               active=$(systemctl is-active "$unit" 2>/dev/null || true)
               echo "$unit ${enabled:-none} ${active:-none}"
             done > "$keep/units"
+            sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }'
+          register: ic_ssh_kept
           changed_when: false
+
+        # The rescue runs only while the play still reaches the host. If
+        # restarting sshd's units cuts the play's own connection, a timer
+        # on the host runs the same script three minutes later; the play
+        # stops it once sshd answers on the new port.
+        - name: Copy the script that puts SSH back
+          ansible.builtin.copy:
+            src: ssh_put_back.sh
+            dest: "{{ ssh_keep_dir }}/ssh_put_back.sh"
+            mode: "0700"
+
+        # systemd-run makes the transient timer, which the systemd module
+        # cannot; the disarms wait on its service, which it cannot either.
+        - name: Arm the timer that puts SSH back if the play is cut off  # noqa: command-instead-of-module
+          ansible.builtin.shell: |
+            systemctl stop {{ ssh_put_back_unit }}.timer 2>/dev/null || true
+            systemctl reset-failed {{ ssh_put_back_unit }}.timer \
+              {{ ssh_put_back_unit }}.service 2>/dev/null || true
+            systemd-run --unit={{ ssh_put_back_unit }} --collect \
+              --on-active=180 --timer-property=AccuracySec=1s \
+              /bin/sh {{ ssh_keep_dir }}/ssh_put_back.sh {{ ssh_keep_dir }}
+          changed_when: true
 
         # Named 00- so it is read FIRST. sshd keeps the first value it
         # reads for each keyword, and drop-ins are read in name order:
@@ -307,7 +338,8 @@
             fail_msg: >-
               sshd would not use the hardening settings: another file under
               /etc/ssh/sshd_config.d/ or a line before the Include in
-              /etc/ssh/sshd_config sets them first. Nothing was restarted.
+              /etc/ssh/sshd_config sets them first. The SSH configuration
+              is put back as it was.
 
         # Ubuntu 22.10+ ships sshd SOCKET-ACTIVATED: systemd's ssh.socket
         # owns the listening port and sshd_config's ``Port`` is ignored
@@ -417,6 +449,22 @@
             timeout: 15
           register: ic_port_check
 
+        # Stopping the timer does not stop a put-back already under way:
+        # one that ran, however late, may have taken sshd back to its old
+        # port, and the play must not go on to close that port.
+        - name: Disarm the timer once sshd answers on the new port  # noqa: command-instead-of-module
+          ansible.builtin.shell: |
+            systemctl stop {{ ssh_put_back_unit }}.timer 2>/dev/null || true
+            while systemctl is-active --quiet {{ ssh_put_back_unit }}.service; do
+              sleep 1
+            done
+            if [ -e {{ ssh_keep_dir }}/put-back-ran ]; then
+              echo "The timer put SSH back before the play disarmed it." >&2
+              exit 1
+            fi
+          changed_when: true
+          timeout: 120
+
         - name: Drop the kept copy of the SSH configuration
           ansible.builtin.file:
             path: "{{ ssh_keep_dir }}"
@@ -426,46 +474,43 @@
         # The kept files go back where they were, the ones this run added
         # go, and each unit is enabled and started as it was. A run that
         # failed before keeping anything has changed nothing.
-        - name: Put the SSH configuration back as it was
+        - name: Disarm the timer before putting SSH back  # noqa: command-instead-of-module
           ansible.builtin.shell: |
-            set -u
-            keep={{ ssh_keep_dir }}
-            if [ ! -f "$keep/units" ]; then
-              echo "Nothing to put back: the SSH configuration was not changed."
-              exit 0
-            fi
-            rm -f /etc/ssh/sshd_config.d/00-incubacloud-hardening.conf \
-                  /etc/ssh/sshd_config.d/99-incubacloud-hardening.conf
-            for f in "$keep"/*-incubacloud-hardening.conf; do
-              if [ -e "$f" ]; then cp -a "$f" /etc/ssh/sshd_config.d/; fi
+            systemctl stop {{ ssh_put_back_unit }}.timer 2>/dev/null || true
+            while systemctl is-active --quiet {{ ssh_put_back_unit }}.service; do
+              sleep 1
             done
-            rm -rf /etc/systemd/system/ssh.socket.d
-            if [ -d "$keep/ssh.socket.d" ]; then
-              cp -a "$keep/ssh.socket.d" /etc/systemd/system/
-            fi
-            systemctl daemon-reload
-            state() { awk -v u="$1" -v f="$2" '$1 == u { print $f }' "$keep/units"; }
-            for unit in ssh.socket ssh.service; do
-              case "$(state "$unit" 2)" in
-                enabled) systemctl enable "$unit" ;;
-                disabled) systemctl disable "$unit" ;;
-              esac
-            done
-            if [ "$(state ssh.socket 3)" = active ]; then
-              systemctl stop ssh.service
-              systemctl restart ssh.socket
-            else
-              systemctl stop ssh.socket 2>/dev/null
-              systemctl restart ssh.service
-            fi
-            echo "SSH configuration put back: $(tr '\n' ';' < "$keep/units")"
+          register: ic_ssh_disarm
+          changed_when: true
+          # Neither a failure nor a timeout here may skip the put-back.
+          ignore_errors: true
+          timeout: 120
+
+        # The copy the timer runs, missing only when the run failed before
+        # it changed anything. Run apart from its output's stderr, which
+        # systemctl fills with notes the job's error has no use for.
+        - name: Put the SSH configuration back as it was
+          ansible.builtin.command:
+            argv:
+              - /bin/sh
+              - "{{ ssh_keep_dir }}/ssh_put_back.sh"
+              - "{{ ssh_keep_dir }}"
           register: ic_ssh_restore
           changed_when: true
           failed_when: false
 
+        # The port sshd used before this run, as ``sshd -T`` said it when
+        # the configuration was kept; the play's own port when it was not.
+        - name: Take the port sshd had before
+          ansible.builtin.set_fact:
+            ic_ssh_port_before: >-
+              {{ (ic_ssh_kept.stdout | default('') | trim)
+                 if (ic_ssh_kept.stdout | default('') | trim) is match('^[0-9]+$')
+                 else (ansible_port | default(22)) }}
+
         - name: Wait for sshd on the port it had before
           ansible.builtin.wait_for:
-            port: "{{ ansible_port | default(22) }}"
+            port: "{{ ic_ssh_port_before }}"
             host: 127.0.0.1
             search_regex: SSH-2.0-
             timeout: 30
@@ -479,7 +524,7 @@
             aggregate: false
             data:
               ic_ssh_rolled_back: true
-              ic_ssh_restored_port: "{{ ansible_port | default(22) }}"
+              ic_ssh_restored_port: "{{ ic_ssh_port_before }}"
               ic_ssh_restored_answers: "{{ ic_ssh_restored is succeeded }}"
 
         - name: Stop the hardening with what failed and what was put back
@@ -488,13 +533,22 @@
               SSH hardening failed at "{{ ansible_failed_task.name }}":
               {{ ansible_failed_result.msg | default('see the task above') }}.
               {{ ic_ssh_restore.stdout | default('') }}
-              {{ ('sshd answers again on port ' ~ (ansible_port | default(22))
+              {{ ('sshd answers again on port ' ~ ic_ssh_port_before
                   ~ '. Nothing after SSH (firewall, fail2ban, sysctl, updates,'
                   ~ ' Docker, journald, auditd) was applied.')
                  if ic_ssh_restored is succeeded else
-                 ('sshd does NOT answer on port ' ~ (ansible_port | default(22))
+                 ('sshd does NOT answer on port ' ~ ic_ssh_port_before
                   ~ ' after putting it back: reach the server through the'
                   ~ " provider's console and check ssh.socket and ssh.service.") }}
+
+    # From here on sshd listens on the new port alone. Should a later
+    # step fail, the executor names this port in the job's error and the
+    # panel takes it, or a retry would knock on a port nothing answers.
+    - name: Tell the panel which port sshd now listens on
+      ansible.builtin.set_stats:
+        aggregate: false
+        data:
+          ic_ssh_moved_port: "{{ ssh_port }}"
 
     # ── Phase 4: nftables ─────────────────────────────────────────────
     - name: Determine the address this play is connecting from
