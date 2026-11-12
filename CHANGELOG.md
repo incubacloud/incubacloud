@@ -88,7 +88,9 @@ is unchanged.
   it had. A server that lacks a tool the step needs runs it attached and
   the job log says why. With `incubacloud_pitr`, the daily «Base copy»
   runs apart in a scope of its own, beside a rebuild or a restore of the
-  same instance, and so does «Wait for the restore», the job parking
+  same instance, and so does the switch on's «First base copy», in the
+  same scope, so two copies of an instance never run at once; and so
+  does «Wait for the restore», the job parking
   while the restore runs on the host. A restore taken up after a park
   keeps the base copy it chose and whether it only followed one already
   there, so a stop then hands the restore to the next job instead of
