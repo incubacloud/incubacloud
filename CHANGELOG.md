@@ -22,9 +22,10 @@ instance's, keep what is typed when the proxy in front of the panel answers
 429, make about half the requests, and take the page's size.
 `incubacloud_pitr` 1.0.13 comes with it.
 
-The update adds one empty table, `cloud_job_checkpoint`, and two empty
-columns, `cloud_job.channel_wait_since` and
-`cloud_instance.pr_update_cut_off`, and needs no data migration. It changes
+The update adds one empty table, `cloud_job_checkpoint`, and six empty
+columns, `cloud_job.channel_wait_since`, `slot_wait_s`, `slot_load`,
+`slot_channel` and `return_wait_s`, and `cloud_instance.pr_update_cut_off`,
+and needs no data migration. It changes
 the terminal pages' templates and adds one, `terminal_client_script`. The
 hosts need nothing: the scripts travel with each job, and the proxy's limit
 is unchanged.
@@ -93,6 +94,15 @@ is unchanged.
   there, so a stop then hands the restore to the next job instead of
   asking the host again. What each reads last, the copies' window and
   the restore's result, comes in the tail of the output the step keeps.
+- **Each job keeps how long it waited for a slot.** `slot_wait_s`, the
+  seconds the channel gate held it back, written as it is handed to
+  queue_job; `slot_load` and `slot_channel`, how many of the panel's jobs
+  held a slot of its channel then, itself included, and which channel;
+  `return_wait_s`, how late it came back from its parks, written as each
+  attempt starts and never in a way that could keep it from starting.
+  Hidden types keep none; a job that did not wait keeps 0. The query that
+  reads them by week, and when they call for following jobs without a
+  thread each, is in `docs/architecture.md` («The job queue»).
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the

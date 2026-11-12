@@ -21637,3 +21637,64 @@ msgstr "segundos"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "· Ctrl S saves"
 msgstr "· Ctrl S guarda"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__slot_wait_s
+msgid "Waited for a Slot (s)"
+msgstr "Espera de hueco (s)"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__slot_wait_s
+msgid ""
+"Seconds the channel gate held this job back before it was handed to "
+"queue_job, over all its dispatches. Written by the dispatcher; empty for "
+"hidden types."
+msgstr ""
+"Segundos que la puerta del canal retuvo este trabajo antes de entregarlo a "
+"queue_job, sumando todos sus despachos. Lo escribe el despachador; vacío en "
+"los tipos ocultos."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__slot_load
+msgid "Jobs in the Channel"
+msgstr "Trabajos en el canal"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__slot_load
+msgid ""
+"How many of the panel's jobs held a slot of its channel when the gate let "
+"it through, itself included. Empty when the gate was off and for hidden "
+"types."
+msgstr ""
+"Cuántos trabajos del panel ocupaban un hueco de su canal cuando la puerta lo "
+"dejó pasar, contando este. Vacío si la puerta estaba desactivada y en los "
+"tipos ocultos."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__slot_channel
+msgid "Slot Channel"
+msgstr "Canal del hueco"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__slot_channel
+msgid ""
+"The queue_job channel that load was counted in: the first with a capacity "
+"on its way to root."
+msgstr ""
+"El canal de queue_job en el que se contó esa carga: el primero con capacidad "
+"en su camino hacia root."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__return_wait_s
+msgid "Late Returns (s)"
+msgstr "Retrasos al volver (s)"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__return_wait_s
+msgid ""
+"Seconds it took, over all its parks, to come back past the time it was due. "
+"Written as each attempt starts; empty for hidden types."
+msgstr ""
+"Segundos que tardó en volver más allá de la hora prevista, sumando todas sus "
+"esperas entre intentos. Se escribe al empezar cada intento; vacío en los "
+"tipos ocultos."
