@@ -453,8 +453,15 @@ class FullSetupExecutor(
             ("check:disk", "df -B1 --output=avail / | tail -n 1"),
             # ── Phase 2: tools (versioned script) + per-tool verify ────
             (
+                # Docker and the packages on a new server: minutes, apart
+                # on the server so a request cut at 900 s (Odoo.sh) does
+                # not cut it (phase 3, 12-nov-2026). Its ``sudo`` asks for
+                # no terminal either way, and what it creates has the
+                # session's umask, as attached. The "Verify *" after it
+                # read what it installed, and stay attached.
                 "Install host tools",
                 self.run_script("full_setup_install.sh", [GIT_HELPER_IMAGE]),
+                {"detached": True},
             ),
         ] + VERIFY_COMMANDS + [
             # ── Phase 3: Traefik ──────────────────────────────────────

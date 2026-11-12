@@ -91,6 +91,9 @@ class AcmeStorePruneMixin:
     #: Names retired by this run. Decided in ``before_execute``, where
     #: the store can be read, and read back when commands are built.
     _acme_retired = ()
+    #: ``_acme_prune_errors`` reads them in ``parse_results``: an attempt
+    #: that takes the job up after a park has them from the checkpoint.
+    _carried = ("_acme_retired",)
 
     def _acme_local_path(self):
         """Return where this job stages the pruned store on the host.

@@ -655,9 +655,14 @@ class PitrBaseBackupExecutor(_PitrExecutor):
         kind = "full" if (self.job.payload or {}).get("full") else "delta"
         return [
             (
+                # Minutes or hours with a large database: apart on the
+                # server, in a scope of its own (a hidden job), so a
+                # rebuild of the instance neither waits for it nor makes
+                # it wait (phase 3, 12-nov-2026). ``IC_PITR_BASES`` comes
+                # last, in the tail of its stdout the step keeps.
                 "Base copy",
                 self.run_script("pitr.sh", ["base-backup", d, user, kind]),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
             (
                 "Drop what left the window",
@@ -854,6 +859,10 @@ class PitrRestoreExecutor(_PitrExecutor):
     """
 
     _job_type = "pitr_restore"
+    #: ``on_abort`` decides with them whether the restore may run on the
+    #: host: an attempt that takes the job up after a park, which calls
+    #: no ``before_execute``, has them from the checkpoint.
+    _carried = ("_plan", "_rejoined", "_probed")
 
     #: Set by ``before_execute``: the base copy and timeline to start from.
     _plan = None
@@ -938,11 +947,18 @@ class PitrRestoreExecutor(_PitrExecutor):
         :raise ValueError: when no base copy was chosen
         """
         d, user = self._common()
+        # Up to ``RESTORE_WAIT_S``: apart on the server, so a request cut
+        # at 900 s (Odoo.sh) does not cut it, the job parking meanwhile
+        # (phase 3, 12-nov-2026). Its ``IC_PITR_RESTORE`` line comes last,
+        # in the tail of its stdout the step keeps. The restore itself runs
+        # in a session of its own (``restore-start``): stopping the wait
+        # never stops it.
         wait = (
             "Wait for the restore",
             self.run_script("pitr.sh", [
                 "restore-wait", d, self._followed(), RESTORE_WAIT_S,
             ]),
+            {"detached": True},
         )
         if (self.job.payload or {}).get("follow") or self._rejoined:
             return [wait]

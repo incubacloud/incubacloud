@@ -80,6 +80,19 @@ is unchanged.
   minute and has less than 85% of its request left leaves it to a fresh
   attempt, as the mechanism allows. A stopped neutralized download still
   drops its throwaway database.
+- **Full Setup and continuous recovery run their long steps apart.**
+  Full Setup's «Install host tools», which installs Docker and the
+  packages of a new server, runs apart on its server, with the umask of
+  the session as attached: what it writes through `sudo` keeps the modes
+  it had. A server that lacks a tool the step needs runs it attached and
+  the job log says why. With `incubacloud_pitr`, the daily «Base copy»
+  runs apart in a scope of its own, beside a rebuild or a restore of the
+  same instance, and so does «Wait for the restore», the job parking
+  while the restore runs on the host. A restore taken up after a park
+  keeps the base copy it chose and whether it only followed one already
+  there, so a stop then hands the restore to the next job instead of
+  asking the host again. What each reads last, the copies' window and
+  the restore's result, comes in the tail of the output the step keeps.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the
