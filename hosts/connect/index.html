@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -650,6 +742,8 @@
       
         
           
+        
+      
         
       
         
@@ -732,6 +826,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1202,6 +1317,8 @@
       
         
       
+        
+      
     
     
       
@@ -1278,6 +1395,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1502,6 +1640,8 @@
       
         
       
+        
+      
     
     
       
@@ -1557,6 +1697,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1976,12 +2137,12 @@ the user's next login: add it beforehand, as above.</p>
 <h3 id="2-fill-in-connection-details">2. Fill in connection details<a class="headerlink" href="#2-fill-in-connection-details" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Name</strong> — whatever helps you remember it (e.g. <code>customer-foo-prod</code>).</li>
-<li><strong>IP Address</strong> — the public IP works fine.</li>
+<li><strong>IP address</strong> — the public IP works fine.</li>
 <li><strong>Port</strong> — the SSH port, usually <code>22</code>.</li>
 <li><strong>User</strong> — <code>root</code> is fine; a user with passwordless <code>sudo</code> is also fine.</li>
-<li><strong>Login Type</strong> — <strong>SSH Key</strong> (recommended) or <strong>Password</strong>. Hardening
+<li><strong>Login type</strong> — <strong>SSH Key</strong> (recommended) or <strong>Password</strong>. Hardening
   needs a key: it copies the user's authorized keys to the account it creates.</li>
-<li><strong>Wildcard Domain</strong> — the domain your instances get their names under
+<li><strong>Wildcard domain</strong> — the domain your instances get their names under
   (<code>example.com</code> or <code>*.example.com</code>): each instance answers at a name such as
   <code>myproject-prod.example.com</code>. Point a wildcard DNS record (<code>*.example.com</code>)
   at the host's IP before you deploy.</li>
@@ -2002,7 +2163,7 @@ copy it. The private half stays in the panel, stored encrypted.</p>
 <p>Keep this page open until you create the host: the key is saved with it. Once
 you have copied the key, the panel asks before you leave the page.</p>
 <p>To use a key of your own instead, choose <strong>Upload my own private key</strong> and
-upload the private half in <strong>SSH Private Key</strong>. It must have no passphrase (the
+upload the private half in <strong>SSH private key</strong>. It must have no passphrase (the
 panel has no field for one).</p>
 <p>The host's <strong>Connection</strong> tab keeps showing the public key, so you can copy it
 again later.</p>
@@ -2012,6 +2173,37 @@ got in, and the panel keeps the host's key to check it on every connection.</p>
 <p>This probes the host: kernel, distro, free disk, RAM, Docker presence.
 Anything missing shows up so you can decide whether to install it manually
 or let us run <strong>Full Setup</strong>.</p>
+<p>The Check ends with a verdict on the host's status:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>When</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Compatible</code></td>
+<td>Linux, 10 GB free or more, every tool in place.</td>
+<td>Ready for instances.</td>
+</tr>
+<tr>
+<td><code>Degraded</code></td>
+<td>Under 10 GB free, or a tool missing. An alert says which.</td>
+<td>The instances already there keep running. With little disk, no new one is placed on it and a build may run out of space: free space. For a missing tool, run <strong>Full Setup</strong>.</td>
+</tr>
+<tr>
+<td><code>Unsupported</code></td>
+<td>Not Linux, or the Check could not reach or read the host.</td>
+<td>Nothing is deployed there.</td>
+</tr>
+</tbody>
+</table>
+<p>The job fails only when the Check could not measure the host. Once 11 GB are
+free, the low-disk alert closes by itself within minutes; a Check closes it
+from 10 GB. <strong>Full Setup</strong> on a disk under 10 GB fails and leaves the host
+<code>Degraded</code> with the same alert.</p>
 <h3 id="5-run-full-setup">5. Run <code>Full Setup</code><a class="headerlink" href="#5-run-full-setup" title="Permanent link">&para;</a></h3>
 <p>We install Docker (if missing), drop in Traefik, wire up cert auto-renewal,
 and run a final probe. Watch the log to follow each step.</p>

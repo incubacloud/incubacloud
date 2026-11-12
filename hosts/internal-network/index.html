@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -650,6 +742,8 @@
       
         
           
+        
+      
         
       
         
@@ -732,6 +826,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1157,6 +1272,8 @@
       
         
       
+        
+      
     
     
       
@@ -1233,6 +1350,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1457,6 +1595,8 @@
       
         
       
+        
+      
     
     
       
@@ -1512,6 +1652,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1881,7 +2042,7 @@ preparing a host, in <a href="../connect/">Connect your own VPS</a>.</p>
   <code>gcr.io</code>.</li>
 </ul>
 <h2 id="names-the-wildcard-domain">Names: the wildcard domain<a class="headerlink" href="#names-the-wildcard-domain" title="Permanent link">&para;</a></h2>
-<p><strong>Host → Traefik → Wildcard Domain</strong> is the domain the host's instances are
+<p><strong>Host → Traefik → Wildcard domain</strong> is the domain the host's instances are
 named under when you give them no name of your own. Write it with or without
 the leading <code>*.</code>: <code>*.odoo.example.com</code> and <code>odoo.example.com</code> mean the same.</p>
 <table>
@@ -1898,7 +2059,7 @@ the leading <code>*.</code>: <code>*.odoo.example.com</code> and <code>odoo.exam
 </tr>
 <tr>
 <td><code>traefik.odoo.example.com</code></td>
-<td>The proxy's dashboard, behind the host's <strong>Panel Password</strong>.</td>
+<td>The proxy's dashboard, behind the host's <strong>Panel password</strong>.</td>
 </tr>
 </tbody>
 </table>

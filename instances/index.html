@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://docs.incubacloud.io/instances/">
       
       
-        <link rel="prev" href="../projects/">
+        <link rel="prev" href="../projects/gitlab/">
       
       
         <link rel="next" href="logs/">
@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -652,6 +744,8 @@
       
         
           
+        
+      
         
       
         
@@ -737,6 +831,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1039,6 +1154,8 @@
       
         
       
+        
+      
     
     
       
@@ -1115,6 +1232,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1339,6 +1477,8 @@
       
         
       
+        
+      
     
     
       
@@ -1394,6 +1534,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1801,7 +1962,7 @@ one filestore. It belongs to a project and runs on a host.</p>
   refused (<em>No backup backend configured for this instance</em>). Register a
   destination first (<a href="../backups/#backup-destinations">Backups</a>)
   and choose it on the instance, on its project, or for every production
-  instance in <strong>Settings → General → Default Backup Destination</strong>.</li>
+  instance in <strong>Settings → General → Default backup destination</strong>.</li>
 </ul>
 <p>An instance's environment is chosen when it is created and cannot be
 changed later.</p>
@@ -1813,10 +1974,10 @@ changed later.</p>
 <li><strong>Staging instance</strong> — test copy. Re-deploys are direct. As many as you like:
   stagings run on servers you already pay for, so they never count against the
   instance allowance of a SaaS plan.</li>
-<li><strong>Odoo version</strong> — one the panel offers, 18.0 to 20.0, taken from the project
+<li><strong>Odoo version</strong> — one the panel offers, 9.0 to 20.0, taken from the project
   when the instance is created and fixed once it is deployed. Odoo 20.0 runs on
-  PostgreSQL 16 to 18; 18.0 and 19.0, on 14 to 18. Older series open as they pass
-  their tests.</li>
+  PostgreSQL 16 to 18; 16.0 to 19.0, on 14 to 18; 13.0 to 15.0, on 12 up to 16 or
+  17; 11.0 and 12.0, on 12 to 13; 9.0 and 10.0, on 12 alone.</li>
 <li><strong>Sleeping</strong> (SaaS Free plan) — on Free it is your control plane, not your
   instances, that is suspended after ~30 minutes without traffic to save
   resources. It wakes up on the next request (the first request after a nap takes
@@ -1844,6 +2005,13 @@ itself when the one ahead of it ends, in the order they were asked for.</p>
   Deploy Instance</em>.</li>
 <li><strong>Recent activity</strong> lists a waiting action as <em>Queued · N ahead</em>: how many
   actions start before it.</li>
+<li><em>Queued · waiting for a free slot (root.user 1/1)</em> means nothing runs on
+  the instance, but the panel already runs as many actions as it runs at
+  once (here one of one). It starts as soon as one of them ends.</li>
+<li><em>Running · on the server, reconnecting at 12:03:05</em> means a long step,
+  such as building the image of a rebuild, goes on on the server while the
+  panel steps away and comes back for it at that time. Nothing to do: the action is
+  running, and <strong>Cancel</strong> still stops it.</li>
 <li>Changed your mind? A waiting action has not started yet, so <strong>Cancel</strong> takes
   it out of the queue at once and nothing happens on the server.</li>
 <li>Asking twice for the same thing while it waits — two restarts, the same
@@ -1968,12 +2136,15 @@ press when your test copy has drifted away from real data.</p>
 scheduled actions and outgoing mail servers disabled and Odoo's test banner
 showing. Leave it on unless you are deliberately testing a cron or a mail flow —
 a staging carrying production's data will otherwise invoice, dun and email your
-real customers.</p>
+real customers. A rebuild that updates the modules of a neutralized staging or
+preview neutralizes it again afterwards, and its mail goes back to the staging's
+mail catcher: the update switches on again the scheduled actions its modules
+ship. A database without Odoo's test banner is left as it is.</p>
 <p>The refresh runs as two jobs (a download on the production, a restore on the
 staging) that you can follow in the activity timeline. If the download fails the
-restore never starts and the staging is left untouched. Refreshing does <strong>not</strong>
-run a module update: if the staging's branch lacks a module the restored database
-has installed, use a rebuild afterwards.</p>
+restore never starts and the staging is left untouched. Refreshing updates the
+modules to the staging's code before it starts, unless <strong>Auto-update modules</strong> is
+off; if that update fails, the staging stays stopped and the job says so.</p>
 <p>Cloning a production to a new staging (<strong>Project → Clone to staging</strong>) applies
 the same neutralization, and always takes a live dump: a production created
 today has no backup to copy until its first nightly run.</p>
@@ -1987,20 +2158,22 @@ today has no backup to copy until its first nightly run.</p>
 </ul>
 <p>Both live under <code>Instance detail → Networking</code>.</p>
 <p><strong>Auto-rebuild</strong> acts on GitHub's push notifications, which reach the panel
-through the <a href="../projects/#private-repositories">GitHub App</a>, so the
+through the <a href="../projects/#private-repositories">GitHub App</a>, and on
+<a href="../projects/gitlab/#rebuild-on-push-webhooks">GitLab's webhooks</a>, so the
 panel must be reachable from the internet.</p>
 <div class="admonition info">
 <p class="admonition-title">IncubaCloud SaaS</p>
 <p>On the Free plan the control plane sleeps after 30 minutes without use, and
-a push notification that arrives while it sleeps only wakes it: the push is
-not acted on. Rebuilding on push needs a paid plan, whose control plane
-never sleeps; on Free, rebuild by hand.</p>
+a push notification of GitHub or GitLab that arrives while it sleeps only
+wakes it: the push is not acted on. Rebuilding on push needs a paid plan,
+whose control plane never sleeps; on Free, rebuild by hand.</p>
 </div>
 <h2 id="pull-request-previews">Pull request previews<a class="headerlink" href="#pull-request-previews" title="Permanent link">&para;</a></h2>
 <p>A project can create a throwaway staging for every pull request, so a change can
 be looked at running — on real data — before it is merged. It is <strong>off by
 default</strong>; turn it on under <strong>Project → Settings → Preview instances for pull
-requests</strong>.</p>
+requests and merge requests</strong>. GitLab merge requests get previews the same way:
+see <a href="../projects/gitlab/#merge-request-previews">Merge request previews</a>.</p>
 <p>With it on, opening (or reopening) a pull request on a repository that one of
 the project's <strong>production</strong> instances follows does this, with nobody pressing
 anything:</p>
@@ -2030,6 +2203,17 @@ anything:</p>
 <li>If a preview cannot be created, the pull request gets a comment saying why and
   the production instance an alert. Fix the cause, then close and reopen the
   pull request to try again.</li>
+<li>The copy's modules are updated to the pull request's code before it starts.
+  If that update fails, the preview stays stopped and the comment says it could
+  not be updated; push a fix to the branch and its rebuild brings it up. If the
+  update never ended (the connection to the server dropped or it ran out of
+  time), it may still be running: a push rebuilds the preview only once the
+  restore's alert is dismissed.</li>
+<li>The panel acts on the pull requests of one installation of its GitHub App,
+  the one under <strong>Settings → GitHub</strong>. If the App is installed on another
+  account too, a pull request there gets no preview: the production that would
+  have been copied gets an alert naming the account instead. Choosing that
+  installation resolves it, or dismiss it.</li>
 </ul>
 <h2 id="stagings-expire-when-nobody-uses-them">Stagings expire when nobody uses them<a class="headerlink" href="#stagings-expire-when-nobody-uses-them" title="Permanent link">&para;</a></h2>
 <p>A staging that nobody has touched for <strong>90 days</strong> is deleted automatically.
@@ -2096,13 +2280,14 @@ back and <em>warns</em>; it cannot warn and delete in the same pass.</p>
 <p><a href="#pull-request-previews">Pull request previews</a> follow the same rule, on top of
 being deleted when their pull request closes.</p>
 <p>Administrators can change the 90 days, or switch the whole thing off, under
-<strong>Settings → General → Staging autopurge</strong>.</p>
+<strong>Settings → Instances → Staging autopurge</strong>.</p>
 <h2 id="email-on-staging">Email on staging<a class="headerlink" href="#email-on-staging" title="Permanent link">&para;</a></h2>
 <p>A staging never emails anybody. Whatever it sends — password resets, order
 confirmations, invitations — is caught by a mail server that runs alongside it
 and goes no further. That is what makes it safe to restore a copy of production
 and click around in it: the customers in that copy are real, and none of them
 will hear from you.</p>
+<p>See a staging copy of production catch every email it sends: <a href="https://youtu.be/jcaXDk8nkns">watch it in 90 seconds</a>.</p>
 <p>Open <strong>Instance detail → Mails</strong> to read what was caught. The list shows when
 each message arrived, who it was for and what it said; open one to see the HTML
 as the recipient would have seen it, the plain-text alternative, and what was
@@ -2117,7 +2302,8 @@ before you restart.</p>
 what this button sends" readable.</p>
 <p>Production is the opposite: its email is real and leaves the server. There is no
 Mails tab there, and the SMTP relay you configure under <em>Networking</em> is the one
-that will actually deliver.</p>
+that will actually deliver: see <a href="mail-relay/">Mail relay</a>, which covers
+Microsoft 365 with OAuth2 and <strong>Send test mail</strong>.</p>
 <h2 id="what-a-staging-can-reach-on-the-internet">What a staging can reach on the internet<a class="headerlink" href="#what-a-staging-can-reach-on-the-internet" title="Permanent link">&para;</a></h2>
 <p>A staging is a copy of production that people poke at, so what it can talk to
 matters. It reaches only the hostnames on its own list; everything else is
@@ -2192,7 +2378,7 @@ While the instance is stopped or asleep, the page stays blocked.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../projects/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Projects">
+          <a href="../projects/gitlab/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Repositories on GitLab">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2202,7 +2388,7 @@ While the instance is stopped or asleep, the page stays blocked.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Projects
+                Repositories on GitLab
               </div>
             </div>
           </a>

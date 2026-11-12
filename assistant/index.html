@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -650,6 +742,8 @@
       
         
           
+        
+      
         
       
         
@@ -732,6 +826,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1034,6 +1149,8 @@
       
         
       
+        
+      
     
     
       
@@ -1110,6 +1227,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1339,6 +1477,8 @@
       
         
       
+        
+      
     
     
       
@@ -1394,6 +1534,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1767,10 +1928,12 @@ alert, tags, and the code on the assistant's own branch. So, among others, these
   opening a pull request in a public repository, or in a project that makes a
   preview of production for each pull request;</li>
 <li>after the assistant read something other people can write — logs, files of your
-  repository, mail a staging caught, a command's output — every change, until you
-  write again: that text could carry instructions the assistant must not follow.
-  This includes the work on the assistant's own new branch and redeploying its
-  staging, which otherwise need no card.</li>
+  repository, mail a staging caught, a command's output, or a project and its jobs
+  when a member with a lower role than yours can change them — every change, until
+  you write again while the assistant is not working: that text could carry
+  instructions the assistant must not follow. A message you send while it works
+  does not lift this. This includes the work on the assistant's own new branch and
+  redeploying its staging, which otherwise need no card.</li>
 </ul>
 <p>The assistant reads only repositories of your projects and instances, and writes only
 to those of your projects. A branch counts as the assistant's when an agent of yours
@@ -1781,6 +1944,10 @@ again.</p>
 answer it, from your browser: the assistant cannot confirm its own actions. A card
 lasts ten minutes, and once confirmed it is used once; writing a new message instead
 of answering it cancels it, and the assistant is told.</p>
+<p>An Administrator can grant your assistant an <a href="../agents/auto-approval/">auto-approval</a>
+rule, until a date or with no end date: then none of these shows a card, including after the assistant
+read text others write, and each action says <em>ran without asking</em> in the chat. Read
+its risks first.</p>
 <h2 id="writing-a-module">Writing a module<a class="headerlink" href="#writing-a-module" title="Permanent link">&para;</a></h2>
 <p>Ask for what you need, in your words: <em>"Add an Internal code field to contacts and
 show it on the contact form"</em>. The assistant:</p>

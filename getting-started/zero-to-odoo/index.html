@@ -1,0 +1,2462 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="User documentation for the IncubaCloud platform — a PaaS for Odoo">
+      
+      
+        <meta name="author" content="IncubaCloud">
+      
+      
+        <link rel="canonical" href="https://docs.incubacloud.io/getting-started/zero-to-odoo/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../signup/">
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.45">
+    
+    
+      
+        <title>From zero to Odoo in production - IncubaCloud Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.0253249f.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        
+        <link rel="stylesheet" href="../../assets/external/fonts.googleapis.com/css.e9cc3c37.css">
+        <style>:root{--md-text-font:"Hanken Grotesk";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#from-zero-to-odoo-in-production" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="IncubaCloud Documentation" class="md-header__button md-logo" aria-label="IncubaCloud Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            IncubaCloud Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              From zero to Odoo in production
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
+  
+    
+  
+  Projects
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../instances/" class="md-tabs__link">
+          
+  
+    
+  
+  Instances
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../hosts/" class="md-tabs__link">
+          
+  
+    
+  
+  Hosts
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../backups/" class="md-tabs__link">
+          
+  
+    
+  
+  Backups
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../billing/" class="md-tabs__link">
+        
+  
+    
+  
+  Billing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../agents/" class="md-tabs__link">
+          
+  
+    
+  
+  Agents
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../assistant/" class="md-tabs__link">
+          
+  
+    
+  
+  Assistant
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../migrations/" class="md-tabs__link">
+          
+  
+    
+  
+  Migrations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="IncubaCloud Documentation" class="md-nav__button md-logo" aria-label="IncubaCloud Documentation" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    IncubaCloud Documentation
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Get started
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Get started
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-will-end-with" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you will end with
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#words-you-will-meet" class="md-nav__link">
+    <span class="md-ellipsis">
+      Words you will meet
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-get-your-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Get your panel
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-choose-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Choose the server
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-set-up-the-backups" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Set up the backups
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-create-the-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Create the project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-deploy-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Deploy Odoo
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-your-own-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Your own domain
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-mail-that-leaves-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Mail that leaves Odoo
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-before-you-open-it-to-the-team" class="md-nav__link">
+    <span class="md-ellipsis">
+      8. Before you open it to the team
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coming-from-another-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      Coming from another Odoo?
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../signup/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Create your account
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-project/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Create your first project
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-deploy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Deploy your first instance
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Projects
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../instances/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Instances
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Instances
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/logs/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Logs
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/resources/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../hosts/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Hosts
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Hosts
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hosts/connect/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connect your own VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hosts/internal-network/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Panel on an internal network
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../hosts/hire/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Order a VPS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backups/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Backups
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Backups
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backups/restore/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Restore a backup
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backups/any-minute/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Restore to any minute
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../billing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Billing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../agents/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Agents
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Agents
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/connect/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Connect an agent
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/confirmations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/secrets/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Secrets
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/revoke/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Revoke an agent
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/limits/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Limits
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/troubleshooting/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Troubleshooting
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../assistant/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Assistant
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Assistant
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../assistant/settings/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Settings
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../assistant/privacy-and-limits/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Privacy and limits
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../migrations/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Migrations
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10" id="__nav_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            Migrations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-odoosh/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11" id="__nav_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/notifications/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Notifications
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/monitoring/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Monitoring
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/monitoring-panels/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Monitoring panels
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/limits/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Service limits
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/third-party/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Third-party software
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-will-end-with" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you will end with
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#words-you-will-meet" class="md-nav__link">
+    <span class="md-ellipsis">
+      Words you will meet
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-get-your-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Get your panel
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-choose-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Choose the server
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-set-up-the-backups" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Set up the backups
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-create-the-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Create the project
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-deploy-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Deploy Odoo
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-your-own-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Your own domain
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-mail-that-leaves-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Mail that leaves Odoo
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-before-you-open-it-to-the-team" class="md-nav__link">
+    <span class="md-ellipsis">
+      8. Before you open it to the team
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coming-from-another-odoo" class="md-nav__link">
+    <span class="md-ellipsis">
+      Coming from another Odoo?
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/getting-started/zero-to-odoo.md" title="Edit this page" class="md-content__button md-icon">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="from-zero-to-odoo-in-production">From zero to Odoo in production<a class="headerlink" href="#from-zero-to-odoo-in-production" title="Permanent link">&para;</a></h1>
+<p>This guide is for you if you want your company's Odoo running on the internet,
+under your own name, and you have never set up a server, a domain or a mail
+account for an application. It goes in order, from nothing to an Odoo your
+team signs in to, and explains each word the first time it comes up.</p>
+<p>The other guides in <strong>Get started</strong> go faster and assume you know these
+things. If you already have a server and a domain, start with
+<a href="../first-project/">Create your first project</a>.</p>
+<h2 id="what-you-will-end-with">What you will end with<a class="headerlink" href="#what-you-will-end-with" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>An Odoo in production</strong>: the copy of Odoo your company works in.</li>
+<li><strong>Its address</strong>: a name under the panel's own domain to begin with, and your
+  own, such as <code>erp.example.com</code>, when you want it.</li>
+<li><strong>Backups every night</strong>, encrypted, kept off the server.</li>
+<li><strong>Mail that leaves Odoo</strong>: invoices, quotations, password resets.</li>
+</ul>
+<p>Plan for about an hour, most of it waiting: for the server to be created, for
+the first deploy, and for a DNS change to be seen everywhere.</p>
+<h2 id="words-you-will-meet">Words you will meet<a class="headerlink" href="#words-you-will-meet" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Word</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Server</strong> (or <em>VPS</em>, <em>host</em>)</td>
+<td>A computer in a data centre, rented by the month or by the hour, where Odoo runs. In the panel it is a <em>host</em>.</td>
+</tr>
+<tr>
+<td><strong>Domain</strong></td>
+<td>Your name on the internet, such as <code>example.com</code>. You rent it from a <em>registrar</em>, usually for a year at a time.</td>
+</tr>
+<tr>
+<td><strong>DNS</strong></td>
+<td>The internet's address book: it turns a name such as <code>erp.example.com</code> into the address (<em>IP</em>) of a server. You change it where your domain is managed.</td>
+</tr>
+<tr>
+<td><strong>DNS record</strong></td>
+<td>One line of that address book. An <strong>A</strong> record sends a name to an IP address; a <strong>TXT</strong> record holds text that mail services read.</td>
+</tr>
+<tr>
+<td><strong>Backup destination</strong></td>
+<td>Storage outside the server where the nightly backups go. Without one, a production instance cannot be deployed.</td>
+</tr>
+<tr>
+<td><strong>Instance</strong></td>
+<td>One running Odoo. <strong>Production</strong> is the one your company uses; a <strong>staging</strong> is a copy for trying things without risk.</td>
+</tr>
+<tr>
+<td><strong>SMTP server</strong></td>
+<td>The service that delivers the mail Odoo sends. Your mail provider has one.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="1-get-your-panel">1. Get your panel<a class="headerlink" href="#1-get-your-panel" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS</p>
+<p><a href="../signup/">Create your account</a> on incubacloud.io and pick a paid plan:
+ordering a server and the managed backup storage, used below, need one.
+Your panel opens at <code>https://&lt;your-subdomain&gt;.incubacloud.io</code>.</p>
+</div>
+<p>On a panel you install yourself, follow
+<a href="https://github.com/incubacloud/incubacloud/blob/19.0/INSTALL.md">INSTALL.md</a>
+and open <code>/cloud</code>.</p>
+<h2 id="2-choose-the-server">2. Choose the server<a class="headerlink" href="#2-choose-the-server" title="Permanent link">&para;</a></h2>
+<p>The size of the server depends on how many people will use Odoo at the same
+time. Odoo's own <a href="https://www.odoo.com/documentation/19.0/administration/on_premise/deploy.html#worker-number-calculation">deployment
+guide</a>
+sizes a server by its <em>workers</em>, the processes that answer people's clicks:</p>
+<ul>
+<li>at most two workers for each vCPU, plus one: (vCPU × 2) + 1;</li>
+<li>about 325 MB of memory each, on average: Odoo counts 80% of light requests
+  at about 150 MB and 20% of heavy ones at about 1 GB;</li>
+<li>about 6 users at once for each worker, with one worker left for the
+  scheduled actions (the crons), as in Odoo's own example.</li>
+</ul>
+<p>A server runs as many workers as both its vCPUs and its memory allow, after
+2 GB kept for the system, the database and the proxy. For the usual sizes:</p>
+<table>
+<thead>
+<tr>
+<th>vCPU</th>
+<th>RAM</th>
+<th>Recommended for up to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Any</td>
+<td>Under 4 GB</td>
+<td>Tests only</td>
+</tr>
+<tr>
+<td>2</td>
+<td>4 GB</td>
+<td>24 users at once</td>
+</tr>
+<tr>
+<td>2</td>
+<td>8 GB</td>
+<td>24 users at once</td>
+</tr>
+<tr>
+<td>4</td>
+<td>8 GB</td>
+<td>48 users at once</td>
+</tr>
+<tr>
+<td>4</td>
+<td>16 GB</td>
+<td>48 users at once</td>
+</tr>
+<tr>
+<td>8</td>
+<td>16 GB</td>
+<td>96 users at once</td>
+</tr>
+<tr>
+<td>8</td>
+<td>32 GB</td>
+<td>96 users at once</td>
+</tr>
+<tr>
+<td>16</td>
+<td>32 GB</td>
+<td>192 users at once</td>
+</tr>
+<tr>
+<td>16</td>
+<td>64 GB</td>
+<td>192 users at once</td>
+</tr>
+</tbody>
+</table>
+<p>Users at once are the people working in Odoo at the same moment, not everyone
+with an account: a team of 40 where about a dozen work in Odoo at the same
+time needs a server for 12. A staging on the same server shares those
+workers. It is a starting point: heavy reports, large imports or many websites
+ask for more. You can move an instance to a bigger server later, with <strong>Move
+to host</strong> on the instance.</p>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS: order it from the panel</p>
+<p>Go to <strong>Hosts</strong> and press <strong>Order new VPS</strong>. In <strong>How many people will use
+Odoo at once?</strong> type how many of you will work at the same time, then
+choose the <strong>Location</strong>: the size recommended for you is picked, and every
+size says how many users at once it is recommended for and its price. The
+DNS is done for you: the platform creates the server's record under its
+own domain, and you do not need a domain to start. While the panel has no backup destination, the order of
+the managed backup storage opens once the server is ordered: step 3
+explains it. See <a href="../../hosts/hire/">Order a VPS</a>.</p>
+</div>
+<p>With your own server, rent one with Ubuntu 22.04 or newer from any provider,
+of the size above, and follow <a href="../../hosts/connect/">Connect your own VPS</a>. It
+needs a DNS record before the first deploy: step 6 says how.</p>
+<h2 id="3-set-up-the-backups">3. Set up the backups<a class="headerlink" href="#3-set-up-the-backups" title="Permanent link">&para;</a></h2>
+<p>A production instance is not deployed without a backup destination: the
+backups of your company's data have to have somewhere to go before there is
+data.</p>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS: managed backup storage</p>
+<p>When the panel has no backup destination yet, <strong>Order VPS</strong> offers
+<strong>Set up managed backups next</strong>, ticked. Once the server is ordered, the
+next window shows the storage tiers with their prices: choose one and
+confirm it, and it becomes the panel's default destination. Nothing more
+to configure. Skipped, you can order it later under <strong>Backup
+Destinations</strong>. See <a href="../../backups/#managed-backup-storage">Managed Backup Storage</a>.</p>
+</div>
+<p>Otherwise, create a bucket at an S3-compatible storage provider and register it
+under <strong>Backup Destinations → New Backend</strong>, as
+<a href="../../backups/#backup-destinations">Backup destinations</a> explains, and
+choose it in <strong>Settings → General → Default backup destination</strong>.</p>
+<p>Either way, the backups are encrypted with the destination's <strong>passphrase</strong>,
+and without it nobody can read them (<a href="../../backups/#encryption">why</a>).
+The managed backup storage comes with one the panel generated and never shows.
+Before the first deploy, open it in <strong>Backup Destinations</strong>, and on its
+<strong>Storage</strong> tab type a passphrase of your own in <strong>Passphrase</strong>, keep a copy in
+your password manager, and save. On a destination of your own, type it when you
+create it. Changed later, it re-encrypts nothing: the backups made before still
+need the passphrase they were made with.</p>
+<h2 id="4-create-the-project">4. Create the project<a class="headerlink" href="#4-create-the-project" title="Permanent link">&para;</a></h2>
+<p>A project holds your company's Odoo: its production and its stagings. On
+<strong>Projects</strong>, press <strong>New Project</strong>, give it a name, and save. You do not need a
+Git repository: without one, Odoo comes with the modules you pick from the
+catalog. See <a href="../first-project/">Create your first project</a>.</p>
+<h2 id="5-deploy-odoo">5. Deploy Odoo<a class="headerlink" href="#5-deploy-odoo" title="Permanent link">&para;</a></h2>
+<ol>
+<li>In the project's side menu, press <strong>+</strong> next to <strong>Production</strong>.</li>
+<li>Give the instance a name, choose the server of step 2 as its host, and pick
+   the modules you want to start with (Sales, Invoicing, Inventory…). You can
+   add more later.</li>
+<li>Press <strong>Create Instance</strong>, and then <strong>Deploy</strong>.</li>
+</ol>
+<p>The first deploy takes a few minutes; you can follow it in <strong>Recent activity</strong>.
+When it ends in green, the instance's address, a name under the server's
+domain, opens Odoo's sign-in page. Details in
+<a href="../first-deploy/">Deploy your first instance</a>.</p>
+<p>Every instance starts with the limits of a small team: Odoo with 2 workers,
+2 GB of memory and 2 CPUs, and its database with 1 GB. Two workers serve about
+12 users at once. Above that, raise them: on the instance's <strong>Resources</strong> tab,
+the <strong>Memory limit</strong> and <strong>CPUs</strong> of Odoo and of the database, and on its
+<strong>Config</strong> tab, <code>workers</code> (Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
+<strong>Deploy</strong>. See <a href="../../instances/resources/">Memory and resources</a>.</p>
+<h2 id="6-your-own-domain">6. Your own domain<a class="headerlink" href="#6-your-own-domain" title="Permanent link">&para;</a></h2>
+<p>You can work with the address the panel gave the instance. To use your own,
+such as <code>erp.example.com</code>:</p>
+<ol>
+<li><strong>Find the server's IP address</strong>: on <strong>Hosts</strong>, open the server; it is its
+   <strong>IP address</strong>.</li>
+<li><strong>Open your domain's DNS</strong> where it is managed: usually your registrar's
+   website, in a section called <em>DNS</em>, <em>DNS zone</em> or <em>DNS records</em>. If your
+   domain uses another DNS service, the registrar says which.</li>
+<li>
+<p><strong>Add an A record</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Name</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td><code>erp</code></td>
+<td>the server's IP address</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>Name</strong> is the part before your domain: <code>erp</code> for <code>erp.example.com</code>.
+Some providers ask for the whole name instead. Leave the TTL as it is.</p>
+</li>
+<li>
+<p><strong>Wait until it is seen.</strong> Usually a few minutes, sometimes an hour. A DNS
+   lookup website, or <code>dig +short erp.example.com</code> in a terminal, shows the
+   IP address once it is.</p>
+</li>
+<li><strong>Add the name to the instance</strong>: <strong>Networking → Domains</strong>, <strong>+ Add
+   domain</strong>, <code>erp.example.com</code>, and <strong>Deploy</strong> again. The certificate for HTTPS
+   is requested by itself, which is why the record must be in place first.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Your own server</p>
+<p>A server you connect yourself needs one more record before its first
+deploy: a <strong>wildcard</strong> record, <code>*</code> (or <code>*.odoo</code> for names under
+<code>odoo.example.com</code>), pointing to its IP address. It is the domain you give
+the host in <strong>Wildcard domain</strong>, and each instance gets a name under it.</p>
+</div>
+<p>More choices, such as certificates you already have, in
+<a href="../../instances/#custom-domains-and-certificates">Custom domains and certificates</a>.</p>
+<h2 id="7-mail-that-leaves-odoo">7. Mail that leaves Odoo<a class="headerlink" href="#7-mail-that-leaves-odoo" title="Permanent link">&para;</a></h2>
+<p>Odoo sends invoices, quotations and password resets by mail. In production, it
+delivers them through the SMTP server you set on the instance: <strong>Networking</strong>,
+fields <strong>SMTP host</strong>, <strong>SMTP port</strong>, <strong>SMTP encryption</strong>, <strong>SMTP user</strong> and
+<strong>SMTP password</strong>. A staging never sends mail to anybody
+(<a href="../../instances/#email-on-staging">why</a>).</p>
+<ol>
+<li><strong>Get the values from your mail provider.</strong> Its help pages give the SMTP
+   server, the port (usually 587, with STARTTLS) and how to sign in. Many
+   providers ask for an <em>app password</em> or a sending account instead of your
+   own password. With Microsoft 365, the mail relay can sign in with OAuth2
+   instead of a password: see
+   <a href="../../instances/mail-relay/#oauth2-with-microsoft-365">OAuth2 with Microsoft 365</a>.</li>
+<li><strong>Fill in the fields</strong> and <strong>Deploy</strong> again.</li>
+<li><strong>Add the records your provider gives you</strong> to your domain's DNS, as in
+   step 6: usually an <strong>SPF</strong> record (TXT) and a <strong>DKIM</strong> record (TXT or
+   CNAME). Without them, much of what Odoo sends ends in spam.</li>
+<li><strong>Try it</strong>: in Odoo, send a quotation to an address of yours outside the
+   company.</li>
+</ol>
+<h2 id="8-before-you-open-it-to-the-team">8. Before you open it to the team<a class="headerlink" href="#8-before-you-open-it-to-the-team" title="Permanent link">&para;</a></h2>
+<ul class="task-list">
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The instance shows <strong>Running</strong> and opens at your address with HTTPS.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The instance's <strong>Backups</strong> tab shows a first backup the morning after
+      the deploy; <strong>Create Backup</strong> takes one at once
+      (<a href="../../backups/">Set up backups</a>).</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The passphrase you typed on the backup destination is in your password
+      manager.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> A test mail arrived, and not in spam.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Your colleagues are invited: Odoo's own users are created in Odoo,
+      under <em>Settings → Users</em>.</li>
+</ul>
+<h2 id="coming-from-another-odoo">Coming from another Odoo?<a class="headerlink" href="#coming-from-another-odoo" title="Permanent link">&para;</a></h2>
+<p>If your company already works in Odoo somewhere else, do steps 1 to 4, and
+then follow <a href="../../migrations/">Migrations</a> instead of step 5: the
+project and the production instance are made from what you already have.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Get started">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Get started
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../signup/" class="md-footer__link md-footer__link--next" aria-label="Next: Create your account">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Create your account
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; IncubaCloud
+    </div>
+  
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/incubacloud" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.incubacloud.io" target="_blank" rel="noopener" title="www.incubacloud.io" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.4c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64h185.3c2.2 20.4 3.3 41.8 3.3 64m28.8-64h123.1c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64m112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6 78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7 10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5 11.6 26 20.9 58.2 27 94.7m-209 0H18.6c30-74.1 93.6-130.9 172-151.6-25.5 34.2-45.3 87.7-55.3 151.6M8.1 192h123.1c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64m186.6 254.6c-11.6-26-20.9-58.2-27-94.6h176.6c-6.1 36.4-15.5 68.6-27 94.6-10.5 23.6-22.2 40.7-33.5 51.5-11.2 10.7-20.5 13.9-27.8 13.9s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6-78.4-20.7-142-77.5-172-151.6zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6 25.5-34.2 45.2-87.7 55.3-151.6h116.7z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://status.incubacloud.io" target="_blank" rel="noopener" title="Service status" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.6.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M576 0c17.7 0 32 14.3 32 32v448c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32M448 96c17.7 0 32 14.3 32 32v352c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32m-96 128v256c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32m-160 64c17.7 0 32 14.3 32 32v160c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32M96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32v-64c0-17.7 14.3-32 32-32s32 14.3 32 32"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["announce.dismiss", "content.action.edit", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.progress", "navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.83f73b43.min.js"></script>
+      
+    
+  </body>
+</html>

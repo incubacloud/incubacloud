@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -650,6 +742,8 @@
       
         
           
+        
+      
         
       
         
@@ -732,6 +826,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1184,6 +1299,8 @@
       
         
       
+        
+      
     
     
       
@@ -1260,6 +1377,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1484,6 +1622,8 @@
       
         
       
+        
+      
     
     
       
@@ -1539,6 +1679,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1921,6 +2082,13 @@ If you need a forensic copy with original credentials and crons, <strong>downloa
 <li>Wait for the restore to finish. The instance is briefly unavailable while
    the database is replaced. When the job ends in green, you're back online with the older data.</li>
 </ol>
+<p>Before Odoo starts, the restored database has its modules updated to the code
+the instance runs now, as a rebuild does (unless <strong>Auto-update modules on
+rebuild</strong> is off); the job's log names the branches and pinned commits. A
+restore does not change the code: to undo a deployment, revert its code first,
+or its migration runs again on the restored database. If the update fails, Odoo
+stays stopped and the job says which module failed: fix it, dismiss the job's
+alert and rebuild the instance.</p>
 <div class="admonition warning">
 <p class="admonition-title">In-place restore is destructive</p>
 <p>The current database is replaced by the backup. Anything created or modified after
@@ -2028,11 +2196,11 @@ users. If the source installation still runs, both now send mail and run
 the same scheduled actions. Stop the source first, or switch them off on
 one side.</p>
 </div>
-<p>The restore does not update modules. If the code in your repositories is newer
-than the one the database last ran, <strong>Rebuild</strong> the instance: a production
-rebuild tries the new code on a copy of the database first, then updates the
-modules whose code changed. Sign in with the users and passwords of the source
-database.</p>
+<p>Before Odoo starts, the modules whose code differs from what the database last
+ran are updated to the instance's code, as a rebuild does, unless <strong>Auto-update
+modules on rebuild</strong> is off. If that update fails, Odoo stays stopped and the
+job names the module: fix it, dismiss the job's alert and rebuild the instance.
+Sign in with the users and passwords of the source database.</p>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <p>For downloads:</p>
 <ul class="task-list">

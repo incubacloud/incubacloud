@@ -259,16 +259,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -508,6 +511,8 @@
       
         
       
+        
+      
     
     
       
@@ -552,6 +557,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -742,16 +768,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -767,6 +859,8 @@
       
         
           
+        
+      
         
       
         
@@ -849,6 +943,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1151,6 +1266,8 @@
       
         
       
+        
+      
     
     
       
@@ -1227,6 +1344,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1451,6 +1589,8 @@
       
         
       
+        
+      
     
     
       
@@ -1506,6 +1646,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1850,17 +2011,17 @@ with the project form.</p>
 <div class="admonition warning">
 <p class="admonition-title">Private repositories</p>
 <p>For private GitHub repos, install the platform's <strong>GitHub App</strong>
-(<code>Settings → GitHub App</code>) — it grants repository access without sharing
+(<code>Settings → GitHub</code>) — it grants repository access without sharing
 credentials — or store a personal access token in <code>Settings → GitHub</code>.
 A URL with a token inside it
 (<code>https://&lt;token&gt;@github.com/your-org/your-repo.git</code>) is refused:
 credentials never travel in the URL.</p>
 </div>
 <h2 id="4-pick-a-backup-destination">4. Pick a backup destination<a class="headerlink" href="#4-pick-a-backup-destination" title="Permanent link">&para;</a></h2>
-<p><strong>Backup Destination</strong> applies to every production instance of the project,
+<p><strong>Backup destination</strong> applies to every production instance of the project,
 unless an instance sets its own. A production instance cannot be deployed
 without a destination: choose one here, on the instance, or for every
-production instance in <strong>Settings → General → Default Backup Destination</strong>.
+production instance in <strong>Settings → General → Default backup destination</strong>.
 See <a href="../../backups/">Set up backups</a> for the full walkthrough, and
 <a href="../../instances/">Before you create the first instance</a> for what the
 first deploy needs.</p>

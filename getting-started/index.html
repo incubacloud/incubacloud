@@ -18,7 +18,7 @@
         <link rel="prev" href="..">
       
       
-        <link rel="next" href="signup/">
+        <link rel="next" href="zero-to-odoo/">
       
       
       <link rel="icon" href="../assets/favicon.svg">
@@ -259,16 +259,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -508,6 +511,8 @@
       
         
       
+        
+      
     
     
       
@@ -552,6 +557,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -630,16 +656,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -655,6 +747,8 @@
       
         
           
+        
+      
         
       
         
@@ -737,6 +831,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1039,6 +1154,8 @@
       
         
       
+        
+      
     
     
       
@@ -1115,6 +1232,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1339,6 +1477,8 @@
       
         
       
+        
+      
     
     
       
@@ -1394,6 +1534,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1656,6 +1817,13 @@
 
 
 <h1 id="get-started">Get started<a class="headerlink" href="#get-started" title="Permanent link">&para;</a></h1>
+<div class="admonition tip">
+<p class="admonition-title">Never set up a server or a domain?</p>
+<p><a href="zero-to-odoo/">From zero to Odoo in production</a> goes step by step, from
+nothing to an Odoo your team signs in to: the server, the domain and its
+DNS, the backups, the first deploy and the mail. It explains each word as it
+comes up.</p>
+</div>
 <p>Three short guides that take you from zero to a running Odoo instance:</p>
 <ol>
 <li><a href="signup/">Create your account</a> — sign up, pick a plan, log in.</li>
@@ -1679,7 +1847,8 @@
 <ul>
 <li><a href="../backups/">Setting up backups</a> so your data is safe.</li>
 <li><a href="../hosts/connect/">Connecting your own VPS</a> if you bring your own infra.</li>
-<li><a href="../migrations/from-odoosh/">Migrating from Odoo.sh</a> if you're moving in.</li>
+<li><a href="../migrations/from-odoosh/">Migrating from Odoo.sh</a> or
+  <a href="../migrations/from-another-host/">from another host</a> if you're moving in.</li>
 </ul>
 
 
@@ -1733,13 +1902,13 @@
         
         
           
-          <a href="signup/" class="md-footer__link md-footer__link--next" aria-label="Next: Create your account">
+          <a href="zero-to-odoo/" class="md-footer__link md-footer__link--next" aria-label="Next: From zero to Odoo in production">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Create your account
+                From zero to Odoo in production
               </div>
             </div>
             <div class="md-footer__button md-icon">

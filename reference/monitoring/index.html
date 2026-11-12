@@ -257,16 +257,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../projects/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../projects/" class="md-tabs__link">
+          
   
     
   
   Projects
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -506,6 +509,8 @@
       
         
       
+        
+      
     
     
       
@@ -547,6 +552,27 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/zero-to-odoo/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From zero to Odoo in production
+  </span>
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -625,16 +651,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../projects/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../projects/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Projects
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Projects
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../projects/gitlab/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Repositories on GitLab
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -650,6 +742,8 @@
       
         
           
+        
+      
         
       
         
@@ -732,6 +826,27 @@
   
   <span class="md-ellipsis">
     Memory and resources
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/mail-relay/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mail relay
   </span>
   
 
@@ -1034,6 +1149,8 @@
       
         
       
+        
+      
     
     
       
@@ -1110,6 +1227,27 @@
   
   <span class="md-ellipsis">
     Approvals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../agents/auto-approval/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Auto-approval
   </span>
   
 
@@ -1334,6 +1472,8 @@
       
         
       
+        
+      
     
     
       
@@ -1389,6 +1529,27 @@
   
   <span class="md-ellipsis">
     From Odoo.sh
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../migrations/from-another-host/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    From another host
   </span>
   
 
@@ -1586,9 +1747,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-is-not-here-yet" class="md-nav__link">
+  <a href="#what-is-not-here" class="md-nav__link">
     <span class="md-ellipsis">
-      What is not here yet
+      What is not here
     </span>
   </a>
   
@@ -1736,9 +1897,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-is-not-here-yet" class="md-nav__link">
+  <a href="#what-is-not-here" class="md-nav__link">
     <span class="md-ellipsis">
-      What is not here yet
+      What is not here
     </span>
   </a>
   
@@ -1775,18 +1936,24 @@ until it succeeds.</p>
 <h2 id="what-is-measured">What is measured<a class="headerlink" href="#what-is-measured" title="Permanent link">&para;</a></h2>
 <p><strong>Per host</strong> — CPU, memory, disk usage and free space, load, and whether
 the host is reporting at all.</p>
-<p><strong>Per instance</strong> — CPU and memory of each container, disk used by the
-instance's directory, and its HTTP traffic: requests per second, status
-codes and latency.</p>
+<p><strong>Per instance</strong> — CPU and memory of each container with their limits,
+how often the CPU quota held it back, restarts and processes killed for
+lack of memory, disk used by the instance's directory, and its HTTP
+traffic: requests per second, server errors and latency.</p>
+<p><strong>On demand</strong> — when you ask, from the instance's <strong>Metrics</strong> tab: what its
+database is doing (sessions, locks, connections) and where Odoo's time went
+(slowest routes, scheduled actions, workers stopped by a limit), read from
+the host and never stored.</p>
 <p><strong>Per request</strong> — the proxy also records who asked for what. That is what
 the <em>Recent requests</em> panel on an instance shows: client IP, method, path
 and response code. Metrics tell you an instance is under load; only these
 tell you what is being done to it.</p>
 <h2 id="where-to-look">Where to look<a class="headerlink" href="#where-to-look" title="Permanent link">&para;</a></h2>
 <p><strong>One instance in trouble</strong> → open it and go to the <strong>Metrics</strong> tab. This
-is the right place during an incident: charts for that instance, and
-underneath, the requests hitting it right now, with a breakdown by status
-code and the client addresses sending the most.</p>
+is the right place during an incident: it says in plain words which
+resource is short, shows since when, compares the instance with its
+neighbours on the same server, reads on demand what its database and its
+Odoo log are doing, and underneath lists the requests hitting it right now.</p>
 <p><strong>The whole fleet</strong> → the <strong>Monitoring</strong> entry in the sidebar, next to
 Hosts. It appears only when observability is enabled.</p>
 <p>For what each individual chart means, what a healthy one looks like and what to
@@ -1823,10 +1990,10 @@ public HTTPS address to push to; set it under <em>Advanced</em>. The local
 address the button fills in is only reachable from the central's own
 host. Or give the central a direct name and its host a direct port: your
 hosts then push to it without a CDN in between, on a port only they may open.</p>
-<h2 id="what-is-not-here-yet">What is not here yet<a class="headerlink" href="#what-is-not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Database metrics per instance (connections, cache hit ratio, locks) and
-synthetic probes from outside. Both are designed and deferred; nothing
-already collected changes when they land.</p>
+<h2 id="what-is-not-here">What is not here<a class="headerlink" href="#what-is-not-here" title="Permanent link">&para;</a></h2>
+<p>Database figures per instance over time (connections, cache hit ratio,
+locks) are not charted or alerted: <strong>Queries now</strong> on the Metrics tab reads
+them when you ask. There are no synthetic probes from outside.</p>
 
 
 
