@@ -205,6 +205,18 @@ Before you apply it:
 Afterwards the panel reaches the host as the operator user on the new port.
 Re-running it is safe: every step checks the host before it changes anything.
 
+## Security logs
+
+With observability on, each server sends its security logs to the metrics
+central: SSH sign-ins and failed attempts (address, user, key), `sudo`
+commands, fail2ban's blocks and changes to `passwd`, `shadow`, `sudoers`
+and the SSH configuration. The central keeps them 90 days; the server can
+add to them but cannot delete them. **Send security logs**, on the
+server's **Connection** tab, stops them for that server; what was sent
+expires on its own. SSH and `sudo` come from the journal, so a server
+that keeps its journal in memory only (no `/var/log/journal`) sends
+fail2ban's and auditd's lines alone, and the agents' install says so.
+
 ## DNS for HTTPS
 
 For Let's Encrypt to issue a cert when you deploy a domain on this host,

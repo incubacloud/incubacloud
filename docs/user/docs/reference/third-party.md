@@ -16,7 +16,7 @@ in the core repository.
 - **queue_job** (LGPL-3.0, Odoo Community Association) runs the panel's
   background jobs.
 - On your hosts, the panel installs **Traefik**, **PostgreSQL**, **WAL-G**,
-  **rclone**, **Grafana**, **Loki**, **VictoriaMetrics** and other tools, as
+  **rclone**, **Fluent Bit**, **Loki**, **VictoriaMetrics** and other tools, as
   their authors publish them.
 
 IncubaCloud's own code is licensed separately: see

@@ -32,7 +32,7 @@ deployment, kept with that deployment.
 | [RB-19](RB-19-restore-large-backup.md) | Get a large backup onto a host and restore it | planned | A dump too large for the browser, or a host nobody holds credentials for |
 | [RB-20](RB-20-neutralize-restored-copy.md) | Restore a copy of production without arming it | planned | Developing against real data, reproducing a bug, rehearsing a migration |
 | [RB-23](RB-23-continuous-recovery.md) | Continuous recovery: alerts, a stuck restore, a moved instance | critical | `pitr_failing`, `pitr_archive_lagging`, `pitr_base_missing`; a restore that never ended |
-| [RB-24](RB-24-direct-path.md) | Direct path: down, a host not admitted, rotate the DNS token, roll back | high | `direct_path_down`, `direct_allowlist_stale`, `direct_certificate_expiring`, `direct_path_unreachable_from_host`; Grafana refusing logins |
+| [RB-24](RB-24-direct-path.md) | Direct path: down, a host not admitted, rotate the DNS token, roll back | high | `direct_path_down`, `direct_allowlist_stale`, `direct_certificate_expiring`, `direct_path_unreachable_from_host` |
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
 | [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 | [RB-32](RB-32-git-repositories-on-the-host.md) | The repositories downloaded on the host | warning | «Fetch the repositories» fails or runs out of time, a series goes back to cloning in the image, the PAT is rotated, instances still to rebuild |

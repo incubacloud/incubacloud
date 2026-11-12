@@ -24,10 +24,31 @@ at 0 on every host, and needs no data migration; the module has to be
 updated, which loads the five rules. The reconciliation cron then
 re-applies the agents of every installed host, five per pass of 15
 minutes, which installs the database collector; nothing has to be run by
-hand. The panel that owns the central runs **Enable observability** once
-afterwards: it closes the operator's read route, caps the operator's
-requests in flight and replaces the deletion key, which moves into a
-file.
+hand. The central's deployment that the update queues (below) closes the
+operator's read route, caps the operator's requests in flight and
+replaces the deletion key, which moves into a file.
+
+**Security logs on every server, and a metrics central without Grafana.**
+Each server sends its security events to the metrics central: SSH
+sign-ins and failed attempts, sudo, fail2ban's blocks and changes to
+passwd, shadow, sudoers and the SSH configuration, kept there 90 days.
+**This update turns them on for every server, also on panels that had
+*Send hosts' security logs* off.** Each server's **Connection** tab has
+the switch that stops them for that server. Fluent Bit sends them, in
+place of promtail, and counts them for the charts and alerts to come; it
+no longer mounts the Docker socket, and the proxy's access log stays on
+the server, where the panel reads it when asked. The central no longer
+runs Grafana: the panel draws every chart itself.
+
+The update needs no step by hand. It adds `cloud.host.security_logs_enabled`
+and `cloud.settings.metrics_central_revision`; the agents' revision is 2,
+so the reconciliation cron re-applies the agents of every server, five
+every 15 minutes. It empties Grafana's admin password and base URL, and
+the central is deployed again once, which removes Grafana and its data;
+VictoriaMetrics and Loki keep theirs. That deployment writes the
+central's URLs again, as every deployment does. To keep what Grafana left,
+create the system parameter `incubacloud.metrics_keep_grafana_data`
+before updating (`docs/observability-operations.md`, "Undo").
 
 ### Added
 
@@ -111,6 +132,28 @@ file.
   `cpu_usage`, `ram_usage` and `usage_last_seen`. Adds three columns to
   `cloud_host` (`cpu_usage`, `ram_usage`, `usage_last_seen`); Spanish
   translation included.
+- **Send security logs, per server.** On the server's **Connection** tab
+  (`cloud.host.security_logs_enabled`, on by default): on, the server's
+  agents run Fluent Bit 5.1.5, which sends the journal's SSH and sudo
+  lines, auditd's records of its four keys and the files they watch, and
+  fail2ban's lines to the central's log store, and exposes seven counters
+  with a closed set of labels (`ic_ssh_auth_failed_total`,
+  `ic_ssh_accepted_total`, `ic_sudo_total`, `ic_sudo_failed_total`,
+  `ic_f2b_total`, `ic_audit_events_total`, `ic_security_lines_total`);
+  off, the container, its cursors and its buffer are removed, so nothing
+  of the time it was off is sent. A change applies at once to that
+  server, also after a failed install, and is in the audit log; an agent
+  that turns it off through `manage_host` asks for approval. A change of
+  the server's key or user applies at once too: a sign-in with the
+  panel's key counts as the panel's. While the central does not answer,
+  the lines wait on disk, up to 64 MB. A server that keeps its journal in
+  memory sends auditd's and fail2ban's lines only, and the install says
+  so. The connection guide has a section on what is sent.
+- **The central converges on its playbook.** The panel records the
+  revision of its central's last good deployment, and the reconciliation
+  cron deploys the central again while it is behind, not while a
+  deployment waits or runs and with a growing wait after a failure. Not
+  with observability off.
 
 ### Changed
 
@@ -132,8 +175,7 @@ file.
   may delete series and read the fleet on the central** now also opens
   the cross-account read to those addresses, as its label and help say.
   Empty, it answers the
-  central's host only, as before. Grafana's admin route still answers
-  the host only.
+  central's host only, as before.
 - **Only the operator has a cap on requests in flight: 16.** vmauth
   counts per user and answers the next request 429 at once; an account's
   user is shared by its agents' writes and its reads, so accounts have
@@ -143,6 +185,35 @@ file.
   *The metrics central is busy* and asks again, keeping the charts it
   already shows. A deletion of series asks again three times, 5 s apart,
   before it warns.
+- **Each server decides its security logs, and the update decides where
+  they start.** The panel-wide *Send hosts' security logs* is gone from
+  Settings, the routes and `update_settings`. The update sets every
+  server on (the owner's decision of 10-nov-2026), unless a module that
+  extends the panel says otherwise through
+  `cloud.host._security_logs_after_upgrade`; such a module may also start
+  new servers off (`_security_logs_default`) and keep every server off,
+  refusing to turn one on by the form, the route or an agent
+  (`_security_logs_available`), as a managed panel's does until whoever
+  manages it allows them. A panel of its own is on from this update.
+- **The central is VictoriaMetrics, vmauth and Loki.** Its deployment
+  removes what Grafana left once the boundary answers, saying in its log
+  what it could not remove instead of failing; `/gadmin/` and its router
+  under the public name are gone (that recreates vmauth once, for
+  seconds), and the account sync only rewrites the access-control list.
+  Settings loses *Grafana base URL*. Loki keeps security logs 90 days and
+  anything else 30, so the access lines already stored expire as before.
+- **`/cloud/monitoring/config` and `get_monitoring`** say whether metrics
+  are collected, whether a central is set and, per server, whether its
+  agents are installed and its security logs sent; Grafana's URL and the
+  instances' list are gone.
+
+### Removed
+
+- **promtail and the proxy's access log in the central.** The access log
+  stays on each server (`/var/log/traefik/access.log`, 30 days); the
+  agents no longer mount the Docker socket.
+- **Grafana**, its dashboards and its organisations: the panel draws the
+  instance's, the server's and the fleet's boards itself.
 
 ### Fixed
 
@@ -164,10 +235,7 @@ file.
   `docker inspect` time out, the database collector counts every
   instance in `ic_pg_scrape_errors` instead of leaving them out as
   stopped.
-- **Grafana base URL** says what it is for (Grafana's own links): the
-  charts do not need it, and Settings no longer says they are hidden
-  without it. The Spanish texts call the metrics central *la central*
-  throughout.
+- The Spanish texts call the metrics central *la central* throughout.
 
 ### Security
 
