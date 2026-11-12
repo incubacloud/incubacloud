@@ -221,23 +221,25 @@ class TestAttemptBudget(BaseCase):
             )
         self.assertEqual(budget, 540)
 
-    def test_the_startup_warning_starts_below_an_hour(self):
-        """3600 s is enough; Odoo.sh's 900 s is still warned about.
+    def test_the_startup_warning_starts_below_odoo_shs_limit(self):
+        """900 s is enough, as on Odoo.sh; 899 s is warned about.
 
-        Only the rebuild's image build runs apart yet: a deploy or a long
-        restore may still pass 900 s in the request.
+        Every long step runs apart since phase 3 (12-nov-2026): what is
+        left in the request fits in 0.4 of 900 s.
         """
         modules = ["base", "web", "queue_job"]
-        self.assertEqual(MIN_LIMIT_TIME_REAL, 3600)
-        self.assertEqual(job_server_limit_problems({
-            "server_wide_modules": modules, "workers": 2,
-            "limit_time_real": 3600,
-        }), [])
+        self.assertEqual(MIN_LIMIT_TIME_REAL, 900)
+        for limit in (900, 3600):
+            self.assertEqual(job_server_limit_problems({
+                "server_wide_modules": modules, "workers": 2,
+                "limit_time_real": limit,
+            }), [], limit)
         problems = job_server_limit_problems({
             "server_wide_modules": modules, "workers": 2,
-            "limit_time_real": 900,
+            "limit_time_real": 899,
         })
         self.assertEqual(len(problems), 1)
-        self.assertIn("limit_time_real is 900 s, below the 3600 s", problems[0])
-        self.assertIn("runs for 540 s", problems[0])
-        self.assertIn("within 360 s", problems[0])
+        self.assertIn("limit_time_real is 899 s, below the 900 s", problems[0])
+        self.assertIn("runs for 539 s", problems[0])
+        self.assertIn("within 359 s", problems[0])
+        self.assertIn("Set limit_time_real to 900 or more", problems[0])
