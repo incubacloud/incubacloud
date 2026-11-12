@@ -167,6 +167,49 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.assertIsNone(closing.closed[1]["Apart"]["exit_status"])
         self.assertTrue(closing.errors[0].startswith("'Apart' did not end"))
 
+    def test_a_step_ended_lets_go_of_the_queue_though_its_directory_stays(self):
+        """Read ended, its directory kept (75): the row stays, the queue goes on."""
+        done = os.path.join(self.marks, "ended")
+        cls = self._lost(
+            apart=f"echo Apart >> {self.runs}; sleep 6; touch {done}; exit 0",
+            _no_return_from="Apart",
+        )
+        self._reconcile(cls)
+        self.assertTrue(self._row().holds_queue_since)
+        self.assertTrue(self._busy())
+        self.assertTrue(_wait_for(done))
+        self._ended()
+
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+
+        async def _run(command, timeout=3600):
+            """``clean`` finds something of the step still alive."""
+            if "ctl.sh clean" in command:
+                return CommandResult(stdout="the step still runs", exit_status=75)
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            yield transport
+
+        Job = type(self.env["cloud.job"])
+        with patch.object(
+            Job, "_schedule_dispatch", autospec=True,
+        ) as dispatch, mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_connect)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertEqual(row._data().get("unclean"), [1])
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+        self.assertTrue(any(
+            {tuple(scope) for scope in call.args[1]} == {self._scope()}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
+
     def test_a_server_that_cannot_be_reached_holds_it_until_it_expires(self):
         """Not known to have ended: held, but no longer than the expiry."""
         cls = self._lost(_no_return_from="Apart")
@@ -453,6 +496,28 @@ class TestTheCloseSeesHowTheStepEnded(_HoldCase):
         """Exit 3: the hook sees that status."""
         closing = self._ended_before_the_close(3)
         self.assertEqual(closing.closed[1]["Apart"]["exit_status"], 3)
+
+    def test_a_step_that_ended_with_a_long_log_unread(self):
+        """More than eight reads of log left: read to its end, not held."""
+        size = 8 * abstract_executor.DETACHED_READ_MAX_BYTES + 512 * 1024
+        cls = self._lost(
+            apart=(
+                f"echo Apart >> {self.runs}; sleep 2;"
+                f" head -c {size} /dev/zero | tr '\\0' a | fold -w 4000; exit 0"
+            ),
+            _no_return_from="Apart",
+        )
+        self._ended()
+        self._reconcile(cls)
+        self.assertEqual(self.job.state, "failed")
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        log = self._log()
+        self.assertIn("'Apart' ended on the server with exit status 0.", log)
+        self.assertFalse(any(
+            "is past the point of no return and still runs" in line
+            for line in log
+        ), log[-5:])
 
     def test_a_step_still_running(self):
         """Past the point of no return and running: it did not end."""

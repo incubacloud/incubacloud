@@ -88,6 +88,10 @@ class HostBuildLockMixin:
         A job parked between two attempts holds the host too: its
         checkpoint says so (``build_lock_host_id``), read on a fresh
         cursor, as the parked job committed it on a cursor of its own.
+        A row a closed job kept (``closed``) holds it only while a step
+        apart of it was left started there (``detached_started``): one
+        kept between two steps, for a directory it could not remove or a
+        server not reached, builds nothing.
         """
         super().pre_run_checks()
         if not self._takes_host_build_lock:
@@ -105,6 +109,7 @@ class HostBuildLockMixin:
             env.cr.execute(
                 "SELECT job_id FROM cloud_job_checkpoint"
                 " WHERE build_lock_host_id = %s AND job_id != %s"
+                " AND (closed IS NOT TRUE OR detached_started)"
                 " ORDER BY job_id LIMIT 1",
                 (host.id, self.job.id),
             )

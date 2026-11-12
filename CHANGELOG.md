@@ -98,7 +98,10 @@ is unchanged.
   same instance, and so does the switch on's «First base copy», in the
   same scope, so two copies of an instance never run at once; and so
   does «Wait for the restore», the job parking
-  while the restore runs on the host. A restore taken up after a park
+  while the restore runs on the host; a stop of the restore waits on the
+  host within what a step in the request may last (240 s with a limit of
+  900, 300 as before with 3600), the next job following one not undone
+  by then. A restore taken up after a park
   keeps the base copy it chose and whether it only followed one already
   there, so a stop then hands the restore to the next job instead of
   asking the host again. What each reads last, the copies' window and
@@ -164,7 +167,9 @@ is unchanged.
   and another build or teardown of the host waits 30 s while it is there,
   its deferral naming the job that holds the host.
   The parked job takes the lock again when it comes back, and waits 5 s
-  if another one holds it at that instant.
+  if another one holds it at that instant. A row its job kept once closed
+  holds the host only while a step apart of it was left started there,
+  not one kept between two steps (a directory it could not remove).
 - **A parked job is stopped and closed by itself or by the
   reconciliation.** Cancelled while parked, it comes back within seconds,
   stops its step (TERM, 60 s for its trap, KILL), removes its working
@@ -185,7 +190,10 @@ is unchanged.
   to end on the server»: the reconciliation looks at the step at every
   pass, says in the closed job's log the exit status it ended with, and
   serves the queue; a server that cannot be reached holds it two hours
-  and ten minutes at most. A step before the point of no return never
+  and ten minutes at most. A step found ended, or stopped, lets go of the
+  queue though its row stays for a directory it could not remove, and a
+  close reads a long log to its end, for up to 30 s, before it takes the
+  step for running. A step before the point of no return never
   holds it, so the rollback of a move whose new server is gone starts at
   once; the point is the one the plan had when it ran, so a move's
   restore does not gain one once the rollback removes the move's marks,
