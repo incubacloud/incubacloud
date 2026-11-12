@@ -52,6 +52,7 @@ from .cloud_host_direct import _SILENT_AFTER
 from .cloud_instance_metrics import _ONE_OFF_NAMES
 from .cloud_metric_rule import (
     BACKEND_UNREACHABLE_CODE,
+    central_busy,
     promql_query,
     promql_query_range,
 )
@@ -852,8 +853,9 @@ def run_board(scope, values, available, base, user, token,
     """Run every panel of *scope* against the central, in parallel.
 
     A panel that fails does not take the board down: its entry carries
-    ``error`` (``"refused"`` on a 401 or 403, ``"unanswered"`` on
-    anything else, for the caller to word) and the others are drawn. A
+    ``error`` (``"refused"`` on a 401 or 403, ``"busy"`` on a 429,
+    ``"unanswered"`` on anything else, for the caller to word) and the
+    others are drawn. A
     panel whose record is missing (an instance placed on no host has no
     server to compare with) is answered empty without asking.
 
@@ -901,7 +903,9 @@ def run_board(scope, values, available, base, user, token,
             )
             # Translated by the caller: ``_`` reads its language from the
             # calling frame, and this one runs in a thread of its own.
-            return {"error": "refused" if _refused(exc) else "unanswered"}
+            if _refused(exc):
+                return {"error": "refused"}
+            return {"error": "busy" if central_busy(exc) else "unanswered"}
 
     panels = PANELS[scope]
     asked = [p for p in panels if p["needs"] in available]
@@ -1013,8 +1017,9 @@ def board_failure(env, board, user, token):
 
     Every panel failing is the central failing: a refused credential
     (401/403) is told apart from a central that does not answer, both
-    with since when. Some panels failing leaves the others drawn, each
-    failed one with its error in words.
+    with since when, and from a busy one (429 to every panel), which is
+    not failing and has no since. Some panels failing leaves the others
+    drawn, each failed one with its error in words.
 
     :param env: an Odoo environment.
     :param dict board: ``run_board``'s answer; ``asked`` is removed.
@@ -1038,13 +1043,23 @@ def board_failure(env, board, user, token):
                     env._("This panel has no credential for the metrics central.")
                 ),
             }
+        if all(board["panels"][key]["error"] == "busy" for key in failed):
+            return {
+                "ok": False, "reason": "busy", "since": None,
+                "error": env._(
+                    "The metrics central is busy. The charts will ask again "
+                    "shortly.",
+                ),
+            }
         return {
             "ok": False, "reason": "central", "since": since,
             "error": env._("The metrics central could not be reached."),
         }
     for key in failed:
-        board["panels"][key]["error"] = env._(
-            "The metrics central could not answer.",
+        board["panels"][key]["error"] = (
+            env._("The metrics central is busy.")
+            if board["panels"][key]["error"] == "busy"
+            else env._("The metrics central could not answer.")
         )
     return None
 

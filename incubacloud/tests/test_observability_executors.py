@@ -33,6 +33,8 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _ACCOUNT_READ_PATHS,
     _ACCOUNT_WRITE_PATH,
     _OPERATOR_DELETE_PATH,
+    _OPERATOR_MAX_CONCURRENT,
+    _OPERATOR_READ_PATHS,
     ObservabilityCentralExecutor,
 )
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
@@ -276,8 +278,24 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         # The operator owns the cross-account doors and nothing else.
         paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
         self.assertEqual(
-            paths, {"/admin-r/.*", "/gadmin/.*", _OPERATOR_DELETE_PATH},
+            paths, {_OPERATOR_READ_PATHS, "/gadmin/.*", _OPERATOR_DELETE_PATH},
         )
+
+    def test_only_the_operator_has_a_cap_on_requests_in_flight(self):
+        """vmauth counts per user and answers 429 at once (Fable A1, 12-nov-2026).
+
+        An account's user is shared by its agents' writes and its reads:
+        a cap there refused writes while reads ran.
+        """
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        self.assertEqual(
+            self._user(cfg, "operator")["max_concurrent_requests"], 16,
+        )
+        self.assertEqual(_OPERATOR_MAX_CONCURRENT, 16)
+        for user in cfg["users"]:
+            if user["username"] != "operator":
+                self.assertNotIn("max_concurrent_requests", user)
 
     def test_retention_falls_back_to_ninety_days(self):
         """Zero would tell VictoriaMetrics to keep nothing."""
@@ -461,6 +479,75 @@ class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
     def test_no_account_route_is_a_catch_all(self):
         """A trailing ``.*`` is how the injection route existed."""
         for pattern in self._account_paths():
+            self.assertNotIn(".*", pattern, pattern)
+
+
+class TestTheOperatorReadNamesItsEndpoints(ObservabilityExecutorCase):
+    """The operator's ``/admin-r/`` serves the accounts' reads and health.
+
+    It was ``/admin-r/.*``: the whole backend. Closed before the route
+    can be opened under the public name (Fable M2/M3, 12-nov-2026);
+    measured against vmauth v1.102.0, an unlisted path answers 400.
+    """
+
+    _ALLOWED = (
+        "/admin-r/health",
+        "/admin-r/api/v1/query",
+        "/admin-r/api/v1/query_range",
+        "/admin-r/api/v1/series",
+        "/admin-r/api/v1/labels",
+        "/admin-r/api/v1/label/__name__/values",
+        "/admin-r/api/v1/metadata",
+        "/admin-r/api/v1/status/buildinfo",
+    )
+
+    _REFUSED = (
+        "/admin-r/api/v1/import/prometheus",
+        "/admin-r/api/v1/import",
+        "/admin-r/api/v1/write",
+        "/admin-r/api/v1/export",
+        "/admin-r/api/v1/admin/tsdb/delete_series",
+        "/admin-r/api/v1/status/tsdb",
+        "/admin-r/snapshot/create",
+        "/admin-r/internal/force_merge",
+        "/admin-r/flags",
+        "/admin-r/metrics",
+        "/admin-r/healthz",
+        "/admin-r/health/../flags",
+        "/admin-r/api/v1/label/a/b/values",
+    )
+
+    def _read_patterns(self, executor_cls=ObservabilityCentralExecutor):
+        """Return the operator's ``src_paths`` that reach VictoriaMetrics."""
+        self.settings._ensure_operator_credential()
+        extra = self._make(executor_cls).get_extra_vars()
+        operator = self._user(yaml.safe_load(extra["ic_vmauth_config"]), "operator")
+        return [
+            sp for entry in operator["url_map"] for sp in entry["src_paths"]
+            if entry["url_prefix"] == "http://victoriametrics:8428/"
+        ]
+
+    def test_the_reads_in_use_and_health_are_reachable(self):
+        """The fleet board, RB-11, RB-16 and the deployment's probe."""
+        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
+            patterns = self._read_patterns(cls)
+            for path in self._ALLOWED:
+                with self.subTest(job=cls._job_type, path=path):
+                    self.assertTrue(
+                        any(re.fullmatch(p, path) for p in patterns),
+                    )
+
+    def test_writes_snapshots_and_flags_are_not(self):
+        for cls in (ObservabilityCentralExecutor, MetricsAclSyncExecutor):
+            patterns = self._read_patterns(cls)
+            for path in self._REFUSED:
+                with self.subTest(job=cls._job_type, path=path):
+                    self.assertFalse(
+                        any(re.fullmatch(p, path) for p in patterns),
+                    )
+
+    def test_no_operator_read_is_a_catch_all(self):
+        for pattern in self._read_patterns():
             self.assertNotIn(".*", pattern, pattern)
 
 

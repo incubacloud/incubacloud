@@ -107,7 +107,12 @@ credential and not from the payload.
 **Two credentials, and they are not interchangeable.** Each account has
 one, scoped to itself, and it is written to that account's hosts. The
 *operator* credential reads across every account (`/admin-r/`), deletes
-series (`/admin-d/`) and is never written to any host. Grafana's own admin password stays on the
+series (`/admin-d/`) and is never written to any host. `/admin-r/` serves
+the same read endpoints as an account's `/r/` plus `/health`
+(`_OPERATOR_READ_PATHS`); anything else, imports, exports, snapshots or
+flags, answers 400. It was `/admin-r/.*`, the whole backend, until
+12-nov-2026, when it was closed so the route could be opened to the
+panel's address under the public name. Grafana's own admin password stays on the
 central: vmauth authenticates callers on `/gadmin/` with the operator
 credential and swaps in the admin credential before proxying, so rotating
 it is a redeploy rather than a change everywhere.
@@ -151,8 +156,29 @@ the instance's host, only when pressed, and holds a worker of the panel
 for at most 20 s, the SSH connection and login included (`_READ_TIMEOUT`;
 jobs keep the host's 30 s for each); the board lets one run at a time, and
 each reading counts against the user's log reads per minute
-(`rate_limit_logs_per_min`). The central has no limit per account of its
-own yet: a cap of concurrent queries per account in vmauth is planned.
+(`rate_limit_logs_per_min`).
+
+**The operator, and only the operator, has a cap on requests in flight:
+16** (`_OPERATOR_MAX_CONCURRENT`, vmauth's `max_concurrent_requests`,
+12-nov-2026). vmauth counts per user, not per route, and answers the next
+request 429 at once, with no queue. An account's user is shared by its
+agents' writes, its logs, its Grafana datasource and its panel: a cap
+there answered a write 429 while two reads ran (measured on v1.102.0 with
+a cap of 2), and after an outage every host empties its queue at once. So
+accounts have none. The operator never writes; 16 covers four fleet
+boards at four queries each plus Grafana's admin calls (measured: 16
+reads in flight pass, the 17th to 20th get 429, an account's 30 reads and
+its write meanwhile all pass). VictoriaMetrics queues the reads
+themselves: `-search.maxConcurrentRequests`, twice the cores (8 on a
+4-core central), each waiting up to 10 s. A share per account belongs
+with a read-only user per account, later.
+
+**A 429 is "busy", not "down".** `promql_query` asks once more after a
+second (`_BUSY_PAUSE`); the rule cron, if it is still busy, evaluates
+nothing that run, raising nothing (no `metrics_backend_unreachable`) and
+resolving nothing; a board says *The metrics central is busy* (`reason:
+"busy"`, no since) and asks again on its own; a busy operator route does
+not fall back to the account's servers the way a refused one does.
 
 Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
@@ -279,7 +305,9 @@ below is only for a central next to the panel.
    token is restricted to client addresses, add the new host's.
 4. In Settings → Monitoring → *Advanced…*, fill in **Central's public
    name** with that name and **Who may delete series on the central**
-   with the panel's public address (`/32`). Empty **Grafana base URL** if
+   with the panel's public address (`/32`): it opens the series deletion
+   and the cross-account read (`/admin-r/`) to that address, under the
+   name. Empty **Grafana base URL** if
    it pointed at the old central, so the deployment fills in the new one.
 5. Re-run *Enable observability* against the new host. When the job
    answers, the panel's query URL, the agents' remote-write URL and (if
@@ -296,8 +324,15 @@ copy the VictoriaMetrics data volume across before step 5 — otherwise
 expect the dashboards to start from the moment of the switch.
 
 What the deployment publishes under the name is what the hand-written
-gateway publishes (next section), with one difference: Traefik drops
-any `X-WEBAUTH-USER` header on its way to Grafana. Grafana's
+gateway publishes (next section), with two differences: Traefik drops
+any `X-WEBAUTH-USER` header on its way to Grafana, and the operator's
+`/admin-r/` and `/admin-d/` have routers of their own (`ic-central-read`,
+`ic-central-delete`, priority 30) that admit the addresses in **Who may
+delete series on the central** plus the host itself, the forwarded
+address when the name is behind a CDN (`ipstrategy.depth: 1`). With the
+setting empty, both answer the host only, as before 12-nov-2026.
+`/gadmin/` answers the host only, always, and no operator route is
+published on the direct entrypoint. Grafana's
 `frame-ancestors` is the list `cloud.settings._grafana_frame_ancestors`
 returns, written again at every deployment: the panel's origin, plus
 whatever origins a module that extends the panel adds, such as other

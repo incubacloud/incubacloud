@@ -8,6 +8,12 @@ on **two consecutive evaluations** (about ten minutes; a single failed
 query, or one that succeeded on its automatic retry, raises nothing).
 While this lasts, **metric-based alerts are not being evaluated**.
 
+A **429** never raises it (since 12-nov-2026): vmauth answers 429 to a
+user over its cap of requests in flight, and only the operator has one
+(16). The central is then busy, not down; the cron skips that run without
+resolving anything, and a board says *The metrics central is busy*. See
+"Costs and sizing" in `docs/observability-operations.md`.
+
 If the alert comes from a panel that reads another panel's central
 at `metrics.<base domain>`, the central belongs to whoever runs that
 other panel, and a module on top may relay the alert to them instead of
@@ -37,6 +43,12 @@ docker compose -p incubacloud-central ps
 The operator credential is in **Settings → Monitoring → Advanced** on the
 panel that owns the central. It is not the account credential the hosts
 carry, and it is deliberately not on any host.
+
+`/admin-r/` serves `/health` and the read endpoints of `/r/` (`query`,
+`query_range`, `series`, `labels`, label values, `metadata`, `rules`,
+`status/buildinfo`); since 12-nov-2026 anything else there answers
+**400** ("missing route"), which is the list working, not the central
+failing.
 
 - `health` answers and containers are up → the panel cannot *reach* it:
   jump to step 3.
@@ -77,6 +89,9 @@ entrypoint is not: hosts are back on the public path; follow
   address, which is the panel container's own namespace and not the
   host's; and a URL pointing straight at VictoriaMetrics, which no longer
   has a published port — every path goes through vmauth.
+- A **429** is not this alert: the central answered, busy. If boards say
+  *busy* for long, see who holds the operator's 16 requests in flight
+  (fleet boards open at once, Grafana's admin calls during a deployment).
 - A **401** means the panel's account credential and the central's user
   list disagree. Re-deploy the central: the list is rebuilt from the
   panel's own state, so that reconciles them.

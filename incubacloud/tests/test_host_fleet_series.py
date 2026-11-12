@@ -40,7 +40,7 @@ def _response(payload):
 def _refusal(status):
     """Return a response double the central sends to a credential it refuses.
 
-    :param int status: 401 or 403.
+    :param int status: 401 or 403; 429, the central busy.
     """
     resp = MagicMock(spec=requests.Response)
     resp.status_code = status
@@ -292,6 +292,24 @@ class TestFleetSeries(HttpCase):
         for series in res["panels"]["load"]["series"]:
             self.assertTrue(series["own"])
             self.assertEqual(series["account"], "")
+
+    def test_an_operator_over_its_cap_is_busy_not_refused(self):
+        """vmauth answers 429 past the operator's 16 requests in flight.
+
+        Busy is not a closed route: the board says so rather than
+        falling back to the account's servers.
+        """
+        def answer(url, params, **kw):
+            if "/admin-r/" in url:
+                return _refusal(429)
+            return _fleet_central()(url, params, **kw)
+
+        with patch(f"{_MODULE}.requests.get", side_effect=answer) as get:
+            res = self._call()
+        self.assertEqual(res["ok"], False)
+        self.assertEqual(res["reason"], "busy")
+        self.assertIsNone(res["since"])
+        self.assertTrue(all("/admin-r/" in c.args[0] for c in get.call_args_list))
 
     def test_a_panel_without_the_operator_credential_reads_its_account(self):
         self.settings.metrics_operator_token = False

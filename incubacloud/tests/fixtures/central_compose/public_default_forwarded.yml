@@ -39,8 +39,9 @@ services:
     # as the hand-written gateway of a central next to its panel
     # (docs/observability-operations.md, «Publishing the central»): the
     # account prefixes for everyone (vmauth asks each for its
-    # credential), the deletion route for the panel only, the
-    # rest of the operator routes for nobody off this host.
+    # credential), the operator's read and deletion routes for
+    # the addresses in ``ic_operator_sources`` only, Grafana's
+    # admin route for nobody off this host.
     networks:
       - default
       - inverseproxy_shared
@@ -60,7 +61,15 @@ services:
       traefik.http.routers.ic-central-delete.middlewares: ic-central-delete-sources
       traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.sourcerange: "127.0.0.1/32"
       traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.ipstrategy.depth: "1"
-      traefik.http.routers.ic-central-operator.rule: "Host(`metrics-central.example.test`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))"
+      # The cross-account read, behind the same list as the
+      # deletion: vmauth serves only the accounts' read
+      # endpoints and health there. Empty list: this host only.
+      traefik.http.routers.ic-central-read.rule: "Host(`metrics-central.example.test`) && PathPrefix(`/admin-r/`)"
+      traefik.http.routers.ic-central-read.entrypoints: https
+      traefik.http.routers.ic-central-read.service: ic-central-gateway
+      traefik.http.routers.ic-central-read.priority: "30"
+      traefik.http.routers.ic-central-read.middlewares: ic-central-delete-sources
+      traefik.http.routers.ic-central-operator.rule: "Host(`metrics-central.example.test`) && PathPrefix(`/gadmin/`)"
       traefik.http.routers.ic-central-operator.entrypoints: https
       traefik.http.routers.ic-central-operator.service: ic-central-gateway
       traefik.http.routers.ic-central-operator.priority: "30"
@@ -68,6 +77,7 @@ services:
       traefik.http.middlewares.ic-central-host-only.ipwhitelist.sourcerange: "127.0.0.1/32"
       traefik.http.routers.ic-central-data.tls: "true"
       traefik.http.routers.ic-central-delete.tls: "true"
+      traefik.http.routers.ic-central-read.tls: "true"
       traefik.http.routers.ic-central-operator.tls: "true"
     depends_on:
       - victoriametrics

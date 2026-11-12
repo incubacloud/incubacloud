@@ -18,7 +18,9 @@ from odoo.tests.common import TransactionCase, tagged
 from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.models.cloud_metric_rule import (
+    _BUSY_PAUSE,
     BACKEND_UNREACHABLE_CODE,
+    central_busy,
 )
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
@@ -483,6 +485,59 @@ class TestQueryRetry(MetricRuleCase):
         )
         self.assertEqual(mocked.call_count, 2)
         self.assertFalse(self._alerts("test_disk"))
+
+
+class TestABusyCentral(MetricRuleCase):
+    """A 429 is the central busy, not down (Fable A1, 12-nov-2026).
+
+    vmauth answers it at once to a user over its cap on requests in
+    flight. Counted as a failure, a busy central would raise
+    ``metrics_backend_unreachable``.
+    """
+
+    def _breach(self):
+        """A sample of this test's host over the threshold."""
+        return _promql(({"host_id": str(self.host.id)}, 99.0))
+
+    def _run_busy(self, *answers):
+        """Evaluate with *answers*, the pause before a retry patched out."""
+        with patch(f"{_MODULE}.time.sleep") as pause:
+            mocked = self._run_sequence(*answers)
+        return mocked, pause
+
+    def test_a_429_is_asked_again_after_a_pause(self):
+        mocked, pause = self._run_busy(429, self._breach())
+        self.assertEqual(mocked.call_count, 2)
+        pause.assert_called_once_with(_BUSY_PAUSE)
+        self.assertTrue(self._alerts("test_disk"))
+
+    @mute_logger(_MODULE)
+    def test_a_central_busy_twice_is_not_an_outage(self):
+        for _run in range(3):
+            self._run_busy(429, 429)
+        self.assertFalse(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+    @mute_logger(_MODULE)
+    def test_a_busy_run_resolves_nothing(self):
+        """Neither an outage nor an answer: what stood still stands."""
+        self._run_with(_promql(({"host_id": str(self.host.id)}, 99.0)))
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self.assertTrue(self._alerts(BACKEND_UNREACHABLE_CODE))
+        self._run_busy(429, 429)
+        self.assertTrue(self._alerts("test_disk"))
+        self.assertTrue(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+    def test_only_a_429_is_busy(self):
+        def http_error(status):
+            resp = MagicMock(spec=requests.Response)
+            resp.status_code = status
+            return requests.HTTPError(str(status), response=resp)
+
+        self.assertTrue(central_busy(http_error(429)))
+        for exc in (http_error(503), http_error(401),
+                    requests.ConnectionError("reset"), ValueError("promql")):
+            self.assertFalse(central_busy(exc), exc)
 
 
 class TestRuleConfirmation(MetricRuleCase):
