@@ -32,6 +32,7 @@ setup() {
     _stub python3 'exit 0'
     _stub zip 'exit 0'
     _stub logrotate 'exit 0'
+    _stub psql 'exit 0'
     _stub systemctl 'echo "systemctl $*" >> "$TMP/systemctl_calls"'
     _stub groups 'echo "cloud docker"'
     _stub docker 'case "$*" in "--version") echo "Docker version 27";; "compose version") exit 0;; *) exit 0;; esac'
@@ -41,6 +42,20 @@ setup() {
 
 teardown() {
     rm -rf "$TMP"
+}
+
+# _path_without TOOL: a PATH of the stubs and the system's tools, TOOL left
+# out, for a test of a host that lacks it (the runner may well have it).
+_path_without() {
+    mkdir -p "$TMP/sys"
+    local dir tool
+    for dir in /usr/local/bin /usr/bin /bin; do
+        for tool in "$dir"/*; do
+            [ "${tool##*/}" = "$1" ] || [ -e "$TMP/sys/${tool##*/}" ] \
+                || ln -s "$tool" "$TMP/sys/${tool##*/}"
+        done
+    done
+    echo "$TMP/bin:$TMP/sys"
 }
 
 @test "runs to completion when every tool is already present" {
@@ -58,6 +73,21 @@ teardown() {
     run bash "$SCRIPT"
     [ "$status" -eq 0 ]
     ! grep -q "apt-get install" "$APT_CALLS"
+}
+
+@test "installs the PostgreSQL client the database collector reads with when it is missing" {
+    rm "$TMP/bin/psql"
+    PATH="$(_path_without psql)" run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    grep -q "apt-get install -y -qq postgresql-client" "$APT_CALLS"
+}
+
+@test "a PostgreSQL client that will not install only warns" {
+    rm "$TMP/bin/psql"
+    _stub apt-get 'case "$*" in *postgresql-client*) exit 100;; *) exit 0;; esac'
+    PATH="$(_path_without psql)" run bash "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"postgresql-client install failed"* ]]
 }
 
 @test "a host with no containers gets the wide address pools, keeping its options" {

@@ -418,6 +418,29 @@ class TestHostAndFleetPanels(BaseCase):
         ])
         self.assertEqual(rows, [{"id": "5", "name": "a", "cpu": 12.35, "disk": 100.0}])
 
+    def test_the_table_sizes_each_database_and_filestore(self):
+        panel = self._panel("host", "consumers")
+        roles = {q["role"]: q["expr"] for q in panel["queries"]}
+        self.assertIn("ic_pg_db_size_bytes{", roles["database"])
+        self.assertIn("ic_instance_filestore_bytes{", roles["filestore"])
+        # Measured once an hour on a small server: the window covers it.
+        self.assertIn("[2h]", roles["filestore"])
+
+    def test_the_database_collector_counts_only_while_fresh(self):
+        """node_exporter serves the last file it found, even an old one."""
+        panel = self._panel("host", "consumers")
+        roles = {q["role"]: q["expr"] for q in panel["queries"]}
+        for role in ("connections", "max_connections", "waiting"):
+            self.assertIn("ic_pg_", roles[role])
+            self.assertIn("by (instance_id, host_id)", roles[role])
+            self.assertIn('file=~".*ic_pg.prom"} < 180)', roles[role])
+        expression = panel_expression(panel, {"host_id": 3, "one_off": "x"}, 30)
+        self.assertIn('node_textfile_mtime_seconds{host_id="3"', expression)
+
+    def test_the_server_says_whether_its_collector_is_installed(self):
+        roles = {q["role"]: q["expr"] for q in self._panel("host", "host")["queries"]}
+        self.assertEqual(roles["pg_collector"], 'max(ic_pg_collector{host_id="%(host_id)d"})')
+
     def test_a_silence_is_a_segment_of_its_own_and_comes_first(self):
         panel = self._panel("fleet", "ingest")
         raw = [

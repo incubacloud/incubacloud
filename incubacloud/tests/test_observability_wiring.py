@@ -494,7 +494,13 @@ class TestEnrolmentConverges(TransactionCase):
         self.assertTrue(self._queued())
 
     def test_an_enrolled_host_is_left_alone(self):
-        self.host.metrics_agents_state = "installed"
+        """Installed by the playbook of this version: nothing to re-apply."""
+        from ..models.observability_agents_executor import AGENTS_REVISION
+
+        self.host.write({
+            "metrics_agents_state": "installed",
+            "metrics_agents_revision": AGENTS_REVISION,
+        })
         self.env["cloud.host"]._cron_reconcile_observability()
         self.assertFalse(self._queued())
 

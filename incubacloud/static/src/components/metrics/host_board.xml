@@ -68,7 +68,7 @@
                             <div t-elif="consumers.length" class="ic-mb-tablebox">
                                 <table class="rl-table ic-mb-table">
                                     <thead>
-                                        <tr><th>Instance</th><th>CPU</th><th>Memory</th><th>Directory</th><th>Requests</th><th>State</th></tr>
+                                        <tr><th>Instance</th><th>CPU</th><th>Memory</th><th>Directory</th><th>Database</th><th>Filestore</th><th>Connections</th><th>Requests</th><th>State</th></tr>
                                     </thead>
                                     <tbody>
                                         <t t-foreach="consumers" t-as="row" t-key="row.id">
@@ -81,6 +81,9 @@
                                                 <td class="ic-mb-num"><span class="ic-mb-k">CPU</span><t t-esc="fmtPercent(row.cpu)"/></td>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">Memory</span><t t-esc="fmtBytes(row.memory)"/></td>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">Directory</span><t t-esc="fmtBytes(row.disk)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Database</span><t t-esc="fmtBytes(row.database)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Filestore</span><t t-esc="fmtBytes(row.filestore)"/></td>
+                                                <td class="ic-mb-num" t-att-data-waiting="row.waiting ? 'yes' : null"><span class="ic-mb-k">Connections</span><t t-esc="connectionsText(row)"/></td>
                                                 <td class="ic-mb-num"><span class="ic-mb-k">Requests</span><t t-esc="fmtValue('rps', row.rps)"/></td>
                                                 <td><span class="ic-mb-k">State</span><t t-esc="runText(row)"/></td>
                                             </tr>
@@ -89,6 +92,7 @@
                                 </table>
                             </div>
                             <p t-else="" class="ic-mb-empty">No instance of this server has reported in the last 5 minutes.</p>
+                            <p t-if="pgCollectorMissing" class="ic-mb-empty" data-pg-collector="missing">Database collector not installed on this server: its connections and lock waits are not measured. The last install of its agents says why, and the next one tries again.</p>
                         </div>
                     </div>
                 </section>

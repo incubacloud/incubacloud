@@ -1917,6 +1917,7 @@ class CrudMixin:
             ),
             'metrics_retention_days': settings.metrics_retention_days or 0,
             'metrics_ship_security_logs': bool(settings.metrics_ship_security_logs),
+            'metrics_collect_pg': bool(settings.metrics_collect_pg),
             'grafana_base_url': settings.grafana_base_url or '',
             'metrics_central_public_host':
                 settings.metrics_central_public_host or '',
@@ -1960,7 +1961,7 @@ class CrudMixin:
         log_search_max_files=None, log_search_timeout_s=None,
         trusted_proxy_ranges=None, metrics_central_public_host=None,
         metrics_central_operator_sources=None,
-        metrics_ship_security_logs=None,
+        metrics_ship_security_logs=None, metrics_collect_pg=None,
         metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
     ):
         """Save the settings a Settings section sent, and only those.
@@ -2121,6 +2122,8 @@ class CrudMixin:
                     metrics_vals['metrics_ship_security_logs'] = bool(
                         metrics_ship_security_logs,
                     )
+                if metrics_collect_pg is not None:
+                    metrics_vals['metrics_collect_pg'] = bool(metrics_collect_pg)
                 for field, value in (
                     ('metrics_central_url', metrics_central_url),
                     ('metrics_remote_write_url', metrics_remote_write_url),

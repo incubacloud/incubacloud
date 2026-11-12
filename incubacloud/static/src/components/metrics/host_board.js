@@ -166,6 +166,35 @@ export class HostBoard extends ChartBoard {
   }
 
   /**
+   * Whether the agents' last install could not put the database
+   * collector in: the board says so instead of showing empty columns.
+   */
+  get pgCollectorMissing() {
+    return this.facts.pg_collector === 0;
+  }
+
+  /**
+   * An instance's database connections against its ceiling, and the
+   * sessions waiting for a lock when there are any ("12 of 100 · 3
+   * waiting").
+   *
+   * @param {Object} row
+   * @returns {string}
+   */
+  connectionsText(row) {
+    if (row.connections === null || row.connections === undefined) {
+      return "—";
+    }
+    let text = row.max_connections
+      ? _t("%(used)s of %(max)s", {used: this.fmtNumber(row.connections), max: this.fmtNumber(row.max_connections)})
+      : this.fmtNumber(row.connections);
+    if (row.waiting) {
+      text += " · " + _t("%s waiting", this.fmtNumber(row.waiting));
+    }
+    return text;
+  }
+
+  /**
    * Whether an instance runs, in a word.
    *
    * @param {Object} row

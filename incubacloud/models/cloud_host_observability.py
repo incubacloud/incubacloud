@@ -24,6 +24,8 @@ import logging
 
 from odoo import api, fields, models
 
+from .observability_agents_executor import AGENTS_REVISION
+
 _logger = logging.getLogger(__name__)
 
 #: Back-off between install attempts, in minutes, indexed by how many
@@ -33,6 +35,17 @@ _BACKOFF_MINUTES = (0, 15, 30, 60, 120)
 
 #: Consecutive failures after which we stop being quiet about it.
 _ALERT_AFTER_ATTEMPTS = 3
+
+#: Installed hosts whose agents are re-applied per pass of the cron when
+#: their last install ran an older playbook (``AGENTS_REVISION``): five
+#: every fifteen minutes, twenty an hour, so an upgrade spreads the
+#: installs over the fleet instead of queuing them all at once, each
+#: pulling images and installing a package on its host (12-nov-2026).
+_REAPPLY_PER_PASS = 5
+
+#: Job states in which an install is still to end: a host with one is
+#: left to it rather than counted against the pass.
+_UNFINISHED_JOB_STATES = ("queued", "pending", "enqueued", "wait_dependencies", "started")
 
 
 class CloudHost(models.Model):
@@ -202,6 +215,66 @@ class CloudHost(models.Model):
         # and a change of the path asks
         # for this cron at once (``_direct_path_changed``).
         self._reconcile_direct_agents()
+        # And those whose last install ran an older playbook.
+        self._reconcile_agents_revision()
+
+    @api.model
+    def _reconcile_agents_revision(self):
+        """Re-apply, a few per pass, the agents installed by an older playbook.
+
+        A host records the revision its last good install ran
+        (``metrics_agents_revision``). One below ``AGENTS_REVISION`` was
+        installed before this version, or by a panel still on older code
+        (a panel rebuilt by another), and nothing else would run the
+        playbook there again until its instances change. Oldest first,
+        ``_REAPPLY_PER_PASS`` per pass; a host whose install is already
+        waiting or running is left to it and not counted. One that fails
+        leaves "installed" and is retried with the back-off of any other.
+
+        :return: how many installs were queued.
+        :rtype: int
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return 0
+        behind = self.sudo().search([
+            ("metrics_agents_state", "=", "installed"), ("active", "=", True),
+        ]).filtered(
+            lambda h: (h.metrics_agents_revision or 0) < AGENTS_REVISION,
+        ).sorted(lambda h: (h.metrics_agents_revision or 0, h.id))
+        if not behind:
+            return 0
+        busy = self.env["cloud.job"].sudo().search([
+            ("host_id", "in", behind.ids),
+            ("job_type_id.code", "=", "install_observability"),
+            ("state", "in", _UNFINISHED_JOB_STATES),
+        ]).host_id
+        queued = 0
+        for host in behind - busy:
+            if queued >= _REAPPLY_PER_PASS:
+                break
+            if not host._observability_target():
+                continue
+            if host._enqueue_observability("agents revision"):
+                queued += 1
+        if queued:
+            _logger.info(
+                "[metrics] re-applied the agents of %s host(s) on an older "
+                "revision (%s left)", queued, len(behind) - queued,
+            )
+        return queued
+
+    @api.model
+    def _reapply_observability_everywhere(self):
+        """Have the cron re-apply the agents of every installed host.
+
+        For a setting the playbook reads, such as the database collector's
+        switch: the hosts converge at the cron's pace, as after an upgrade.
+        """
+        self.sudo().search([
+            ("metrics_agents_state", "=", "installed"),
+            ("metrics_agents_revision", "!=", 0),
+        ]).write({"metrics_agents_revision": 0})
 
     # ── State transitions, called by the install job ──────────────────────
 

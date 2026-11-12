@@ -10,6 +10,16 @@
    with a growing back-off per host and an alert once failures persist.
    Host setup also chains an install, but only as an accelerator — if it
    fails, the cron picks the host up.
+4. **Hosts follow the playbook.** Each host records the revision of the
+   agents' install it last completed (`metrics_agents_revision`, from
+   `AGENTS_REVISION` in `observability_agents_executor.py`). The same
+   cron re-applies the installed hosts on an older revision, oldest first,
+   **five per pass** (`_REAPPLY_PER_PASS`): twenty an hour, so an upgrade
+   spreads the installs (image pulls, a package) over the fleet instead of
+   queuing them at once, and a host installed by a panel still on older
+   code converges once its panel is updated. No migration queues installs.
+   A change to the playbook that installed hosts need raises
+   `AGENTS_REVISION` (12-nov-2026: revision 1, the database collector).
 
 There is no per-host button, and no step to remember. There never should
 have been: there is no host to which observability does not apply, so
@@ -180,6 +190,45 @@ resolving nothing; a board says *The metrics central is busy* (`reason:
 "busy"`, no since) and asks again on its own; a busy operator route does
 not fall back to the account's servers the way a refused one does.
 
+### On each server: the collectors
+
+What the agents' install puts on a server besides the three containers,
+measured on F0 of the observability plan (9-nov-2026, a `cpx22`, ten
+`db` services of 800 tables each) and chosen on 10 and 12-nov-2026:
+
+| Collector | Runs | Cost | Why so |
+| --- | --- | --- | --- |
+| `collect_pg.sh` (`ansible/playbooks/files/`), root's | every minute, `/etc/cron.d/incubacloud-collect-pg` | 83 ms of CPU per running instance: 1.7 s a minute with 20, 2.8 % of a core | The host's psql through the socket of the instance's `db` container as its filesystem shows it (`/proc/<pid>/root/run/postgresql`): a `docker exec` of the container's psql cost 169 ms, twice the plan's estimate, and the owner chose every minute over every two |
+| Database size (`pg_database_size`) in `collect_disk.sh` | every 10 minutes | one `docker exec` of the `db` container's psql, ~170 ms per instance | It cost the per-minute collector half its CPU (46 of 124 ms) on 6 700 files |
+| Filestore size (`du` in `collect_disk.sh`) | every 10 minutes on a server of 6 GB or more, once an hour below (`ic_filestore_hourly_below_mb`) | the I/O of a `du` over the filestore | Under `nice -n 19 ionice -c 3` and `timeout 120` **inside** the `odoo` container: run on the host they lowered the docker client, not `du`, which containerd starts. Hourly on the 2–4 GB servers, where that I/O is felt |
+
+`collect_pg.sh` reads every running instance in one pass: one query per
+database in a read-only session (`PGOPTIONS` with `statement_timeout=3000`
+and `default_transaction_read_only=on`, `PGCONNECT_TIMEOUT=3`), at most
+6 s each and **45 s for the whole pass**, so twenty databases that hang end
+within the minute; a pass that finds the previous one still running exits
+(`flock -n` on `/run/incubacloud-collect-pg.lock`). A stopped `db` (an
+instance asleep) or a paused one is left out and is no error; one that runs
+and does not answer counts in `ic_pg_scrape_errors`, one left unasked when
+the 45 s ran out in `ic_pg_scrape_skipped`. It writes `ic_pg.prom` in one
+rename, ten series per instance plus three of its own. Its script and
+its list of databases (`collect_pg.instances`) are in
+`/usr/local/lib/incubacloud/`, root's: root is no more than the connecting
+user already holds through the docker group and sudo, but what root runs
+is not that user's to change.
+
+Nothing of it may fail the agents' install, which runs at the end of every
+deploy, move and removal: `postgresql-client` comes with Full Setup, the
+playbook installs it only when `psql` is missing (apt's lock waited 60 s at
+most), and every step that needs root is in a block whose rescue leaves the
+agents installed, writes `ic_pg_collector 0` for the server's board
+("Database collector not installed") and says why in the job's log; the
+next install tries again. *Collect database figures*
+(`metrics_collect_pg`, under *Advanced*) switches it off: the next install
+removes its schedule, its files and its last readings, and switching it
+either way has the reconciliation cron re-apply every installed host. The
+teardown of a host removes it too, before the agents' directory.
+
 Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
 drops it as it ages out.
@@ -263,7 +312,11 @@ memory and directory per instance) keep the nine largest instances and
 add the rest up as `others`, so the stack still reaches the server's
 total. The "who uses it" table (`kind: "table"`, instant queries over the
 last five minutes) is matched to the instances the caller can read, which
-are the ones it links to. Its diagnosis (`diagnose_host`) reads the same
+are the ones it links to. Its database and filestore sizes are the last of
+the past 30 minutes and 2 hours; its connections and lock waits come from
+`ic_pg.prom` only while node_exporter's copy of it is under three minutes
+old (`node_textfile_mtime_seconds`), since node_exporter keeps serving the
+last file it found after the collector stops. Its diagnosis (`diagnose_host`) reads the same
 board: memory over 92 % and the root disk over 90 % (the thresholds of
 `metrics_memory_high` and `metrics_disk_critical`), load per core over 2,
 and the kernel's waits for memory over 10 % and for the disk over 20 % of
@@ -454,9 +507,13 @@ to be tuned in QA with real data:
 | `metrics_host_io_pressure` | PSI I/O "some", % of the last 5 min | > 20 | 3 cycles (15 min) | A fifth of the time is where every instance of the server feels the disk; a backup saturates it for minutes, not for fifteen |
 | `metrics_host_memory_pressure` | PSI memory "full", % of the last 5 min | > 10, critical | 2 cycles | A tenth of the time with nothing running for lack of memory: the kernel is evicting every instance's pages |
 | `metrics_instance_cpu_throttled` | CFS periods the `odoo` container was throttled, % of the last 5 min, one-off runs left out | > 25 | 3 cycles (15 min) | A quarter: requests queue behind the quota most of the time (the instance board's threshold, 10-nov-2026) |
+| `metrics_instance_db_lock_wait` | `min_over_time(ic_pg_waiting_lock[10m])`: the fewest sessions waiting for a lock in any minute of the last ten | > 0 | 1 cycle | Somebody waited the whole ten minutes; two readings five minutes apart could each catch a short wait (review of 12-nov-2026) |
+| `metrics_instance_db_connections` | `ic_pg_connections / ic_pg_max_connections`, % | > 85 | 2 cycles | The next workers or a burst of crons start being refused a connection |
 
-The two database rules of the plan (a lock wait held, connections near
-their ceiling) arrive with the collector that measures them.
+Both database rules read only a fresh `ic_pg.prom`
+(`time() - node_textfile_mtime_seconds{file=~".*ic_pg.prom"} < 180`): with
+no collector, or one that stopped, there is no sample, so neither an alert
+nor a failure.
 
 ## URLs: which one must resolve from where
 

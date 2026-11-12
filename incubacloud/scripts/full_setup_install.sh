@@ -115,6 +115,15 @@ ic_log "Installing logrotate..."
 command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
     || ic_warn "logrotate install failed: instance logs will not be archived"
 
+# The client the observability agents' database collector (collect_pg.sh)
+# reads each instance's PostgreSQL with, through the socket of its db
+# container. Installed here so the agents' install, which runs at the end
+# of every deploy, never waits on apt; it installs it itself only on a
+# server set up before this.
+ic_log "Installing the PostgreSQL client..."
+command -v psql >/dev/null 2>&1 || $APT install -y -qq postgresql-client \
+    || ic_warn "postgresql-client install failed: the agents' install tries again"
+
 if [ -n "${1:-}" ]; then
     ic_log "Pulling the git helper image..."
     if sudo docker pull -q "$1" >/dev/null; then

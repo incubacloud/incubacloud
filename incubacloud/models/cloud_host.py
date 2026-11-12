@@ -529,6 +529,15 @@ class CloudHost(models.Model):
              "back-off and the alert that fires once retrying stops being "
              "reasonable.",
     )
+    metrics_agents_revision = fields.Integer(
+        string="Agents revision",
+        default=0,
+        copy=False,
+        readonly=True,
+        help="Which version of the agents' install this host last "
+             "completed. The reconciliation cron re-applies, a few hosts "
+             "at a time, every installed host on an older one.",
+    )
     metrics_last_seen = fields.Datetime(
         string="Metrics last seen",
         copy=False,

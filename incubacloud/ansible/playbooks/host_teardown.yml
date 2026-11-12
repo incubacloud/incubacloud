@@ -13,8 +13,11 @@
 
   vars:
     traefik_dir: "{{ ansible_env.HOME }}/traefik"
-    # Where host_observability.yml installs the metrics agents.
+    # Where host_observability.yml installs the metrics agents, and root's
+    # database collector with its schedule.
     ic_obs_dir: "{{ ansible_env.HOME }}/observability"
+    ic_lib_dir: /usr/local/lib/incubacloud
+    ic_pg_cron_file: /etc/cron.d/incubacloud-collect-pg
 
   tasks:
     # The metrics agents go first. Left running, a host the panel no
@@ -37,6 +40,26 @@
       ansible.builtin.cron:
         name: "incubacloud instance disk usage"
         state: absent
+
+    # Root's: the user's crontab above does not hold it. Looked for
+    # first, so a host where it never ran needs no sudo here.
+    - name: Look for the database collector
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ ic_pg_cron_file }}"
+        - "{{ ic_lib_dir }}"
+      register: ic_pg_collector_files
+
+    - name: Remove the database collector, its schedule first
+      become: "{{ ansible_user_id != 'root' }}"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ ic_pg_cron_file }}"
+        - "{{ ic_lib_dir }}"
+      when: ic_pg_collector_files.results | selectattr('stat.exists') | list | length > 0
 
     - name: Remove the agents' directory
       # It holds this panel's metrics credential in clear.

@@ -346,6 +346,12 @@ settingsBlocks.add("core-monitoring", {
             synonyms: ["ssh", "fail2ban", "auditd", "security"],
         },
         {
+            id: "metrics_collect_pg", type: "toggle", advanced: true, block: _t("Observability"),
+            label: _t("Collect database figures"),
+            help: _t("Each instance's connections, queries and lock waits, every minute, read on its server as root. Applies to every server within hours."),
+            synonyms: ["postgresql", "database", "locks", "collector"],
+        },
+        {
             id: "grafana_base_url", type: "text", width: "l", mono: true, advanced: true,
             placeholder: "https://metrics.example.com/grafana/", block: _t("Observability"),
             label: _t("Grafana base URL"), help: _t("Empty hides the charts."),

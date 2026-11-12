@@ -21,6 +21,18 @@ from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
 
+#: What the playbook installs, as a number the host keeps
+#: (``cloud.host.metrics_agents_revision``) once an install with it ends
+#: well. The reconciliation cron re-applies, a few hosts per pass, every
+#: installed host below it, so a host whose last install ran an older
+#: playbook (a panel still on older code, or one rebuilt by another
+#: panel) converges without a burst at upgrade. Raise it with every change
+#: of the playbook that installed hosts need.
+#:
+#: 1. 12-nov-2026: the database collector (``collect_pg.sh``) and the
+#:    sizes of each instance's database and filestore.
+AGENTS_REVISION = 1
+
 
 class ObservabilityAgentsExecutor(AnsibleExecutor):
     """Deploy node_exporter + cAdvisor + vmagent on this job's host."""
@@ -51,6 +63,10 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "tenant": "",
             "tenant_id": "",
             "dir": instance.get_remote_dir(),
+            # What the database collectors connect to, through the
+            # socket of the instance's own ``db`` container.
+            "dbname": instance.postgres_dbname or "prod",
+            "dbuser": instance.postgres_username or "odoo",
             # Prefix of the Traefik service/router names this instance
             # answers under. The panel runs ``copier copy`` itself and
             # feeds it ``project_name = doodba_project_name`` — the same
@@ -196,6 +212,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             # SSH, sudo, auditd and fail2ban, besides the access log. Only
             # where the panel says so: the hosts have to be its own.
             "ic_ship_security_logs": bool(settings.metrics_ship_security_logs),
+            # The per-minute database collector, root's; off removes it.
+            "ic_collect_pg": bool(settings.metrics_collect_pg),
             # User half of the credential. It is also the label the
             # central forces on everything this agent writes, so the copy
             # the agent sends is only a hint — the gateway overwrites it
@@ -238,7 +256,9 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         )
         host = self._host()
         host._mark_observability_installed()
+        host.sudo().write({"metrics_agents_revision": AGENTS_REVISION})
         self._resolve_alert("observability_agents_failed")
+        self._report_pg_collector(facts)
         installed = str(facts.get("ic_write_url_installed") or "")
         if installed:
             host.sudo().write({"metrics_agents_write_url": installed})
@@ -256,6 +276,27 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 self.env["cloud.host"]._direct_path_changed(
                     f"direct URLs reached from {host.name} changed",
                 )
+
+    def _report_pg_collector(self, facts):
+        """Say in the job's log what became of the database collector.
+
+        Its failure is not the job's: the agents are installed, the
+        server's board says the collector is missing, and the next run
+        of this job tries again.
+
+        :param dict facts: what the playbook exported.
+        """
+        state = str(facts.get("ic_pg_collector") or "")
+        if state == "installed":
+            self._sys("Database collector installed (every minute, as root).")
+        elif state == "off":
+            self._sys("Database collector switched off in Settings: removed.")
+        elif state == "failed":
+            self._sys(
+                "⚠ Database collector not installed; the agents are. "
+                f"{facts.get('ic_pg_collector_error') or ''}".strip()
+                + " The next install of the agents tries again."
+            )
 
     async def on_cancelled_running(self, results, exc):
         """A stop is not a failed install: the host's agent state stays as it was.
