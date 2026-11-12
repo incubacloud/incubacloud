@@ -104,7 +104,6 @@ from . import (
     test_metric_rules,
     test_host_metrics_handover,
     test_observability_wiring,
-    test_monitoring_picklist,
     test_form_error_accessibility,
     test_observability_executors,
     test_observability_central_public,
@@ -300,3 +299,4 @@ from . import test_metrics_readings
 from . import test_session_guard
 from . import test_pg_collector
 from . import test_security_logs
+from . import test_central_without_grafana

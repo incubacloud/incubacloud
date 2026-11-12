@@ -1886,21 +1886,15 @@ class OpsMixin:
     def cloud_monitoring_config(self):
         """Return what the Monitoring page and ``get_monitoring`` read.
 
-        Deliberately narrow: the master switch, the public Grafana URL,
-        the hosts and the instances. The metrics backend URL and the
-        remote-write token stay server-side — the browser has no
-        business knowing either, and the token is a write credential for
-        the whole fleet.
+        Deliberately narrow: whether metrics are collected, whether a
+        central is set to read them from, and the hosts the caller can
+        read, each with whether its agents are installed and whether it
+        sends its security logs. The central's URLs and the credentials
+        stay server-side — the browser has no business knowing them.
 
         The page draws its own boards: its Hosts view picks a host by
-        ``id`` from ``hosts``, the hosts the caller can read, and asks
-        ``/cloud/host/resource_series`` for it. The names and the
-        instances' picklist are what the MCP tool reports.
-
-        Instances come from ``cloud.instance._monitoring_picklist``,
-        which skips drafts (nothing of theirs runs on a host yet, so no
-        series can carry their name) and labels each one: the bare name
-        is what Grafana filters on, but it means nothing on its own.
+        ``id`` from ``hosts`` and asks ``/cloud/host/resource_series`` for
+        it.
         """
         self._sec()._check_can_view_metrics()
         settings = request.env["cloud.settings"].sudo()._get_system()
@@ -1908,7 +1902,14 @@ class OpsMixin:
         return {
             "ok": True,
             "enabled": bool(settings.metrics_enabled),
-            "grafana_base_url": settings.grafana_base_url or "",
-            "hosts": [{"id": h.id, "name": h.name} for h in hosts],
-            "instances": request.env["cloud.instance"]._monitoring_picklist(),
+            "central": bool((settings.metrics_central_url or "").strip()),
+            "hosts": [
+                {
+                    "id": h.id,
+                    "name": h.name,
+                    "metrics_agents_state": h.metrics_agents_state,
+                    "security_logs_enabled": h.security_logs_enabled,
+                }
+                for h in hosts
+            ],
         }

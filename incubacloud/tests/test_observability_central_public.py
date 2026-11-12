@@ -3,7 +3,7 @@
 With ``metrics_central_public_host`` empty — a central next to its panel,
 production's case — nothing changes: the compose file carries no Traefik
 label and no extra network, and the deployment writes the docker-bridge
-address it always wrote. With a name, vmauth and Grafana are published
+address it always wrote. With a name, vmauth is published
 through the host's Traefik under it (the same routes as the hand-written
 gateway of a co-located central), and the panel and every agent are
 pointed at it.
@@ -40,7 +40,6 @@ DIRECT = "direct.metrics-central.example.test"
 _FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures" / "central_compose"
 _PUBLIC = {
     "ic_public_host": PUBLIC,
-    "ic_grafana_frame_ancestors": "https://panel.example.test",
 }
 _BEFORE = {
     "none": {},
@@ -71,8 +70,6 @@ def _compose(**variables):
     values.update(
         ic_central_dir="/root/observability-central",
         ic_gateway_bind="172.17.0.1:8428",
-        ic_grafana_bind="172.17.0.1:3000",
-        ic_grafana_admin_password="pw",
         ic_retention_days=90,
     )
     values.update(variables)
@@ -93,7 +90,6 @@ def _published(
         ic_public_tls=tls,
         ic_public_forwarded=forwarded,
         ic_operator_sources=list(sources),
-        ic_grafana_frame_ancestors="https://panel.example.test https://*.example.test",
     ))
 
 
@@ -152,13 +148,6 @@ class TestTheComposeFile(BaseCase):
         self.assertEqual(
             labels[f"{prefix}.sourcerange"], "127.0.0.1/32,198.51.100.7/32",
         )
-        # The deletion and read routes share the list; Grafana's admin
-        # route answers the host alone.
-        self.assertNotIn(
-            "traefik.http.middlewares.ic-central-host-only.ipwhitelist"
-            ".ipstrategy.depth",
-            labels,
-        )
 
     def test_the_cross_account_read_answers_the_named_sources_only(self):
         """Its own router, behind the deletion's list (Fable M2, 12-nov-2026).
@@ -208,49 +197,23 @@ class TestTheComposeFile(BaseCase):
             "127.0.0.1/32",
         )
 
-    def test_grafana_s_admin_route_answers_the_host_only(self):
-        labels = _published()["services"]["vmauth"]["labels"]
-        rule = labels["traefik.http.routers.ic-central-operator.rule"]
-        self.assertEqual(rule, f"Host(`{PUBLIC}`) && PathPrefix(`/gadmin/`)")
-        self.assertEqual(
-            labels[
-                "traefik.http.middlewares.ic-central-host-only"
-                ".ipwhitelist.sourcerange"
-            ],
-            "127.0.0.1/32",
-        )
-        # Above the account routes, which do not overlap them anyway.
-        self.assertGreater(
-            int(labels["traefik.http.routers.ic-central-operator.priority"]),
-            int(labels["traefik.http.routers.ic-central-data.priority"]),
-        )
-
-    def test_grafana_drops_the_header_it_would_trust(self):
-        """Without an identity provider Grafana logs in whoever sends it."""
-        labels = _published()["services"]["grafana"]["labels"]
-        self.assertEqual(
-            labels[
-                "traefik.http.middlewares.ic-central-grafana-headers"
-                ".headers.customrequestheaders.X-WEBAUTH-USER"
-            ],
-            "",
-        )
-        self.assertEqual(
-            labels[
-                "traefik.http.middlewares.ic-central-grafana-headers"
-                ".headers.contentsecuritypolicy"
-            ],
-            "frame-ancestors 'self' https://panel.example.test https://*.example.test",
-        )
-        self.assertIn(
-            "PathPrefix(`/grafana/`)",
-            labels["traefik.http.routers.ic-central-grafana.rule"],
-        )
+    def test_grafana_is_neither_run_nor_published(self):
+        """Its service, its route under the public name and ``/gadmin/``
+        are gone; the panel draws every chart (12-nov-2026)."""
+        doc = _published()
+        self.assertEqual(set(doc["services"]), {"victoriametrics", "loki", "vmauth"})
+        rendered = _compose(ic_public_host=PUBLIC, ic_operator_sources=["127.0.0.1/32"])
+        for gone in (
+            "grafana/grafana", "    grafana:\n", "/gadmin/", "ic-central-operator",
+            "GF_", ":3000",
+        ):
+            self.assertNotIn(gone, rendered)
+        self.assertNotIn("grafana-data", doc["volumes"])
 
     def test_every_router_asks_for_a_certificate_or_uses_the_hosts(self):
         acme = _published(tls="acme")
         default = _published(tls="default")
-        for service in ("vmauth", "grafana"):
+        for service in ("vmauth",):
             routers = {
                 key.split(".")[3]
                 for key in acme["services"][service]["labels"]
@@ -270,12 +233,12 @@ class TestTheComposeFile(BaseCase):
                     "true",
                 )
 
-    def test_both_join_the_traefik_network_and_keep_their_own(self):
+    def test_vmauth_joins_the_traefik_network_and_keeps_its_own(self):
         doc = _published()
         self.assertEqual(
             doc["networks"], {"inverseproxy_shared": {"external": True}},
         )
-        for service in ("vmauth", "grafana"):
+        for service in ("vmauth",):
             self.assertEqual(
                 doc["services"][service]["networks"],
                 ["default", "inverseproxy_shared"],
@@ -302,7 +265,6 @@ class TestTheDeployment(ObservabilityExecutorCase):
         self.settings.write({
             "metrics_central_public_host": False,
             "metrics_remote_write_url": False,
-            "grafana_base_url": False,
         })
         settings = self._deployed()
         self.assertEqual(settings.metrics_central_url, "http://172.17.0.1:8428/r")
@@ -310,7 +272,6 @@ class TestTheDeployment(ObservabilityExecutorCase):
             settings.metrics_remote_write_url,
             "http://172.17.0.1:8428/w/api/v1/write",
         )
-        self.assertFalse(settings.grafana_base_url)
         self.assertEqual(settings.metrics_central_host_id, self.host)
 
     def test_without_a_name_a_set_write_url_is_kept(self):
@@ -329,23 +290,11 @@ class TestTheDeployment(ObservabilityExecutorCase):
         self.settings.write({
             "metrics_central_public_host": PUBLIC,
             "metrics_remote_write_url": "https://old.example.com/w/api/v1/write",
-            "grafana_base_url": False,
         })
         settings = self._deployed()
         self.assertEqual(settings.metrics_central_url, f"https://{PUBLIC}/r")
         self.assertEqual(
             settings.metrics_remote_write_url, f"https://{PUBLIC}/w/api/v1/write",
-        )
-        self.assertEqual(settings.grafana_base_url, f"https://{PUBLIC}/grafana/")
-
-    def test_with_a_name_a_grafana_url_already_set_is_kept(self):
-        """It is the OIDC client's redirect; changing it breaks the login."""
-        self.settings.write({
-            "metrics_central_public_host": PUBLIC,
-            "grafana_base_url": "https://dash.example.com/grafana/",
-        })
-        self.assertEqual(
-            self._deployed().grafana_base_url, "https://dash.example.com/grafana/",
         )
 
     def test_the_playbook_gets_nothing_to_publish_without_a_name(self):
@@ -359,7 +308,6 @@ class TestTheDeployment(ObservabilityExecutorCase):
         self.settings.write({
             "metrics_central_public_host": PUBLIC,
             "metrics_central_operator_sources": "198.51.100.7/32\n",
-            "grafana_base_url": False,
         })
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
         self.assertEqual(extra["ic_public_host"], PUBLIC)
@@ -370,35 +318,6 @@ class TestTheDeployment(ObservabilityExecutorCase):
         self.assertEqual(
             extra["ic_operator_sources"], ["127.0.0.1/32", "198.51.100.7/32"],
         )
-        self.assertEqual(extra["ic_grafana_root_url"], f"https://{PUBLIC}/grafana/")
-
-
-    def test_the_panel_may_frame_the_grafana_it_publishes(self):
-        """The list comes from the settings, where a layer can add to it:
-        built here, it named the panel alone, and every other panel
-        got a blank frame (QA, 20-oct-2026)."""
-        self.env["ir.config_parameter"].sudo().set_param(
-            "web.base.url", "https://panel.example.test",
-        )
-        self.settings.write({"metrics_central_public_host": PUBLIC})
-        with patch.object(
-            type(self.settings), "_grafana_frame_ancestors",
-            return_value=["https://panel.example.test", "https://*.example.test"],
-        ):
-            extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
-        self.assertEqual(
-            extra["ic_grafana_frame_ancestors"],
-            "https://panel.example.test https://*.example.test",
-        )
-        self.assertIn(
-            "https://panel.example.test",
-            self.settings._grafana_frame_ancestors(),
-        )
-
-    def test_without_a_name_nobody_is_told_to_frame(self):
-        self.settings.write({"metrics_central_public_host": False})
-        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
-        self.assertEqual(extra["ic_grafana_frame_ancestors"], "")
 
     def test_behind_a_cdn_the_playbook_is_told_the_name_is_forwarded(self):
         self.settings.write({"metrics_central_public_host": PUBLIC})
@@ -423,7 +342,7 @@ class TestTheSettings(ObservabilityExecutorCase):
     def test_anything_else_is_refused(self):
         for value in (
             f"https://{PUBLIC}",
-            f"{PUBLIC}/grafana",
+            f"{PUBLIC}/r",
             "metrics",
             "Metrics.Example.Test",
             "metrics example.test",
@@ -533,10 +452,9 @@ class TestTheDirectRouter(BaseCase):
             }
             self.assertEqual(on_direct, {"ic-central-direct"})
 
-    def test_grafana_joins_no_network_for_it(self):
+    def test_vmauth_alone_joins_the_traefik_network_for_it(self):
         doc = yaml.safe_load(_compose(ic_direct_host=DIRECT))
-        self.assertNotIn("networks", doc["services"]["grafana"])
-        self.assertNotIn("labels", doc["services"]["grafana"])
+        self.assertEqual(set(doc["services"]), {"victoriametrics", "loki", "vmauth"})
         self.assertEqual(
             doc["services"]["vmauth"]["networks"], ["default", "inverseproxy_shared"],
         )
@@ -592,16 +510,3 @@ class TestTheDirectDeployment(ObservabilityExecutorCase):
             ("host_id", "=", self.host.id),
             ("job_type_id.code", "=", "sync_direct_path"),
         ]))
-
-    def test_the_grafana_settings_it_shipped_are_told(self):
-        executor = self._make(ObservabilityCentralExecutor)
-        self.host.direct_port_shipped = 9443
-        executor.get_extra_vars()
-        executor._shipped_accounts = []
-        settings_cls = type(self.env["cloud.settings"])
-        with patch.object(
-            settings_cls, "_grafana_oidc_shipped", autospec=True,
-        ) as shipped:
-            executor._record_shipped_accounts()
-        shipped.assert_called_once()
-        self.assertEqual(shipped.call_args.args[1], executor._shipped_grafana_oidc)

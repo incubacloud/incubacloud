@@ -256,7 +256,7 @@
             <field name="name">Install Observability</field>
             <field name="code">install_observability</field>
             <field name="apply_to">host</field>
-            <field name="description">Installs the metrics agents (node_exporter, cAdvisor, vmagent) on the host and labels every container with its instance/project so the panel can attribute metrics. Push-only: no inbound port is opened.</field>
+            <field name="description">Installs the metrics agents (node_exporter, cAdvisor, vmagent, and Fluent Bit where the host sends its security logs) on the host and labels every container with its instance/project so the panel can attribute metrics. Push-only: no inbound port is opened.</field>
             <field name="priority_tier">low</field>
             <!-- Deliberately NOT offered as a button. It used to be one,
                  justified as "how an operator refreshes the labels after
@@ -277,7 +277,7 @@
             <field name="name">Deploy Metrics Central</field>
             <field name="code">deploy_metrics_central</field>
             <field name="apply_to">host</field>
-            <field name="description">Deploys the central metrics stack (VictoriaMetrics + Grafana with provisioned dashboards) on the target host. Run it against the panel host to co-locate, or against a dedicated VPS to move it.</field>
+            <field name="description">Deploys the central metrics stack on the target host: VictoriaMetrics, vmauth and Loki, the store of the hosts' security logs. Run it again against another host to move it.</field>
         </record>
 
         <record id="sync_metrics_accounts" model="cloud.job.type">
@@ -290,7 +290,7 @@
                  visible is what serialises the two against the same
                  host. -->
             <field name="show_as_action">False</field>
-            <field name="description">Rewrites the gateway's access-control list on an already-deployed central and provisions the Grafana organisations of any new accounts. Granting an account is a sub-second reload of the proxy — it never touches the compose file, so it cannot recreate VictoriaMetrics, Loki or Grafana.</field>
+            <field name="description">Rewrites the gateway's access-control list on an already-deployed central. Granting an account is a sub-second reload of the proxy — it never touches the compose file, so it cannot recreate VictoriaMetrics or Loki.</field>
             <field name="queue_collapse">True</field>
         </record>
 

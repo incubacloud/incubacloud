@@ -301,8 +301,8 @@ settingsBlocks.add("core-monitoring", {
         {
             id: "central_host", type: "custom", block: _t("Observability"),
             label: _t("Where the central runs"),
-            help: _t("VictoriaMetrics, Grafana and a gateway, deployed as a job on this host. Run it again to move it."),
-            synonyms: ["metrics", "grafana", "victoriametrics", "prometheus", "observability"],
+            help: _t("VictoriaMetrics, Loki and a gateway, deployed as a job on this host. Run it again to move it."),
+            synonyms: ["metrics", "victoriametrics", "loki", "prometheus", "observability"],
         },
         {
             id: "observability_status", type: "custom", block: _t("Observability"),
@@ -344,12 +344,6 @@ settingsBlocks.add("core-monitoring", {
             label: _t("Collect database figures"),
             help: _t("Each instance's connections, queries and lock waits, every minute, read on its server as root. Applies to every server within hours."),
             synonyms: ["postgresql", "database", "locks", "collector"],
-        },
-        {
-            id: "grafana_base_url", type: "text", width: "l", mono: true, advanced: true,
-            placeholder: "https://metrics.example.com/grafana/", block: _t("Observability"),
-            label: _t("Grafana base URL"), help: _t("Where the central's Grafana answers, for its own links. The charts do not need it."),
-            synonyms: ["grafana", "dashboards", "charts"],
         },
         {
             id: "metrics_central_public_host", type: "text", width: "m", mono: true, advanced: true,

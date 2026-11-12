@@ -112,13 +112,13 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
         errors = self._executor(FullSetupExecutor, "full_setup").parse_results({
             "check:os": {"stdout": "Linux", "exit_status": 0},
             "Check the direct port": {
-                "stdout": "IC_DIRECT_PORT_BUSY container incubacloud-central-grafana-1",
+                "stdout": "IC_DIRECT_PORT_BUSY container acme-app-1",
                 "exit_status": 1,
             },
         })
         self.assertEqual(len(errors), 1)
         self.assertIn("Port 9443 is already in use on fs-direct", errors[0])
-        self.assertIn("incubacloud-central-grafana-1", errors[0])
+        self.assertIn("acme-app-1", errors[0])
 
     def _good_results(self, executor):
         """What every step of a run that went well printed."""

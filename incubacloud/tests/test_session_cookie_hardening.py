@@ -269,8 +269,8 @@ class TestTraefikHstsRetrofit(TransactionCase):
     def test_secure_middleware_is_not_the_entrypoint_default(self):
         """``secure`` must stay off the entrypoint.
 
-        It sets ``frameDeny``, which blanks out the panel's Grafana
-        iframes and breaks Odoo's website editor, and it sets
+        It sets ``frameDeny``, which breaks Odoo's website editor and
+        every page an instance frames, and it sets
         ``stsIncludeSubdomains``/``stsPreload``, which would make an
         expired instance certificate unreachable with no click-through.
         Those are HARD-001 decisions, not this one's.

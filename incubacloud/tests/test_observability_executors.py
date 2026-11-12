@@ -280,7 +280,7 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         # The operator owns the cross-account doors and nothing else.
         paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
         self.assertEqual(
-            paths, {_OPERATOR_READ_PATHS, "/gadmin/.*", _OPERATOR_DELETE_PATH},
+            paths, {_OPERATOR_READ_PATHS, _OPERATOR_DELETE_PATH},
         )
 
     def test_only_the_operator_has_a_cap_on_requests_in_flight(self):
@@ -403,7 +403,7 @@ class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
     the same question vmauth asks.
     """
 
-    #: What agents, the panel and Grafana 11.2 were measured using.
+    #: What agents and a dashboard were measured using.
     _ALLOWED = (
         "/w/api/v1/write",
         "/r/api/v1/query",
@@ -674,26 +674,6 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
         self.assertFalse(self.settings.metrics_delete_auth_key)
 
 
-class TestTheWholeAccountListTravels(ObservabilityExecutorCase):
-    """Grafana organisations of accounts missing from the list are deleted.
-
-    So the list must be the whole one in both jobs — the sync narrows
-    ``ic_accounts`` to the new accounts, and handing that to the
-    convergence would delete every other organisation.
-    """
-
-    def test_the_deployment_names_every_account(self):
-        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
-        self.assertEqual(extra["ic_account_names"], ["acct_test01"])
-
-    def test_the_sync_names_every_account_not_only_the_new_ones(self):
-        self.settings.metrics_accounts_deployed = "acct_test01"
-        self.settings._ensure_operator_credential()
-        extra = self._make(MetricsAclSyncExecutor).get_extra_vars()
-        self.assertEqual(extra["ic_accounts"], [])
-        self.assertEqual(extra["ic_account_names"], ["acct_test01"])
-
-
 class TestTheListInForceIsAnnounced(ObservabilityExecutorCase):
     """Whoever hands accounts out hears when the gateway accepts them.
 
@@ -817,7 +797,6 @@ class TestFirstDeploymentIsUsable(ObservabilityExecutorCase):
             real_accounts,
             "the central would have come up accepting no writes at all",
         )
-        self.assertTrue(extra["ic_accounts"])
         self.assertTrue(self.settings.metrics_account)
 
 
@@ -839,21 +818,23 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
             "metrics_account": False,
             "metrics_remote_write_token": False,
             "metrics_operator_token": False,
-            "grafana_admin_password": False,
             "metrics_delete_auth_key": False,
         })
 
     def _assert_saved(self, extra):
         """Every credential the playbook received is the one in the database."""
-        (account,) = extra["ic_account_names"]
+        users = {
+            u["username"]: u["password"]
+            for u in yaml.safe_load(extra["ic_vmauth_config"])["users"]
+            if u["username"] != "operator"
+        }
+        (account,) = users
         self.assertTrue(account)
         self.assertEqual(self.stored(self.settings, "metrics_account"), account)
-        passwords = {a["user"]: a["password"] for a in extra["ic_accounts"]}
-        if account in passwords:
-            self.assertEqual(
-                self.stored(self.settings, "metrics_remote_write_token"),
-                passwords[account],
-            )
+        self.assertEqual(
+            self.stored(self.settings, "metrics_remote_write_token"),
+            users[account],
+        )
         self.assertEqual(
             self.stored(self.settings, "metrics_operator_token"),
             extra["ic_operator_plain"],
@@ -867,10 +848,6 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
         self.end_job()
         self._assert_saved(extra)
         self.assertEqual(
-            self.stored(self.settings, "grafana_admin_password"),
-            extra["ic_grafana_admin_password"],
-        )
-        self.assertEqual(
             self.stored(self.settings, "metrics_delete_auth_key"),
             extra["ic_delete_auth_key"],
         )
@@ -880,7 +857,6 @@ class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecuto
         extra = self._make(MetricsAclSyncExecutor).get_extra_vars()
         self.end_job()
         self._assert_saved(extra)
-        self.assertTrue(self.stored(self.settings, "grafana_admin_password"))
         self.assertFalse(self.stored(self.settings, "metrics_delete_auth_key"))
 
     def test_the_job_reads_what_it_minted_without_a_query(self):

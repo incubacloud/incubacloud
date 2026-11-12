@@ -38,9 +38,9 @@ teardown() {
 }
 
 @test "a port Docker publishes without a socket is busy" {
-    STUB_PS='incubacloud-central-grafana-1 172.17.0.1:3000->3000/tcp' run bash "$SCRIPT" 3000
+    STUB_PS='acme-app-1 172.17.0.1:3000->3000/tcp' run bash "$SCRIPT" 3000
     [ "$status" -eq 1 ]
-    [[ "$output" == "IC_DIRECT_PORT_BUSY container incubacloud-central-grafana-1"* ]]
+    [[ "$output" == "IC_DIRECT_PORT_BUSY container acme-app-1"* ]]
 }
 
 @test "a port published on any address is busy" {

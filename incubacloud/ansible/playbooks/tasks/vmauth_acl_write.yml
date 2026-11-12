@@ -15,7 +15,7 @@
   # and reads only its own series and logs, because the route forces
   # the ic_account label and the X-Scope-OrgID header from the
   # authenticated user) plus one operator (the cross-account read and
-  # the Grafana admin API). Adding a user grants access; removing one
+  # series deletion). Adding a user grants access; removing one
   # revokes it. There is no unauthorized_user section, which is what
   # makes a credential-less request 401 rather than proxied.
   #

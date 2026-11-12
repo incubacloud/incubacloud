@@ -2,7 +2,6 @@ import logging
 import os
 import re
 import uuid
-from urllib.parse import urlsplit
 
 from psycopg2 import sql
 
@@ -526,78 +525,6 @@ class CloudSettings(models.Model):
         reconciliation.
         """
 
-    def _grafana_oidc_shipped(self, oidc):
-        """React to Grafana's SSO settings being in force on the central.
-
-        Called by the central's deployment and by the account sync with
-        what they handed Grafana (``_grafana_oidc``), on the job's durable
-        cursor. Core has nothing to keep; a layer may record the token
-        URL in force, so its reconciliation sees when Grafana is behind.
-
-        :param oidc: the settings sent, ``{}`` or None when none were.
-        """
-
-    def _grafana_oidc(self, accounts):
-        """Return the OIDC settings Grafana should authenticate with.
-
-        Empty here: core ships to partners, who have no identity provider
-        of ours, so the playbook wires ``auth.proxy`` instead and trusts
-        a header set by the panel's own reverse proxy. A layer with an
-        identity provider of its own overrides this.
-
-        On the model rather than on the executor for the same reason the
-        account list is: both the deployment and the account sync need
-        it, and a job that had to re-declare it would eventually be one
-        that forgot to.
-
-        :param accounts: ``[(user, token), ...]`` the run is built from,
-            used to map each account to its own organisation.
-        """
-        return {}
-
-    def _grafana_frame_ancestors(self):
-        """Return the origins allowed to frame a Grafana the panel publishes.
-
-        A central published under a name of its own
-        (``metrics_central_public_host``) answers with its own
-        ``frame-ancestors``, and a browser refuses any frame this list
-        does not name, silently: the frame still fires ``load``. Core
-        frames Grafana from the panel alone, so the list is the panel's
-        origin, read from ``web.base.url``. A layer overrides this
-        to add the other panels that frame it.
-
-        On the model rather than on the executor, like ``_grafana_oidc``:
-        who frames Grafana is the layer's knowledge, not the job's.
-
-        :return: origins such as ``https://panel.example.com``; empty
-            while the panel's own address is unknown.
-        :rtype: list
-        """
-        panel = urlsplit(
-            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
-        )
-        return [f"{panel.scheme}://{panel.netloc}"] if panel.netloc else []
-
-    def _grafana_org_mapping(self, accounts):
-        """Return Grafana's ``org_mapping`` string, one entry per account.
-
-        Format is ``claim:org:role`` entries separated by spaces. No
-        wildcard entry: a wildcard would send any authenticated user into
-        an organisation it does not own. Everyone gets Viewer except this
-        panel's own account, which the operator needs Editor on to manage
-        dashboards and datasources.
-
-        :param accounts: ``[(user, token), ...]`` to map.
-        """
-        system_account = self._get_system().metrics_account
-        return " ".join(
-            "%s:%s:%s" % (
-                account, account,
-                "Editor" if account == system_account else "Viewer",
-            )
-            for account, _token in accounts
-        )
-
     # The central's credentials are for system administrators only: the
     # panel's code reads and mints them elevated (``_get_system``), and the
     # settings page only says whether the account's token is set. Without
@@ -613,23 +540,15 @@ class CloudSettings(models.Model):
              'exposes nothing beyond what that panel could already see. '
              'Stored encrypted; written to each host as root-only 0600.',
     )
-    grafana_admin_password = EncryptedChar(
-        string='Grafana admin password',
-        groups='base.group_system',
-        help='Grafana\'s own administrative credential. Never leaves the '
-             'central: the gateway authenticates callers with the '
-             'operator credential and swaps this one in before proxying, '
-             'so rotating it is a redeploy rather than a change in every '
-             'place that talks to Grafana.',
-    )
     metrics_operator_token = EncryptedChar(
         string='Operator read credential',
         groups='base.group_system',
-        help='Second credential, for the UNFILTERED read used by the '
-             "operator's own Grafana organisation. Only meaningful on the "
-             'panel that owns the central, and deliberately never written '
-             'to any host — that is the whole point of keeping it apart '
-             'from the account credential above.',
+        help='Second credential, for the UNFILTERED read of every '
+             "account's series (the fleet's board) and for deleting "
+             'series. Only meaningful on the panel that owns the central, '
+             'and deliberately never written to any host — that is the '
+             'whole point of keeping it apart from the account credential '
+             'above.',
     )
     metrics_delete_auth_key = EncryptedChar(
         string='Metrics deletion key',
@@ -656,12 +575,14 @@ class CloudSettings(models.Model):
              "on the agents' next install, which the reconciliation cron "
              "runs a few servers at a time.",
     )
-    grafana_base_url = fields.Char(
-        string='Grafana base URL',
-        help="Base URL where the central's Grafana answers, e.g. "
-             "https://grafana.example.com; Grafana builds its own links "
-             "from it. The panel's charts read the central and do not "
-             "need it.",
+    metrics_central_revision = fields.Integer(
+        string='Central revision',
+        default=0,
+        readonly=True,
+        copy=False,
+        help='Which version of the central\'s deployment last ended well '
+             'on its server. The reconciliation cron deploys the central '
+             'again while it is behind the panel\'s.',
     )
     metrics_central_public_host = fields.Char(
         string='Public host name of the central',
@@ -679,8 +600,7 @@ class CloudSettings(models.Model):
              "to reach the central's series-deletion route under its "
              "public name: the panel's own public address. They may also "
              "read every account's series there, through the operator's "
-             'read-only route. Grafana\'s admin route stays reachable from '
-             "the central host only. Empty: only the central's host itself, "
+             "read-only route. Empty: only the central's host itself, "
              'which is right while the panel runs there.',
     )
 
@@ -710,8 +630,7 @@ class CloudSettings(models.Model):
 
         Deliberately separate from the account credential: this one grants
         a view across every account, so it must never be written to a
-        host. Only the panel that owns the central holds it, and only its
-        own Grafana organisation uses it.
+        host. Only the panel that owns the central holds it.
 
         :return: the plaintext operator password.
         """
@@ -747,18 +666,6 @@ class CloudSettings(models.Model):
             })
         return settings.metrics_delete_auth_key
 
-    def _ensure_grafana_admin_password(self):
-        """Return Grafana's admin password, generating it once.
-
-        :return: the plaintext password.
-        """
-        settings = self._get_system()
-        if not settings.grafana_admin_password:
-            settings.sudo().write({
-                'grafana_admin_password': generate_password(32),
-            })
-        return settings.grafana_admin_password
-
     def _ensure_metrics_credential(self):
         """Return ``(account, password)``, generating both if absent.
 
@@ -792,9 +699,7 @@ class CloudSettings(models.Model):
             There is something to *look at* — collection plus a central
             to read the panel's own charts from. Collecting without a
             central URL is a valid state for a moment (the central is
-            being deployed); offering charts in it is not. Until
-            12-nov-2026 this asked for a Grafana URL, which the charts no
-            longer need.
+            being deployed); offering charts in it is not.
         ``configure``
             This panel's own operator edits these settings. False where
             they are injected from above, which core never does itself:

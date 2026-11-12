@@ -251,7 +251,6 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
         "cloud_git_provider.base_url":
             "its tokens are cleared: the copy reads public repositories only",
         "cloud_settings.copier_template_url": "a public template the copy reads",
-        "cloud_settings.grafana_base_url": "read only while metrics are on",
         "cloud_settings.metrics_central_url": "read only while metrics are on",
         "cloud_settings.metrics_remote_write_url": "read only while metrics are on",
         "cloud_host.metrics_agents_write_url":
