@@ -284,10 +284,17 @@ export class HostsDashboard extends Component {
      */
     usageMissing(host) {
         if (host.usage_state === "off") {
+            // A tenant's panel has no Monitoring section to turn them on in.
+            if (this.metricsNotConfigurable()) {
+                return _t("Live usage is not available on this panel.");
+            }
             return _t("Metrics are off. Turn them on in Settings to see live usage.");
         }
         if (host.usage_state === "no_agents") {
             return _t("The metrics agents are not installed on this host.");
+        }
+        if (host.usage_state === "agents_failed") {
+            return _t("The installation of the metrics agents on this host failed.");
         }
         const ago = this.timeAgo(host.usage_last_seen);
         // 15 minutes is USAGE_FRESH_SECONDS (cloud_host_metrics.py).
@@ -297,15 +304,30 @@ export class HostsDashboard extends Component {
     }
 
     /**
+     * Whether this panel cannot turn metrics on, as a tenant's, whose
+     * Monitoring section is hidden (``monitoring.js`` asks the same).
+     *
+     * @returns {boolean}
+     */
+    metricsNotConfigurable() {
+        return this.env.features?.observability?.configure === false;
+    }
+
+    /**
      * The icon beside ``usageMissing``: where to look, at a glance.
      *
      * @param {Object} host
      * @returns {string} a key of the Relay icon set.
      */
     usageIcon(host) {
+        if (host.usage_state === "off" && this.metricsNotConfigurable()) {
+            return "lock";
+        }
+        // Not ``heartbeat``: the set draws it as the reload arrows.
         return {
             off: "settings",
-            no_agents: "heartbeat",
+            no_agents: "download",
+            agents_failed: "alert",
         }[host.usage_state] || "clock";
     }
 

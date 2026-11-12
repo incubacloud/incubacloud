@@ -42,9 +42,17 @@ _QUERIES = {
     "_disk_size": ("node_filesystem_size_bytes", 'mountpoint="/"', "{}"),
     # The busy share of all cores over the last five minutes: one cron
     # tick, so each reading covers the time since the one before.
+    # ``iowait`` does not count as busy: the core is idle, waiting on the
+    # disk, and a host that waits on its I/O would otherwise read as
+    # loaded on a CPU bar that says how much compute is left (decided
+    # 12-nov-2026). ``steal`` does count: it is compute the host's
+    # provider took. The idle and iowait rates are added per host and
+    # divided by its core count, since ``avg`` over both modes would halve
+    # them.
     "cpu_usage": (
-        "node_cpu_seconds_total", 'mode="idle"',
-        "100 * (1 - avg by (host_id) (rate({}[5m])))",
+        "node_cpu_seconds_total", 'mode=~"idle|iowait"',
+        "100 * (1 - sum by (host_id) (rate({}[5m])) / "
+        'count by (host_id) (node_cpu_seconds_total{{mode="idle"}}))',
     ),
     "_mem_available": ("node_memory_MemAvailable_bytes", "", "{}"),
 }
@@ -241,7 +249,8 @@ class CloudHost(models.Model):
         :param bool metrics_enabled: whether metrics are on in Settings.
         :param datetime now: the time freshness is measured against.
         :return: ``usage_state`` (``live``, ``off`` with metrics off in
-            Settings, ``no_agents`` with the agents not installed, or
+            Settings, ``no_agents`` with the agents not installed,
+            ``agents_failed`` with their installation failed, or
             ``stale`` with no recent reading), ``cpu_usage`` and
             ``ram_usage`` in percent or ``None``, and ``usage_last_seen``
             as ISO text or ``''``.
@@ -255,6 +264,8 @@ class CloudHost(models.Model):
             state = "off"
         elif fresh:
             state = "live"
+        elif self.metrics_agents_state == "failed":
+            state = "agents_failed"
         elif self.metrics_agents_state != "installed":
             state = "no_agents"
         else:

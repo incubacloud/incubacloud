@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { useEnv, useState } from "@odoo/owl";
+import {
+    allowTranslations,
+    mountWithCleanup,
+    patchWithCleanup,
+} from "@web/../tests/web_test_helpers";
+import { relayIcon } from "@incubacloud/utils/icons";
 import { HostsDashboard } from "@incubacloud/components/hosts_dashboard/hosts_dashboard";
 
 /**
@@ -308,6 +314,23 @@ describe("HostsDashboard — live usage", () => {
             .toBe("No reading yet.");
     });
 
+    test("a failed installation of the agents is said as such", () => {
+        expect(String(card.usageMissing({ usage_state: "agents_failed" })))
+            .toBe("The installation of the metrics agents on this host failed.");
+    });
+
+    test("on a panel that cannot turn metrics on, off gives no instruction", () => {
+        const tenant = Object.create(HostsDashboard.prototype);
+        tenant.env = { features: { observability: { configure: false } } };
+        expect(String(tenant.usageMissing({ usage_state: "off" })))
+            .toBe("Live usage is not available on this panel.");
+        expect(tenant.usageIcon({ usage_state: "off" })).toBe("lock");
+        const core = Object.create(HostsDashboard.prototype);
+        core.env = { features: { observability: { configure: true } } };
+        expect(String(core.usageMissing({ usage_state: "off" })))
+            .toBe("Metrics are off. Turn them on in Settings to see live usage.");
+    });
+
     test("a stale reading says when the last one was", () => {
         const threeHoursAgo = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
         expect(String(card.usageMissing({ usage_state: "stale", usage_last_seen: threeHoursAgo })))
@@ -316,12 +339,101 @@ describe("HostsDashboard — live usage", () => {
 
     test("each reason has its icon", () => {
         expect(card.usageIcon({ usage_state: "off" })).toBe("settings");
-        expect(card.usageIcon({ usage_state: "no_agents" })).toBe("heartbeat");
+        expect(card.usageIcon({ usage_state: "no_agents" })).toBe("download");
+        expect(card.usageIcon({ usage_state: "agents_failed" })).toBe("alert");
         expect(card.usageIcon({ usage_state: "stale" })).toBe("clock");
     });
 
     test("without a reading the allocation still shows, when there is one", () => {
         expect(String(card.allocatedText(live))).toBe("Allocated: 6 vCPU · 12 GB");
         expect(card.allocatedText({ allocated_cpus: 0, allocated_ram_gb: 0 })).toBe("");
+    });
+});
+
+/**
+ * What the template paints for each host: the bars with a live reading,
+ * «No data» and its reason without one. The real class and template,
+ * with the setup that reaches for services replaced by one that only
+ * holds the state.
+ */
+describe("HostsDashboard — what a card paints", () => {
+    beforeEach(() => allowTranslations());
+
+    const base = {
+        status: "compatible", ip_address: "10.0.0.1", region: "", tags: [],
+        cpu_cores: 4, ram_total_gb: 16, disk: 40,
+        allocated_cpus: 6, allocated_ram_gb: 12,
+    };
+    const live = {
+        ...base, id: 1, name: "live-host", usage_state: "live",
+        cpu_usage: 23.4, ram_usage: 62.5, usage_last_seen: "2026-11-12T10:00:00",
+    };
+    const stale = {
+        ...base, id: 2, name: "stale-host", usage_state: "stale",
+        cpu_usage: null, ram_usage: null, usage_last_seen: "",
+    };
+
+    /**
+     * Mount the dashboard with these hosts.
+     *
+     * @param {Object[]} hosts
+     * @param {Object} [features] the env's features
+     */
+    async function mountWith(hosts, features = {}) {
+        patchWithCleanup(HostsDashboard.prototype, {
+            setup() {
+                this.env = useEnv();
+                this.state = useState({
+                    hosts, visible_hosts: hosts, truncated: false,
+                    total: hosts.length, limit: 200, loading: false, error: "",
+                });
+            },
+        });
+        await mountWithCleanup(HostsDashboard, {
+            env: { icon: relayIcon, features, navigate() {} },
+            noMainContainer: true,
+        });
+    }
+
+    /**
+     * The card of the host called *name*.
+     *
+     * @param {string} name
+     * @returns {string} a selector
+     */
+    const cardOf = (name) =>
+        `.ic-host-card:has(.rl-rname:contains("${name}"))`;
+
+    test("a live host paints the CPU and RAM bars and no «No data»", async () => {
+        await mountWith([live]);
+        const card = cardOf("live-host");
+        expect(`${card} .ic-mbar-cpu .rl-mbar-fill`).toHaveCount(1);
+        expect(`${card} .ic-mbar-ram .rl-mbar-fill`).toHaveCount(1);
+        expect(`${card} .ic-mbar-cpu .rl-mbar-fill`).toHaveStyle({ width: "23%" });
+        expect(`${card} .ic-usage-none`).toHaveCount(0);
+    });
+
+    test("a host without a recent reading paints «No data» and no bar", async () => {
+        await mountWith([stale]);
+        const card = cardOf("stale-host");
+        expect(`${card} .ic-usage-none`).toHaveCount(1);
+        expect(`${card} .ic-usage-none`).toHaveText(/No data/);
+        expect(`${card} .ic-usage-reason`).toHaveText("No reading yet.");
+        expect(`${card} .ic-mbar-cpu`).toHaveCount(0);
+        expect(`${card} .ic-mbar-ram`).toHaveCount(0);
+    });
+
+    test("each card paints its own: one with bars beside one without", async () => {
+        await mountWith([live, stale]);
+        expect(".ic-mbar-cpu").toHaveCount(1);
+        expect(".ic-usage-none").toHaveCount(1);
+        expect(`${cardOf("live-host")} .ic-usage-none`).toHaveCount(0);
+        expect(`${cardOf("stale-host")} .ic-mbar-cpu`).toHaveCount(0);
+    });
+
+    test("a tenant's panel gives no instruction for off", async () => {
+        const off = { ...stale, usage_state: "off" };
+        await mountWith([off], { observability: { configure: false } });
+        expect(".ic-usage-reason").toHaveText("Live usage is not available on this panel.");
     });
 });

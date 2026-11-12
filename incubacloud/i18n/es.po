@@ -21997,3 +21997,15 @@ msgstr ""
 "Segundos que tardó en volver más allá de la hora prevista, sumando todas sus "
 "esperas entre intentos. Se escribe al empezar cada intento; vacío en los "
 "tipos ocultos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "Live usage is not available on this panel."
+msgstr "El uso en tiempo real no está disponible en este panel."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
+msgid "The installation of the metrics agents on this host failed."
+msgstr "La instalación de los agentes de métricas en este host falló."
