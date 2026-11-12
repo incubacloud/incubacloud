@@ -9,9 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.225] — 2026-11-11
 
 Jobs that outlive the request that runs them, as on Odoo.sh, where a
-request is cut at 900 s: one step runs apart from its request so far, the
-image build of a rebuild, before its point of no return, and every other
-step runs as before. Settings is a menu of sections, one page each, with a
+request is cut at 900 s: a rebuild runs apart from its request its download
+of the repositories, its image build, its boot test and its module update,
+and every other step runs as before. Settings is a menu of sections, one page each, with a
 search over every setting (issue #3). A restore to a moment updates its
 database to the code the instance runs, as every other restore does since
 1.0.224; a stopped update of a preview no longer lets a push start a second
@@ -30,12 +30,20 @@ is unchanged.
 
 ### Added
 
-- **A rebuild's image build runs apart on its server.** «Rebuild Odoo
-  image» is the first step marked `detached`, in core's rebuild and in
-  every rebuild that inherits it. A rebuild whose build outlasts the
-  attempt's budget leaves the build to the server and comes back for it;
-  cancelled meanwhile, the build is stopped and the rebuild closes as it
-  does today, leaving the instance on its previous image. What an
+- **A rebuild's long steps run apart on its server.** «Fetch the
+  repositories», «Rebuild Odoo image», «Test new image (safe boot check)»
+  and «Update changed modules» are marked `detached`, with the options
+  they had, in core's rebuild and in every rebuild that inherits it (a
+  plan change skips them all, and keeps no checkpoint). A rebuild whose
+  step outlasts the attempt's budget leaves it to the server and comes
+  back for it. Cancelled before its update, the step is stopped and the
+  rebuild closes as it does today, leaving the instance on its previous
+  image; from the update on, a stop is refused as before, and an attempt
+  that takes the update up after a park follows it without deciding the
+  stop again. An update the instance's crons hold back (75) starts the
+  rebuild over five minutes later, as before, its checkpoint and step
+  directory removed. «Ensure incubacloud_connect» stays attached: a
+  rebuild's database nearly always has the module. What an
   executor's hooks read that is set before the steps (`_carried`) now adds
   up over its classes, so a mixin declares its own without hiding its
   bases'.

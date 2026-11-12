@@ -1373,13 +1373,24 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         Its timeout is fixed (``_FETCH_STEP_TIMEOUT_S``), whatever the
         number of repositories: ``deploy.sh`` keeps the budget by itself.
 
+        Run apart on the host (phase 3, 12-nov-2026), for the deploy and
+        the rebuild alike: up to 1 260 s, past the 0.4 of
+        ``limit_time_real`` a step in the request may last. The command
+        names the spec file in the job's directory, which holds the
+        credentials and stays while the job is parked; ``fetch-repos``
+        sets its own umask and picks up what a cut run left.
+
         :param str d: the instance's directory on the host
         :rtype: tuple
         """
         return (
             _LABEL_FETCH,
             self._fetch_repos_command(d),
-            {"stop_on_failure": True, "timeout": _FETCH_STEP_TIMEOUT_S},
+            {
+                "stop_on_failure": True,
+                "timeout": _FETCH_STEP_TIMEOUT_S,
+                "detached": True,
+            },
         )
 
     def _git_trust_steps(self, d):

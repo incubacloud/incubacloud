@@ -299,6 +299,10 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     with the new image against the clone, and clean up.
             #     If the boot fails, stop_on_failure prevents up -d
             #     so the instance keeps running with the old image.
+            #     Run apart (phase 3, 12-nov-2026): the clone of a large
+            #     database takes minutes. Before the point of no return:
+            #     a stop sends TERM, and the script's trap removes its
+            #     container and the clone.
             (
                 "Test new image (safe boot check)",
                 self.run_script(
@@ -310,7 +314,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                         inst.postgres_dbname or "prod",
                     ],
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
             # 12. Update changed modules in the real DB.
             #     click-odoo-update compares checksums stored in the DB
@@ -321,6 +325,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     cron record used to die on a ParseError whenever a
             #     tick was in flight. The guard pauses the crons, waits
             #     for the in-flight ones, and always restores them.
+            #     Run apart (phase 3, 12-nov-2026): with real modules and
+            #     data it takes tens of minutes. The job is marked before
+            #     it starts (``_no_return_from``) and an attempt that
+            #     takes it up after a park follows it without marking it
+            #     again. Its 75 (crons busy) comes back as the step's own
+            #     exit status, and ``parse_results`` starts the rebuild
+            #     over as before.
             (
                 _LABEL_UPDATE,
                 self.run_script(
@@ -331,7 +342,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                         inst.postgres_username or "odoo",
                     ],
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
             ]
             # 12a. A staging or a preview neutralized when it was copied
@@ -360,7 +371,9 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             # 12b. Ensure incubacloud_connect is installed (restored DBs
             #      may not have it; click-odoo-update only updates, not
             #      installs). The script asks the database first, and
-            #      boots no Odoo for a module already there.
+            #      boots no Odoo for a module already there: attached, as
+            #      a rebuild's database nearly always has it (phase 3,
+            #      12-nov-2026; a restore's may not, and runs it apart).
             (
                 "Ensure incubacloud_connect",
                 self.run_script(
