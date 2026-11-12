@@ -41,10 +41,10 @@ describe("HostDetail — class structure", () => {
 });
 
 describe("HostDetail — Send security logs", () => {
-    function make({ collect = true, available = true } = {}) {
+    function make({ collect = true, available = true, saved = false } = {}) {
         const comp = Object.create(HostDetail.prototype);
         comp.env = { features: { observability: { collect } } };
-        comp.state = { securityLogsAvailable: available };
+        comp.state = { securityLogsAvailable: available, securityLogsSaved: saved };
         return comp;
     }
 
@@ -58,6 +58,11 @@ describe("HostDetail — Send security logs", () => {
 
     test("is locked where the panel collects nothing", () => {
         expect(make({ collect: false }).securityLogsSwitchable).toBe(false);
+    });
+
+    test("can always be turned off", () => {
+        expect(make({ collect: false, saved: true }).securityLogsSwitchable).toBe(true);
+        expect(make({ available: false, saved: true }).securityLogsSwitchable).toBe(true);
     });
 });
 

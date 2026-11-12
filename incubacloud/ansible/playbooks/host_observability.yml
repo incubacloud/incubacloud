@@ -1111,12 +1111,39 @@
       changed_when: ic_promtail_image_rm.rc == 0
       failed_when: false
 
+    - name: Count Fluent Bit's restarts before the wait
+      when: ic_fluent_bit | bool
+      ansible.builtin.command:
+        cmd: docker inspect --format '{% raw %}{{.RestartCount}}{% endraw %}' incubacloud-observability-fluent-bit-1
+      register: ic_fb_restarts
+      changed_when: false
+      failed_when: false
+
     - name: Give Fluent Bit time to read its configuration
       # A configuration it refuses ends it within a second or two, and
       # Docker starts it again: read too early, it would count as running.
       when: ic_fluent_bit | bool
       ansible.builtin.wait_for:
         timeout: 5
+
+    - name: Count Fluent Bit's restarts after the wait
+      when: ic_fluent_bit | bool
+      ansible.builtin.command:
+        cmd: docker inspect --format '{% raw %}{{.State.Running}} {{.RestartCount}}{% endraw %}' incubacloud-observability-fluent-bit-1
+      register: ic_fb_restarts_after
+      changed_when: false
+      failed_when: false
+
+    - name: Leave out a Fluent Bit Docker restarted during the wait
+      # Seen once, between two of Docker's restarts, one that ends on
+      # every start looks running (review of 12-nov-2026): it runs only if
+      # it ran through the wait without a restart.
+      ansible.builtin.set_fact:
+        ic_agents_unsteady: >-
+          {{ ['fluent-bit'] if (ic_fluent_bit | bool) and
+             (ic_fb_restarts_after.stdout | default('') | trim)
+             != ('true ' ~ (ic_fb_restarts.stdout | default('') | trim))
+             else [] }}
 
     - name: Wait for the agents to report healthy
       ansible.builtin.command:
@@ -1133,7 +1160,8 @@
           # Which ones run, so the job can say which did not.
           ic_agents_running_services: >-
             {{ ic_agents_ps.stdout_lines | select('search', ' running')
-               | map('split', ' ') | map('first') | list | to_json }}
+               | map('split', ' ') | map('first')
+               | reject('in', ic_agents_unsteady) | list | to_json }}
           # Whether Fluent Bit was meant to run, and whether the journal
           # it reads SSH and sudo from is kept on disk.
           ic_fluent_bit: "{{ ic_fluent_bit | bool }}"

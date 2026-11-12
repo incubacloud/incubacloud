@@ -698,7 +698,7 @@
                                         Coming soon.
                                     </span>
                                     <span class="ic-form-note" t-elif="!observabilityCollects">
-                                        Observability is off on this panel, so nothing is sent.
+                                        Observability is off on this panel: agents already installed keep sending until it is on again, and a change here applies then.
                                     </span>
                                 </div>
                             </div>

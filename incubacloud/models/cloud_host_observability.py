@@ -113,10 +113,19 @@ class CloudHost(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Refuse a server created sending security logs where they are withheld."""
+        """Refuse a server created sending security logs where they are withheld.
+
+        The servers created are checked, not only *vals_list*: a
+        ``default_security_logs_enabled`` in the context, or a default
+        an administrator set, turns the switch on without being sent
+        (review of 12-nov-2026).
+        """
         for vals in vals_list:
             self._check_security_logs_available(vals)
-        return super().create(vals_list)
+        hosts = super().create(vals_list)
+        if hosts.filtered("security_logs_enabled"):
+            self._check_security_logs_available({"security_logs_enabled": True})
+        return hosts
 
     @api.model
     def _security_logs_after_upgrade(self, shipped_before):
@@ -187,15 +196,26 @@ class CloudHost(models.Model):
     def _reapply_observability_now(self, reason):
         """Queue this host's agents' install now, installed or failed.
 
+        Where it cannot be queued (observability off, the host not a
+        target, the queue refusing it), an installed host's agents keep
+        running as they were installed: its revision goes to 0, so the
+        reconciliation re-applies it as soon as it can, as after an
+        upgrade, instead of never (review of 12-nov-2026). A failed host
+        is retried by the reconciliation anyway.
+
         :param str reason: short free text for the log.
         :return: the queued job id, or ``False`` when nothing was queued.
         """
         self.ensure_one()
-        if not self._observability_target():
-            return False
-        if self.metrics_agents_state not in ("installed", "failed"):
-            return False
-        return self._enqueue_observability(reason)
+        job = False
+        if (
+            self._observability_target()
+            and self.metrics_agents_state in ("installed", "failed")
+        ):
+            job = self._enqueue_observability(reason)
+        if not job and self.metrics_agents_state == "installed":
+            self.sudo().write({"metrics_agents_revision": 0})
+        return job
 
     # ── Label refresh ─────────────────────────────────────────────────────
 

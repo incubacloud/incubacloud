@@ -213,7 +213,8 @@ commands, fail2ban's blocks and changes to `passwd`, `shadow`, `sudoers`
 and the SSH configuration. The central keeps them 90 days; the server can
 add to them but cannot delete them. **Send security logs**, on the
 server's **Connection** tab, stops them for that server; what was sent
-expires on its own. SSH and `sudo` come from the journal, so a server
+expires on its own. With observability off, the agents already on a server
+keep running, and a change of the switch applies once it is on again. SSH and `sudo` come from the journal, so a server
 that keeps its journal in memory only (no `/var/log/journal`) sends
 fail2ban's and auditd's lines alone, and the agents' install says so.
 

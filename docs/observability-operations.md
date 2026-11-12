@@ -296,6 +296,10 @@ itself and its counters never expire).
   cursors and its buffer: on again, nothing of the time it was off is
   sent. A change applies at once, to that server, also after a failed
   install: turning it off is how a Fluent Bit that misbehaves is removed.
+  It can always be turned off. With observability off nothing is
+  installed, and the agents already on a server keep sending: the change
+  sets the server's agents' revision to 0, so the reconciliation applies
+  it once observability is on again.
   An agent's `manage_host` that turns it off asks for approval unless an
   auto-approval rule covers it; the change is in the audit log either
   way. The update to 1.0.229 replaced the panel-wide *Send hosts'
@@ -480,7 +484,12 @@ label recreates vmauth, a few seconds the agents' queues cover.
 - **Back to the release before.** The columns 1.0.229 stopped using stay
   in the database, emptied: the release before starts. Its agents'
   revision is lower, so hosts already on revision 2 keep Fluent Bit until
-  their next install gives them promtail back; both send to `/lw/`. A
+  their next install gives them promtail back; both send to `/lw/`. That
+  install removes Fluent Bit's container but not its configuration,
+  `~/observability/fluent-bit/` (the credential is in it, 0600), nor its
+  volume: on each server, `rm -rf ~/observability/fluent-bit` and
+  `docker volume rm incubacloud-observability_fluent-bit-data` as the
+  panel's user. A
   deployment of the central by the release before brings Grafana back
   with an empty volume and nothing pointing at it.
 

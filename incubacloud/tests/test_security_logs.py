@@ -214,6 +214,29 @@ class TestTheRenderedCollector(TransactionCase):
         stop = next(t for t in tasks if t["name"] == "Stop the metrics agents")
         self.assertIn("down --volumes", stop["ansible.builtin.command"]["cmd"])
 
+    def test_a_fluent_bit_restarted_during_the_wait_does_not_run(self):
+        """b3: seen between two of Docker's restarts, it looked running."""
+        expression = playbook.task(
+            "Leave out a Fluent Bit Docker restarted during the wait",
+        )["ansible.builtin.set_fact"]["ic_agents_unsteady"]
+
+        def unsteady(after, before="0", on=True):
+            return playbook.environment().from_string(expression).render(
+                ic_fluent_bit=on,
+                ic_fb_restarts={"stdout": before},
+                ic_fb_restarts_after={"stdout": after},
+            )
+
+        self.assertEqual(unsteady("true 0"), "[]")
+        self.assertEqual(unsteady("true 2"), "['fluent-bit']")
+        self.assertEqual(unsteady("false 0"), "['fluent-bit']")
+        self.assertEqual(unsteady("", on=False), "[]")
+        export = playbook.task("Export the agent facts")["ansible.builtin.set_stats"]
+        self.assertIn(
+            "reject('in', ic_agents_unsteady)",
+            export["data"]["ic_agents_running_services"],
+        )
+
 
 class TestTheExecutorAndTheSwitch(ObservabilityExecutorCase):
     """What the install reads from the server, and what it says."""
@@ -275,6 +298,25 @@ class TestTheExecutorAndTheSwitch(ObservabilityExecutorCase):
         self._succeed(True, ic_fluent_bit="True", ic_journal_persistent="True")
         self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
 
+    def test_the_switch_on_without_the_permission_installs_nothing(self):
+        """A1: the install asks both, whatever let the switch on."""
+        self.host.security_logs_enabled = True
+        with patch.object(
+            type(self.env["cloud.host"]), "_security_logs_available",
+            autospec=True, return_value=False,
+        ):
+            executor = self._make(ObservabilityAgentsExecutor)
+            self.assertIs(executor.get_extra_vars()["ic_security_logs"], False)
+            lines = []
+            executor._sys = lines.append
+            executor._facts = {
+                "ic_agents_running": "3", "ic_instances_labelled": "0",
+                "ic_fluent_bit": "False",
+            }
+            asyncio.run(executor.on_success({}))
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertIn("not available on this panel", "\n".join(lines))
+
     def test_a_journal_in_memory_is_said_not_failed(self):
         log = self._succeed(True, ic_fluent_bit="True", ic_journal_persistent="False")
         self.assertIn("/var/log/journal is missing", log)
@@ -324,10 +366,28 @@ class TestTheSwitchReappliesItsServer(ObservabilityExecutorCase):
         self.host.security_logs_enabled = False
         self.assertFalse(self._queued(self.host))
 
-    def test_nothing_with_observability_off(self):
+    def test_with_observability_off_it_applies_once_it_is_on(self):
+        """M-1: the agents installed keep running; nothing may forget it."""
+        self.host.metrics_agents_revision = AGENTS_REVISION
+        self.other.metrics_agents_revision = AGENTS_REVISION
         self.settings.metrics_enabled = False
         self.host.security_logs_enabled = False
         self.assertFalse(self._queued(self.host))
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+        self.assertEqual(self.other.metrics_agents_revision, AGENTS_REVISION)
+        self.settings.metrics_enabled = True
+        self.env["cloud.host"]._reconcile_agents_revision()
+        self.assertEqual(len(self._queued(self.host)), 1)
+        self.assertFalse(self._queued(self.other))
+
+    def test_a_queue_that_refuses_it_leaves_it_to_the_cron(self):
+        self.host.metrics_agents_revision = AGENTS_REVISION
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue",
+            autospec=True, side_effect=UserError("full"),
+        ):
+            self.host.security_logs_enabled = False
+        self.assertEqual(self.host.metrics_agents_revision, 0)
 
     def test_the_same_value_queues_nothing(self):
         self.host.write({"security_logs_enabled": True, "name": "HX2"})
@@ -425,6 +485,16 @@ class TestWithheldSecurityLogs(TransactionCase):
             self.env["cloud.host"].create({
                 "name": "SW2", "ip_address": "10.0.8.21", "user": "root",
                 "wildcard_domain": "sw2.example.com", "security_logs_enabled": True,
+            })
+
+    def test_a_server_created_on_by_a_default_is_refused(self):
+        """A1: the servers created are checked, not only what was sent."""
+        with self.assertRaises(UserError):
+            self.env["cloud.host"].with_context(
+                default_security_logs_enabled=True,
+            ).create({
+                "name": "SW4", "ip_address": "10.0.8.22", "user": "root",
+                "wildcard_domain": "sw4.example.com",
             })
 
     def test_off_and_other_fields_still_write(self):
