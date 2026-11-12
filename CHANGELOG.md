@@ -149,8 +149,8 @@ next deploy when its host is behind Cloudflare.
   kept 90 days.
 - **What the guard writes never stops a request.** Every row goes on a
   database connection of its own, and a write that collides with a
-  parallel request of the same page is tried again on a new one, three
-  times in all: without it, a user whose signal only logs (the anti-loop)
+  parallel request of the same page is tried again on a new one, eight
+  times in all, after a pause of 10 to 50 ms at random: without it, a user whose signal only logs (the anti-loop)
   was closed by the second request of a page. Any failure of the guard
   but a close is logged and the request is served, where Odoo would
   answer 403 on every route, the sign-out included, a database not yet

@@ -72,6 +72,7 @@ session rotation and no ``STORED_SESSION_BYTES``, so nothing here reads
 either (:data:`SESSION_IDENTIFIER_LENGTH`).
 """
 import logging
+import random
 import time
 from datetime import timedelta
 
@@ -142,8 +143,14 @@ LOCK_TIMEOUT = "3s"
 #: REPEATABLE READ: a transaction that writes a row another committed
 #: after its first statement fails, and the parallel requests of one page
 #: write the same row at the same moment. A new cursor sees what the
-#: other committed. RB-33 (12-nov-2026).
-WRITE_ATTEMPTS = 3
+#: other committed. Queued on the user's lock, the n-th of a burst can
+#: need n cursors, and Odoo 19's web client opens a page with more than
+#: three calls at once, over HTTP/2 behind the CDN, so the browser does not
+#: hold them to six. RB-33 (12-nov-2026).
+WRITE_ATTEMPTS = 8
+#: The pause before trying again, in seconds, drawn at random between the
+#: two, so the requests that collided do not collide again together.
+RETRY_PAUSE = (0.01, 0.05)
 #: The errors a new cursor answers.
 RETRIED_ERRORS = (pg_errors.SerializationFailure, pg_errors.DeadlockDetected)
 
@@ -592,8 +599,9 @@ class CloudSessionGuard(models.AbstractModel):
         written in it yet at authentication, and a transaction left open
         around another would, under the tests' cursors, take the other's
         writes down with it. A collision (:data:`RETRIED_ERRORS`) is
-        tried again up to :data:`WRITE_ATTEMPTS` times in all; the new
-        cursor sees what the other request committed.
+        tried again up to :data:`WRITE_ATTEMPTS` times in all, after a
+        pause of :data:`RETRY_PAUSE`; the new cursor sees what the other
+        request committed.
 
         :param work: a callable taking this guard, as superuser, on the
             new cursor
@@ -615,6 +623,7 @@ class CloudSessionGuard(models.AbstractModel):
                     "request; trying again (%s of %s)",
                     attempt + 1, WRITE_ATTEMPTS,
                 )
+                time.sleep(random.uniform(*RETRY_PAUSE))
 
     # -- acting --------------------------------------------------------
 

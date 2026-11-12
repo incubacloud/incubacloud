@@ -150,7 +150,8 @@ request's, and committed before the request is refused or served.
 
 | Value (in code) | Value | Why (12-nov-2026, review of the result) |
 |---|---|---|
-| `WRITE_ATTEMPTS` | 3 | Odoo's transactions are REPEATABLE READ: the parallel requests of one page write the same row at the same moment, and all but the first fail to serialize. A new connection sees what the first committed. Three covers the usual burst of a page; past that the request closes the session, even for a user in a hold (A1). |
+| `WRITE_ATTEMPTS` | 8 | Odoo's transactions are REPEATABLE READ: the parallel requests of one page write the same row at the same moment, and all but the first fail to serialize. A new connection sees what the first committed. Queued on the user's lock, the n-th request of a burst can need n connections. Odoo 19's web client opens a page with more than three calls at once, and behind the CDN over HTTP/2 the browser does not hold them to six, so three was not enough. Past eight the request closes the session, even for a user in a hold (A1). |
+| `RETRY_PAUSE` | 10–50 ms, at random | The pause before trying again, so the requests that collided do not collide again together. |
 | `LOCK_TIMEOUT` | 3 s | A close waits for another close of the same user under a lock and holds a second connection meanwhile. Past three seconds it closes without recording. |
 
 **A failure of the guard lets the request through.** Odoo turns anything
