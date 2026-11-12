@@ -30,6 +30,18 @@ class BackupCreateExecutor(AbstractSSHExecutor):
     def _is_production(self):
         return self._inst().environment == 'production'
 
+    @property
+    def _outcome_needs_room(self):
+        """Whether the closing hooks fetch the archive through the panel.
+
+        Only outside production: a production's copy goes to the backup
+        store. An attempt that ran long leaves that fetch to a fresh one
+        (``OUTCOME_ROOM_FACTOR``).
+
+        :rtype: bool
+        """
+        return not self._is_production()
+
     def _remote_tmp(self):
         """Return where the dump lands: the job's drop directory.
 
@@ -51,12 +63,17 @@ class BackupCreateExecutor(AbstractSSHExecutor):
         inst = self._inst()
         d = self._inst_dir(inst)
 
+        # Apart on the server (12-nov-2026), in both forms: a large
+        # database, with its filestore, takes longer than a request is
+        # given. Stopped, it is the ``docker compose`` client that goes;
+        # what runs in the container goes on, as attached.
         if self._is_production():
             return [
                 (
                     "Create backup",
                     f"cd {d} && docker compose exec -T backup"
                     f" /etc/periodic/daily/jobrunner",
+                    {"detached": True},
                 ),
             ]
 
@@ -86,7 +103,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                     ],
                     env=script_env(inst.odoo_version),
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             ),
         ]
 
