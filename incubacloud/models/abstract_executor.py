@@ -28,7 +28,7 @@ from odoo.tools import config, file_path
 from odoo.addons.queue_job.exception import RetryableJobError
 
 from ._concurrency import read_committed_cursor
-from ._job_server_limits import attempt_budget_seconds
+from ._job_server_limits import ATTEMPT_BUDGET_FACTOR, attempt_budget_seconds
 from ._repo_requirements import has_pip_conflicts
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .registry import executor_registry
@@ -448,6 +448,21 @@ DETACHED_RECONNECT_GAP_S = CONNECTION_RETRY_SECONDS
 #: checkpoint, to the reconciliation.
 DETACHED_CONTACT_GRACE_S = 600
 
+#: An attempt whose closing hooks fetch through the panel
+#: (``_outcome_needs_room``) leaves them to a fresh attempt once it has run
+#: past this share of the request's limit, in other words once less than
+#: ``OUTCOME_ROOM_FACTOR`` of it is left (12-nov-2026, Fable's review of
+#: phase 3): the time to make an archive and the time to fetch it grow
+#: together, and parking costs a few seconds where a fetch cut short
+#: reloads the whole server. With 900 s it parks from 135 s on; with 3600,
+#: from 540 s.
+OUTCOME_ROOM_FACTOR = 0.85
+
+#: An attempt that has run less than this, in seconds, never parks for
+#: room (12-nov-2026): its hooks start with nearly all of the request, and
+#: a park would only add its gap.
+OUTCOME_ROOM_MIN_ELAPSED_S = 60
+
 #: The header ``detached_step.sh read`` answers with: state, exit status,
 #: whether the cap cut the step, and the offset the bytes after it end at.
 _DETACHED_HEADER_RE = re.compile(
@@ -842,6 +857,17 @@ class AbstractExecutor(ABC):
     # When this attempt's budget ends (``time.monotonic()``), or None: an
     # attempt whose clock was not started (``_start_clock``) never parks.
     _budget_ends = None
+    #: The closing hooks fetch through the panel what the steps made (a
+    #: download to an attachment, over SFTP): they cannot run apart on the
+    #: server, and need the request's time. An attempt that has run long
+    #: leaves them to a fresh one (``OUTCOME_ROOM_FACTOR``).
+    _outcome_needs_room = False
+    # ``time.monotonic()`` when this attempt started (``_start_clock``).
+    _attempt_started = None
+    # The request's limit this attempt runs under, in seconds, or None
+    # when nothing cuts it: ``limit_time_real``, or what the configured
+    # budget stands for.
+    _attempt_limit = None
     # The attempt goes on from an earlier one's checkpoint (``_resume``).
     _resumed = False
     # The first step a resumed attempt runs.
@@ -1085,6 +1111,12 @@ class AbstractExecutor(ABC):
                         raise self._park(len(commands), (
                             "This attempt's time is up: the job closes in"
                             " a few seconds."
+                        ))
+                    if self._outcome_wants_fresh_attempt(len(commands)):
+                        raise self._park(len(commands), (
+                            "The result is fetched in a fresh attempt, with"
+                            " all of its time: the job goes on in a few"
+                            " seconds."
                         ))
                     # Before the cleanup below, so ``after_commands`` can
                     # still run a script.
@@ -2165,7 +2197,36 @@ class AbstractExecutor(ABC):
         one take their share. No budget when it is 0 (no limit).
         """
         budget = attempt_budget_seconds(config)
-        self._budget_ends = time.monotonic() + budget if budget > 0 else None
+        self._attempt_started = time.monotonic()
+        self._budget_ends = self._attempt_started + budget if budget > 0 else None
+        # The limit the budget is a share of: ``limit_time_real``, or the
+        # one a configured budget stands for.
+        self._attempt_limit = budget / ATTEMPT_BUDGET_FACTOR if budget > 0 else None
+
+    def _outcome_wants_fresh_attempt(self, total):
+        """Whether the closing hooks should start in a fresh attempt.
+
+        For an executor whose hooks fetch through the panel
+        (``_outcome_needs_room``) and may park: once this attempt has run
+        ``OUTCOME_ROOM_MIN_ELAPSED_S`` and less than ``OUTCOME_ROOM_FACTOR``
+        of the request's limit is left. Never for an attempt that resumed
+        the job at its hooks: it is the fresh one.
+
+        :param int total: how many steps the plan has
+        :rtype: bool
+        """
+        if not (self._outcome_needs_room and self._may_park()):
+            return False
+        if self._attempt_limit is None or self._attempt_started is None:
+            return False
+        if self._resumed and self._resume_index >= total:
+            return False
+        elapsed = time.monotonic() - self._attempt_started
+        return (
+            elapsed >= OUTCOME_ROOM_MIN_ELAPSED_S
+            and self._attempt_limit - elapsed
+            < OUTCOME_ROOM_FACTOR * self._attempt_limit
+        )
 
     def _budget_spent(self):
         """Whether this attempt's budget is spent.
