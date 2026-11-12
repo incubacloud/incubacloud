@@ -407,7 +407,14 @@ class TestRestoreVerifies(_MoveCase):
 
     def test_a_difference_fails_before_odoo_starts(self):
         executor = self._restore(verify_job=self.fingerprint.id)
-        commands = self._commands(executor)
+        # Attached, every one: what is checked is the integrity step,
+        # which is not marked ``detached``, and what it stops.
+        commands = [
+            (step[0], step[1], {
+                key: value for key, value in step[2].items() if key != "detached"
+            }) if len(step) == 3 else step
+            for step in self._commands(executor)
+        ]
         mismatch = "Integrity check failed: res_users source 3, target 2\n"
 
         async def run(command, on_stdout, on_stderr, timeout=None):

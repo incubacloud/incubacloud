@@ -15,6 +15,7 @@ and the executor's step runs on its durable cursor, in a thread of its own
 when it has to wait for the stop's lock.
 """
 import asyncio
+import json
 import threading
 import time
 from unittest.mock import MagicMock, patch
@@ -608,13 +609,28 @@ class TestWhichRestoreHasThePoint(_QueueCase):
             {"mode": "from_host", "as_move": True}, moving_to=True,
         )
         self.assertIsNone(executor._no_return_from)
-        carried = executor._carried_state()
+        apart = {"stop_on_failure": True, "detached": True}
+        row = self.env["cloud.job.checkpoint"].sudo().create({
+            "job_id": executor.job.id, "host_id": executor.job.host_id.id,
+            "next_index": 1, "detached_started": True,
+            "data": json.dumps({
+                "plan": [
+                    ["Stop Odoo service", "stop", {}],
+                    [_RESTORE_STEP, "restore", apart],
+                ],
+                "results": {}, "job_dir": None, "private_uploads": [],
+                "carried": executor._carried_state(),
+                "no_return_from": executor._no_return_from,
+            }),
+        })
+        # The move is rolled back: its markers go.
         self.inst.sudo().write({"move_target_host_id": False})
         later = RestoreInstanceExecutor(executor.job, executor.job.host_id)
-        for name, value in carried.items():
-            setattr(later, name, value)
+        later._adopt_checkpoint(row)
         self.assertIsNone(later._no_return_from)
+        self.assertFalse(later._past_no_return(1))
         self.assertEqual(later._load_as(), "move")
+        self.assertEqual(later._contact_grace_s(), 120)
 
     def test_a_moves_restore_gives_up_on_its_server_sooner(self):
         """120 s instead of 600 (Fable's review, 12-nov-2026): the

@@ -484,12 +484,28 @@ class TestARestoreRetriedAfterAFailure(_HandoffBase):
             return CommandResult("", 1 if failed else 0)
 
         transport.execute.side_effect = _answer
+        real_commands = type(ex).get_commands
+
+        def _attached(executor):
+            """The job's steps, every one attached: what is checked is the
+            archive each run uses, not where a step marked ``detached``
+            runs."""
+            return [
+                (step[0], step[1], {
+                    key: value for key, value in step[2].items()
+                    if key != "detached"
+                }) if len(step) == 3 else step
+                for step in real_commands(executor)
+            ]
+
         exc = None
         with patch.object(
             type(self.host_a), "get_transport", autospec=True,
         ) as get_transport, patch.object(
             type(ex), "on_failure", autospec=True,
-        ), patch.object(type(ex), "on_success", autospec=True):
+        ), patch.object(type(ex), "on_success", autospec=True), patch.object(
+            type(ex), "get_commands", autospec=True, side_effect=_attached,
+        ):
             get_transport.return_value.__aenter__.return_value = transport
             try:
                 asyncio.run(ex._async_entry())

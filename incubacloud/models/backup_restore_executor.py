@@ -79,8 +79,10 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
                 self.run_script("backup_restore.sh", ["restore", d, time]),
                 # Abort before dropdb/createdb: a failed restore must never
                 # fall through to destroying the production database and
-                # then importing a stale/absent SQL dump.
-                {"stop_on_failure": True},
+                # then importing a stale/absent SQL dump. Apart on the
+                # server (12-nov-2026): duplicity fetches the whole backup
+                # from the store.
+                {"stop_on_failure": True, "detached": True},
             ),
             (
                 "Drop database",
@@ -95,7 +97,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             (
                 "Import SQL",
                 self.run_script("backup_restore.sh", ["import-sql", d, dbname]),
-                {"stop_on_failure": True},
+                # Apart on the server, past the point of no return: a large
+                # database loads for longer than a request is given.
+                {"stop_on_failure": True, "detached": True},
             ),
         ]
         # The backup was taken under the code of its day; the instance
