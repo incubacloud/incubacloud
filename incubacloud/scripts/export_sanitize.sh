@@ -85,7 +85,7 @@ if [ -d "$staging/odoo/custom/conf.d" ]; then
     find "$staging/odoo/custom/conf.d" -type f -name '*.conf' -exec \
         sed -i -E \
             -e '/^[[:space:]]*[A-Za-z0-9_]*(pass|secret|token|key)[A-Za-z0-9_]*[[:space:]]*[=:]/Id' \
-            -e '/^[[:space:]]*x_real_ip_(header|trusted|proxy)[[:space:]]*[=:]/d' \
+            -e '/^[[:space:]]*x_real_ip_(header|trusted|proxy|country_header)[[:space:]]*[=:]/d' \
             {} +
 fi
 

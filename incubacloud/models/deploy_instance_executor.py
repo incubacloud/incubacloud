@@ -2289,6 +2289,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         host = self._inst().host_id
         header = host._effective_client_ip_header() if host else ""
         trusted = host._effective_trusted_proxy_ranges() if host else []
+        # The country travels with them, on the same proof: only a
+        # panel's session guard reads it (``cloud_session_guard``).
+        country = host._effective_client_country_header() if host else ""
         if header and trusted:
             cp.set("options", real_ip.HEADER_OPTION, header)
             cp.set("options", real_ip.TRUSTED_OPTION, ", ".join(trusted))
@@ -2297,6 +2300,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             cp.remove_option("options", real_ip.HEADER_OPTION)
             cp.remove_option("options", real_ip.TRUSTED_OPTION)
             cp.remove_option("options", real_ip.PROXY_OPTION)
+        if header and trusted and country:
+            cp.set("options", real_ip.COUNTRY_OPTION, country)
+        else:
+            cp.remove_option("options", real_ip.COUNTRY_OPTION)
         out = io.StringIO()
         cp.write(out)
         return out.getvalue()

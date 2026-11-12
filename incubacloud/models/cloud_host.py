@@ -54,6 +54,11 @@ GENERATED_KEY_TTL = 24 * 3600
 #: The comment of every public key the panel shows, whatever the key's own
 #: comment says: the page offers it inside a command to run on a server.
 PUBLIC_KEY_COMMENT = "incubacloud"
+#: The header a CDN states the visitor's country in, by the header it
+#: states the address in (lower case). Cloudflare's, when its IP
+#: Geolocation is on for the zone; without it the header is absent and
+#: no country is compared. 12-nov-2026.
+CDN_COUNTRY_HEADERS = {"cf-connecting-ip": "CF-IPCountry"}
 
 
 def parse_memory_to_gb(mem_str):
@@ -3938,6 +3943,20 @@ class CloudHost(models.Model):
         """
         self.ensure_one()
         return (self.client_ip_header or "").strip()
+
+    def _effective_client_country_header(self):
+        """Return the header this host states the visitor's country in.
+
+        The one the CDN writes beside the visitor's address, for a CDN
+        whose pair is known (:data:`CDN_COUNTRY_HEADERS`); ``''``
+        otherwise, and then a panel on this host compares no country
+        (``models/cloud_session_guard``).
+
+        :rtype: str
+        """
+        self.ensure_one()
+        header = self._effective_client_ip_header().lower()
+        return CDN_COUNTRY_HEADERS.get(header, "")
 
     def _tls_default_covers(self, hostname):
         """Return whether this host's default certificate serves *name*.

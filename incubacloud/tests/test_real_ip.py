@@ -62,6 +62,9 @@ OTHER_PANEL_HOST = "203.0.113.82"
 PROXY_OPTION = "x_real_ip_proxy"
 #: Where the module says what it could not do.
 LOGGER = "odoo.addons.incubacloud.net.real_ip"
+#: The option naming the CDN's country header, and the header itself.
+COUNTRY_OPTION = "x_real_ip_country_header"
+COUNTRY_HEADER = "CF-IPCountry"
 
 
 def _gaierror(code):
@@ -575,6 +578,76 @@ class TestRewritingTheChain(BaseCase):
         self.assertNotIn("HTTP_X_FORWARDED_FOR", environ)
 
 
+class TestTheCountryGoesWithTheVisitor(BaseCase):
+    """The CDN's country is believed on the same proof as its visitor.
+
+    Traefik passes ``CF-IPCountry`` through from anybody, so a country is
+    worth exactly what the proof that the CDN said it is worth. The
+    session guard closes a session on it (review of 12-nov-2026, A1):
+    whether the request came through the CDN at all is said too.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.networks = real_ip.parse_networks(TRUSTED)
+
+    def _rewrite(self, environ, proxy="", country=COUNTRY_HEADER):
+        """Rewrite *environ*, carrying the country from *country*."""
+        return real_ip.rewrite(
+            environ, HEADER, self.networks, real_ip.OwnProxy(proxy), country,
+        )
+
+    def _with_country(self, value, **kw):
+        """Return a proxied request's environment stating *value*."""
+        environ = _environ(**kw)
+        environ[real_ip.environ_key(COUNTRY_HEADER)] = value
+        return environ
+
+    def test_the_cdn_s_country_is_carried_with_its_visitor(self):
+        environ = self._with_country("es")
+        self.assertEqual(self._rewrite(environ), VISITOR)
+        self.assertIs(environ[real_ip.VIA_CDN_KEY], True)
+        self.assertEqual(environ[real_ip.COUNTRY_KEY], "ES")
+
+    def test_the_cdn_s_own_codes_are_kept_for_the_guard(self):
+        """``XX``, unknown, and ``T1``, Tor, mean different things to
+        the guard: one is logged, the other closes."""
+        for code in ("XX", "T1"):
+            with self.subTest(code=code):
+                environ = self._with_country(code)
+                self._rewrite(environ)
+                self.assertEqual(environ[real_ip.COUNTRY_KEY], code)
+
+    def test_anything_but_two_letters_is_no_country(self):
+        for value in ("", "ESP", "E", "1;", "é1"):
+            with self.subTest(value=value):
+                environ = self._with_country(value)
+                self._rewrite(environ)
+                self.assertEqual(environ[real_ip.COUNTRY_KEY], "")
+
+    def test_a_neighbour_cannot_state_a_country(self):
+        environ = self._with_country(
+            "FR", remote=NEIGHBOUR, chain=FORGED, claimed=FORGED,
+        )
+        self._rewrite(environ, proxy=PROXY)
+        self.assertIs(environ[real_ip.VIA_CDN_KEY], False)
+        self.assertNotIn(real_ip.COUNTRY_KEY, environ)
+
+    def test_a_request_that_skipped_the_cdn_says_so(self):
+        """Through our proxy from somebody who is not the CDN: the
+        connection to the origin made straight to Traefik."""
+        environ = self._with_country("ES", chain=OUTSIDER, claimed=VISITOR)
+        self.assertIsNone(self._rewrite(environ, proxy=PROXY))
+        self.assertIs(environ[real_ip.VIA_CDN_KEY], False)
+        self.assertNotIn(real_ip.COUNTRY_KEY, environ)
+
+    def test_without_the_option_no_country_is_carried(self):
+        environ = self._with_country("ES")
+        self._rewrite(environ, country="")
+        self.assertIs(environ[real_ip.VIA_CDN_KEY], True)
+        self.assertEqual(environ[real_ip.COUNTRY_KEY], "")
+
+
 class _OnTheUncorrectedProxyFix:
     """Run each test against Odoo's own ``ProxyFix``, restored after.
 
@@ -595,13 +668,20 @@ class _OnTheUncorrectedProxyFix:
         self.addCleanup(setattr, odoo.http, "ProxyFix", current)
         self._original = real_ip.uninstalled(current)
         odoo.http.ProxyFix = self._original
+        # What the process installed, restored as it was: the session
+        # guard reads it to know where countries come from.
+        installed = dict(real_ip._INSTALLED)
+        real_ip._INSTALLED.clear()
+        self.addCleanup(real_ip._INSTALLED.update, installed)
+        self.addCleanup(real_ip._INSTALLED.clear)
 
-    def _config(self, header=HEADER, trusted=TRUSTED, proxy=""):
+    def _config(self, header=HEADER, trusted=TRUSTED, proxy="", country=""):
         """Return the options as Odoo's configuration would carry them."""
         return {
             real_ip.HEADER_OPTION: header,
             real_ip.TRUSTED_OPTION: trusted,
             PROXY_OPTION: proxy,
+            COUNTRY_OPTION: country,
         }
 
     def _apply(self, environ):
@@ -660,6 +740,26 @@ class TestInstallingItInOdoo(
         self.assertIs(
             real_ip.uninstalled(self._original), self._original,
         )
+
+    def test_installing_says_which_country_header_it_believes(self):
+        self.assertFalse(real_ip.installed())
+        self.assertEqual(real_ip.country_header(), "")
+        self.assertTrue(real_ip.install(
+            self._config(country=f" {COUNTRY_HEADER} "), self.http,
+        ))
+        self.assertTrue(real_ip.installed())
+        self.assertEqual(real_ip.country_header(), COUNTRY_HEADER)
+        environ = _environ()
+        environ[real_ip.environ_key(COUNTRY_HEADER)] = "PT"
+        self._apply(environ)
+        self.assertEqual(environ[real_ip.COUNTRY_KEY], "PT")
+
+    def test_an_installation_reached_directly_carries_no_country(self):
+        self.assertFalse(real_ip.install(
+            self._config(header="", country=COUNTRY_HEADER), self.http,
+        ))
+        self.assertFalse(real_ip.installed())
+        self.assertEqual(real_ip.country_header(), "")
 
     def test_installing_twice_wraps_once(self):
         self.assertTrue(real_ip.install(self._config(), self.http))
@@ -1038,6 +1138,21 @@ class TestWhatAnInstanceIsConfiguredWith(
         ``proxy``, which any compose project on the network may use."""
         self._behind_the_cdn()
         self.assertEqual(self._options().get(PROXY_OPTION), PROXY_NAME)
+
+    def test_the_cdn_s_country_header_travels_with_them(self):
+        self._behind_the_cdn()
+        self.assertEqual(self._options().get(COUNTRY_OPTION), COUNTRY_HEADER)
+
+    def test_a_header_the_platform_knows_no_country_for_carries_none(self):
+        self._behind_the_cdn()
+        self.host.client_ip_header = "X-Real-IP"
+        self.assertNotIn(COUNTRY_OPTION, self._conf())
+
+    def test_the_country_header_is_cleared_with_the_rest(self):
+        self._behind_the_cdn()
+        self.instance.odoo_conf = self._conf()
+        self.host.client_ip_header = ""
+        self.assertNotIn(COUNTRY_OPTION, self._conf())
 
     def test_a_header_with_nobody_to_believe_is_not_written(self):
         """One believed from anywhere is one any visitor can write."""
