@@ -1211,18 +1211,28 @@ class TestTheBackendRefusesDeletionsWithoutTheKey(BaseCase):
     ``/w/`` it deleted its own series, the forced filter being the only
     thing keeping it to its own. The flag is rendered into the compose
     file, so it is checked here the way Ansible renders it.
+
+    The key itself travels in a file since 12-nov-2026: as the flag's
+    value it was in the container's command, which ``docker inspect``
+    shows to the host's docker group.
     """
 
-    def _vm_command(self, key):
-        """Return the VictoriaMetrics command the playbook would write.
+    _FILE = "/etc/victoriametrics/delete_auth_key"
+
+    def _tasks(self):
+        """Return the central playbook's tasks."""
+        return yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+
+    def _vm_service(self, key):
+        """Return the VictoriaMetrics service the playbook would write.
 
         :param key: the ``ic_delete_auth_key`` value to render with.
-        :return: the ``command`` list of the ``victoriametrics`` service.
+        :return: the ``victoriametrics`` service of the compose file.
         """
         import jinja2  # noqa: PLC0415 — only this test renders a template
 
         task = next(
-            t for t in yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+            t for t in self._tasks()
             if t.get("name") == "Write the central compose file"
         )
         content = task["ansible.builtin.copy"]["content"]
@@ -1231,19 +1241,53 @@ class TestTheBackendRefusesDeletionsWithoutTheKey(BaseCase):
             trim_blocks=True,
         ).from_string(
             content,
-        ).render(ic_delete_auth_key=key, ic_retention_days=90)
-        return yaml.safe_load(rendered)["services"]["victoriametrics"]["command"]
+        ).render(
+            ic_delete_auth_key=key, ic_retention_days=90,
+            ic_central_dir="/root/observability-central",
+        )
+        return yaml.safe_load(rendered)["services"]["victoriametrics"]
 
-    def test_the_key_becomes_the_flag(self):
-        self.assertIn("-deleteAuthKey=s3cr3t", self._vm_command("s3cr3t"))
+    def _vm_command(self, key):
+        """Return the VictoriaMetrics command the playbook would write."""
+        return self._vm_service(key)["command"]
+
+    def test_the_key_becomes_the_flag_through_a_file(self):
+        command = self._vm_command("s3cr3t")
+        self.assertIn(f"-deleteAuthKey=file://{self._FILE}", command)
+        self.assertNotIn("s3cr3t", "\n".join(command))
+
+    def test_the_file_s_directory_is_mounted_read_only(self):
+        """The directory, not the file: a replaced file is a new inode."""
+        self.assertIn(
+            "/root/observability-central/victoriametrics:/etc/victoriametrics:ro",
+            self._vm_service("s3cr3t")["volumes"],
+        )
+
+    def test_the_file_is_written_owner_only_and_never_logged(self):
+        task = next(
+            t for t in self._tasks()
+            if t.get("name") == "Write the backend's deletion key"
+        )
+        copy = task["ansible.builtin.copy"]
+        self.assertTrue(copy["dest"].endswith("/victoriametrics/delete_auth_key"))
+        self.assertEqual(copy["content"], "{{ ic_delete_auth_key }}")
+        self.assertEqual(copy["mode"], "0600")
+        self.assertIs(task["no_log"], True)
+        names = [t.get("name") for t in self._tasks()]
+        self.assertLess(
+            names.index("Write the backend's deletion key"),
+            names.index("Bring the central stack up"),
+        )
 
     def test_no_key_renders_no_flag(self):
         """An empty flag would be a key of '' — the lock left open."""
-        command = self._vm_command("")
+        service = self._vm_service("")
+        command = service["command"]
         self.assertFalse(
             [arg for arg in command if arg.startswith("-deleteAuthKey")],
         )
         self.assertIn("-retentionPeriod=90d", command)
+        self.assertEqual(service["volumes"], ["vmdata:/vmdata"])
 
 
 class TestTeardownStopsTheAgents(BaseCase):

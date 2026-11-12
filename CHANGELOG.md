@@ -19,8 +19,8 @@ The update adds no table or column and needs no data migration; the
 module has to be updated, which loads the three rules. The hosts need
 nothing: every chart reads series the agents already send. The panel
 that owns the central runs **Enable observability** once afterwards: it
-closes the operator's read route and caps the operator's requests in
-flight.
+closes the operator's read route, caps the operator's requests in flight
+and replaces the deletion key, which moves into a file.
 
 ### Added
 
@@ -84,6 +84,14 @@ flight.
   a second, the rule cron skips the run without raising
   `metrics_backend_unreachable` or resolving anything, and a board says
   *The metrics central is busy* and asks again.
+
+### Security
+
+- **The central's deletion key no longer shows in `docker inspect`.** It
+  was the value of `-deleteAuthKey` in the VictoriaMetrics container's
+  command; the deployment now writes it to a file only the central's
+  directory reaches, and passes the flag the file's path. The first
+  deployment with this release replaces a key recorded before it, once.
 
 ---
 
