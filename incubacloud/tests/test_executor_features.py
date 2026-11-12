@@ -2,6 +2,7 @@
 Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
+import contextlib
 import http.client
 import os
 import shlex
@@ -115,6 +116,30 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
     ex._scripts_uploaded = False
     ex._script_overlay_cache = None
     return ex
+
+
+@contextlib.contextmanager
+def _apart_runs_attached(executor_cls):
+    """Run the steps marked ``detached`` of *executor_cls* as attached ones.
+
+    For a test of what a plan does with the answers of its steps, through
+    a fake ``transport.execute``: no checkpoint is written and nothing of
+    ``detached_step.sh`` is asked; a step apart gets what ``execute``
+    answers its command, with its own timeout.
+
+    :param type executor_cls: the executor class whose plan runs
+    """
+    async def _attached(self, transport, _index, _label, command, opts, resume=False):
+        """Answer the step through ``transport.execute``, as attached."""
+        extra = {"timeout": opts["timeout"]} if opts.get("timeout") else {}
+        return await transport.execute(
+            command, self.on_stdout, self.on_stderr, **extra,
+        )
+
+    with mock.patch.object(
+        executor_cls, "_open_checkpoint", autospec=True,
+    ), mock.patch.object(executor_cls, "_run_detached", _attached):
+        yield
 
 
 def _find_cmd(cmds, label_substring):

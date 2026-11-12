@@ -488,12 +488,14 @@ class TestAPlanWithoutStepsApart(BaseCase):
         self.assertFalse(executor._checkpoint)
         transport.run.assert_not_called()
 
-    def test_only_the_rebuild_marks_a_step(self):
+    def test_only_the_deploy_and_the_rebuild_mark_steps(self):
         """Steps are marked one by one, each with its own review and QA.
 
         The first, the rebuild's image build (decided on 10-nov-2026),
         marked in core's rebuild and inherited by every rebuild built on
-        it; no other module of an executor marks one.
+        it; then the deploy's and the rebuild's long steps (phase 3,
+        12-nov-2026), inherited the same way. No other module of an
+        executor marks one.
         """
         marked = re.compile(r"""["']detached["']\s*:""")
         found = sorted({
@@ -501,7 +503,9 @@ class TestAPlanWithoutStepsApart(BaseCase):
             for cls in executor_registry.all().values()
             if marked.search(inspect.getsource(inspect.getmodule(cls)))
         })
-        self.assertEqual(found, ["rebuild_instance_executor"])
+        self.assertEqual(
+            found, ["deploy_instance_executor", "rebuild_instance_executor"],
+        )
 
     def test_every_class_adds_what_it_carries(self):
         """A mixin's ``_carried`` adds to its bases' instead of hiding them."""

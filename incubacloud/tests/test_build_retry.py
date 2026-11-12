@@ -39,7 +39,11 @@ from ..models.deploy_instance_executor import (
 )
 from ..models.transport import CommandResult, SSHTransport
 from .test_blocked_and_aborted_jobs import _DeployJobCase
-from .test_executor_features import _make_deploy_executor, _make_rebuild_executor
+from .test_executor_features import (
+    _apart_runs_attached,
+    _make_deploy_executor,
+    _make_rebuild_executor,
+)
 
 _BUILD = "Build Odoo image"
 _COMPOSE_BUILD = "docker compose build odoo"
@@ -422,7 +426,8 @@ class TestAFailedBuildStopsTheDeploy(_DeployJobCase):
 
         transport = MagicMock(spec=SSHTransport)
         transport.execute.side_effect = execute
-        results, skipped = asyncio.run(executor._run_steps(transport, commands))
+        with _apart_runs_attached(DeployInstanceExecutor):
+            results, skipped = asyncio.run(executor._run_steps(transport, commands))
         self.assertEqual(list(results)[-1], _BUILD)
         self.assertEqual(skipped, [c[0] for c in commands[build + 1:]])
         self.assertIn(
