@@ -220,7 +220,9 @@ TOOLS = (
     ),
     ToolSpec(
         "get_monitoring",
-        "How monitoring is set up on this panel: collection, dashboards, links.",
+        "How monitoring is set up on this panel: whether metrics are collected, "
+        "whether a central is set, and per server whether its agents are installed "
+        "and its security logs sent.",
         _DEVELOPER,
         obj(),
         route="/cloud/monitoring/config",

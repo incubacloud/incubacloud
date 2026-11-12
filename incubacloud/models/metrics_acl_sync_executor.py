@@ -13,8 +13,8 @@ forever — indistinguishable, from their side, from our software being
 broken.
 
 This executor restores the equivalence by making "grant" an act of its
-own, cheap enough to run on every change: rewrite the document, reload
-the proxy, provision the organisations the new accounts need. It shares
+own, cheap enough to run on every change: rewrite the document and reload
+the proxy. It shares
 every task file with the full deployment, so the two cannot disagree
 about what the boundary looks like.
 
@@ -22,7 +22,6 @@ It deliberately cannot recreate containers — it never touches the compose
 file. Granting an account is a sub-second reload of one proxy, not a blip
 for the whole fleet, which is what makes automating it uncontroversial.
 """
-import base64
 import logging
 
 from .observability_central_executor import ObservabilityCentralExecutor
@@ -44,63 +43,43 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         return ""
 
     def get_extra_vars(self):
-        """Hand the whole document, and only the new accounts, to Ansible.
+        """Hand the whole access-control document to Ansible.
 
-        The document is complete because it replaces the file: a partial
-        list would revoke everyone missing from it. The account list is
-        the delta because it only drives Grafana provisioning, which is
-        idempotent — so the difference is cost, and at a thousand accounts
-        the difference is the whole point.
+        Complete because it replaces the file: a partial list would revoke
+        everyone missing from it. How many accounts come and go is said in
+        the job's log.
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
         # Minted durably and before the list is read, exactly as the
         # deployment does: a central whose own account does not exist
         # accepts no writes from anyone and looks healthy from every
-        # angle. The deletion key is read, never minted: it is a flag of
-        # the VictoriaMetrics container, which this job cannot restart.
-        accounts, operator_token, admin_password, delete_key = (
+        # angle. The deletion key is read, never minted: the backend reads
+        # it from a file only the deployment writes.
+        accounts, operator_token, delete_key = (
             self._ensure_central_secrets(mint_delete_key=False)
         )
         granted = set((settings.metrics_accounts_deployed or "").split())
-        new = [
-            {"user": user, "password": password}
-            for user, password in accounts
-            if user not in granted
-        ]
+        new = [user for user, _password in accounts if user not in granted]
         revoked = granted - {user for user, _p in accounts}
         self._sys(
             f"Syncing the access-control list on {self._host().name}: "
             f"{len(accounts)} account(s) total, {len(new)} to grant, "
             f"{len(revoked)} to revoke."
         )
-        grafana_admin_basic = base64.b64encode(
-            f"admin:{admin_password}".encode()
-        ).decode()
-        self._shipped_grafana_oidc = settings._grafana_oidc(accounts)
         return {
             # The deletion key must travel whenever it exists — the
             # document replaces the file, so leaving it out here would
             # delete the operator's deletion route on every account change.
             "ic_vmauth_config": self._vmauth_config(
-                accounts, operator_token, grafana_admin_basic, delete_key,
+                accounts, operator_token, delete_key,
             ),
-            "ic_accounts": new,
-            # The whole list, not the delta: the organisations of accounts
-            # missing from it are deleted, which is how an account that left
-            # stops leaving one behind.
-            "ic_account_names": [user for user, _password in accounts],
-            # The boundary probe and every Grafana call authenticate AS
-            # the operator, so the plaintext has to travel alongside the
-            # document that grants it. Left out, the probe authenticates
-            # with no password at all and vmauth answers 401 — which
-            # reads as the frontier being broken rather than the caller,
-            # and strands every account minted since the last sync.
+            # The boundary probe authenticates AS the operator, so the
+            # plaintext has to travel alongside the document that grants
+            # it. Left out, the probe authenticates with no password at
+            # all and vmauth answers 401 — which reads as the frontier
+            # being broken rather than the caller, and strands every
+            # account minted since the last sync.
             "ic_operator_plain": operator_token,
-            # The organisation mapping has to name every account, not
-            # just the new ones: it replaces the setting rather than
-            # adding to it, so a partial map would strand everyone
-            # missing from it in Grafana's default organisation.
-            "ic_grafana_oidc": self._shipped_grafana_oidc,
         }
 
     def parse_results(self, results):

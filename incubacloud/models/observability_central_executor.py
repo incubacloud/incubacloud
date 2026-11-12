@@ -1,6 +1,6 @@
 """Deploy the central metrics stack (Fase 4 / A5).
 
-VictoriaMetrics + Loki + Grafana behind **vmauth**, deployed by the panel
+VictoriaMetrics + Loki behind **vmauth**, deployed by the panel
 like any other host state — the owner's condition was "no manual steps,
 deployed the way prepare-host is" (P9-5).
 
@@ -16,11 +16,10 @@ that collides with the one the route forces, where an nginx that appends
 its own filter was bypassable by a client sending its own — so the
 account filter cannot be widened, and it needs no hand-written reject
 rules that would rot when VictoriaMetrics changes a query arg's meaning.
-It cannot proxy websockets, which is why Grafana's browser path does not
-go through it (Traefik carries that); everything vmauth serves is plain
-request/response.
+
+The panel draws every chart itself; the central ran Grafana until
+12-nov-2026, and a deployment removes what it left (``ic_purge_grafana``).
 """
-import base64
 import logging
 
 import yaml
@@ -38,7 +37,23 @@ _logger = logging.getLogger(__name__)
 #: from off the box.
 _VM_URL = "http://victoriametrics:8428/"
 _LOKI_URL = "http://loki:3100/"
-_GRAFANA_URL = "http://grafana:3000/"
+
+#: What the playbook deploys, as a number the panel keeps
+#: (``cloud.settings.metrics_central_revision``) once a deployment with it
+#: ends well. The reconciliation cron deploys the central again while the
+#: number is behind: an update that changes the central converges even
+#: when its first deployment was run by older code, failed, or waited for
+#: observability to be switched back on (review of 12-nov-2026). Raise it
+#: with every change of the playbook a deployed central needs.
+#:
+#: 1. 12-nov-2026: the central without Grafana, whose volume, provisioning
+#:    and image it removes.
+CENTRAL_REVISION = 1
+
+#: Its existence keeps what Grafana left on the central through the
+#: deployments, for an operator who wants it before the update removes it
+#: (the owner decided on 10-nov-2026 to remove it; review of 12-nov-2026).
+_KEEP_GRAFANA_PARAM = "incubacloud.metrics_keep_grafana_data"
 
 # What an account may reach on the central, and nothing else. Each is a
 # vmauth ``src_paths`` regex, which vmauth matches against the WHOLE path.
@@ -51,11 +66,11 @@ _GRAFANA_URL = "http://grafana:3000/"
 # and the other account then saw the series as its own. The same route
 # created snapshots, forced merges and read the backend's flags.
 #
-# Writes are the one path each agent posts to. Reads are what Grafana
-# 11.2 was measured calling (dashboards, Explore, the metrics and label
-# browsers, "Save & test") plus ``series``, which the browsers use once
-# a label is picked. Nothing in the panel reads logs through here today;
-# the log read route is kept, read-only, for the datasource that will.
+# Writes are the one path each agent posts to. Reads are the query API a
+# dashboard and a metrics browser call; the panel uses ``query`` and
+# ``query_range``, and which of the rest the security view needs is
+# decided with it (review of 12-nov-2026). The log read route is
+# read-only, for the panel's reading of the security logs.
 _ACCOUNT_WRITE_PATH = "/w/api/v1/write"
 _READ_ENDPOINTS = (
     "query|query_range|query_exemplars|series|labels"
@@ -83,11 +98,10 @@ _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 #: Requests the operator may have in flight at once; vmauth answers the
 #: next one 429 at once, without a queue. Only the operator has a cap
 #: (12-nov-2026): vmauth counts per user, not per route, and an account's
-#: user is shared by its agents' writes, its logs, its Grafana datasource
-#: and its panel, so a cap there refused writes while reads ran — and
-#: after an outage every host empties its queue at once. The operator
-#: never writes; 16 covers four fleet boards at four queries each plus
-#: Grafana's admin calls. VictoriaMetrics queues the reads themselves
+#: user is shared by its agents' writes, its logs and its panel, so a cap
+#: there refused writes while reads ran — and after an outage every host
+#: empties its queue at once. The operator never writes; 16 covers four
+#: fleet boards at four queries each. VictoriaMetrics queues the reads themselves
 #: (``-search.maxConcurrentRequests``, twice the cores, 10 s wait).
 _OPERATOR_MAX_CONCURRENT = 16
 
@@ -104,13 +118,12 @@ _CENTRAL_SECRET_FIELDS = (
     "metrics_account",
     "metrics_remote_write_token",
     "metrics_operator_token",
-    "grafana_admin_password",
     "metrics_delete_auth_key",
 )
 
 
 class ObservabilityCentralExecutor(AnsibleExecutor):
-    """Deploy VictoriaMetrics + Grafana on this job's host."""
+    """Deploy VictoriaMetrics, Loki and vmauth on this job's host."""
 
     _job_type = "deploy_metrics_central"
     _playbook = "playbooks/observability_central.yml"
@@ -170,8 +183,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         dropped when the job ended — and core 1.0.135 lost the deletion
         key the same way in production. So they are minted in
         :meth:`_durable_env` and then copied into the job's cache, where
-        the rest of the run (Grafana's organisation mapping reads the
-        panel's own account) finds them.
+        the rest of the run finds them.
 
         The panel's own account is minted before the list is built. It
         used to be created in ``on_success``, so the very first
@@ -186,16 +198,15 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             when absent. Only the full deployment restarts the backend
             with it (see ``cloud.settings._ensure_metrics_delete_key``);
             otherwise it is only read.
-        :return: ``(accounts, operator_token, admin_password, delete_key)``
-            where ``accounts`` is ``[(user, password), ...]`` and
-            ``delete_key`` may be empty
+        :return: ``(accounts, operator_token, delete_key)`` where
+            ``accounts`` is ``[(user, password), ...]`` and ``delete_key``
+            may be empty
         """
         with self._durable_env() as env:
             settings = env["cloud.settings"].sudo()._get_system()
             settings._ensure_metrics_credential()
             accounts = self._accounts_for_deployment(settings)
             operator_token = settings._ensure_operator_credential()
-            admin_password = settings._ensure_grafana_admin_password()
             if mint_delete_key:
                 # Minted once and then kept, except for a key recorded
                 # before the backend read it from a file: that one was a
@@ -227,7 +238,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             self.env["cloud.settings"].sudo().browse(settings_id),
             values, volatile,
         )
-        return accounts, operator_token, admin_password, delete_key
+        return accounts, operator_token, delete_key
 
     def _record_shipped_accounts(self):
         """Write down the access-control list this run put in force.
@@ -256,7 +267,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         # The accounts authenticate from now on: whoever hands them out
         # hears it here, from both jobs that write the list.
         settings._metrics_accounts_shipped()
-        settings._grafana_oidc_shipped(getattr(self, "_shipped_grafana_oidc", None))
 
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.
@@ -312,15 +322,12 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             },
         ]
 
-    def _vmauth_config(
-        self, accounts, operator_token, grafana_admin_basic, delete_key="",
-    ):
+    def _vmauth_config(self, accounts, operator_token, delete_key=""):
         """Render the vmauth ``-auth.config`` YAML for the whole central.
 
         One vmauth ``user`` per account (writes and reads only its own
         series and logs) plus one operator (the cross-account read of the
-        same endpoints, the Grafana admin API used to provision
-        organisations, and series deletion), the only user with a cap on
+        same endpoints, and series deletion), the only user with a cap on
         concurrent requests (see ``_OPERATOR_MAX_CONCURRENT``). There is
         deliberately NO ``unauthorized_user`` section:
         its absence is what makes a credential-less request 401 rather
@@ -329,13 +336,12 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         Passwords are in clear here — vmauth has no hash support. It is
         mitigated the same way the agents' copy of the token is: the file
         lives in the central's 0700 directory and every task that writes
-        it is ``no_log``. The token already exists in clear on every agent
-        and in each Grafana datasource, so this adds no new exposure.
+        it is ``no_log``. The token already exists in clear on every agent,
+        so this adds no new exposure.
 
         The deletion key is the one secret here that no caller holds:
         VictoriaMetrics refuses any deletion without it, and only the
-        operator's deletion route adds it, the way the Grafana admin
-        route swaps in Grafana's password. Measured (lab, 2026-09-27): an
+        operator's deletion route adds it. Measured (lab, 2026-09-27): an
         ``authKey`` the client sends collides with the forced one and is
         dropped, and the prefix has to be the backend ROOT — vmauth
         appends the path, so a prefix naming ``delete_series`` answers
@@ -343,8 +349,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
 
         :param accounts: ``[(user, token), ...]``.
         :param operator_token: the cross-account operator credential.
-        :param grafana_admin_basic: base64 ``admin:<pw>`` for the header
-            swap on the Grafana admin path.
         :param delete_key: VictoriaMetrics' ``-deleteAuthKey``; empty
             leaves the deletion route out, for a central not yet started
             with a key.
@@ -363,16 +367,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             {
                 "src_paths": [_OPERATOR_READ_PATHS],
                 "url_prefix": _VM_URL,
-                "drop_src_path_prefix_parts": 1,
-            },
-            {
-                "src_paths": ["/gadmin/.*"],
-                "url_prefix": _GRAFANA_URL,
-                # vmauth consumes the operator's Authorization to
-                # authenticate, then this REPLACES it with Grafana's
-                # admin credential before forwarding (verified in the
-                # lab). So the panel never holds Grafana's password.
-                "headers": [f"Authorization: Basic {grafana_admin_basic}"],
                 "drop_src_path_prefix_parts": 1,
             },
         ]
@@ -438,9 +432,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         )
 
     def get_extra_vars(self):
-        """Hand retention, credentials and Grafana auth to the playbook."""
+        """Hand retention, credentials and the public name to the playbook."""
         settings = self.env["cloud.settings"].sudo()._get_system()
-        accounts, operator_token, admin_password, delete_key = (
+        accounts, operator_token, delete_key = (
             self._ensure_central_secrets(mint_delete_key=True)
         )
         self._sys(
@@ -457,49 +451,35 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "⚠ No metrics account resolved, so this central will "
                 "accept no writes from anyone."
             )
-        grafana_admin_basic = base64.b64encode(
-            f"admin:{admin_password}".encode()
-        ).decode()
         public = self._public_endpoint(settings)
-        # What Grafana is told here is what a layer may record as in
-        # force (``_grafana_oidc_shipped``) once the run succeeds.
-        self._shipped_grafana_oidc = settings._grafana_oidc(accounts)
+        keep_grafana = bool(
+            self.env["ir.config_parameter"].sudo().get_param(_KEEP_GRAFANA_PARAM)
+        )
+        if keep_grafana:
+            self._sys(
+                f"{_KEEP_GRAFANA_PARAM} is set: what Grafana left on the "
+                "central is kept."
+            )
         return {
             "ic_retention_days": settings.metrics_retention_days or 90,
             # The whole vmauth access-control list in one document: the
             # user list IS the boundary. The playbook writes it verbatim.
             "ic_vmauth_config": self._vmauth_config(
-                accounts, operator_token, grafana_admin_basic, delete_key,
+                accounts, operator_token, delete_key,
             ),
             # Written to a file the VictoriaMetrics container reads. The
             # same key sits on the operator's deletion route above;
             # nothing else has it.
             "ic_delete_auth_key": delete_key,
-            # Plaintext, because each organisation's datasource has to
-            # authenticate AS that account — a hash cannot be used to
-            # make a request. Every task consuming it is ``no_log``.
-            "ic_accounts": [
-                {"user": user, "password": password}
-                for user, password in accounts
-            ],
-            # Grafana organisations of accounts missing from this list
-            # are deleted, so it is always the whole list.
-            "ic_account_names": [user for user, _password in accounts],
-            # Grafana's datasource and the post-deploy health check both
-            # need to *use* the credential, not just verify it, so the
-            # plaintext travels too. It never lands on disk in clear: the
-            # tasks that consume it are ``no_log``.
+            # The post-deploy health check has to *use* the credential, not
+            # just verify it, so the plaintext travels. It never lands on
+            # disk in clear: the tasks that consume it are ``no_log``.
             "ic_operator_plain": operator_token,
-            "ic_grafana_admin_password": admin_password,
-            "ic_grafana_admin_basic": grafana_admin_basic,
-            # With a public name, Grafana answers under it from the first
-            # deployment on: its links need the root before anyone
-            # embeds it.
-            "ic_grafana_root_url": settings.grafana_base_url
-            or (public["grafana"] if public else ""),
+            # False while the parameter exists: what Grafana left stays.
+            "ic_purge_grafana": not keep_grafana,
             # Empty keeps the central on this host's docker bridge only,
             # exactly as before. Set, the playbook also publishes vmauth
-            # and Grafana through this host's Traefik under the name.
+            # through this host's Traefik under the name.
             "ic_public_host": public["host"] if public else "",
             "ic_public_tls": public["tls"] if public else "",
             "ic_public_forwarded": public["forwarded"] if public else False,
@@ -509,13 +489,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "ic_direct_host": (
                 settings.metrics_central_direct_host or ""
             ).strip().lower(),
-            "ic_grafana_frame_ancestors": public["frame_ancestors"] if public else "",
-            # Filled by a layer once Grafana is registered as an
-            # OIDC client (see ``_grafana_oidc``). Empty here means
-            # "no identity provider available", which is the self-hosted
-            # case: the playbook falls back to trusting a header set by
-            # the panel's own reverse proxy.
-            "ic_grafana_oidc": self._shipped_grafana_oidc,
         }
 
     def _public_endpoint(self, settings):
@@ -523,8 +496,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
 
         :param settings: the ``cloud.settings`` record.
         :returns: ``{"host", "tls", "forwarded", "operator_sources",
-            "frame_ancestors", "read", "write", "grafana"}`` for a public
-            name, else None.
+            "read", "write"}`` for a public name, else None.
         :rtype: dict or None
         """
         host_name = (settings.metrics_central_public_host or "").strip().lower()
@@ -544,12 +516,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # (the panel's public address once it runs elsewhere).
             "operator_sources": ["127.0.0.1/32"]
             + parse_ranges(settings.metrics_central_operator_sources),
-            # Whoever embeds the dashboards: the panel, and the other
-            # panels a layer adds.
-            "frame_ancestors": " ".join(settings._grafana_frame_ancestors()),
             "read": f"{base}/r",
             "write": f"{base}/w/api/v1/write",
-            "grafana": f"{base}/grafana/",
         }
 
     def parse_results(self, results):
@@ -604,8 +572,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # right for what runs on this very host.
             vals["metrics_central_url"] = public["read"]
             vals["metrics_remote_write_url"] = public["write"]
-            if not (settings.grafana_base_url or "").strip():
-                vals["grafana_base_url"] = public["grafana"]
         elif gateway:
             # Read path: the panel queries from inside its own container,
             # so the docker bridge address the playbook reports is
@@ -622,8 +588,10 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 vals["metrics_remote_write_url"] = (
                     f"{gateway}/w/api/v1/write"
                 )
+        vals["metrics_central_revision"] = CENTRAL_REVISION
         settings.write(vals)
         self._record_shipped_accounts()
+        self._report_grafana_purge()
         if (settings.metrics_central_direct_host or "").strip():
             # Probe the name now rather than at the cron's next pass.
             self._host()._enqueue_direct_sync("central deployed", chained=True)
@@ -646,6 +614,23 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "not reachable from them."
             )
         self._resolve_alert("metrics_central_failed")
+
+    def _report_grafana_purge(self):
+        """Say in the job's log what became of what Grafana left.
+
+        A purge that failed does not fail the job: the central works, and
+        ``metrics_central_failed`` would say otherwise.
+        """
+        state = str(self.playbook_facts().get("ic_grafana_purge") or "")
+        if state == "removed":
+            self._sys("What Grafana left on the central is removed.")
+        elif state.startswith("failed"):
+            self._sys(
+                "⚠ What Grafana left on the central could not be removed "
+                f"({state[len('failed:'):].strip()}). Remove the volume "
+                "incubacloud-central_grafana-data on the central's server "
+                "by hand; the central works without it."
+            )
 
     async def on_failure(self, results, errors):
         """Alert: without the central every metric alert is blind."""

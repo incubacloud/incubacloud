@@ -51,8 +51,8 @@ http:
         referrerPolicy: "strict-origin-when-cross-origin"
     # HSTS on its own, so it can be the default middleware of the https
     # entrypoint without dragging the rest of `secure` along. `secure`
-    # sets frameDeny (X-Frame-Options: DENY), which would blank out the
-    # panel's Grafana iframes and break Odoo's own website editor, and it
+    # sets frameDeny (X-Frame-Options: DENY), which would break Odoo's
+    # own website editor and every page an instance frames, and it
     # sets stsIncludeSubdomains/stsPreload, which must not be turned on
     # until every subdomain is known to hold a valid certificate: with
     # includeSubDomains, an expired instance cert becomes unreachable with

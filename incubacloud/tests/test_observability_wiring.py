@@ -1,13 +1,10 @@
 """The parts of observability that are wiring, not logic.
 
-Three things here failed silently rather than loudly, which is why they
+Two things here failed silently rather than loudly, which is why they
 are worth pinning:
 
-* The shipped dashboards and the SPA's tab list are two hand-maintained
-  copies of the same uid list. A mismatch renders an empty Grafana frame
-  with no error at all.
-* A dashboard panel can filter on a label the pipeline never produces,
-  and a blank panel is indistinguishable from "no traffic". Traefik
+* A chart can filter on a label the pipeline never produces, and a
+  blank chart is indistinguishable from "no traffic". Traefik
   samples CAN carry an instance label — the service names are derived
   from the project name the panel itself feeds copier — but only while
   the scrape config actually emits the rules that attach it.
@@ -27,34 +24,17 @@ import yaml
 from odoo import fields
 from odoo.tests.common import BaseCase, TransactionCase
 
-from ..models.cloud_instance_metrics import _ODOO_SERVICE, _ONE_OFF_NAMES
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
-_DASHBOARDS = _ROOT / "ansible" / "files" / "dashboards"
 _CENTRAL_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "observability_central.yml"
-_METRIC_RULES = _ROOT / "data" / "metric_rule_data.xml"
 _MONITORING_JS = (
     _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.js"
 )
 
-# Load per core is a ratio: there is no unit to give it, and forcing one
-# would be worse than none. Everything else has to name its numbers.
-_RATIO_PANELS = frozenset({"Load per core, by host", "CPU load per core"})
-
-
-def _dashboard_files():
-    return sorted(_DASHBOARDS.glob("*.json"))
-
-
-class TestDashboardsMatchTheSpa(BaseCase):
+class TestTheChartsAreThePanels(BaseCase):
 
     def test_monitoring_embeds_no_dashboard_of_another_tool(self):
-        """Monitoring draws its own boards since 12-nov-2026.
-
-        The dashboards on disk stay on the central until Grafana is
-        retired; the panel no longer frames them, so nothing ties their
-        uids to the SPA any more.
-        """
+        """Monitoring draws its own boards since 12-nov-2026."""
         js = _MONITORING_JS.read_text()
         xml = _MONITORING_JS.with_suffix(".xml").read_text()
         self.assertNotIn("<iframe", xml)
@@ -87,191 +67,13 @@ class TestDashboardsMatchTheSpa(BaseCase):
             "config emits no rule that could attach the label",
         )
 
-    def test_every_template_variable_used_is_declared(self):
-        """``$foo`` with no matching variable silently matches nothing."""
-        offenders = []
-        for path in _dashboard_files():
-            dashboard = json.loads(path.read_text())
-            declared = {
-                variable["name"]
-                for variable in dashboard["templating"]["list"]
-            }
-            for panel in dashboard["panels"]:
-                for target in panel.get("targets", []):
-                    for used in re.findall(r'\$(\w+)', target.get("expr", "")):
-                        # ``$1`` and friends are label_replace's capture
-                        # references, resolved by PromQL itself — not
-                        # dashboard variables, and never declared.
-                        if used.isdigit() or used in declared:
-                            continue
-                        offenders.append(
-                            f"{path.name}: {panel['title']} uses ${used}"
-                        )
-        self.assertFalse(offenders, "undeclared dashboard variables: %s"
-                         % offenders)
-
-    def test_the_staleness_panel_still_matches_its_alert(self):
-        """The panel and the rule share one expression, by design.
-
-        Whoever "improves" the panel query has to change the rule too, or
-        the fleet view and the alert start telling different stories about
-        the same host. The threshold is pinned for the same reason: the
-        colour break has to fall where the alert fires.
-        """
-        rule = ElementTree.parse(  # nosec B314 — our own data file, shipped in this repo
-            _METRIC_RULES,
-        ).getroot().find(".//record[@id='metric_rule_host_down']")
-        expression = rule.find("field[@name='expression']").text.strip()
-        threshold = float(rule.find("field[@name='threshold']").text)
-
-        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
-        panel = next(
-            p for p in fleet["panels"]
-            if p["title"].startswith("Ingest age per host")
-        )
-        self.assertEqual(panel["targets"][0]["expr"], expression)
-        # Lanes, not lines: every agent in the fleet scrapes on the same
-        # wall-clock tick, so on a shared axis the healthy hosts drew
-        # identical curves and hid one another completely.
-        self.assertEqual(panel["type"], "state-timeline")
-        steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
-        red = [s for s in steps if s["color"] == "red"]
-        self.assertEqual([s["value"] for s in red], [threshold])
-
-    def test_the_instance_picker_only_offers_real_instances(self):
-        """cAdvisor labels anything it cannot attribute with the raw
-        target address — the same literal string on every host. It sorts
-        before every real instance, so it was what the dashboard opened
-        on, and selecting it adds up containers across hosts."""
-        instance = json.loads(
-            (_DASHBOARDS / "incubacloud-instance.json").read_text()
-        )
-        variable = next(
-            v for v in instance["templating"]["list"] if v["name"] == "instance"
-        )
-        self.assertIn('instance_id!=""', variable["definition"])
-        self.assertEqual(variable["definition"], variable["query"]["query"])
-
-    def test_the_fleet_counter_only_counts_real_instances(self):
-        """The same omission as the picker above, one panel over.
-
-        ``instance_id`` is attached by the agent's relabelling, and only
-        to containers belonging to an instance — the agents' own stack
-        and the proxy never carry it. PromQL does not drop the series
-        that lack the grouping label: it collects them into one group
-        keyed on the empty string. So the count came out at one more
-        than the fleet holds, on every host that reports containers at
-        all, and read as a real instance nobody could find. Filtered, an
-        empty fleet has no series left to count, hence the fallback.
-        """
-        expression = self._fleet_panel("Instances running")["targets"][0]["expr"]
-        self.assertIn('instance_id!=""', expression)
-        self.assertIn("or vector(0)", expression)
-
-    def _fleet_panel(self, title):
-        """Return the Fleet dashboard panel titled *title*."""
-        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
-        return next(p for p in fleet["panels"] if p["title"] == title)
-
-    def test_running_means_what_the_panel_means_by_running(self):
-        """The panel decides ``running`` from the ``odoo`` container
-        alone (``_ODOO_EXPRESSION``). Counting "any container", as the
-        card used to, made an instance asleep with ``db`` up count as
-        running — and since 1.0.145 a sleeping one counts as nothing."""
-        expression = self._fleet_panel("Instances running")["targets"][0]["expr"]
-        self.assertIn(
-            f'container_label_com_docker_compose_service="{_ODOO_SERVICE}"',
-            expression,
-        )
-
-    def test_deployed_counts_what_every_host_reports_for_every_instance(self):
-        """A sleeping instance has no container series at all, so the
-        only metric that names every deployed instance is the disk one
-        the host agent writes for each instance directory. The card has
-        to read the name the playbook actually emits."""
-        expression = self._fleet_panel("Instances deployed")["targets"][0]["expr"]
-        metric = re.search(r"\((\w+)\)\)", expression).group(1)
-        playbook = (
-            _ROOT / "ansible" / "playbooks" / "host_observability.yml"
-        ).read_text()
-        self.assertIn(f"{metric}{{instance_id=", playbook)
-        self.assertIn("or vector(0)", expression)
-
-    def test_the_top_row_lists_hosts_then_instances(self):
-        """Grouped so the operator reads one subject at a time, and
-        laid out on Grafana's 24-column grid with nothing overlapping."""
-        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
-        row = sorted(
-            (p for p in fleet["panels"] if p["gridPos"]["y"] == 0),
-            key=lambda p: p["gridPos"]["x"],
-        )
-        self.assertEqual(
-            [p["title"] for p in row],
-            [
-                "Hosts reporting",
-                "Hosts above 90% disk",
-                "Hosts above 92% memory",
-                "Instances deployed",
-                "Instances running",
-            ],
-        )
-        edge = 0
-        for panel in row:
-            self.assertEqual(panel["gridPos"]["x"], edge, panel["title"])
-            edge += panel["gridPos"]["w"]
-        self.assertEqual(edge, 24)
-
-    def test_instance_panels_are_scoped_to_one_host(self):
-        """Container names repeat across hosts and an instance name is
-        only unique within its project, so an unscoped filter can add up
-        two machines without saying so."""
-        instance = json.loads(
-            (_DASHBOARDS / "incubacloud-instance.json").read_text()
-        )
-        for panel in instance["panels"]:
-            for target in panel["targets"]:
-                self.assertIn(
-                    'host=~"$host"', target["expr"],
-                    f"{panel['title']} filters by instance without a host",
-                )
-
-    def test_instance_panels_leave_one_off_containers_out(self):
-        """``docker compose run`` names each container it creates anew
-        (``<project>-odoo-run-<hash>``), so every deploy step and every
-        shell session added a series that ended minutes later and sat in
-        the legend for the whole range. Keyed by compose service, the
-        legend reads odoo/db/smtp; the one-offs are not charted at all
-        rather than added to ``odoo``, where a shell session would look
-        like the server's own memory. The rebuild's boot test is one too,
-        under a name of its own (``ic_boot_odoo_<id>``). The panels leave
-        out exactly what the liveness cron does (``_ONE_OFF_NAMES``)."""
-        instance = json.loads(
-            (_DASHBOARDS / "incubacloud-instance.json").read_text()
-        )
-        for panel in instance["panels"]:
-            for target in panel["targets"]:
-                self.assertIn(
-                    f'name!~"{_ONE_OFF_NAMES}"', target["expr"],
-                    panel["title"],
-                )
-                self.assertIn(
-                    "by (container_label_com_docker_compose_service)",
-                    target["expr"], panel["title"],
-                )
-                self.assertEqual(
-                    target["legendFormat"],
-                    "{{container_label_com_docker_compose_service}}",
-                    panel["title"],
-                )
-
-    def test_the_disk_panel_reads_a_label_the_collector_emits(self):
+    def test_the_disk_collector_names_its_instance_label_apart(self):
         """A legend can only name a label the exposed metric carries.
 
         And it must not name ``instance``: the scraper owns that one and
         overwrites it with the target address, renaming whatever the
-        metric called that to ``exported_instance``. A panel keyed on it
-        renders every series of a host under the same legend — data
-        present, series distinct, and completely unreadable.
+        metric called that to ``exported_instance``. A chart keyed on it
+        renders every series of a host under the same legend.
         """
         playbook = (
             _ROOT / "ansible" / "playbooks" / "host_observability.yml"
@@ -284,38 +86,11 @@ class TestDashboardsMatchTheSpa(BaseCase):
             "instance", exposed,
             "the collector exposes a label the scraper overwrites",
         )
-        host = json.loads((_DASHBOARDS / "incubacloud-host.json").read_text())
-        panel = next(
-            p for p in host["panels"] if p["title"] == "Disk used per instance"
-        )
-        used = set(re.findall(r"{{(\w+)}}", panel["targets"][0]["legendFormat"]))
-        self.assertTrue(
-            used <= exposed,
-            f"the panel legends by {used - exposed}, which the collector "
-            f"never emits (it emits {exposed})",
-        )
+        self.assertIn("instance_name", exposed)
 
-    def test_every_chart_panel_says_what_its_numbers_are(self):
-        """A byte count rendered as ``10000000000`` is not a reading.
-
-        Ratios are exempt because there is nothing to name; anything else
-        declares a unit or, where Grafana has none, an axis label.
-        """
-        offenders = []
-        for path in _dashboard_files():
-            for panel in json.loads(path.read_text())["panels"]:
-                if panel["type"] not in ("timeseries", "state-timeline"):
-                    continue
-                if panel["title"] in _RATIO_PANELS:
-                    continue
-                defaults = panel.get("fieldConfig", {}).get("defaults", {})
-                if defaults.get("unit"):
-                    continue
-                if defaults.get("custom", {}).get("axisLabel"):
-                    continue
-                offenders.append(f"{path.name}: {panel['title']}")
-        self.assertFalse(offenders, "panels with unlabelled numbers: %s"
-                         % offenders)
+    def test_no_dashboard_of_another_tool_is_shipped(self):
+        """The panel draws every chart; the central runs no Grafana."""
+        self.assertFalse(list((_ROOT / "ansible" / "files").glob("**/*.json")))
 
 
 class TestLabelMapFollowsTheInstanceSet(TransactionCase):
@@ -563,18 +338,17 @@ class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
     """What the central mounts, the container's process must be able to read.
 
     The processes behind the mounts are not root: vmauth runs
-    unprivileged and Grafana runs as uid 472. Writing their configuration
-    owner-only is the intuitive "careful" choice and it is the wrong one —
-    the first live deployment (nginx, then) answered ``permission denied``
-    on its own credential file and left a Grafana in a restart loop, from
-    files that looked perfect on the host.
+    unprivileged. Writing their configuration owner-only is the intuitive
+    "careful" choice and it is the wrong one — the first live deployment
+    (nginx, then) answered ``permission denied`` on its own credential
+    file, from a file that looked perfect on the host.
 
-    Then the obvious fix broke it a second way: two of these paths are
-    mounted as DIRECTORIES, so tightening the whole tree to 0700 left
-    Grafana unable to traverse them. Confidentiality therefore lives on
-    the root of the tree, which nothing mounts, and everything below it
-    stays reachable. Both mistakes are cheap to make and silent from the
-    host, so both are pinned here.
+    Then the obvious fix broke it a second way: some paths are mounted as
+    DIRECTORIES, so tightening the whole tree to 0700 left the containers
+    unable to traverse them. Confidentiality therefore lives on the root
+    of the tree, which nothing mounts, and everything below it stays
+    reachable. Both mistakes are cheap to make and silent from the host,
+    so both are pinned here.
     """
 
     def _tasks(self):
@@ -693,8 +467,8 @@ class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
             )
             self.assertIn(
                 mode[-1], "1357",
-                f"{path} is mounted into Grafana as a directory but is "
-                f"written {mode}: uid 472 cannot traverse it",
+                f"{path} is mounted into a container as a directory but "
+                f"is written {mode}: its process cannot traverse it",
             )
 
 
@@ -749,23 +523,6 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
         body = self._SYNC_PLAYBOOK.read_text()
         self.assertNotIn("docker-compose.yaml:", body)
         self.assertNotIn("up -d", body)
-
-    def test_the_dashboard_glob_resolves_from_the_task_file(self):
-        """A wrong relative depth here does not fail, it provisions
-        organisations with a datasource and no dashboards at all."""
-        orgs = self._TASKS_DIR / "grafana_orgs.yml"
-        globs = re.findall(r"fileglob',\s*'([^']+)'", orgs.read_text())
-        self.assertEqual(len(globs), 1, "the dashboard glob moved or split")
-        resolved = (orgs.parent / globs[0]).resolve()
-        self.assertEqual(
-            resolved.parent, _DASHBOARDS,
-            f"the glob resolves to {resolved.parent}, not the shipped "
-            f"dashboards directory",
-        )
-        self.assertTrue(
-            list(orgs.parent.glob(globs[0])),
-            "the glob matches no dashboard files from its own directory",
-        )
 
     _VAR = re.compile(r"\bic_[a-z0-9_]+")
     _INCLUDE = re.compile(r"include_tasks:\s*(\S+)")
@@ -883,80 +640,6 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
                 )
 
 
-class TestGrafanaIdentityIsNotInTheComposeFile(BaseCase):
-    """Why adding an account stopped recreating Grafana.
-
-    The organisation map names every account, so it changed with every
-    account — and it lived in the compose file, whose every change makes
-    ``up -d`` recreate the container. One new account dropped every open
-    session in the fleet, which is what made automating the grant look
-    unacceptable in the first place.
-
-    Measured (lab, Grafana 11.2.0): the SSO settings API writes to
-    Grafana's database, overrides the env vars (``source`` flips from
-    ``system`` to ``database``) and applies with the restart count still
-    at zero.
-    """
-
-    _TASKS_DIR = _ROOT / "ansible" / "playbooks" / "tasks"
-
-    def _sso_task(self):
-        for task in yaml.safe_load(
-            (self._TASKS_DIR / "grafana_orgs.yml").read_text(),
-        ):
-            if "sso-settings" in str(task.get("ansible.builtin.uri", {})):
-                return task
-        self.fail("the SSO settings task was renamed or removed")
-
-    def test_the_compose_file_carries_no_oauth_configuration(self):
-        """Two sources for one block, with the database silently
-        winning, is worse than either alone."""
-        self.assertNotIn(
-            "GF_AUTH_GENERIC_OAUTH",
-            _CENTRAL_PLAYBOOK.read_text(),
-            "the OAuth config is back in the compose file, so every new "
-            "account recreates Grafana again — and the database copy "
-            "written by the API would override it anyway",
-        )
-
-    def test_the_whole_provider_block_is_sent(self):
-        """The API replaces the provider, it does not patch a field.
-
-        Anything omitted here silently reverts to Grafana's default.
-        ``orgAttributePath`` is the one that already cost us: with
-        ``groupsAttributePath`` instead, org_mapping falls back to the
-        default organisation and every login lands in "Main Org." while
-        the token carries the right claim.
-        """
-        settings = self._sso_task()["ansible.builtin.uri"]["body"]["settings"]
-        for key in (
-            "enabled", "clientId", "clientSecret", "authUrl", "tokenUrl",
-            "apiUrl", "scopes", "usePkce", "orgMapping", "orgAttributePath",
-            "roleAttributePath", "allowAssignGrafanaAdmin", "autoLogin",
-        ):
-            self.assertIn(
-                key, settings,
-                f"{key} is missing from the SSO settings body; the PUT "
-                f"replaces the whole provider, so it would silently "
-                f"revert to Grafana's default",
-            )
-        self.assertEqual(settings["orgAttributePath"], "groups")
-
-    def test_it_is_skipped_without_an_identity_provider(self):
-        """The self-hosted case has none, and the playbook wires
-        auth.proxy instead — enabling OAuth there would deploy a Grafana
-        redirecting to a provider that will refuse it."""
-        self.assertIn("ic_grafana_oidc", str(self._sso_task().get("when", "")))
-
-    def test_it_goes_through_the_operator_door(self):
-        """One door, not a second one to keep track of: vmauth
-        authenticates the operator and swaps in Grafana's admin
-        credential, so the panel never holds Grafana's password."""
-        uri = self._sso_task()["ansible.builtin.uri"]
-        self.assertIn("/gadmin/", uri["url"])
-        self.assertEqual(uri["url_username"], "operator")
-
-
 class TestObservabilityCapabilities(TransactionCase):
     """The one definition of what a panel can do with observability.
 
@@ -1016,7 +699,6 @@ class TestObservabilityCapabilities(TransactionCase):
         self.settings.write({
             "metrics_enabled": True,
             "metrics_central_url": "https://central.example.com/r",
-            "grafana_base_url": "",
         })
         self.assertEqual(
             self._caps(),
@@ -1091,122 +773,6 @@ class TestNavGateConsultsEveryAxis(BaseCase):
         gate = self._nav_gate()
         self.assertIn("observability?.dashboards or", gate)
         self.assertIn("observability?.configure", gate)
-
-
-class TestTheDefaultOrganisationIsNotAPrivilegedFallback(BaseCase):
-    """Grafana's default org must hold nothing worth landing in.
-
-    It is where Grafana drops a login whose ``groups`` claim matches no
-    entry in ``orgMapping`` — so whatever lives there is what an
-    unrecognised user reads. File provisioning carries no orgId, which
-    means a datasource provisioned from a file lands exactly there, and
-    the one that used to be provisioned pointed at vmauth's operator
-    path: no account filter, the whole fleet.
-
-    Structural because the failure is silent from every angle. The
-    other panel sees a dashboard that works, the operator sees an org nobody
-    uses, and the only difference between the two readings is which
-    session rendered the iframe.
-    """
-
-    _SYNC_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "metrics_acl_sync.yml"
-    _DATASOURCE_FILE = "provisioning/datasources"
-
-    def _tasks(self, playbook):
-        return yaml.safe_load(playbook.read_text())[0]["tasks"]
-
-    def _datasource_file_task(self):
-        tasks = [
-            (i, task) for i, task in enumerate(self._tasks(_CENTRAL_PLAYBOOK))
-            if self._DATASOURCE_FILE
-            in str((task.get("ansible.builtin.copy") or {}).get("dest", ""))
-        ]
-        self.assertEqual(
-            len(tasks), 1,
-            "exactly one task should account for the datasource "
-            "provisioning file",
-        )
-        return tasks[0]
-
-    def test_the_provisioning_file_declares_no_datasource(self):
-        """Declaring one at all is the bug: it can only land in org 1."""
-        _, task = self._datasource_file_task()
-        content = task["ansible.builtin.copy"]["content"]
-        self.assertNotIn(
-            "datasources:\n", content.replace("deleteDatasources:", ""),
-            "the central provisions a datasource from a file, and file "
-            "provisioning has no orgId: it lands in the default "
-            "organisation, the fallback for every unmapped login",
-        )
-        self.assertNotIn("admin-r", content)
-
-    def test_the_datasource_already_in_grafana_is_deleted(self):
-        """Not declaring it is not enough on an already-deployed central.
-
-        The row an earlier deployment created lives in Grafana's
-        database and outlives every file, and Grafana flags what it
-        provisioned read-only: the HTTP API answers 403 "Cannot delete
-        read-only data source". ``deleteDatasources`` is therefore not
-        one way to remove it, it is the only one — and dropping the file
-        instead leaves the row orphaned and serving, which reads as
-        fixed and is not.
-        """
-        _, task = self._datasource_file_task()
-        declared = yaml.safe_load(task["ansible.builtin.copy"]["content"])
-        self.assertEqual(
-            declared.get("deleteDatasources"),
-            [{"name": "VictoriaMetrics", "orgId": 1}],
-            "the provisioning file does not delete the datasource the "
-            "central used to create in the default organisation",
-        )
-
-    def test_the_deletion_is_applied_without_waiting_for_a_restart(self):
-        """Grafana reads provisioning at startup, and this deployment
-        gives it no reason to restart: ``up -d`` recreates a container
-        whose definition changed, and a provisioning file is not part of
-        one. Without the reload the fix applies whenever Grafana next
-        happens to restart, which is not a schedule."""
-        tasks = self._tasks(_CENTRAL_PLAYBOOK)
-        reloads = [
-            i for i, task in enumerate(tasks)
-            if "provisioning/datasources/reload"
-            in str((task.get("ansible.builtin.uri") or {}).get("url", ""))
-        ]
-        self.assertEqual(
-            len(reloads), 1, "the provisioning reload is missing",
-        )
-        self.assertEqual(
-            tasks[reloads[0]]["ansible.builtin.uri"].get("method"), "POST",
-        )
-        written, _task = self._datasource_file_task()
-        self.assertGreater(
-            reloads[0], written,
-            "the reload runs before the file it is meant to apply",
-        )
-
-    def test_the_organisation_map_is_rewritten_on_every_sync(self):
-        """``orgMapping`` names every account, so it cannot be gated.
-
-        The sync used to include this only when it had new accounts to
-        grant. The organisations are indeed the only thing that needs a
-        new account — but the map is rewritten whole, and skipping it
-        leaves an account minted and unmapped until the next full
-        deployment of the central. Its user lands in the default
-        organisation for the entire window.
-        """
-        includes = [
-            task for task in self._tasks(self._SYNC_PLAYBOOK)
-            if task.get("ansible.builtin.include_tasks")
-            == "tasks/grafana_orgs.yml"
-        ]
-        self.assertEqual(len(includes), 1)
-        self.assertNotIn(
-            "when", includes[0],
-            "the sync gates the organisation map on there being new "
-            "accounts; a revocation-only sync would then leave the map "
-            "naming an account that no longer exists, and a grant whose "
-            "org already existed would never refresh it",
-        )
 
 
 class TestTheBackendRefusesDeletionsWithoutTheKey(BaseCase):
@@ -1350,82 +916,6 @@ class TestTeardownStopsTheAgents(BaseCase):
         self.assertIn("{{ ic_obs_dir }}", removed)
 
 
-class TestStaleOrganisationsAreDeleted(BaseCase):
-    """An account that leaves stops leaving its Grafana organisation behind.
-
-    Organisations were created and never deleted — seven were removed by
-    hand on 2026-09-20. The task file now converges against the whole
-    account list; these pin what it may and may not delete.
-    """
-
-    _ORGS = _ROOT / "ansible" / "playbooks" / "tasks" / "grafana_orgs.yml"
-
-    def _tasks(self):
-        """Return the task file's tasks by name."""
-        return {t["name"]: t for t in yaml.safe_load(self._ORGS.read_text())}
-
-    def _stale(self, orgs, names):
-        """Render the stale-organisation expression as Ansible would.
-
-        :param orgs: what Grafana's ``GET /api/orgs`` returned.
-        :param names: ``ic_account_names``.
-        :return: the organisations the playbook would delete.
-        """
-        import jinja2  # noqa: PLC0415 — only this test renders a template
-
-        expr = self._tasks()["Work out which account organisations are stale"][
-            "ansible.builtin.set_fact"
-        ]["ic_stale_orgs"]
-        env = jinja2.Environment()  # nosec B701 — renders a Jinja expression as Ansible does, never HTML
-        # Ansible's ``match`` test: re.match, anchored at the start.
-        env.tests["match"] = lambda value, pattern: bool(re.match(pattern, value))
-        rendered = env.from_string(expr).render(
-            ic_all_orgs={"json": orgs}, ic_account_names=names,
-        )
-        return ast.literal_eval(rendered.strip())
-
-    def test_only_account_organisations_missing_from_the_list_go(self):
-        orgs = [
-            {"id": 1, "name": "Main Org."},
-            {"id": 3, "name": "acct_124ff4d0041f"},
-            {"id": 9, "name": "acct_99e784a633ed"},
-            {"id": 12, "name": "Operators"},
-            {"id": 14, "name": "acct_notanaccount!"},
-        ]
-        stale = self._stale(orgs, ["acct_124ff4d0041f"])
-        self.assertEqual([o["id"] for o in stale], [9])
-
-    def test_the_default_organisation_is_never_a_candidate(self):
-        stale = self._stale([{"id": 1, "name": "acct_0"}], ["acct_1"])
-        self.assertEqual(stale, [])
-
-    def test_every_step_is_skipped_without_the_list(self):
-        """An empty list must not read as "every account is gone"."""
-        for name, task in self._tasks().items():
-            if name in (
-                "List every organisation",
-                "Work out which account organisations are stale",
-                "Leave the admin session in the default organisation",
-                "Delete the organisations of accounts that no longer exist",
-            ):
-                self.assertIn(
-                    "ic_account_names | length > 0", str(task.get("when")),
-                    name,
-                )
-
-    def test_the_admin_leaves_the_organisation_before_deleting(self):
-        """Grafana 11.2 refuses to delete the admin's current organisation."""
-        names = [t["name"] for t in yaml.safe_load(self._ORGS.read_text())]
-        self.assertLess(
-            names.index("Leave the admin session in the default organisation"),
-            names.index("Delete the organisations of accounts that no longer exist"),
-        )
-        switch = self._tasks()[
-            "Leave the admin session in the default organisation"
-        ]["ansible.builtin.uri"]
-        self.assertTrue(switch["url"].endswith("/gadmin/api/user/using/1"))
-
-
 class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
     """The host's instances share ``inverseproxy_shared``; the agents must not.
 
@@ -1558,45 +1048,6 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
             "-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token",
             vmagent["command"],
         )
-
-
-class TestUsersOfGoneAccountsAreRemoved(BaseCase):
-    """2-nov-2026: an account re-created with the same e-mail got "User sync
-    failed" in Grafana, because the user of its old login was still there."""
-
-    _TASKS = _ROOT / "ansible" / "playbooks" / "tasks" / "grafana_orgs.yml"
-
-    def _tasks(self):
-        return yaml.safe_load(self._TASKS.read_text())
-
-    def _named(self, prefix):
-        tasks = self._tasks()
-        return next(i for i, task in enumerate(tasks) if task["name"].startswith(prefix))
-
-    def test_users_go_after_the_organisations_they_lost(self):
-        self.assertLess(
-            self._named("Delete the organisations of accounts"),
-            self._named("Delete the users left without an organisation"),
-        )
-
-    def test_only_panel_sign_ins_without_any_organisation_go(self):
-        tasks = self._tasks()
-        keep = tasks[self._named("Keep only the panel's sign-ins")]
-        expression = keep["ansible.builtin.set_fact"]["ic_panel_users"]
-        self.assertIn("'Generic OAuth'", expression)
-        self.assertIn("rejectattr('login', 'equalto', 'admin')", expression)
-        delete = tasks[self._named("Delete the users left without an organisation")]
-        self.assertEqual(delete["ansible.builtin.uri"]["method"], "DELETE")
-        self.assertIn("item.json | length == 0", delete["when"])
-
-    def test_a_lost_account_list_deletes_nobody(self):
-        """An empty list must not read as "every account is gone"."""
-        tasks = self._tasks()
-        first = self._named("List the users who signed in through the panel")
-        for task in tasks[first:]:
-            when = task["when"]
-            when = when if isinstance(when, list) else [when]
-            self.assertIn("ic_account_names | length > 0", when[0], task["name"])
 
 
 class TestMonitoringExplainsAnEmptyFleet(BaseCase):

@@ -1,5 +1,6 @@
-"""End-migrate for 1.0.229 — each server's own Send security logs.
+"""End-migrate for 1.0.229 — security logs per server, a central without Grafana.
 
+**Send security logs.**
 The panel-wide *Send hosts' security logs* (``metrics_ship_security_logs``)
 gives way to a switch on every server, ``cloud.host.security_logs_enabled``.
 The column is created with its default for every host; this sets the value
@@ -12,6 +13,13 @@ table, unread.
 Written with SQL, not ``write``: the agents' revision (2) already has the
 reconciliation cron re-apply every installed server, five per pass, and
 a write would queue them all at once.
+
+**Grafana.** Its admin password and base URL are emptied: the columns
+stay in the table, and a secret nothing uses is not left there. The
+central is deployed again, which removes Grafana: queued here when it can
+be, and in any case by the reconciliation cron while the panel's
+``metrics_central_revision`` is behind (``_reconcile_central_revision``),
+so a deployment run by older code, or one that fails, is tried again.
 
 ``end`` and not ``post``: a layer's override has to be loaded
 (``odoo/modules/loading.py`` runs the ``end-*`` scripts with every module
@@ -39,8 +47,37 @@ def _shipped_before(cr):
     return bool(row and row[0])
 
 
+def _forget_grafana(cr):
+    """Empty Grafana's admin password and base URL where the columns remain.
+
+    :param cr: database cursor
+    """
+    for column in ("grafana_admin_password", "grafana_base_url"):
+        if column_exists(cr, "cloud_settings", column):
+            cr.execute(
+                f"UPDATE cloud_settings SET {column} = NULL "  # noqa: S608 — fixed names
+                f"WHERE {column} IS NOT NULL"
+            )
+
+
+def _deploy_the_central(env):
+    """Queue the central's deployment now, when it can be.
+
+    Never fails the update: the reconciliation cron queues it otherwise.
+
+    :param env: an environment with every module loaded
+    """
+    try:
+        with env.cr.savepoint():
+            env["cloud.host"]._reconcile_central_revision()
+    except Exception as exc:  # noqa: BLE001 — the cron tries again
+        _logger.warning(
+            "[metrics] the central's deployment is left to the cron: %s", exc,
+        )
+
+
 def migrate(cr, version):
-    """Give every server the switch's value the update decides.
+    """Give every server the switch's value, and retire Grafana.
 
     :param cr: database cursor
     :param version: module version being upgraded from
@@ -63,3 +100,5 @@ def migrate(cr, version):
         "on" if value else "off", total, "on" if shipped else "off",
     )
     env["cloud.host"].invalidate_model(["security_logs_enabled"])
+    _forget_grafana(cr)
+    _deploy_the_central(env)

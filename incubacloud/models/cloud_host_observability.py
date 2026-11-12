@@ -28,6 +28,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from .observability_agents_executor import AGENTS_REVISION
+from .observability_central_executor import CENTRAL_REVISION
 
 _logger = logging.getLogger(__name__)
 
@@ -362,6 +363,65 @@ class CloudHost(models.Model):
         self._reconcile_direct_agents()
         # And those whose last install ran an older playbook.
         self._reconcile_agents_revision()
+        # And the central, when its last deployment ran an older one.
+        self._reconcile_central_revision()
+
+    @api.model
+    def _reconcile_central_revision(self):
+        """Deploy the central again while its deployment is behind this code.
+
+        The panel records the revision its central's last good deployment
+        ran (``metrics_central_revision``). Behind ``CENTRAL_REVISION``,
+        the central is deployed again: an update that changes it converges
+        even when the first deployment was run by a worker on older code,
+        failed (an unreachable host, a pull), or never ran. Not while one
+        waits or runs on the central's host, and after a failure with the
+        same growing back-off as the agents' installs. Not with
+        observability off: the deployment switches it on, so it waits for
+        the operator to switch it back on.
+
+        :return: the queued job id, or ``False``.
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return False
+        if (settings.metrics_central_revision or 0) >= CENTRAL_REVISION:
+            return False
+        host = settings.metrics_central_host_id.sudo()
+        if not (host and host.active):
+            return False
+        Job = self.env["cloud.job"].sudo()
+        jobs = Job.search([
+            ("host_id", "=", host.id),
+            ("job_type_id.code", "=", "deploy_metrics_central"),
+        ], order="id desc", limit=len(_BACKOFF_MINUTES))
+        if jobs.filtered(lambda j: j.state in _UNFINISHED_JOB_STATES):
+            return False
+        failures = 0
+        for job in jobs:
+            if job.state not in ("failed", "cancelled"):
+                break
+            failures += 1
+        if failures:
+            wait = _BACKOFF_MINUTES[min(failures, len(_BACKOFF_MINUTES) - 1)]
+            last = jobs[0].date_done or jobs[0].write_date
+            if last and (fields.Datetime.now() - last).total_seconds() < wait * 60:
+                return False
+        try:
+            with self.env.cr.savepoint():
+                job_id = Job.enqueue(host.id, False, "deploy_metrics_central")
+        except Exception as exc:  # noqa: BLE001 — a cron pass never fails on it
+            _logger.info(
+                "[metrics] could not queue the central's deployment on %s: %s",
+                host.name, exc,
+            )
+            return False
+        _logger.info(
+            "[metrics] the central on %s is on revision %s, behind %s: "
+            "deploying it again", host.name,
+            settings.metrics_central_revision or 0, CENTRAL_REVISION,
+        )
+        return job_id
 
     @api.model
     def _reconcile_agents_revision(self):

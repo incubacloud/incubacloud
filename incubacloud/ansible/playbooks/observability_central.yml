@@ -1,15 +1,12 @@
 ---
-# Deploy the central metrics stack (VictoriaMetrics + Loki + Grafana,
-# behind vmauth). Driven by ObservabilityCentralExecutor.
+# Deploy the central metrics stack (VictoriaMetrics and Loki, behind
+# vmauth). Driven by ObservabilityCentralExecutor.
 #
-# Co-located on the panel host at first: VM + Grafana sit around 1-1.5 GB,
-# which the panel box absorbs. The destination is a plain parameter, so
-# moving the central to its own VPS later is "point the job at another
-# host and re-run", not a rewrite.
-#
-# Grafana is provisioned as CODE (datasource + dashboards from files), not
-# clicked: a hand-built dashboard is invisible to review and lost on the
-# next redeploy.
+# On a server the panel manages, never on the panel's own. The destination
+# is a plain parameter, so moving the central to another VPS is "point the
+# job at another host and re-run", not a rewrite. The panel draws every
+# chart itself, reading VictoriaMetrics through vmauth; Loki keeps the
+# hosts' security logs.
 #
 # ── Why vmauth sits in front ───────────────────────────────────────────
 # The central can be shared: several panels write to
@@ -31,16 +28,9 @@
 # Measured (lab, 2026-08-10) against real VM + Loki: the forced arg wins,
 # the client's is dropped, and a credential-less request is 401 — with no
 # hand-written reject rules to rot when VM changes a query arg's meaning.
-# The one thing vmauth cannot do is proxy websockets, which is why the
-# Grafana BROWSER path does not go through it (the panel's Traefik carries
-# that); everything vmauth serves is plain request/response.
 #
-# Grafana is no longer anonymous. It authenticates through the panel's
-# identity provider when there is one, or through a header set by
-# the panel's own reverse proxy when there is not (self-hosted), and each
-# account lands in its own organisation with a datasource it cannot
-# change. Operators get a second, unfiltered credential that is never
-# written to any host.
+# The central ran Grafana until 12-nov-2026. A deployment removes what it
+# left, once the boundary has answered (``ic_purge_grafana``).
 - name: Deploy the central metrics stack
   hosts: all
   gather_facts: true
@@ -53,14 +43,6 @@
     ic_delete_auth_key: ""
     # The whole vmauth access-control document, rendered by the executor.
     ic_vmauth_config: ""
-    # [{user, password}, ...] — the plaintext is needed to build each
-    # organisation's datasource. Every task that touches it is no_log.
-    ic_accounts: []
-    # Every account's name, even where ic_accounts is only the new ones:
-    # the organisations of names missing from it are deleted.
-    ic_account_names: []
-    ic_grafana_root_url: ""
-    ic_grafana_oidc: {}
     # The name the central is published under through this host's Traefik
     # (``metrics_central_public_host``). Empty, as on a central next to
     # its panel: nothing is published, the compose file is what it always
@@ -75,7 +57,7 @@
     # Empty changes nothing in the compose file.
     ic_direct_host: ""
     # Who may reach the operator's read and series-deletion routes under
-    # the public name; Grafana's admin route answers this host only.
+    # the public name.
     ic_operator_sources: []
     # The public name reaches this host through a CDN, whose edge opens
     # the connection: the deletion route then checks the address the CDN
@@ -84,18 +66,22 @@
     # Traefik only keeps that header from the ranges it trusts, so a
     # caller reaching the host directly cannot hand it the address.
     ic_public_forwarded: false
-    # The panel's origin, allowed to frame the dashboards.
-    ic_grafana_frame_ancestors: ""
-    ic_grafana_admin_password: ""
-    ic_grafana_admin_basic: ""
     ic_vm_image: "victoriametrics/victoria-metrics:v1.102.0"
+    # Removed after the boundary answers: the volume of the Grafana the
+    # central ran until 12-nov-2026, its provisioning and its image. The
+    # executor sets it false while ``incubacloud.metrics_keep_grafana_data``
+    # exists (docs/observability-operations.md, «Undo»).
+    ic_purge_grafana: true
     ic_grafana_image: "grafana/grafana:11.2.0"
     # The account boundary. vmauth is VictoriaMetrics' own auth proxy;
     # pinned to the same release train as the backend.
     ic_vmauth_image: "victoriametrics/vmauth:v1.102.0"
     ic_loki_image: "grafana/loki:2.9.8"
-    # The access log: 30 days, the same as each host keeps on disk. Not
-    # longer, because these lines carry end-user IP addresses.
+    # Anything that is not a security log: nothing new arrives since the
+    # agents stopped sending the proxy's access log (12-nov-2026). Kept at
+    # 30 days so the access lines already stored, which carry the
+    # instances' visitors' addresses, expire as before; 90 would keep them
+    # longer.
     ic_log_retention_days: 30
     # Hosts' security logs (SSH, sudo, auditd, fail2ban), where sent:
     # kept longer, because an incident is often found weeks after it
@@ -110,28 +96,22 @@
     # 127.0.0.1 bind is unreachable to every one of them — verified live,
     # where vmagent got "connection refused" against a healthy backend.
     #
-    # Two things are published, both on the bridge: vmauth (the account
-    # boundary for data) and Grafana (so the panel's Traefik can route
-    # the browser to it — vmauth cannot proxy Grafana's websockets).
-    # VictoriaMetrics and Loki have no host port at all: reachable only
-    # over the compose network, so nothing can bypass vmauth by talking
-    # to them directly. Grafana having a port is safe where theirs is
-    # not — Grafana authenticates every request itself (OIDC); VM and
-    # Loki authenticate nothing.
+    # One thing is published, on the bridge: vmauth, the account
+    # boundary. VictoriaMetrics and Loki have no host port at all:
+    # reachable only over the compose network, so nothing can bypass
+    # vmauth by talking to them directly; they authenticate nothing.
     ic_bridge_ip: "{{ ansible_docker0.ipv4.address | default('172.17.0.1') }}"
     ic_gateway_bind: "{{ ic_bridge_ip }}:8428"
-    ic_grafana_bind: "{{ ic_bridge_ip }}:3000"
 
   tasks:
     # ── Where confidentiality is enforced ─────────────────────────────
     # On the DIRECTORY, not on the files inside it.
     #
-    # The vmauth config and the datasource below are read by processes
-    # inside the containers, and those processes are not root: vmauth runs
-    # unprivileged and Grafana runs as uid 472. Writing them owner-only
-    # looked like the careful choice and was the opposite — the first live
-    # deployment (nginx, then) came up answering "permission denied" on
-    # its own credential file, and a Grafana in a restart loop.
+    # The vmauth config is read by a process inside its container, and
+    # that process is not root: vmauth runs unprivileged. Writing it
+    # owner-only looked like the careful choice and was the opposite — the
+    # first live deployment (nginx, then) came up answering "permission
+    # denied" on its own credential file.
     #
     # So there is ONE gate, at the top: the root of the tree is not
     # traversable by anyone but its owner, and everything under it is
@@ -146,22 +126,15 @@
         state: directory
         mode: "0700"
 
-    # Traversable, because two of them are mounted into Grafana as
-    # DIRECTORIES rather than file by file — at 0700 uid 472 could not
-    # enter them, which is the same failure wearing a different hat.
+    # Traversable: they are mount points, read by the containers'
+    # processes, and their mode would otherwise be whatever the umask
+    # happened to be.
     - name: Create the central subdirectories
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         mode: "0755"
       loop:
-        # Listed even though creating its children would create it: it is
-        # a mount point, and its mode would otherwise be whatever the
-        # umask happened to be.
-        - "{{ ic_central_dir }}/provisioning"
-        - "{{ ic_central_dir }}/provisioning/datasources"
-        - "{{ ic_central_dir }}/provisioning/dashboards"
-        - "{{ ic_central_dir }}/dashboards"
         - "{{ ic_central_dir }}/vmauth"
         - "{{ ic_central_dir }}/victoriametrics"
 
@@ -185,11 +158,10 @@
       ansible.builtin.include_tasks: tasks/vmauth_acl_write.yml
 
     - name: Write the log store configuration
-      # Retention is short and deliberate: these lines carry the IP
-      # addresses of the instances' visitors, so we keep what an incident
-      # needs and no more. ``auth_enabled`` is what makes the account
-      # header meaningful — without it Loki ignores it and every account
-      # shares one namespace.
+      # The hosts' security logs, 90 days; anything else 30 (see the
+      # variables). ``auth_enabled`` is what makes the account header
+      # meaningful — without it Loki ignores it and every account shares
+      # one namespace.
       ansible.builtin.copy:
         dest: "{{ ic_central_dir }}/loki.yaml"
         mode: "0644"
@@ -229,65 +201,6 @@
             retention_enabled: true
             delete_request_store: filesystem
       register: ic_loki_cfg
-
-    - name: Leave the default organisation without a datasource
-      # This used to provision one here, pointing at vmauth's operator
-      # path — the one view that spans every account. File provisioning
-      # carries no orgId, so it landed in Grafana's DEFAULT organisation,
-      # and the default organisation is where Grafana drops any login
-      # whose ``groups`` claim matches no entry in ``orgMapping``.
-      #
-      # That made the fallback the most privileged view in the system: a
-      # panel whose account exists but is not yet in the map — the window
-      # between minting it and the next sync — would land there and read
-      # the whole fleet, unfiltered, with nothing on screen saying so.
-      #
-      # The operator does not need it: OIDC puts them in their own
-      # account's organisation, whose datasource is filtered like everyone
-      # else's. If a cross-account view is ever wanted, it belongs IN that
-      # organisation as a datasource of its own, named for what it is —
-      # never as the landing zone for an unrecognised login.
-      #
-      # Written rather than deleted, and left in place permanently.
-      # Grafana flags a datasource it provisioned from a file as
-      # read-only and refuses to delete it through the API — measured:
-      # ``{"message":"Cannot delete read-only data source"}``, HTTP 403 —
-      # so ``deleteDatasources`` is not one way to remove it, it is the
-      # only one. Removing the file instead leaves the row orphaned and
-      # untouched, which reads as fixed and is not.
-      ansible.builtin.copy:
-        dest: "{{ ic_central_dir }}/provisioning/datasources/victoriametrics.yml"
-        # Readable by Grafana, which runs as uid 472 — see the directory
-        # task. Grafana refuses to start if it cannot read this, so
-        # getting it wrong is loud rather than silent.
-        mode: "0644"
-        content: |
-          # Auto-generated by IncubaCloud. Do not edit by hand.
-          apiVersion: 1
-          deleteDatasources:
-            - name: VictoriaMetrics
-              orgId: 1
-
-    - name: Provision the dashboard loader
-      ansible.builtin.copy:
-        dest: "{{ ic_central_dir }}/provisioning/dashboards/incubacloud.yml"
-        mode: "0644"
-        content: |
-          apiVersion: 1
-          providers:
-            - name: IncubaCloud
-              folder: IncubaCloud
-              type: file
-              options:
-                path: /var/lib/grafana/dashboards
-
-    - name: Install the dashboards
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: "{{ ic_central_dir }}/dashboards/{{ item | basename }}"
-        mode: "0644"
-      with_fileglob:
-        - "../files/dashboards/*.json"
 
     - name: Write the central compose file
       ansible.builtin.copy:
@@ -331,7 +244,7 @@
               image: {{ ic_vmauth_image }}
               restart: unless-stopped
               # Listen on 8428 (not vmauth's 8427 default) so every
-              # service name in this stack — datasource, health check,
+              # address of this stack — the panel's, the health check,
               # the agents' URLs — speaks one port.
               command:
                 - '-auth.config=/etc/vmauth/auth.yml'
@@ -347,8 +260,7 @@
               # (docs/observability-operations.md, «Publishing the central»): the
               # account prefixes for everyone (vmauth asks each for its
               # credential), the operator's read and deletion routes for
-              # the addresses in ``ic_operator_sources`` only, Grafana's
-              # admin route for nobody off this host.
+              # the addresses in ``ic_operator_sources`` only.
               networks:
                 - default
                 - inverseproxy_shared
@@ -380,13 +292,7 @@
                 traefik.http.routers.ic-central-read.service: ic-central-gateway
                 traefik.http.routers.ic-central-read.priority: "30"
                 traefik.http.routers.ic-central-read.middlewares: ic-central-delete-sources
-                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/gadmin/`)"
-                traefik.http.routers.ic-central-operator.entrypoints: https
-                traefik.http.routers.ic-central-operator.service: ic-central-gateway
-                traefik.http.routers.ic-central-operator.priority: "30"
-                traefik.http.routers.ic-central-operator.middlewares: ic-central-host-only
-                traefik.http.middlewares.ic-central-host-only.ipwhitelist.sourcerange: "127.0.0.1/32"
-          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-read', 'ic-central-operator'] %}
+          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-read'] %}
           {% if ic_public_tls == 'default' %}
                 traefik.http.routers.{{ router }}.tls: "true"
           {% else %}
@@ -414,106 +320,6 @@
                 - victoriametrics
                 - loki
 
-            grafana:
-              image: {{ ic_grafana_image }}
-              restart: unless-stopped
-              environment:
-                # Anonymous access is OFF. It used to be on because the
-                # panel proxy was the only way in; on a shared central
-                # that would hand every account's data to anyone who
-                # reached the URL.
-                GF_AUTH_ANONYMOUS_ENABLED: "false"
-                # Kept ON because Grafana cannot create an organisation
-                # from file provisioning, so the panel drives the admin
-                # API — through vmauth's operator-only path, which swaps
-                # in this password. Grafana's bridge port is not routable
-                # from off the host, and the password never travels to any
-                # host, so the API is not a second public front door.
-                GF_AUTH_BASIC_ENABLED: "true"
-                GF_SECURITY_ADMIN_PASSWORD: "{{ ic_grafana_admin_password }}"
-                GF_SECURITY_ALLOW_EMBEDDING: "true"
-                # Grafana is reached by the browser THROUGH Traefik, not
-                # through vmauth (which cannot proxy its websockets). This
-                # bridge port is how the panel's Traefik routes to it; VM
-                # and Loki have none.
-                GF_USERS_DEFAULT_THEME: "dark"
-                GF_USERS_ALLOW_SIGN_UP: "false"
-          {% if ic_grafana_root_url %}
-                GF_SERVER_ROOT_URL: "{{ ic_grafana_root_url }}"
-                # Grafana is served under /grafana/, so it must build its
-                # own links with that prefix or every asset 404s and the
-                # embed shows a blank frame.
-                GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-          {% endif %}
-          {% if ic_grafana_oidc %}
-                # Identity comes from the panel's own OIDC provider, and
-                # the account claim maps each user into its organisation.
-                # Grafana refuses datasources outside a user's org, which
-                # is the second ring behind vmauth's own filter.
-                #
-                # Deliberately NOT configured here. The whole
-                # generic_oauth block is written afterwards through
-                # Grafana's SSO settings API (tasks/grafana_orgs.yml),
-                # because the organisation map names every account and so
-                # changed with every account — which changed this file,
-                # and a changed compose definition means ``up -d``
-                # recreates the container. Adding one account dropped
-                # every open session in the fleet.
-                #
-                # Measured (lab, 11.2.0): the API writes to Grafana's own
-                # database, OVERRIDES these env vars (the provider's
-                # ``source`` flips from ``system`` to ``database``) and
-                # takes effect with no restart. Since the database wins,
-                # leaving a copy here would be a second source that
-                # silently loses — worse than no copy at all.
-          {% else %}
-                # No identity provider (self-hosted). Grafana trusts a
-                # header, and the ONLY thing allowed to set it is the
-                # panel's own reverse proxy, which authenticates the
-                # session first. Never expose Grafana directly when this
-                # branch is active.
-                GF_AUTH_PROXY_ENABLED: "true"
-                GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
-                GF_AUTH_PROXY_HEADER_PROPERTY: "username"
-                GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
-                GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "false"
-          {% endif %}
-              ports:
-                - "{{ ic_grafana_bind }}:3000"
-          {% if ic_public_host %}
-              # The dashboards under /grafana/ of the public name. The
-              # header Grafana trusts when there is no identity provider
-              # is removed from every request that comes this way: only
-              # the panel's own proxy may ever set it.
-              networks:
-                - default
-                - inverseproxy_shared
-              labels:
-                traefik.enable: "true"
-                traefik.docker.network: inverseproxy_shared
-                traefik.http.services.ic-central-grafana.loadbalancer.server.port: "3000"
-                traefik.http.routers.ic-central-grafana.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/grafana/`)"
-                traefik.http.routers.ic-central-grafana.entrypoints: https
-                traefik.http.routers.ic-central-grafana.service: ic-central-grafana
-                traefik.http.routers.ic-central-grafana.priority: "20"
-                traefik.http.routers.ic-central-grafana.middlewares: ic-central-grafana-headers
-                traefik.http.middlewares.ic-central-grafana-headers.headers.customrequestheaders.X-WEBAUTH-USER: ""
-                traefik.http.middlewares.ic-central-grafana-headers.headers.contentsecuritypolicy: "frame-ancestors 'self' {{ ic_grafana_frame_ancestors }}"
-          {% for router in ['ic-central-grafana'] %}
-          {% if ic_public_tls == 'default' %}
-                traefik.http.routers.{{ router }}.tls: "true"
-          {% else %}
-                traefik.http.routers.{{ router }}.tls.certresolver: letsencrypt
-          {% endif %}
-          {% endfor %}
-          {% endif %}
-              volumes:
-                - grafana-data:/var/lib/grafana
-                - {{ ic_central_dir }}/provisioning:/etc/grafana/provisioning:ro
-                - {{ ic_central_dir }}/dashboards:/var/lib/grafana/dashboards:ro
-              depends_on:
-                - vmauth
-
           {% if ic_public_host or ic_direct_host %}
           networks:
             inverseproxy_shared:
@@ -523,7 +329,6 @@
           volumes:
             vmdata:
             lokidata:
-            grafana-data:
 
     - name: Bring the central stack up
       ansible.builtin.command:
@@ -537,69 +342,51 @@
       # if anonymous writes are accepted.
       ansible.builtin.include_tasks: tasks/vmauth_acl_apply.yml
 
-    - name: Wait for Grafana to answer
-      # The org provisioning below drives Grafana's admin API; it must be
-      # up first. Its own port on the bridge, not through vmauth (which
-      # does not carry the browser path).
-      ansible.builtin.uri:
-        url: "http://{{ ic_grafana_bind }}/api/health"
-        status_code: [200]
-      register: ic_grafana_health
-      retries: 15
-      delay: 3
-      until: ic_grafana_health is succeeded
+    # ── What Grafana left ─────────────────────────────────────────────
+    # Only now, with the boundary answering and refusing an anonymous
+    # write: a deployment that fails before here leaves Grafana's data in
+    # place for the next one. ``--remove-orphans`` above removed its
+    # container, not its volume, which the compose file no longer names.
+    # Nothing in it was the only copy: its dashboards and organisations
+    # were written from the code. A failure here is said, not raised: the
+    # central works, and failing the job would raise
+    # ``metrics_central_failed`` for nothing (review of 12-nov-2026).
+    - name: Remove what Grafana left
+      when: ic_purge_grafana | bool
+      block:
+        - name: Remove Grafana's volume
+          ansible.builtin.command:
+            cmd: docker volume rm incubacloud-central_grafana-data
+          register: ic_grafana_volume_rm
+          changed_when: ic_grafana_volume_rm.rc == 0
+          failed_when: >-
+            ic_grafana_volume_rm.rc != 0
+            and 'no such volume' not in (ic_grafana_volume_rm.stderr | lower)
 
-    - name: Force Grafana's admin password to match this deployment
-      # GF_SECURITY_ADMIN_PASSWORD is applied only when Grafana first
-      # initialises its database. The grafana-data volume persists across
-      # redeploys, so a rotated password never reaches a Grafana that was
-      # already initialised — and the admin API then rejects vmauth's
-      # /gadmin/ credential swap with 401, which is exactly how the first
-      # vmauth deploy failed (a volume left by an earlier attempt). Reset
-      # it every run so the running Grafana, the compose file and the swap
-      # always agree, whatever state the volume is in.
-      #
-      # Password on stdin, never as an argument: it is url-safe base64 and
-      # can start with '-', which grafana-cli would read as a flag.
-      ansible.builtin.command:
-        cmd: >-
-          docker exec -i incubacloud-central-grafana-1
-          grafana-cli admin reset-admin-password --password-from-stdin
-        stdin: "{{ ic_grafana_admin_password }}"
-        stdin_add_newline: false
-      no_log: true
-      changed_when: true
+        - name: Remove Grafana's provisioning and dashboards
+          ansible.builtin.file:
+            path: "{{ ic_central_dir }}/{{ item }}"
+            state: absent
+          loop:
+            - provisioning
+            - dashboards
 
-    # ── Per-account Grafana organisations ─────────────────────────────
-    # One organisation per account, each with a datasource that can only
-    # reach that account's series. This is the ring behind vmauth's own
-    # filter: Grafana refuses a datasource outside a user's org, so even
-    # a bug in the query path cannot cross accounts.
-    #
-    # Done through the API because Grafana's file provisioning cannot
-    # create organisations — and through vmauth's operator-only path, so
-    # there is exactly one door rather than a second one to keep track of.
-    # Grafana reads provisioning files at startup, and ``up -d`` above
-    # only recreates the container when its definition changed — which,
-    # for a deployment that changes nothing but a provisioning file, it
-    # did not. Without this the deletion above would apply whenever
-    # Grafana next happened to restart, which is not a schedule.
-    - name: Apply the datasource provisioning
-      ansible.builtin.uri:
-        url_username: operator
-        url_password: "{{ ic_operator_plain }}"
-        force_basic_auth: true
-        url: >-
-          http://{{ ic_gateway_bind }}/gadmin/api/admin/provisioning/datasources/reload
-        method: POST
-        status_code: [200]
-      no_log: true
+        - name: Remove Grafana's image
+          ansible.builtin.command:
+            cmd: docker image rm {{ ic_grafana_image }}
+          register: ic_grafana_image_rm
+          changed_when: ic_grafana_image_rm.rc == 0
+          failed_when: false
 
-    - name: Provision the per-account Grafana organisations
-      # Shared with the account sync, which passes only the accounts the
-      # deployed access-control list is missing. Here it is every one of
-      # them: a full deployment is also how an operator repairs orgs.
-      ansible.builtin.include_tasks: tasks/grafana_orgs.yml
+        - name: Note what Grafana left removed
+          ansible.builtin.set_fact:
+            ic_grafana_purge: removed
+      rescue:
+        - name: Note what Grafana left not removed, and why
+          ansible.builtin.set_fact:
+            ic_grafana_purge: >-
+              failed: {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
 
     - name: Export the central facts
       ansible.builtin.set_stats:
@@ -607,3 +394,5 @@
         data:
           ic_central_up: "{{ (ic_vm_health.status | default(0)) == 200 }}"
           ic_central_gateway: "http://{{ ic_gateway_bind }}"
+          # removed, failed and why, or kept (incubacloud.metrics_keep_grafana_data).
+          ic_grafana_purge: "{{ ic_grafana_purge | default('kept') }}"

@@ -34,7 +34,8 @@ _logger = logging.getLogger(__name__)
 DIRECT_MARK = "# incubacloud:direct"
 
 #: Ports the platform publishes on a host, whatever the host says: mail,
-#: web, Traefik's dashboard and metrics, the central's gateway and Grafana.
+#: web, Traefik's dashboard and metrics, the central's gateway, and 3000,
+#: where a central answered for Grafana until 1.0.229.
 _PLATFORM_PORTS = frozenset({25, 80, 143, 443, 465, 587, 993, 3000, 8080, 8082, 8428})
 
 #: Traffic born on the host itself reaches its own direct port with a

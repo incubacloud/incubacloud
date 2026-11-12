@@ -387,25 +387,23 @@ class TestMetricsCentralSecrets(_SecretFieldCase):
 
     Readable by every Manager through the ORM, although only the panel's
     code uses them: the account's write token, the operator's unfiltered
-    read credential, Grafana's admin password and VictoriaMetrics'
-    deletion key, which only the gateway may present.
+    read credential and VictoriaMetrics' deletion key, which only the
+    gateway may present.
     """
 
     FIELDS = (
         "metrics_remote_write_token",
-        "grafana_admin_password",
         "metrics_operator_token",
         "metrics_delete_auth_key",
     )
 
     def setUp(self):
-        """Store a value in each of the four secrets."""
+        """Store a value in each of the three secrets."""
         super().setUp()
         self.settings = self.env["cloud.settings"]._get_system()
         self.settings.write({
             "metrics_account": "acct_secretgroups",
             "metrics_remote_write_token": "write-token-5501",
-            "grafana_admin_password": "grafana-pass-5502",
             "metrics_operator_token": "operator-token-5503",
             "metrics_delete_auth_key": "delete-key-5504",
         })
@@ -432,7 +430,6 @@ class TestMetricsCentralSecrets(_SecretFieldCase):
             Settings._metrics_auth(operator=True),
             ("operator", "operator-token-5503"),
         )
-        self.assertEqual(Settings._ensure_grafana_admin_password(), "grafana-pass-5502")
         self.assertEqual(Settings._ensure_metrics_delete_key(), "delete-key-5504")
 
     def test_the_settings_page_says_the_token_is_set_and_stores_a_new_one(self):
@@ -441,8 +438,7 @@ class TestMetricsCentralSecrets(_SecretFieldCase):
         page = self._call(self._controller(), "cloud_get_general_settings", manager)
         self.assertTrue(page["has_metrics_remote_write_token"])
         for value in (
-            "write-token-5501", "grafana-pass-5502",
-            "operator-token-5503", "delete-key-5504",
+            "write-token-5501", "operator-token-5503", "delete-key-5504",
         ):
             self.assertNotIn(value, repr(page))
         answer = self._call(

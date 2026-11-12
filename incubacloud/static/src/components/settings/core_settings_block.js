@@ -33,7 +33,7 @@ export const CORE_PARTS = Object.freeze({
     monitoring: [
         "metrics_enabled", "metrics_central_url", "metrics_remote_write_url",
         "metrics_remote_write_token", "metrics_retention_days",
-        "metrics_collect_pg", "grafana_base_url",
+        "metrics_collect_pg",
         "metrics_central_public_host", "metrics_central_direct_host",
         "acme_dns_cloudflare_token", "metrics_central_operator_sources",
     ],
@@ -68,7 +68,6 @@ const DEFAULTS = {
     metrics_remote_write_token: "",
     metrics_retention_days: 90,
     metrics_collect_pg: true,
-    grafana_base_url: "",
     metrics_central_public_host: "",
     metrics_central_direct_host: "",
     acme_dns_cloudflare_token: "",
