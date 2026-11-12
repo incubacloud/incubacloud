@@ -86,6 +86,10 @@ _DISPATCHED_KEY = "cloud_job_dispatched"
 #: Where a transaction keeps, in ``cr.postcommit.data``, that the jobs the
 #: gate holds are to be served once it commits (``_wake_channel_waiters``).
 _WAKE_KEY = "cloud_job_wake"
+#: Where a transaction keeps, in ``cr.postcommit.data``, what the gate
+#: counted in the channel of each job it let through, ``{job id: (channel,
+#: load)}``, for the write that dispatches it (``_slot_vals``).
+_ADMITTED_KEY = "cloud_job_admitted"
 
 #: How long the gate holds a visible job before it stops counting the
 #: background jobs that are due but not started, in seconds (11-nov-2026).
@@ -321,6 +325,42 @@ class CloudJob(models.Model):
         help="Since when the dispatcher holds this queued job back: its"
              " queue_job channel has no free slot, counting the jobs parked"
              " between two attempts. Cleared once it is dispatched.",
+    )
+    # How long jobs wait for a slot, and how many run at once: the numbers
+    # the second step of the Odoo.sh plan is decided with (a job followed
+    # without holding a thread), read with the query of docs/architecture.md
+    # («The job queue»). Empty on jobs from before them and on hidden types;
+    # 0 on a job that did not wait (12-nov-2026).
+    slot_wait_s = fields.Integer(
+        string="Waited for a Slot (s)",
+        copy=False,
+        readonly=True,
+        help="Seconds the channel gate held this job back before it was"
+             " handed to queue_job, over all its dispatches. Written by the"
+             " dispatcher; empty for hidden types.",
+    )
+    slot_load = fields.Integer(
+        string="Jobs in the Channel",
+        copy=False,
+        readonly=True,
+        help="How many of the panel's jobs held a slot of its channel when"
+             " the gate let it through, itself included. Empty when the"
+             " gate was off and for hidden types.",
+    )
+    slot_channel = fields.Char(
+        string="Slot Channel",
+        copy=False,
+        readonly=True,
+        help="The queue_job channel that load was counted in: the first"
+             " with a capacity on its way to root.",
+    )
+    return_wait_s = fields.Integer(
+        string="Late Returns (s)",
+        copy=False,
+        readonly=True,
+        help="Seconds it took, over all its parks, to come back past the"
+             " time it was due. Written as each attempt starts; empty for"
+             " hidden types.",
     )
     worker_lost_at = fields.Datetime(
         string="Worker Lost At",
@@ -2531,15 +2571,19 @@ class CloudJob(models.Model):
         with self._fresh_env() as env:
             load = env["cloud.job"]._channel_load(dispatched)
         manager = channel_manager(configured_channels())
-        full = full_channel(manager, channel, [name for name, _idle in load])
+        names = [name for name, _idle in load]
+        full = full_channel(manager, channel, names)
         since = first.channel_wait_since
         if full is not None and since and (
             fields.Datetime.now() - since
         ).total_seconds() >= CHANNEL_PROBE_PATIENCE_S:
-            full = full_channel(
-                manager, channel, [name for name, idle in load if not idle],
-            )
+            names = [name for name, idle in load if not idle]
+            full = full_channel(manager, channel, names)
         if full is None:
+            counted, held, _capacity = channel_wait(manager, channel, names)
+            self.env.cr.postcommit.data.setdefault(_ADMITTED_KEY, {})[
+                first.id
+            ] = (counted, held + 1)
             return True
         if not since:
             entry.with_context(ic_skip_state_hook=True).write(
@@ -2822,13 +2866,15 @@ class CloudJob(models.Model):
             # dispatcher's language is nobody's in particular.
             description=job.name,
         ).execute()
+        hidden = job_type.code in self._get_hidden_job_types()
         job.with_context(ic_skip_state_hook=True).write({
             "queue_job_uuid": delayed.uuid,
             "state": "pending",
             "channel_wait_since": False,
+            **({} if hidden else self._slot_vals(job)),
         })
         self._note_dispatched(
-            delayed.uuid, channel, job_type.code in self._get_hidden_job_types(),
+            delayed.uuid, channel, hidden,
         )
         self._broadcast_job_update(job.id)
 
@@ -2849,6 +2895,32 @@ class CloudJob(models.Model):
             # After ``with_user``, which drops it.
             runner = runner.sudo()
         return runner
+
+    @api.model
+    def _slot_vals(self, job):
+        """Return what *job*'s dispatch measures of its wait for a slot.
+
+        ``slot_wait_s`` adds the time the gate held it (``channel_wait_since``
+        to now), 0 when it did not; ``slot_load`` and ``slot_channel`` are
+        what the gate counted when it let it through (``_channel_admits``),
+        left as they were when the gate did not count (switched off). For
+        the write that dispatches it, which clears ``channel_wait_since``.
+
+        :param job: the ``cloud.job`` being dispatched; for a chain, its
+            first step
+        :return: values for that write
+        :rtype: dict
+        """
+        waited = 0
+        if job.channel_wait_since:
+            waited = max(0, int(
+                (fields.Datetime.now() - job.channel_wait_since).total_seconds(),
+            ))
+        vals = {"slot_wait_s": (job.slot_wait_s or 0) + waited}
+        admitted = self.env.cr.postcommit.data.get(_ADMITTED_KEY, {}).pop(job.id, None)
+        if admitted:
+            vals |= {"slot_channel": admitted[0], "slot_load": admitted[1]}
+        return vals
 
     @api.model
     def _dispatch_chain(self, records):
@@ -2885,6 +2957,10 @@ class CloudJob(models.Model):
                 "state": "pending" if position == 0 else "wait_dependencies",
                 "channel_wait_since": False,
             }
+            if position == 0:
+                # The step the gate let through; the others take the slot
+                # it leaves, and are not measured.
+                vals |= self._slot_vals(record)
             if node._generated_job:
                 vals["queue_job_uuid"] = node._generated_job.uuid
                 if position == 0:

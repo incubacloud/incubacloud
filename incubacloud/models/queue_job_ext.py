@@ -482,6 +482,8 @@ class QueueJob(models.Model):
             # above read it with SQL, from other transactions and from
             # this one.
             cjob.flush_recordset(["state"])
+            if new_state == "started":
+                qjob._note_return_wait(cjob)
             _logger.info(
                 "[queue_job_ext] uuid=%s state=%s -> cloud.job id=%s updated",
                 qjob.uuid, new_state, cjob.id,
@@ -676,6 +678,59 @@ class QueueJob(models.Model):
             for name in ("succeeded_before_cancel", "worker_lost_at")
             if cjob[name]
         }
+
+    def _late_return_s(self, cjob):
+        """Return how late *cjob* comes back from a park, in seconds.
+
+        Past the ``parked_until`` of its checkpoint, written by this queue
+        job's attempt that parked; 0 for a start that is no return from a
+        park, or one before it was due. Read in the transaction that stores
+        ``started``, which began after the park committed: the runner
+        starts the job once its ``eta`` passed, which queue_job stored
+        after the park.
+
+        :param cjob: the ``cloud.job`` of this queue job
+        :rtype: int
+        """
+        self.ensure_one()
+        self.env.cr.execute(
+            "SELECT parked_until FROM cloud_job_checkpoint"
+            " WHERE job_id = %s AND queue_job_uuid = %s AND parked"
+            "   AND parked_until IS NOT NULL",
+            (cjob.id, self.uuid),
+        )
+        row = self.env.cr.fetchone()
+        if not row:
+            return 0
+        return max(0, int((fields.Datetime.now() - row[0]).total_seconds()))
+
+    def _note_return_wait(self, cjob):
+        """Add to *cjob*'s ``return_wait_s`` how late this attempt starts.
+
+        In the transaction that stores ``started``, never from the job's
+        run, which holds its row; in a savepoint, so a measure that fails
+        never keeps the job from starting. Nothing for a hidden type.
+
+        :param cjob: the ``cloud.job`` of this queue job
+        """
+        self.ensure_one()
+        if cjob.sudo().job_type_id.code in cjob._get_hidden_job_types():
+            return
+        try:
+            # SQL only inside: nothing of the ORM to flush, or to lose.
+            with self.env.cr.savepoint(flush=False):
+                late = self._late_return_s(cjob)
+                self.env.cr.execute(
+                    "UPDATE cloud_job SET return_wait_s ="
+                    " COALESCE(return_wait_s, 0) + %s WHERE id = %s",
+                    (late, cjob.id),
+                )
+        except Exception:  # noqa: BLE001 — a measure, never the start
+            _logger.warning(
+                "[queue_job_ext] cloud.job id=%s: its late return was not"
+                " measured", cjob.id, exc_info=True,
+            )
+        cjob.invalidate_recordset(["return_wait_s"])
 
     def _let_go_between_ticks(self, vals):
         """Give ``on_never_run`` to the jobs of ``self`` stopped between ticks.
