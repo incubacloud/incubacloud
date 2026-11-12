@@ -2,13 +2,17 @@
 # Install the per-host observability agents. Driven by
 # ObservabilityAgentsExecutor.
 #
-# Three containers, deployed as one compose stack — the same shape the
-# host already runs for Traefik and the global whitelist, so nothing new
-# has to be learned or maintained per distro:
+# Three containers, four where the server sends its security logs,
+# deployed as one compose stack — the same shape the host already runs for
+# Traefik and the global whitelist, so nothing new has to be learned or
+# maintained per distro:
 #
 #   node_exporter  system metrics (CPU/RAM/disk/net) + textfile collector
 #   cAdvisor       per-container metrics
-#   vmagent        scrapes both locals and PUSHES outbound (remote-write)
+#   vmagent        scrapes the others and PUSHES outbound (remote-write)
+#   fluent-bit     the security logs (SSH, sudo, fail2ban, auditd), pushed
+#                  to the central's log store, and their counters, which
+#                  vmagent scrapes; only with the server's switch on
 #
 # Push, not scrape, is the whole point (P9): no inbound port is opened on
 # the host, so BYOH boxes behind NAT work exactly like ours.
@@ -24,8 +28,8 @@
   vars:
     ic_obs_dir: "{{ ansible_env.HOME }}/observability"
     ic_remote_write_url: ""
-    # Where access logs are pushed. Empty disables collection entirely
-    # rather than starting a collector that pushes into the void.
+    # Where the security logs are pushed. Empty sends none rather than
+    # starting a collector that pushes into the void.
     ic_logs_write_url: ""
     # The direct path, when the panel offers
     # it: the URLs and what to try first. Empty: the URLs above, as before.
@@ -43,6 +47,32 @@
     # [{compose_project, instance_id, instance, project, tenant,
     #   traefik_prefix, traefik_extra}, ...]
     ic_instances: []
+    # This server's switch, Send security logs. On, and with somewhere to
+    # push them, Fluent Bit runs; off, its container, its cursors and its
+    # buffer are removed, so turning it back on sends nothing of the time
+    # it was off.
+    ic_security_logs: false
+    # The SHA256 fingerprints of the panel's key for this server, as
+    # ``ssh-keygen -lf`` prints them: a sign-in with one counts as the
+    # panel's. Empty (a password, or a key with a passphrase) counts every
+    # sign-in as another's.
+    ic_panel_key_fingerprints: []
+    # The user the panel signs in as: its sudo counts as the panel user's.
+    ic_panel_ssh_user: ""
+    # Fluent Bit 5.1.5, chosen over Vector and promtail for its memory on
+    # small servers: 61 MB idle, 81-87 MB under 600 failed SSH attempts a
+    # minute (F0 of the observability plan, 9-nov-2026; the owner's choice
+    # the same day). It reads the journal itself and its counters never
+    # expire.
+    ic_fluent_bit_image: "fluent/fluent-bit:5.1.5"
+    # What Fluent Bit keeps on disk while the central does not answer:
+    # about seven hours of an attack at 600 lines a minute. Full, it drops
+    # the oldest (review of 12-nov-2026).
+    ic_fluent_bit_buffer: 64M
+    # Its memory ceiling: twice the most measured under attack (87 MB).
+    ic_fluent_bit_mem_limit: 128m
+    # Replaced by Fluent Bit on 12-nov-2026 (end of life on 2-mar-2026):
+    # named so a server that ran it loses its image.
     ic_promtail_image: "grafana/promtail:2.9.8"
     ic_node_exporter_image: "quay.io/prometheus/node-exporter:v1.8.2"
     # v0.54.0+ is REQUIRED, not merely preferred: Docker 28/29 default to
@@ -131,6 +161,18 @@
         ic_logs_url:
           "{{ ic_direct_logs_write_url if (ic_direct_ok | bool) else ic_logs_write_url }}"
 
+    - name: Decide whether this server sends its security logs
+      ansible.builtin.set_fact:
+        ic_fluent_bit: "{{ (ic_security_logs | bool) and (ic_logs_url | length > 0) }}"
+
+    - name: Look for a persistent journal
+      # Without /var/log/journal the journal lives in memory and Fluent Bit
+      # finds no SSH or sudo lines; auditd and fail2ban still arrive. The
+      # job says so in its log rather than failing.
+      ansible.builtin.stat:
+        path: /var/log/journal
+      register: ic_journal_dir
+
     - name: Create the observability directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -139,9 +181,6 @@
       loop:
         - "{{ ic_obs_dir }}"
         - "{{ ic_obs_dir }}/textfile"
-        # Where the log collector remembers how far it read each file, so
-        # a restart does not send the 30-day access log again.
-        - "{{ ic_obs_dir }}/promtail-positions"
 
     - name: Write the remote-write credentials
       # 0600: this secret authorises writes into the central. It is
@@ -260,6 +299,28 @@
           {% endfor %}
           {% endif %}
 
+          {% if ic_fluent_bit %}
+            # The security counters, only where Fluent Bit runs: a job
+            # pointing at nothing would sit at up=0 and fail its name
+            # lookup every interval. ``ic_*`` and the three figures that
+            # say whether lines reach the central, about 15 series a host.
+            - job_name: security
+              static_configs:
+                - targets: ["fluent-bit:2021"]
+              metric_relabel_configs:
+                - source_labels: [__name__]
+                  regex: "ic_.*"
+                  action: keep
+            - job_name: security-agent
+              metrics_path: /api/v2/metrics/prometheus
+              static_configs:
+                - targets: ["fluent-bit:2020"]
+              metric_relabel_configs:
+                - source_labels: [__name__]
+                  regex: "fluentbit_output_(proc_records|dropped_records|retries_failed)_total"
+                  action: keep
+          {% endif %}
+
             - job_name: cadvisor
               static_configs:
                 - targets: ["cadvisor:8080"]
@@ -294,105 +355,222 @@
           {% endfor %}
       register: ic_scrape_cfg
 
-    - name: Write the access-log collector configuration
-      # The proxy's access log, from the file it writes on the host
-      # (1.0.183) -- and from its container output while the host has not
-      # been set up since and still logs there; the two never overlap.
-      # Only JSON access lines are kept. The service name becomes a label,
-      # which is what makes "show me this instance's requests" a cheap
-      # query -- its cardinality is bounded by the instances on this host,
-      # not by anything unbounded like a path or an IP.
-      #
-      # When the panel says so, the host's security logs as well: SSH and
-      # sudo from the journal, auditd and fail2ban from their files. The
-      # central keeps them 90 days (``log_type="security"``), and this
-      # host's credential can add lines there but never delete them.
-      when: ic_logs_url | length > 0
-      ansible.builtin.copy:
-        dest: "{{ ic_obs_dir }}/promtail.yaml"
-        mode: "0644"
-        content: |
-          server:
-            http_listen_port: 9080
-            grpc_listen_port: 0
-          positions:
-            filename: /var/lib/promtail/positions.yaml
-          clients:
-            - url: {{ ic_logs_url }}
-              basic_auth:
-                username: {{ ic_remote_write_user }}
-                password_file: /etc/remote_write_token
-          scrape_configs:
-            - job_name: traefik-access-file
-              static_configs:
-                - targets: [localhost]
-                  labels:
-                    job: traefik-access
-                    host: "{{ ic_host_name }}"
-                    __path__: /var/log/traefik/access.log
-              pipeline_stages:
-                - drop:
-                    expression: '^[^{]'
-                - json:
-                    expressions:
-                      service: ServiceName
-                      status: DownstreamStatus
-                - labels:
-                    service:
-          {% if ic_ship_security_logs | default(false) | bool %}
-            - job_name: security-journal
-              journal:
-                path: /var/log/journal
-                max_age: 12h
-                labels:
-                  log_type: security
-                  host: "{{ ic_host_name }}"
-              relabel_configs:
-                - source_labels: ['__journal__systemd_unit', '__journal_syslog_identifier']
-                  separator: ';'
-                  regex: '(ssh|sshd)(@[^;]*)?\.service;.*|fail2ban\.service;.*|.*;sudo'
-                  action: keep
-                - source_labels: ['__journal_syslog_identifier']
-                  target_label: source
-            - job_name: security-files
-              static_configs:
-                - targets: [localhost]
-                  labels:
-                    log_type: security
-                    source: auditd
-                    host: "{{ ic_host_name }}"
-                    __path__: /var/log/audit/audit.log
-                - targets: [localhost]
-                  labels:
-                    log_type: security
-                    source: fail2ban
-                    host: "{{ ic_host_name }}"
-                    __path__: /var/log/fail2ban.log
-          {% endif %}
-            - job_name: traefik-access
-              docker_sd_configs:
-                - host: unix:///var/run/docker.sock
-                  refresh_interval: 30s
-                  filters:
-                    - name: name
-                      values: ["inverseproxy-proxy-1"]
-              relabel_configs:
-                - source_labels: ['__meta_docker_container_name']
-                  target_label: container
-                - target_label: host
-                  replacement: "{{ ic_host_name }}"
-              pipeline_stages:
-                # Everything Traefik writes that is not an access line
-                # starts with something other than a brace.
-                - drop:
-                    expression: '^[^{]'
-                - json:
-                    expressions:
-                      service: ServiceName
-                      status: DownstreamStatus
-                - labels:
-                    service:
-      register: ic_promtail_cfg
+    - name: Write the security log collector
+      when: ic_fluent_bit | bool
+      block:
+        - name: Create the security log collector's directory
+          ansible.builtin.file:
+            path: "{{ ic_obs_dir }}/fluent-bit"
+            state: directory
+            mode: "0755"
+
+        - name: Install the classification of the security lines
+          ansible.builtin.copy:
+            src: fluent-bit/classify.lua
+            dest: "{{ ic_obs_dir }}/fluent-bit/classify.lua"
+            mode: "0644"
+          register: ic_fb_lua
+
+        - name: Write what the classification knows about the panel
+          # Data only, read by classify.lua: the name Loki labels the lines
+          # with, the panel's key fingerprints, its user and that user's
+          # uid. Written as JSON strings without escaping what is not
+          # ASCII, which Lua reads as its own string literals.
+          ansible.builtin.copy:
+            dest: "{{ ic_obs_dir }}/fluent-bit/panel.lua"
+            mode: "0644"
+            content: |
+              -- Auto-generated by IncubaCloud. Read by classify.lua.
+              return {
+                host = {{ ic_host_name | to_json(ensure_ascii=False) }},
+                fps = {
+              {% for fp in ic_panel_key_fingerprints %}
+                  [{{ fp | to_json }}] = true,
+              {% endfor %}
+                },
+                user = {{ ic_panel_ssh_user | to_json(ensure_ascii=False) }},
+                uid = {{ (ansible_user_uid | string) | to_json }},
+              }
+          register: ic_fb_panel
+
+        - name: Write the security log collector's configuration
+          # 0600 and never logged: it holds the credential, as
+          # .remote_write_token does. Never in the container's environment,
+          # which ``docker inspect`` shows to the docker group.
+          #
+          # SSH and sudo from the journal (OpenSSH 9.8 and later log as
+          # sshd-session and sshd-auth), auditd and fail2ban from their
+          # files, each from where it stopped, and from the end the first
+          # time: a first start does not send 30 days of journal. A file
+          # that does not exist (a server not hardened) is no error.
+          #
+          # Seven counters, one per log_to_metrics filter, on :2021 for
+          # vmagent; then what is counted but not sent is dropped. Neither
+          # port is published.
+          #
+          # While the central does not answer, the lines wait on disk up
+          # to ``ic_fluent_bit_buffer`` and are retried for ever, at most
+          # five minutes apart: one retry, Fluent Bit's default, dropped
+          # them (review of 12-nov-2026). On disk it is the chunks held in
+          # memory at once that bound the memory, not a per-input limit.
+          ansible.builtin.copy:
+            dest: "{{ ic_obs_dir }}/fluent-bit/fluent-bit.yaml"
+            mode: "0600"
+            content: |
+              # Auto-generated by IncubaCloud. Do not edit by hand.
+              service:
+                flush: 1
+                log_level: warn
+                http_server: on
+                http_listen: 0.0.0.0
+                http_port: 2020
+                health_check: on
+                storage.path: /var/lib/fluent-bit/buffer
+                storage.sync: normal
+                storage.max_chunks_up: 16
+                storage.backlog.mem_limit: 8M
+                scheduler.base: 5
+                scheduler.cap: 300
+
+              pipeline:
+                inputs:
+                  - name: systemd
+                    tag: journal
+                    path: /var/log/journal
+                    db: /var/lib/fluent-bit/journal.db
+                    systemd_filter_type: or
+                    systemd_filter:
+                      - _SYSTEMD_UNIT=ssh.service
+                      - _SYSTEMD_UNIT=sshd.service
+                      - SYSLOG_IDENTIFIER=sshd
+                      - SYSLOG_IDENTIFIER=sshd-session
+                      - SYSLOG_IDENTIFIER=sshd-auth
+                      - SYSLOG_IDENTIFIER=sudo
+                    read_from_tail: on
+                    storage.type: filesystem
+                  - name: tail
+                    tag: file.auditd
+                    path: /var/log/audit/audit.log
+                    db: /var/lib/fluent-bit/auditd.db
+                    read_from_head: false
+                    storage.type: filesystem
+                  - name: tail
+                    tag: file.fail2ban
+                    path: /var/log/fail2ban.log
+                    db: /var/lib/fluent-bit/fail2ban.db
+                    read_from_head: false
+                    storage.type: filesystem
+
+                filters:
+                  - name: lua
+                    match_regex: '^(journal|file\..*)$'
+                    script: /fluent-bit/etc/classify.lua
+                    call: classify
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_lines
+                    metric_subsystem: security
+                    metric_name: lines_total
+                    metric_description: Security lines read
+                    add_label: [source $source]
+                    regex: 'source .+'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_failed
+                    metric_subsystem: ssh
+                    metric_name: auth_failed_total
+                    metric_description: Failed SSH connections
+                    regex: 'c_failed ^1$'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_accepted
+                    metric_subsystem: ssh
+                    metric_name: accepted_total
+                    metric_description: Accepted SSH sign-ins
+                    add_label: [kind $c_acc_kind, method $c_acc_method]
+                    regex: 'c_acc_kind .+'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_sudo
+                    metric_subsystem: sudo
+                    metric_name: total
+                    metric_description: sudo commands
+                    add_label: [kind $c_sudo_kind]
+                    regex: 'c_sudo_kind .+'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_sudo_failed
+                    metric_subsystem: sudo
+                    metric_name: failed_total
+                    metric_description: sudo refused
+                    regex: 'c_sudo_failed ^1$'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_f2b
+                    metric_subsystem: f2b
+                    metric_name: total
+                    metric_description: fail2ban events
+                    add_label: [jail $c_f2b_jail, action $c_f2b_action]
+                    regex: 'c_f2b_action .+'
+                  - name: log_to_metrics
+                    match_regex: '^(journal|file\..*)$'
+                    tag: ic_metrics
+                    metric_mode: counter
+                    metric_namespace: ic
+                    emitter_name: m_audit
+                    metric_subsystem: audit
+                    metric_name: events_total
+                    metric_description: auditd records on sensitive files
+                    add_label: [key $c_audit_key, who $c_audit_who]
+                    regex: 'c_audit_key .+'
+                  - name: grep
+                    match_regex: '^(journal|file\..*)$'
+                    exclude: c_drop ^1$
+                  - name: modify
+                    match_regex: '^(journal|file\..*)$'
+                    remove_regex: '^c_'
+
+                outputs:
+                  - name: loki
+                    match_regex: '^(journal|file\..*)$'
+                    host: {{ ic_logs_url | urlsplit('hostname') | to_json }}
+                    port: {{ ic_logs_url | urlsplit('port') or (443 if (ic_logs_url | urlsplit('scheme')) == 'https' else 80) }}
+                    uri: {{ ic_logs_url | urlsplit('path') | to_json }}
+                    tls: {{ 'on' if (ic_logs_url | urlsplit('scheme')) == 'https' else 'off' }}
+                    tls.verify: on
+                    http_user: {{ ic_remote_write_user | to_json }}
+                    http_passwd: {{ ic_remote_write_token | to_json }}
+                    labels: log_type=security
+                    label_keys: $host,$source
+                    remove_keys: host,source
+                    drop_single_key: raw
+                    line_format: key_value
+                    retry_limit: no_limits
+                    storage.total_limit_size: {{ ic_fluent_bit_buffer }}
+                  - name: prometheus_exporter
+                    match: ic_metrics
+                    host: 0.0.0.0
+                    port: 2021
+          no_log: true
+          register: ic_fb_cfg
 
     - name: Write the agents compose file
       ansible.builtin.copy:
@@ -436,24 +614,36 @@
                 - /var/lib/docker/:/var/lib/docker:ro
                 - /dev/disk/:/dev/disk:ro
 
-          {% if ic_logs_url %}
-            promtail:
-              image: {{ ic_promtail_image }}
+          {% if ic_fluent_bit %}
+            fluent-bit:
+              image: {{ ic_fluent_bit_image }}
               restart: unless-stopped
-              command: ['-config.file=/etc/promtail/promtail.yaml']
+              command: ['/fluent-bit/bin/fluent-bit', '-c', '/fluent-bit/etc/fluent-bit.yaml']
+              # Root, to read the journal and audit.log, with no other power:
+              # every capability dropped but reading files it does not own
+              # (its 0600 configuration belongs to the connecting user), a
+              # read-only filesystem and a memory ceiling.
+              read_only: true
+              cap_drop:
+                - ALL
+              cap_add:
+                - DAC_READ_SEARCH
+              security_opt:
+                - no-new-privileges:true
+              mem_limit: {{ ic_fluent_bit_mem_limit }}
               volumes:
-                - {{ ic_obs_dir }}/promtail.yaml:/etc/promtail/promtail.yaml:ro
-                - {{ ic_obs_dir }}/.remote_write_token:/etc/remote_write_token:ro
-                - {{ ic_obs_dir }}/promtail-positions:/var/lib/promtail
-                # Read-only: the access log, and -- when sent -- auditd,
-                # fail2ban and the journal all live under /var/log.
+                - {{ ic_obs_dir }}/fluent-bit:/fluent-bit/etc:ro
+                # Its cursors and its buffer, in a volume of its own: the
+                # switch turned off removes it with the container, and the
+                # teardown with ``down --volumes``. In the connecting user's
+                # home, root's files left behind failed the teardown.
+                - fluent-bit-data:/var/lib/fluent-bit
+                # Read-only: the journal, auditd and fail2ban live under
+                # /var/log. The whole directory, never single files, which
+                # logrotate replaces.
                 - /var/log:/var/log:ro
                 # The journal reader needs the machine id to find it.
                 - /etc/machine-id:/etc/machine-id:ro
-                # Read-only socket: it only needs to discover and read the
-                # proxy container's log stream on hosts not set up since
-                # the access log moved to its file.
-                - /var/run/docker.sock:/var/run/docker.sock:ro
           {% endif %}
 
             vmagent:
@@ -496,6 +686,9 @@
 
           volumes:
             vmagent-data:
+          {% if ic_fluent_bit %}
+            fluent-bit-data:
+          {% endif %}
 
           networks:
             default:
@@ -865,18 +1058,62 @@
       when: ic_scrape_cfg is changed and ic_agents_compose is not changed
       changed_when: true
 
-    - name: Restart promtail when its configuration changed  # noqa: no-handler
-      # Same reason as vmagent's: a new push URL alone does not recreate
-      # the container, and promtail reads its file at start only. Whether
-      # the compose file changed too says nothing: a new URL for vmagent
-      # changes it, and only vmagent is recreated (1-nov-2026).
+    - name: Restart Fluent Bit when its configuration changed  # noqa: no-handler
+      # Same reason as vmagent's: new files alone do not recreate the
+      # container, and Fluent Bit reads them at start only (no reload).
+      # Whether the compose file changed too says nothing: a new URL for
+      # vmagent changes it, and only vmagent is recreated (1-nov-2026).
       ansible.builtin.command:
-        cmd:
-          docker compose -p incubacloud-observability -f docker-compose.yaml restart
-          promtail
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml restart fluent-bit
         chdir: "{{ ic_obs_dir }}"
-      when: ic_promtail_cfg is changed
+      when: >-
+        (ic_fluent_bit | bool)
+        and (ic_fb_cfg is changed or ic_fb_lua is changed or ic_fb_panel is changed)
       changed_when: true
+
+    - name: Remove the security log collector, switched off
+      # ``up -d --remove-orphans`` above removed its container. Its volume
+      # holds the cursors: kept, turning the switch back on would send
+      # everything that happened while it was off.
+      when: not (ic_fluent_bit | bool)
+      block:
+        - name: Remove the security log collector's cursors and buffer
+          ansible.builtin.command:
+            cmd: docker volume rm incubacloud-observability_fluent-bit-data
+          register: ic_fb_volume_rm
+          changed_when: ic_fb_volume_rm.rc == 0
+          failed_when: >-
+            ic_fb_volume_rm.rc != 0
+            and 'no such volume' not in (ic_fb_volume_rm.stderr | lower)
+
+        - name: Remove the security log collector's configuration
+          ansible.builtin.file:
+            path: "{{ ic_obs_dir }}/fluent-bit"
+            state: absent
+
+    - name: Remove what promtail left
+      # Fluent Bit replaced it (12-nov-2026); ``--remove-orphans`` removed
+      # its container. Its configuration held the credential.
+      ansible.builtin.file:
+        path: "{{ ic_obs_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - promtail.yaml
+        - promtail-positions
+
+    - name: Remove promtail's image
+      ansible.builtin.command:
+        cmd: docker image rm {{ ic_promtail_image }}
+      register: ic_promtail_image_rm
+      changed_when: ic_promtail_image_rm.rc == 0
+      failed_when: false
+
+    - name: Give Fluent Bit time to read its configuration
+      # A configuration it refuses ends it within a second or two, and
+      # Docker starts it again: read too early, it would count as running.
+      when: ic_fluent_bit | bool
+      ansible.builtin.wait_for:
+        timeout: 5
 
     - name: Wait for the agents to report healthy
       ansible.builtin.command:
@@ -890,6 +1127,14 @@
         aggregate: false
         data:
           ic_agents_running: "{{ ic_agents_ps.stdout_lines | select('search', 'running') | list | length }}"
+          # Which ones run, so the job can say which did not.
+          ic_agents_running_services: >-
+            {{ ic_agents_ps.stdout_lines | select('search', ' running')
+               | map('split', ' ') | map('first') | list | to_json }}
+          # Whether Fluent Bit was meant to run, and whether the journal
+          # it reads SSH and sudo from is kept on disk.
+          ic_fluent_bit: "{{ ic_fluent_bit | bool }}"
+          ic_journal_persistent: "{{ ic_journal_dir.stat.isdir | default(false) }}"
           ic_instances_labelled: "{{ ic_instances | length }}"
           ic_write_url_installed: "{{ ic_write_url }}"
           # installed, failed or off, and what failed.

@@ -1322,7 +1322,7 @@ class TestTeardownStopsTheAgents(BaseCase):
             if "ansible.builtin.command" in t
         ]
         self.assertIn(
-            f"docker compose -p {install_project} -f docker-compose.yaml down",
+            f"docker compose -p {install_project} -f docker-compose.yaml down --volumes",
             commands,
         )
 
@@ -1475,6 +1475,8 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
             ic_account="acct",
             ic_instances=[],
             ic_has_traefik=True,
+            # Set by the play: whether this server sends its security logs.
+            ic_fluent_bit=False,
         )
         values.update(variables)
         content = self._task(name)["ansible.builtin.copy"]["content"]

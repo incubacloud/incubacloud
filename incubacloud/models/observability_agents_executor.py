@@ -10,6 +10,7 @@ and tenant, so it generates that mapping and hands it over as extra-vars.
 Labels are attached at ingest because they cannot be added to historical
 series afterwards.
 """
+import json
 import logging
 
 from odoo import _
@@ -21,6 +22,33 @@ from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
 
+
+def _truthy(value):
+    """Return whether a fact the playbook exported says yes.
+
+    ``set_stats`` hands booleans back as booleans or as their text.
+
+    :param value: the fact.
+    :rtype: bool
+    """
+    return str(value).strip().lower() in ("true", "1", "yes")
+
+
+def _as_list(value):
+    """Return a fact the playbook exported as a JSON list, as a list.
+
+    :param value: a list, its JSON text, or nothing.
+    :return: the list, empty when there is none or it cannot be read.
+    :rtype: list
+    """
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
 #: What the playbook installs, as a number the host keeps
 #: (``cloud.host.metrics_agents_revision``) once an install with it ends
 #: well. The reconciliation cron re-applies, a few hosts per pass, every
@@ -31,11 +59,14 @@ _logger = logging.getLogger(__name__)
 #:
 #: 1. 12-nov-2026: the database collector (``collect_pg.sh``) and the
 #:    sizes of each instance's database and filestore.
-AGENTS_REVISION = 1
+#: 2. 12-nov-2026: Fluent Bit sends the security logs, and counts them,
+#:    where the server's switch is on; promtail, the proxy's access log
+#:    and the Docker socket leave every server.
+AGENTS_REVISION = 2
 
 
 class ObservabilityAgentsExecutor(AnsibleExecutor):
-    """Deploy node_exporter + cAdvisor + vmagent on this job's host."""
+    """Deploy node_exporter, cAdvisor, vmagent and Fluent Bit on this job's host."""
 
     _job_type = "install_observability"
     _playbook = "playbooks/host_observability.yml"
@@ -137,7 +168,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
     _LOGS_WRITE_SUFFIX = "/lw/loki/api/v1/push"
 
     def _logs_write_url(self, settings):
-        """Return where access logs are pushed, or '' to skip collection.
+        """Return where the security logs are pushed, or '' to send none.
 
         Derived from the metrics endpoint rather than configured
         separately: on our gateway the two live side by side (``/w/`` and
@@ -198,6 +229,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         account, token = settings._metrics_auth()
         # Kept for on_success: a switch moved meanwhile is applied again.
         self._sent_collect_pg = bool(settings.metrics_collect_pg)
+        self._sent_security_logs = bool(host.security_logs_enabled)
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
@@ -211,9 +243,12 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 {"url": p["url"], "method": p["method"], "status": p["status"]}
                 for p in self._direct_probes
             ],
-            # SSH, sudo, auditd and fail2ban, besides the access log. Only
-            # where the panel says so: the hosts have to be its own.
-            "ic_ship_security_logs": bool(settings.metrics_ship_security_logs),
+            # SSH, sudo, fail2ban and auditd: the server's own switch.
+            "ic_security_logs": self._sent_security_logs,
+            # What tells the panel's own sign-ins and sudo from anyone
+            # else's: the fingerprint of its key and the user it signs in as.
+            "ic_panel_key_fingerprints": host._panel_key_fingerprints(),
+            "ic_panel_ssh_user": host.user or "",
             # The per-minute database collector, root's; off removes it.
             "ic_collect_pg": self._sent_collect_pg,
             # User half of the credential. It is also the label the
@@ -241,13 +276,53 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             )
             return errors
         facts = self.playbook_facts()
-        running = int(facts.get("ic_agents_running") or 0)
-        if running < 3:
-            errors.append(
-                f"Only {running}/3 agent containers came up "
-                f"(node-exporter, cadvisor, vmagent)."
-            )
+        errors.extend(self._agents_errors(facts))
         errors.extend(self._collector_errors(facts))
+        return errors
+
+    #: The containers every server runs; ``fluent-bit`` too where it sends
+    #: its security logs.
+    _BASE_AGENTS = ("node-exporter", "cadvisor", "vmagent")
+
+    def _agents_errors(self, facts):
+        """Return the job's errors for agents that did not come up.
+
+        Three containers, four where the server sends its security logs.
+        Fluent Bit that does not start is named apart, with the switch
+        that removes it: that switch works on a failed install too.
+
+        :param dict facts: what the playbook exported.
+        :return: the error lines, empty when every agent runs.
+        :rtype: list[str]
+        """
+        expected = list(self._BASE_AGENTS)
+        if _truthy(facts.get("ic_fluent_bit")):
+            expected.append("fluent-bit")
+        running = _as_list(facts.get("ic_agents_running_services"))
+        if not running:
+            # A playbook from before the list: the count is all it says.
+            count = int(facts.get("ic_agents_running") or 0)
+            if count >= len(expected):
+                return []
+            return [
+                f"Only {count}/{len(expected)} agent containers came up "
+                f"({', '.join(expected)})."
+            ]
+        missing = [name for name in expected if name not in running]
+        errors = []
+        base_missing = [name for name in missing if name != "fluent-bit"]
+        if base_missing:
+            errors.append(
+                f"Only {len(expected) - len(missing)}/{len(expected)} agent "
+                f"containers came up: {', '.join(base_missing)} did not."
+            )
+        if "fluent-bit" in missing:
+            errors.append(
+                "Fluent Bit, which sends this server's security logs, did not "
+                "start. Turn off Send security logs on this server's "
+                "Connection tab to remove it, and look at its log with "
+                "docker logs incubacloud-observability-fluent-bit-1."
+            )
         return errors
 
     def _collector_errors(self, facts):
@@ -303,6 +378,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             host.sudo().write({"metrics_agents_revision": revision})
         self._resolve_alert("observability_agents_failed")
         self._report_pg_collector(facts)
+        self._report_security_logs(facts)
         installed = str(facts.get("ic_write_url_installed") or "")
         if installed:
             host.sudo().write({"metrics_agents_write_url": installed})
@@ -335,13 +411,41 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         elif state == "off":
             self._sys("Database collector switched off in Settings: removed.")
 
+    def _report_security_logs(self, facts):
+        """Say in the job's log whether this server sends its security logs.
+
+        A journal kept only in memory is said, not failed: auditd and
+        fail2ban still arrive, SSH and sudo do not.
+
+        :param dict facts: what the playbook exported.
+        """
+        if not _truthy(facts.get("ic_fluent_bit")):
+            if getattr(self, "_sent_security_logs", False):
+                self._sys(
+                    "Security logs not sent: the central has no log store "
+                    "this panel can write to."
+                )
+            else:
+                self._sys("Security logs switched off on this server.")
+            return
+        self._sys("Security logs sent to the central (Fluent Bit).")
+        if not _truthy(facts.get("ic_journal_persistent")):
+            self._sys(
+                "⚠ This server keeps its journal in memory only "
+                "(/var/log/journal is missing): SSH and sudo lines are not "
+                "sent; auditd and fail2ban are. Create /var/log/journal and "
+                "restart systemd-journald to send them."
+            )
+
     def _revision_to_record(self, host, facts):
         """Return the revision this install leaves on *host*, or None for none.
 
-        None when the database collector's switch moved while the install
-        ran: the install applied the old value, and the switch already
-        asked the reconciliation cron to re-apply every server; recording
-        the current revision would cancel that for this one.
+        None when the database collector's switch, or this server's Send
+        security logs, moved while the install ran: the install applied
+        the old value. The collector's switch already asked the
+        reconciliation cron to re-apply every server, and the server's
+        switch queued an install of its own; recording the current
+        revision would cancel the first for this one.
 
         :param host: the ``cloud.host`` the install ran on.
         :param dict facts: what the playbook exported.
@@ -354,6 +458,13 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             self._sys(
                 "The database collector's switch moved during this install: "
                 "the reconciliation cron applies it again."
+            )
+            return None
+        sent_logs = getattr(self, "_sent_security_logs", None)
+        if sent_logs is not None and sent_logs != bool(host.security_logs_enabled):
+            self._sys(
+                "Send security logs changed on this server during this "
+                "install: it is applied again."
             )
             return None
         return AGENTS_REVISION

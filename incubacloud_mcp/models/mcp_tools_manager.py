@@ -22,8 +22,8 @@ TOOLS = (
         "manage_host",
         "Create a server (vals), change one (host_id and vals), or set up its egress "
         "whitelist (host_id and setup_whitelist=true). The proxies it trusts for "
-        "client addresses (trusted_proxy_ranges) change only with the user's "
-        "approval.",
+        "client addresses (trusted_proxy_ranges) change, and its security logs "
+        "stop (security_logs_enabled false), only with the user's approval.",
         _MANAGER,
         obj(
             {
@@ -178,30 +178,46 @@ class McpToolsManager(models.AbstractModel):
 
     @api.model
     def _confirm_manage_host(self, args):
-        """Ask for approval when the server's trusted proxy ranges change (D2).
+        """Ask for approval when a change to a server lowers a defence (D2).
 
-        They decide whose word the server takes for a client's address, as
-        the panel's own do: the message says from what to what.
+        Its trusted proxy ranges decide whose word the server takes for a
+        client's address, as the panel's own do: the message says from
+        what to what. Turning off its security logs blinds the record an
+        attack is read from, and an agent misled into it must not do that
+        quietly (review of 12-nov-2026). Turning them on asks nothing.
         """
         vals = args.get("vals") or {}
-        if args.get("setup_whitelist") or "trusted_proxy_ranges" not in vals:
+        if args.get("setup_whitelist"):
             return None
-        current = ""
-        if args.get("host_id"):
-            host = self._route("/cloud/get_host", host_id=args["host_id"])
-            current = host.get("trusted_proxy_ranges")
-        new = vals["trusted_proxy_ranges"]
-        key = "trusted_proxy_ranges"
-        if normalized_setting(key, new, current) == normalized_setting(
-            key, current, current
+        host = {}
+        if args.get("host_id") and (
+            "trusted_proxy_ranges" in vals or "security_logs_enabled" in vals
         ):
-            return None
-        return self.env._(
-            "Change which proxies the server trusts for client addresses:\n"
-            "- trusted_proxy_ranges: %(old)r → %(new)r",
-            old=current,
-            new=new,
-        )
+            host = self._route("/cloud/get_host", host_id=args["host_id"])
+        texts = []
+        if "trusted_proxy_ranges" in vals:
+            current = host.get("trusted_proxy_ranges") or ""
+            new = vals["trusted_proxy_ranges"]
+            key = "trusted_proxy_ranges"
+            if normalized_setting(key, new, current) != normalized_setting(
+                key, current, current
+            ):
+                texts.append(self.env._(
+                    "Change which proxies the server trusts for client addresses:\n"
+                    "- trusted_proxy_ranges: %(old)r → %(new)r",
+                    old=current,
+                    new=new,
+                ))
+        if (
+            "security_logs_enabled" in vals
+            and not vals["security_logs_enabled"]
+            and (host.get("security_logs_enabled") or not args.get("host_id"))
+        ):
+            texts.append(self.env._(
+                "Stop sending this server's security logs (SSH sign-ins, sudo, "
+                "fail2ban and changes to sensitive files) to the metrics central."
+            ))
+        return "\n".join(texts) or None
 
     @api.model
     def _confirm_harden_host(self, args):

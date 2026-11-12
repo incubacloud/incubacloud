@@ -89,6 +89,37 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertFalse(same["isError"], same)
         self.assertEqual(host.name, "mcp-same")
 
+    def test_a_server_s_security_logs_stop_only_with_approval(self):
+        """Turning a server's security logs off waits for approval; turning
+        them on, or leaving them off, does not (review of 12-nov-2026)."""
+        created = self._payload(
+            self._call_tool(self.key, "manage_host", {"vals": NEW_HOST})
+        )
+        host = self.env["cloud.host"].browse(created["id"])
+        host.security_logs_enabled = True
+        off = self._call_tool(
+            self.key,
+            "manage_host",
+            {"host_id": host.id, "vals": {"security_logs_enabled": False}},
+        )
+        self.assertTrue(off["isError"])
+        self.assertIn("approval", off["content"][0]["text"])
+        self.assertTrue(host.security_logs_enabled)
+        host.security_logs_enabled = False
+        still_off = self._call_tool(
+            self.key,
+            "manage_host",
+            {"host_id": host.id, "vals": {"security_logs_enabled": False}},
+        )
+        self.assertFalse(still_off["isError"], still_off)
+        on = self._call_tool(
+            self.key,
+            "manage_host",
+            {"host_id": host.id, "vals": {"security_logs_enabled": True}},
+        )
+        self.assertFalse(on["isError"], on)
+        self.assertTrue(host.security_logs_enabled)
+
     def test_whitelist_needs_a_server(self):
         """setup_whitelist without host_id is refused."""
         self.assertTrue(

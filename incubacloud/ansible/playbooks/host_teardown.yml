@@ -30,8 +30,10 @@
       register: ic_agents_compose
 
     - name: Stop the metrics agents
+      # With their volumes: vmagent's queue, and Fluent Bit's cursors and
+      # buffer, which root owns and the connecting user could not remove.
       ansible.builtin.command:
-        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml down
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml down --volumes
         chdir: "{{ ic_obs_dir }}"
       when: ic_agents_compose.stat.exists
       changed_when: true

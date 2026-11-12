@@ -106,6 +106,8 @@ export class HostDetail extends Component {
             directAllowlist: [],
             directAllowlistPending: false,
             agentsWriteUrl: "",
+            // Whether this panel may send security logs at all.
+            securityLogsAvailable: true,
             directReachReason: "",
             traefik_file: "traefik_config_yml",
             loading: !this.isNew,
@@ -352,6 +354,8 @@ export class HostDetail extends Component {
                 cdn_client_ca:            host.cdn_client_ca || "",
                 direct_port:              host.direct_port || 0,
                 direct_path_opt_out:      host.direct_path_opt_out || false,
+                // Saved hosts only: a new one starts with the panel's default.
+                security_logs_enabled:    !!host.security_logs_enabled,
                 tls_default_cert:         host.tls_default_cert || "",
                 tls_default_key:          "",
                 whitelist:                host.whitelist || [],
@@ -371,6 +375,7 @@ export class HostDetail extends Component {
             this.state.directAllowlistPending = host.direct_allowlist_pending || false;
             this.state.agentsWriteUrl = host.metrics_agents_write_url || "";
             this.state.directReachReason = host.direct_reach_reason || "";
+            this.state.securityLogsAvailable = host.security_logs_available !== false;
             this.state.selectedTags = [...(host.tags || [])];
             this.state.allTags = [...(host.all_tags || [])];
             this._snapshotForm();
@@ -432,6 +437,23 @@ export class HostDetail extends Component {
      */
     get canConfigureObservability() {
         return this.env.features?.observability?.configure !== false;
+    }
+
+    /**
+     * Whether this panel collects metrics at all. Off, a server's
+     * Send security logs is shown but cannot be changed: nothing is sent.
+     */
+    get observabilityCollects() {
+        return this.env.features?.observability?.collect !== false;
+    }
+
+    /**
+     * Whether this server's Send security logs may be changed here: the
+     * panel collects metrics, and the panel may send security logs at
+     * all (a managed panel waits for its manager's permission).
+     */
+    get securityLogsSwitchable() {
+        return this.observabilityCollects && this.state.securityLogsAvailable !== false;
     }
 
     setTab(tab) {
