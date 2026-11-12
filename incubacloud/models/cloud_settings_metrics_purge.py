@@ -34,11 +34,14 @@ to whoever does own it.
 """
 import logging
 import re
+import time
 from datetime import timedelta
 
 import requests
 
 from odoo import models
+
+from .cloud_metric_rule import central_busy
 
 _logger = logging.getLogger(__name__)
 
@@ -59,6 +62,11 @@ _DELETE_ROUTE = "/admin-d/api/v1/admin/tsdb/delete_series"
 _READ_SUFFIX = "/r"
 
 _TIMEOUT = 15
+# The operator's cap on requests in flight (16) covers this route too: a
+# deletion that meets four fleet boards at once is answered 429. Asked
+# again this many times, this many seconds apart, before it warns.
+_BUSY_RETRIES = 3
+_BUSY_PAUSE = 5
 
 #: What a label value may contain here. Accounts are ``acct_<hex>`` and
 #: ids are integers, so this refuses nothing real — and it makes quoting
@@ -199,6 +207,31 @@ class CloudSettings(models.Model):
         )._job_purge_metrics(selectors)
         return True
 
+    def _post_purge(self, url, auth, selectors):
+        """POST the deletion, asking again while the central answers 429.
+
+        :param str url: the operator's deletion route.
+        :param tuple auth: the operator's credential.
+        :param selectors: selectors built by :func:`series_selector`.
+        :raises requests.RequestException: on any other failure, or on a
+            429 still there after :data:`_BUSY_RETRIES` pauses.
+        """
+        for attempt in range(_BUSY_RETRIES + 1):
+            response = requests.post(
+                url,
+                data=[("match[]", selector) for selector in selectors],
+                auth=auth,
+                timeout=_TIMEOUT,
+            )
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                if attempt < _BUSY_RETRIES and central_busy(exc):
+                    time.sleep(_BUSY_PAUSE)
+                    continue
+                raise
+            return
+
     def _job_purge_metrics(self, selectors):
         """Delete the series matching *selectors* on the central (queued).
 
@@ -218,13 +251,7 @@ class CloudSettings(models.Model):
         url, auth = endpoint
         Alert = self.env["cloud.alert"].sudo()
         try:
-            response = requests.post(
-                url,
-                data=[("match[]", selector) for selector in selectors],
-                auth=auth,
-                timeout=_TIMEOUT,
-            )
-            response.raise_for_status()
+            self._post_purge(url, auth, selectors)
         except requests.RequestException as exc:
             _logger.warning(
                 "[metrics] could not delete %s series selector(s): %s",

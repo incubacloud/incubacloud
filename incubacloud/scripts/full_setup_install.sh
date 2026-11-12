@@ -119,7 +119,7 @@ command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
 # longer installs it.
 ic_log "Installing cron..."
 command -v crontab >/dev/null 2>&1 || $APT install -y -qq cron \
-    || ic_warn "cron install failed: the agents' install tries again"
+    || ic_warn "cron install failed: the metrics agents' install fails until it is installed (apt install cron)"
 
 # The client the observability agents' database collector (collect_pg.sh)
 # reads each instance's PostgreSQL with, through the socket of its db

@@ -217,15 +217,23 @@ its list of databases (`collect_pg.instances`) are in
 user already holds through the docker group and sudo, but what root runs
 is not that user's to change.
 
-Nothing of it may fail the agents' install, which runs at the end of every
-deploy, move and removal: `postgresql-client` and `cron` come with Full
-Setup, the playbook installs each only when missing (apt's lock waited 60 s
-at most; Debian 13 no longer installs cron, and the project's own Debian 13
-image had none, where the disk collector's schedule failed the whole
-install, found on 12-nov-2026), and every step that needs root is in a block whose rescue leaves the
-agents installed, writes `ic_pg_collector 0` for the server's board
-("Database collector not installed") and says why in the job's log; the
-next install tries again. *Collect database figures*
+`postgresql-client` and `cron` come with Full Setup, and the playbook
+installs each only when missing (apt's lock waited 60 s at most; Debian 13
+no longer installs cron, and the project's own Debian 13 image had none,
+found on 12-nov-2026). Every step that needs root is in a block whose
+rescue lets the playbook go on: the agents still come up, the server's
+board shows "Database collector not installed" (`ic_pg_collector 0`), and
+the playbook exports what failed and why. The executor then **fails the
+job** with what to do: install cron (`apt install cron`, or use the
+project's image), give the connecting user passwordless sudo, or free apt;
+the reconciliation cron retries it with the back-off of any failed
+install, and the alert follows after three. The owner chose a failed job
+over a green one with a collector missing (12-nov-2026), so that a server
+without figures is fixed when it happens, not found a month later. Without
+cron the teardown removes no schedule and says so in its log; a database
+collector it cannot remove (sudo no longer works) is said there too, and
+the server is still deleted.
+*Collect database figures*
 (`metrics_collect_pg`, under *Advanced*) switches it off: the next install
 removes its schedule, its files and its last readings, and switching it
 either way has the reconciliation cron re-apply every installed host. The
@@ -359,8 +367,8 @@ below is only for a central next to the panel.
 3. Point the direct name's A record at it too (DNS-only, no AAAA). If the DNS
    token is restricted to client addresses, add the new host's.
 4. In Settings → Monitoring → *Advanced…*, fill in **Central's public
-   name** with that name and **Who may delete series on the central**
-   with the panel's public address (`/32`): it opens the series deletion
+   name** with that name and **Who may delete series and read the fleet
+   on the central** with the panel's public address (`/32`): it opens the series deletion
    and the cross-account read (`/admin-r/`) to that address, under the
    name. Empty **Grafana base URL** if
    it pointed at the old central, so the deployment fills in the new one.

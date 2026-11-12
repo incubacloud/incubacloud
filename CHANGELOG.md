@@ -72,9 +72,10 @@ file.
   each filestore's (`ic_instance_filestore_bytes`, once an hour on a
   server under 6 GB). Full Setup installs `postgresql-client` and `cron`;
   the agents' install puts each in only when missing, and a collector that
-  cannot be installed (no passwordless sudo, apt busy) leaves the agents
-  installed and the job successful, says why in its log and shows as
-  *Database collector not installed* on the server's board.
+  cannot be installed (no cron, no passwordless sudo, apt busy) still lets
+  the agents come up and shows as *Database collector not installed* on
+  the server's board, but fails the job with what to do, so that it is
+  fixed then and not found later without the figures.
   **Collect database figures** (Settings → Monitoring, *Advanced*) turns
   it off on every server, and a server's teardown removes it.
 - **Rules `metrics_instance_db_lock_wait` and
@@ -109,8 +110,9 @@ file.
   imports, exports, snapshots and flags included, and those now answer
   400. Under the central's public name it has a router of its own,
   `ic-central-read`, behind the same list as the series deletion: **Who
-  may delete series on the central** now also opens the cross-account
-  read to those addresses, as its help says. Empty, it answers the
+  may delete series and read the fleet on the central** now also opens
+  the cross-account read to those addresses, as its label and help say.
+  Empty, it answers the
   central's host only, as before. Grafana's admin route still answers
   the host only.
 - **Only the operator has a cap on requests in flight: 16.** vmauth
@@ -119,13 +121,34 @@ file.
   none. A 429 is "busy", not "down": `promql_query` asks once more after
   a second, the rule cron skips the run without raising
   `metrics_backend_unreachable` or resolving anything, and a board says
-  *The metrics central is busy* and asks again.
+  *The metrics central is busy* and asks again, keeping the charts it
+  already shows. A deletion of series asks again three times, 5 s apart,
+  before it warns.
 
 ### Fixed
 
 - **The agents install on a server without cron.** Debian 13 no longer
   installs it, and the disk collector's schedule failed the whole
-  install there; Full Setup and the agents' install now put it in.
+  install there; Full Setup and the agents' install now put it in. When
+  it cannot be installed (apt busy, sudo asking a password), the job
+  fails with *cron is not installed on the server and could not be
+  installed: install it (apt install cron) or use the IncubaCloud image*.
+- **A server without cron can be deleted.** The teardown removed the disk
+  collector's schedule with the `cron` module, which fails without
+  `crontab`, so `delete_host` failed on a Debian 13 that never had cron;
+  it now says in its log that there is no schedule to remove. A database
+  collector that cannot be removed (sudo no longer works) is said in the
+  log instead of stopping the removal.
+- **An install that ran while Collect database figures changed** records
+  no revision, so the reconciliation cron applies the new value.
+- **Docker not answering is not a sleeping fleet.** When `docker ps` or
+  `docker inspect` time out, the database collector counts every
+  instance in `ic_pg_scrape_errors` instead of leaving them out as
+  stopped.
+- **Grafana base URL** says what it is for (Grafana's own links): the
+  charts do not need it, and Settings no longer says they are hidden
+  without it. The Spanish texts call the metrics central *la central*
+  throughout.
 
 ### Security
 

@@ -80,10 +80,11 @@ def _render(template, **values):
     return env.from_string(template).render(**values)
 
 
-class TestTheCollectorCannotFailTheJob(BaseCase):
-    """A3 of the review of 12-nov-2026: the agents' install runs at the end
-    of every deploy, move and removal; whatever the collector needs (sudo,
-    apt, a package) goes wrong in a rescue, not in the job."""
+class TestTheCollectorCannotStopThePlaybook(BaseCase):
+    """A3 of the review of 12-nov-2026, as the owner changed it the same
+    day: whatever the collectors need (cron, sudo, apt, a package) goes
+    wrong in a rescue, so the agents still come up; the facts say what
+    failed, and the executor fails the job with what to do."""
 
     def setUp(self):
         super().setUp()
@@ -136,7 +137,7 @@ class TestTheCollectorCannotFailTheJob(BaseCase):
             self.assertIn(f"ic_pg_collector {value}", content.splitlines())
 
     def test_the_agents_are_up_whatever_became_of_the_collector(self):
-        """The collector comes before the agents start, and fails nothing."""
+        """The collector comes before the agents start, and stops nothing."""
         names = [t.get("name") for t in self.play["tasks"]]
         self.assertLess(
             names.index("Install the database collector"),
@@ -157,6 +158,41 @@ class TestTheCollectorCannotFailTheJob(BaseCase):
         )
         check = _task(self.play, "Check that cron is there to run it")
         self.assertEqual(check["failed_when"], "not ic_crontab_now.stat.exists")
+
+    def test_without_cron_the_disk_collector_is_not_scheduled(self):
+        """M-a of the final review (12-nov-2026): cron's own install may
+        fail (apt's lock, sudo asking a password), and the cron module
+        fails without crontab. The playbook goes on and says so; the
+        executor fails the job (``TestTheInstallRecordsItsRevision``)."""
+        names = [t.get("name") for t in self.play["tasks"]]
+        look = _task(self.play, "Look for cron before scheduling the disk collector")
+        self.assertEqual(look["ansible.builtin.stat"]["path"], "/usr/bin/crontab")
+        self.assertEqual(look["register"], "ic_crontab_disk")
+        self.assertLess(
+            names.index("Look for cron before scheduling the disk collector"),
+            names.index("Schedule the disk collector"),
+        )
+        self.assertEqual(
+            _task(self.play, "Schedule the disk collector")["when"],
+            "ic_crontab_disk.stat.exists",
+        )
+        rescue = _task(self.play, "Note cron not installed, and why")["ansible.builtin.set_fact"]
+        self.assertIn("ansible_failed_result", rescue["ic_cron_error"])
+        note = _task(self.play, "Note the disk collector not scheduled")
+        self.assertEqual(note["when"], "not ic_crontab_disk.stat.exists")
+        self.assertEqual(note["ansible.builtin.set_fact"]["ic_disk_collector"], "failed")
+        first = _task(self.play, "Note whether this run connects as root")
+        self.assertEqual(first["ansible.builtin.set_fact"]["ic_disk_collector"], "installed")
+        stats = _task(self.play, "Export the agent facts")["ansible.builtin.set_stats"]["data"]
+        self.assertEqual(stats["ic_disk_collector"], "{{ ic_disk_collector }}")
+        self.assertEqual(stats["ic_cron_error"], "{{ ic_cron_error }}")
+
+    def test_every_cron_task_waits_for_crontab(self):
+        """No ``cron`` module call where crontab may be missing."""
+        for path in (_INSTALL, _TEARDOWN):
+            for task in _all_tasks(_play(path)["tasks"]):
+                if "ansible.builtin.cron" in task:
+                    self.assertIn("stat.exists", str(task.get("when")), f"{path.name}: {task['name']}")
 
 
 class TestTheCollectorIsRoots(BaseCase):
@@ -248,9 +284,35 @@ class TestTheCollectorComesOff(BaseCase):
         self.assertEqual(task["ansible.builtin.file"]["state"], "absent")
         names = [t["name"] for t in teardown["tasks"]]
         self.assertLess(
-            names.index("Remove the database collector, its schedule first"),
+            names.index("Remove the database collector"),
             names.index("Remove the agents' directory"),
         )
+
+    def test_the_teardown_of_a_server_without_cron_or_sudo_still_ends(self):
+        """M-b of the final review (12-nov-2026): ``delete_host`` failed on a
+        Debian 13 without cron, and a sudo that no longer works must not
+        stop it either: what is left is said in the job's log."""
+        teardown = _play(_TEARDOWN)
+        names = [t["name"] for t in teardown["tasks"]]
+        look = _task(teardown, "Look for cron")
+        self.assertEqual(look["ansible.builtin.stat"]["path"], "/usr/bin/crontab")
+        removal = _task(teardown, "Remove the disk usage collector")
+        self.assertEqual(removal["when"], "ic_crontab.stat.exists")
+        self.assertEqual(removal["ansible.builtin.cron"]["state"], "absent")
+        self.assertLess(names.index("Look for cron"), names.index("Remove the disk usage collector"))
+        said = _task(teardown, "Say there is no schedule to remove")
+        self.assertEqual(said["when"], "not ic_crontab.stat.exists")
+        self.assertIn("cron is not installed", said["ansible.builtin.debug"]["msg"])
+        block = _task(teardown, "Remove the database collector")
+        self.assertIn("rescue", block)
+        self.assertIn("ic_pg_collector_files", block["when"])
+        inside = {id(t) for t in _all_tasks(block["block"])}
+        for task in _all_tasks(teardown["tasks"]):
+            if "become" in task:
+                self.assertIn(id(task), inside, task["name"])
+        said = block["rescue"][0]["ansible.builtin.debug"]["msg"]
+        self.assertIn("ansible_failed_result", said)
+        self.assertIn("{{ ic_pg_cron_file }}", said)
 
 
 class TestTheDiskCollectorMeasuresDatabaseAndFilestore(BaseCase):
@@ -415,20 +477,66 @@ class TestTheInstallRecordsItsRevision(ObservabilityExecutorCase):
         self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
         self.assertEqual(self.host.metrics_agents_state, "installed")
 
-    def test_a_collector_that_failed_is_said_and_fails_nothing(self):
+    def _errors(self, **facts):
+        """Return what ``parse_results`` makes of a playbook that ended
+        well and exported *facts*."""
         executor = self._make(ObservabilityAgentsExecutor)
-        executor._facts = {"ic_agents_running": "3", "ic_pg_collector": "failed"}
-        self.assertEqual(
-            executor.parse_results({executor._playbook: {"exit_status": 0}}), [],
-        )
-        log = self._succeed(
+        executor._facts = {"ic_agents_running": "3", **facts}
+        return executor.parse_results({executor._playbook: {"exit_status": 0}})
+
+    def test_a_collector_that_failed_fails_the_job_with_what_to_do(self):
+        """The owner, 12-nov-2026: fixed now, not found a month later."""
+        errors = self._errors(
             ic_pg_collector="failed",
             ic_pg_collector_error="Check that sudo asks no password: non-zero return code",
         )
-        self.assertIn("Database collector not installed", log)
-        self.assertIn("sudo asks no password", log)
-        # Still the current revision: running it again changes nothing.
-        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("database collector could not be installed", errors[0])
+        self.assertIn("Collect database figures", errors[0])
+        self.assertIn("Reason: Check that sudo asks no password", errors[0])
+
+    def test_one_that_could_not_be_removed_says_so(self):
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor._sent_collect_pg = False
+        executor._facts = {"ic_agents_running": "3", "ic_pg_collector": "failed"}
+        errors = executor.parse_results({executor._playbook: {"exit_status": 0}})
+        self.assertIn("could not be removed", errors[0])
+
+    def test_without_cron_the_job_fails_saying_to_install_it(self):
+        errors = self._errors(
+            ic_pg_collector="failed", ic_disk_collector="failed",
+            ic_cron_error="Install cron: Could not get lock /var/lib/dpkg/lock-frontend",
+        )
+        self.assertEqual(len(errors), 1, "cron missing is said once, for both collectors")
+        self.assertTrue(errors[0].startswith(
+            "cron is not installed on the server and could not be installed: "
+            "install it (apt install cron) or use the IncubaCloud image."
+        ))
+        self.assertIn("Could not get lock", errors[0])
+
+    def test_both_collectors_in_place_fail_nothing(self):
+        self.assertEqual(self._errors(ic_pg_collector="installed", ic_disk_collector="installed"), [])
+        self.assertEqual(self._errors(ic_pg_collector="off"), [])
+        # A playbook from before the facts existed.
+        self.assertEqual(self._errors(), [])
+
+    def test_a_switch_moved_during_the_install_leaves_the_revision(self):
+        """B-e of the final review: the install applied the old value."""
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor._sent_collect_pg = True
+        self.settings.metrics_collect_pg = False
+        lines = []
+        executor._sys = lines.append
+        executor._facts = {"ic_agents_running": "3", "ic_pg_collector": "installed"}
+        asyncio.run(executor.on_success({}))
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+        self.assertEqual(self.host.metrics_agents_state, "installed")
+        self.assertIn("switch moved", "\n".join(lines))
+
+    def test_the_value_sent_is_the_one_compared(self):
+        executor = self._make(ObservabilityAgentsExecutor)
+        extra = executor.get_extra_vars()
+        self.assertIs(extra["ic_collect_pg"], executor._sent_collect_pg)
 
     def test_switched_off_is_said(self):
         self.assertIn("switched off", self._succeed(ic_pg_collector="off"))

@@ -94,16 +94,23 @@ esc() {
 
 # The PID of every running ``db`` container, by compose project. Two
 # docker calls for the whole pass, whatever the number of instances.
+# Docker that does not answer (a loaded host past the 5 s) says nothing
+# about which databases run: every instance listed then counts as an
+# error, not as asleep.
 declare -A PID=()
-mapfile -t ids < <(timeout 5 docker ps -q --filter label=com.docker.compose.service=db 2>/dev/null)
-if [ "${#ids[@]}" -gt 0 ]; then
+docker_ok=true
+listed="$(timeout 5 docker ps -q --filter label=com.docker.compose.service=db 2>/dev/null)" \
+    || docker_ok=false
+mapfile -t ids < <(printf '%s\n' "$listed" | grep -v '^$')
+if [ "$docker_ok" = true ] && [ "${#ids[@]}" -gt 0 ]; then
+    states="$(timeout 5 docker inspect -f \
+        '{{index .Config.Labels "com.docker.compose.project"}} {{.State.Pid}} {{.State.Running}} {{.State.Paused}}' \
+        "${ids[@]}" 2>/dev/null)" || docker_ok=false
     while read -r project pid running paused; do
         if [ "$running" = true ] && [ "$paused" = false ] && [ "${pid:-0}" != 0 ]; then
             PID[$project]=$pid
         fi
-    done < <(timeout 5 docker inspect -f \
-        '{{index .Config.Labels "com.docker.compose.project"}} {{.State.Pid}} {{.State.Running}} {{.State.Paused}}' \
-        "${ids[@]}" 2>/dev/null)
+    done <<<"$states"
 fi
 
 samples=()
@@ -114,7 +121,10 @@ while read -r iid iname project db user; do
     case "$iid" in \#*) continue ;; esac
     pid="${PID[$project]:-}"
     # Stopped, sleeping or paused: nothing runs to be asked.
-    [ -n "$pid" ] || continue
+    if [ -z "$pid" ]; then
+        [ "$docker_ok" = true ] || errors=$((errors + 1))
+        continue
+    fi
     left=$((deadline - SECONDS))
     if [ "$left" -le 0 ]; then
         skipped=$((skipped + 1))

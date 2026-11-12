@@ -2,7 +2,8 @@
 # Tests for ansible/playbooks/files/collect_pg.sh.
 #
 # ``docker`` and ``psql`` are stubbed. The docker stub answers from
-# STUB_PS (``docker ps -q``) and STUB_INSPECT (``docker inspect``); the psql
+# STUB_PS (``docker ps -q``) and STUB_INSPECT (``docker inspect``), or
+# fails as ``timeout`` does for the command named in STUB_DOCKER_HANGS; the psql
 # stub records its arguments and environment, and answers STUB_ROW, sleeps
 # STUB_SLEEP or fails when the socket it is given is listed in STUB_FAIL.
 # /proc is a directory of this test (IC_PG_PROC), the lock one of its files.
@@ -22,6 +23,7 @@ setup() {
     export STUB_ROW="7 100 2 1 0 12 0 3 4096 0.991234"
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
+[ "$1" = "${STUB_DOCKER_HANGS:-}" ] && exit 124
 case "$1" in
     ps) printf '%s\n' "$STUB_PS" ;;
     inspect) printf '%s\n' "$STUB_INSPECT" ;;
@@ -115,6 +117,17 @@ collect() {
     export STUB_INSPECT="acme-prod 101 true false"
     collect
     grep -qx 'ic_pg_scrape_errors 0' "$TMP/textfile/ic_pg.prom"
+}
+
+@test "docker not answering counts every instance as an error, not as asleep" {
+    for hangs in ps inspect; do
+        export STUB_DOCKER_HANGS="$hangs"
+        rm -f "$TMP/psql_calls"
+        collect
+        [ "$status" -eq 0 ]
+        grep -qx 'ic_pg_scrape_errors 2' "$TMP/textfile/ic_pg.prom"
+        [ ! -e "$TMP/psql_calls" ]
+    done
 }
 
 @test "a paused database is left out without asking it" {
