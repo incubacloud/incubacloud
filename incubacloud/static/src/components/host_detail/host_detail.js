@@ -108,6 +108,9 @@ export class HostDetail extends Component {
             agentsWriteUrl: "",
             // Whether this panel may send security logs at all.
             securityLogsAvailable: true,
+            // Whether the saved server has Send security logs on: it can
+            // always be turned off.
+            securityLogsSaved: false,
             directReachReason: "",
             traefik_file: "traefik_config_yml",
             loading: !this.isNew,
@@ -376,6 +379,7 @@ export class HostDetail extends Component {
             this.state.agentsWriteUrl = host.metrics_agents_write_url || "";
             this.state.directReachReason = host.direct_reach_reason || "";
             this.state.securityLogsAvailable = host.security_logs_available !== false;
+            this.state.securityLogsSaved = !!host.security_logs_enabled;
             this.state.selectedTags = [...(host.tags || [])];
             this.state.allTags = [...(host.all_tags || [])];
             this._snapshotForm();
@@ -440,19 +444,23 @@ export class HostDetail extends Component {
     }
 
     /**
-     * Whether this panel collects metrics at all. Off, a server's
-     * Send security logs is shown but cannot be changed: nothing is sent.
+     * Whether this panel collects metrics at all. Off, the agents already
+     * installed on a server keep running until it is on again.
      */
     get observabilityCollects() {
         return this.env.features?.observability?.collect !== false;
     }
 
     /**
-     * Whether this server's Send security logs may be changed here: the
-     * panel collects metrics, and the panel may send security logs at
-     * all (a managed panel waits for its manager's permission).
+     * Whether this server's Send security logs may be changed here. On,
+     * it can always be turned off; off, it can be turned on where the
+     * panel collects metrics and may send security logs at all (a
+     * managed panel waits for its manager's permission).
      */
     get securityLogsSwitchable() {
+        if (this.state.securityLogsSaved) {
+            return true;
+        }
         return this.observabilityCollects && this.state.securityLogsAvailable !== false;
     }
 

@@ -69,7 +69,7 @@ PY
     cat "$here/fixtures/fluent_bit/fail2ban.log" >> "$TMP/log/fail2ban.log"
     for _ in $(seq 60); do
         [ "$(loki_count auditd)" = 5 ] && [ "$(loki_count fail2ban)" = 7 ] &&
-            [ "$(loki_count sshd)" = 6 ] && [ "$(loki_count sudo)" = 5 ] && break
+            [ "$(loki_count sshd)" = 11 ] && [ "$(loki_count sudo)" = 6 ] && break
         sleep 1
     done
     curl -fs "$METRICS/metrics" > "$TMP/metrics.txt"
@@ -99,8 +99,10 @@ counter() {
     [ -n "$line" ] && echo "${line##* }" || echo none
 }
 
-@test "one failed SSH connection counts once" {
-    [ "$(counter 'ic_ssh_auth_failed_total')" = 3 ]
+@test "one failed SSH connection counts once, however it ends" {
+    # Closed, reset or said goodbye by the client, or ended by sshd after
+    # too many attempts; a connection that never named a user is not one.
+    [ "$(counter 'ic_ssh_auth_failed_total')" = 7 ]
 }
 
 @test "a sign-in with the panel's key is the panel's" {
@@ -111,7 +113,8 @@ counter() {
 @test "a refused sudo is not a command run" {
     [ "$(counter 'ic_sudo_total{kind="panel_user"}')" = 1 ]
     [ "$(counter 'ic_sudo_total{kind="ansible"}')" = 1 ]
-    [ "$(counter 'ic_sudo_total{kind="other"}')" = 1 ]
+    # Another user's BECOME-SUCCESS is not Ansible's.
+    [ "$(counter 'ic_sudo_total{kind="other"}')" = 2 ]
     [ "$(counter 'ic_sudo_failed_total')" = 1 ]
 }
 
@@ -134,8 +137,8 @@ counter() {
 }
 
 @test "every line read is counted, sent or not" {
-    [ "$(counter 'ic_security_lines_total{source="sshd"}')" = 6 ]
-    [ "$(counter 'ic_security_lines_total{source="sudo"}')" = 5 ]
+    [ "$(counter 'ic_security_lines_total{source="sshd"}')" = 11 ]
+    [ "$(counter 'ic_security_lines_total{source="sudo"}')" = 6 ]
     [ "$(counter 'ic_security_lines_total{source="fail2ban"}')" = 9 ]
     [ "$(counter 'ic_security_lines_total{source="auditd"}')" = 8 ]
 }

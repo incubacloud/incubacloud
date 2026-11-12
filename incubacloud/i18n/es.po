@@ -22976,9 +22976,13 @@ msgstr "Disponible próximamente."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid "Observability is off on this panel, so nothing is sent."
+msgid ""
+"Observability is off on this panel: agents already installed keep sending "
+"until it is on again, and a change here applies then."
 msgstr ""
-"La observabilidad está apagada en este panel, así que no se envía nada."
+"La observabilidad está apagada en este panel: los agentes ya instalados "
+"siguen enviando hasta que se vuelva a encender, y un cambio aquí se aplica "
+"entonces."
 
 #. module: incubacloud
 #. odoo-python

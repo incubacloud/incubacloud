@@ -16,14 +16,20 @@
 local PANEL = dofile("/fluent-bit/etc/panel.lua")
 
 -- One line per failed connection: sshd ends every connection that never
--- authenticated with one of these (the client closing, or saying goodbye
--- first). ``Invalid user`` and ``Failed …`` come before them in the same
--- connection, which made 1.8 lines per attempt (F0, 9-nov-2026).
+-- authenticated with one of these (the client closing, resetting or
+-- saying goodbye first, or sshd ending it after too many attempts, as a
+-- brute force with several passwords per connection gets). ``Invalid
+-- user`` and ``Failed …`` come before them in the same connection, which
+-- made 1.8 lines per attempt (F0, 9-nov-2026; review of 12-nov-2026).
 local FAILED_ENDINGS = {
     "^Connection closed by invalid user ",
     "^Connection closed by authenticating user ",
+    "^Connection reset by invalid user ",
+    "^Connection reset by authenticating user ",
     "^Disconnected from invalid user ",
     "^Disconnected from authenticating user ",
+    "^Disconnecting invalid user ",
+    "^Disconnecting authenticating user ",
 }
 
 local function ssh(msg, out)
@@ -52,12 +58,14 @@ local function sudo(msg, out)
     end
     local user = msg:match("^%s*(%S+) : .*COMMAND=")
     if user then
-        if msg:find("BECOME-SUCCESS", 1, true) then
-            out.c_sudo_kind = "ansible"
-        elseif user == PANEL.user then
-            out.c_sudo_kind = "panel_user"
-        else
+        if user ~= PANEL.user then
+            -- ``sudo echo BECOME-SUCCESS`` is anyone's to type: only the
+            -- panel's user runs Ansible (review of 12-nov-2026).
             out.c_sudo_kind = "other"
+        elseif msg:find("BECOME-SUCCESS", 1, true) then
+            out.c_sudo_kind = "ansible"
+        else
+            out.c_sudo_kind = "panel_user"
         end
     end
 end

@@ -148,7 +148,10 @@ before updating (`docs/observability-operations.md`, "Undo").
   panel's key counts as the panel's. While the central does not answer,
   the lines wait on disk, up to 64 MB. A server that keeps its journal in
   memory sends auditd's and fail2ban's lines only, and the install says
-  so. The connection guide has a section on what is sent.
+  so. It can always be turned off; with observability off, the change
+  applies once it is on again. The install sends the logs only where the
+  switch is on and the panel may send them. The connection guide has a
+  section on what is sent.
 - **The central converges on its playbook.** The panel records the
   revision of its central's last good deployment, and the reconciliation
   cron deploys the central again while it is behind, not while a

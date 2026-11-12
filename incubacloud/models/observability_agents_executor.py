@@ -229,7 +229,10 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         account, token = settings._metrics_auth()
         # Kept for on_success: a switch moved meanwhile is applied again.
         self._sent_collect_pg = bool(settings.metrics_collect_pg)
-        self._sent_security_logs = bool(host.security_logs_enabled)
+        # Both: the switch alone would install Fluent Bit on a panel that
+        # withholds the logs, were it left on by an update cut short or
+        # turned on past the checks (review of 12-nov-2026).
+        self._sent_security_logs = self._security_logs_due(host)
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
@@ -265,6 +268,15 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 for inst in instances
             ],
         }
+
+    @staticmethod
+    def _security_logs_due(host):
+        """Return whether *host* is to send its security logs.
+
+        :param host: the ``cloud.host`` installed.
+        :rtype: bool
+        """
+        return bool(host.security_logs_enabled and host._security_logs_available())
 
     def parse_results(self, results):
         """Fail when the playbook did, and report what came up."""
@@ -420,11 +432,14 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         :param dict facts: what the playbook exported.
         """
         if not _truthy(facts.get("ic_fluent_bit")):
+            host = self._host()
             if getattr(self, "_sent_security_logs", False):
                 self._sys(
                     "Security logs not sent: the central has no log store "
                     "this panel can write to."
                 )
+            elif host.security_logs_enabled:
+                self._sys("Security logs not sent: not available on this panel.")
             else:
                 self._sys("Security logs switched off on this server.")
             return
@@ -461,7 +476,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             )
             return None
         sent_logs = getattr(self, "_sent_security_logs", None)
-        if sent_logs is not None and sent_logs != bool(host.security_logs_enabled):
+        if sent_logs is not None and sent_logs != self._security_logs_due(host):
             self._sys(
                 "Send security logs changed on this server during this "
                 "install: it is applied again."
