@@ -165,6 +165,13 @@ CORE_DYNAMIC_CALLS = {
     "/incubacloud/static/src/components/metrics/on_demand_panel.js": {
         "this.props.route": frozenset(),
     },
+    # The charts' common board loads the route its subclass names in
+    # ``get route()``: /cloud/instance/resource_series (metrics_board.js),
+    # /cloud/host/resource_series (host_board.js) and
+    # /cloud/fleet/resource_series (fleet_board.js), all classified above.
+    "/incubacloud/static/src/components/metrics/chart_board.js": {
+        "this.route": frozenset(),
+    },
     "/incubacloud/static/src/components/instance_detail/instance_detail_restore.js": {
         "`/cloud/instance/${this.props.instance_id}/restore/${path}`": frozenset(
             {
