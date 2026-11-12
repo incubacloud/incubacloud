@@ -312,15 +312,22 @@ is unchanged.
 - **A refund that fails keeps the refusal.** When giving back the hour's hit
   of a test mail the queue refused fails, the asker still reads the queue's
   refusal and the failure is logged.
-- **The relay's test mail waits for the relay to open its port.** Right
-  after a rebuild the relay's container may not accept connections yet, and
-  «Send test mail» failed its job instead of giving a result (issue #51).
-  `relay_test.sh` now tries again every 3 s, for up to 45 s, while port 25
-  gives no answer (connection refused, no banner, the container not up),
-  and then fails saying «the relay is not accepting mail on its port 25 yet;
-  try again in a minute», which the job shows as its error (exit status
-  75). A relay that answers and refuses the mail is a result and is not
-  tried again. The step's timeout grows from 150 s to 225 s.
+- **The relay's test mail waits for the relay to start.** Right after a
+  rebuild the relay's container may not accept connections yet, and «Send
+  test mail» failed its job instead of giving a result (issue #51); and
+  Amavis, the content filter every mail goes through, starts later than
+  Postfix, so a test mail taken then was deferred with «connect to
+  127.0.0.1[127.0.0.1]:10024: Connection refused» and raised the critical
+  alert «smtp_relay_failing» with the content filter as its cause.
+  `relay_test.sh` now reads the content filter Postfix hands mail to
+  (`postconf -h content_filter`) and waits for its port to accept
+  connections before the mail goes in; it tries again every 3 s, for up to
+  90 s, while the container, the content filter or port 25 gives no answer
+  (connection refused, no banner, the container not up), and then fails
+  saying the relay is still starting and to try again in a minute, which
+  the job shows as its error (exit status 75) without touching the relay's
+  state or its alert. A relay that answers and refuses the mail is a result
+  and is not tried again. The step's timeout grows from 150 s to 275 s.
 
 ---
 

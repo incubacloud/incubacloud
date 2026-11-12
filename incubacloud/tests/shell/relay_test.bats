@@ -39,6 +39,19 @@ case "$1" in
         done
         exec grep "${args[@]}"
         ;;
+    postconf)
+        # docker-mailserver's own unless CONTENT_FILTER says otherwise
+        # (empty: no content filter).
+        printf '%s\n' "${CONTENT_FILTER-smtp-amavis:[127.0.0.1]:10024}"
+        exit 0
+        ;;
+    timeout)
+        # The probe of the content filter's port: the first
+        # FILTER_FAIL_FIRST calls find it closed (Amavis still starting).
+        n=$(($(grep -c '^timeout ' "$CALLS")))
+        if [ "$n" -le "${FILTER_FAIL_FIRST:-0}" ]; then exit 1; fi
+        exit 0
+        ;;
     postsuper | postqueue) exit 0 ;;
 esac
 exit 99
@@ -182,6 +195,43 @@ run_test() {
     run_test t14 0 5 30
     [ "$status" -eq 1 ]
     [[ "$output" == *"did not take the test mail"* ]]
+    [ "$(grep -c '^swaks ' "$CALLS")" -eq 1 ]
+}
+
+@test "a content filter that does not answer yet is waited for before the mail goes in" {
+    log_mail t15 AAAAAA1 BBBBBB2 "relay=h[1.2.3.4]:587, dsn=2.0.0, status=sent (250 ok)"
+    export FILTER_FAIL_FIRST=2
+    run_test t15 0 5 30
+    [ "$status" -eq 0 ]
+    [ "${lines[-1]}" = 'IC_RELAY_TEST {"status": "sent", "response": "250 ok", "token": null}' ]
+    grep -q '^postconf -h content_filter$' "$CALLS"
+    [ "$(grep -E '^(timeout|swaks) ' "$CALLS" | cut -d' ' -f1 | paste -sd, -)" = "timeout,timeout,timeout,swaks" ]
+}
+
+@test "the probe asks the host and port the content filter names" {
+    log_mail t16 AAAAAA1 BBBBBB2 "relay=h[1.2.3.4]:587, dsn=2.0.0, status=sent (250 ok)"
+    export CONTENT_FILTER='smtp-amavis:[10.0.0.5]:10026'
+    run_test t16 0 5 30
+    [ "$status" -eq 0 ]
+    grep -q '^timeout .* 10\.0\.0\.5 10026$' "$CALLS"
+}
+
+@test "a content filter that never answers exits 75 saying the relay is still starting, and sends nothing" {
+    export FILTER_FAIL_FIRST=1000
+    run_test t17 0 5 1
+    [ "$status" -eq 75 ]
+    [[ "$output" == *"the relay is still starting: its content filter does not answer yet; try again in a minute"* ]]
+    [ "$(grep -c '^timeout ' "$CALLS")" -ge 1 ]
+    ! grep -q '^swaks ' "$CALLS"
+    ! grep -q '^postsuper' "$CALLS"
+}
+
+@test "without a content filter the mail goes in at once" {
+    log_mail t18 AAAAAA1 BBBBBB2 "relay=h[1.2.3.4]:587, dsn=2.0.0, status=sent (250 ok)"
+    export CONTENT_FILTER=''
+    run_test t18 0 5 30
+    [ "$status" -eq 0 ]
+    ! grep -q '^timeout ' "$CALLS"
     [ "$(grep -c '^swaks ' "$CALLS")" -eq 1 ]
 }
 

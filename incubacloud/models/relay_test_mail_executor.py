@@ -9,10 +9,11 @@ one with OAuth2 alike.
 A mail the server did not take is an answer, not a failed job: the job
 ends ``done`` with ``delivered`` false and the server's reply. It fails
 only when the relay could not be asked (no connection to the host, the
-``smtp`` container not answering on its port 25 after 45 s, which the job
-says in words). Its answer is evidence about the
-relay, so it updates the relay's state and alert as the health probe
-does, at once: the person who asked has just seen the result.
+``smtp`` container still starting after 90 s: its port 25 or its content
+filter, Amavis, not answering, which the job says in words and which
+leaves the relay's state and alert as they were). Its answer is evidence
+about the relay, so it updates the relay's state and alert as the health
+probe does, at once: the person who asked has just seen the result.
 """
 import json
 import logging
@@ -36,21 +37,26 @@ _ANSWER_RE = re.compile(r"^IC_RELAY_TEST (\{.*\})\s*$", re.MULTILINE)
 #: Amavis adds a few seconds before. Two minutes covers all of it with
 #: room, and is what a person waits for at most.
 WAIT_SECONDS = 120
-#: How long the script keeps trying while the relay's port 25 does not
-#: answer, in seconds. 45 s (12-nov-2026): just after a rebuild the
-#: relay's container may not accept connections yet, and the QA's first
-#: test mail after one failed 7 s later; docker-mailserver takes up to
-#: about half a minute to start, so 45 s covers it with margin.
-#: ``relay_test.sh`` has the same default.
-CONNECT_WAIT_SECONDS = 45
-#: The most one attempt to connect can take before the script looks at the
-#: clock again: swaks's own timeout on a silent port.
-CONNECT_ATTEMPT_SECONDS = 30
-#: The script's exit status when port 25 never answered (EX_TEMPFAIL).
+#: How long the script keeps trying while the relay is not ready to take
+#: mail, in seconds. 90 s (12-nov-2026): just after a rebuild the relay's
+#: container may not accept connections yet (the QA's first test mail
+#: after one failed 7 s later), and its Amavis, the content filter every
+#: mail goes through, starts later than Postfix (the QA's test mail after
+#: another found port 25 open and Amavis's 10024 closed, and was deferred).
+#: docker-mailserver takes up to about half a minute to open port 25, and
+#: Amavis more; 90 s covers both with margin. ``relay_test.sh`` has the
+#: same default.
+CONNECT_WAIT_SECONDS = 90
+#: The most one attempt can take before the script looks at the clock
+#: again: the probe of the content filter's port (5 s) and swaks's own
+#: timeout on a silent port (30 s).
+CONNECT_ATTEMPT_SECONDS = 35
+#: The script's exit status when the relay was still starting: port 25 or
+#: its content filter never answered (EX_TEMPFAIL).
 EXIT_PORT_SILENT = 75
 #: The step's own timeout: the wait to connect, one last attempt past it,
 #: the wait for the verdict, and the mail's way in and the clean-up after
-#: it (30 s): 225 s.
+#: it (30 s): 275 s. The QA's walk waits 300 s for the job.
 STEP_TIMEOUT = (
     CONNECT_WAIT_SECONDS + CONNECT_ATTEMPT_SECONDS + WAIT_SECONDS + 30
 )
@@ -109,8 +115,11 @@ class RelayTestMailExecutor(AbstractSSHExecutor):
         """
         step = results.get(_LABEL) or {}
         if step.get("exit_status") == EXIT_PORT_SILENT:
+            # A relay still starting says nothing of it: the job fails
+            # before ``on_success``, which alone touches its state and
+            # ``smtp_relay_failing``.
             return [
-                "The relay is not accepting mail on its port 25 yet; "
+                "The relay is still starting and is not taking mail yet; "
                 "try again in a minute."
             ]
         if step.get("exit_status") != 0:

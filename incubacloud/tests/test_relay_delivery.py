@@ -479,22 +479,29 @@ class TestRelayTestMail(_RelayCase):
         _job, errors = self._run(None)
         self.assertEqual(errors, ["The relay's test gave no answer."])
 
-    def test_a_silent_port_25_fails_the_job_in_words(self):
-        """The script's exit 75 reads as what it means, not as a status."""
+    def test_a_relay_still_starting_fails_the_job_in_words(self):
+        """The script's exit 75 reads as what it means, not as a status.
+
+        Port 25 silent or the content filter (Amavis) not answering yet,
+        as just after a rebuild: the relay is starting, which says nothing
+        of it, so its state and its alert stay as they were.
+        """
         _job, errors = self._run(None, exit_status=75)
         self.assertEqual(errors, [
-            "The relay is not accepting mail on its port 25 yet; "
+            "The relay is still starting and is not taking mail yet; "
             "try again in a minute."
         ])
+        self.assertFalse(self._alert())
+        self.assertEqual(self.inst.smtp_relay_state, "unknown")
 
     def test_the_step_timeout_leaves_room_for_the_wait_to_connect(self):
-        """Connecting 45 s, one last attempt, the 120 s verdict and the clean-up."""
+        """Waiting 90 s, one last attempt, the 120 s verdict and the clean-up."""
         self.env.user.email = "asker@example.org"
         job = self._job("relay_test_mail")
         (_label, command, opts), = RelayTestMailExecutor(
             job, self.host,
         ).get_commands()
-        self.assertTrue(command.rstrip().endswith(" 0 120 45"), command)
+        self.assertTrue(command.rstrip().endswith(" 0 120 90"), command)
         self.assertGreaterEqual(
             opts["timeout"],
             CONNECT_WAIT_SECONDS + CONNECT_ATTEMPT_SECONDS + WAIT_SECONDS,
