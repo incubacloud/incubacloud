@@ -21,6 +21,9 @@ import psycopg2
 
 from odoo import fields
 
+from odoo.addons.incubacloud.models._job_server_limits import (
+    attached_step_limit_seconds,
+)
 from odoo.addons.incubacloud.models.abstract_executor import (
     CANCELLED_WHILE_RUNNING,
     AbstractSSHExecutor,
@@ -45,7 +48,9 @@ RESTORE_UNREACHABLE_MAX = 8
 #: How long a cancel waits on the host for the restore to stop and put
 #: back what it changed, in the job's own run (a worker of the job runner):
 #: a phase stops in seconds and a rollback only renames, so most cancels
-#: end within it; one that does not is followed by the next job.
+#: end within it; one that does not is followed by the next job. With the
+#: connection's margin, within what a step in the request may last
+#: (``_cancel_wait_in_run``): 0.4 of ``limit_time_real``.
 CANCEL_WAIT_S = 300
 #: The same wait outside the job's run: the reconciliation of lost jobs
 #: (``cloud.job._cron_reconcile_lost_jobs``) runs it in the cron thread
@@ -1137,6 +1142,29 @@ class PitrRestoreExecutor(_PitrExecutor):
         """
         return self._loop is not None
 
+    def _cancel_wait_in_run(self):
+        """Return how long a cancel in the job's run waits on the host, in s.
+
+        ``CANCEL_WAIT_S``, cut so that it and ``CANCEL_SSH_MARGIN_S`` fit in
+        what a step run in the request may last
+        (``attached_step_limit_seconds``, 0.4 of the server's
+        ``limit_time_real``): the stop may come at the end of the attempt's
+        budget. Never below ``CANCEL_WAIT_OUTSIDE_RUN_S``; the whole wait
+        on a server without a limit. A cancel the host has not finished
+        within it is followed by the next job.
+
+        :rtype: int
+        """
+        limit = attached_step_limit_seconds({
+            "limit_time_real": self.env["cloud.job"]._server_limit_time_real(),
+        })
+        if limit <= 0:
+            return CANCEL_WAIT_S
+        return max(
+            CANCEL_WAIT_OUTSIDE_RUN_S,
+            min(CANCEL_WAIT_S, limit - CANCEL_SSH_MARGIN_S),
+        )
+
     async def on_cancelled_running(self, results, exc):
         """Stop the restore on the host and wait for it to put back what it did.
 
@@ -1165,7 +1193,10 @@ class PitrRestoreExecutor(_PitrExecutor):
         self.env = self.job.env
         inst = self._inst()
         d, _user = self._common()
-        wait = CANCEL_WAIT_S if self._in_own_run() else CANCEL_WAIT_OUTSIDE_RUN_S
+        wait = (
+            self._cancel_wait_in_run() if self._in_own_run()
+            else CANCEL_WAIT_OUTSIDE_RUN_S
+        )
         self._sys(
             f"Asking the host to stop the restore of '{inst.name}' and put "
             f"back what it changed; waiting up to {wait} s."
