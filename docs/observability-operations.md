@@ -302,7 +302,7 @@ itself and its counters never expire).
   it once observability is on again.
   An agent's `manage_host` that turns it off asks for approval unless an
   auto-approval rule covers it; the change is in the audit log either
-  way. The update to 1.0.229 replaced the panel-wide *Send hosts'
+  way. The update to 1.0.227 replaced the panel-wide *Send hosts'
   security logs* with it and turned it on on every server, unless a
   module that extends the panel decides otherwise
   (`cloud.host._security_logs_after_upgrade`,
@@ -467,7 +467,7 @@ label recreates vmauth, a few seconds the agents' queues cover.
 
 ## Undo
 
-- **What Grafana left.** The first deployment with 1.0.229, which the
+- **What Grafana left.** The first deployment with 1.0.227, which the
   update queues on its own, removes the volume `incubacloud-central_grafana-data`,
   the central's `provisioning/` and `dashboards/` directories and the
   image `grafana/grafana:11.2.0`, after the boundary answered. Nothing in
@@ -481,7 +481,7 @@ label recreates vmauth, a few seconds the agents' queues cover.
   security logs** on that server; its container goes at once. For the
   whole fleet, the same server by server (an agent's `manage_host` asks
   for approval for each).
-- **Back to the release before.** The columns 1.0.229 stopped using stay
+- **Back to the release before.** The columns 1.0.227 stopped using stay
   in the database, emptied: the release before starts. Its agents'
   revision is lower, so hosts already on revision 2 keep Fluent Bit until
   their next install gives them promtail back; both send to `/lw/`. That

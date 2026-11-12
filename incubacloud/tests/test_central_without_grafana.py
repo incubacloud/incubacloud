@@ -146,11 +146,11 @@ class TestTheCentralConverges(ObservabilityExecutorCase):
 
 
 def _load_migration():
-    """Import 1.0.229's end-migrate script as a module."""
+    """Import 1.0.227's end-migrate script as a module."""
     path = os.path.join(
-        get_module_path("incubacloud"), "migrations", "1.0.229", "end-migrate.py",
+        get_module_path("incubacloud"), "migrations", "1.0.227", "end-migrate.py",
     )
-    spec = importlib.util.spec_from_file_location("ic_end_1_0_229_grafana", path)
+    spec = importlib.util.spec_from_file_location("ic_end_1_0_227_grafana", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -174,7 +174,7 @@ class TestTheUpdateRetiresGrafana(ObservabilityExecutorCase):
         )
 
     def test_the_secret_is_emptied_and_the_central_queued(self):
-        _load_migration().migrate(self.env.cr, "1.0.228")
+        _load_migration().migrate(self.env.cr, "1.0.225")
         self.env.cr.execute("SELECT grafana_admin_password FROM cloud_settings")
         self.assertEqual({row[0] for row in self.env.cr.fetchall()}, {None})
         self.assertTrue(self.env["cloud.job"].search([
@@ -187,7 +187,7 @@ class TestTheUpdateRetiresGrafana(ObservabilityExecutorCase):
             type(self.env["cloud.host"]), "_reconcile_central_revision",
             side_effect=RuntimeError("busy"),
         ):
-            _load_migration().migrate(self.env.cr, "1.0.228")
+            _load_migration().migrate(self.env.cr, "1.0.225")
         self.env.cr.execute("SELECT grafana_admin_password FROM cloud_settings")
         self.assertEqual({row[0] for row in self.env.cr.fetchall()}, {None})
 

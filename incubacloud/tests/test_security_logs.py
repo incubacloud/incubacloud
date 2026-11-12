@@ -430,11 +430,11 @@ class TestTheSwitchReappliesItsServer(CorePermissionMixin, ObservabilityExecutor
 
 
 def _load_migration():
-    """Import 1.0.229's end-migrate script as a module."""
+    """Import 1.0.227's end-migrate script as a module."""
     path = os.path.join(
-        get_module_path("incubacloud"), "migrations", "1.0.229", "end-migrate.py",
+        get_module_path("incubacloud"), "migrations", "1.0.227", "end-migrate.py",
     )
-    spec = importlib.util.spec_from_file_location("ic_end_1_0_229", path)
+    spec = importlib.util.spec_from_file_location("ic_end_1_0_227", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -455,7 +455,7 @@ class TestTheUpdateGivesEveryServerTheSwitch(CorePermissionMixin, TransactionCas
     def test_every_server_on_also_with_the_panel_wide_setting_off(self):
         """The owner, 10-nov-2026: on everywhere, said in the changelog."""
         self.env.flush_all()
-        _load_migration().migrate(self.env.cr, "1.0.228")
+        _load_migration().migrate(self.env.cr, "1.0.225")
         self.env.invalidate_all()
         self.assertEqual(set(self.hosts.mapped("security_logs_enabled")), {True})
 
@@ -467,7 +467,7 @@ class TestTheUpdateGivesEveryServerTheSwitch(CorePermissionMixin, TransactionCas
         ):
             self.hosts.write({"security_logs_enabled": True})
             self.env.flush_all()
-            _load_migration().migrate(self.env.cr, "1.0.228")
+            _load_migration().migrate(self.env.cr, "1.0.225")
         self.env.invalidate_all()
         self.assertEqual(set(self.hosts.mapped("security_logs_enabled")), {False})
 
