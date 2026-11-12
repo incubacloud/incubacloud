@@ -2,13 +2,14 @@
 
 A base copy (wal-g) takes minutes or hours with a large database, and a
 job follows a restore for up to ``RESTORE_WAIT_S``: on Odoo.sh a request
-is cut at 900 s. «Base copy» and «Wait for the restore» run apart on the
-server (``detached_step.sh``) and their jobs park around them (phase 3,
-cut 6, 12-nov-2026).
+is cut at 900 s. «Base copy», the switch on's «First base copy» and «Wait
+for the restore» run apart on the server (``detached_step.sh``) and their
+jobs park around them (phase 3, cut 6, 12-nov-2026).
 
 The base copy is a hidden job: it runs beside the visible jobs of its
 instance, and its step holds a scope of its own on the server, so a
-rebuild that starts meanwhile is not made to wait for it. An attempt that
+rebuild that starts meanwhile is not made to wait for it. The first base
+copy holds the same scope: never two copies of an instance at once. An attempt that
 takes a restore up after a park knows what the first one chose
 (``_carried``), so a stop there follows the restore instead of asking a
 host that may not answer. And what the steps print last, which the jobs
@@ -93,8 +94,18 @@ class TestTheLongStepsRunApart(_PitrCase):
             "Wait for the restore": {"detached": True},
         })
 
+    def test_the_first_base_copy_runs_apart_and_the_switch_attached(self):
+        """The same ``base-backup`` as the daily copy, with the options it had."""
+        enable = self._executor(ex.PitrEnableExecutor, "pitr_enable")
+        self.assertEqual(_options(enable.get_commands()), {
+            "Settle archiving": {"stop_on_failure": True},
+            "Install wal-g": {"stop_on_failure": True},
+            "Switch archiving on": {"stop_on_failure": True},
+            "First base copy": {"detached": True},
+        })
+
     def test_no_other_step_of_continuous_recovery_runs_apart(self):
-        """Marked one by one, each with its review: these two only."""
+        """Marked one by one, each with its review: these three only."""
         marked = {}
         for code in ("pitr_enable", "pitr_disable", "pitr_status"):
             executor = self._executor(executor_registry.get(code), code)
@@ -103,7 +114,10 @@ class TestTheLongStepsRunApart(_PitrCase):
                 if opts.get("detached")
             ]
         self.assertEqual(
-            marked, {"pitr_enable": [], "pitr_disable": [], "pitr_status": []},
+            marked, {
+                "pitr_enable": ["First base copy"], "pitr_disable": [],
+                "pitr_status": [],
+            },
         )
 
 
@@ -156,6 +170,15 @@ class TestABaseCopyBesideARebuild(_PitrCase):
         self.assertEqual(self._start("rebuild_instance", "sleep 30"), 0)
         self.assertEqual(
             self._start("restart_instance", "true"), DETACHED_EXIT_BUSY,
+        )
+
+    def test_the_first_base_copy_holds_the_daily_copys_scope(self):
+        """Switching on copies beside a rebuild's step, as the daily copy
+        does, but never while a daily copy of the instance runs."""
+        self.assertEqual(self._start("rebuild_instance", "sleep 30"), 0)
+        self.assertEqual(self._start("pitr_base_backup", "sleep 30"), 0)
+        self.assertEqual(
+            self._start("pitr_enable", "true"), DETACHED_EXIT_BUSY,
         )
 
 
