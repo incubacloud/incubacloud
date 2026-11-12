@@ -81,6 +81,7 @@ from . import (
     test_rebuild_crons_busy,
     test_job_queue,
     test_full_setup_commands,
+    test_full_setup_detached,
     test_responsive_css,
     test_github_setup,
     test_restore_backup_guard,
