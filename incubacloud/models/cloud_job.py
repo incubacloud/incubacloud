@@ -3627,11 +3627,11 @@ class CloudJob(models.Model):
     #: reached within one more pass of Odoo.sh's cron.
     _RECONCILE_CHECKPOINT_RETRY_MINUTES = 10
     #: Minutes from its claim after which a job stopped while it was
-    #: parked whose close never happens has its checkpoint let go
-    #: (``_claim_lost_job``): six passes of 5 minutes. The row is all that
-    #: names it to close, and kept unclosed it read *Cancelling…*, held
-    #: its host's build lock and was cleaned up again at every pass
-    #: (13-nov-2026).
+    #: parked whose close never happens has its checkpoint let go, after a
+    #: close tried in that pass (``_let_go_unclosed_checkpoint``): six
+    #: passes of 5 minutes. The row is all that names it to close, and
+    #: kept unclosed it read *Cancelling…*, held its host's build lock and
+    #: was cleaned up again at every pass (13-nov-2026).
     _RECONCILE_CLOSE_PATIENCE_MINUTES = 30
 
     @staticmethod
@@ -3688,8 +3688,10 @@ class CloudJob(models.Model):
         clean-up may have stopped half way. The checkpoint of a job
         stopped while it was parked, the one mark of a job to close, is
         let go by step 3, in the transaction that writes the end: step 2
-        only says what to do with it. A pass starts no clean-up once
-        ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
+        only says what to do with it; a close tried and not done
+        ``_RECONCILE_CLOSE_PATIENCE_MINUTES`` after the claim closes it
+        instead (``_let_go_unclosed_checkpoint``). A pass starts no
+        clean-up once ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
 
         Assumes the database lets idle transactions be
         (``idle_in_transaction_session_timeout`` off): cut off, a live
@@ -3711,6 +3713,7 @@ class CloudJob(models.Model):
                     " for its next pass", len(job_ids) - position,
                 )
                 break
+            tried = None
             try:
                 claim = self._claim_lost_job(job_id)
                 if claim is None:
@@ -3727,9 +3730,10 @@ class CloudJob(models.Model):
                     break
                 hooked, release = self._clean_up_lost_job(job_id, case, resumed)
                 cleaned |= hooked
-                closed += self._close_lost_job(
-                    job_id, claimed=case, release=release,
-                )
+                tried = case
+                if self._close_lost_job(job_id, claimed=case, release=release):
+                    closed += 1
+                    tried = None
             except Exception:
                 # One job that cannot be dealt with must not hold the
                 # others: its claim stands, and so does the checkpoint of
@@ -3739,6 +3743,8 @@ class CloudJob(models.Model):
                     "cloud.job %s: the reconciliation of its lost worker failed",
                     job_id,
                 )
+            if tried == "stopped_parked":
+                self._let_go_unclosed_checkpoint(job_id)
         return closed
 
     @api.model
@@ -3959,14 +3965,9 @@ class CloudJob(models.Model):
         The case is read again on the locked rows, with the same margin
         as the read that found the job, and ``worker_lost_at`` is set and
         committed before anything is cleaned up. A job already claimed
-        is taken up again for its close alone.
-
-        A job stopped while it was parked (``stopped_parked``) claimed
-        more than ``_RECONCILE_CLOSE_PATIENCE_MINUTES`` ago has its
-        checkpoint closed here, on the claim's cursor, and is left alone:
-        a close that never happens would otherwise clean it up again at
-        every pass. Nothing of the row's data nor of its creator is read,
-        so nothing of theirs can stop it.
+        is taken up again for its close alone, however long ago: the
+        patience of a close that does not happen counts from a close
+        tried (``_let_go_unclosed_checkpoint``).
 
         :param int job_id: the ``cloud.job``
         :return: ``(case, resumed)`` — *resumed* when an earlier pass
@@ -3990,23 +3991,6 @@ class CloudJob(models.Model):
                 # every pass until it is reached.
                 return "checkpoint", False
             if job_row["worker_lost_at"]:
-                patience = fields.Datetime.now() - timedelta(
-                    minutes=self._RECONCILE_CLOSE_PATIENCE_MINUTES,
-                )
-                if case == "stopped_parked" and (
-                    job_row["worker_lost_at"] < patience
-                ):
-                    cr.execute(
-                        "UPDATE cloud_job_checkpoint SET closed = TRUE,"
-                        " parked = FALSE WHERE job_id = %s",
-                        (job_id,),
-                    )
-                    _logger.error(
-                        "cloud.job %s: could not be closed in %d minutes:"
-                        " its checkpoint is let go; the steps after it may"
-                        " wait", job_id, self._RECONCILE_CLOSE_PATIENCE_MINUTES,
-                    )
-                    return None
                 return case, True
             if (job_row["write_date"] or cutoff) >= cutoff or (
                 queue_row and (queue_row["moved"] or cutoff) >= cutoff
@@ -4153,15 +4137,21 @@ class CloudJob(models.Model):
                         "job_id": job_id, "content": note, "source": "system",
                     })
                     if row:
-                        Chunk.create({
-                            "job_id": job_id, "source": "system",
-                            "content": runner.env._(
-                                "This job's type has no executor in this"
-                                " server any more: nothing can stop or remove"
-                                " what it left on its server. Check the"
-                                " server's /tmp by hand."
-                            ),
-                        })
+                        line = runner.env._(
+                            "This job's type has no executor in this"
+                            " server any more: nothing can stop or remove"
+                            " what it left on its server. Check the"
+                            " server's /tmp by hand."
+                        )
+                        # Once per job, while its close is tried again.
+                        if not Chunk.search_count(
+                            [("job_id", "=", job_id), ("content", "=", line)],
+                            limit=1,
+                        ):
+                            Chunk.create({
+                                "job_id": job_id, "source": "system",
+                                "content": line,
+                            })
                         _logger.warning(
                             "cloud.job %s: its type %s has no executor any"
                             " more: what it left on its server is not"
@@ -4544,6 +4534,56 @@ class CloudJob(models.Model):
                 "cloud.job %s: closed by the reconciliation (%s)", job_id, case,
             )
         return True
+
+    @api.model
+    def _let_go_unclosed_checkpoint(self, job_id):
+        """Close the checkpoint of a job whose close keeps not happening.
+
+        Called after a close of this pass that did not happen, for a job
+        claimed ``stopped_parked``. Once its claim is
+        ``_RECONCILE_CLOSE_PATIENCE_MINUTES`` old, its checkpoint is
+        closed, on a cursor of its own with both rows locked without
+        waiting: a close that never happens would otherwise clean it up
+        again at every pass. Only after a close tried: a job taken up
+        again after more than that without a pass (the panel stopped, the
+        cron off in a deploy) is first tried once more (13-nov-2026).
+        Nothing of the row's data nor of its creator is read, so nothing
+        of theirs can stop it. Never raises.
+
+        :param int job_id: the ``cloud.job``
+        """
+        patience = fields.Datetime.now() - timedelta(
+            minutes=self._RECONCILE_CLOSE_PATIENCE_MINUTES,
+        )
+        try:
+            with self.env.registry.cursor() as cr:
+                rows = self._lock_lost_job(cr, job_id)
+                if rows is None:
+                    return
+                job_row, queue_row = rows
+                if not (
+                    job_row["worker_lost_at"]
+                    and job_row["worker_lost_at"] < patience
+                    and self._lost_job_case_of(cr, job_row, queue_row)
+                    == "stopped_parked"
+                ):
+                    return
+                cr.execute(
+                    "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                    " parked = FALSE WHERE job_id = %s",
+                    (job_id,),
+                )
+                _logger.error(
+                    "cloud.job %s: could not be closed in %d minutes:"
+                    " its checkpoint is let go; the steps after it may"
+                    " wait", job_id, self._RECONCILE_CLOSE_PATIENCE_MINUTES,
+                )
+        except Exception:
+            # Its close or this, at the next pass.
+            _logger.exception(
+                "cloud.job %s: its unclosed checkpoint could not be let go",
+                job_id,
+            )
 
     @api.model
     def _close_lost_job_without_queue(

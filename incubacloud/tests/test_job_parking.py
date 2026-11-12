@@ -1646,6 +1646,7 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
             self._reconcile(None)
         self.assertEqual(closes, [True])
         self.assertEqual(len(self._given_up_alert()), 1)
+        self.assertEqual(self._log().count(_NO_EXECUTOR), 1)
         self._assert_let_go()
 
     def test_no_executor_for_a_job_not_cancelled_raises_no_alert(self):
@@ -1681,7 +1682,8 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         self.assertEqual(len(self._given_up_alert()), 1)
 
     def test_a_close_that_never_happens_lets_the_row_go_after_30_minutes(self):
-        """Closed on the claim, with an error: no longer a job to close."""
+        """Closed after the pass's close, with an error: no longer a job
+        to close."""
         cls = self._stopped_and_cancelled_by_hand()
         with self._closes(held=True):
             self._reconcile(cls)
@@ -1695,7 +1697,7 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
             logger, "ERROR",
         ) as logs:
             self._reconcile(cls)
-        self.assertEqual(closes, [])
+        self.assertEqual(closes, [False])
         self.assertTrue(any(
             "could not be closed in 30 minutes" in line for line in logs.output
         ))
@@ -1708,6 +1710,27 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
             ("checkpoint", False),
         )
         self.assertEqual(self._hooks(cls), 1)
+
+    def test_a_job_back_after_a_long_pause_is_closed_before_it_is_let_go(self):
+        """No pass for more than 30 minutes after its claim (the panel
+        stopped, the cron off in a deploy): the pass that comes back
+        closes it, and its row goes with the close."""
+        cls = self._stopped_and_cancelled_by_hand()
+        with patch.object(
+            type(self.env["cloud.job"]), "_clean_up_lost_job", autospec=True,
+            side_effect=RuntimeError("the cron died"),
+        ), mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(cls)
+        self.assertTrue(self.job.worker_lost_at)
+        self.env.cr.execute(
+            "UPDATE cloud_job SET worker_lost_at = worker_lost_at"
+            " - interval '31 minutes' WHERE id = %s", (self.job.id,),
+        )
+        with self._closes() as closes:
+            self._reconcile(cls)
+        self.assertEqual(closes, [True])
+        self.assertFalse(Path(self.directory).exists())
+        self._assert_let_go()
 
     def test_the_row_holds_the_host_until_the_close(self):
         """A build on the host waits for the close, not for the clean-up."""
