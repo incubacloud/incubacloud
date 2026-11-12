@@ -57,7 +57,10 @@ is unchanged.
   and files stay `0700` and `0600`. Cancelled, it is sent
   TERM, given 60 s for its trap and killed; its last lines still reach the
   log. One step at a time per instance, or per host: a job that finds
-  another job's step still running there waits 30 s for it. A
+  another job's step still running there waits 30 s for it. A hidden
+  job's step (a base copy of PITR) holds a scope of its own, and never
+  makes a visible job of the same instance wait for it, nor waits for
+  one. A
   server that kills an account's processes when its SSH session ends
   (logind's `KillUserProcesses`), or that lacks `flock`, `setsid`,
   `timeout`, `pgrep` or `pkill`, runs the step attached, as before. The

@@ -266,6 +266,7 @@ from . import test_job_checkpoint
 from . import test_job_channel_gate
 from . import test_detached_step
 from . import test_job_parking
+from . import test_detached_hold
 from . import test_job_output_by_role
 from . import test_server_only_methods
 from . import test_git_reader
