@@ -53,6 +53,17 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         restore instead of attaching it (payload ``handoff='host'``)."""
         return (self.job.payload or {}).get('handoff') == 'host'
 
+    @property
+    def _outcome_needs_room(self):
+        """Whether the closing hooks fetch the archive through the panel.
+
+        Not for a handoff, which leaves it on its server. An attempt that
+        ran long leaves that fetch to a fresh one (``OUTCOME_ROOM_FACTOR``).
+
+        :rtype: bool
+        """
+        return not self._handoff()
+
     def _live(self):
         """Whether this download is a dump of the database as it runs.
 
@@ -167,6 +178,10 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         # Taken for every non-prod instance (no snapshot store exists)
         # and for production when the caller explicitly asks for
         # ``time='live'`` — the duplicity path below is untouched.
+        #
+        # The dump, the restore from the store and the packaging run apart
+        # on the server (12-nov-2026): with a large database each takes
+        # longer than a request is given. The handover is a ``mv``.
         if inst.environment != 'production' or raw_time == 'live':
             return [
                 (
@@ -179,7 +194,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                         ],
                         env=script_env(inst.odoo_version),
                     ),
-                    {"stop_on_failure": True},
+                    {"stop_on_failure": True, "detached": True},
                 ),
                 *self._handover_step(),
             ]
@@ -195,6 +210,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                         "backup_download.sh",
                         ["restore-sql", d, dbname, raw_time],
                     ),
+                    {"detached": True},
                 ),
                 (
                     "Extract and package",
@@ -202,6 +218,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                         "backup_download.sh",
                         ["package-sql", d, dbname, tmp_dir, archive],
                     ),
+                    {"detached": True},
                 ),
                 *self._handover_step(),
             ]
@@ -213,6 +230,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                 self.run_script(
                     "backup_download.sh", ["restore-full", d, raw_time],
                 ),
+                {"detached": True},
             ),
             (
                 "Extract and package",
@@ -220,6 +238,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                     "backup_download.sh",
                     ["package-full", d, dbname, tmp_dir, archive],
                 ),
+                {"detached": True},
             ),
             *self._handover_step(),
         ]

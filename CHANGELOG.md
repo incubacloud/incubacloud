@@ -70,6 +70,16 @@ is unchanged.
   down meanwhile. The relays through the panel (an upload, an archive of
   another job, one handed over from another server) still run within the
   request, before the steps.
+- **The copies and downloads run their long steps apart on their server.**
+  A copy runs apart its dump, or the backup store's run for a production;
+  a download its dump, its restore from the backup store and its
+  packaging; a neutralized download its source, its neutralization and
+  its dump. The handover of an archive for a chained restore, a `mv`, and
+  the neutralized download's cleanup stay attached. The fetch of the
+  archive into the panel cannot run apart: an attempt that has run a
+  minute and has less than 85% of its request left leaves it to a fresh
+  attempt, as the mechanism allows. A stopped neutralized download still
+  drops its throwaway database.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the

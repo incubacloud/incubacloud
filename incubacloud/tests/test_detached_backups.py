@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import json
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase
@@ -243,3 +244,100 @@ class TestAStoppedNeutralizedDownloadDropsItsDatabase(_BackupCase):
         self.assertIn(
             f"rm -rf {_JOB_DIR}/bkneu {_JOB_DIR}/neutralized.zip", ran[0],
         )
+
+
+class TestTheFreshAttemptFetchesWhatTheFirstMade(_BackupCase):
+    """The attempt that resumes at the fetch runs neither ``before_execute``
+    nor ``get_commands``: what ``after_commands`` and ``on_success`` read
+    comes from the job's payload, its instance and the checkpoint's
+    directory, none of it set before the steps (no ``_carried``)."""
+
+    def _resumed_at_the_fetch(self, cls, inst, payload):
+        """An attempt of *cls* that resumed a job at its fetch.
+
+        :return: the executor, and the paths its fetch read and fetched
+        :rtype: tuple
+        """
+        self.registry_enter_test_mode()
+        first = self._executor(cls, inst, payload)
+        plan = [
+            [step[0], step[1], step[2] if len(step) == 3 else {}]
+            for step in first.get_commands()
+        ]
+        row = self.env["cloud.job.checkpoint"].sudo().create({
+            "job_id": first.job.id, "host_id": self.host.id,
+            "next_index": len(plan), "parked": True,
+            "queue_job_uuid": first.job.queue_job_uuid,
+            "data": json.dumps({
+                "plan": plan,
+                "results": {
+                    step[0]: {"stdout": "", "exit_status": 0} for step in plan
+                },
+                "job_dir": _JOB_DIR, "private_uploads": [], "carried": {},
+            }),
+        })
+        fresh = cls(first.job, self.host)
+        fresh._adopt_checkpoint(row)
+        self.assertGreaterEqual(fresh._resume_index, len(plan))
+        fetched = []
+        transport = MagicMock(spec=SSHTransport)
+
+        async def run(command, *_args, **_kwargs):
+            """Answer every check as a regular file that is there."""
+            return CommandResult("", 0)
+
+        async def download(remote, local):
+            """Record what is fetched; write a small archive."""
+            fetched.append(remote)
+            Path(local).write_bytes(b"zip")
+
+        transport.run.side_effect = run
+        transport.download_file.side_effect = download
+        lines = []
+        with patch.object(
+            cls, "_sys", autospec=True,
+            side_effect=lambda _self, line: lines.append(line),
+        ):
+            asyncio.run(fresh.after_commands(transport, row._data()["results"]))
+            asyncio.run(fresh.on_success(row._data()["results"]))
+        return fresh, fetched, lines
+
+    def _attachments(self, job):
+        """The archives attached to *job*."""
+        return self.env["ir.attachment"].sudo().search([
+            ("res_model", "=", "cloud.job"), ("res_id", "=", job.id),
+        ])
+
+    def test_a_staging_s_copy(self):
+        """Its dump, from the drop directory of the first attempt."""
+        fresh, fetched, lines = self._resumed_at_the_fetch(
+            BackupCreateExecutor, self.staging, {"with_filestore": False},
+        )
+        self.assertEqual(fetched, [f"{_JOB_DIR}/out/backup.zip"])
+        self.assertEqual(len(self._attachments(fresh.job)), 1)
+        backup = self.env["cloud.instance.backup"].sudo().search(
+            [("instance_id", "=", self.staging.id)],
+        )
+        self.assertFalse(backup.with_filestore)
+        self.assertTrue(any("ready for download" in line for line in lines))
+
+    def test_a_download(self):
+        """Packaged from the store, in the first attempt's directory."""
+        fresh, fetched, _lines = self._resumed_at_the_fetch(
+            BackupDownloadExecutor, self.prod,
+            {"time": "latest", "download_type": "all"},
+        )
+        self.assertEqual(fetched, [f"{_JOB_DIR}/backup.zip"])
+        attachment = self._attachments(fresh.job)
+        self.assertEqual(len(attachment), 1)
+        self.assertTrue(attachment.name.endswith("-full.zip"), attachment.name)
+
+    def test_a_neutralized_download(self):
+        """Its archive, from the first attempt's directory."""
+        fresh, fetched, _lines = self._resumed_at_the_fetch(
+            BackupDownloadNeutralizedExecutor, self.staging,
+            {"time": "live", "with_filestore": True},
+        )
+        self.assertEqual(fetched, [f"{_JOB_DIR}/neutralized.zip"])
+        attachment = self._attachments(fresh.job)
+        self.assertTrue(attachment.name.endswith("-full.zip"), attachment.name)

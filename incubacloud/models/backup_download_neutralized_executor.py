@@ -31,6 +31,11 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
 
     _job_type = "backup_download_neutralized"
 
+    #: The closing hooks fetch the archive through the panel: an attempt
+    #: that ran long leaves that fetch to a fresh one
+    #: (``OUTCOME_ROOM_FACTOR``).
+    _outcome_needs_room = True
+
     def _inst(self):
         return self.job.instance_id
 
@@ -85,6 +90,11 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         archive = self._host_tmp_archive()
         is_prod = inst.environment == 'production'
 
+        # Steps 1 to 3 run apart on the server (12-nov-2026): with a large
+        # database each takes longer than a request is given. A stop
+        # sends TERM to the ``docker compose`` client; ``on_failure`` then
+        # drops the throwaway database and removes the job's files.
+        #
         # Step 1: produce a source dump on the host, landing at
         # {host_tmp}/src.zip (non-prod live, or prod packaged from S3).
         if is_prod:
@@ -97,7 +107,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                         source_dbname, raw_time, host_tmp,
                     ],
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             )
         else:
             # Non-prod: dump the live DB inside the odoo container.
@@ -109,7 +119,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                      source_dbname, host_tmp],
                     env=script_env(inst.odoo_version),
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             )
 
         # Step 2: restore into a throwaway DB with --neutralize.
@@ -124,7 +134,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                 ["restore-neutralize", d, self.job.id, neutral_db],
                 env=script_env(inst.odoo_version),
             ),
-            {"stop_on_failure": True},
+            {"stop_on_failure": True, "detached": True},
         )
 
         # Step 3: re-dump the neutralized DB.
@@ -136,7 +146,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                     ["redump-full", d, self.job.id, neutral_db, archive],
                     env=script_env(inst.odoo_version),
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             )
         else:
             step_redump = (
@@ -146,7 +156,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                     ["redump-sql", d, self.job.id, neutral_db,
                      host_tmp, archive],
                 ),
-                {"stop_on_failure": True},
+                {"stop_on_failure": True, "detached": True},
             )
 
         # Step 4: drop the throwaway DB + cleanup source files.
