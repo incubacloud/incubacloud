@@ -284,7 +284,7 @@ export class HostsDashboard extends Component {
      */
     usageMissing(host) {
         if (host.usage_state === "off") {
-            // A tenant's panel has no Monitoring section to turn them on in.
+            // A managed panel has no Monitoring section to turn them on in.
             if (this.metricsNotConfigurable()) {
                 return _t("Live usage is not available on this panel.");
             }
@@ -304,7 +304,7 @@ export class HostsDashboard extends Component {
     }
 
     /**
-     * Whether this panel cannot turn metrics on, as a tenant's, whose
+     * Whether this panel cannot turn metrics on, as a managed one, whose
      * Monitoring section is hidden (``monitoring.js`` asks the same).
      *
      * @returns {boolean}
