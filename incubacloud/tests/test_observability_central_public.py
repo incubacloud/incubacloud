@@ -573,7 +573,7 @@ class TestTheDirectDeployment(ObservabilityExecutorCase):
     def test_a_public_name_without_full_setup_is_refused(self):
         self.settings.write({"metrics_central_public_host": PUBLIC})
         self.host.traefik_deployed = False
-        with self.assertRaisesRegex(JobRefused, "press Full Setup"):
+        with self.assertRaisesRegex(JobRefused, "Full Setup has not been run"):
             self._refusal(ObservabilityCentralExecutor)
 
     def test_a_public_name_with_full_setup_is_not_refused_for_it(self):

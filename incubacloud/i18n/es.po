@@ -15257,11 +15257,11 @@ msgstr ""
 #. module: incubacloud
 #: code:addons/incubacloud/models/observability_central_executor.py:0
 msgid ""
-"This server does not have the proxy that Full Setup installs: press Full "
-"Setup on the server and activate observability again."
+"Full Setup has not been run on this server: run it and enable observability "
+"again."
 msgstr ""
-"Este servidor no tiene el proxy que instala la Configuración completa: pulse"
-" «Configuración completa» en el servidor y vuelva a activar la "
+"A este servidor no se le ha hecho la Configuración completa: pulse "
+"«Configuración completa» en el servidor y vuelva a activar la "
 "observabilidad."
 
 #. module: incubacloud
