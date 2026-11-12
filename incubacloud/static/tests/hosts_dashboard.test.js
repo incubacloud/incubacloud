@@ -411,7 +411,7 @@ describe("HostsDashboard — what a card paints", () => {
         const card = cardOf("live-host");
         expect(`${card} .ic-mbar-cpu .rl-mbar-fill`).toHaveCount(1);
         expect(`${card} .ic-mbar-ram .rl-mbar-fill`).toHaveCount(1);
-        expect(`${card} .ic-mbar-cpu .rl-mbar-fill`).toHaveStyle({ width: "23%" });
+        expect(`${card} .ic-mbar-cpu .rl-mbar-fill`).toHaveAttribute("style", "width:23%");
         expect(`${card} .ic-usage-none`).toHaveCount(0);
     });
 
