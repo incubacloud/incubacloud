@@ -201,6 +201,35 @@ class TestSeededRules(TransactionCase):
         )
         self.assertIn("by (instance_id, instance)", rule.expression)
 
+    def test_the_server_waits_read_the_kernel_s_pressure(self):
+        """12-nov-2026: a disk or memory too busy for the instances.
+
+        Both read PSI as a percentage, so the message's value reads as
+        one; memory reads "full" (nothing ran), the disk "some".
+        """
+        io = self._rule("metric_rule_host_io_pressure")
+        self.assertIn("node_pressure_io_waiting_seconds_total", io.expression)
+        self.assertEqual((io.level, io.comparator, io.threshold), ("warning", "gt", 20))
+        memory = self._rule("metric_rule_host_memory_pressure")
+        self.assertIn("node_pressure_memory_stalled_seconds_total", memory.expression)
+        self.assertEqual((memory.level, memory.comparator, memory.threshold), ("critical", "gt", 10))
+        for rule in (io, memory):
+            self.assertEqual(rule.scope, "host")
+            self.assertTrue(rule.expression.startswith("round(100 * "))
+            self.assertIn("%(value)s%%", rule.message)
+
+    def test_the_cpu_quota_rule_leaves_one_off_runs_out(self):
+        """The odoo container's own share, as the instance board reads it."""
+        from ..models.cloud_instance_metrics import _ONE_OFF_NAMES
+
+        rule = self._rule("metric_rule_instance_cpu_throttled")
+        self.assertEqual(rule.scope, "instance")
+        self.assertEqual((rule.level, rule.comparator, rule.threshold), ("warning", "gt", 25))
+        self.assertEqual(rule.expression.count(f'name!~"{_ONE_OFF_NAMES}"'), 2)
+        self.assertEqual(rule.expression.count(
+            'container_label_com_docker_compose_service="odoo"'), 2)
+        self.assertIn("Resources", rule.message)
+
     def test_no_seeded_rule_aggregates_its_own_label_away(self):
         """A rule must not lose the label its alert is attributed by.
 
@@ -503,6 +532,9 @@ class TestRuleConfirmation(MetricRuleCase):
         self.assertEqual(ref("incubacloud.metric_rule_instance_down").confirm_cycles, 2)
         self.assertEqual(ref("incubacloud.metric_rule_instance_errors").confirm_cycles, 1)
         self.assertEqual(ref("incubacloud.metric_rule_instance_oom").confirm_cycles, 1)
+        self.assertEqual(ref("incubacloud.metric_rule_instance_cpu_throttled").confirm_cycles, 3)
+        self.assertEqual(ref("incubacloud.metric_rule_host_io_pressure").confirm_cycles, 3)
+        self.assertEqual(ref("incubacloud.metric_rule_host_memory_pressure").confirm_cycles, 2)
 
 
 class TestAlertApi(TransactionCase):
@@ -831,6 +863,22 @@ class TestInstanceScopedRules(MetricRuleCase):
         rule._sync_alerts([(sample, 0.0)])
         self.assertFalse(self.env["cloud.alert"].sudo().search([
             ("code", "=", "metrics_instance_oom"), ("state", "=", "active"),
+        ]))
+
+    def test_a_held_back_instance_is_named_with_its_share(self):
+        """The shipped CPU quota rule, judged on one answer."""
+        rule = self.env.ref("incubacloud.metric_rule_instance_cpu_throttled")
+        rule.confirm_cycles = 1
+        sample = {"instance_id": str(self.instance.id), "instance": "prod"}
+        rule._sync_alerts([(sample, 31.0)])
+        alert = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "metrics_instance_cpu_throttled"), ("state", "=", "active"),
+        ])
+        self.assertEqual(alert.instance_id, self.instance)
+        self.assertIn("(31% of the time)", alert.message)
+        rule._sync_alerts([(sample, 5.0)])
+        self.assertFalse(self.env["cloud.alert"].sudo().search([
+            ("code", "=", "metrics_instance_cpu_throttled"), ("state", "=", "active"),
         ]))
 
 class TestRuleCodeUniqueness(TransactionCase):

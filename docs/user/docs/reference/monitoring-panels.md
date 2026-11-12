@@ -4,8 +4,10 @@ What each chart shows, what a healthy one looks like, and what to do when it
 looks wrong. For what is measured and how to switch it on, see
 [Monitoring](monitoring.md).
 
-Charts refresh every minute and open on the last 6 hours. Use the time picker to
-change that: `1h` while watching a deploy, `7d` to tell a spike from a trend.
+The panel draws every chart itself from the metrics central. A board opens on
+the last hour and refreshes every 45 seconds; pick `6 h`, `24 h` or `7 d`
+above it to tell a spike from a trend, or drag across any chart to zoom all of
+them into that window (**Reset zoom** brings the range back).
 
 !!! tip "Alerts do the watching for you"
     Where a card says *this is alerted*, you need not keep the page open: the
@@ -15,88 +17,89 @@ change that: `1h` while watching a deploy, `7d` to tell a spike from a trend.
 
 ## Fleet
 
-Open **Monitoring** in the sidebar. This tab answers "is anything wrong
-anywhere?" and needs no selection — every host you manage is on it.
+Open **Monitoring** in the sidebar; **Fleet** is the first view. It answers "is
+anything wrong anywhere?" and needs no selection. On the panel that runs the
+metrics central it shows every account's servers (*Every account on the
+central*, the account in brackets after a server of another one); on any other
+panel, yours (*Your servers*).
 
-The top row reads left to right: three cards about your hosts, then two
-about your instances.
+The figures at the top:
 
-| Card | What it shows | Healthy |
+| Figure | What it shows | Healthy |
 | --- | --- | --- |
-| **Hosts reporting** | How many hosts sent a sample in the last five minutes | The number of hosts you manage |
-| **Hosts above 90% disk** | Count of hosts whose root disk is nearly full | `0` |
-| **Hosts above 92% memory** | Count of hosts nearly out of memory | `0` |
-| **Instances deployed** | How many instances are installed on your hosts, awake or asleep | Your instance count |
-| **Instances running** | How many instances have Odoo up right now | Your instance count, minus any that are asleep |
+| **Servers reporting** | Servers that sent a sample in the last five minutes | The number of servers you manage |
+| **Root disk over 90 %** | Servers whose root disk is nearly full | `0` |
+| **Memory over 92 %** | Servers nearly out of memory | `0` |
+| **Waiting over 20 % of the time** | Servers whose tasks waited for CPU, memory or disk more than a fifth of the time | `0` |
+| **Instances deployed** | Instances installed on your servers, awake or asleep | Your instance count |
+| **Instances running** | Instances with Odoo up right now | Your instance count, minus any asleep |
+| **Active alerts** and **Active security alerts** | This panel's open alerts | `0` |
 
-**Load per core, by host.** The 15-minute load average divided by the number of
-cores, top ten hosts. A ratio, not a percentage: `1` means the host is using
-exactly the CPU it has. Below `1` is comfortable, sustained above `2` is a host
-that cannot keep up — *this is alerted*. Brief peaks during a deploy or a backup
-are normal.
+**Busiest servers.** Four charts, the ten servers highest on each: **Load per
+core** (the 15-minute load average over the cores: below `1` is comfortable,
+sustained above `2` is a server that cannot keep up — *this is alerted*),
+**Memory in use** and **Root disk in use** (alerted at 92 % and 90 %), and
+**Disk busy** (the share of the time the server's busiest disk had work).
 
-**Root filesystem used %** and **Memory used %, by host.** Top ten hosts, as
-percentages. Disk is the one to act on early: it does not recover on its own,
-and a full disk stops an instance dead. Alerted at 90% and 92% respectively.
-
-**Ingest age per host.** One lane per host, green while it is reporting and red
-once it has been silent for more than five minutes. Unbroken green is what you
-want; a lane turning red means the machine is down, or just its agent. *This is
-alerted.*
-
-??? note "Why a lane per host and not lines"
-    Every agent samples on the same clock tick, so on a shared axis the hosts
-    drew identical lines on top of each other and all but one were invisible.
-    Lanes cannot hide each other, and the colour change sits on the alert's
-    own threshold — chart and alert can never disagree.
+**Are the servers reporting?** One lane per server, green for each step of
+the window with a sample and red where there was none. A lane turning red
+means the machine is down, or just its agent — *this is alerted* after five
+minutes. Servers with a silence come first; your own open their board.
 
 ## Hosts
 
-One host at a time. **Pick it with the Host selector** above the charts — it
-starts on your first host, so check the selector before reading the numbers.
+In **Monitoring**, **Hosts** shows one server's board: pick it with the
+**Host** selector, which starts on your first server. The same board is the
+**Metrics** tab of a server's page (**Hosts**, then the server).
 
-**CPU load per core.** The same ratio as the fleet card, for this host alone.
-Around or below `1` is healthy; sustained above `2` is alerted.
+### What is happening?
 
-**Memory used %** and **Root filesystem used %.** This host's totals. Alerted at
-92% and 90% respectively.
+One card with the figures of the server (cores, memory, root disk) and a
+verdict on its last 15 minutes, with the instance to look at when one is to
+blame:
 
-**Disk used per instance.** Disk taken by each instance on this host, in bytes.
-When the disk percentage climbs, this is the card that names the culprit —
-usually a database that has grown or backups piling up locally, see
-[Backups](../backups/index.md). There is no per-instance alert (a byte
-threshold means nothing across instances of very different sizes); the host
-disk alert is what warns you.
+| It says | Because | What to do |
+| --- | --- | --- |
+| Memory is at N %, and which instance uses the most | Memory in use above 92 % | Lower that instance's workers or memory, or move an instance to another server |
+| Tasks wait for memory | The kernel reports waits for memory over 10 % of the time | Move an instance or give the server more memory |
+| The root disk is N % full, and the largest instance directory | Root disk above 90 % | Free space or grow the disk: a full disk stops every instance |
+| The server is saturated, and which instance uses the most CPU | Load per core above 2 | See that instance's own **Metrics** tab |
+| The disk is the bottleneck | The kernel reports waits for the disk over 20 % of the time | Wait for a backup or a migration to end; otherwise the server needs a faster disk |
+| Normal | None of the above | — |
 
-**HTTP requests by Traefik service** (requests per second) and **Request
-duration p95 by Traefik service** (seconds). Traffic through this host's proxy,
-grouped by service. p95 means 95% of requests finished faster than the line
-shows; watch its shape, not its absolute value, since a heavy report is
-legitimately slow. A p95 climbing while requests stay flat is the interesting
-one: the same load is getting harder to serve.
+Under it, how long ago the server's agents sent their last sample, in amber
+past five minutes.
 
-!!! info "Why by service and not by instance"
-    The proxy reports per service, and service names come from each
-    deployment's own configuration, so they cannot be attributed back to a
-    single instance. For one instance's traffic, use its **Metrics** tab
-    instead.
+### Load and memory
 
-## Instances
+**Load per core** over the last minute and the last 15 minutes. **Waiting for
+resources**: the share of the time some task of the server waited for CPU,
+memory or the disk, as the kernel counts it; this is what makes instances slow
+even when no percentage looks full. **Memory in use**, and the share of the
+swap in use on a server that has one.
 
-One instance at a time, with a **Host** selector and an **Instance** selector.
-Set the host first: container names repeat across machines, and without the host
-two instances with the same container name would be added together.
+### Which instance uses it?
 
-**CPU per container.** One line per container of the instance, in cores. A
-container at `1.0` is using a full core. The Odoo container doing the work while
-the others idle is the normal shape.
+**CPU per instance** and **Memory per instance**, stacked so the top line is
+the server's total; past nine instances the rest add up as *others*. **Right
+now** lists every instance of the server over the last five minutes, busiest
+first: CPU (100 % is one core), memory, the size of its directory, requests per
+second and whether it runs. An instance you can open links to its page.
 
-**Memory per container.** Working set per container, in bytes. A slow, permanent
-climb in the Odoo container between restarts is worth investigating; a database
-container that settles on a plateau is doing its job.
+### Disk
 
-Neither card is alerted on its own. What is alerted is the instance going quiet
-altogether: no container reporting for five minutes.
+**Root disk in use** (alerted at 90 %), **Disk busy** per disk, **Disk
+throughput** read and written, and **Directory per instance**, measured every
+ten minutes. When the root disk climbs, the last one names the culprit — usually
+a database that has grown or backups kept locally, see
+[Backups](../backups/index.md).
+
+### Network and requests
+
+**Network** received and sent by the server's own link, **Requests per
+instance** at the server's proxy, and **Request time per instance** (p95: 95 %
+of requests finished faster than the line). A p95 climbing while requests stay
+flat is the interesting one: the same load is getting harder to serve.
 
 !!! info "IncubaCloud SaaS"
     An instance on a plan that sleeps when idle stops its containers on

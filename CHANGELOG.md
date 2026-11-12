@@ -6,6 +6,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.228] — 2026-11-12
+
+A server's page has a **Metrics** tab, and **Monitoring** draws the fleet
+and each server itself, with no Grafana frame: the same charts as an
+instance's Metrics tab, read from the metrics central. Three alert rules
+watch what makes instances slow without a percentage showing it: a disk
+or memory the server's tasks wait for, and an instance held back by its
+CPU quota.
+
+The update adds no table or column and needs no data migration; the
+module has to be updated, which loads the three rules. The hosts need
+nothing: every chart reads series the agents already send.
+
+### Added
+
+- **A server's Metrics tab.** Under **Hosts**, a server's page has a
+  **Metrics** tab (`developer` role and above), also shown in
+  Monitoring's **Hosts** view. It says in plain words what is short over
+  the last 15 minutes and which instance to look at (memory over 92 %,
+  root disk over 90 %, load over 2 per core, the kernel's waits for
+  memory or the disk), then its load per core, the waits (PSI), memory
+  and swap, CPU, memory and directory per instance stacked to the
+  server's total, the disks' activity and throughput, network traffic,
+  requests and p95 per instance, how long ago the agents sent their last
+  sample, and a table of every instance over the last five minutes,
+  busiest first, linked to its page. `/cloud/host/resource_series`
+  answers it in one call; `/cloud/hosts/<id>?tab=metrics` opens it.
+- **Monitoring without a frame.** **Fleet** counts the servers that
+  report and those over 90 % of disk, 92 % of memory or waiting over a
+  fifth of the time, the instances deployed and running and the active
+  alerts, draws the ten busiest servers by load, memory, root disk and
+  disk activity, and shows which servers went silent in the window. The
+  panel that deployed the central reads it with the operator credential
+  through the central's read-only `/admin-r` route and sees every
+  account (a central whose gateway does not let the panel's address read
+  that route shows the panel's own servers instead); any other panel, a
+  tenant's among them, sees its own servers. **Hosts** shows one
+  server's board. `/cloud/fleet/resource_series`
+  answers it; `/cloud/monitoring/config` gives each host's `id`.
+- **Rules `metrics_host_io_pressure`, `metrics_host_memory_pressure` and
+  `metrics_instance_cpu_throttled`.** A server whose tasks wait for the
+  disk over a fifth of the time for 15 minutes (warning), one whose tasks
+  all stall for memory over a tenth of the time (critical), and an
+  instance whose Odoo was held back by its CPU quota over a quarter of
+  the time for 15 minutes (warning). Thresholds with their reasons in
+  `docs/observability-operations.md`, "Tuning alerts".
+
+### Changed
+
+- **Monitoring appears wherever there is a central to read.** The
+  `dashboards` axis of `_observability_capabilities()` asks for a
+  central URL instead of a Grafana URL, so a tenant's panel that reads a
+  central now has a Monitoring entry showing its own servers.
+- **The boards share their mechanics.** `ChartBoard` holds the range,
+  the zoom, the refresh every 45 s and the words for an answer with
+  nothing to draw; the instance's board, the server's and the fleet's
+  extend it. The three routes share one budget of 20 boards a minute per
+  user.
+
+---
+
 ## [1.0.227] — 2026-11-12
 
 A host's card shows the CPU and RAM the server really uses, read from the
