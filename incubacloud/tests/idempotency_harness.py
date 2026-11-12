@@ -65,8 +65,13 @@ from ..models.registry import executor_registry
 from ..models.transport import CommandResult, SSHTransport
 
 #: What the photo leaves out of a row: who and when, which differ from
-#: one scenario to the next and say nothing about the world.
-VOLATILE_COLUMNS = frozenset({"create_uid", "create_date", "write_uid", "write_date"})
+#: one scenario to the next and say nothing about the world, and
+#: ``return_wait_s``, a measure every attempt that starts adds to (0 when
+#: it was not late), so a job run twice keeps 0 where one run once keeps
+#: nothing.
+VOLATILE_COLUMNS = frozenset({
+    "create_uid", "create_date", "write_uid", "write_date", "return_wait_s",
+})
 
 #: The models whose rows created during a scenario are part of the photo,
 #: with how each row is summed up (SQL over the table, ``%s`` the id the
