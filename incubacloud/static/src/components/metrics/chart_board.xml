@@ -32,15 +32,23 @@
             </div>
         </t>
         <t t-elif="state.error">
-            <div class="rl-card rl-stub ic-mb-stub" role="alert" t-att-data-reason="state.reason">
-                <span class="rl-si"><t t-out="env.icon('alert', 40)"/></span>
-                <h3>Could not load the charts</h3>
+            <div class="rl-card rl-stub ic-mb-stub" t-att-role="state.reason === 'busy' ? 'status' : 'alert'" t-att-data-reason="state.reason">
+                <span class="rl-si"><t t-out="env.icon(state.reason === 'busy' ? 'clock' : 'alert', 40)"/></span>
+                <h3 t-if="state.reason === 'busy'">The metrics central is busy</h3>
+                <h3 t-else="">Could not load the charts</h3>
                 <p t-esc="state.error"/>
                 <p t-if="sinceText" class="ic-mb-since" t-esc="sinceText"/>
                 <p t-if="state.reason === 'credential'" t-esc="credentialHint"/>
                 <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.load()">Try again</button>
             </div>
         </t>
+    </t>
+
+    <!-- Above a board kept from its last answer while the central is
+         busy (429): the charts stay, and this line says why they do not
+         move. Called from a board's template, inside its charts. -->
+    <t t-name="incubacloud.ChartBoardBusy">
+        <p t-if="state.reason === 'busy'" class="ic-mb-since ic-mb-busy" role="status">The metrics central is busy: these charts are from the last reading, and ask again shortly.</p>
     </t>
 
     <!-- The range of a board and the way back from a zoom. -->

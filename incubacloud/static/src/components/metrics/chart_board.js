@@ -189,6 +189,12 @@ export class ChartBoard extends Component {
       this.state.board = res;
       this.state.updatedAt = DateTime.now();
       console.debug("[metrics-board]", this.route, this.state.range, res.timing);
+    } else if (res.reason === "busy" && this.state.board) {
+      // A central over its cap answers again in a moment: the last
+      // board stays, with a quiet line saying so (``ChartBoardBusy``).
+      this.state.error = "";
+      this.state.reason = "busy";
+      this.state.since = null;
     } else {
       this.state.error = res.error || _t("Could not load the charts.");
       this.state.reason = res.reason || "";

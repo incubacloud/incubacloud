@@ -1070,7 +1070,7 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_accounts_deployed
 msgid "Accounts on the central"
-msgstr "Cuentas en el central"
+msgstr "Cuentas en la central"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1189,12 +1189,12 @@ msgid ""
 "while the panel runs there."
 msgstr ""
 "Rangos de direcciones, uno por línea (p. ej. 198.51.100.7/32), a los que se "
-"permite llegar a la ruta de borrado de series del central bajo su nombre "
+"permite llegar a la ruta de borrado de series de la central bajo su nombre "
 "público: la dirección pública del propio panel. También pueden leer allí las"
 " series de todas las cuentas, por la ruta de lectura del operador. La ruta "
-"de administración de Grafana solo es accesible desde el host del central. "
-"Vacío: solo el propio host del central, que es lo correcto mientras el panel"
-" corre allí."
+"de administración de Grafana solo es accesible desde el host de la central. "
+"Vacío: solo el propio host de la central, que es lo correcto mientras el "
+"panel corre allí."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_allowlist_shipped
@@ -1485,11 +1485,11 @@ msgid ""
 "credentials can add lines but never delete them, so the record outlives the "
 "host. Off by default: a panel turns it on for hosts that are its own."
 msgstr ""
-"Enviar también al central los logs de seguridad de cada host: SSH y sudo del"
-" journal, auditd y fail2ban. Allí se guardan 90 días, y las credenciales del"
-" propio host pueden añadir líneas pero nunca borrarlas, así que el registro "
-"sobrevive al host. Desactivado por defecto: un panel lo activa para los "
-"hosts que son suyos."
+"Enviar también a la central los logs de seguridad de cada host: SSH y sudo "
+"del journal, auditd y fail2ban. Allí se guardan 90 días, y las credenciales "
+"del propio host pueden añadir líneas pero nunca borrarlas, así que el "
+"registro sobrevive al host. Desactivado por defecto: un panel lo activa para"
+" los hosts que son suyos."
 
 #. module: incubacloud
 #. odoo-python
@@ -2090,16 +2090,6 @@ msgid "Backups"
 msgstr "Copias de seguridad"
 
 #. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_base_url
-msgid ""
-"Base URL of the Grafana embedded in the panel, e.g. "
-"https://grafana.example.com. Empty hides the Monitoring tab."
-msgstr ""
-"URL base del Grafana embebido en el panel, p. ej. "
-"https://grafana.example.com. Si se deja vacía, la pestaña Monitorización no "
-"se muestra."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_url
 msgid ""
 "Base URL the PANEL uses to query metrics (PromQL). It must resolve from "
@@ -2593,23 +2583,23 @@ msgstr "Cc"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_host
 msgid "Central's direct name"
-msgstr "Nombre directo del central"
+msgstr "Nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_checked_at
 msgid "Central's direct name last probed"
-msgstr "Último sondeo del nombre directo del central"
+msgstr "Último sondeo del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_state
 msgid "Central's direct name state"
-msgstr "Estado del nombre directo del central"
+msgstr "Estado del nombre directo de la central"
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Central's public name"
-msgstr "Nombre público del central"
+msgstr "Nombre público de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__cert_resolver
@@ -4497,7 +4487,7 @@ msgstr "Desplegar instancia"
 #. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.deploy_metrics_central
 msgid "Deploy Metrics Central"
-msgstr "Desplegar el central de métricas"
+msgstr "Desplegar la central de métricas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5661,7 +5651,7 @@ msgstr "No se pudo encolar el hardening."
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Failed to queue the central deployment"
-msgstr "No se pudo encolar el despliegue del central"
+msgstr "No se pudo encolar el despliegue de la central"
 
 #. module: incubacloud
 #. odoo-python
@@ -7437,8 +7427,8 @@ msgid ""
 "one in before proxying, so rotating it is a redeploy rather than a change in"
 " every place that talks to Grafana."
 msgstr ""
-"Credencial de administración propia de Grafana. Nunca sale del central: la "
-"pasarela autentica al llamante con la credencial del operador y sustituye "
+"Credencial de administración propia de Grafana. Nunca sale de la central: la"
+" pasarela autentica al llamante con la credencial del operador y sustituye "
 "por ésta antes de reenviar, así que rotarla es un redespliegue y no un "
 "cambio en todo lo que habla con Grafana."
 
@@ -7848,8 +7838,8 @@ msgid ""
 msgstr ""
 "Host que aloja la pila central, registrado cuando un despliegue de ella "
 "tiene éxito. La sincronización de cuentas apunta a él. Vacío significa que "
-"nunca se desplegó un central desde este panel, y no se pueden conceder "
-"cuentas hasta que lo haya."
+"nunca se desplegó una central desde este panel, y no se pueden conceder "
+"cuentas hasta que la haya."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7888,11 +7878,12 @@ msgid ""
 "every agent writes to it, under that name. Empty: the central is used from "
 "the panel's own host, on its docker bridge, as before."
 msgstr ""
-"Nombre de host bajo el que el central se publica, con certificado, a través "
+"Nombre de host bajo el que la central se publica, con certificado, a través "
 "del Traefik del host en el que corre, p. ej. metrics.example.com; su "
-"registro DNS debe apuntar a ese host. Entonces el panel llega al central, y "
-"todos los agentes escriben en él, por ese nombre. Vacío: el central se usa "
-"desde el propio host del panel, por su puente de Docker, como hasta ahora."
+"registro DNS debe apuntar a ese host. Entonces el panel llega a la central, "
+"y todos los agentes escriben en ella, por ese nombre. Vacío: la central se "
+"usa desde el propio host del panel, por su puente de Docker, como hasta "
+"ahora."
 
 #. module: incubacloud
 #. odoo-python
@@ -8012,8 +8003,8 @@ msgid ""
 "How long the central keeps series. Passed to the central deployment "
 "playbook."
 msgstr ""
-"Cuánto tiempo conserva las series el central. Se pasa al playbook de "
-"despliegue del central."
+"Cuánto tiempo conserva las series la central. Se pasa al playbook de "
+"despliegue de la central."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_last_cut_seconds
@@ -8208,10 +8199,10 @@ msgid ""
 "agent: the central derives it from the authenticated user. A panel generates"
 " its own, unless a module that extends the panel assigns it."
 msgstr ""
-"Identidad con la que este panel se autentica ante el central, y etiqueta que"
-" el central IMPONE a toda serie que escribe para nosotros. Es lo que impide "
+"Identidad con la que este panel se autentica ante la central, y etiqueta que"
+" la central IMPONE a toda serie que escribe para nosotros. Es lo que impide "
 "que un panel lea o envenene los datos de otro, por eso nunca se acepta del "
-"agente: el central la deduce del usuario autenticado. Cada panel genera la "
+"agente: la central la deduce del usuario autenticado. Cada panel genera la "
 "suya, salvo que se la asigne un módulo que extiende el panel."
 
 #. module: incubacloud
@@ -8369,7 +8360,7 @@ msgid ""
 "In Settings › Monitoring, pick a host under Where the central runs and press"
 " Enable observability. Every host is then enrolled on its own."
 msgstr ""
-"En Configuración › Monitorización, elija un host en Dónde corre el central y"
+"En Configuración › Monitorización, elija un host en Dónde corre la central y"
 " pulse Activar la observabilidad. Después, cada host se enrola solo."
 
 #. module: incubacloud
@@ -9363,7 +9354,7 @@ msgid ""
 " that its direct port is. Kept in a system parameter, not in this row: it "
 "moves at every pass."
 msgstr ""
-"Última vez que respondió una lectura PromQL del central. Indica que el "
+"Última vez que respondió una lectura PromQL de la central. Indica que la "
 "central funciona, no que lo haga su puerto directo. Se guarda en un "
 "parámetro del sistema, no en esta fila: cambia en cada pasada."
 
@@ -10011,32 +10002,32 @@ msgstr "Métricas"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_cert_expires
 msgid "Metrics Central Direct Cert Expires"
-msgstr "Caducidad del certificado del nombre directo del central"
+msgstr "Caducidad del certificado del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_dns_bad
 msgid "Metrics Central Direct Dns Bad"
-msgstr "DNS incorrecto del nombre directo del central"
+msgstr "DNS incorrecto del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_error
 msgid "Metrics Central Direct Error"
-msgstr "Error del nombre directo del central"
+msgstr "Error del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_failing_since
 msgid "Metrics Central Direct Failing Since"
-msgstr "Fallo del nombre directo del central desde"
+msgstr "Fallo del nombre directo de la central desde"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_failures
 msgid "Metrics Central Direct Failures"
-msgstr "Fallos del nombre directo del central"
+msgstr "Fallos del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_successes
 msgid "Metrics Central Direct Successes"
-msgstr "Aciertos del nombre directo del central"
+msgstr "Aciertos del nombre directo de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_account
@@ -10081,7 +10072,7 @@ msgstr "URL del backend de métricas"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_host_id
 msgid "Metrics central host"
-msgstr "Host del central de métricas"
+msgstr "Host de la central de métricas"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_remote_write_token
@@ -10321,8 +10312,8 @@ msgid ""
 "under the zone, DNS only, no AAAA. Empty: every agent writes to the remote-"
 "write URL."
 msgstr ""
-"Nombre con el que los servidores propios de la plataforma llegan al central "
-"por el puerto directo de su host, sin la CDN, p. ej. "
+"Nombre con el que los servidores propios de la plataforma llegan a la "
+"central por el puerto directo de su host, sin la CDN, p. ej. "
 "direct.metrics.example.com: dos niveles bajo la zona, solo DNS, sin registro"
 " AAAA. Vacío: cada agente escribe en la URL de remote-write."
 
@@ -12382,7 +12373,7 @@ msgstr "Clave pública"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_public_host
 msgid "Public host name of the central"
-msgstr "Nombre de host público del central"
+msgstr "Nombre de host público de la central"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13593,8 +13584,8 @@ msgid ""
 "account is a sub-second reload of the proxy — it never touches the compose "
 "file, so it cannot recreate VictoriaMetrics, Loki or Grafana."
 msgstr ""
-"Reescribe la lista de control de acceso de la pasarela en un central ya "
-"desplegado y aprovisiona las organizaciones de Grafana de las cuentas "
+"Reescribe la lista de control de acceso de la pasarela en una central ya "
+"desplegada y aprovisiona las organizaciones de Grafana de las cuentas "
 "nuevas. Dar acceso a una cuenta es una recarga del proxy de menos de un "
 "segundo: nunca toca el archivo compose, así que no puede recrear "
 "VictoriaMetrics, Loki ni Grafana."
@@ -14111,7 +14102,7 @@ msgid ""
 "keeping it apart from the account credential above."
 msgstr ""
 "Segunda credencial, para la lectura SIN FILTRAR que usa la organización de "
-"Grafana del operador. Solo tiene sentido en el panel dueño del central, y "
+"Grafana del operador. Solo tiene sentido en el panel dueño de la central, y "
 "deliberadamente nunca se escribe en ningún host — que es justo el motivo de "
 "mantenerla separada de la credencial de cuenta de arriba."
 
@@ -15260,8 +15251,8 @@ msgid ""
 "The central's host has no direct port applied. Set the port on the host and "
 "press Full Setup."
 msgstr ""
-"El host del central no tiene puerto directo aplicado. Indique el puerto en "
-"el host y pulse «Configuración completa»."
+"El host de la central no tiene puerto directo aplicado. Indique el puerto en"
+" el host y pulse «Configuración completa»."
 
 #. module: incubacloud
 #. odoo-python
@@ -15278,7 +15269,7 @@ msgid ""
 "under Where the central runs and press Enable observability."
 msgstr ""
 "Los gráficos se leen de una central. En Configuración › Monitorización, "
-"elija un host en Dónde corre el central y pulse Activar la observabilidad."
+"elija un host en Dónde corre la central y pulse Activar la observabilidad."
 
 #. module: incubacloud
 #. odoo-python
@@ -17317,10 +17308,10 @@ msgid ""
 "series. Minted by the central deployment; empty means the central was "
 "deployed before deletions existed and cannot delete yet."
 msgstr ""
-"Clave propia de VictoriaMetrics para borrar series. El central rechaza todo "
+"Clave propia de VictoriaMetrics para borrar series. La central rechaza todo "
 "borrado que no la lleve, y la pasarela solo la añade en la ruta de borrado "
 "del operador, así que ninguna cuenta puede borrar nada, ni siquiera sus "
-"propias series. La genera el despliegue del central; si está vacía, el "
+"propias series. La genera el despliegue de la central; si está vacía, la "
 "central se desplegó antes de que existieran los borrados y todavía no puede "
 "borrar."
 
@@ -17926,7 +17917,7 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Where the central runs"
-msgstr "Dónde corre el central"
+msgstr "Dónde corre la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__state
@@ -18065,13 +18056,6 @@ msgstr ""
 "Quién elimina los backups antiguos: el cron de eliminación diario dentro del"
 " contenedor, una política de ciclo de vida del bucket configurada fuera de "
 "IncubaCloud, o nadie (los backups se conservan para siempre)."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
-msgid "Who may delete series on the central"
-msgstr "Quién puede borrar series en el central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_reason
@@ -21784,14 +21768,6 @@ msgstr "Borrar la búsqueda"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
-msgid "Collecting. Charts are hidden until a Grafana base URL is set."
-msgstr ""
-"Recogiendo. Las gráficas se ocultan hasta que se indique una URL base de "
-"Grafana."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
 msgid "Connected · App ID %s"
 msgstr "Conectada · App ID %s"
@@ -21889,12 +21865,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
-msgid "Empty hides the charts."
-msgstr "Vacío oculta las gráficas."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings_search_box.xml:0
 msgid "Enter"
 msgstr "Intro"
@@ -21966,7 +21936,7 @@ msgstr ""
 msgid ""
 "For a central on a host of its own; point the name's DNS at that host first."
 msgstr ""
-"Para un central en un host propio; apunte antes el DNS del nombre a ese "
+"Para una central en un host propio; apunte antes el DNS del nombre a ese "
 "host."
 
 #. module: incubacloud
@@ -22348,16 +22318,6 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
-msgid ""
-"One range per line: the panel's public address. Used only with a public "
-"name."
-msgstr ""
-"Un rango por línea: la dirección pública del panel. Solo se usa con un "
-"nombre público."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "Page · the list of backup destinations"
 msgstr "Página · la lista de destinos de copia"
 
@@ -22456,7 +22416,7 @@ msgstr "Sustituir"
 msgid ""
 "Replacing it means redeploying the central and enrolling every host again."
 msgstr ""
-"Sustituirla obliga a volver a desplegar el central e inscribir de nuevo "
+"Sustituirla obliga a volver a desplegar la central e inscribir de nuevo "
 "todos los hosts."
 
 #. module: incubacloud
@@ -22494,7 +22454,7 @@ msgid ""
 "SSH, sudo, auditd and fail2ban, kept 90 days in the central. Applies on the "
 "next agent install."
 msgstr ""
-"SSH, sudo, auditd y fail2ban, conservados 90 días en el central. Se aplica "
+"SSH, sudo, auditd y fail2ban, conservados 90 días en la central. Se aplica "
 "en la siguiente instalación de los agentes."
 
 #. module: incubacloud
@@ -22995,3 +22955,58 @@ msgstr "El uso en tiempo real no está disponible en este panel."
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
 msgid "The installation of the metrics agents on this host failed."
 msgstr "La instalación de los agentes de métricas en este host falló."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"Where the central's Grafana answers, for its own links. The charts do not "
+"need it."
+msgstr ""
+"Dónde responde el Grafana de la central, para sus propios enlaces. Los "
+"gráficos no lo necesitan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
+msgid "Who may delete series and read the fleet on the central"
+msgstr "Quién puede borrar series y leer la flota en la central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"One range per line: the panel's public address, which deletes series and "
+"reads every account's. Used only with a public name."
+msgstr ""
+"Un rango por línea: la dirección pública del panel, que borra series y lee "
+"las de todas las cuentas. Solo se usa con un nombre público."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_base_url
+msgid ""
+"Base URL where the central's Grafana answers, e.g. "
+"https://grafana.example.com; Grafana builds its own links from it. The "
+"panel's charts read the central and do not need it."
+msgstr ""
+"URL base en la que responde el Grafana de la central, p. ej. "
+"https://grafana.example.com; Grafana construye con ella sus propios enlaces."
+" Los gráficos del panel leen la central y no la necesitan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid "The metrics central is busy"
+msgstr "La central de métricas está ocupada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
+msgid ""
+"The metrics central is busy: these charts are from the last reading, and ask"
+" again shortly."
+msgstr ""
+"La central de métricas está ocupada: estos gráficos son de la última lectura"
+" y volverán a consultarla en breve."

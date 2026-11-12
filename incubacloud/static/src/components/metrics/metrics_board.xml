@@ -30,9 +30,10 @@
                 </div>
             </t>
             <t t-elif="state.error">
-                <div class="rl-card rl-stub ic-mb-stub" role="alert" t-att-data-reason="state.reason">
-                    <span class="rl-si"><t t-out="env.icon('alert', 40)"/></span>
-                    <h3>Could not load the charts</h3>
+                <div class="rl-card rl-stub ic-mb-stub" t-att-role="state.reason === 'busy' ? 'status' : 'alert'" t-att-data-reason="state.reason">
+                    <span class="rl-si"><t t-out="env.icon(state.reason === 'busy' ? 'clock' : 'alert', 40)"/></span>
+                    <h3 t-if="state.reason === 'busy'">The metrics central is busy</h3>
+                    <h3 t-else="">Could not load the charts</h3>
                     <p t-esc="state.error"/>
                     <p t-if="sinceText" class="ic-mb-since" t-esc="sinceText"/>
                     <p t-if="state.reason === 'credential'" t-esc="credentialHint"/>
@@ -40,6 +41,7 @@
                 </div>
             </t>
             <t t-else="">
+                <t t-call="incubacloud.ChartBoardBusy"/>
                 <!-- What is happening now -->
                 <section class="ic-mb-section" aria-labelledby="ic-mb-now">
                     <h3 class="ic-mb-h" id="ic-mb-now">What is happening now?</h3>

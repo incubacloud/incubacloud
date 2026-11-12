@@ -232,6 +232,45 @@ describe("Boards, mounted", () => {
         expect(".ic-mb-finding[data-code=normal]").toHaveCount(1);
     });
 
+    test("a busy central keeps the last board, with a quiet line", async () => {
+        const routes = {
+            "/cloud/host/resource_series": {
+                ok: true, start: 0, end: 3600, step: 30, timing: {},
+                panels: {
+                    memory: { series: [{ name: "used", role: "used", points: [[0, 40], [30, 41]] }] },
+                    host: { value: { cores: 4, ingest_age: 20 } },
+                },
+                diagnosis: { current: true, tone: "ok", findings: [] },
+                silence: { code: "window", since: null },
+            },
+        };
+        const { asked } = answer(routes);
+        await mountWithCleanup(HostBoard, { props: { hostId: 3 }, env: ENV, noMainContainer: true });
+        await animationFrame();
+        expect(".ic-mb-busy").toHaveCount(0);
+        routes["/cloud/host/resource_series"] = {
+            ok: false, reason: "busy", since: null, error: "The metrics central is busy.",
+        };
+        await advanceTime(REFRESH_MS);
+        await animationFrame();
+        expect(asked["/cloud/host/resource_series"]).toBe(2);
+        expect("[data-panel=memory] canvas").toHaveCount(1);
+        expect(".ic-mb-busy[role=status]").toHaveCount(1);
+        expect(".ic-mb-stub").toHaveCount(0);
+    });
+
+    test("a busy central with no board yet says so, not as an error", async () => {
+        answer({
+            "/cloud/host/resource_series": {
+                ok: false, reason: "busy", since: null, error: "The metrics central is busy.",
+            },
+        });
+        await mountWithCleanup(HostBoard, { props: { hostId: 3 }, env: ENV, noMainContainer: true });
+        await animationFrame();
+        expect(".ic-mb-stub[data-reason=busy] h3").toHaveText("The metrics central is busy");
+        expect(".ic-mb-stub[data-reason=busy]").toHaveAttribute("role", "status");
+    });
+
     test("Monitoring draws the fleet, then a server, with no frame", async () => {
         const { asked } = answer({
             "/cloud/monitoring/config": { ok: true, hosts: [{ id: 3, name: "srv-01" }, { id: 5, name: "srv-02" }] },

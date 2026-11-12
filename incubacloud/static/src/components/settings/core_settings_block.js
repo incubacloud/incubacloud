@@ -324,9 +324,6 @@ export class CoreSettingsBlock extends Component {
         if (!form.metrics_central_url) {
             return _t("On, but no query URL is set: nothing can be read back.");
         }
-        if (!form.grafana_base_url) {
-            return _t("Collecting. Charts are hidden until a Grafana base URL is set.");
-        }
         return _t("Collecting, with charts available.");
     }
 

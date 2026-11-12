@@ -7,6 +7,7 @@
                 <t t-call="incubacloud.ChartBoardStates"/>
             </t>
             <t t-else="">
+                <t t-call="incubacloud.ChartBoardBusy"/>
                 <!-- Figures -->
                 <section class="ic-mb-section" aria-labelledby="ic-fb-now">
                     <div class="ic-mb-head">
