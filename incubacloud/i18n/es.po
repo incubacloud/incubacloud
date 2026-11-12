@@ -2539,6 +2539,12 @@ msgstr "Cambios guardados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid "Charts are not available on this panel"
+msgstr "Los gráficos no están disponibles en este panel"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Chat ID"
 msgstr "ID de chat"
@@ -5567,6 +5573,12 @@ msgid "Failing since %s"
 msgstr "Falla desde %s"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid "Failing since %s."
+msgstr "Falla desde %s."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__failure_holds_queue
 msgid "Failure Holds the Queue"
 msgstr "Un fallo retiene la cola"
@@ -6311,18 +6323,6 @@ msgstr "Vecinos: CPU por instancia en este servidor"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
-msgid ""
-"No data for this period. The host's agent has not reported this instance in "
-"the selected window: a stopped or newly deployed instance shows nothing "
-"until its containers run."
-msgstr ""
-"Sin datos en este periodo. El agente del servidor no ha informado de esta "
-"instancia en el intervalo elegido: una instancia parada o recién desplegada "
-"no muestra nada hasta que sus contenedores están en marcha."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "No instance of this server has reported yet."
 msgstr "Ninguna instancia de este servidor ha informado todavía."
 
@@ -6665,6 +6665,26 @@ msgstr "No se pudo leer el log de esta instancia."
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
 msgid "The metrics agents are not installed on this host."
 msgstr "Los agentes de métricas no están instalados en este host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"The metrics agents are not installed on this instance's server yet. The "
+"panel installs them on its own."
+msgstr ""
+"Los agentes de métricas aún no están instalados en el servidor de esta "
+"instancia. El panel los instala por sí solo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"The metrics agents could not be installed on this instance's server. The "
+"panel keeps trying on its own."
+msgstr ""
+"No se pudieron instalar los agentes de métricas en el servidor de esta "
+"instancia. El panel sigue intentándolo por sí solo."
 
 #. module: incubacloud
 #. odoo-python
@@ -7757,6 +7777,16 @@ msgstr ""
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__inactivity
 msgid "Inactivity"
 msgstr "Inactividad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid ""
+"In Settings › Monitoring, pick a host under Where the central runs and press"
+" Enable observability. Every host is then enrolled on its own."
+msgstr ""
+"En Configuración › Monitorización, elija un host en Dónde corre el central y"
+" pulse Activar la observabilidad. Después, cada host se enrola solo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9443,6 +9473,22 @@ msgstr ""
 "observabilidad."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid "Metrics are managed by your provider. Let them know if this persists."
+msgstr "Su proveedor gestiona las métricas. Avísele si esto continúa."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid ""
+"Metrics are managed by your provider. Queries now and Slow routes, below, "
+"read the server directly."
+msgstr ""
+"Su proveedor gestiona las métricas. Consultas ahora y Rutas lentas, más "
+"abajo, leen el servidor directamente."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_url
 msgid "Metrics backend URL"
 msgstr "URL del backend de métricas"
@@ -9856,6 +9902,12 @@ msgid ""
 msgstr ""
 "No hay credenciales de GitHub configuradas. Configure una GitHub App o un "
 "Token de Acceso Personal (PAT) para acceder a repositorios privados."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid "No data for this period."
+msgstr "Sin datos en este periodo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10350,6 +10402,16 @@ msgid "Nothing to show for the current filter."
 msgstr "Nada que mostrar para el filtro actual."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"Nothing was reported in the selected window. Pick a longer range or reset "
+"the zoom."
+msgstr ""
+"No se recibió nada en el intervalo elegido. Elija un rango más largo o "
+"restablezca el zoom."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__email_from
 msgid "Notification From"
 msgstr "Notificación desde"
@@ -10506,6 +10568,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Observability is not enabled"
 msgstr "La observabilidad no está activada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid "Observability is on, but there is no metrics central"
+msgstr "La observabilidad está activada, pero no hay central de métricas"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__occurrences
@@ -10922,6 +10990,12 @@ msgstr "Abrir inicio de sesión de GitHub"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Open Host Shell"
 msgstr "Abrir shell del host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid "Open Settings › Monitoring"
+msgstr "Abrir Configuración › Monitorización"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14516,6 +14590,16 @@ msgid "The IP address of the cloud host."
 msgstr "La dirección IP del host cloud."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"The Monitoring line on the server's page, under Hosts, shows how it is "
+"going."
+msgstr ""
+"La línea Monitorización de la página del servidor, en Hosts, muestra cómo "
+"va."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_settings.py:0
 msgid "The Odoo log archive must keep at least 1 day."
@@ -14595,6 +14679,16 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_settings_direct.py:0
 msgid "The certificate of the direct path %(name)s expires on %(date)s."
 msgstr "El certificado del camino directo %(name)s caduca el %(date)s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+msgid ""
+"The charts are read from a central. In Settings › Monitoring, pick a host "
+"under Where the central runs and press Enable observability."
+msgstr ""
+"Los gráficos se leen de una central. En Configuración › Monitorización, "
+"elija un host en Dónde corre el central y pulse Activar la observabilidad."
 
 #. module: incubacloud
 #. odoo-python
@@ -14843,6 +14937,12 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "The mail catcher did not answer. It may not be running."
 msgstr "El capturador de correo no respondió. Puede que no esté en marcha."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "The metrics central refused this panel's credential."
+msgstr "La central de métricas rechazó la credencial de este panel."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__last_login_seen_at
@@ -15369,6 +15469,16 @@ msgstr ""
 "de backup (de instancia, proyecto o global) primero."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"This instance has not reported yet: a new instance shows data once its "
+"containers run."
+msgstr ""
+"Esta instancia aún no ha enviado datos: una instancia nueva los muestra "
+"cuando sus contenedores están en marcha."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This instance is already imported."
@@ -15407,6 +15517,12 @@ msgid ""
 msgstr ""
 "Esta instancia aún no está ubicada en un host, así que no hay nada que leer "
 "en ella."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid "This instance is stopped. Start it to see its charts again."
+msgstr "Esta instancia está parada. Iníciela para volver a ver sus gráficos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15539,6 +15655,12 @@ msgid ""
 msgstr ""
 "Este panel no puede saber su dirección pública, así que no puede ofrecerle "
 "permitirla."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/metrics_charts.py:0
+msgid "This panel has no credential for the metrics central."
+msgstr "Este panel no tiene credencial para la central de métricas."
 
 #. module: incubacloud
 #. odoo-python
@@ -16090,13 +16212,6 @@ msgstr "Intentar de nuevo"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Try expanding the time range or adjusting filters."
 msgstr "Intente ampliar el rango de tiempo o ajustar los filtros."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Turn it on in Settings; every host is enrolled automatically."
-msgstr ""
-"Actívela en Configuración; todos los hosts se enrolan automáticamente."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -19009,6 +19124,16 @@ msgid "CA fingerprints"
 msgstr "Huellas de la CA"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"Check Credential in Settings › Monitoring › Advanced: it must be the one the"
+" central was deployed with."
+msgstr ""
+"Revise Credencial en Configuración › Monitorización › Avanzado: debe ser la "
+"misma con la que se desplegó la central."
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_check_git_providers_ir_actions_server
 msgid "Check Git Provider Credentials"
 msgstr "Comprobar credenciales de proveedores Git"
@@ -19541,6 +19666,16 @@ msgid ""
 "There is no Git provider for %s: add it under Settings → Git providers."
 msgstr ""
 "No hay un proveedor Git para %s: añádalo en Ajustes → Proveedores Git."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"This instance's server stopped sending metrics on %s. Check that the server "
+"is on and reachable."
+msgstr ""
+"El servidor de esta instancia dejó de enviar métricas el %s. Compruebe que "
+"el servidor está encendido y accesible."
 
 #. module: incubacloud
 #. odoo-python
@@ -21671,6 +21806,16 @@ msgstr "No se guardó la GitHub App."
 #: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
 msgid "The GitHub App's credentials were kept."
 msgstr "Se conservaron las credenciales de la GitHub App."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
+msgid ""
+"The agents on this instance's server are installed but have not sent "
+"anything yet. The first readings arrive within a few minutes."
+msgstr ""
+"Los agentes del servidor de esta instancia están instalados, pero aún no han"
+" enviado nada. Las primeras lecturas llegan en pocos minutos."
 
 #. module: incubacloud
 #. odoo-javascript

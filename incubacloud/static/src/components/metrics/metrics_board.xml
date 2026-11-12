@@ -11,19 +11,31 @@
                 </div>
             </t>
             <t t-elif="state.reason === 'disabled' or state.reason === 'unconfigured'">
-                <t t-if="props.canConfigure">
-                    <div class="rl-stub ic-mb-stub">
-                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                <div class="rl-stub ic-mb-stub" t-att-data-reason="state.reason">
+                    <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                    <t t-if="!props.canConfigure">
+                        <h3>Charts are not available on this panel</h3>
+                        <p>Metrics are managed by your provider. Queries now and Slow routes, below, read the server directly.</p>
+                    </t>
+                    <t t-elif="state.reason === 'disabled'">
                         <h3>Observability is not enabled</h3>
-                        <p>Turn it on in Settings; every host is enrolled automatically.</p>
-                    </div>
-                </t>
+                        <p>In Settings › Monitoring, pick a host under Where the central runs and press Enable observability. Every host is then enrolled on its own.</p>
+                    </t>
+                    <t t-else="">
+                        <h3>Observability is on, but there is no metrics central</h3>
+                        <p>The charts are read from a central. In Settings › Monitoring, pick a host under Where the central runs and press Enable observability.</p>
+                    </t>
+                    <button t-if="canOpenSettings" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-on-click="openSettings">Open Settings › Monitoring</button>
+                </div>
             </t>
             <t t-elif="state.error">
-                <div class="rl-card rl-stub ic-mb-stub" role="alert">
+                <div class="rl-card rl-stub ic-mb-stub" role="alert" t-att-data-reason="state.reason">
                     <span class="rl-si"><t t-out="env.icon('alert', 40)"/></span>
                     <h3>Could not load the charts</h3>
                     <p t-esc="state.error"/>
+                    <p t-if="sinceText" class="ic-mb-since" t-esc="sinceText"/>
+                    <p t-if="state.reason === 'credential'" t-esc="credentialHint"/>
                     <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="() => this.load()">Try again</button>
                 </div>
             </t>
@@ -36,7 +48,10 @@
                             <p class="ic-mb-diag-text">The window shown ends in the past: the diagnosis reads only the last 15 minutes up to now. Reset the zoom to see it.</p>
                         </t>
                         <t t-elif="!hasData">
-                            <p class="ic-mb-diag-text">No data for this period. The host's agent has not reported this instance in the selected window: a stopped or newly deployed instance shows nothing until its containers run.</p>
+                            <p class="ic-mb-diag-text" t-att-data-silence="state.board.silence?.code">
+                                <span>No data for this period.</span> <t t-esc="silenceText"/>
+                            </p>
+                            <p t-if="silenceHint" class="ic-mb-diag-text" t-esc="silenceHint"/>
                         </t>
                         <t t-else="">
                             <div class="ic-mb-diag-head">
@@ -90,13 +105,19 @@
                     <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
                         <div class="rl-card ic-mb-card" data-panel="latency">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Request time</span><span class="ic-mb-hint">p50 and p95, at the proxy</span></div>
-                            <TimeSeriesChart series="series('latency')" markers="markers" window="window" step="state.board.step"
-                                             unit="'seconds'" palette="'role'" label.translate="Request time over time" onZoom.bind="zoomTo"/>
+                            <p t-if="panelError('latency')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('latency')"/>
+                            <t t-else="">
+                                <TimeSeriesChart series="series('latency')" markers="markers" window="window" step="state.board.step"
+                                                 unit="'seconds'" palette="'role'" label.translate="Request time over time" onZoom.bind="zoomTo"/>
+                            </t>
                         </div>
                         <div class="rl-card ic-mb-card" data-panel="requests">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Requests</span><span class="ic-mb-hint">per second, and server errors</span></div>
-                            <TimeSeriesChart series="series('requests')" markers="markers" window="window" step="state.board.step"
-                                             unit="'rps'" palette="'role'" label.translate="Requests per second over time" onZoom.bind="zoomTo"/>
+                            <p t-if="panelError('requests')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('requests')"/>
+                            <t t-else="">
+                                <TimeSeriesChart series="series('requests')" markers="markers" window="window" step="state.board.step"
+                                                 unit="'rps'" palette="'role'" label.translate="Requests per second over time" onZoom.bind="zoomTo"/>
+                            </t>
                         </div>
                     </div>
                 </section>
@@ -107,22 +128,32 @@
                     <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
                         <div class="rl-card ic-mb-card" data-panel="cpu">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">CPU per container</span><span class="ic-mb-hint">100 % = one core · dashed: quota</span></div>
-                            <TimeSeriesChart series="series('cpu')" markers="markers" window="window" step="state.board.step"
-                                             unit="'percent'" label.translate="CPU use per container over time" onZoom.bind="zoomTo"/>
+                            <p t-if="panelError('cpu')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('cpu')"/>
+                            <t t-else="">
+                                <TimeSeriesChart series="series('cpu')" markers="markers" window="window" step="state.board.step"
+                                                 unit="'percent'" label.translate="CPU use per container over time" onZoom.bind="zoomTo"/>
+                            </t>
                         </div>
                         <div class="rl-card ic-mb-card" data-panel="throttled">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Held back by the CPU quota</span><span class="ic-mb-hint">% of the time</span></div>
-                            <TimeSeriesChart series="series('throttled')" window="window" step="state.board.step"
-                                             unit="'percent'" label.translate="Share of time each container was held back by its CPU quota" onZoom.bind="zoomTo"/>
+                            <p t-if="panelError('throttled')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('throttled')"/>
+                            <t t-else="">
+                                <TimeSeriesChart series="series('throttled')" window="window" step="state.board.step"
+                                                 unit="'percent'" label.translate="Share of time each container was held back by its CPU quota" onZoom.bind="zoomTo"/>
+                            </t>
                         </div>
                         <div class="rl-card ic-mb-card" data-panel="memory">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Memory per container</span><span class="ic-mb-hint">working set · dashed: limit</span></div>
-                            <TimeSeriesChart series="series('memory')" markers="markers" window="window" step="state.board.step"
-                                             unit="'bytes'" label.translate="Memory use per container over time" onZoom.bind="zoomTo"/>
+                            <p t-if="panelError('memory')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('memory')"/>
+                            <t t-else="">
+                                <TimeSeriesChart series="series('memory')" markers="markers" window="window" step="state.board.step"
+                                                 unit="'bytes'" label.translate="Memory use per container over time" onZoom.bind="zoomTo"/>
+                            </t>
                         </div>
                         <div class="rl-card ic-mb-card" data-panel="pressure">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Server: waiting for resources</span><span class="ic-mb-hint">% of the time some task waited</span></div>
-                            <t t-if="hasSeries('pressure')">
+                            <p t-if="panelError('pressure')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('pressure')"/>
+                            <t t-elif="hasSeries('pressure')">
                                 <TimeSeriesChart series="series('pressure')" window="window" step="state.board.step"
                                                  unit="'percent'" palette="'role'" label.translate="Time the server's tasks waited for CPU, memory or disk" onZoom.bind="zoomTo"/>
                             </t>
@@ -130,7 +161,8 @@
                         </div>
                         <div class="rl-card ic-mb-card ic-mb-wide" data-panel="neighbours">
                             <div class="ic-mb-cardhead"><span class="rl-ovtitle">Neighbours: CPU per instance on this server</span><span class="ic-mb-hint">this instance in green</span></div>
-                            <t t-if="hasSeries('neighbours')">
+                            <p t-if="panelError('neighbours')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('neighbours')"/>
+                            <t t-elif="hasSeries('neighbours')">
                                 <TimeSeriesChart series="series('neighbours')" window="window" step="state.board.step"
                                                  unit="'percent'" palette="'neighbours'" highlightId="instanceKey"
                                                  label.translate="CPU use of every instance on this server over time" onZoom.bind="zoomTo"/>
@@ -286,7 +318,8 @@
                             <span class="rl-ovtitle">Directory on the server</span>
                             <span class="ic-mb-hint" t-esc="directorySize"/>
                         </div>
-                        <t t-if="hasSeries('disk')">
+                        <p t-if="panelError('disk')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('disk')"/>
+                        <t t-elif="hasSeries('disk')">
                             <TimeSeriesChart series="series('disk')" window="window" step="state.board.step"
                                              unit="'bytes'" palette="'role'" label.translate="Size of the instance's directory over time" onZoom.bind="zoomTo"/>
                         </t>

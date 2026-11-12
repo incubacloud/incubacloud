@@ -268,6 +268,15 @@
   padding-block: 40px;
 }
 
+.ic-mb-panel-error {
+  color: var(--rl-amber-text);
+}
+
+.ic-mb-since {
+  color: var(--rl-muted);
+  font-size: 12.5px;
+}
+
 .ic-mb-meta {
   margin-block: 0;
   color: var(--rl-faint);
