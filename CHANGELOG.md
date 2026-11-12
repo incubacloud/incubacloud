@@ -296,11 +296,12 @@ before updating (`docs/observability-operations.md`, "Undo").
   waited for good. The close now lets the row go with the job's end.
   One whose clean-up raises is closed all the same, its row closed for
   a later pass, instead of being closed again at every pass. A close
-  that has not happened 30 minutes after the job was taken up has the
-  row closed, with an error in the server's log. A job whose type has no
-  executor any more says in its log that nothing can clean what it left,
-  and a cancelled one raises `job_cleanup_given_up`. Spanish translation
-  included.
+  tried and not done 30 minutes after the job was taken up has the row
+  closed, with an error in the server's log; a job taken up again after
+  more than that without a pass is tried once more first. A job whose
+  type has no executor any more says once in its log that nothing can
+  clean what it left, and a cancelled one raises `job_cleanup_given_up`.
+  Spanish translation included.
 - The Spanish texts call the metrics central *la central* throughout.
 
 ### Security
