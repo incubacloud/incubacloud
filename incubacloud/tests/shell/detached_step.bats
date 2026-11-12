@@ -304,6 +304,12 @@ wait_state() {
     [ "$status" -eq 0 ]
 }
 
+@test "a hidden job's step and a visible one of the same instance run side by side" {
+    start "$OTHER" 'sleep 30' 60 "instance:7:pitr_base_backup"
+    run start "$D" 'true'
+    [ "$status" -eq 0 ]
+}
+
 @test "a finished step of another job holds nothing" {
     start "$OTHER" 'true'
     wait_state "$OTHER" done

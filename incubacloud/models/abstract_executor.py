@@ -2556,12 +2556,20 @@ class AbstractExecutor(ABC):
         """Return what a step apart of this job holds on its server.
 
         One step at a time per instance, or per host for a job of the
-        host: ``detached_step.sh start`` refuses a second one.
+        host: ``detached_step.sh start`` refuses a second one. A hidden
+        job (``cloud.job._get_hidden_job_types``) holds a scope of its
+        own, per type: it runs beside the visible jobs of its target
+        (a base copy of PITR beside a rebuild), and must not make them
+        wait for it on the server, nor wait for them.
 
         :rtype: str
         """
         inst = self.job.instance_id
-        return f"instance:{inst.id}" if inst else "host"
+        scope = f"instance:{inst.id}" if inst else "host"
+        code = self.job.sudo().job_type_id.code
+        if code and code in self.env["cloud.job"]._get_hidden_job_types():
+            scope = f"{scope}:{code}"
+        return scope
 
     @staticmethod
     def _script_message(output):
