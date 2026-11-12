@@ -2588,13 +2588,20 @@ class AbstractExecutor(ABC):
     def _step_may_run(self):
         """Whether the adopted checkpoint's step at ``next_index`` may run.
 
-        Started apart, or the row of an attempt that ended while it ran
-        (not parked): unknown otherwise only for a step never started.
+        Started apart, or the row of an attempt that ended while it ran:
+        neither parked nor closed. A close writes ``parked = FALSE``, and
+        the attempt that closed the row was alive: had it started the step
+        apart, ``detached_started`` says so. Not a step whose end was read
+        and whose directory a process kept (``unclean``).
 
         :rtype: bool
         """
         row = self._checkpoint_row
-        return bool(row) and bool(row.detached_started or not row.parked)
+        if not row:
+            return False
+        if row.next_index in (self._checkpoint_data.get("unclean") or ()):
+            return False
+        return bool(row.detached_started or not (row.parked or row.closed))
 
     def _hold_queue(self):
         """Mark the job's checkpoint as keeping the job's queue busy.
@@ -3130,6 +3137,7 @@ class AbstractExecutor(ABC):
         """
         self._detached_running = None
         self._on_server_index = None
+        stopped = False
         try:
             stop = await transport.run(
                 _detached_ctl(directory, "stop", wait_s) + " 2>&1",
@@ -3146,15 +3154,31 @@ class AbstractExecutor(ABC):
             stopped = stop.exit_status == 0
             if not stopped:
                 self._detached_left_alive = True
+                self._hold_queue_if_past(index)
             await self._clean_detached(transport, directory, index)
         except BaseException as exc:
             self._detached_left_alive = True
+            if not stopped:
+                self._hold_queue_if_past(index)
             logging.getLogger("AbstractExecutor").warning(
                 "[job %s] could not stop its step in %s: %s: %s",
                 self.job.id, directory, type(exc).__name__, exc,
             )
             if not isinstance(exc, Exception):
                 raise
+
+    def _hold_queue_if_past(self, index):
+        """Keep the job's queue busy if step *index* is past the point of no return.
+
+        For a stop that may have left the step running (``_stop_detached``):
+        its job fails, and the next job of its queue must not start beside
+        it before the reconciliation looks at it. Not for a directory that
+        only could not be removed.
+
+        :param int index: position of the step in the plan, or None
+        """
+        if index is not None and self._checkpoint and self._past_no_return(index):
+            self._hold_queue()
 
     # ===============================
     # STREAM HANDLERS (OVERRIDABLE)

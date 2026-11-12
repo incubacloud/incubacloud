@@ -20,6 +20,7 @@ the panel starts them in a fresh attempt when its own has run long.
 The steps run for real, on this machine, as in ``test_job_parking``.
 """
 import contextlib
+import json
 import os
 import subprocess
 import time
@@ -38,6 +39,7 @@ from odoo.addons.queue_job.exception import JobError
 from ..models import abstract_executor
 from ..models.abstract_executor import DETACHED_HOLDS_QUEUE_MAX_S
 from ..models.restore_instance_executor import RestoreInstanceExecutor
+from ..models.transport import CommandResult
 from .test_detached_step import _Apart, _local_transport
 from .test_job_parking import _TRAPPED, _Parking, _ParkingCase, _StopCase
 
@@ -202,6 +204,60 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.assertFalse(self._row())
         self.assertFalse(self._busy())
         self.assertIn("trapped", self._log())
+
+    def _ended_by_hand(self):
+        """The job failed and its queue.job ended: only its server is left."""
+        self.job.with_context(ic_skip_state_hook=True).write({"state": "failed"})
+        if self.qjob.exists():
+            self.qjob.write({"state": "failed"})
+        self.env["cloud.job"].invalidate_model(["state"])
+
+    def test_a_step_never_started_does_not_hold_it(self):
+        """Parked before the step, the server gone: nothing of it runs."""
+        cls = self._class(self._plan(), spend_at="step:1")
+        cls._no_return_from = "Apart"
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self._postponed()
+        self.qjob.unlink()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+
+    def test_a_closed_row_whose_step_never_started_does_not_hold_it(self):
+        """Closed by the attempt after the park, which never reached the server.
+
+        A close writes ``parked = FALSE``: the row of a step never
+        started reads as that of an attempt that died with it running.
+        """
+        cls = self._class(self._plan(), spend_at="step:1")
+        cls._no_return_from = "Apart"
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self._row().write({"closed": True, "parked": False})
+        self._ended_by_hand()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+
+    def test_a_row_kept_for_a_directory_only_does_not_hold_it(self):
+        """The step ended and was read; a process of it kept its directory."""
+        cls = self._lost(_no_return_from="Apart")
+        row = self._row()
+        data = row._data()
+        data["unclean"] = [1]
+        row.write({"closed": True, "parked": False, "data": json.dumps(data)})
+        self._ended_by_hand()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
 
 
 class TestAMoveRestoreUndoneDoesNotHoldItsQueue(_HoldCase):
@@ -432,6 +488,48 @@ class TestALostServerPastTheGrace(_ParkingCase):
         """The 73 of ``start`` and the reconciliation cover the rest."""
         row = self._given_up(None)
         self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+
+
+class TestAStopThatFailsPastThePointHoldsTheQueue(_ParkingCase):
+    """The job's own stop of its step leaves it alive: the queue waits."""
+
+    def _failed_stop(self, no_return):
+        """The step's read gets an answer it cannot use; its stop fails.
+
+        :return: the job's checkpoint once the job failed
+        """
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+        reads = {"n": 0}
+
+        async def _run(command, timeout=3600):
+            """A read that cannot be used, then a stop that fails."""
+            if "ctl.sh read" in command:
+                reads["n"] += 1
+                if reads["n"] == 2:
+                    raise RuntimeError("an answer that cannot be read")
+            if "ctl.sh stop" in command:
+                return CommandResult(stdout="still there", exit_status=1)
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+        cls = self._class(self._plan(apart=_TRAPPED.format(runs=self.runs)))
+        cls._no_return_from = no_return
+        with mute_logger("AbstractExecutor"):
+            self.assertIsInstance(self._execute(cls, transport), JobError)
+        return self._row()
+
+    def test_past_the_point_of_no_return_it_holds(self):
+        """Marked by the job itself, before its queue is served."""
+        row = self._failed_stop("Apart")
+        self.assertTrue(row.closed)
+        self.assertTrue(row.holds_queue_since)
+
+    def test_before_it_it_does_not(self):
+        """Left to the reconciliation, the queue free."""
+        row = self._failed_stop(None)
+        self.assertTrue(row.closed)
         self.assertFalse(row.holds_queue_since)
 
 
