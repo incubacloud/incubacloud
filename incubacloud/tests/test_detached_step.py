@@ -496,19 +496,31 @@ class TestAPlanWithoutStepsApart(BaseCase):
         it; then the deploy's and the rebuild's long steps (phase 3,
         12-nov-2026), inherited the same way, the restores (the restore of
         an archive, and the restore from the backup store; the update both
-        share is marked where they build it, in ``abstract_executor``), and
-        the copies and downloads. No other module of an executor marks one.
+        share is marked where they build it, in ``abstract_executor``), the
+        copies and downloads, and Full Setup's install of the host's tools.
+        No other module of core's executors marks one; the modules on top
+        of core check their own (``incubacloud_pitr``); a class of theirs
+        that replaces one of core's executors counts as that executor.
         """
         marked = re.compile(r"""["']detached["']\s*:""")
-        found = sorted({
-            inspect.getmodule(cls).__name__.rsplit(".", 1)[-1]
+        core = "odoo.addons.incubacloud."
+        modules = {
+            next(
+                (inspect.getmodule(base) for base in cls.__mro__
+                 if base.__module__.startswith(core) and vars(base).get("_job_type")),
+                None,
+            )
             for cls in executor_registry.all().values()
-            if marked.search(inspect.getsource(inspect.getmodule(cls)))
-        })
+        }
+        found = sorted(
+            module.__name__.rsplit(".", 1)[-1]
+            for module in modules - {None}
+            if marked.search(inspect.getsource(module))
+        )
         self.assertEqual(found, [
             "backup_create_executor", "backup_download_executor",
             "backup_download_neutralized_executor", "backup_restore_executor",
-            "deploy_instance_executor",
+            "deploy_instance_executor", "full_setup_executor",
             "rebuild_instance_executor", "restore_instance_executor",
         ])
 
