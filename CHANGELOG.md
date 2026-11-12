@@ -9,9 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.225] — 2026-11-11
 
 Jobs that outlive the request that runs them, as on Odoo.sh, where a
-request is cut at 900 s: a rebuild runs apart from its request its download
-of the repositories, its image build, its boot test and its module update,
-and every other step runs as before. Settings is a menu of sections, one page each, with a
+request is cut at 900 s: a deploy and a rebuild run apart from their
+request their long steps (the download of the repositories, the pull and
+build of the image, the initialization of a new database, the boot test
+and the module update), and every other step runs as before. Settings is a menu of sections, one page each, with a
 search over every setting (issue #3). A restore to a moment updates its
 database to the code the instance runs, as every other restore does since
 1.0.224; a stopped update of a preview no longer lets a push start a second
@@ -47,6 +48,13 @@ is unchanged.
   executor's hooks read that is set before the steps (`_carried`) now adds
   up over its classes, so a mixin declares its own without hiding its
   bases'.
+- **A deploy's long steps run apart on its server.** «Fetch the
+  repositories», «Pull images», «Build Odoo image», «Initialize database»
+  and «Initialize module checksums» are marked `detached`, with the
+  options they had; «Pull images», capped only by the default hour
+  before, gets 900 s. A move's deploy, which initializes nothing, keeps
+  the others. A deploy stopped during one of them, parked or not, stops
+  the step and its instance goes back to draft, as it does today.
 - **The job lists say what a waiting job waits for.** A job parked
   between two attempts reads *Running · on the server, reconnecting at
   12:03:05* (*Running · reconnecting at …* when nothing of it runs on the
