@@ -198,18 +198,132 @@ export class HostsDashboard extends Component {
         return _t("%s cores", n);
     }
 
-    usagePct(host) {
-        const r = Number(host.usage_ratio || 0);
-        return Math.min(100, Math.round(r * 100));
+    /**
+     * A figure as a card writes it: one decimal at most, none when whole.
+     *
+     * @param {number} value
+     * @returns {string} "0.9", "6"
+     */
+    formatNum(value) {
+        return String(Math.round(Number(value || 0) * 10) / 10);
     }
 
-    usageExtra(host) {
-        const cpu = Number(host.allocated_cpus || 0);
+    /**
+     * Whether the host's live CPU and RAM usage can be shown: the server
+     * sends them only while its last reading is recent.
+     *
+     * @param {Object} host a host as ``/cloud/get_hosts`` returns it.
+     * @returns {boolean}
+     */
+    hasLiveUsage(host) {
+        return host.usage_state === "live"
+            && host.cpu_usage !== null && host.cpu_usage !== undefined
+            && host.ram_usage !== null && host.ram_usage !== undefined;
+    }
+
+    /**
+     * A usage percentage as the bar and its figure read it, whole.
+     *
+     * @param {number} value percent, 0-100.
+     * @returns {number}
+     */
+    pct(value) {
+        return Math.min(100, Math.max(0, Math.round(Number(value || 0))));
+    }
+
+    /**
+     * The line under the CPU bar: cores in use of the host's, and the
+     * vCPU its instances are allowed when there are any.
+     *
+     * @param {Object} host
+     * @returns {string} "0.9 of 4 cores · allocated: 6 vCPU"
+     */
+    cpuExtra(host) {
         const cores = Number(host.cpu_cores || 0);
+        const parts = [];
+        if (cores) {
+            parts.push(_t("%(used)s of %(total)s cores", {
+                used: this.formatNum(host.cpu_usage * cores / 100),
+                total: cores,
+            }));
+        }
+        if (Number(host.allocated_cpus || 0)) {
+            parts.push(_t("allocated: %s vCPU", this.formatNum(host.allocated_cpus)));
+        }
+        return parts.join(" · ");
+    }
+
+    /**
+     * The line under the RAM bar: memory in use of the host's, and the
+     * memory its instances are allowed when there are any.
+     *
+     * @param {Object} host
+     * @returns {string} "9.9 of 16 GB · allocated: 12 GB"
+     */
+    ramExtra(host) {
+        const total = Number(host.ram_total_gb || 0);
+        const parts = [];
+        if (total) {
+            parts.push(_t("%(used)s of %(total)s GB", {
+                used: this.formatNum(host.ram_usage * total / 100),
+                total: this.formatNum(total),
+            }));
+        }
+        if (Number(host.allocated_ram_gb || 0)) {
+            parts.push(_t("allocated: %s GB", this.formatNum(host.allocated_ram_gb)));
+        }
+        return parts.join(" · ");
+    }
+
+    /**
+     * Why a card shows no live CPU and RAM, in words: never a 0 that
+     * reads as an idle host.
+     *
+     * @param {Object} host
+     * @returns {string}
+     */
+    usageMissing(host) {
+        if (host.usage_state === "off") {
+            return _t("Metrics are off. Turn them on in Settings to see live usage.");
+        }
+        if (host.usage_state === "no_agents") {
+            return _t("The metrics agents are not installed on this host.");
+        }
+        const ago = this.timeAgo(host.usage_last_seen);
+        // 15 minutes is USAGE_FRESH_SECONDS (cloud_host_metrics.py).
+        return ago
+            ? _t("No reading in the last 15 minutes (last: %s).", ago)
+            : _t("No reading yet.");
+    }
+
+    /**
+     * The icon beside ``usageMissing``: where to look, at a glance.
+     *
+     * @param {Object} host
+     * @returns {string} a key of the Relay icon set.
+     */
+    usageIcon(host) {
+        return {
+            off: "settings",
+            no_agents: "heartbeat",
+        }[host.usage_state] || "clock";
+    }
+
+    /**
+     * What the host's instances are allowed, for a card without live
+     * usage; empty when it runs none.
+     *
+     * @param {Object} host
+     * @returns {string} "Allocated: 6 vCPU · 12 GB"
+     */
+    allocatedText(host) {
+        const cpu = Number(host.allocated_cpus || 0);
         const ram = Number(host.allocated_ram_gb || 0);
-        const ramTot = Number(host.ram_total_gb || 0);
-        if (!cores && !ramTot) return '';
-        return `${cpu}/${cores} vCPU · ${ram.toFixed(1)}/${ramTot.toFixed(1)} GB`;
+        if (!cpu && !ram) return "";
+        return _t("Allocated: %(cpu)s vCPU · %(ram)s GB", {
+            cpu: this.formatNum(cpu),
+            ram: this.formatNum(ram),
+        });
     }
 
     statusLabel(status) {

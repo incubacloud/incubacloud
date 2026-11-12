@@ -407,6 +407,20 @@ is unchanged.
   with changes asks first. A section sends only the fields changed since it
   loaded or saved, so it never puts back another's settings or a value a job
   wrote meanwhile. Older `?tab=` links land on their section.
+- **A host's card shows the CPU and RAM it really uses.** Its one
+  «CPU / RAM» bar added up the limits of the host's instances, so a nearly
+  idle server could read 100 % beside a disk bar that was real. The card
+  now has a CPU bar and a RAM bar with the use the metrics agents report
+  (the cores' busy share over the last five minutes, memory in use as
+  total minus available), each with the figure in cores or GB, and what
+  the instances are allocated as a second line: *0.9 of 4 cores ·
+  allocated: 11.3 vCPU*. Without a reading of the last 15 minutes the card
+  shows no bar and says why: metrics off, agents not installed, or no
+  recent reading and when the last one was. The specs cron reads both
+  with two more queries and writes them only together; `/cloud/get_hosts`
+  gives `usage_state`, `cpu_usage`, `ram_usage` and `usage_last_seen`.
+  Adds three columns to `cloud_host` (`cpu_usage`, `ram_usage`,
+  `usage_last_seen`); Spanish translation included.
 
 ### Fixed
 

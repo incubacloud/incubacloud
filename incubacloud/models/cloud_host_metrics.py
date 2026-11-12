@@ -6,7 +6,9 @@ a fleet of ~100 targets. node_exporter already reports all of it.
 
 Scope note: this covers ``host_metrics`` **completely** (cpu_cores,
 ram_total_gb, disk_usage, disk_free_gb, last_probed, and the
-disk-critical alert, which is now a seeded ``cloud.metric.rule``). It does
+disk-critical alert, which is now a seeded ``cloud.metric.rule``), and
+reads the live CPU and RAM usage the hosts' cards show, which the SSH
+probe never did. It does
 NOT cover ``instance_health``, which also does HTTP health probing and
 error-log scraping — those need blackbox and Loki, both part of
 observability v2 (a later batch of the metrics work, not the
@@ -38,7 +40,31 @@ _QUERIES = {
     "ram_total_gb": ("node_memory_MemTotal_bytes", "", "{}"),
     "disk_free_gb": ("node_filesystem_avail_bytes", 'mountpoint="/"', "{}"),
     "_disk_size": ("node_filesystem_size_bytes", 'mountpoint="/"', "{}"),
+    # The busy share of all cores over the last five minutes: one cron
+    # tick, so each reading covers the time since the one before.
+    "cpu_usage": (
+        "node_cpu_seconds_total", 'mode="idle"',
+        "100 * (1 - avg by (host_id) (rate({}[5m])))",
+    ),
+    "_mem_available": ("node_memory_MemAvailable_bytes", "", "{}"),
 }
+
+#: Seconds a CPU and RAM reading is shown for. Three ticks of the
+#: five-minute specs cron, as ``HostMetricsExecutor._METRICS_FRESH_SECONDS``:
+#: one missed tick must not blank the hosts' cards, and a host that stopped
+#: reporting must not show its last figures as if they were current
+#: (12-nov-2026).
+USAGE_FRESH_SECONDS = 900
+
+
+def _percent(value):
+    """Return *value* as a percentage rounded to one decimal, within 0–100.
+
+    :param float value: a percentage as computed, which a counter reset or
+        a rounding can push a little out of range.
+    :rtype: float
+    """
+    return round(min(100.0, max(0.0, value)), 1)
 
 
 def _query(key, host_ids=None):
@@ -190,9 +216,56 @@ class CloudHost(models.Model):
                 vals["disk_free_gb"] = round(free / _GIB, 1)
             if free is not None and size:
                 vals["disk_usage"] = round(100 - (free / size * 100), 1)
+            # CPU and RAM go together or not at all: a host just enrolled
+            # has no rate yet, and stamping half a reading would show the
+            # other half's default 0 as a live figure.
+            cpu = data.get("cpu_usage")
+            available = data.get("_mem_available")
+            total = data.get("ram_total_gb")
+            if cpu is not None and available is not None and total:
+                vals["cpu_usage"] = _percent(cpu)
+                vals["ram_usage"] = _percent(100 - available / total * 100)
+                vals["usage_last_seen"] = now
             host.write(vals)
             if "disk_usage" in vals:
                 self._apply_disk_status(host, vals["disk_usage"])
+
+    def _usage_for_card(self, metrics_enabled, now=None):
+        """Return the live CPU and RAM usage a host's card shows, or why not.
+
+        The figures are given only while ``usage_last_seen`` is recent
+        (``USAGE_FRESH_SECONDS``); otherwise they are ``None`` and the
+        state says why, so the card never shows a stale or default figure
+        as current.
+
+        :param bool metrics_enabled: whether metrics are on in Settings.
+        :param datetime now: the time freshness is measured against.
+        :return: ``usage_state`` (``live``, ``off`` with metrics off in
+            Settings, ``no_agents`` with the agents not installed, or
+            ``stale`` with no recent reading), ``cpu_usage`` and
+            ``ram_usage`` in percent or ``None``, and ``usage_last_seen``
+            as ISO text or ``''``.
+        :rtype: dict
+        """
+        self.ensure_one()
+        now = now or fields.Datetime.now()
+        seen = self.usage_last_seen
+        fresh = bool(seen) and (now - seen).total_seconds() <= USAGE_FRESH_SECONDS
+        if not metrics_enabled:
+            state = "off"
+        elif fresh:
+            state = "live"
+        elif self.metrics_agents_state != "installed":
+            state = "no_agents"
+        else:
+            state = "stale"
+        live = state == "live"
+        return {
+            "usage_state": state,
+            "cpu_usage": self.cpu_usage if live else None,
+            "ram_usage": self.ram_usage if live else None,
+            "usage_last_seen": seen.isoformat() if seen else "",
+        }
 
     def _apply_disk_status(self, host, disk_usage):
         """Carry over the disk half of what the SSH probe used to do.

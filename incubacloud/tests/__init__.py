@@ -136,6 +136,7 @@ from . import test_docker_prune_executor
 from . import test_build_cache_prune
 from . import test_build_retry
 from . import test_host_disk_refresh
+from . import test_host_live_usage
 from . import test_nav_counts_route
 from . import test_deploy_retries_failed
 from . import test_action_required_reason

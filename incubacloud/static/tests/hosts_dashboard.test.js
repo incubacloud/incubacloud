@@ -1,4 +1,5 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import { HostsDashboard } from "@incubacloud/components/hosts_dashboard/hosts_dashboard";
 
 /**
@@ -245,5 +246,82 @@ describe("HostsDashboard — silent vs. visible refresh", () => {
         await HostsDashboard.prototype.loadHosts.call(self);
         expect(self.state.error).toBe("boom");
         expect(self.state.loading).toBe(false);
+    });
+});
+
+/**
+ * Live CPU and RAM on a host's card. The real prototype methods, on an
+ * object made from the prototype so they reach each other through
+ * ``this`` without the service/mount stack.
+ */
+describe("HostsDashboard — live usage", () => {
+    beforeEach(() => allowTranslations());
+    const card = Object.create(HostsDashboard.prototype);
+    const live = {
+        usage_state: "live", cpu_usage: 23.4, ram_usage: 62.5,
+        cpu_cores: 4, ram_total_gb: 16,
+        allocated_cpus: 6, allocated_ram_gb: 12,
+    };
+
+    test("a live reading is shown; a stale one or a missing figure is not", () => {
+        expect(card.hasLiveUsage(live)).toBe(true);
+        expect(card.hasLiveUsage({ ...live, usage_state: "stale" })).toBe(false);
+        expect(card.hasLiveUsage({ ...live, cpu_usage: null })).toBe(false);
+        expect(card.hasLiveUsage({ ...live, ram_usage: undefined })).toBe(false);
+    });
+
+    test("a live 0 % is still a reading", () => {
+        expect(card.hasLiveUsage({ ...live, cpu_usage: 0 })).toBe(true);
+    });
+
+    test("the bar's percentage is whole and within 0-100", () => {
+        expect(card.pct(23.4)).toBe(23);
+        expect(card.pct(100.6)).toBe(100);
+        expect(card.pct(-1)).toBe(0);
+        expect(card.pct(null)).toBe(0);
+    });
+
+    test("the CPU line gives cores in use and the allocation beside", () => {
+        expect(String(card.cpuExtra(live))).toBe("0.9 of 4 cores · allocated: 6 vCPU");
+    });
+
+    test("an allocation over the host's cores reads as it is", () => {
+        expect(String(card.cpuExtra({ ...live, allocated_cpus: 11.25 })))
+            .toBe("0.9 of 4 cores · allocated: 11.3 vCPU");
+    });
+
+    test("without instances the allocation is left out", () => {
+        expect(String(card.cpuExtra({ ...live, allocated_cpus: 0 }))).toBe("0.9 of 4 cores");
+        expect(String(card.ramExtra({ ...live, allocated_ram_gb: 0 }))).toBe("10 of 16 GB");
+    });
+
+    test("the RAM line gives memory in use and the allocation beside", () => {
+        expect(String(card.ramExtra(live))).toBe("10 of 16 GB · allocated: 12 GB");
+    });
+
+    test("each reason for no reading is said in words", () => {
+        expect(String(card.usageMissing({ usage_state: "off" })))
+            .toBe("Metrics are off. Turn them on in Settings to see live usage.");
+        expect(String(card.usageMissing({ usage_state: "no_agents" })))
+            .toBe("The metrics agents are not installed on this host.");
+        expect(String(card.usageMissing({ usage_state: "stale", usage_last_seen: "" })))
+            .toBe("No reading yet.");
+    });
+
+    test("a stale reading says when the last one was", () => {
+        const threeHoursAgo = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+        expect(String(card.usageMissing({ usage_state: "stale", usage_last_seen: threeHoursAgo })))
+            .toBe("No reading in the last 15 minutes (last: 3h ago).");
+    });
+
+    test("each reason has its icon", () => {
+        expect(card.usageIcon({ usage_state: "off" })).toBe("settings");
+        expect(card.usageIcon({ usage_state: "no_agents" })).toBe("heartbeat");
+        expect(card.usageIcon({ usage_state: "stale" })).toBe("clock");
+    });
+
+    test("without a reading the allocation still shows, when there is one", () => {
+        expect(String(card.allocatedText(live))).toBe("Allocated: 6 vCPU · 12 GB");
+        expect(card.allocatedText({ allocated_cpus: 0, allocated_ram_gb: 0 })).toBe("");
     });
 });
