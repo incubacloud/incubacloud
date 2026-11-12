@@ -12,6 +12,8 @@ import json
 from datetime import timedelta
 from unittest.mock import patch
 
+import requests
+
 from odoo import fields
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
@@ -62,12 +64,45 @@ class TestTheCronReadsLiveUsage(HostMetricsHandoverCase):
         self.assertTrue(self.host.usage_last_seen)
 
     def test_cpu_is_asked_as_the_busy_share_of_every_core(self):
+        """Idle and iowait both count as not busy, over the host's cores."""
         with patch(_PROMQL, autospec=True, side_effect=self._backend()) as promql:
             self._cron()
         self.assertIn(
-            '100 * (1 - avg by (host_id) (rate(node_cpu_seconds_total{mode="idle"}[5m])))',
+            '100 * (1 - sum by (host_id) '
+            '(rate(node_cpu_seconds_total{mode=~"idle|iowait"}[5m])) / '
+            'count by (host_id) (node_cpu_seconds_total{mode="idle"}))',
             [call.args[1] for call in promql.call_args_list],
         )
+
+    def test_a_failed_pass_keeps_the_last_reading(self):
+        """A backend that stops answering after a good reading must leave
+        the figures and their time as they were: no zeros, no new stamp."""
+        self._read()
+        seen = self.host.usage_last_seen
+        with patch(
+            _PROMQL, autospec=True, side_effect=requests.ConnectionError("down"),
+        ):
+            self._cron()
+        self.host.invalidate_recordset()
+        self.assertEqual(self.host.cpu_usage, 23.4)
+        self.assertEqual(self.host.ram_usage, 62.5)
+        self.assertEqual(self.host.usage_last_seen, seen)
+
+    def test_a_host_missing_from_the_answer_is_left_alone(self):
+        """The backend answers for one host and says nothing of another:
+        the first is written, the second keeps what it had."""
+        other = self.env["cloud.host"].create({
+            "name": "HM2", "ip_address": "10.0.0.21", "user": "root",
+            "wildcard_domain": "hm2.example.com",
+            "cpu_usage": 11.0, "ram_usage": 22.0,
+        })
+        self._read()
+        self.assertEqual(self.host.cpu_usage, 23.4)
+        self.assertTrue(self.host.usage_last_seen)
+        other.invalidate_recordset()
+        self.assertEqual(other.cpu_usage, 11.0)
+        self.assertEqual(other.ram_usage, 22.0)
+        self.assertFalse(other.usage_last_seen)
 
     def test_half_a_reading_is_not_written(self):
         """A host just enrolled has no rate yet: its RAM alone must not
@@ -126,11 +161,12 @@ class TestWhatTheCardIsGiven(HostMetricsHandoverCase):
         self.assertTrue(usage["usage_last_seen"])
 
     def test_without_agents_the_card_says_so(self):
-        for state in ("never", "failed"):
+        """Not installed and failed to install are told apart."""
+        for state, shown in (("never", "no_agents"), ("failed", "agents_failed")):
             with self.subTest(state=state):
                 self.host.metrics_agents_state = state
                 usage = self.host._usage_for_card(True, self.now)
-                self.assertEqual(usage["usage_state"], "no_agents")
+                self.assertEqual(usage["usage_state"], shown)
                 self.assertIsNone(usage["cpu_usage"])
                 self.assertEqual(usage["usage_last_seen"], "")
 
