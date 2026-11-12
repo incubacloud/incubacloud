@@ -469,10 +469,29 @@ class PitrEnableExecutor(_PitrExecutor):
                 {"stop_on_failure": True},
             ),
             (
+                # The daily copy's ``base-backup``, a full one here: minutes
+                # or hours with a large database, apart on the server, in
+                # the daily copy's scope (``_detached_scope``) (phase 3,
+                # 12-nov-2026). ``IC_PITR_BASES`` comes last, in the tail
+                # of its stdout the step keeps.
                 "First base copy",
                 self.run_script("pitr.sh", ["base-backup", d, user]),
+                {"detached": True},
             ),
         ]
+
+    def _detached_scope(self):
+        """Return the daily base copy's scope: the step is the same copy.
+
+        ``pitr.sh base-backup`` takes no lock of its own: holding the
+        scope of ``pitr_base_backup`` keeps a daily copy of the instance
+        and this one from running at once on its server, and lets the
+        copy run beside a visible job's step of the instance, as the daily
+        one does.
+
+        :rtype: str
+        """
+        return f"{super()._detached_scope()}:{PitrBaseBackupExecutor._job_type}"
 
     async def on_success(self, results):
         """Archiving: record the cluster, the window, and say so."""
