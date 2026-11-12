@@ -4056,8 +4056,14 @@ class CloudJob(models.Model):
         knows nothing of the lost run but what the database holds.
         Then the job log says what happened, and its watchers hear of
         it. A job claimed by an earlier pass is not cleaned up again:
-        its log says the clean-up may have stopped half way. Never
-        raises: the job is closed next whatever happens here.
+        its log says the clean-up may have stopped half way, and its
+        checkpoint, which no hook takes along now, is let go
+        (``_forget_checkpoint``: deleted, or closed for a later pass when
+        the server was not reached). So is the checkpoint of a job whose
+        type has no executor any more, which nothing can clean: kept
+        unclosed, either would read as a ``stopped_parked`` job to close
+        at every pass, and its job as *Cancelling…* for good (12-nov-2026).
+        Never raises: the job is closed next whatever happens here.
 
         :param int job_id: the ``cloud.job``
         :param str case: as ``_lost_job_case`` names it
@@ -4078,6 +4084,10 @@ class CloudJob(models.Model):
                     job.env["cloud.job.log.chunk"].sudo().create({
                         "job_id": job_id, "content": note, "source": "system",
                     })
+                    cr.execute(
+                        "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                        (job_id,),
+                    )
                     return hooked
                 executor = executor_cls(
                     job_record=runner, host_record=runner.sudo().host_id,
@@ -4121,6 +4131,7 @@ class CloudJob(models.Model):
                         " closing it: what the lost run left may not all"
                         " have been put back."
                     ))
+                    executor._forget_checkpoint()
                 elif case == "failed":
                     hooked = True
                     asyncio.run(executor._dispatch_abort(
