@@ -348,6 +348,43 @@ class TestParkAndResume(_ParkingCase):
         )
         self.assertEqual(cls.instances[2].closed[0], "success")
 
+    def test_a_rebuilds_update_apart_held_by_the_crons_starts_over(self):
+        """«Update changed modules» run apart exits 75 (``cron_guard.sh``:
+        nothing was updated) in the attempt that took it up after a park:
+        the rebuild's own ``parse_results`` asks for a retry from the start
+        five minutes later, the checkpoint and the step's directory go, and
+        the next attempt runs every step again (phase 3, 12-nov-2026)."""
+        from ..models.rebuild_instance_executor import RebuildInstanceExecutor
+
+        update = "Update changed modules"
+        plan = list(self._plan(apart=(
+            f"echo Update >> {self.runs}; echo line-1; sleep 0.4;"
+            " echo line-2; exit 75"
+        )))
+        plan[1] = (update, plan[1][1], {"stop_on_failure": True, "detached": True})
+        cls = self._class(tuple(plan), spend_at="follow")
+        cls.parse_results = RebuildInstanceExecutor.parse_results
+        cls._first_attempt_started_at = RebuildInstanceExecutor._first_attempt_started_at
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        exc = self._execute(cls)
+        self.assertIsInstance(exc, RetryableJobError)
+        self.assertNotIsInstance(exc, abstract_executor.JobParked)
+        self.assertEqual(exc.seconds, 300)
+        self.assertTrue(exc.ignore_retry)
+        self.assertFalse(self._row())
+        self.assertFalse(Path(self._dir(1)).exists())
+        self.assertFalse(Path(cls.instances[0]._job_dir_path).exists())
+        self.assertEqual(self._runs(), ["First", "Update"])
+        self.assertEqual(cls.prepared, 1)
+        plan[1] = (update, plan[1][1].replace("exit 75", "exit 0"), plan[1][2])
+        cls.plan = tuple(plan)
+        self.assertIsNone(self._execute(cls))
+        self.assertEqual(cls.prepared, 2)
+        self.assertEqual(
+            self._runs(), ["First", "Update", "First", "Update", "Last"],
+        )
+        self.assertEqual(cls.instances[2].closed[0], "success")
+
     def test_the_budget_counts_from_the_start_of_the_attempt(self):
         """0.6 of the limit from ``_start_clock``; none without a limit."""
         executor = object.__new__(_Apart)

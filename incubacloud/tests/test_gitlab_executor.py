@@ -264,8 +264,16 @@ class TestTheSeriesThatFetchFirst(_GitLabExecutorCase):
         _label, fetch, fetch_opts = _find_cmd(cmds, "Fetch the repositories")
         self.assertEqual(shlex.split(fetch)[2], "fetch-repos")
         self.assertNotIn("docker compose build", fetch)
-        self.assertEqual(fetch_opts["timeout"], deploy_mod._FETCH_STEP_TIMEOUT_S)
-        self.assertTrue(fetch_opts["stop_on_failure"])
+        # Run apart (phase 3, 12-nov-2026), with its own timeout: the
+        # credentials travel in the spec file it names, never in the
+        # command the checkpoint keeps.
+        self.assertEqual(fetch_opts, {
+            "stop_on_failure": True,
+            "timeout": deploy_mod._FETCH_STEP_TIMEOUT_S,
+            "detached": True,
+        })
+        self.assertEqual(shlex.split(fetch)[4], ex._tmp(ex._HEADS_SPEC))
+        self.assertNotIn(_GL_TOKEN, fetch)
         build = _find_cmd(cmds, "Rebuild Odoo image")
         self.assertEqual(labels.index("Fetch the repositories") + 1,
                          labels.index("Rebuild Odoo image"))

@@ -264,10 +264,38 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertLess(
             labels.index(cmd[0]), labels.index(RebuildInstanceExecutor._no_return_from),
         )
+
+    def test_the_long_steps_run_apart_with_their_options(self):
+        """Phase 3 (12-nov-2026): the download, the build, the boot test
+        and the update run apart, each with the options it had; the
+        update is the point of no return. «Ensure incubacloud_connect»
+        stays attached: a query on a database that nearly always has it."""
         self.assertEqual(
-            [c[0] for c in self.cmds if len(c) == 3 and c[2].get("detached")],
-            [cmd[0]],
+            [
+                (c[0], c[2]) for c in self.cmds
+                if len(c) == 3 and c[2].get("detached")
+            ],
+            [
+                ("Fetch the repositories", {
+                    "stop_on_failure": True, "timeout": 1260, "detached": True,
+                }),
+                ("Rebuild Odoo image", {"stop_on_failure": True, "detached": True}),
+                ("Test new image (safe boot check)", {
+                    "stop_on_failure": True, "detached": True,
+                }),
+                ("Update changed modules", {
+                    "stop_on_failure": True, "detached": True,
+                }),
+            ],
         )
+        ensure = _find_cmd(self.cmds, "Ensure incubacloud_connect")
+        self.assertEqual(len(ensure), 2)
+
+    def test_a_staging_neutralizes_again_attached(self):
+        """The UPDATEs after the update are short: not run apart."""
+        cmds = _make_rebuild_executor(environment="staging").get_commands()
+        step = _find_cmd(cmds, "Neutralize again after the update")
+        self.assertEqual(step[2], {"stop_on_failure": True})
 
     def test_a_failed_build_is_repeated_once(self):
         """A passing failure at GitHub must not fail the whole rebuild."""
@@ -275,6 +303,65 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertEqual(build.count("docker compose build"), 2)
         self.assertIn("|| {", build)
         self.assertIn("sleep 60", build)
+
+
+class TestStepsApartAreKeptAsWritten(BaseCase):
+    """What a step run apart keeps on the server and in the checkpoint.
+
+    Its command is written to the step's directory and to the checkpoint's
+    plan (phase 3, 12-nov-2026): it names the files that hold secrets,
+    never a secret. And it stays POSIX: on a server that falls back to
+    running it attached (``DETACHED_EXIT_ATTACHED``) it runs in the user's
+    login shell, dash on a self-hosted one.
+    """
+
+    #: What would give a secret away inside a command.
+    _SECRET_MARKS = ("password", "token", "secret", "x-access-token", "oauth2:")
+
+    @staticmethod
+    def _apart(cmds):
+        """The steps of *cmds* marked to run apart.
+
+        :rtype: list
+        """
+        return [c for c in cmds if len(c) == 3 and c[2].get("detached")]
+
+    def _plans(self):
+        """The plans of a deploy and a rebuild, by series and environment.
+
+        :return: ``[(name, cmds), ...]``
+        """
+        plans = []
+        for make in (_make_deploy_executor, _make_rebuild_executor):
+            for version in ("8.0", "19.0"):
+                for environment in ("production", "staging"):
+                    ex = make(odoo_version=version, environment=environment)
+                    plans.append((
+                        f"{type(ex).__name__} {version} {environment}",
+                        ex.get_commands(),
+                    ))
+        return plans
+
+    def test_no_step_apart_names_a_secret(self):
+        for name, cmds in self._plans():
+            for label, command, _opts in self._apart(cmds):
+                with self.subTest(plan=name, step=label):
+                    lowered = command.lower()
+                    for mark in self._SECRET_MARKS:
+                        self.assertNotIn(mark, lowered)
+
+    def test_every_step_apart_parses_in_a_posix_shell(self):
+        shell = "dash" if subprocess.run(
+            ["sh", "-c", "command -v dash"], capture_output=True, check=False,
+        ).returncode == 0 else "sh"
+        for name, cmds in self._plans():
+            for label, command, _opts in self._apart(cmds):
+                with self.subTest(plan=name, step=label):
+                    checked = subprocess.run(
+                        [shell, "-n", "-c", command],
+                        capture_output=True, text=True, check=False,
+                    )
+                    self.assertEqual(checked.returncode, 0, checked.stderr)
 
 
 # ---------------------------------------------------------------------------
