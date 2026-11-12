@@ -30,13 +30,21 @@ import logging
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timezone
 from operator import itemgetter
 
-from odoo import _, models
+import requests
+
+from odoo import _, fields, models
 from odoo.exceptions import UserError
 
+from .cloud_host_direct import _SILENT_AFTER
 from .cloud_instance_metrics import _ONE_OFF_NAMES
-from .cloud_metric_rule import promql_query, promql_query_range
+from .cloud_metric_rule import (
+    BACKEND_UNREACHABLE_CODE,
+    promql_query,
+    promql_query_range,
+)
 from .deploy_instance_executor import ODOO_COMMAND_PROD, ODOO_COMMAND_TEST
 from .metrics_diagnosis import diagnose_instance
 
@@ -389,15 +397,41 @@ def shape_stat(panel, raw):
     return out
 
 
+def _refused(exc):
+    """Whether *exc* is the central turning this panel's credential down.
+
+    A 401 or a 403: the central answered, so it is not down, and asking
+    again with the same credential would answer the same.
+
+    :param Exception exc: what a query of the board raised.
+    :rtype: bool
+    """
+    if not isinstance(exc, requests.HTTPError):
+        return False
+    return getattr(exc.response, "status_code", None) in (401, 403)
+
+
+def _iso_utc(moment):
+    """Return a naive UTC datetime of the ORM as ISO 8601 with its offset.
+
+    :param datetime moment: a ``fields.Datetime`` value, or False.
+    :returns: ``"2026-11-12T09:30:00+00:00"``, or None without a moment.
+    :rtype: str | None
+    """
+    if not moment:
+        return None
+    return moment.replace(tzinfo=timezone.utc).isoformat()
+
+
 def run_board(scope, values, available, base, user, token,
               range_key=None, start=None, end=None):
     """Run every panel of *scope* against the central, in parallel.
 
     A panel that fails does not take the board down: its entry carries
-    ``error`` (``"unanswered"``, for the caller to word) and the others
-    are drawn. A panel whose record is missing
-    (an instance placed on no host has no server to compare with) is
-    answered empty without asking.
+    ``error`` (``"refused"`` on a 401 or 403, ``"unanswered"`` on
+    anything else, for the caller to word) and the others are drawn. A
+    panel whose record is missing (an instance placed on no host has no
+    server to compare with) is answered empty without asking.
 
     :param str scope: a key of ``PANELS``.
     :param dict values: the placeholders' values, the ids among them.
@@ -439,7 +473,7 @@ def run_board(scope, values, available, base, user, token,
             )
             # Translated by the caller: ``_`` reads its language from the
             # calling frame, and this one runs in a thread of its own.
-            return {"error": "unanswered"}
+            return {"error": "refused" if _refused(exc) else "unanswered"}
 
     panels = PANELS[scope]
     asked = [p for p in panels if p["needs"] in available]
@@ -508,9 +542,11 @@ class CloudInstance(models.Model):
         :param start: zoom window start, unix seconds (optional).
         :param end: zoom window end, unix seconds (optional).
         :returns: ``{"ok": True, "start", "end", "step", "panels",
-            "diagnosis", "workers", "timing"}``, or ``{"ok": False,
-            "reason", "error"}`` when observability is off or has no
-            central.
+            "diagnosis", "workers", "silence", "timing"}``, or ``{"ok":
+            False, "reason", "error"}`` when observability is off
+            (``disabled``) or has no central (``unconfigured``), plus
+            ``since`` when the central refuses this panel's credential
+            (``credential``) or does not answer (``central``).
         :rtype: dict
         """
         self.ensure_one()
@@ -537,8 +573,18 @@ class CloudInstance(models.Model):
         asked = board.pop("asked")
         failed = [key for key in asked if "error" in board["panels"][key]]
         if asked and len(failed) == len(asked):
+            since = self._metrics_failing_since()
+            if any(board["panels"][key]["error"] == "refused" for key in failed):
+                return {
+                    "ok": False, "reason": "credential", "since": since,
+                    "error": (
+                        _("The metrics central refused this panel's credential.")
+                        if user and token else
+                        _("This panel has no credential for the metrics central.")
+                    ),
+                }
             return {
-                "ok": False, "reason": "central",
+                "ok": False, "reason": "central", "since": since,
                 "error": _("The metrics central could not be reached."),
             }
         for key in failed:
@@ -550,4 +596,64 @@ class CloudInstance(models.Model):
         board["diagnosis"] = diagnose_instance(
             board, self, workers, now=time.time(),
         )
+        board["silence"] = self._metrics_silence()
         return {"ok": True, **board}
+
+    def _metrics_failing_since(self):
+        """Return since when the central has failed, as its alert says.
+
+        The rule cron raises ``metrics_backend_unreachable`` on its
+        second failed evaluation in a row, a refused credential
+        included: the alert's creation is the earliest failure the panel
+        has confirmed. Before that there is none to give.
+
+        :returns: ISO 8601 in UTC, or None while no such alert is open.
+        :rtype: str | None
+        """
+        alert = self.env["cloud.alert"].sudo().search(
+            [("code", "=", BACKEND_UNREACHABLE_CODE), ("state", "=", "active")],
+            order="create_date", limit=1,
+        )
+        return _iso_utc(alert.create_date)
+
+    def _metrics_silence(self, now=None):
+        """Say why the central may have nothing on this instance.
+
+        Read from what the panel keeps already, in the order a reader
+        would look: the instance's server (are its agents there, has it
+        sent anything, is it still sending), then the instance itself
+        (deployed, ever reported, running). The board shows it only when
+        no chart has a line to draw.
+
+        Codes: ``new`` (no server, not deployed or never reported),
+        ``agents_missing``, ``agents_failed``, ``agents_waiting``
+        (installed, nothing received yet), ``host_silent`` (quiet for
+        ``_SILENT_AFTER``, ``since`` its last reading), ``stopped`` and
+        ``window`` (everything reports: the window is empty).
+
+        :param datetime now: the current time, for tests.
+        :returns: ``{"code": str, "since": str | None}``.
+        :rtype: dict
+        """
+        self.ensure_one()
+        now = now or fields.Datetime.now()
+        instance = self.sudo()
+        host = instance.host_id
+        if not host:
+            return {"code": "new", "since": None}
+        if host.metrics_agents_state == "failed":
+            return {"code": "agents_failed", "since": None}
+        if host.metrics_agents_state != "installed":
+            return {"code": "agents_missing", "since": None}
+        if not host.metrics_last_seen:
+            return {"code": "agents_waiting", "since": None}
+        if host.metrics_last_seen < now - _SILENT_AFTER:
+            return {
+                "code": "host_silent",
+                "since": _iso_utc(host.metrics_last_seen),
+            }
+        if instance.state != "deployed" or not instance.metrics_last_seen:
+            return {"code": "new", "since": None}
+        if not instance.running:
+            return {"code": "stopped", "since": None}
+        return {"code": "window", "since": None}

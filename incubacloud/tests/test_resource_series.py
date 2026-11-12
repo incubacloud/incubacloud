@@ -6,13 +6,15 @@ Driven over real HTTP, with the metrics central replaced at
 ``requests.get``.
 """
 import json
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from odoo.exceptions import UserError
-from odoo.tests.common import BaseCase, HttpCase, tagged
+from odoo.tests.common import BaseCase, HttpCase, TransactionCase, tagged
 
+from ..models.cloud_metric_rule import BACKEND_UNREACHABLE_CODE
 from ..models.cloud_rate_limit import CloudRateLimit
 from ..models.metrics_charts import (
     CHART_MAX_POINTS,
@@ -31,6 +33,19 @@ def _response(payload):
     """Return a response double carrying *payload* as its JSON body."""
     resp = MagicMock(spec=requests.Response)
     resp.json.return_value = payload
+    return resp
+
+
+def _refusal(status):
+    """Return a response double the central sends to a credential it refuses.
+
+    :param int status: 401 or 403.
+    """
+    resp = MagicMock(spec=requests.Response)
+    resp.status_code = status
+    resp.raise_for_status.side_effect = requests.HTTPError(
+        f"{status} Client Error", response=resp,
+    )
     return resp
 
 
@@ -129,6 +144,8 @@ class TestResourceSeries(HttpCase):
         self.assertEqual(res["workers"], {"configured": 2})
         self.assertIn("findings", res["diagnosis"])
         self.assertEqual(set(res["timing"]), {"central_ms", "total_ms"})
+        # Why a board may be empty comes along, for the browser to word.
+        self.assertEqual(set(res["silence"]), {"code", "since"})
 
     def test_an_instance_on_no_host_skips_the_server_panels(self):
         """Pressure, neighbours and the host's numbers need a server."""
@@ -153,7 +170,11 @@ class TestResourceSeries(HttpCase):
         with patch(f"{_MODULE}.requests.get", side_effect=answer):
             res = self._call(instance_id=self.instance.id)["result"]
         self.assertTrue(res["ok"], res)
-        self.assertIn("error", res["panels"]["pressure"])
+        self.assertEqual(
+            res["panels"]["pressure"]["error"],
+            "The metrics central could not answer.",
+        )
+        self.assertNotIn("error", res["panels"]["cpu"])
         self.assertTrue(res["panels"]["cpu"]["series"])
 
     def test_a_central_that_fails_says_so(self):
@@ -163,9 +184,70 @@ class TestResourceSeries(HttpCase):
             res = self._call(instance_id=self.instance.id)["result"]
         self.assertEqual(res["ok"], False)
         self.assertEqual(res["reason"], "central")
+        self.assertEqual(res["error"], "The metrics central could not be reached.")
+        # No alert yet: the rule cron confirms an outage on its second try.
+        self.assertIsNone(res["since"])
         # Each panel is asked once: a retry would double the wait on a
         # central that is already failing.
         self.assertEqual(get.call_count, len(PANELS["instance"]))
+
+    def test_a_central_that_fails_says_since_when(self):
+        """The cron's alert dates the outage the board reports."""
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            BACKEND_UNREACHABLE_CODE, "unreachable", level="critical",
+            confirm_after=1, confirm_window=900,
+        )
+        self.authenticate("charts-dev", "charts-dev")
+        with patch(f"{_MODULE}.requests.get",
+                   side_effect=requests.ConnectionError("down")):
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertEqual(res["reason"], "central")
+        self.assertEqual(
+            datetime.fromisoformat(res["since"]).replace(tzinfo=None),
+            alert.create_date,
+        )
+        self.assertTrue(res["since"].endswith("+00:00"), res["since"])
+
+    def test_a_refused_credential_is_told_apart(self):
+        """A 401 or 403 is the central answering, not the central down."""
+        self.authenticate("charts-dev", "charts-dev")
+        for status in (401, 403):
+            with self.subTest(status=status), patch(
+                f"{_MODULE}.requests.get",
+                side_effect=lambda url, params, status=status, **kw: _refusal(status),
+            ) as get:
+                res = self._call(instance_id=self.instance.id)["result"]
+            self.assertEqual(res["ok"], False)
+            self.assertEqual(res["reason"], "credential")
+            self.assertEqual(
+                res["error"], "The metrics central refused this panel's credential.",
+            )
+            self.assertIn("since", res)
+            # Refused once is refused: no panel is asked twice.
+            self.assertEqual(get.call_count, len(PANELS["instance"]))
+
+    def test_a_panel_without_a_credential_says_so(self):
+        self.env["cloud.settings"].sudo()._get_system().metrics_remote_write_token = False
+        self.authenticate("charts-dev", "charts-dev")
+        with patch(f"{_MODULE}.requests.get",
+                   side_effect=lambda url, params, **kw: _refusal(401)) as get:
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertEqual(res["reason"], "credential")
+        self.assertEqual(
+            res["error"], "This panel has no credential for the metrics central.",
+        )
+        # The queries went out without one, as before: the central says no.
+        self.assertIsNone(get.call_args.kwargs["auth"])
+
+    def test_on_without_a_central_says_what_is_missing(self):
+        """Not "not enabled": it is on, and the central is what is missing."""
+        self.env["cloud.settings"].sudo()._get_system().metrics_central_url = False
+        self.authenticate("charts-dev", "charts-dev")
+        with patch(f"{_MODULE}.requests.get") as get:
+            res = self._call(instance_id=self.instance.id)["result"]
+        self.assertEqual(res["reason"], "unconfigured")
+        self.assertEqual(res["error"], "No metrics central is configured.")
+        get.assert_not_called()
 
     def test_boards_are_limited_per_user(self):
         self.authenticate("charts-dev", "charts-dev")
@@ -216,6 +298,68 @@ class TestResourceSeries(HttpCase):
             res = self._call(instance_id=self.instance.id + 10**6)["result"]
         self.assertEqual(res, {"ok": False, "error": "Instance not found"})
         get.assert_not_called()
+
+
+@tagged("post_install", "-at_install")
+class TestMetricsSilence(TransactionCase):
+    """Why the central has nothing on an instance, from what the panel keeps."""
+
+    NOW = datetime(2026, 11, 12, 10, 0, 0)
+
+    def setUp(self):
+        super().setUp()
+        project = self.env["cloud.project"].create({"name": "Silence"})
+        self.host = self.env["cloud.host"].create({
+            "name": "HSilence", "ip_address": "203.0.113.62", "user": "root",
+            "wildcard_domain": "hsilence.example.com",
+            "metrics_agents_state": "installed",
+            "metrics_last_seen": self.NOW - timedelta(minutes=3),
+        })
+        self.instance = self.env["cloud.instance"].create({
+            "name": "prod", "project_id": project.id,
+            "environment": "production", "host_id": self.host.id,
+            "state": "deployed", "running": True,
+            "metrics_last_seen": self.NOW - timedelta(minutes=2),
+        })
+
+    def _code(self):
+        """Return the silence code of the instance at ``NOW``."""
+        return self.instance._metrics_silence(now=self.NOW)["code"]
+
+    def test_everything_reports_so_the_window_is_empty(self):
+        self.assertEqual(self.instance._metrics_silence(now=self.NOW), {
+            "code": "window", "since": None,
+        })
+
+    def test_an_instance_on_no_server_is_new(self):
+        self.instance.host_id = False
+        self.assertEqual(self._code(), "new")
+
+    def test_the_server_s_agents_come_first(self):
+        self.host.metrics_agents_state = "never"
+        self.assertEqual(self._code(), "agents_missing")
+        self.host.metrics_agents_state = "failed"
+        self.assertEqual(self._code(), "agents_failed")
+        self.host.write({"metrics_agents_state": "installed", "metrics_last_seen": False})
+        self.assertEqual(self._code(), "agents_waiting")
+
+    def test_a_server_gone_quiet_says_since_when(self):
+        quiet = self.NOW - timedelta(minutes=45)
+        self.host.metrics_last_seen = quiet
+        silence = self.instance._metrics_silence(now=self.NOW)
+        self.assertEqual(silence["code"], "host_silent")
+        self.assertEqual(datetime.fromisoformat(silence["since"]).replace(tzinfo=None), quiet)
+        # Quiet for less than the reconciliation's threshold is not.
+        self.host.metrics_last_seen = self.NOW - timedelta(minutes=10)
+        self.assertEqual(self._code(), "window")
+
+    def test_an_instance_never_reported_or_stopped(self):
+        self.instance.metrics_last_seen = False
+        self.assertEqual(self._code(), "new")
+        self.instance.write({
+            "metrics_last_seen": self.NOW - timedelta(minutes=2), "running": False,
+        })
+        self.assertEqual(self._code(), "stopped")
 
 
 class TestChartWindow(BaseCase):

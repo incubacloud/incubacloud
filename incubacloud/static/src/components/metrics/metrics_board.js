@@ -15,6 +15,13 @@ export const REFRESH_MS = 45000;
 /** Ranges that refresh on their own: a week does not move in 45 s. */
 const LIVE_RANGES = new Set(["1h", "6h"]);
 
+/**
+ * Answers that a refresh would only repeat: observability off, or on
+ * with no central. Settings change them, and opening the tab again
+ * reads them again.
+ */
+const SETTLED_REASONS = new Set(["disabled", "unconfigured"]);
+
 /** The windows the slow routes are read over, in minutes. */
 export const SLOW_WINDOWS = [15, 60];
 
@@ -74,6 +81,7 @@ export class MetricsBoard extends Component {
       loading: true,
       error: "",
       reason: "",
+      since: null,
       board: null,
       updatedAt: null,
       reading: false,
@@ -158,15 +166,17 @@ export class MetricsBoard extends Component {
     if (res.ok) {
       this.state.error = "";
       this.state.reason = "";
+      this.state.since = null;
       this.state.board = res;
       this.state.updatedAt = DateTime.now();
       console.debug("[metrics-board]", this.state.range, res.timing);
     } else {
       this.state.error = res.error || _t("Could not load the charts.");
       this.state.reason = res.reason || "";
+      this.state.since = res.since || null;
       this.state.board = null;
     }
-    if (LIVE_RANGES.has(this.state.range) && !this.state.zoom && this.state.reason !== "disabled") {
+    if (LIVE_RANGES.has(this.state.range) && !this.state.zoom && !SETTLED_REASONS.has(this.state.reason)) {
       this.scheduleRefresh();
     }
   }
@@ -210,6 +220,73 @@ export class MetricsBoard extends Component {
   /** The moments (restarts, out-of-memory kills) of the window. */
   get markers() {
     return this.panel("events").markers || [];
+  }
+
+  /**
+   * Why one panel could not be read, when the central failed it alone.
+   *
+   * @param {string} key a panel's key
+   * @returns {string} the server's words, or "" when it was answered
+   */
+  panelError(key) {
+    return this.panel(key).error || "";
+  }
+
+  /** Whether this person can open Settings › Monitoring from here. */
+  get canOpenSettings() {
+    return !!(this.props.canConfigure && this.env.permissions?.can_manage_settings);
+  }
+
+  /** Open Settings › Monitoring, where observability is set up. */
+  openSettings() {
+    this.env.navigate("settings", {section: "monitoring"});
+  }
+
+  /** "Failing since …" under a central that fails, when the panel knows. */
+  get sinceText() {
+    return this.state.since ? _t("Failing since %s.", this.fmtAt(this.state.since)) : "";
+  }
+
+  /** What to do about a credential the central refuses. */
+  get credentialHint() {
+    if (!this.props.canConfigure) {
+      return _t("Metrics are managed by your provider. Let them know if this persists.");
+    }
+    return _t("Check Credential in Settings › Monitoring › Advanced: it must be the one the central was deployed with.");
+  }
+
+  /**
+   * Why the board has no line to draw, in words, from the server's
+   * ``silence``: the server's agents, then the instance itself.
+   */
+  get silenceText() {
+    const silence = this.state.board?.silence || {};
+    switch (silence.code) {
+      case "agents_missing":
+        return _t("The metrics agents are not installed on this instance's server yet. The panel installs them on its own.");
+      case "agents_failed":
+        return _t("The metrics agents could not be installed on this instance's server. The panel keeps trying on its own.");
+      case "agents_waiting":
+        return _t("The agents on this instance's server are installed but have not sent anything yet. The first readings arrive within a few minutes.");
+      case "host_silent":
+        return _t("This instance's server stopped sending metrics on %s. Check that the server is on and reachable.", this.fmtAt(silence.since));
+      case "stopped":
+        return _t("This instance is stopped. Start it to see its charts again.");
+      case "new":
+        return _t("This instance has not reported yet: a new instance shows data once its containers run.");
+      default:
+        return _t("Nothing was reported in the selected window. Pick a longer range or reset the zoom.");
+    }
+  }
+
+  /** Where to look next about the server, for whoever manages hosts. */
+  get silenceHint() {
+    const code = this.state.board?.silence?.code;
+    const aboutServer = ["agents_missing", "agents_failed", "agents_waiting", "host_silent"].includes(code);
+    if (!aboutServer || !this.env.permissions?.can_manage_hosts) {
+      return "";
+    }
+    return _t("The Monitoring line on the server's page, under Hosts, shows how it is going.");
   }
 
   /** Whether any panel has anything to draw. */
