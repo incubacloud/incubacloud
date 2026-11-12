@@ -100,8 +100,11 @@ class TestTheCollectorCannotFailTheJob(BaseCase):
     def test_every_step_that_needs_root_is_in_the_block(self):
         """No ``become`` outside a block that rescues it."""
         inside = {id(t) for t in _all_tasks(self.block["block"])}
-        off = _task(self.play, "Remove the database collector, switched off")
-        inside |= {id(t) for t in _all_tasks(off["block"])}
+        for name in ("Remove the database collector, switched off",
+                     "Install cron when the server has none"):
+            block = _task(self.play, name)
+            self.assertIn("rescue", block, name)
+            inside |= {id(t) for t in _all_tasks(block["block"])}
         for task in _all_tasks(self.play["tasks"]):
             if "become" in task:
                 self.assertIn(id(task), inside, task["name"])
@@ -139,6 +142,21 @@ class TestTheCollectorCannotFailTheJob(BaseCase):
             names.index("Install the database collector"),
             names.index("Bring the agents up"),
         )
+
+    def test_cron_is_installed_before_anything_is_scheduled(self):
+        """Debian 13 ships without cron: the project's image had none and
+        the disk collector's schedule failed the install (12-nov-2026)."""
+        names = [t.get("name") for t in self.play["tasks"]]
+        self.assertLess(
+            names.index("Install cron when the server has none"),
+            names.index("Install the database collector"),
+        )
+        self.assertLess(
+            names.index("Install cron when the server has none"),
+            names.index("Schedule the disk collector"),
+        )
+        check = _task(self.play, "Check that cron is there to run it")
+        self.assertEqual(check["failed_when"], "not ic_crontab_now.stat.exists")
 
 
 class TestTheCollectorIsRoots(BaseCase):

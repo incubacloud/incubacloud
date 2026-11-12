@@ -218,9 +218,11 @@ user already holds through the docker group and sudo, but what root runs
 is not that user's to change.
 
 Nothing of it may fail the agents' install, which runs at the end of every
-deploy, move and removal: `postgresql-client` comes with Full Setup, the
-playbook installs it only when `psql` is missing (apt's lock waited 60 s at
-most), and every step that needs root is in a block whose rescue leaves the
+deploy, move and removal: `postgresql-client` and `cron` come with Full
+Setup, the playbook installs each only when missing (apt's lock waited 60 s
+at most; Debian 13 no longer installs cron, and the project's own Debian 13
+image had none, where the disk collector's schedule failed the whole
+install, found on 12-nov-2026), and every step that needs root is in a block whose rescue leaves the
 agents installed, writes `ic_pg_collector 0` for the server's board
 ("Database collector not installed") and says why in the job's log; the
 next install tries again. *Collect database figures*

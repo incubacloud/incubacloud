@@ -506,6 +506,194 @@
           {% endif %}
       register: ic_agents_compose
 
+    # ── The database collector (collect_pg.sh) ─────────────────────────
+    # Every minute, each running instance's connections, queries, lock
+    # waits and cache hits, read with the host's psql through the socket of
+    # its ``db`` container as that container's filesystem shows it
+    # (``/proc/<pid>/root``), which only root can open: 83 ms of CPU per
+    # instance, 2.8 % of a core with twenty (F0 of the observability plan,
+    # 9-nov-2026; the owner chose every minute and root on 10-nov-2026).
+    # Root is no more than the connecting user already holds through the
+    # docker group and sudo; what root runs is root's: the script, its list
+    # and its schedule live in ``ic_lib_dir`` and /etc/cron.d, never in
+    # that user's home.
+    #
+    # This job runs at the end of every deploy, move and removal, and a
+    # failed one marks the host failed, retries and alerts. So nothing of
+    # the collector may fail it: whatever goes wrong here (no passwordless
+    # sudo, apt's lock held by an upgrade, no package) leaves the agents
+    # installed, says so in the job's log and on the server's board, and
+    # the next run of this job tries again.
+    - name: Note whether this run connects as root
+      ansible.builtin.set_fact:
+        ic_as_root: "{{ ansible_user_id == 'root' }}"
+        ic_pg_collector: "off"
+        ic_pg_collector_error: ""
+
+    - name: Look for cron
+      # Both collectors are scheduled with cron, and Debian 13 no longer
+      # installs it: the project's own image has none (12-nov-2026), and
+      # there the disk collector's schedule failed the whole install.
+      ansible.builtin.stat:
+        path: /usr/bin/crontab
+      register: ic_crontab
+
+    - name: Install cron when the server has none
+      when: not ic_crontab.stat.exists
+      block:
+        - name: Install cron
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.apt:
+            name: cron
+            state: present
+            update_cache: true
+            cache_valid_time: 86400
+            lock_timeout: 60
+      rescue:
+        - name: Note cron not installed, and why
+          ansible.builtin.set_fact:
+            ic_pg_collector_error: >-
+              {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
+
+    - name: Install the database collector
+      when: ic_collect_pg | bool
+      block:
+        - name: Check that sudo asks no password
+          ansible.builtin.command: sudo -n true
+          when: not (ic_as_root | bool)
+          changed_when: false
+
+        - name: Check that cron is there to run it
+          ansible.builtin.stat:
+            path: /usr/bin/crontab
+          register: ic_crontab_now
+          failed_when: not ic_crontab_now.stat.exists
+
+        - name: Look for a PostgreSQL client
+          # Full Setup installs it; a server set up before that, or by
+          # hand, may lack it.
+          ansible.builtin.command: psql --version
+          register: ic_psql
+          changed_when: false
+          failed_when: false
+
+        - name: Install the PostgreSQL client
+          when: ic_psql.rc != 0
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.apt:
+            name: postgresql-client
+            state: present
+            update_cache: true
+            cache_valid_time: 86400
+            # An unattended upgrade holding the lock fails this, not the job.
+            lock_timeout: 60
+
+        - name: Create the collector's directory
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.file:
+            path: "{{ ic_lib_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Install the collector
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            src: collect_pg.sh
+            dest: "{{ ic_lib_dir }}/collect_pg.sh"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Write the databases the collector reads
+          # Names and identifiers the panel only accepts shell-safe.
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            dest: "{{ ic_lib_dir }}/collect_pg.instances"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # instance_id instance_name compose_project dbname dbuser
+              {% for inst in ic_instances %}
+              {{ inst.instance_id }} {{ inst.instance }} {{ inst.compose_project }} {{ inst.dbname }} {{ inst.dbuser }}
+              {% endfor %}
+
+        - name: Schedule the collector every minute, as root
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            dest: "{{ ic_pg_cron_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Installed by IncubaCloud's observability agents: each
+              # instance's database figures, for node_exporter.
+              SHELL=/bin/sh
+              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              * * * * * root {{ ic_lib_dir }}/collect_pg.sh {{ ic_lib_dir }}/collect_pg.instances {{ ic_obs_dir }}/textfile >/dev/null 2>&1
+
+        - name: Note the collector installed
+          ansible.builtin.set_fact:
+            ic_pg_collector: installed
+      rescue:
+        - name: Note the collector not installed, and why
+          ansible.builtin.set_fact:
+            ic_pg_collector: failed
+            ic_pg_collector_error: >-
+              {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
+
+    - name: Remove the database collector, switched off
+      # The setting is how it is turned off without going back a version:
+      # a playbook from before it would leave root's schedule in place.
+      when: not (ic_collect_pg | bool)
+      block:
+        - name: Look for the collector's schedule
+          ansible.builtin.stat:
+            path: "{{ ic_pg_cron_file }}"
+          register: ic_pg_cron_present
+
+        - name: Remove the collector's schedule and files
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ ic_pg_cron_file }}"
+            - "{{ ic_lib_dir }}/collect_pg.sh"
+            - "{{ ic_lib_dir }}/collect_pg.instances"
+          when: ic_pg_cron_present.stat.exists
+
+        - name: Remove the collector's last readings
+          ansible.builtin.file:
+            path: "{{ ic_obs_dir }}/textfile/{{ item }}"
+            state: absent
+          loop:
+            - ic_pg.prom
+            - ic_pg_collector.prom
+      rescue:
+        - name: Note the collector not removed, and why
+          ansible.builtin.set_fact:
+            ic_pg_collector: failed
+            ic_pg_collector_error: >-
+              {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
+
+    - name: Say on the server's board whether the collector runs
+      # 1 installed, 0 not: the board tells a collector that could not be
+      # installed from a database with nothing to say.
+      when: ic_collect_pg | bool
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/textfile/ic_pg_collector.prom"
+        mode: "0644"
+        content: |
+          # HELP ic_pg_collector Whether the database collector is installed on this server.
+          # TYPE ic_pg_collector gauge
+          ic_pg_collector {{ 1 if ic_pg_collector == 'installed' else 0 }}
+
     - name: Install the per-instance disk usage collector
       # node_exporter's textfile collector turns a plain script into
       # metrics. Disk per instance is the one number cAdvisor cannot give
@@ -633,162 +821,6 @@
         name: "incubacloud instance disk usage"
         minute: "*/10"
         job: "{{ ic_obs_dir }}/collect_disk.sh >/dev/null 2>&1"
-
-    # ── The database collector (collect_pg.sh) ─────────────────────────
-    # Every minute, each running instance's connections, queries, lock
-    # waits and cache hits, read with the host's psql through the socket of
-    # its ``db`` container as that container's filesystem shows it
-    # (``/proc/<pid>/root``), which only root can open: 83 ms of CPU per
-    # instance, 2.8 % of a core with twenty (F0 of the observability plan,
-    # 9-nov-2026; the owner chose every minute and root on 10-nov-2026).
-    # Root is no more than the connecting user already holds through the
-    # docker group and sudo; what root runs is root's: the script, its list
-    # and its schedule live in ``ic_lib_dir`` and /etc/cron.d, never in
-    # that user's home.
-    #
-    # This job runs at the end of every deploy, move and removal, and a
-    # failed one marks the host failed, retries and alerts. So nothing of
-    # the collector may fail it: whatever goes wrong here (no passwordless
-    # sudo, apt's lock held by an upgrade, no package) leaves the agents
-    # installed, says so in the job's log and on the server's board, and
-    # the next run of this job tries again.
-    - name: Note whether this run connects as root
-      ansible.builtin.set_fact:
-        ic_as_root: "{{ ansible_user_id == 'root' }}"
-        ic_pg_collector: "off"
-        ic_pg_collector_error: ""
-
-    - name: Install the database collector
-      when: ic_collect_pg | bool
-      block:
-        - name: Check that sudo asks no password
-          ansible.builtin.command: sudo -n true
-          when: not (ic_as_root | bool)
-          changed_when: false
-
-        - name: Look for a PostgreSQL client
-          # Full Setup installs it; a server set up before that, or by
-          # hand, may lack it.
-          ansible.builtin.command: psql --version
-          register: ic_psql
-          changed_when: false
-          failed_when: false
-
-        - name: Install the PostgreSQL client
-          when: ic_psql.rc != 0
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.apt:
-            name: postgresql-client
-            state: present
-            update_cache: true
-            cache_valid_time: 86400
-            # An unattended upgrade holding the lock fails this, not the job.
-            lock_timeout: 60
-
-        - name: Create the collector's directory
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.file:
-            path: "{{ ic_lib_dir }}"
-            state: directory
-            owner: root
-            group: root
-            mode: "0755"
-
-        - name: Install the collector
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.copy:
-            src: collect_pg.sh
-            dest: "{{ ic_lib_dir }}/collect_pg.sh"
-            owner: root
-            group: root
-            mode: "0755"
-
-        - name: Write the databases the collector reads
-          # Names and identifiers the panel only accepts shell-safe.
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.copy:
-            dest: "{{ ic_lib_dir }}/collect_pg.instances"
-            owner: root
-            group: root
-            mode: "0644"
-            content: |
-              # instance_id instance_name compose_project dbname dbuser
-              {% for inst in ic_instances %}
-              {{ inst.instance_id }} {{ inst.instance }} {{ inst.compose_project }} {{ inst.dbname }} {{ inst.dbuser }}
-              {% endfor %}
-
-        - name: Schedule the collector every minute, as root
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.copy:
-            dest: "{{ ic_pg_cron_file }}"
-            owner: root
-            group: root
-            mode: "0644"
-            content: |
-              # Installed by IncubaCloud's observability agents: each
-              # instance's database figures, for node_exporter.
-              SHELL=/bin/sh
-              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              * * * * * root {{ ic_lib_dir }}/collect_pg.sh {{ ic_lib_dir }}/collect_pg.instances {{ ic_obs_dir }}/textfile >/dev/null 2>&1
-
-        - name: Note the collector installed
-          ansible.builtin.set_fact:
-            ic_pg_collector: installed
-      rescue:
-        - name: Note the collector not installed, and why
-          ansible.builtin.set_fact:
-            ic_pg_collector: failed
-            ic_pg_collector_error: >-
-              {{ ansible_failed_task.name | default('') }}:
-              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
-
-    - name: Remove the database collector, switched off
-      # The setting is how it is turned off without going back a version:
-      # a playbook from before it would leave root's schedule in place.
-      when: not (ic_collect_pg | bool)
-      block:
-        - name: Look for the collector's schedule
-          ansible.builtin.stat:
-            path: "{{ ic_pg_cron_file }}"
-          register: ic_pg_cron_present
-
-        - name: Remove the collector's schedule and files
-          become: "{{ not (ic_as_root | bool) }}"
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - "{{ ic_pg_cron_file }}"
-            - "{{ ic_lib_dir }}/collect_pg.sh"
-            - "{{ ic_lib_dir }}/collect_pg.instances"
-          when: ic_pg_cron_present.stat.exists
-
-        - name: Remove the collector's last readings
-          ansible.builtin.file:
-            path: "{{ ic_obs_dir }}/textfile/{{ item }}"
-            state: absent
-          loop:
-            - ic_pg.prom
-            - ic_pg_collector.prom
-      rescue:
-        - name: Note the collector not removed, and why
-          ansible.builtin.set_fact:
-            ic_pg_collector: failed
-            ic_pg_collector_error: >-
-              {{ ansible_failed_task.name | default('') }}:
-              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
-
-    - name: Say on the server's board whether the collector runs
-      # 1 installed, 0 not: the board tells a collector that could not be
-      # installed from a database with nothing to say.
-      when: ic_collect_pg | bool
-      ansible.builtin.copy:
-        dest: "{{ ic_obs_dir }}/textfile/ic_pg_collector.prom"
-        mode: "0644"
-        content: |
-          # HELP ic_pg_collector Whether the database collector is installed on this server.
-          # TYPE ic_pg_collector gauge
-          ic_pg_collector {{ 1 if ic_pg_collector == 'installed' else 0 }}
 
     - name: Bring the agents up
       # Retried on purpose. Compose pulls the three images concurrently,
