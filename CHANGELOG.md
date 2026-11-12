@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.228] — 2026-11-12
+## [1.0.227] — 2026-11-12
 
 A server's page has a **Metrics** tab, and **Monitoring** draws the fleet
 and each server itself, with no Grafana frame: the same charts as an
@@ -15,10 +15,13 @@ watch what makes instances slow without a percentage showing it: a disk
 or memory the server's tasks wait for, an instance held back by its CPU
 quota, queries waiting for a lock and a database near its connection
 ceiling. Each server measures its instances' databases every minute.
+A host's card shows the CPU and RAM the server really uses, read from the
+metrics agents, instead of one bar that added up its instances' limits.
 
-The update adds one column, `cloud.host.metrics_agents_revision`, which
-starts at 0 on every host, and needs no data migration; the module has to
-be updated, which loads the five rules. The reconciliation cron then
+The update adds four columns to `cloud_host`: `cpu_usage`, `ram_usage`
+and `usage_last_seen`, empty, and `metrics_agents_revision`, which starts
+at 0 on every host, and needs no data migration; the module has to be
+updated, which loads the five rules. The reconciliation cron then
 re-applies the agents of every installed host, five per pass of 15
 minutes, which installs the database collector; nothing has to be run by
 hand. The panel that owns the central runs **Enable observability** once
@@ -92,6 +95,22 @@ file.
   reconciliation cron re-applies, five per pass, the installed hosts on
   an older one, so a host installed by a panel still on older code is
   brought up to date without a burst of installs at upgrade.
+- **A host's card shows the CPU and RAM it really uses.** Its one
+  «CPU / RAM» bar added up the limits of the host's instances, so a nearly
+  idle server could read 100 % beside a disk bar that was real. The card
+  now has a CPU bar and a RAM bar with the use the metrics agents report
+  (the cores' busy share over the last five minutes, `iowait` not counted
+  as busy; memory in use as total minus available), each with the figure
+  in cores or GB, and what the instances are allocated as a second line:
+  *0.9 of 4 cores · allocated: 11.3 vCPU*. Without a reading of the last
+  15 minutes the card shows no bar and says why: metrics off (on a
+  tenant's panel, which cannot turn them on, not available there), agents
+  not installed, their installation failed, or no recent reading and when
+  the last one was. The specs cron reads both with two more queries and
+  writes them only together; `/cloud/get_hosts` gives `usage_state`,
+  `cpu_usage`, `ram_usage` and `usage_last_seen`. Adds three columns to
+  `cloud_host` (`cpu_usage`, `ram_usage`, `usage_last_seen`); Spanish
+  translation included.
 
 ### Changed
 
@@ -157,36 +176,6 @@ file.
   command; the deployment now writes it to a file only the central's
   directory reaches, and passes the flag the file's path. The first
   deployment with this release replaces a key recorded before it, once.
-
----
-
-## [1.0.227] — 2026-11-12
-
-A host's card shows the CPU and RAM the server really uses, read from the
-metrics agents, instead of one bar that added up its instances' limits.
-
-The update adds three empty columns to `cloud_host`, `cpu_usage`,
-`ram_usage` and `usage_last_seen`, and needs no data migration; the
-module has to be updated. The hosts need nothing.
-
-### Added
-
-- **A host's card shows the CPU and RAM it really uses.** Its one
-  «CPU / RAM» bar added up the limits of the host's instances, so a nearly
-  idle server could read 100 % beside a disk bar that was real. The card
-  now has a CPU bar and a RAM bar with the use the metrics agents report
-  (the cores' busy share over the last five minutes, `iowait` not counted
-  as busy; memory in use as total minus available), each with the figure
-  in cores or GB, and what the instances are allocated as a second line:
-  *0.9 of 4 cores · allocated: 11.3 vCPU*. Without a reading of the last
-  15 minutes the card shows no bar and says why: metrics off (on a
-  tenant's panel, which cannot turn them on, not available there), agents
-  not installed, their installation failed, or no recent reading and when
-  the last one was. The specs cron reads both with two more queries and
-  writes them only together; `/cloud/get_hosts` gives `usage_state`,
-  `cpu_usage`, `ram_usage` and `usage_last_seen`. Adds three columns to
-  `cloud_host` (`cpu_usage`, `ram_usage`, `usage_last_seen`); Spanish
-  translation included.
 
 ---
 
