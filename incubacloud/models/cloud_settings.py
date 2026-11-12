@@ -722,18 +722,18 @@ class CloudSettings(models.Model):
     def _ensure_metrics_delete_key(self):
         """Return VictoriaMetrics' deletion key, generating it once.
 
-        Only the central deployment calls this: the key is a flag of the
-        VictoriaMetrics container, so it only exists on the central once
-        a deployment has restarted that container with it. The account
-        sync reads the field without minting it for the same reason — a
-        key the backend was never started with would be a route that
-        answers 401.
+        Only the central deployment calls this: the key reaches the
+        VictoriaMetrics container through a file only that deployment
+        writes, so it only exists on the central once a deployment has
+        written it. The account sync reads the field without minting it
+        for the same reason — a key the backend was never given would be
+        a route that answers 401.
 
         The deployment mints it before its playbook runs, on a cursor
         that outlives the job. One that fails afterwards leaves a key the
         backend may not have yet: purges then fail with
         ``metrics_purge_failed`` until the next good deployment, which
-        starts the backend with this same key.
+        hands the backend this same key.
 
         :return: the plaintext key.
         """

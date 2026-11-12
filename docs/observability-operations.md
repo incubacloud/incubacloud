@@ -400,7 +400,25 @@ rolled-back removal deletes nothing.
 **Only the panel that owns the central deletes.** It holds the operator
 credential; the gateway adds VictoriaMetrics' `-deleteAuthKey` on the
 operator's `/admin-d/` route, the way it swaps in Grafana's password, so
-the panel never sends the key and no account can delete at all. Another
+the panel never sends the key and no account can delete at all.
+
+**The key is a file, not a flag value.** Until 12-nov-2026 it was in the
+VictoriaMetrics container's command, which `docker inspect` shows to
+anyone in the host's docker group. The deployment now writes it to
+`victoriametrics/delete_auth_key` in the central's directory (`0600`,
+`no_log`), mounts that directory read-only and passes
+`-deleteAuthKey=file:///etc/victoriametrics/delete_auth_key`.
+VictoriaMetrics reads such a file again every few seconds, so a new key
+takes effect without a restart (measured on v1.102.0). The first
+deployment with this release replaces a key recorded before it, once
+(`incubacloud.metrics_delete_key_in_file` marks a key that only ever
+travelled in the file), and recreates the VictoriaMetrics container
+because its command changes: a few seconds without ingestion, which the
+agents' queues absorb. To rotate it again: delete the system parameter
+`incubacloud.metrics_delete_key_in_file` and press **Enable
+observability**; the deployment mints a new key, writes it to the file
+and to vmauth's route in the same run. The account sync never rotates
+it: it does not write the file. Another
 panel with an account names what it removed through a route a module
 that extends this panel provides, and core deletes it under the account
 core holds for that panel — never one the request names. Until the central is redeployed with 1.0.135 there is no key and

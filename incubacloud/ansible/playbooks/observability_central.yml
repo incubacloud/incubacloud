@@ -163,6 +163,21 @@
         - "{{ ic_central_dir }}/provisioning/dashboards"
         - "{{ ic_central_dir }}/dashboards"
         - "{{ ic_central_dir }}/vmauth"
+        - "{{ ic_central_dir }}/victoriametrics"
+
+    - name: Write the backend's deletion key
+      # A file, not the flag's value: a flag is part of the container's
+      # command, which ``docker inspect`` shows to anyone in the docker
+      # group. VictoriaMetrics reads a ``file://`` key again every few
+      # seconds, so a new one takes effect with no restart (lab, v1.102.0,
+      # 12-nov-2026). Its directory is mounted rather than the file: a
+      # file mount keeps the inode the replaced copy no longer has.
+      ansible.builtin.copy:
+        dest: "{{ ic_central_dir }}/victoriametrics/delete_auth_key"
+        content: "{{ ic_delete_auth_key }}"
+        mode: "0600"
+      when: ic_delete_auth_key | length > 0
+      no_log: true
 
     - name: Write the vmauth access-control config
       # Shared with the account sync so the boundary has exactly one
@@ -291,11 +306,15 @@
                 # Without it VictoriaMetrics deletes for anyone who can
                 # reach it. Only vmauth's operator deletion route carries
                 # it, so no account can delete — not even its own series.
-                - '-deleteAuthKey={{ ic_delete_auth_key }}'
+                # Read from the file written above, never named here.
+                - '-deleteAuthKey=file:///etc/victoriametrics/delete_auth_key'
           {% endif %}
                 # Bound to the compose network only — see the header.
               volumes:
                 - vmdata:/vmdata
+          {% if ic_delete_auth_key %}
+                - {{ ic_central_dir }}/victoriametrics:/etc/victoriametrics:ro
+          {% endif %}
 
             loki:
               image: {{ ic_loki_image }}

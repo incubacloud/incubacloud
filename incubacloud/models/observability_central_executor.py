@@ -91,6 +91,12 @@ _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 #: (``-search.maxConcurrentRequests``, twice the cores, 10 s wait).
 _OPERATOR_MAX_CONCURRENT = 16
 
+#: Set once the recorded deletion key has only ever reached the backend
+#: in a file. Before 12-nov-2026 it was a flag of the VictoriaMetrics
+#: container, which ``docker inspect`` shows; the next deployment
+#: replaces such a key once and hands the new one in the file.
+_DELETE_KEY_IN_FILE_PARAM = "incubacloud.metrics_delete_key_in_file"
+
 #: The ``cloud.settings`` credentials a run may mint. Minted on a durable
 #: cursor, then copied into the job's cache so the rest of the run reads
 #: them from there.
@@ -191,7 +197,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             operator_token = settings._ensure_operator_credential()
             admin_password = settings._ensure_grafana_admin_password()
             delete_key = (
-                settings._ensure_metrics_delete_key() if mint_delete_key
+                self._delete_key_for_deployment(env, settings)
+                if mint_delete_key
                 else settings.metrics_delete_auth_key or ""
             )
             values, volatile = self._durable_values(
@@ -203,6 +210,35 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             values, volatile,
         )
         return accounts, operator_token, admin_password, delete_key
+
+    def _delete_key_for_deployment(self, env, settings):
+        """Return the deletion key this deployment hands the backend.
+
+        Minted once and then kept, except for a key recorded before the
+        backend read it from a file: that one was a flag of the
+        container, readable with ``docker inspect`` by anyone in the
+        host's docker group, so it is replaced the first time. The mark
+        is written with the key, on the same durable cursor: a deployment
+        that fails afterwards leaves the new key for the next one, as it
+        always left a freshly minted one.
+
+        :param env: the durable environment of
+            :meth:`_ensure_central_secrets`.
+        :param settings: the ``cloud.settings`` record, in that environment.
+        :return: the plaintext key.
+        :rtype: str
+        """
+        params = env["ir.config_parameter"].sudo()
+        if (
+            settings.metrics_delete_auth_key
+            and not params.get_param(_DELETE_KEY_IN_FILE_PARAM)
+        ):
+            settings.write({"metrics_delete_auth_key": False})
+            self._sys("Replacing the metrics deletion key: the backend "
+                      "received the old one as a visible flag.")
+        key = settings._ensure_metrics_delete_key()
+        params.set_param(_DELETE_KEY_IN_FILE_PARAM, "1")
+        return key
 
     def _record_shipped_accounts(self):
         """Write down the access-control list this run put in force.
@@ -427,8 +463,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "ic_vmauth_config": self._vmauth_config(
                 accounts, operator_token, grafana_admin_basic, delete_key,
             ),
-            # A flag of the VictoriaMetrics container. The same key sits
-            # on the operator's deletion route above; nothing else has it.
+            # Written to a file the VictoriaMetrics container reads. The
+            # same key sits on the operator's deletion route above;
+            # nothing else has it.
             "ic_delete_auth_key": delete_key,
             # Plaintext, because each organisation's datasource has to
             # authenticate AS that account — a hash cannot be used to

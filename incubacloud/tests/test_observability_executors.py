@@ -32,6 +32,7 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _ACCOUNT_LOG_WRITE_PATH,
     _ACCOUNT_READ_PATHS,
     _ACCOUNT_WRITE_PATH,
+    _DELETE_KEY_IN_FILE_PARAM,
     _OPERATOR_DELETE_PATH,
     _OPERATOR_MAX_CONCURRENT,
     _OPERATOR_READ_PATHS,
@@ -575,8 +576,42 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
     def test_a_redeployment_keeps_the_recorded_key(self):
         """Rotating it on every deployment would buy nothing."""
         self.settings.metrics_delete_auth_key = "k" * 43
+        self.env["ir.config_parameter"].sudo().set_param(
+            _DELETE_KEY_IN_FILE_PARAM, "1",
+        )
         extra, _cfg = self._config()
         self.assertEqual(extra["ic_delete_auth_key"], "k" * 43)
+
+    def test_a_key_the_backend_got_as_a_flag_is_replaced_once(self):
+        """Before 12-nov-2026 it was in the container's command.
+
+        ``docker inspect`` showed it to the docker group, so the first
+        deployment that hands it in a file mints a new one; the next
+        keeps it.
+        """
+        self.settings.metrics_delete_auth_key = "k" * 43
+        self.env["ir.config_parameter"].sudo().set_param(
+            _DELETE_KEY_IN_FILE_PARAM, False,
+        )
+        first, _cfg = self._config()
+        self.assertTrue(first["ic_delete_auth_key"])
+        self.assertNotEqual(first["ic_delete_auth_key"], "k" * 43)
+        self.assertEqual(
+            self.settings.metrics_delete_auth_key, first["ic_delete_auth_key"],
+        )
+        again, _cfg = self._config()
+        self.assertEqual(again["ic_delete_auth_key"], first["ic_delete_auth_key"])
+
+    def test_the_account_sync_never_replaces_it(self):
+        """Only the deployment writes the file the backend reads."""
+        self.settings.metrics_delete_auth_key = "k" * 43
+        self.settings._ensure_operator_credential()
+        self.env["ir.config_parameter"].sudo().set_param(
+            _DELETE_KEY_IN_FILE_PARAM, False,
+        )
+        _extra, cfg = self._config(MetricsAclSyncExecutor)
+        route = self._route(self._user(cfg, "operator"), _OPERATOR_DELETE_PATH)
+        self.assertTrue(route["url_prefix"].endswith("?authKey=" + "k" * 43))
 
     def test_a_failed_deployment_leaves_the_key_for_the_next_one(self):
         """Minted before the playbook, so a failure cannot take it back.
