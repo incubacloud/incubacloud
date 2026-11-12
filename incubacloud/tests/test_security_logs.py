@@ -22,6 +22,9 @@ from odoo.exceptions import UserError
 from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.cloud_host_observability import (
+    CloudHost as CoreCloudHost,
+)
 from odoo.addons.incubacloud.models.observability_agents_executor import (
     AGENTS_REVISION,
     ObservabilityAgentsExecutor,
@@ -238,7 +241,30 @@ class TestTheRenderedCollector(TransactionCase):
         )
 
 
-class TestTheExecutorAndTheSwitch(ObservabilityExecutorCase):
+class CorePermissionMixin:
+    """Core's own answers to the permission's hooks, with any layer installed.
+
+    The tenant's module withholds the security logs until the manager
+    allows them; core's suite runs with it installed too (the saas CI's
+    ``core-with-tenant``), and these tests are about core's switch.
+    """
+
+    def setUp(self):
+        """Put core's own permission, new server's default and update's
+        value on the model, over any layer's."""
+        model = type(self.env["cloud.host"])
+        for name in (
+            "_security_logs_available",
+            "_security_logs_default",
+            "_security_logs_after_upgrade",
+        ):
+            patcher = patch.object(model, name, getattr(CoreCloudHost, name))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        super().setUp()
+
+
+class TestTheExecutorAndTheSwitch(CorePermissionMixin, ObservabilityExecutorCase):
     """What the install reads from the server, and what it says."""
 
     def test_the_switch_the_key_and_the_user_reach_the_playbook(self):
@@ -323,7 +349,7 @@ class TestTheExecutorAndTheSwitch(ObservabilityExecutorCase):
         self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
 
 
-class TestTheSwitchReappliesItsServer(ObservabilityExecutorCase):
+class TestTheSwitchReappliesItsServer(CorePermissionMixin, ObservabilityExecutorCase):
     """The switch, the key and the user apply now, to that server alone."""
 
     def setUp(self):
@@ -414,7 +440,7 @@ def _load_migration():
     return module
 
 
-class TestTheUpdateGivesEveryServerTheSwitch(TransactionCase):
+class TestTheUpdateGivesEveryServerTheSwitch(CorePermissionMixin, TransactionCase):
     """The switch moves from the panel to each server."""
 
     def setUp(self):

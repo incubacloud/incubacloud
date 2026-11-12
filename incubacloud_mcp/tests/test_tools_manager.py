@@ -91,7 +91,18 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
 
     def test_a_server_s_security_logs_stop_only_with_approval(self):
         """Turning a server's security logs off waits for approval; turning
-        them on, or leaving them off, does not (review of 12-nov-2026)."""
+        them on, or leaving them off, does not (review of 12-nov-2026).
+
+        The panel may send them here, as on core alone: a layer that
+        withholds them (the tenant's) would refuse the switch on before
+        the approval is asked.
+        """
+        allowed = patch.object(
+            type(self.env["cloud.host"]), "_security_logs_available",
+            autospec=True, return_value=True,
+        )
+        allowed.start()
+        self.addCleanup(allowed.stop)
         created = self._payload(
             self._call_tool(self.key, "manage_host", {"vals": NEW_HOST})
         )
