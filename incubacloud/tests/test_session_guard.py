@@ -694,22 +694,29 @@ class TestParallelClosesOnRealConnections(TransactionCase):
         :rtype: tuple
         """
         outcome = []
-        cursors = []
+        # The cursors are bound to the registry here: a thread that asks
+        # for the registry waits for the lock the module loading, which
+        # runs these tests, holds until it ends.
+        ready = [self._connect() for _ in range(guard_module.WRITE_ATTEMPTS)]
+        for cr in ready:
+            self._guard(cr)
+        handed = []
 
         def new_cursor(guard):
             """A cursor on a connection of its own, as in production."""
-            cursors.append(self._connect())
-            return cursors[-1]
+            handed.append(ready[len(handed)])
+            return handed[-1]
 
         session = odoo.http.Session({"uid": self.uid}, self.IDENTIFIER * 2)
         request = MagicMock(spec=odoo.http.Request)
         request.session = session
         base = self._connect()
+        guard_b = self._guard(base)
 
         def second():
             """The second request of the page."""
             try:
-                self._guard(base)._session_guard_act(
+                guard_b._session_guard_act(
                     request, "country", "close", *self.PAIR,
                 )
                 outcome.append("held")
@@ -740,9 +747,10 @@ class TestParallelClosesOnRealConnections(TransactionCase):
                 first.commit()
                 thread.join(30)
         finally:
-            first.close()
-            base.close()
-        return outcome, len(cursors)
+            for cr in (first, base, *ready):
+                if not cr.closed:
+                    cr.close()
+        return outcome, len(handed)
 
     def test_a_held_user_s_parallel_request_is_held_too(self):
         outcome, cursors = self._second_request_after_the_first()
