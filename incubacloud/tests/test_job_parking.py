@@ -1336,6 +1336,63 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         """The queue.job deleted."""
         self._stopped_then(self.qjob.unlink)
 
+    def _stopped_and_cancelled_by_hand(self):
+        """Park, stop, store the postpone, then queue_job's Cancel button.
+
+        :return: the executor class
+        """
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self._postponed()
+        self.qjob.write({
+            "state": "cancelled", "date_cancelled": fields.Datetime.now(),
+        })
+        self.env["cloud.job"].invalidate_model(["state"])
+        return cls
+
+    def _assert_let_go(self):
+        """Closed cancelled, its row gone, and no pass takes it up again."""
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertFalse(self._row())
+        self.assertEqual(
+            self.env["cloud.job"]._stopping_ids([("id", "=", self.job.id)]), set(),
+        )
+        self._age()
+        self.assertNotIn(self.job.id, self.env["cloud.job"]._lost_job_ids())
+
+    def test_a_pass_cut_off_before_the_close_lets_the_row_go_next(self):
+        """The cron died between the claim and the close: the next pass
+        stops what the job left, lets its row go and closes it, once."""
+        cls = self._stopped_and_cancelled_by_hand()
+        with patch.object(
+            type(self.env["cloud.job"]), "_clean_up_lost_job", autospec=True,
+            side_effect=RuntimeError("the cron died"),
+        ), mute_logger("odoo.addons.incubacloud.models.cloud_job"):
+            self._reconcile(cls)
+        self.assertTrue(self.job.worker_lost_at)
+        self.assertFalse(self._row().closed)
+        self._reconcile(cls)
+        self.assertFalse(Path(self.directory).exists())
+        self._assert_let_go()
+        self._reconcile(cls)
+        self.assertEqual(len([
+            line for line in self._log()
+            if line.startswith("An earlier pass took this job up")
+        ]), 1)
+
+    def test_a_job_whose_type_has_no_executor_lets_its_row_go(self):
+        """Nothing can stop what it left: its row goes, or every pass
+        would take it up again."""
+        self._stopped_and_cancelled_by_hand()
+        self._age()
+        with patch.object(
+            abstract_executor.executor_registry, "get", return_value=None,
+        ):
+            self.env["cloud.job"]._cron_reconcile_lost_jobs()
+        self.env.invalidate_all()
+        self._assert_let_go()
+
 
 class TestTheReconciliationServesClosesFirst(_StopCase):
     """Rows of servers it cannot reach do not hold up the jobs to close."""
