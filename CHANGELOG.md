@@ -114,7 +114,8 @@ is unchanged.
   restore does not gain one once the rollback removes the move's marks,
   and a step on a server the instance does not live on holds nothing.
   A job whose own stop of such a step fails holds its queue as it ends,
-  and a step that never started holds nothing. A step found ended when the job is closed is said in its log with
+  a step that never started holds nothing, and a job taken up again
+  drops the hold its row kept. A step found ended when the job is closed is said in its log with
   its exit status, which the closing hook gets as the step's result
   instead of a step that did not end. A job run
   again over a checkpoint it does not take up — kept by the hook that

@@ -20178,6 +20178,11 @@ msgid "Queued · waiting for job #%s to end on the server"
 msgstr "En cola · esperando a que el trabajo #%s acabe en el servidor"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__holds_queue_since
+msgid "Holds Queue Since"
+msgstr "Retiene la cola desde"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__reconcile_tried_at
 msgid "Reconcile Tried At"
 msgstr "Último intento de conciliación"
@@ -20316,6 +20321,19 @@ msgid ""
 msgstr ""
 "Cuándo intentó la conciliación por última vez llegar al servidor para "
 "limpiar tras el trabajo terminado, sin conseguirlo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__holds_queue_since
+msgid ""
+"Since when the row keeps its job's queue busy: a step past the job's point "
+"of no return was left running, or could not be asked, when the job was "
+"closed. Counted by cloud.job._scope_busy until the row goes or "
+"DETACHED_HOLDS_QUEUE_MAX_S pass."
+msgstr ""
+"Desde cuándo la fila mantiene ocupada la cola de su trabajo: al cerrarse el "
+"trabajo, un paso pasado su punto de no retorno quedó en marcha o no se pudo "
+"consultar. cloud.job._scope_busy la cuenta hasta que la fila desaparece o "
+"pasan DETACHED_HOLDS_QUEUE_MAX_S."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__step_started_at

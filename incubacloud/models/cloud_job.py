@@ -3659,7 +3659,9 @@ class CloudJob(models.Model):
         (``checkpoint``), not tried in the last
         ``_RECONCILE_CHECKPOINT_RETRY_MINUTES``. Those come last, but a
         job stopped while it was parked and never closed
-        (``stopped_parked``), which is one to close.
+        (``stopped_parked``), which is one to close; and of those, first
+        the rows that hold their queue (``holds_queue_since``): rows of
+        servers that do not answer must not spend the pass before them.
 
         :rtype: list[int]
         """
@@ -3685,7 +3687,8 @@ class CloudJob(models.Model):
             "     q.date_cancelled, q.date_enqueued, q.date_created) < %(cutoff)s"
             " UNION"
             " SELECT c.id, CASE WHEN c.state = 'cancelled'"
-            "   AND k.closed IS NOT TRUE THEN 0 ELSE 1 END"
+            "   AND k.closed IS NOT TRUE THEN 0"
+            "   WHEN k.holds_queue_since IS NOT NULL THEN 1 ELSE 2 END"
             " FROM cloud_job_checkpoint k"
             " JOIN cloud_job c ON c.id = k.job_id"
             " LEFT JOIN queue_job q ON q.uuid = k.queue_job_uuid"
@@ -4081,6 +4084,9 @@ class CloudJob(models.Model):
         :param executor: the job's executor, with the row adopted
         :param row: the job's ``cloud.job.checkpoint``
         """
+        # As the database has it now: this pass may have set it
+        # (``_hold_queue``, on a cursor of its own) after the row was read.
+        row.invalidate_recordset(["holds_queue_since"])
         held = bool(row.holds_queue_since)
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
