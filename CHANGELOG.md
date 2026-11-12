@@ -654,6 +654,26 @@ is unchanged.
 
 ### Fixed
 
+- **The hardening never leaves a host without SSH.** On Ubuntu 24.04 the
+  port drop-in of `ssh.socket` gave a bare port, and the distro's unit says
+  `BindIPv6Only=ipv6-only`: the socket took IPv6 alone and IPv4 had no
+  sshd. The 24.04 `sshd-socket-generator` hid it whenever the port was not
+  22, since its own file, read after ours, lists both families; with port
+  22 it writes nothing, and a run on a fresh server left it reachable on
+  IPv6 only and stopped (12-nov-2026; the server was rebuilt). The drop-in
+  is now `zz-incubacloud-port.conf`, read after the generator's, with
+  `BindIPv6Only=both`: one socket for IPv4 and IPv6 on Ubuntu 22.04, 24.04
+  and Debian 13, and IPv4 alone on a kernel without IPv6. The old
+  `10-incubacloud-port.conf` is removed. Everything that moves sshd runs in
+  one block that first keeps the SSH files and the state of `ssh.socket`
+  and `ssh.service`, and waits for sshd's own greeting on the new port, not
+  just an open port. When any of it fails, the play puts the files and
+  units back as they were, waits for sshd on the port it had, and fails
+  with the step that failed and whether sshd answers again; the job's error
+  says the SSH configuration was put back, and nothing after SSH (firewall,
+  fail2ban and the rest) was applied. The recipe changes, so every
+  hardened host reads `host_hardening_outdated` at the next hourly check
+  until its hardening is re-applied.
 - **An auto-approval rule without charges asks only for the calls that
   charge.** A tool can be declared `charges_per_call`: a
   `_charges_<name>` method of `incubacloud.mcp.tools` says whether a call
