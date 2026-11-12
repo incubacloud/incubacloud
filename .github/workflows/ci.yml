@@ -24,7 +24,7 @@ env:
 jobs:
   lint:
     name: Lint (refurb)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -83,7 +83,7 @@ jobs:
 
   js-syntax:
     name: Lint (JS syntax)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -376,7 +376,7 @@ jobs:
 
   shellcheck:
     name: Lint (shellcheck)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -405,7 +405,7 @@ jobs:
 
   bats:
     name: Shell tests (bats)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -429,7 +429,7 @@ jobs:
 
   firewall:
     name: Firewall ruleset (nft -c, every supported OS)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     # The hardening playbook writes one nftables ruleset for every OS its
@@ -465,7 +465,7 @@ jobs:
 
   connect-old-python:
     name: incubacloud_connect compiles (Python 2.7, 3.5)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     # doodba compiles every addon of the image with the series' own
@@ -488,7 +488,7 @@ jobs:
 
   ansible-lint:
     name: Lint (ansible-lint)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -509,7 +509,7 @@ jobs:
 
   bandit:
     name: Security (bandit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -532,7 +532,7 @@ jobs:
 
   pip-audit:
     name: Deps audit (pip-audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -554,7 +554,7 @@ jobs:
 
   gitleaks:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
