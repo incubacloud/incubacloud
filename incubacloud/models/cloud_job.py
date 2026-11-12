@@ -1884,7 +1884,11 @@ class CloudJob(models.Model):
         so that a row nobody removes (a stopped cron, an executor gone)
         does not hold it for good. A step before the point of no return
         never holds: it is stopped, and a move's rollback must not wait
-        for a server that is gone. Hidden background types never hold.
+        for a server that is gone. Nor does the row of a server the
+        instance does not live on: every step with a point of no return
+        runs on its instance's server, and an instance recovered on
+        another one no longer waits for the one that died. Hidden
+        background types never hold.
 
         :param int instance_id: the instance whose queue to look at, or
         :param int host_id: the host whose host-level queue to look at
@@ -1896,7 +1900,11 @@ class CloudJob(models.Model):
             ["job_id", "holds_queue_since"],
         )
         if instance_id:
-            scope_sql, params = "j.instance_id = %s", [instance_id]
+            scope_sql, params = (
+                "j.instance_id = %s AND k.host_id = (SELECT i.host_id"
+                " FROM cloud_instance i WHERE i.id = j.instance_id)",
+                [instance_id],
+            )
         else:
             scope_sql, params = (
                 "j.host_id = %s AND j.instance_id IS NULL", [host_id],
