@@ -22,10 +22,18 @@ queue until it ends. A step run apart keeps its exit status when stopped on
 a server whose `timeout` is uutils', as on Ubuntu 26.04.
 `incubacloud_pitr` 1.0.14 comes with it.
 
+A signed-in session that changes hands is closed on the server, without
+asking anything: used from another country, from another browser family
+or by a script, or idle past its limit. Off by default in core; each
+signal is switched off, logged or closing by a system parameter.
+
 The update adds five empty columns, `cloud_job.slot_wait_s`, `slot_load`,
 `slot_channel` and `return_wait_s`, and
-`cloud_job_checkpoint.holds_queue_since`, and needs no data migration. The
-hosts need nothing: the scripts travel with each job.
+`cloud_job_checkpoint.holds_queue_since`, and two empty tables,
+`cloud_session_closure` and `cloud_session_hold`, and needs no data
+migration. The hosts need nothing: the scripts travel with each job. A
+panel's own Odoo configuration gains `x_real_ip_country_header` on its
+next deploy when its host is behind Cloudflare.
 
 ### Added
 
@@ -118,6 +126,32 @@ hosts need nothing: the scripts travel with each job.
   instance does not live on holds nothing. A job whose own stop of such a
   step fails holds its queue as it ends, a step that never started holds
   nothing, and a job taken up again drops the hold its row kept.
+- **The session guard** ([RB-33](docs/runbooks/RB-33-session-guard.md)).
+  What a session is compared with is written into it on its first signed-in
+  request: the country, the browser family as Odoo's parser names it, and
+  its idle limit. A request that adds a trace to the session — a new
+  address or browser — is compared; another country, Tor (`T1`), a request
+  that did not come through the CDN, another family or a browser the
+  parser cannot name close the session for whoever holds it, and the
+  request is answered as an expired session. A country the CDN could not
+  tell (`XX`) is only logged. The idle time is checked on the server on
+  every request, which Odoo leaves to the cookie's lifetime. Switches
+  `incubacloud.session_guard.country`, `.browser` and `.inactivity`, each
+  `off`, `log` or `close`, all `off` in core: the module may be installed on
+  somebody's ERP. Every close, and every request a signal in `log` would
+  have closed, is a row of `cloud.session.closure`, with the time the user
+  took to sign in again and from where; it is written on a cursor of its
+  own before the request is refused, once per session however many
+  requests of a page saw the change. After three closes of distinct
+  sessions of one user by one signal within 24 hours, that signal only logs
+  for them for 7 days, renewed while the same pair of values keeps showing
+  up, with one `session_guard_antiloop` alert per user and pair. Rows are
+  kept 90 days.
+- **The visitor's country behind a CDN.** `x_real_ip_country_header`
+  (`CF-IPCountry` on Cloudflare) is believed only on the proof the visitor's
+  address is, and each request the correction saw says whether the CDN
+  spoke. A deploy writes it for an instance on a host behind Cloudflare, and
+  an export drops it with the other proxy options.
 
 ### Changed
 

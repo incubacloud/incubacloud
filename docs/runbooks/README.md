@@ -36,6 +36,7 @@ deployment, kept with that deployment.
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
 | [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 | [RB-32](RB-32-git-repositories-on-the-host.md) | The repositories downloaded on the host | warning | «Fetch the repositories» fails or runs out of time, a series goes back to cloning in the image, the PAT is rotated, instances still to rebuild |
+| [RB-33](RB-33-session-guard.md) | The session guard | planned | Switching it on, users signed out more than once, a `session_guard_antiloop` alert, setting a signal to log only |
 
 ## Conventions
 
