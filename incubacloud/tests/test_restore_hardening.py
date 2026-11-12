@@ -522,6 +522,21 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
         self.assertIn(f"--config {self.executor._curl_config_path()}", command)
         self.assertIn(f"rm -f {self.executor._curl_config_path()}", command)
 
+    def test_no_step_run_apart_names_the_link(self):
+        """A step apart keeps its command in its directory on the server and
+        in the checkpoint (12-nov-2026): the download runs apart, and no
+        step apart carries the link or its signature."""
+        self._staged()
+        commands = self.executor.get_commands()
+        apart = [c for c in commands if len(c) == 3 and c[2].get("detached")]
+        self.assertEqual(apart[0][0], "Download the archive")
+        self.assertEqual(
+            apart[0][2], {"stop_on_failure": True, "detached": True},
+        )
+        for label, command, _opts in apart:
+            for hidden in (SIGNATURE, "X-Amz", "acme-7", "backup.zip"):
+                self.assertNotIn(hidden, command, label)
+
     def test_lab_the_argv_curl_gets_holds_no_link(self):
         """On a real shell, with ``curl`` recording its arguments."""
         self._staged()

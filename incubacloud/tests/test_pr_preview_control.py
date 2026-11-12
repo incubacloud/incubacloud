@@ -774,6 +774,107 @@ class TestPreviewUpdateFailedComment(_CommentCase):
         self.assertFalse(self._comment_jobs())
 
 
+class TestPreviewRestoreClosedFromItsCheckpoint(_CommentCase):
+    """A preview's restore closed by whoever adopts its checkpoint.
+
+    Its update runs apart on the server (12-nov-2026): the worker that ran
+    the restore can die with it running, and the reconciliation closes the
+    job from its checkpoint (``_adopt_checkpoint``), the step it ran then
+    as ``_running_step``, the end of a step it found ended in its results
+    (``_record_ended_apart``). The restore's ``on_failure`` keeps the
+    preview's queue apart only from an update that may still run.
+    """
+
+    _UPDATE = 'Update changed modules'
+
+    def _closed(self, detached_started=True, parked=False, ended=None):
+        """Close a preview's restore from a checkpoint at its update.
+
+        :param bool detached_started: the row says the update started apart
+        :param bool parked: the row says the job was parked
+        :param ended: the update's exit status as the server said it, or
+            None when nothing is known of its end
+        :return: the preview
+        """
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            JobWorkerLost,
+        )
+        from odoo.addons.incubacloud.models.restore_instance_executor import (
+            RestoreInstanceExecutor,
+        )
+        preview = self._preview()
+        job = self.env['cloud.job'].sudo().create({
+            'name': 'restore', 'host_id': self.host.id,
+            'instance_id': preview.id,
+            'job_type_id': self.env['cloud.job.type'].search(
+                [('code', '=', 'restore_instance')], limit=1,
+            ).id,
+            'payload': {'mode': 'from_job', 'source_job_id': 1},
+            'queue_job_uuid': 'preview-restore-closed',
+        })
+        apart = {'stop_on_failure': True, 'detached': True}
+        row = self.env['cloud.job.checkpoint'].sudo().create({
+            'job_id': job.id, 'host_id': self.host.id, 'next_index': 1,
+            'detached_started': detached_started, 'parked': parked,
+            'queue_job_uuid': 'preview-restore-closed',
+            'data': json.dumps({
+                'plan': [
+                    ['Restore database', 'restore', apart],
+                    [self._UPDATE, 'update', apart],
+                    ['Start Odoo service', 'start', {}],
+                ],
+                'results': {
+                    'Restore database': {'stdout': '', 'exit_status': 0},
+                },
+                'job_dir': None, 'private_uploads': [],
+                'carried': {'_moved': False},
+            }),
+        })
+        executor = RestoreInstanceExecutor(job, self.host)
+        executor._adopt_checkpoint(row)
+        # As the reconciliation hands the hook what had run, then what
+        # ``_close_on_server`` read of the step.
+        executor._step_results = dict(executor._checkpoint_data['results'])
+        if ended is not None:
+            executor._step_results[self._UPDATE] = {
+                'stdout': '', 'exit_status': ended,
+            }
+        with patch.object(RestoreInstanceExecutor, '_sys', autospec=True):
+            asyncio.run(executor.on_abort(JobWorkerLost('worker lost')))
+        return preview
+
+    def test_an_update_left_running_is_cut_off(self):
+        """It may still run on the server: the queue keeps it apart."""
+        preview = self._closed()
+        self.assertEqual(preview.status, 'error')
+        self.assertTrue(preview.pr_update_cut_off)
+        self.assertIn('did not end', preview.pr_update_error)
+
+    def test_an_attempt_that_died_with_it_running_is_cut_off(self):
+        """Not recorded as started apart, but the row is not parked."""
+        preview = self._closed(detached_started=False, parked=False)
+        self.assertTrue(preview.pr_update_cut_off)
+
+    def test_an_update_found_ended_well_is_no_cut(self):
+        """Exit 0 read on the server: nothing runs, nothing failed in it."""
+        preview = self._closed(ended=0)
+        self.assertEqual(preview.status, 'error')
+        self.assertFalse(preview.pr_update_cut_off)
+        self.assertFalse(preview.pr_update_error)
+
+    def test_an_update_found_failed_says_its_status(self):
+        """Exit 1 read on the server: a failed update, not a cut one."""
+        preview = self._closed(ended=1)
+        self.assertFalse(preview.pr_update_cut_off)
+        self.assertIn('exit status 1', preview.pr_update_error)
+
+    def test_an_update_never_started_is_no_cut(self):
+        """Parked before it, never started: the update is not counted."""
+        preview = self._closed(detached_started=False, parked=True)
+        self.assertFalse(preview.pr_update_cut_off)
+        self.assertFalse(preview.pr_update_error)
+
+
 class TestPreviewCommentFoundAgain(_CommentCase):
     """A comment written by a try whose answer never came is not written twice.
 
