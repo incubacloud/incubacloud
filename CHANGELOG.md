@@ -220,6 +220,33 @@ before updating (`docs/observability-operations.md`, "Undo").
 
 ### Fixed
 
+- **A failure while moving sshd puts it back.** On Ubuntu 24.04 the
+  port drop-in of `ssh.socket` gave a bare port, and the distro's unit says
+  `BindIPv6Only=ipv6-only`: the socket took IPv6 alone and IPv4 had no
+  sshd. The 24.04 `sshd-socket-generator` hid it whenever the port was not
+  22, since its own file, read after ours, lists both families; with port
+  22 it writes nothing, and a run on a fresh server left it reachable on
+  IPv6 only and stopped (12-nov-2026; the server was rebuilt). The drop-in
+  is now `zz-incubacloud-port.conf`, read after the generator's, with
+  `BindIPv6Only=both`: one socket for IPv4 and IPv6 on Ubuntu 22.04, 24.04
+  and Debian 13, and IPv4 alone on a kernel without IPv6. The old
+  `10-incubacloud-port.conf` is removed. Everything that moves sshd runs in
+  one block that first keeps the SSH files, the state of `ssh.socket` and
+  `ssh.service` and the port sshd uses, and waits for sshd's own greeting
+  on the new port, not just an open port. When any of it fails, the play
+  puts the files and units back as they were, waits for sshd on the port
+  it had, and fails with the step that failed and whether sshd answers
+  again; the job's error says the SSH configuration was put back, and
+  nothing after SSH (firewall, fail2ban and the rest) was applied. Should
+  the play's own connection be lost on the way, which leaves Ansible no
+  rescue to run, a timer on the host puts it back three minutes later; the
+  play stops it once sshd answers on the new port. A run that fails after
+  that, at the firewall or a later step, leaves sshd on the new port: the
+  job's error names it, and the panel takes it, opening it on the
+  provider's firewall, so a retry reaches the host there and keeps it
+  instead of drawing another. The recipe changes, so every hardened host
+  reads `host_hardening_outdated` at the next hourly check until its
+  hardening is re-applied.
 - **The agents install on a server without cron.** Debian 13 no longer
   installs it, and the disk collector's schedule failed the whole
   install there; Full Setup and the agents' install now put it in. When
@@ -654,33 +681,6 @@ is unchanged.
 
 ### Fixed
 
-- **A failure while moving sshd puts it back.** On Ubuntu 24.04 the
-  port drop-in of `ssh.socket` gave a bare port, and the distro's unit says
-  `BindIPv6Only=ipv6-only`: the socket took IPv6 alone and IPv4 had no
-  sshd. The 24.04 `sshd-socket-generator` hid it whenever the port was not
-  22, since its own file, read after ours, lists both families; with port
-  22 it writes nothing, and a run on a fresh server left it reachable on
-  IPv6 only and stopped (12-nov-2026; the server was rebuilt). The drop-in
-  is now `zz-incubacloud-port.conf`, read after the generator's, with
-  `BindIPv6Only=both`: one socket for IPv4 and IPv6 on Ubuntu 22.04, 24.04
-  and Debian 13, and IPv4 alone on a kernel without IPv6. The old
-  `10-incubacloud-port.conf` is removed. Everything that moves sshd runs in
-  one block that first keeps the SSH files, the state of `ssh.socket` and
-  `ssh.service` and the port sshd uses, and waits for sshd's own greeting
-  on the new port, not just an open port. When any of it fails, the play
-  puts the files and units back as they were, waits for sshd on the port
-  it had, and fails with the step that failed and whether sshd answers
-  again; the job's error says the SSH configuration was put back, and
-  nothing after SSH (firewall, fail2ban and the rest) was applied. Should
-  the play's own connection be lost on the way, which leaves Ansible no
-  rescue to run, a timer on the host puts it back three minutes later; the
-  play stops it once sshd answers on the new port. A run that fails after
-  that, at the firewall or a later step, leaves sshd on the new port: the
-  job's error names it, and the panel takes it, opening it on the
-  provider's firewall, so a retry reaches the host there and keeps it
-  instead of drawing another. The recipe changes, so every hardened host
-  reads `host_hardening_outdated` at the next hourly check until its
-  hardening is re-applied.
 - **An auto-approval rule without charges asks only for the calls that
   charge.** A tool can be declared `charges_per_call`: a
   `_charges_<name>` method of `incubacloud.mcp.tools` says whether a call
