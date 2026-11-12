@@ -49,7 +49,7 @@ file.
   through the central's read-only `/admin-r` route and sees every
   account (a central whose gateway does not let the panel's address read
   that route shows the panel's own servers instead); any other panel, a
-  tenant's among them, sees its own servers. **Hosts** shows one
+  managed one among them, sees its own servers. **Hosts** shows one
   server's board. `/cloud/fleet/resource_series`
   answers it; `/cloud/monitoring/config` gives each host's `id`.
 - **Rules `metrics_host_io_pressure`, `metrics_host_memory_pressure` and
@@ -96,7 +96,7 @@ file.
 
 - **Monitoring appears wherever there is a central to read.** The
   `dashboards` axis of `_observability_capabilities()` asks for a
-  central URL instead of a Grafana URL, so a tenant's panel that reads a
+  central URL instead of a Grafana URL, so a managed panel that reads a
   central now has a Monitoring entry showing its own servers.
 - **The boards share their mechanics.** `ChartBoard` holds the range,
   the zoom, the refresh every 45 s and the words for an answer with

@@ -10871,6 +10871,8 @@ msgid "None"
 msgstr "Ninguno"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__scheduling_priority__normal
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__normal
 msgid "Normal"

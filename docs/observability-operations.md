@@ -325,7 +325,7 @@ the time.
 Monitoring's **Fleet** view draws `PANELS["fleet"]` from
 `/cloud/fleet/resource_series`. Its expressions select no record: read
 with the account credential they are that account's servers, which is
-what a tenant's panel sees. The panel that holds the operator credential
+what a managed panel sees. The panel that holds the operator credential
 (`metrics_operator_token`, the one that deployed the central) reads the
 central's operator route instead, `metrics_central_url` with `/r`
 replaced by `/admin-r`, and sees every account; its aggregations keep
