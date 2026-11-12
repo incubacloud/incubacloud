@@ -2115,7 +2115,9 @@ class TestCancellingARestore(_PitrCase):
         with patcher, patch.object(
             ex.PitrRestoreExecutor, "before_execute", autospec=True,
             side_effect=_hang,
-        ), patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+        ), patch.object(self.Job, "enqueue", autospec=True) as enqueue, patch.object(
+            self.Job, "_server_limit_time_real", autospec=True, return_value=3600,
+        ):
             try:
                 executor.run()
             except JobCancelled:
@@ -2128,6 +2130,23 @@ class TestCancellingARestore(_PitrCase):
         self.assertEqual(busy, [True])
         enqueue.assert_not_called()
         self.assertFalse(self._alerts("pitr_failing"))
+
+    def test_the_wait_in_the_run_fits_in_a_step_of_the_request(self):
+        """Cut to 0.4 of ``limit_time_real`` with the connection's margin."""
+        executor = ex.PitrRestoreExecutor(self._restore().job, self.host)
+        waits = {}
+        for limit in (0, 120, 900, 3600):
+            with patch.object(
+                self.Job, "_server_limit_time_real", autospec=True,
+                return_value=limit,
+            ):
+                waits[limit] = executor._cancel_wait_in_run()
+        self.assertEqual(waits, {
+            0: ex.CANCEL_WAIT_S,
+            120: ex.CANCEL_WAIT_OUTSIDE_RUN_S,
+            900: 360 - ex.CANCEL_SSH_MARGIN_S,
+            3600: ex.CANCEL_WAIT_S,
+        })
 
 
 class TestAJobThatEndedWithoutKnowing(_PitrCase):
