@@ -51,9 +51,12 @@ committed before the request is refused: refusing it rolls the
 request's transaction back (M1). Its re-entry columns say how long the
 user took to sign in again and from where, which is what tells a false
 close from a stolen cookie without asking anybody. Nothing of the guard
-is read or written on the request's cursor, and a write that collides
-with a parallel request of the same page is tried again on a new cursor
-(review of the result, 12-nov-2026, A1 and A2).
+is read or written on the request's cursor. The guard's own cursor
+reads what other requests committed (READ COMMITTED), and a write that
+still collides with a parallel request of the same page is tried again
+on a new cursor (review of the result, 12-nov-2026, A1 and A2). The
+anti-loop's alert, which can page somebody over HTTP, is raised after
+the hold is committed, outside the user's lock (re-review, M-a).
 
 A close refuses the request as an expired session, except on a route
 open to visitors (``auth='public'`` or ``'none'``), which is served as
@@ -78,7 +81,7 @@ from datetime import timedelta
 
 from psycopg2 import errors as pg_errors
 
-from odoo import SUPERUSER_ID, _, api, fields, models
+from odoo import SUPERUSER_ID, _, api, fields, models, sql_db
 from odoo.http import GeoIP, SessionExpiredException, get_session_max_inactivity, root
 
 from ..net import real_ip
@@ -131,22 +134,33 @@ BROWSER_UNKNOWN = "unknown"
 
 #: The class of the advisory lock that serialises one user's closes, so
 #: two sessions closing at once do not both read the count before either
-#: writes. Any constant: it only has to differ from the other users of
-#: two-key advisory locks on the database.
+#: writes: the guard's cursor reads in READ COMMITTED
+#: (:data:`READ_COMMITTED`), so the count taken after the wait sees what
+#: the close before it committed. Any constant: it only has to differ from
+#: the other users of two-key advisory locks on the database.
 LOCK_CLASS = 4801
 #: How long a close waits for another close of the same user before it
 #: gives up and closes without recording: the wait holds a second
 #: connection. RB-33 (12-nov-2026).
 LOCK_TIMEOUT = "3s"
 
-#: How many cursors a write of the guard is tried on. Odoo's cursors are
-#: REPEATABLE READ: a transaction that writes a row another committed
-#: after its first statement fails, and the parallel requests of one page
-#: write the same row at the same moment. A new cursor sees what the
-#: other committed. Queued on the user's lock, the n-th of a burst can
-#: need n cursors, and Odoo 19's web client opens a page with more than
-#: three calls at once, over HTTP/2 behind the CDN, so the browser does not
-#: hold them to six. RB-33 (12-nov-2026).
+#: Whether the guard's own cursor is switched to READ COMMITTED. Odoo's
+#: cursors are REPEATABLE READ: the snapshot is taken by the first
+#: statement, the request for the user's lock, before the wait, so a
+#: transaction that then writes a row another committed meanwhile fails,
+#: and the count the lock is for misses the close before it. In READ
+#: COMMITTED each statement sees what was committed when it starts. Only
+#: on a real cursor: a test's cursor is one transaction already begun.
+#: RB-33 (re-review of 12-nov-2026).
+READ_COMMITTED = True
+
+#: How many cursors a write of the guard is tried on. In READ COMMITTED
+#: the parallel requests of one page no longer collide on the rows they
+#: write; the attempts stay for a cursor that is not switched and for a
+#: deadlock. Queued on the user's lock, the n-th of a burst on a
+#: REPEATABLE READ cursor can need n, and Odoo 19's web client opens a page
+#: with more than three calls at once, over HTTP/2 behind the CDN, so the
+#: browser does not hold them to six. RB-33 (12-nov-2026).
 WRITE_ATTEMPTS = 8
 #: The pause before trying again, in seconds, drawn at random between the
 #: two, so the requests that collided do not collide again together.
@@ -572,7 +586,8 @@ class CloudSessionGuard(models.AbstractModel):
                           AND session_identifier != %s
                         ORDER BY id DESC LIMIT 1)
             """, (now, pin["country"], pin["browser"], uid,
-                  now - timedelta(hours=hours), identifier))
+                  now - timedelta(hours=hours), identifier),
+                log_exceptions=False)
 
         try:
             self._session_guard_own(reenter)
@@ -598,10 +613,12 @@ class CloudSessionGuard(models.AbstractModel):
         The request's transaction is rolled back first: nothing has been
         written in it yet at authentication, and a transaction left open
         around another would, under the tests' cursors, take the other's
-        writes down with it. A collision (:data:`RETRIED_ERRORS`) is
-        tried again up to :data:`WRITE_ATTEMPTS` times in all, after a
-        pause of :data:`RETRY_PAUSE`; the new cursor sees what the other
-        request committed.
+        writes down with it. A real cursor is switched to READ COMMITTED
+        before anything runs on it (:data:`READ_COMMITTED`). A collision
+        (:data:`RETRIED_ERRORS`) is tried again up to
+        :data:`WRITE_ATTEMPTS` times in all, after a pause of
+        :data:`RETRY_PAUSE`, with one line of its own at INFO; the new
+        cursor sees what the other request committed.
 
         :param work: a callable taking this guard, as superuser, on the
             new cursor
@@ -612,16 +629,20 @@ class CloudSessionGuard(models.AbstractModel):
         for attempt in range(1, WRITE_ATTEMPTS + 1):
             try:
                 with self._session_guard_new_cursor() as cr:
+                    if READ_COMMITTED and isinstance(cr, sql_db.Cursor):
+                        cr.execute(
+                            "SET TRANSACTION ISOLATION LEVEL READ COMMITTED",
+                        )
                     return work(
                         self.with_env(api.Environment(cr, SUPERUSER_ID, {})),
                     )
-            except RETRIED_ERRORS:
+            except RETRIED_ERRORS as error:
                 if attempt == WRITE_ATTEMPTS:
                     raise
                 _logger.info(
                     "[session-guard] a write collided with a parallel "
-                    "request; trying again (%s of %s)",
-                    attempt + 1, WRITE_ATTEMPTS,
+                    "request (%s); trying again (%s of %s)",
+                    type(error).__name__, attempt + 1, WRITE_ATTEMPTS,
                 )
                 time.sleep(random.uniform(*RETRY_PAUSE))
 
@@ -637,8 +658,11 @@ class CloudSessionGuard(models.AbstractModel):
         rolls the request's transaction back. A failure to write does
         not keep the session open — ante la duda, cerrar. A failure of
         :meth:`_session_guard_closed` keeps the row, so the anti-loop
-        still counts the close. Logging is bookkeeping: a failure to
-        write the row is logged and the check goes on.
+        still counts the close. A hold that starts for a new pair raises
+        its alert once committed, on another cursor and outside the
+        user's lock: the alert can page somebody over HTTP, and the other
+        requests of the page wait for that lock. Logging, and the alert,
+        are bookkeeping: a failure is logged and the check goes on.
 
         The exception a close raises carries :data:`CLOSED_MARK`, which
         lets a route open to visitors serve the request as one
@@ -668,10 +692,11 @@ class CloudSessionGuard(models.AbstractModel):
 
         def record(guard):
             """Decide, write the row and run what a close does beyond
-            this database; return the action."""
-            action = "closed"
+            this database; return the action and whether a hold started
+            for a new pair."""
+            action, new_hold = "closed", False
             if signal != "inactivity":
-                action = guard._session_guard_hold(
+                action, new_hold = guard._session_guard_hold(
                     uid, identifier, signal, pinned, seen,
                 )
             first = guard._session_guard_write(
@@ -691,16 +716,26 @@ class CloudSessionGuard(models.AbstractModel):
                         "[session-guard] what a close does beyond this "
                         "database failed for user %s by %s", uid, signal,
                     )
-            return action
+            return action, new_hold
 
         try:
-            action = self._session_guard_own(record)
+            action, new_hold = self._session_guard_own(record)
         except Exception:  # noqa: BLE001 - a failed write still closes
             _logger.exception(
                 "[session-guard] could not record the close of a session of "
                 "user %s by %s; closing it anyway", uid, signal,
             )
-            action = "closed"
+            action, new_hold = "closed", False
+        if new_hold:
+            try:
+                self._session_guard_own(lambda guard: guard._session_guard_alert(
+                    uid, signal, pinned, seen,
+                ))
+            except Exception:  # noqa: BLE001 - the hold is kept
+                _logger.exception(
+                    "[session-guard] could not raise the anti-loop alert of "
+                    "user %s by %s", uid, signal,
+                )
         if action != "closed":
             return
         _logger.info(
@@ -717,24 +752,31 @@ class CloudSessionGuard(models.AbstractModel):
         """Decide between closing and the anti-loop, on the close's cursor.
 
         Under a lock per user, so two sessions closing at once count in
-        turn, waited for :data:`LOCK_TIMEOUT` at most. A hold in force
-        for this signal logs instead of closing, and starts again when it
-        is about this same pair of values.
+        turn, waited for :data:`LOCK_TIMEOUT` at most; the cursor reads in
+        READ COMMITTED, so the count after the wait sees the close before
+        it. A hold in force for this signal logs instead of closing, and
+        starts again when it is about this same pair of values.
         Otherwise, if the user's distinct sessions closed by this signal
-        within the window reach ``antiloop_closes``, a hold starts, and
-        the alert is raised the first time for this pair.
+        within the window reach ``antiloop_closes``, a hold starts. The
+        statements that can collide with a parallel request do not log
+        Odoo's ``bad query``: :meth:`_session_guard_own` logs the attempt.
 
         :param int uid: the session's user
         :param str identifier: the session's identifier
         :param str signal: ``country`` or ``browser``
         :param str pinned: the value the session was opened with
         :param str seen: the value this request shows
-        :return: ``'closed'`` or ``'held'``
-        :rtype: str
+        :return: ``'closed'`` or ``'held'``, and whether a hold started
+            for a pair never held before, whose alert the caller raises
+            once this is committed (:meth:`_session_guard_alert`)
+        :rtype: tuple
         """
         cr = self.env.cr
         cr.execute("SET LOCAL lock_timeout = %s", (LOCK_TIMEOUT,))
-        cr.execute("SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_CLASS, uid))
+        cr.execute(
+            "SELECT pg_advisory_xact_lock(%s, %s)", (LOCK_CLASS, uid),
+            log_exceptions=False,
+        )
         now = fields.Datetime.now()
         pair = "|".join(sorted((pinned, seen)))
         until = now + timedelta(
@@ -751,9 +793,9 @@ class CloudSessionGuard(models.AbstractModel):
                     cr.execute(
                         "UPDATE cloud_session_hold SET until = %s, "
                         "write_date = %s WHERE id = %s",
-                        (until, now, hold_id),
+                        (until, now, hold_id), log_exceptions=False,
                     )
-            return "held"
+            return "held", False
         since = now - timedelta(
             hours=self._session_guard_value("antiloop_window_hours"),
         )
@@ -763,7 +805,7 @@ class CloudSessionGuard(models.AbstractModel):
                AND create_date >= %s AND session_identifier != %s
         """, (uid, signal, since, identifier))
         if cr.fetchone()[0] < self._session_guard_value("antiloop_closes"):
-            return "closed"
+            return "closed", False
         cr.execute("""
             INSERT INTO cloud_session_hold
                    (user_id, signal, pair, until,
@@ -772,14 +814,17 @@ class CloudSessionGuard(models.AbstractModel):
             ON CONFLICT (user_id, signal, pair)
             DO UPDATE SET until = EXCLUDED.until, write_date = EXCLUDED.write_date
             RETURNING (xmax = 0)
-        """, (uid, signal, pair, until, SUPERUSER_ID, SUPERUSER_ID, now, now))
-        if cr.fetchone()[0]:
-            self._session_guard_alert(uid, signal, pinned, seen)
-        return "held"
+        """, (uid, signal, pair, until, SUPERUSER_ID, SUPERUSER_ID, now, now),
+            log_exceptions=False)
+        return "held", bool(cr.fetchone()[0])
 
     @api.model
     def _session_guard_alert(self, uid, signal, pinned, seen):
         """Raise the alert of a new anti-loop hold.
+
+        Called once the hold is committed, on a cursor of its own and
+        outside the user's lock (:meth:`_session_guard_act`): the alert
+        may page somebody over HTTP.
 
         :param int uid: the user
         :param str signal: ``country`` or ``browser``
@@ -823,7 +868,7 @@ class CloudSessionGuard(models.AbstractModel):
                           write_date = EXCLUDED.write_date
             RETURNING (xmax = 0)
         """, (uid, identifier, signal, action, pinned or "", seen or "", now,
-              SUPERUSER_ID, SUPERUSER_ID, now, now))
+              SUPERUSER_ID, SUPERUSER_ID, now, now), log_exceptions=False)
         return bool(self.env.cr.fetchone()[0])
 
     @api.model
@@ -844,14 +889,19 @@ class CloudSessionGuard(models.AbstractModel):
         """Delete the session's files: the current one and the ones it
         was rotated from, which share its identifier.
 
+        Any failure is logged and the close goes on: the request is
+        still refused as an expired session, which on an HTTP route Odoo
+        also signs out, where a failure reaching ``_update_device`` would
+        let the request through with the row saying ``closed``.
+
         :param session: the ``odoo.http.Session`` to destroy
         """
         try:
             root.session_store.delete_from_identifiers(
                 [session.sid[:SESSION_IDENTIFIER_LENGTH]],
             )
-        except (OSError, ValueError):
+        except Exception:  # noqa: BLE001 - the close goes on
             _logger.warning(
                 "[session-guard] could not delete the files of a closed "
-                "session", exc_info=True,
+                "session; closing it anyway", exc_info=True,
             )
