@@ -83,8 +83,14 @@ swap in use on a server that has one.
 **CPU per instance** and **Memory per instance**, stacked so the top line is
 the server's total; past nine instances the rest add up as *others*. **Right
 now** lists every instance of the server over the last five minutes, busiest
-first: CPU (100 % is one core), memory, the size of its directory, requests per
-second and whether it runs. An instance you can open links to its page.
+first: CPU (100 % is one core), memory, the size of its directory, of its
+database and of its filestore, its database connections against their maximum
+(and how many wait for a lock, when any does), requests per second and whether
+it runs. An instance you can open links to its page. The sizes are measured
+every ten minutes, the filestore once an hour on a server under 6 GB of memory;
+the connections every minute. When the server could not take the program that
+reads the connections, the table says *Database collector not installed* and
+the server's last agents install says why.
 
 ### Disk
 
@@ -228,5 +234,7 @@ proxy has not been redeployed since access logging was switched on.
 
 ## What you will not find here
 
-Database figures over time (connections, locks, cache hit ratio as charts and
-alerts): today they are read on demand with **Queries now**.
+Database figures as charts over time (connections, locks, cache hit ratio): the
+server's **Right now** table shows the latest connections and lock waits, two
+alerts warn when queries wait for a lock for ten minutes or a database uses over
+85 % of its connections, and **Queries now** reads the rest on demand.

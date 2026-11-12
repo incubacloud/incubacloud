@@ -53,6 +53,18 @@
     # v0.55.1 → 54. Do not pin this back down.
     ic_cadvisor_image: "gcr.io/cadvisor/cadvisor:v0.55.1"
     ic_vmagent_image: "victoriametrics/vmagent:v1.102.0"
+    # The database collector (``collect_pg.sh``), on unless the panel's
+    # setting switches it off, which removes it. Root's, outside the
+    # connecting user's home: its script, its list of databases and its
+    # schedule are files that user cannot change.
+    ic_collect_pg: true
+    ic_lib_dir: /usr/local/lib/incubacloud
+    ic_pg_cron_file: /etc/cron.d/incubacloud-collect-pg
+    # Below this much memory a server measures its filestores once an
+    # hour instead of every ten minutes: on the 2 and 4 GB servers the
+    # I/O of a ``du`` over hundreds of thousands of files is felt by the
+    # instances (review of 12-nov-2026).
+    ic_filestore_hourly_below_mb: 6144
 
   tasks:
     - name: Detect whether Traefik runs on this host
@@ -509,6 +521,25 @@
       # same expansion ``ic_expand_home`` does for the scripts that go
       # through run_script(); this template is the one generator that does
       # not, so it repeats it rather than sourcing lib/common.sh.
+      #
+      # Besides each directory, two figures that ask the instance's own
+      # containers, run as their user ``docker exec`` (12-nov-2026):
+      #
+      #   * its database's size, ``pg_database_size``, with the ``db``
+      #     container's psql. Ten minutes and not with the per-minute
+      #     database collector: on 6 700 files it cost that collector half
+      #     of its CPU (46 of 124 ms per instance, F0 of the observability
+      #     plan, 9-nov-2026).
+      #   * its filestore's size, ``du`` inside the ``odoo`` container
+      #     under ``nice``/``ionice`` and a ``timeout`` of its own: run from
+      #     here they would lower the docker client, not ``du``, which
+      #     containerd starts. Every pass on a server of 6 GB or more, once
+      #     an hour below (``ic_filestore_hourly_below_mb``), kept in a file
+      #     of its own so the hour between keeps the last reading.
+      #
+      # A stopped instance (asleep) has no container to ask: its
+      # directory is measured, its database and filestore are not. One
+      # pass at a time: a filestore that takes long does not pile passes up.
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/collect_disk.sh"
         mode: "0755"
@@ -526,25 +557,238 @@
           set -euo pipefail
           out="{{ ic_obs_dir }}/textfile/ic_instance_disk.prom"
           tmp="${out}.$$"
+          fs_out="{{ ic_obs_dir }}/textfile/ic_instance_filestore.prom"
+          fs_tmp="${fs_out}.$$"
+          exec 9>"{{ ic_obs_dir }}/.collect_disk.lock"
+          flock -n 9 || exit 0
+          # Minutes a filestore reading stands for, less five of slack.
+          fs_fresh={{ (60 if (ansible_memtotal_mb | int) < (ic_filestore_hourly_below_mb | int) else 10) - 5 }}
+          measure_fs=0
+          if [ ! -e "$fs_out" ] || [ -z "$(find "$fs_out" -mmin "-$fs_fresh" 2>/dev/null)" ]; then
+            measure_fs=1
+          fi
+          declare -A ODOO=() DB=()
+          while read -r project service id; do
+            case "$service" in
+              odoo) ODOO[$project]=$id ;;
+              db) DB[$project]=$id ;;
+            esac
+          done < <(timeout 20 docker ps --filter label=com.docker.compose.service \
+            --format '{% raw %}{{.Label "com.docker.compose.project"}} {{.Label "com.docker.compose.service"}} {{.ID}}{% endraw %}' 2>/dev/null || true)
+          # db_size PROJECT DBNAME DBUSER: the database's size in bytes.
+          db_size() {
+            local id="${DB[$1]:-}"
+            [ -n "$id" ] || return 1
+            timeout 30 docker exec -e PGCONNECT_TIMEOUT=3 \
+              -e "PGOPTIONS=-c statement_timeout=10000 -c default_transaction_read_only=on" \
+              "$id" psql -X -w -q -A -t -U "$3" -d "$2" \
+              -c "SELECT pg_database_size(current_database())" 2>/dev/null
+          }
+          # filestore_size PROJECT DBNAME: the filestore's size in bytes.
+          filestore_size() {
+            local id="${ODOO[$1]:-}"
+            [ -n "$id" ] || return 1
+            # shellcheck disable=SC2016  # expanded by the container's sh
+            timeout 150 docker exec "$id" sh -c 'p="/var/lib/odoo/filestore/$1"; [ -d "$p" ] || exit 1
+              if command -v ionice >/dev/null 2>&1; then exec timeout 120 nice -n 19 ionice -c 3 du -sb "$p"; fi
+              exec timeout 120 nice -n 19 du -sb "$p"' sh "$2" 2>/dev/null | awk '{print $1}'
+          }
           {
             echo "# HELP ic_instance_disk_bytes Disk used by an instance directory."
             echo "# TYPE ic_instance_disk_bytes gauge"
           {% for inst in ic_instances %}
           {% set inst_dir = inst.dir | regex_replace('^~/', ansible_env.HOME ~ '/') %}
             if [ -d "{{ inst_dir }}" ]; then
-              size=$(du -sb "{{ inst_dir }}" 2>/dev/null | awk '{print $1}')
+              size=$(du -sb "{{ inst_dir }}" 2>/dev/null | awk '{print $1}') || size=""
               [ -n "${size:-}" ] && printf 'ic_instance_disk_bytes{instance_id="%s",instance_name="%s"} %s\n' \
                 '{{ inst.instance_id }}' '{{ inst.instance }}' "$size"
             fi
           {% endfor %}
+            echo "# HELP ic_pg_db_size_bytes Size of an instance's database."
+            echo "# TYPE ic_pg_db_size_bytes gauge"
+          {% for inst in ic_instances %}
+            size=$(db_size '{{ inst.compose_project }}' '{{ inst.dbname }}' '{{ inst.dbuser }}') || size=""
+            [[ "$size" =~ ^[0-9]+$ ]] && printf 'ic_pg_db_size_bytes{instance_id="%s",instance_name="%s"} %s\n' \
+              '{{ inst.instance_id }}' '{{ inst.instance }}' "$size"
+          {% endfor %}
+            true
           } > "$tmp"
           mv "$tmp" "$out"
+          if [ "$measure_fs" = 1 ]; then
+            {
+              echo "# HELP ic_instance_filestore_bytes Size of an instance's filestore."
+              echo "# TYPE ic_instance_filestore_bytes gauge"
+          {% for inst in ic_instances %}
+              size=$(filestore_size '{{ inst.compose_project }}' '{{ inst.dbname }}') || size=""
+              [[ "$size" =~ ^[0-9]+$ ]] && printf 'ic_instance_filestore_bytes{instance_id="%s",instance_name="%s"} %s\n' \
+                '{{ inst.instance_id }}' '{{ inst.instance }}' "$size"
+          {% endfor %}
+              true
+            } > "$fs_tmp"
+            mv "$fs_tmp" "$fs_out"
+          fi
 
     - name: Schedule the disk collector
       ansible.builtin.cron:
         name: "incubacloud instance disk usage"
         minute: "*/10"
         job: "{{ ic_obs_dir }}/collect_disk.sh >/dev/null 2>&1"
+
+    # ── The database collector (collect_pg.sh) ─────────────────────────
+    # Every minute, each running instance's connections, queries, lock
+    # waits and cache hits, read with the host's psql through the socket of
+    # its ``db`` container as that container's filesystem shows it
+    # (``/proc/<pid>/root``), which only root can open: 83 ms of CPU per
+    # instance, 2.8 % of a core with twenty (F0 of the observability plan,
+    # 9-nov-2026; the owner chose every minute and root on 10-nov-2026).
+    # Root is no more than the connecting user already holds through the
+    # docker group and sudo; what root runs is root's: the script, its list
+    # and its schedule live in ``ic_lib_dir`` and /etc/cron.d, never in
+    # that user's home.
+    #
+    # This job runs at the end of every deploy, move and removal, and a
+    # failed one marks the host failed, retries and alerts. So nothing of
+    # the collector may fail it: whatever goes wrong here (no passwordless
+    # sudo, apt's lock held by an upgrade, no package) leaves the agents
+    # installed, says so in the job's log and on the server's board, and
+    # the next run of this job tries again.
+    - name: Note whether this run connects as root
+      ansible.builtin.set_fact:
+        ic_as_root: "{{ ansible_user_id == 'root' }}"
+        ic_pg_collector: "off"
+        ic_pg_collector_error: ""
+
+    - name: Install the database collector
+      when: ic_collect_pg | bool
+      block:
+        - name: Check that sudo asks no password
+          ansible.builtin.command: sudo -n true
+          when: not (ic_as_root | bool)
+          changed_when: false
+
+        - name: Look for a PostgreSQL client
+          # Full Setup installs it; a server set up before that, or by
+          # hand, may lack it.
+          ansible.builtin.command: psql --version
+          register: ic_psql
+          changed_when: false
+          failed_when: false
+
+        - name: Install the PostgreSQL client
+          when: ic_psql.rc != 0
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.apt:
+            name: postgresql-client
+            state: present
+            update_cache: true
+            cache_valid_time: 86400
+            # An unattended upgrade holding the lock fails this, not the job.
+            lock_timeout: 60
+
+        - name: Create the collector's directory
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.file:
+            path: "{{ ic_lib_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Install the collector
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            src: collect_pg.sh
+            dest: "{{ ic_lib_dir }}/collect_pg.sh"
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Write the databases the collector reads
+          # Names and identifiers the panel only accepts shell-safe.
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            dest: "{{ ic_lib_dir }}/collect_pg.instances"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # instance_id instance_name compose_project dbname dbuser
+              {% for inst in ic_instances %}
+              {{ inst.instance_id }} {{ inst.instance }} {{ inst.compose_project }} {{ inst.dbname }} {{ inst.dbuser }}
+              {% endfor %}
+
+        - name: Schedule the collector every minute, as root
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.copy:
+            dest: "{{ ic_pg_cron_file }}"
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Installed by IncubaCloud's observability agents: each
+              # instance's database figures, for node_exporter.
+              SHELL=/bin/sh
+              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              * * * * * root {{ ic_lib_dir }}/collect_pg.sh {{ ic_lib_dir }}/collect_pg.instances {{ ic_obs_dir }}/textfile >/dev/null 2>&1
+
+        - name: Note the collector installed
+          ansible.builtin.set_fact:
+            ic_pg_collector: installed
+      rescue:
+        - name: Note the collector not installed, and why
+          ansible.builtin.set_fact:
+            ic_pg_collector: failed
+            ic_pg_collector_error: >-
+              {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
+
+    - name: Remove the database collector, switched off
+      # The setting is how it is turned off without going back a version:
+      # a playbook from before it would leave root's schedule in place.
+      when: not (ic_collect_pg | bool)
+      block:
+        - name: Look for the collector's schedule
+          ansible.builtin.stat:
+            path: "{{ ic_pg_cron_file }}"
+          register: ic_pg_cron_present
+
+        - name: Remove the collector's schedule and files
+          become: "{{ not (ic_as_root | bool) }}"
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ ic_pg_cron_file }}"
+            - "{{ ic_lib_dir }}/collect_pg.sh"
+            - "{{ ic_lib_dir }}/collect_pg.instances"
+          when: ic_pg_cron_present.stat.exists
+
+        - name: Remove the collector's last readings
+          ansible.builtin.file:
+            path: "{{ ic_obs_dir }}/textfile/{{ item }}"
+            state: absent
+          loop:
+            - ic_pg.prom
+            - ic_pg_collector.prom
+      rescue:
+        - name: Note the collector not removed, and why
+          ansible.builtin.set_fact:
+            ic_pg_collector: failed
+            ic_pg_collector_error: >-
+              {{ ansible_failed_task.name | default('') }}:
+              {{ (ansible_failed_result.msg | default('') | string)[:300] }}
+
+    - name: Say on the server's board whether the collector runs
+      # 1 installed, 0 not: the board tells a collector that could not be
+      # installed from a database with nothing to say.
+      when: ic_collect_pg | bool
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/textfile/ic_pg_collector.prom"
+        mode: "0644"
+        content: |
+          # HELP ic_pg_collector Whether the database collector is installed on this server.
+          # TYPE ic_pg_collector gauge
+          ic_pg_collector {{ 1 if ic_pg_collector == 'installed' else 0 }}
 
     - name: Bring the agents up
       # Retried on purpose. Compose pulls the three images concurrently,
@@ -598,6 +842,9 @@
           ic_agents_running: "{{ ic_agents_ps.stdout_lines | select('search', 'running') | list | length }}"
           ic_instances_labelled: "{{ ic_instances | length }}"
           ic_write_url_installed: "{{ ic_write_url }}"
+          # installed, failed or off, and what failed.
+          ic_pg_collector: "{{ ic_pg_collector }}"
+          ic_pg_collector_error: "{{ ic_pg_collector_error }}"
           ic_direct_report:
             "{{ ic_direct_report if ic_direct_report is string else (ic_direct_report | to_json)
             }}"

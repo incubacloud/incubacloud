@@ -104,6 +104,22 @@ describe("HostBoard", () => {
     test("throughput reads per second", () => {
         expect(formatValue("bytes_rate", 2048)).toBe("2 KiB/s");
     });
+
+    test("a database's connections read against their ceiling, with its lock waits", () => {
+        const comp = boardWith(HostBoard, null);
+        expect(comp.connectionsText({ connections: 12, max_connections: 100 })).toBe("12 of 100");
+        expect(comp.connectionsText({ connections: 12, max_connections: 100, waiting: 3 })).toBe("12 of 100 · 3 waiting");
+        expect(comp.connectionsText({})).toBe("—");
+    });
+
+    test("a database collector the agents could not install is said, and only then", () => {
+        const missing = boardWith(HostBoard, { panels: { host: { value: { pg_collector: 0 } } } });
+        expect(missing.pgCollectorMissing).toBe(true);
+        const installed = boardWith(HostBoard, { panels: { host: { value: { pg_collector: 1 } } } });
+        expect(installed.pgCollectorMissing).toBe(false);
+        const off = boardWith(HostBoard, { panels: { host: { value: {} } } });
+        expect(off.pgCollectorMissing).toBe(false);
+    });
 });
 
 describe("FleetBoard", () => {
@@ -197,8 +213,9 @@ describe("Boards, mounted", () => {
                 panels: {
                     memory: { series: [{ name: "used", role: "used", points: [[0, 40], [30, 41]] }] },
                     io: { series: [], error: "The metrics central could not answer." },
-                    consumers: { rows: [{ id: "9", name: "prod", project_id: 4, cpu: 12, memory: 1024, running: true }] },
-                    host: { value: { cores: 4, ingest_age: 20 } },
+                    consumers: { rows: [{ id: "9", name: "prod", project_id: 4, cpu: 12, memory: 1024, running: true,
+                                          database: 2048, filestore: 4096, connections: 5, max_connections: 100, waiting: 1 }] },
+                    host: { value: { cores: 4, ingest_age: 20, pg_collector: 0 } },
                 },
                 diagnosis: { current: true, tone: "ok", findings: [{ code: "normal", tone: "ok", text: "Normal." }] },
                 silence: { code: "window", since: null },
@@ -210,6 +227,8 @@ describe("Boards, mounted", () => {
         expect("[data-panel=memory] canvas").toHaveCount(1);
         expect("[data-panel=consumers] tbody tr").toHaveCount(1);
         expect("[data-panel=consumers] a").toHaveText("prod");
+        expect("[data-panel=consumers] td[data-waiting=yes]").toHaveText(/5 of 100 · 1 waiting/);
+        expect("[data-panel=consumers] [data-pg-collector=missing]").toHaveCount(1);
         expect(".ic-mb-finding[data-code=normal]").toHaveCount(1);
     });
 

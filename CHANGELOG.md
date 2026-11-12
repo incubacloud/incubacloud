@@ -10,17 +10,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 A server's page has a **Metrics** tab, and **Monitoring** draws the fleet
 and each server itself, with no Grafana frame: the same charts as an
-instance's Metrics tab, read from the metrics central. Three alert rules
+instance's Metrics tab, read from the metrics central. Five alert rules
 watch what makes instances slow without a percentage showing it: a disk
-or memory the server's tasks wait for, and an instance held back by its
-CPU quota.
+or memory the server's tasks wait for, an instance held back by its CPU
+quota, queries waiting for a lock and a database near its connection
+ceiling. Each server measures its instances' databases every minute.
 
-The update adds no table or column and needs no data migration; the
-module has to be updated, which loads the three rules. The hosts need
-nothing: every chart reads series the agents already send. The panel
-that owns the central runs **Enable observability** once afterwards: it
-closes the operator's read route, caps the operator's requests in flight
-and replaces the deletion key, which moves into a file.
+The update adds one column, `cloud.host.metrics_agents_revision`, which
+starts at 0 on every host, and needs no data migration; the module has to
+be updated, which loads the five rules. The reconciliation cron then
+re-applies the agents of every installed host, five per pass of 15
+minutes, which installs the database collector; nothing has to be run by
+hand. The panel that owns the central runs **Enable observability** once
+afterwards: it closes the operator's read route, caps the operator's
+requests in flight and replaces the deletion key, which moves into a
+file.
 
 ### Added
 
@@ -55,6 +59,38 @@ and replaces the deletion key, which moves into a file.
   instance whose Odoo was held back by its CPU quota over a quarter of
   the time for 15 minutes (warning). Thresholds with their reasons in
   `docs/observability-operations.md`, "Tuning alerts".
+- **Each instance's database, measured on its server.** The agents'
+  install adds `collect_pg.sh`, run as root every minute from
+  `/etc/cron.d/incubacloud-collect-pg`: each running instance's
+  connections and their maximum, active queries, sessions waiting for a
+  lock or idle in a transaction and the oldest of each, deadlocks,
+  temporary bytes and cache hits (`ic_pg_*`), read with the host's psql
+  through the socket of the instance's `db` container, in a read-only
+  session that gives up after 3 s, within 45 s for the whole pass. 83 ms
+  of CPU per instance, 2.8 % of a core with twenty. Every ten minutes the
+  disk collector adds each database's size (`ic_pg_db_size_bytes`) and
+  each filestore's (`ic_instance_filestore_bytes`, once an hour on a
+  server under 6 GB). Full Setup installs `postgresql-client`; the
+  agents' install puts it in only when missing, and a collector that
+  cannot be installed (no passwordless sudo, apt busy) leaves the agents
+  installed and the job successful, says why in its log and shows as
+  *Database collector not installed* on the server's board.
+  **Collect database figures** (Settings → Monitoring, *Advanced*) turns
+  it off on every server, and a server's teardown removes it.
+- **Rules `metrics_instance_db_lock_wait` and
+  `metrics_instance_db_connections`.** Queries of an instance waiting for
+  a lock at every reading for 10 minutes, and a database using over 85 %
+  of its connections twice in a row (warnings). Both read only a fresh
+  reading of the collector: one that stopped raises nothing.
+- **The server's "Right now" table** shows each instance's database and
+  filestore size and its connections against their maximum, with the
+  sessions waiting for a lock.
+- **Hosts converge on the agents' playbook.** `cloud.host` records the
+  revision of the agents' install it last completed
+  (`metrics_agents_revision`, `AGENTS_REVISION` in the executor); the
+  reconciliation cron re-applies, five per pass, the installed hosts on
+  an older one, so a host installed by a panel still on older code is
+  brought up to date without a burst of installs at upgrade.
 
 ### Changed
 

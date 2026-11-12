@@ -124,7 +124,7 @@
                     <SettingRow id="'observability_status'" plain="true">
                         <span class="ic-set-ro" t-esc="observabilityStatus"/>
                     </SettingRow>
-                    <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_ship_security_logs', 'grafana_base_url', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
+                    <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_ship_security_logs', 'metrics_collect_pg', 'grafana_base_url', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
                         <SettingField id="'metrics_enabled'" form="form"/>
                         <SettingField id="'metrics_central_url'" form="form"/>
                         <SettingField id="'metrics_remote_write_url'" form="form"/>
@@ -133,6 +133,7 @@
                                       placeholder="state.hasMetricsToken ? undefined : generatedText"/>
                         <SettingField id="'metrics_retention_days'" form="form"/>
                         <SettingField id="'metrics_ship_security_logs'" form="form"/>
+                        <SettingField id="'metrics_collect_pg'" form="form"/>
                         <SettingField id="'grafana_base_url'" form="form"/>
                         <SettingField id="'metrics_central_public_host'" form="form"/>
                         <SettingField id="'metrics_central_direct_host'" form="form">

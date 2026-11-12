@@ -262,6 +262,47 @@
         <field name="message">Instance %(host)s has been held back by its CPU quota for 15 minutes (%(value)s%% of the time): its requests wait. Raise the quota in Resources or spread the instances over more servers.</field>
     </record>
 
+    <!-- The database collector's (collect_pg.sh, every minute). Both
+         read only a file the collector wrote in the last three minutes
+         (node_textfile_mtime_seconds): node_exporter keeps serving the
+         last file it found, so a collector that stopped would otherwise
+         repeat its last reading for ever. No fresh file, no sample: no
+         alert and no failure. Added 12-nov-2026 (plan of observability,
+         section 2.6, and its review of the same day), thresholds to tune
+         in QA with real data. -->
+    <record id="metric_rule_instance_db_lock_wait" model="cloud.metric.rule">
+        <field name="name">Instance's database waiting on locks</field>
+        <field name="sequence">80</field>
+        <field name="code">metrics_instance_db_lock_wait</field>
+        <!-- Measures over its own window: one sample is already a verdict. -->
+        <field name="confirm_cycles">1</field>
+        <field name="scope">instance</field>
+        <!-- The fewest sessions waiting for a lock in any minute of the
+             last ten: above 0 means somebody waited all ten minutes, not
+             that two readings five minutes apart each caught a wait. -->
+        <field name="expression">max by (instance_id, host_id) (min_over_time(ic_pg_waiting_lock{instance_id!=""}[10m])) and on (host_id) (time() - node_textfile_mtime_seconds{file=~".*ic_pg.prom"} &lt; 180)</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">0</field>
+        <field name="level">warning</field>
+        <field name="message">In %(host)s, queries have been waiting for a lock for 10 minutes (%(value)s at least at every reading). See "Queries now" in its Metrics tab.</field>
+    </record>
+
+    <record id="metric_rule_instance_db_connections" model="cloud.metric.rule">
+        <field name="name">Instance's database near its connection ceiling</field>
+        <field name="sequence">90</field>
+        <field name="code">metrics_instance_db_connections</field>
+        <!-- An instant reading: a lone spike must not page anyone. -->
+        <field name="confirm_cycles">2</field>
+        <field name="scope">instance</field>
+        <field name="expression">round(100 * max by (instance_id, host_id) (ic_pg_connections{instance_id!=""} / ic_pg_max_connections{instance_id!=""})) and on (host_id) (time() - node_textfile_mtime_seconds{file=~".*ic_pg.prom"} &lt; 180)</field>
+        <field name="comparator">gt</field>
+        <!-- 85 % of max_connections: the next workers or a cron burst
+             start being refused a connection, and Odoo answers errors. -->
+        <field name="threshold">85</field>
+        <field name="level">warning</field>
+        <field name="message">The database of %(host)s uses %(value)s%% of its connections: new ones will soon be refused. Check its workers and crons, or raise max_connections.</field>
+    </record>
+
     <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">
         <field name="name">Evaluate metric rules</field>
         <field name="model_id" ref="model_cloud_metric_rule"/>

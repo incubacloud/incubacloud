@@ -232,6 +232,32 @@ class TestSeededRules(TransactionCase):
             'container_label_com_docker_compose_service="odoo"'), 2)
         self.assertIn("Resources", rule.message)
 
+    def test_the_database_rules_read_only_a_fresh_collector(self):
+        """12-nov-2026: node_exporter serves the last file it found, so a
+        collector that stopped would repeat its last reading for ever.
+
+        A lock wait is one held over ten minutes (the fewest waiting in
+        any minute of them), not two instants five minutes apart.
+        """
+        locks = self._rule("metric_rule_instance_db_lock_wait")
+        self.assertIn("min_over_time(ic_pg_waiting_lock{", locks.expression)
+        self.assertIn("[10m]", locks.expression)
+        self.assertEqual((locks.comparator, locks.threshold, locks.confirm_cycles), ("gt", 0, 1))
+        connections = self._rule("metric_rule_instance_db_connections")
+        self.assertIn("ic_pg_connections{", connections.expression)
+        self.assertIn("/ ic_pg_max_connections{", connections.expression)
+        self.assertEqual((connections.comparator, connections.threshold), ("gt", 85))
+        self.assertGreaterEqual(connections.confirm_cycles, 2)
+        self.assertIn("%(value)s%%", connections.message)
+        for rule in (locks, connections):
+            self.assertEqual((rule.scope, rule.level), ("instance", "warning"))
+            self.assertTrue(rule.expression.endswith(
+                ' and on (host_id) (time() - node_textfile_mtime_seconds'
+                '{file=~".*ic_pg.prom"} < 180)'
+            ), rule.code)
+            # The join needs host_id on the left.
+            self.assertIn("by (instance_id, host_id)", rule.expression)
+
     def test_no_seeded_rule_aggregates_its_own_label_away(self):
         """A rule must not lose the label its alert is attributed by.
 
@@ -935,6 +961,23 @@ class TestInstanceScopedRules(MetricRuleCase):
         self.assertFalse(self.env["cloud.alert"].sudo().search([
             ("code", "=", "metrics_instance_cpu_throttled"), ("state", "=", "active"),
         ]))
+
+    def test_a_lock_wait_and_a_full_database_are_named(self):
+        """The shipped database rules, judged on one answer each."""
+        sample = {"instance_id": str(self.instance.id), "host_id": "1"}
+        locks = self.env.ref("incubacloud.metric_rule_instance_db_lock_wait")
+        locks._sync_alerts([(sample, 2.0)])
+        connections = self.env.ref("incubacloud.metric_rule_instance_db_connections")
+        connections.confirm_cycles = 1
+        connections._sync_alerts([(sample, 88.0)])
+        alerts = self.env["cloud.alert"].sudo().search([
+            ("code", "in", ("metrics_instance_db_lock_wait", "metrics_instance_db_connections")),
+            ("state", "=", "active"),
+        ])
+        self.assertEqual(alerts.instance_id, self.instance)
+        messages = " ".join(alerts.mapped("message"))
+        self.assertIn("waiting for a lock for 10 minutes", messages)
+        self.assertIn("uses 88% of its connections", messages)
 
 class TestRuleCodeUniqueness(TransactionCase):
     """BUG-002 — ``code`` is the alert's identity, so it has to be unique.

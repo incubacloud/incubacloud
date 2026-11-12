@@ -111,6 +111,15 @@ _HOST_SELECTOR = 'host_id="%(host_id)d"'
 #: The containers of a host's instances, their one-off runs left out.
 _HOST_INSTANCES = _HOST_SELECTOR + ', instance_id!="", name!~"%(one_off)s"'
 
+#: The database collector's readings, kept only while its file is fresh:
+#: node_exporter serves the last file it found, so a collector that
+#: stopped would repeat its last reading for ever. Three minutes, as the
+#: database rules read it.
+_PG_FRESH = (
+    " and on (host_id) (time() - node_textfile_mtime_seconds{"
+    + _HOST_SELECTOR + ', file=~".*ic_pg.prom"} < 180)'
+)
+
 #: Block devices that are not a disk an instance writes to: loop mounts
 #: of snaps, RAM disks, optical drives, compressed swap in memory.
 _DISKS = 'device!~"loop.*|ram.*|sr.*|zram.*"'
@@ -461,6 +470,11 @@ PANELS = {
                 # gone stale still has its last sample within the hour.
                 _q("ingest_age", "time() - max(last_over_time(timestamp("
                    'up{job="node", ' + _HOST_SELECTOR + "})[1h:1m]))"),
+                # 1 when the agents' last install put the database
+                # collector in, 0 when it could not; none when it is
+                # switched off or the agents predate it.
+                _q("pg_collector", "max(ic_pg_collector{"
+                   + _HOST_SELECTOR + "})"),
             ),
         },
         {
@@ -481,6 +495,19 @@ PANELS = {
                 _q("rps", "sum by (instance_id) (rate("
                    "traefik_service_requests_total{" + _HOST_SELECTOR
                    + ', instance_id!=""}[5m]))'),
+                # The disk collector measures the database every ten
+                # minutes and the filestore every ten or every hour by the
+                # server's memory: twice that covers a missed run.
+                _q("database", "max by (instance_id) (last_over_time("
+                   "ic_pg_db_size_bytes{" + _HOST_SELECTOR + "}[30m]))"),
+                _q("filestore", "max by (instance_id) (last_over_time("
+                   "ic_instance_filestore_bytes{" + _HOST_SELECTOR + "}[2h]))"),
+                _q("connections", "max by (instance_id, host_id) ("
+                   "ic_pg_connections{" + _HOST_SELECTOR + "})" + _PG_FRESH),
+                _q("max_connections", "max by (instance_id, host_id) ("
+                   "ic_pg_max_connections{" + _HOST_SELECTOR + "})" + _PG_FRESH),
+                _q("waiting", "max by (instance_id, host_id) ("
+                   "ic_pg_waiting_lock{" + _HOST_SELECTOR + "})" + _PG_FRESH),
             ),
         },
     ),

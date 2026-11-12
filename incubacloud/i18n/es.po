@@ -279,6 +279,12 @@ msgid "%(used)s of %(total)s cores"
 msgstr "%(used)s de %(total)s núcleos"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "%(used)s of %(max)s"
+msgstr "%(used)s de %(max)s"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "%s (archived)"
@@ -397,6 +403,12 @@ msgstr "%s de disco raíz"
 #: code:addons/incubacloud/static/src/components/metrics/formatters.js:0
 msgid "%s s"
 msgstr "%s s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
+msgid "%s waiting"
+msgstr "%s esperando un bloqueo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1279,6 +1291,11 @@ msgstr "Agentes instalados, sin datos todavía"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_since
 msgid "Agents last changed"
 msgstr "Últimos cambios en los agentes"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_revision
+msgid "Agents revision"
+msgstr "Revisión de los agentes"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3068,6 +3085,13 @@ msgstr "Recopilar métricas del host"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_collect_pg
+msgid "Collect database figures"
+msgstr "Recopilar datos de las bases de datos"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Collecting, with charts available."
 msgstr "Recogiendo, con gráficas disponibles."
@@ -3342,6 +3366,12 @@ msgstr "Conexión fallida. Compruebe credenciales del host y red."
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Connection successful — bucket is accessible."
 msgstr "Conexión exitosa — el bucket es accesible."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid "Connections"
+msgstr "Conexiones"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_attempts
@@ -4065,6 +4095,18 @@ msgstr "Solo BD"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
+msgid ""
+"Database collector not installed on this server: its connections and lock "
+"waits are not measured. The last install of its agents says why, and the "
+"next one tries again."
+msgstr ""
+"El colector de las bases de datos no está instalado en este servidor: no se "
+"miden sus conexiones ni sus esperas de bloqueo. La última instalación de sus"
+" agentes dice por qué, y la siguiente lo vuelve a intentar."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 msgid "Dead rows"
 msgstr "Filas muertas"
@@ -4137,6 +4179,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 msgid "Database"
 msgstr "Base de datos"
 
@@ -4997,6 +5040,17 @@ msgid "Duration"
 msgstr "Duración"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"Each instance's connections, queries and lock waits, every minute, read on "
+"its server as root. Applies to every server within hours."
+msgstr ""
+"Las conexiones, las consultas y las esperas de bloqueo de cada instancia, "
+"cada minuto, leídas en su servidor como root. Se aplica a todos los "
+"servidores en unas horas."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__edge_guard_shipped_hash
 msgid "Edge guard applied"
 msgstr "Guarda del borde aplicada"
@@ -5194,6 +5248,21 @@ msgstr "Tipo de evento"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "Every account on the central"
 msgstr "Todas las cuentas de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_collect_pg
+msgid ""
+"Every minute, each instance's database connections, running queries, lock "
+"waits and cache hits, read on its server by a small program run as root. Off"
+" removes it from every server on the agents' next install, which the "
+"reconciliation cron runs a few servers at a time."
+msgstr ""
+"Cada minuto, las conexiones de la base de datos de cada instancia, sus "
+"consultas en curso, sus esperas de bloqueo y sus aciertos de caché, leídos "
+"en su servidor por un pequeño programa que se ejecuta como root. "
+"Desactivado, se quita de todos los servidores en la siguiente instalación de"
+" los agentes, que el cron de reconciliación ejecuta unos pocos servidores "
+"cada vez."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5776,6 +5845,7 @@ msgstr "El archivo supera los 2 GB: se cambió a subida por SSH."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 msgid "Filestore"
 msgstr "Filestore"
 
@@ -22759,6 +22829,17 @@ msgstr ""
 msgid ""
 "Which proxies in front of the panel are trusted to say who the caller is."
 msgstr "En qué proxies delante del panel se confía para decir quién llama."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_revision
+msgid ""
+"Which version of the agents' install this host last completed. The "
+"reconciliation cron re-applies, a few hosts at a time, every installed host "
+"on an older one."
+msgstr ""
+"Qué versión de la instalación de los agentes completó este host por última "
+"vez. El cron de reconciliación vuelve a aplicar, unos pocos hosts cada vez, "
+"la de todo host instalado con una anterior."
 
 #. module: incubacloud
 #. odoo-javascript

@@ -656,6 +656,15 @@ class CloudSettings(models.Model):
              "never delete them, so the record outlives the host. Off by "
              "default: a panel turns it on for hosts that are its own.",
     )
+    metrics_collect_pg = fields.Boolean(
+        string="Collect database figures",
+        default=True,
+        help="Every minute, each instance's database connections, running "
+             "queries, lock waits and cache hits, read on its server by a "
+             "small program run as root. Off removes it from every server "
+             "on the agents' next install, which the reconciliation cron "
+             "runs a few servers at a time.",
+    )
     grafana_base_url = fields.Char(
         string='Grafana base URL',
         help='Base URL of the Grafana embedded in the panel, e.g. '
@@ -901,6 +910,22 @@ class CloudSettings(models.Model):
             raise UserError(
                 _("Only one IncubaCloud settings record is allowed.")
             )
+
+    def write(self, vals):
+        """Have every server re-apply its agents when the collector's switch moves.
+
+        The switch reaches a server only through the agents' install, so a
+        change asks the reconciliation cron to run it again on every
+        installed host, at its pace.
+        """
+        switched = "metrics_collect_pg" in vals and any(
+            rec.metrics_collect_pg != bool(vals["metrics_collect_pg"])
+            for rec in self
+        )
+        result = super().write(vals)
+        if switched:
+            self.env["cloud.host"]._reapply_observability_everywhere()
+        return result
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
