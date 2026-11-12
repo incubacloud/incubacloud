@@ -99,6 +99,19 @@ class TestBackupRestoreCommands(BaseCase):
             labels.index("Drop database"),
         )
 
+    def test_the_long_steps_run_apart(self):
+        """Phase 3 (12-nov-2026): duplicity's restore, the import and the
+        update run apart on the server; the short ones stay attached."""
+        apart = {
+            label: opts for label, _cmd, *rest in self.cmds
+            for opts in rest if opts.get("detached")
+        }
+        self.assertEqual(apart, {
+            "Restore from backup": {"stop_on_failure": True, "detached": True},
+            "Import SQL": {"stop_on_failure": True, "detached": True},
+            "Update changed modules": {"stop_on_failure": True, "detached": True},
+        })
+
 
 
 class TestBackupRestoreUpdatesModules(BaseCase):

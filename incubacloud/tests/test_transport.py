@@ -932,8 +932,38 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
         # The archive this job brings lands in its own directory.
         self.assertEqual(argv[4], executor._job_path("restore.zip"))
         # Stop the chain on failure: skipping the rest avoids destroying
-        # the live DB when we already know the upload is missing.
-        self.assertEqual(opts, {"stop_on_failure": True})
+        # the live DB when we already know the upload is missing. Apart
+        # on the server (12-nov-2026): an archive of several GB takes
+        # minutes to check.
+        self.assertEqual(opts, {"stop_on_failure": True, "detached": True})
+
+    def test_the_long_steps_run_apart(self):
+        """Phase 3 (12-nov-2026): the check of the archive, the load, the
+        update and the connector's install, which boots an Odoo when the
+        module is missing, run apart; the short steps stay attached."""
+        executor = self._make_executor()
+        # A staging refreshed from production: neutralized, its base URL
+        # reset, its mail sent to the catcher.
+        executor._inst().environment = "staging"
+        executor.job.payload = {"neutralize": True, "reset_base_url": True}
+        executor._base_url = lambda: "https://myinst.example.com"
+        cmds = executor.get_commands()
+        self.assertIn("Neutralize again after the update", [c[0] for c in cmds])
+        self.assertIn("Reset base URL", [c[0] for c in cmds])
+        apart = [label for label, _cmd, *rest in cmds if rest and rest[0].get("detached")]
+        self.assertEqual(apart, [
+            "Verify backup file", "Restore database", "Update changed modules",
+            "Ensure incubacloud_connect",
+        ])
+        opts = {label: rest[0] if rest else {} for label, _cmd, *rest in cmds}
+        self.assertEqual(
+            opts["Restore database"], {"stop_on_failure": True, "detached": True},
+        )
+        self.assertEqual(
+            opts["Update changed modules"],
+            {"stop_on_failure": True, "detached": True},
+        )
+        self.assertEqual(opts["Ensure incubacloud_connect"], {"detached": True})
 
     def test_restore_and_stop_steps_precede_the_db_restore(self):
         labels = [t[0] for t in self._make_executor().get_commands()]

@@ -579,6 +579,61 @@ class TestWhichRestoreHasThePoint(_QueueCase):
         )
         self.assertIsNone(executor._no_return_from)
 
+    def test_a_moves_load_apart_is_stopped_and_holds_no_queue(self):
+        """A stop or a close stops the load of a move, which runs apart
+        (12-nov-2026); a copy's load is left to end and holds its queue."""
+        plan = {"plan": [
+            ["Stop Odoo service", "stop", {}],
+            [_RESTORE_STEP, "restore", {"stop_on_failure": True, "detached": True}],
+        ]}
+        moving = self._executor(
+            {"mode": "from_host", "as_move": True}, moving_to=True,
+        )
+        moving._checkpoint_data = plan
+        self.assertFalse(moving._past_no_return(1))
+        copy = self._executor({"mode": "from_job"})
+        copy._checkpoint_data = plan
+        self.assertTrue(copy._past_no_return(1))
+        self.assertFalse(copy._past_no_return(0))
+
+    def test_whoever_closes_it_later_decides_as_it_ran(self):
+        """The decision travels in the checkpoint (12-nov-2026).
+
+        A move's restore that failed is rolled back, which clears the move's
+        target; the reconciliation that closes its step later must still
+        see a step it may stop, not one past a point of no return that
+        would hold the rollback's queue.
+        """
+        executor = self._executor(
+            {"mode": "from_host", "as_move": True}, moving_to=True,
+        )
+        self.assertIsNone(executor._no_return_from)
+        carried = executor._carried_state()
+        self.inst.sudo().write({"move_target_host_id": False})
+        later = RestoreInstanceExecutor(executor.job, executor.job.host_id)
+        for name, value in carried.items():
+            setattr(later, name, value)
+        self.assertIsNone(later._no_return_from)
+        self.assertEqual(later._load_as(), "move")
+
+    def test_a_moves_restore_gives_up_on_its_server_sooner(self):
+        """120 s instead of 600 (Fable's review, 12-nov-2026): the
+        instance is down on its old server meanwhile, and a rollback
+        waits for the restore to fail."""
+        from ..models import abstract_executor, restore_instance_executor
+
+        moving = self._executor(
+            {"mode": "from_host", "as_move": True}, moving_to=True,
+        )
+        self.assertEqual(
+            moving._contact_grace_s(), restore_instance_executor.MOVE_CONTACT_GRACE_S,
+        )
+        self.assertEqual(restore_instance_executor.MOVE_CONTACT_GRACE_S, 120)
+        copy = self._executor({"mode": "from_job"})
+        self.assertEqual(
+            copy._contact_grace_s(), abstract_executor.DETACHED_CONTACT_GRACE_S,
+        )
+
 
 class TestTheRefusalSaysWhyByType(TransactionCase):
     """``cloud.job._no_return_refusal``: the reason a stop is refused,
