@@ -289,6 +289,18 @@ before updating (`docs/observability-operations.md`, "Undo").
   any more. Kept unclosed, a job cancelled while parked was taken up at
   every pass of 5 minutes, its server cleaned again and a line added to
   its log each time, and it read *Cancelling…* for good.
+- **A job cancelled while parked keeps its checkpoint until its close
+  (#71).** The reconciliation let it go while cleaning up, before the
+  close; a close that then found the job's rows held, or raised, left a
+  job nothing named any more: it never closed, and the steps after it
+  waited for good. The close now lets the row go with the job's end.
+  One whose clean-up raises is closed all the same, its row closed for
+  a later pass, instead of being closed again at every pass. A close
+  that has not happened 30 minutes after the job was taken up has the
+  row closed, with an error in the server's log. A job whose type has no
+  executor any more says in its log that nothing can clean what it left,
+  and a cancelled one raises `job_cleanup_given_up`. Spanish translation
+  included.
 - The Spanish texts call the metrics central *la central* throughout.
 
 ### Security
