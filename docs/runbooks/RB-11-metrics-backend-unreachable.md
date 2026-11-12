@@ -75,7 +75,7 @@ Common causes, in the order they actually happen:
 
 If in doubt, press **Enable observability** in Settings again. It is
 idempotent, rebuilds the stack from the declared state, and re-applies
-the account list and Grafana organisations along the way.
+the account list along the way.
 
 If `direct_path_down` is active too, the central is fine and the direct
 entrypoint is not: hosts are back on the public path; follow
@@ -91,7 +91,7 @@ entrypoint is not: hosts are back on the public path; follow
   has a published port — every path goes through vmauth.
 - A **429** is not this alert: the central answered, busy. If boards say
   *busy* for long, see who holds the operator's 16 requests in flight
-  (fleet boards open at once, Grafana's admin calls during a deployment).
+  (fleet boards open at once).
 - A **401** means the panel's account credential and the central's user
   list disagree. Re-deploy the central: the list is rebuilt from the
   panel's own state, so that reconciles them.

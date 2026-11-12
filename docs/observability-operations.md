@@ -2,7 +2,7 @@
 
 1. **Settings → Monitoring** — pick the host that should run the central
    and press **Enable observability**. That is the whole procedure.
-2. The job deploys VictoriaMetrics, Loki, Grafana and vmauth (the account
+2. The job deploys VictoriaMetrics, Loki and vmauth (the account
    boundary) and, when they answer, writes the endpoints back, generates
    this panel's account credential and switches observability on.
 3. **Hosts enrol themselves.** A reconciliation cron (every 15 min)
@@ -19,7 +19,18 @@
    queuing them at once, and a host installed by a panel still on older
    code converges once its panel is updated. No migration queues installs.
    A change to the playbook that installed hosts need raises
-   `AGENTS_REVISION` (12-nov-2026: revision 1, the database collector).
+   `AGENTS_REVISION` (12-nov-2026: revision 1, the database collector;
+   revision 2, Fluent Bit and each server's security logs).
+5. **The central follows its playbook too.** The panel records the
+   revision of the central's last good deployment
+   (`metrics_central_revision`, from `CENTRAL_REVISION` in
+   `observability_central_executor.py`). While it is behind, the same cron
+   deploys the central again: not while a deployment waits or runs on its
+   host, and after a failure with the agents' growing wait. An update
+   that changes the central converges this way even when its first
+   deployment ran on older code, failed, or never ran. Not with
+   observability off: the deployment switches it on, so it waits for the
+   operator (12-nov-2026: revision 1, the central without Grafana).
 
 There is no per-host button, and no step to remember. There never should
 have been: there is no host to which observability does not apply, so
@@ -45,16 +56,14 @@ the platform.
 ┌──────────────────────────────┐   ┌──────────────────────────────────┐
 │ node_exporter  (system)      │   │  vmauth  ← the account boundary  │
 │ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/           │
-│ Traefik        (HTTP, :8082) │   │  /admin-r/ /admin-d/ /gadmin/    │
+│ Traefik        (HTTP, :8082) │   │  /admin-r/ /admin-d/             │
 │ vmagent   ── push ───────────┼──▶│         │                        │
-│ promtail  ── push ───────────┼──▶│         ├→ VictoriaMetrics       │
-└──────────────────────────────┘   │         └→ Loki                  │
-                            HTTPS  │                                   │
-   browser ─ HTTPS ─▶ Traefik ─────┼──▶ Grafana (org per account)     │
-                                   └──────────────────────────────────┘
+│ Fluent Bit ── push ──────────┼──▶│         ├→ VictoriaMetrics       │
+│  (security logs, if on)      │   │         └→ Loki (security logs)  │
+└──────────────────────────────┘   └──────────────────────────────────┘
                                               ▲
                                      PromQL   │
-                                 panel cron ──┘   → cloud.alert
+                    panel (charts, rule cron) ┘   → cloud.alert
 ```
 
 **Push, not scrape.** Hosts open no inbound port; the agents dial out.
@@ -62,19 +71,16 @@ That is what makes bring-your-own-host and NAT'd boxes work without
 firewall exceptions, and it is why the write endpoint must be reachable
 from every host.
 
-**Two proxies, by capability, not preference.** vmauth is the account
-boundary for *data* (metrics and logs), because only it can force the
-account into a query arg / header that a client cannot override — Traefik
-cannot touch a query string. Grafana in the *browser* goes through
-Traefik instead, because it needs websockets (Grafana Live) and vmauth
-does not proxy them. Each does the one thing only it can.
+**vmauth is the account boundary for data** (metrics and logs), because
+only it can force the account into a query arg / header that a client
+cannot override — Traefik cannot touch a query string. The panel draws
+every chart itself, reading through it; the central ran Grafana until
+12-nov-2026.
 
-**vmauth and Grafana are published; VictoriaMetrics and Loki are not.**
-The two backends have no host port at all — anything able to reach them
-directly would bypass the boundary, including another panel's container on
-a shared host. Grafana having a bridge port is safe where theirs is not:
-Grafana authenticates every request itself (OIDC); VM and Loki
-authenticate nothing.
+**vmauth is published; VictoriaMetrics and Loki are not.** The two
+backends have no host port at all — anything able to reach them directly
+would bypass the boundary, including another panel's container on a
+shared host. They authenticate nothing.
 
 ### The account boundary
 
@@ -104,11 +110,10 @@ the production configuration: through its *read* route an account posted
 to `/api/v1/import/prometheus` with another account's `ic_account` — a
 read route forces a read filter, not a write label — and the other
 account saw the series as its own; the same route created snapshots and
-forced merges. The read list is what Grafana 11.2 and the panel were
-measured calling (dashboards, Explore, both browsers, *Save & test*). A
-Grafana upgrade that starts calling a new endpoint shows up as a 400 from
-vmauth in that panel: add the endpoint to `_ACCOUNT_READ_PATHS`, never a
-wildcard.
+forced merges. The read list is a dashboard's and a metrics browser's
+query API; the panel calls `query` and `query_range`. A reader that starts
+calling another endpoint gets a 400 from vmauth: add the endpoint to
+`_ACCOUNT_READ_PATHS`, never a wildcard.
 
 An agent runs on a machine its owner has root on. Its claim about who it
 is can never be trusted, which is why the label comes from the
@@ -122,16 +127,13 @@ the same read endpoints as an account's `/r/` plus `/health`
 (`_OPERATOR_READ_PATHS`); anything else, imports, exports, snapshots or
 flags, answers 400. It was `/admin-r/.*`, the whole backend, until
 12-nov-2026, when it was closed so the route could be opened to the
-panel's address under the public name. Grafana's own admin password stays on the
-central: vmauth authenticates callers on `/gadmin/` with the operator
-credential and swaps in the admin credential before proxying, so rotating
-it is a redeploy rather than a change everywhere.
+panel's address under the public name.
 
 vmauth keeps its credentials in clear (it has no hash support). That is
 mitigated the same way the agents' copy of the token is: the config lives
 in the central's `0700` directory and every task that writes it is
-`no_log`. The token already exists in clear on every agent and in each
-Grafana datasource, so this adds no new exposure.
+`no_log`. The token already exists in clear on every agent, so this adds
+no new exposure.
 
 **Alerts do not live in the metrics stack.** There is no Alertmanager and
 no vmalert. A panel cron (`cloud.metric.rule._cron_evaluate`, every 5
@@ -149,9 +151,9 @@ instance would train everyone to ignore the alert that matters.
 
 | Piece | Rough cost |
 |---|---|
-| Agents per host | ~50 MB RAM total |
+| Agents per host | ~50 MB RAM total, and Fluent Bit ~61 MB idle, 81–87 MB under 600 failed SSH attempts a minute, where the server sends its security logs (F0, 9-nov-2026); its container is capped at 128 MB |
 | VictoriaMetrics | ~0.5–1 GB RAM; disk grows with series × retention |
-| Grafana | ~300–500 MB RAM |
+| Loki | the hosts' security logs: tens of lines a minute under attack, units at rest |
 
 The panel's own charts cost the central one PromQL query per panel each
 time a board is read: an instance's Metrics tab is ten (`metrics_charts.
@@ -172,11 +174,11 @@ each reading counts against the user's log reads per minute
 16** (`_OPERATOR_MAX_CONCURRENT`, vmauth's `max_concurrent_requests`,
 12-nov-2026). vmauth counts per user, not per route, and answers the next
 request 429 at once, with no queue. An account's user is shared by its
-agents' writes, its logs, its Grafana datasource and its panel: a cap
-there answered a write 429 while two reads ran (measured on v1.102.0 with
-a cap of 2), and after an outage every host empties its queue at once. So
-accounts have none. The operator never writes; 16 covers four fleet
-boards at four queries each plus Grafana's admin calls (measured: 16
+agents' writes, its logs and its panel: a cap there answered a write 429
+while two reads ran (measured on v1.102.0 with a cap of 2), and after an
+outage every host empties its queue at once. So accounts have none. The
+operator never writes; 16 covers four fleet boards at four queries each
+(measured: 16
 reads in flight pass, the 17th to 20th get 429, an account's 30 reads and
 its write meanwhile all pass). VictoriaMetrics queues the reads
 themselves: `-search.maxConcurrentRequests`, twice the cores (8 on a
@@ -243,24 +245,68 @@ Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
 drops it as it ages out.
 
-Logs have two retentions in Loki, both applied on the next central
-deploy: **30 days** for the proxies' access logs (not longer, because the
-lines carry the instances' visitors' addresses) and **90 days** for the
-hosts' security logs (`log_type="security"`: SSH and sudo from the
-journal, auditd, fail2ban), because an incident is often found weeks
-after it began. Security logs are collected only where the panel turns on
-*Send hosts' security logs* (`metrics_ship_security_logs`) and the agents
-are reinstalled; a module that extends the panel may turn it on for its
-own hosts. A host's
+Loki keeps the hosts' **security logs** (`log_type="security"`) **90
+days**, because an incident is often found weeks after it began, and
+anything else 30 days: nothing else arrives since the agents stopped
+sending the proxies' access log (12-nov-2026), and 30 lets the access
+lines already stored, which carry the instances' visitors' addresses,
+expire as before. Both apply on the next central deploy. A host's
 credential reaches only the push and read routes above — Loki's delete
 API is not routed — so a host that is compromised cannot erase what it
-already sent.
+already sent. The proxy's access log stays on each host, in
+`/var/log/traefik/access.log` (rotated daily or past 100 MB, 30 days),
+where the panel reads it when asked.
 
-On each host the collector reads the proxy's access log from its file
-(`/var/log/traefik/access.log`, rotated daily or past 100 MB, 30 days),
-falling back to the proxy container's output on a host not set up since
-the log moved there, and remembers its read positions on the host so a
-restart does not send the file again.
+### Security logs
+
+Where a server's **Send security logs** (`cloud.host.security_logs_enabled`,
+its **Connection** tab) is on and the central has a log store, its agents
+run **Fluent Bit 5.1.5** beside the other three (F0 of the observability
+plan, 9-nov-2026: 61 MB idle against Vector's 94; it reads the journal
+itself and its counters never expire).
+
+- **Sources.** The journal's `ssh.service`, `sshd.service` and the
+  identifiers `sshd`, `sshd-session`, `sshd-auth` (OpenSSH 9.8 and later)
+  and `sudo`; `/var/log/audit/audit.log` and `/var/log/fail2ban.log`. Each
+  from where it stopped, and from the end the first time.
+- **What leaves the server.** The journal's lines; of auditd, only the
+  `SYSCALL` records of its four keys (`passwd_changes`, `shadow_changes`,
+  `sudoers_changes`, `ssh_config_changes`) and the `PATH` records of the
+  files they watch (auditd's other records were 68 % of what it sent
+  under attack and repeat sshd and fail2ban); of fail2ban, the jail
+  `sshd` whole, only the bans of `incubacloud-weblogin` (its `Found`
+  lines name the instances' users), the daemon's own lines, and no other
+  jail. Labels: `log_type`, `host`, `source` (`sshd`, `sudo`, `fail2ban`,
+  `auditd`).
+- **Counters**, scraped by vmagent from Fluent Bit (`job="security"`), with
+  a closed set of labels: `ic_ssh_auth_failed_total` (one per connection
+  that never authenticated), `ic_ssh_accepted_total{kind=panel|other,
+  method}` (`panel` when the key's fingerprint is the panel's),
+  `ic_sudo_total{kind=ansible|panel_user|other}` (a refused sudo is not
+  counted here), `ic_sudo_failed_total`, `ic_f2b_total{jail, action}`,
+  `ic_audit_events_total{key, who=system|root|panel|user}` and
+  `ic_security_lines_total{source}`, the heartbeat of each source; plus
+  `fluentbit_output_{proc_records,dropped_records,retries_failed}_total`
+  (`job="security-agent"`). A counter appears with its first event, so
+  `increase()` does not see that one.
+- **The central down.** Lines wait on disk, up to 64 MB (about seven
+  hours of 600 lines a minute), retried for ever at most five minutes
+  apart; full, the oldest go.
+- **The switch.** Off, the next install removes the container, its
+  cursors and its buffer: on again, nothing of the time it was off is
+  sent. A change applies at once, to that server, also after a failed
+  install: turning it off is how a Fluent Bit that misbehaves is removed.
+  An agent's `manage_host` that turns it off asks for approval unless an
+  auto-approval rule covers it; the change is in the audit log either
+  way. The update to 1.0.229 replaced the panel-wide *Send hosts'
+  security logs* with it and turned it on on every server, unless a
+  module that extends the panel decides otherwise
+  (`cloud.host._security_logs_after_upgrade`,
+  `_security_logs_available`, `_security_logs_default`).
+- **Reading them.** Through `/lr/` with the account's credential.
+- **What it costs.** See *Costs and sizing*. Fluent Bit runs as root with
+  every capability dropped but reading files, a read-only filesystem and
+  no port published; its credential is in a 0600 file.
 
 ## The panel's own charts
 
@@ -392,37 +438,51 @@ below is only for a central next to the panel.
    name** with that name and **Who may delete series and read the fleet
    on the central** with the panel's public address (`/32`): it opens the series deletion
    and the cross-account read (`/admin-r/`) to that address, under the
-   name. Empty **Grafana base URL** if
-   it pointed at the old central, so the deployment fills in the new one.
+   name.
 5. Re-run *Enable observability* against the new host. When the job
-   answers, the panel's query URL, the agents' remote-write URL and (if
-   it was empty) the Grafana base URL point at the new name.
-6. Register Grafana as an OIDC client again: its redirect is the new
-   Grafana URL.
-7. Hosts enrolled before the move are re-applied on their own once the new
+   answers, the panel's query URL and the agents' remote-write URL point
+   at the new name.
+6. Hosts enrolled before the move are re-applied on their own once the new
    central's host has applied the list and its direct name answers.
-8. Remove `metrics-gateway.yml` from the old host's Traefik and
+7. Remove `metrics-gateway.yml` from the old host's Traefik and
    decommission the old stack.
 
 Historical series are not migrated by this procedure. If you need them,
 copy the VictoriaMetrics data volume across before step 5 — otherwise
-expect the dashboards to start from the moment of the switch.
+expect the charts to start from the moment of the switch.
 
 What the deployment publishes under the name is what the hand-written
-gateway publishes (next section), with two differences: Traefik drops
-any `X-WEBAUTH-USER` header on its way to Grafana, and the operator's
+gateway publishes (next section), with one difference: the operator's
 `/admin-r/` and `/admin-d/` have routers of their own (`ic-central-read`,
 `ic-central-delete`, priority 30) that admit the addresses in **Who may
 delete series on the central** plus the host itself, the forwarded
 address when the name is behind a CDN (`ipstrategy.depth: 1`). With the
-setting empty, both answer the host only, as before 12-nov-2026.
-`/gadmin/` answers the host only, always, and no operator route is
-published on the direct entrypoint. Grafana's
-`frame-ancestors` is the list `cloud.settings._grafana_frame_ancestors`
-returns, written again at every deployment: the panel's origin, plus
-whatever origins a module that extends the panel adds, such as other
-panels that frame the dashboards. A list widened by
-hand on the host would not survive the next run; widen it there instead.
+setting empty, both answer the host only, as before 12-nov-2026. No
+operator route is published on the direct entrypoint. Removing a router
+label recreates vmauth, a few seconds the agents' queues cover.
+
+## Undo
+
+- **What Grafana left.** The first deployment with 1.0.229, which the
+  update queues on its own, removes the volume `incubacloud-central_grafana-data`,
+  the central's `provisioning/` and `dashboards/` directories and the
+  image `grafana/grafana:11.2.0`, after the boundary answered. Nothing in
+  them was the only copy: Grafana's dashboards and organisations were
+  written from the code. To keep them, create the system parameter
+  `incubacloud.metrics_keep_grafana_data` (any value) **before** updating;
+  remove it, or run `docker volume rm incubacloud-central_grafana-data` on
+  the central's server, when they are no longer wanted. A removal that
+  fails is said in the job's log and does not fail the deployment.
+- **Fluent Bit misbehaves on a server** (memory, CPU): turn off **Send
+  security logs** on that server; its container goes at once. For the
+  whole fleet, the same server by server (an agent's `manage_host` asks
+  for approval for each).
+- **Back to the release before.** The columns 1.0.229 stopped using stay
+  in the database, emptied: the release before starts. Its agents'
+  revision is lower, so hosts already on revision 2 keep Fluent Bit until
+  their next install gives them promtail back; both send to `/lw/`. A
+  deployment of the central by the release before brings Grafana back
+  with an empty volume and nothing pointing at it.
 
 ## Labels
 
@@ -484,8 +544,7 @@ rolled-back removal deletes nothing.
 
 **Only the panel that owns the central deletes.** It holds the operator
 credential; the gateway adds VictoriaMetrics' `-deleteAuthKey` on the
-operator's `/admin-d/` route, the way it swaps in Grafana's password, so
-the panel never sends the key and no account can delete at all.
+operator's `/admin-d/` route, so the panel never sends the key and no account can delete at all.
 
 **The key is a file, not a flag value.** Until 12-nov-2026 it was in the
 VictoriaMetrics container's command, which `docker inspect` shows to
@@ -586,29 +645,23 @@ once the URL is right.
 
 ## Publishing the central through Traefik (agents on other hosts)
 
-Agents and browsers that are not on the central's host reach it over
+Agents and panels that are not on the central's host reach it over
 public HTTPS, terminated by the panel's existing Traefik. This is a
 one-time edit to Traefik's dynamic config on the central's host — a
 **separate file**, so a bad edit is rejected without taking the rest of
 the proxy down. Its shape:
 
-- `Host(metrics.<domain>)` and `/admin-r/`, `/admin-d/` or `/gadmin/` →
-  **denied** from the public (an `ipWhitelist`). Every operator route
-  vmauth serves must be on this list; a test pins it to what the code
-  renders. Their only real callers — the panel
-  and Grafana's datasource — reach vmauth over the bridge, never through
-  Traefik.
-- `Host(metrics.<domain>)` and `/grafana/` → Grafana's bridge port
-  (websockets pass through; Grafana authenticates via OIDC). This router
-  carries its own `frame-ancestors` when panels on other origins embed
-  it, and the host's `frame_ancestors` field then stays empty: Traefik
-  applies that one as an entrypoint default, and an entrypoint header
-  overrides every router's (measured on Traefik v2.11).
+- `Host(metrics.<domain>)` and `/admin-r/` or `/admin-d/` → **denied**
+  from the public (an `ipWhitelist`). Every operator route vmauth serves
+  must be on this list; a test pins it to what the code renders. Their
+  only real caller, the panel, reaches vmauth over the bridge, never
+  through Traefik.
 - `Host(metrics.<domain>)` and `/w/ /r/ /lw/ /lr/` → vmauth's bridge
   port, which returns 401 without a credential. **Only those four
   prefixes**: vmauth answers its own `/flags`, `/metrics`,
   `/debug/pprof/` and `/-/reload` to anyone, and until 2026-09-27 a POST
-  to them from outside got 200.
+  to them from outside got 200. Any other path of the name, `/grafana/`
+  among them, falls to the host's catch-all.
 
 Then set the URLs the agents on other hosts use in Settings to
 `https://metrics.<domain>/w/api/v1/write` and
@@ -804,7 +857,7 @@ rather than reading fields. They are:
 | Axis | True when | Owned by |
 |---|---|---|
 | `collect` | `metrics_enabled` — agents enrol, rules evaluate, PromQL is queried | the panel's own settings |
-| `dashboards` | `collect` **and** a non-blank `metrics_central_url` (the panel draws its own charts; until 12-nov-2026 it asked for a Grafana URL) | the panel's own settings |
+| `dashboards` | `collect` **and** a non-blank `metrics_central_url` (the panel draws its own charts) | the panel's own settings |
 | `configure` | this panel's operator edits those settings | core says `True`; a layer above says otherwise |
 
 Core publishes `configure: True` because it has no notion of a panel
@@ -828,7 +881,7 @@ possible message is an instruction the viewer cannot act on. Concretely:
   `collect` is true, the same prompts otherwise.
 - The **instance Metrics tab** draws its own board (no embed) whenever
   `collect` is true: it reads the central with the panel's own account
-  credential, so it needs no Grafana. With `collect` false it shows the
+  credential. With `collect` false it shows the
   "enable observability" prompt only when `configure` is true, and no
   board otherwise. The readings on demand (*Queries now*, *Slow routes*)
   and *Recent requests* stay in every case: they go to the host over SSH.

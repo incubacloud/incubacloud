@@ -3,24 +3,19 @@
 **Severity:** high when `direct_path_down` is raised; planned otherwise.
 **Typical trigger:** `direct_path_down`, `direct_allowlist_stale`,
 `direct_certificate_expiring`, `direct_path_unreachable_from_host`; a host whose
-metrics stopped while the direct path says _Working_; Grafana refusing logins, if a
-module on top gives Grafana an identity provider; the DNS token has to be rotated.
+metrics stopped while the direct path says _Working_; the DNS token has to be rotated.
 **Who runs it:** platform manager.
 
 The direct path is the platform talking to itself without the CDN: hosts push metrics
 to `direct.metrics.…:9443`, and a module on top may publish a direct name of its own
-and send calls there. If that module gives Grafana an identity provider, Grafana may
-exchange its logins at such a name; in core, Grafana trusts the panel's reverse proxy
-(`auth.proxy`) and exchanges nothing. The public path (`metrics.…`, the panel's name)
-is never touched and is always the way back: every failure below ends with hosts and
-panels on it, and Grafana too where it exchanges logins.
+and send calls there. The public path (`metrics.…`, the panel's name) is never touched
+and is always the way back: every failure below ends with hosts and panels on it.
 
 ## Symptoms
 
 - **`direct_path_down` (critical).** Two probes in a row failed (one, if the name
   resolves elsewhere or has an AAAA record). Hosts and panels are back on the public
-  path on their own; a Grafana that exchanges its logins on the direct path follows with
-  its next account sync. Read the layer in the alert (`dns`, `connect`, `tls`, `route`).
+  path on their own. Read the layer in the alert (`dns`, `connect`, `tls`, `route`).
 - **`direct_allowlist_stale`.** A host's list has lagged for 30 minutes: new addresses
   use the public path until it is applied. Look at the host's last _Sync Direct Path_
   job.
@@ -33,13 +28,9 @@ panels on it, and Grafana too where it exchanges logins.
   they are installed. After 20 minutes without metrics the reconciliation re-applies
   them (at most hourly, only while the central answers), and they fall to the public
   path if the try fails. To force it now: tick _Use the public path_ on the host.
-- **Grafana refuses logins** (only if a module on top gives Grafana an identity
-  provider). Between the direct name going down and the account sync that gives Grafana
-  the public issuer back, Grafana has no fallback. Wait for the sync on the central's
-  host, or run it.
-- **429 on the identity provider's token endpoint** (the same case). On a host where
-  every container reaches Traefik from the proxy network's gateway, every service there
-  (mail, Grafana, the light probe…) shares its rate limits. A client failing many
+- **429 on the identity provider's token endpoint** (a module on top that publishes
+  one). On a host where every container reaches Traefik from the proxy network's
+  gateway, every service there (mail, the light probe…) shares its rate limits. A client failing many
   exchanges blocks the others for the window; the access log shows it.
 
 ## Diagnosis (on the host that publishes the name)
@@ -54,8 +45,7 @@ echo | openssl s_client -connect <ip>:9443 -servername <name> 2>/dev/null \
 dig +short A <name> @1.1.1.1; dig +short AAAA <name> @1.1.1.1
 ```
 
-From a container (the way agents and the manager come, and Grafana where it exchanges
-its logins), any answer over HTTPS proves the path:
+From a container (the way agents and the manager come), any answer over HTTPS proves the path:
 
 ```bash
 docker exec <panel>-odoo-1 python3 -c "import requests; \
@@ -79,7 +69,6 @@ print(requests.get('https://<name>:9443/', timeout=5).status_code)"
 - One host: tick _Use the public path_ on it. Its agents and the panels on it go back at
   once.
 - Everybody's metrics: empty _Central's direct name_. Calls a module on top sends there:
-  empty the direct name it keeps; if it gives Grafana an identity provider, empty the
-  back channel it gives Grafana too.
+  empty the direct name it keeps.
 - The port itself: direct port 0 and Full Setup on the host (Traefik restarts), then
   remove the provider's firewall rule and the two DNS records.
