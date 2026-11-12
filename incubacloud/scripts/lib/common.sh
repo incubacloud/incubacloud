@@ -16,6 +16,12 @@
 # line matching \b(ERROR|FATAL|CRITICAL)\b as a red [err] entry, so
 # ic_die surfaces correctly in the panel without extra plumbing.
 
+#: The ``timeout`` for the calls whose status says why they ended. The
+#: uutils one of Ubuntu 26.04 answers a TERM from outside with 124 whatever
+#: the child did, so a stopped call would read as one out of time; the GNU
+#: one, kept there as ``gnutimeout``, passes the child's status on.
+IC_TIMEOUT="$(command -v gnutimeout || printf timeout)"
+
 # Print a progress line to the job log.
 ic_log() {
     printf '[incubacloud] %s\n' "$*"
@@ -181,7 +187,7 @@ ic_git_helper_prepare() {
     [ "$tag" != "$image" ] || return 0
     if ! "$@" image inspect "$tag" >/dev/null 2>&1; then
         printf 'FROM %s\nLABEL incubacloud.protect=1\n' "$image" \
-            | timeout -k 5 "$IC_GIT_HELPER_PULL_TIMEOUT" "$@" build -q -t "$tag" - \
+            | "$IC_TIMEOUT" -k 5 "$IC_GIT_HELPER_PULL_TIMEOUT" "$@" build -q -t "$tag" - \
             >/dev/null || return
     fi
     ic_git_helper_drop_old "$tag" "$@"

@@ -180,7 +180,7 @@ ic_git_container() {
     IC_GIT_CONTAINER="$name"
     # Without fetch-repos' lock (fd 9): a client that outlived this run
     # would keep the instance locked.
-    timeout -k 5 "$secs" docker "${args[@]}" 9>&- &
+    "$IC_TIMEOUT" -k 5 "$secs" docker "${args[@]}" 9>&- &
     wait "$!" || rc=$?
     if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
         docker rm -f "$name" >/dev/null 2>&1 || true
@@ -368,7 +368,7 @@ remote_ref_head() {
                 HOME="$home" XDG_CONFIG_HOME="$home/.config" \
                 GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
                 GIT_CEILING_DIRECTORIES="$(dirname "$home")" \
-                timeout -k 5 "$HEADS_TIMEOUT" \
+                "$IC_TIMEOUT" -k 5 "$HEADS_TIMEOUT" \
                 git -c credential.helper= -c protocol.version=2 \
                     ls-remote -- "$url" "${wanted[@]}" 2>/dev/null </dev/null
         )" || return

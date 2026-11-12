@@ -271,7 +271,8 @@ STUB
 
 # A timeout that runs its command, or behaves as a command that ran out
 # of time (status 124, or $LS_REMOTE_HANG_STATUS, nothing run) when
-# $LS_REMOTE_HANG is set.
+# $LS_REMOTE_HANG is set. Also as gnutimeout, the one the scripts take first
+# where it exists (Ubuntu 26.04), so the stub answers there too.
 _stub_timeout() {
     cat > "$TMP/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
@@ -282,6 +283,7 @@ while [ "$#" -gt 0 ] && [ "$1" != git ]; do shift; done
 exec "$@"
 STUB
     chmod +x "$TMP/bin/timeout"
+    cp "$TMP/bin/timeout" "$TMP/bin/gnutimeout"
 }
 
 HEADS_TOKEN="ghs_tokenOfTheHour"
@@ -637,7 +639,8 @@ _stub_git_config() {
     grep -q 'CALLS.config' "$TMP/bin/git"
 }
 
-# A timeout that runs whatever command follows its options.
+# A timeout that runs whatever command follows its options, also as
+# gnutimeout like _stub_timeout.
 _stub_timeout_any() {
     cat > "$TMP/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
@@ -648,6 +651,7 @@ shift
 exec "$@"
 STUB
     chmod +x "$TMP/bin/timeout"
+    cp "$TMP/bin/timeout" "$TMP/bin/gnutimeout"
 }
 
 # docker as the helper container answers it. ``run`` records its argv,
