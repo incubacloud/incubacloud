@@ -667,8 +667,10 @@ class CloudSettings(models.Model):
     )
     grafana_base_url = fields.Char(
         string='Grafana base URL',
-        help='Base URL of the Grafana embedded in the panel, e.g. '
-             'https://grafana.example.com. Empty hides the Monitoring tab.',
+        help="Base URL where the central's Grafana answers, e.g. "
+             "https://grafana.example.com; Grafana builds its own links "
+             "from it. The panel's charts read the central and do not "
+             "need it.",
     )
     metrics_central_public_host = fields.Char(
         string='Public host name of the central',
@@ -680,7 +682,7 @@ class CloudSettings(models.Model):
              "panel's own host, on its docker bridge, as before.",
     )
     metrics_central_operator_sources = fields.Text(
-        string='Who may delete series on the central',
+        string='Who may delete series and read the fleet on the central',
         help='Address ranges, one per line (e.g. 198.51.100.7/32), allowed '
              "to reach the central's series-deletion route under its "
              "public name: the panel's own public address. They may also "
