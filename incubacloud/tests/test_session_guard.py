@@ -7,23 +7,31 @@ the parallel requests of one page each load the session before the
 first of them deletes it. Countries are given the way production gives
 them, through ``net/real_ip`` and its proof, with the correction
 installed for the test.
+
+Under ``HttpCase`` every cursor is the test's one transaction, so two
+parallel requests never collide there as they do in production; the
+collision is driven apart, on connections of their own
+(:class:`TestParallelClosesOnRealConnections`).
 """
 import json
 import threading
 import time
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import requests
+from psycopg2 import errors as pg_errors
 
 import odoo.http
-from odoo import fields
+import odoo.sql_db
+from odoo import SUPERUSER_ID, api, fields
 from odoo.tests import tagged
-from odoo.tests.common import BaseCase, HttpCase
+from odoo.tests.common import BaseCase, HttpCase, TransactionCase
 from odoo.tools import config
 
 from odoo.addons.incubacloud.models import cloud_session_guard as guard_module
 from odoo.addons.incubacloud.models.cloud_session_guard import (
+    LOCK_CLASS,
     PIN_KEY,
     judge_browser,
     judge_country,
@@ -128,7 +136,7 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         """
         self.authenticate(
             "guarded", "guarded-pw",
-            session_extra={"_trace_disable": False, **extra},
+            session_extra={"_trace_disable": False} | extra,
         )
         return self.session.sid
 
@@ -269,21 +277,90 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
              "limit": 0},
         )
 
+    def _get(self, sid, path, agent):
+        """GET *path* with session *sid*, without following redirects.
+
+        :rtype: requests.Response
+        """
+        self.env.flush_all()
+        with self.allow_requests(all_requests=True):
+            response = requests.get(
+                self.base_url() + path, headers={"User-Agent": agent},
+                cookies={"session_id": sid}, allow_redirects=False, timeout=30,
+            )
+        self.env.invalidate_all()
+        return response
+
     def test_an_http_route_signs_out_as_an_expired_session_does(self):
         self._switch(browser="close")
         sid = self._sign_in()
         self.assertTrue(self._check(sid, CHROME))
-        self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            response = requests.get(
-                self.base_url() + "/web/login", headers={"User-Agent": FIREFOX},
-                cookies={"session_id": sid}, allow_redirects=False, timeout=30,
-            )
-        self.env.invalidate_all()
+        response = self._get(sid, "/web/webclient/load_menus", FIREFOX)
         self.assertIn(response.status_code, (302, 303))
         self.assertIn("/web/login", response.headers["Location"])
         self.assertIsNone(self._stored(sid).uid)
         self.assertEqual(self._rows().action, "closed")
+
+    def test_a_route_open_to_visitors_serves_a_closed_session_as_one(self):
+        """Review of the result, M1: as Odoo serves a session it no longer
+        accepts there, not sent to the sign-in."""
+        self._switch(browser="close")
+        sid = self._sign_in()
+        self.assertTrue(self._check(sid, CHROME))
+        response = self._get(sid, "/web/login", FIREFOX)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.cookies.get("session_id"), sid)
+        self.assertIsNone(self._stored(sid).uid)
+        self.assertEqual(self._rows().action, "closed")
+        # A JSON route open to anybody answers too, instead of the
+        # expired-session error.
+        other = self._sign_in()
+        self.assertTrue(self._check(other, CHROME))
+        self.env.flush_all()
+        with self.allow_requests(all_requests=True):
+            answer = requests.post(
+                self.base_url() + "/web/webclient/version_info",
+                data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
+                headers={"User-Agent": FIREFOX, "Content-Type": "application/json"},
+                cookies={"session_id": other}, timeout=30,
+            ).json()
+        self.env.invalidate_all()
+        self.assertIn("result", answer)
+        self.assertIsNone(self._stored(other).uid)
+
+    # -- review of the result, A2: a fault of ours blocks nobody -----------
+
+    def test_a_failure_of_the_guard_lets_the_request_through(self):
+        """Odoo would turn it into a 403 on every route, the sign-out
+        included. The request goes on and is traced as always."""
+        self._switch(browser="close")
+        sid = self._sign_in()
+        Guard = type(self.env["cloud.session.guard"])
+        with patch.object(Guard, "_session_guard_check", autospec=True,
+                          side_effect=RuntimeError("the guard broke")), \
+                self.assertLogs(
+                    "odoo.addons.incubacloud.models.res_device_log", "ERROR",
+                ):
+            self.assertTrue(self._check(sid, FIREFOX))
+        self.assertTrue(self.env["res.device.log"].sudo().search_count(
+            [("session_identifier", "=", sid[:42])],
+        ))
+
+    def test_without_its_table_the_guard_lets_every_request_through(self):
+        """New code serving before the module is updated: the re-entry
+        and the log cannot be written, and nobody gets a 403."""
+        self._switch(browser="log")
+        self.env.cr.execute(
+            "ALTER TABLE cloud_session_closure RENAME TO cloud_session_closure_x",
+        )
+        sid = self._sign_in()
+        with self.assertLogs(
+            "odoo.addons.incubacloud.models.cloud_session_guard", "ERROR",
+        ) as logged:
+            self.assertTrue(self._check(sid, CHROME))
+            self.assertTrue(self._check(sid, FIREFOX))
+        self.assertEqual(len(logged.records), 2)
+        self.assertEqual(self._stored(sid)[PIN_KEY]["browser"], "chrome")
 
     # -- country -----------------------------------------------------------
 
@@ -403,6 +480,20 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
             self.ICP.get_param("test.session_guard.layer"),
             f"{self.user.id}:browser",
         )
+        self.assertEqual(self._rows().action, "closed")
+
+    def test_a_failed_layer_keeps_the_row_of_the_close(self):
+        """Review of the result, low: the anti-loop still counts it."""
+        self._switch(browser="close")
+        sid = self._sign_in()
+        self.assertTrue(self._check(sid, CHROME))
+        Guard = type(self.env["cloud.session.guard"])
+        with patch.object(Guard, "_session_guard_closed", autospec=True,
+                          side_effect=RuntimeError("the layer broke")), \
+                self.assertLogs(
+                    "odoo.addons.incubacloud.models.cloud_session_guard", "ERROR",
+                ):
+            self.assertFalse(self._check(sid, FIREFOX))
         self.assertEqual(self._rows().action, "closed")
 
     # -- review A2: one close of one session counts once -------------------
@@ -532,6 +623,152 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         self._closed_before(1, pair=("ES", "PT"))
         self.Closure._gc_session_closures()
         self.assertEqual(self._rows().mapped("seen_value"), ["PT"])
+
+
+@tagged("-at_install", "post_install")
+class TestParallelClosesOnRealConnections(TransactionCase):
+    """Review of the result, A1: two requests of one page, each on a
+    connection of its own, as in production.
+
+    Odoo's cursors are REPEATABLE READ. The second request takes its
+    snapshot when it asks for the user's lock, before it waits; once the
+    first commits, writing the rows the first wrote fails to serialize.
+    The rows here are committed for real, and deleted at the end.
+    """
+
+    PAIR = ("Q1", "Q2")
+    IDENTIFIER = "q" * 42
+
+    def setUp(self):
+        super().setUp()
+        self.uid = self.env.ref("base.user_admin").id
+        self.dbname = self.env.cr.dbname
+        self.addCleanup(self._clean)
+        now = fields.Datetime.now()
+        with self._connect() as cr:
+            cr.execute("""
+                INSERT INTO cloud_session_hold
+                       (user_id, signal, pair, until,
+                        create_uid, write_uid, create_date, write_date)
+                VALUES (%s, 'country', %s, %s, 1, 1, %s, %s)
+            """, (self.uid, "|".join(self.PAIR), now + timedelta(days=1),
+                  now, now))
+
+    def _connect(self):
+        """Return a cursor on a connection of its own, outside the test's
+        transaction."""
+        return odoo.sql_db.db_connect(self.dbname).cursor()
+
+    def _clean(self):
+        """Delete what the test committed."""
+        with self._connect() as cr:
+            cr.execute(
+                "DELETE FROM cloud_session_closure WHERE session_identifier = %s",
+                (self.IDENTIFIER,),
+            )
+            cr.execute(
+                "DELETE FROM cloud_session_hold WHERE user_id = %s AND pair = %s",
+                (self.uid, "|".join(self.PAIR)),
+            )
+
+    def _guard(self, cr):
+        """Return the guard on *cr*, as superuser."""
+        return api.Environment(cr, SUPERUSER_ID, {})["cloud.session.guard"]
+
+    def _waiting_for_the_lock(self):
+        """Return whether a connection waits for the user's lock."""
+        with self._connect() as cr:
+            cr.execute("""
+                SELECT count(*) FROM pg_locks
+                 WHERE locktype = 'advisory' AND NOT granted
+                   AND classid = %s AND objid = %s
+            """, (LOCK_CLASS, self.uid))
+            return bool(cr.fetchone()[0])
+
+    def _second_request_after_the_first(self):
+        """Hold the user's lock with the first request's writes, start
+        the second, commit the first once the second waits for the lock.
+
+        :return: what the second request came to (``'held'``,
+            ``'closed'`` or the exception), and how many cursors it took
+        :rtype: tuple
+        """
+        outcome = []
+        cursors = []
+
+        def new_cursor(guard):
+            """A cursor on a connection of its own, as in production."""
+            cursors.append(self._connect())
+            return cursors[-1]
+
+        session = odoo.http.Session({"uid": self.uid}, self.IDENTIFIER * 2)
+        request = MagicMock(spec=odoo.http.Request)
+        request.session = session
+        base = self._connect()
+
+        def second():
+            """The second request of the page."""
+            try:
+                self._guard(base)._session_guard_act(
+                    request, "country", "close", *self.PAIR,
+                )
+                outcome.append("held")
+            except odoo.http.SessionExpiredException:
+                outcome.append("closed")
+            except Exception as error:  # noqa: BLE001 - reported below
+                outcome.append(error)
+
+        first = self._connect()
+        try:
+            guard = self._guard(first)
+            self.assertEqual(guard._session_guard_hold(
+                self.uid, self.IDENTIFIER, "country", *self.PAIR,
+            ), "held")
+            guard._session_guard_write(
+                self.uid, self.IDENTIFIER, "country", "held", *self.PAIR,
+            )
+            Guard = type(self.env["cloud.session.guard"])
+            with patch.object(Guard, "_session_guard_new_cursor",
+                              autospec=True, side_effect=new_cursor), \
+                    patch.object(Guard, "_session_guard_destroy", autospec=True):
+                thread = threading.Thread(target=second)
+                thread.start()
+                deadline = time.monotonic() + 2
+                while (not self._waiting_for_the_lock()
+                       and time.monotonic() < deadline):
+                    time.sleep(0.02)
+                first.commit()
+                thread.join(30)
+        finally:
+            first.close()
+            base.close()
+        return outcome, len(cursors)
+
+    def test_a_held_user_s_parallel_request_is_held_too(self):
+        outcome, cursors = self._second_request_after_the_first()
+        self.assertEqual(outcome, ["held"])
+        self.assertEqual(cursors, 2)
+        with self._connect() as cr:
+            cr.execute(
+                "SELECT action, hits FROM cloud_session_closure "
+                "WHERE session_identifier = %s", (self.IDENTIFIER,),
+            )
+            self.assertEqual(cr.fetchall(), [("held", 2)])
+
+    def test_on_one_cursor_the_collision_would_close(self):
+        """What the second cursor is for: the same collision, tried once,
+        closes the held user, who is who the anti-loop exists for."""
+        with patch.object(guard_module, "WRITE_ATTEMPTS", 1), \
+                self.assertLogs(
+                    "odoo.addons.incubacloud.models.cloud_session_guard",
+                    "ERROR",
+                ) as logged:
+            outcome, cursors = self._second_request_after_the_first()
+        self.assertEqual(outcome, ["closed"])
+        self.assertEqual(cursors, 1)
+        self.assertIsInstance(
+            logged.records[0].exc_info[1], pg_errors.SerializationFailure,
+        )
 
 
 class TestTheModuleNamesNoOdoo19Constant(BaseCase):
