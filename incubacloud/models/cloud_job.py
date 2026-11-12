@@ -4155,7 +4155,9 @@ class CloudJob(models.Model):
         line in the job log.
 
         A row that held the job's queue (``holds_queue_since``) serves the
-        queue once it is gone, as the end of a job does.
+        queue once it is gone, as the end of a job does, or once the close
+        let go of the queue and kept the row for a directory left behind
+        (``_queue_hold_released``).
 
         :param executor: the job's executor, with the row adopted
         :param row: the job's ``cloud.job.checkpoint``
@@ -4163,12 +4165,13 @@ class CloudJob(models.Model):
         # As the database has it now: this pass may have set it
         # (``_hold_queue``, on a cursor of its own) after the row was read.
         row.invalidate_recordset(["holds_queue_since"])
-        held = bool(row.holds_queue_since)
+        released = executor._queue_hold_released
+        held = bool(row.holds_queue_since) or released
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
         else:
             self._give_up_if_past_cap(executor, row)
-        if held and not executor._checkpoint:
+        if held and (released or not executor._checkpoint):
             job = executor.job.sudo()
             job._schedule_dispatch({job._scope_of()})
 

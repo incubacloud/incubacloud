@@ -352,6 +352,13 @@ DETACHED_POLL_S = 1
 #: followed by another at once.
 DETACHED_READ_MAX_BYTES = 1024 * 1024
 
+#: How long a close reads on a step apart's log to reach its end, in
+#: seconds (12-nov-2026): ``read`` says ``running`` while bytes remain, so
+#: a step that ended with a long log unread would count as running for
+#: another pass. The reads, up to ``DETACHED_READ_MAX_BYTES`` each,
+#: follow one another; the cap keeps a close from hanging on a huge log.
+DETACHED_READ_TO_END_S = 30
+
 #: What a step apart keeps of its stdout for its result, in bytes
 #: (10-nov-2026): a ``parse_results`` that reads a long step's stdout sees
 #: its last 256 KiB.
@@ -842,6 +849,10 @@ class AbstractExecutor(ABC):
     # server that answered (``_close_on_server``): the reconciliation looks
     # at it again at its next pass, not ten minutes later.
     _left_running = False
+    # The close found the step it had left past the point of no return
+    # ended, or stopped it, and let go of the queue it held
+    # (``_release_queue_hold``): the queue is served though the row stays.
+    _queue_hold_released = False
 
     #: Attributes of the executor its closing hooks read and that are set
     #: before its steps: kept in the checkpoint, and set again on an attempt
@@ -2516,9 +2527,13 @@ class AbstractExecutor(ABC):
                         await self._record_ended_apart(
                             transport, directory, index, exit_status, timedout,
                         )
-                    await self._stop_detached(
+                    stopped = await self._stop_detached(
                         transport, directory, wait_s=wait_s, index=index,
                     )
+                    if past and (settled or stopped):
+                        # Nothing of it runs: a directory left behind
+                        # keeps the row, not the queue.
+                        self._release_queue_hold()
                     settled = True
                 await self._clean_ended_steps(transport, index)
                 if self._detached_left_alive:
@@ -2550,18 +2565,19 @@ class AbstractExecutor(ABC):
         """Read the step apart in *directory* up to the end of its log.
 
         Its lines go to the job log; a log longer than one read is read
-        on, at most eight times: the state says ``done`` or ``lost`` only
-        once the bytes reach the end.
+        on for up to ``DETACHED_READ_TO_END_S``: the state says ``done``
+        or ``lost`` only once the bytes reach the end.
 
         :param transport: an open transport to the step's server
         :param str directory: :func:`detached_dir`
         :return: ``(state, exit_status, timedout)`` as the last read said
         """
-        for _read in range(8):
+        deadline = time.monotonic() + DETACHED_READ_TO_END_S
+        while True:
             state, exit_status, timedout, more = await self._read_detached(
                 transport, directory,
             )
-            if state != "running" or not more:
+            if state != "running" or not more or time.monotonic() >= deadline:
                 break
         return state, exit_status, timedout
 
@@ -2634,6 +2650,32 @@ class AbstractExecutor(ABC):
                 "[job %s] could not mark its checkpoint as holding its queue:"
                 " %s", self.job.id, exc,
             )
+
+    def _release_queue_hold(self):
+        """Let go of the queue the job's checkpoint held, keeping the row.
+
+        For a step past the point of no return found ended, or stopped,
+        by a close that keeps the row for something else (a directory
+        that could not be removed): the queue no longer waits for a step
+        that does not run. Sets ``_queue_hold_released`` when a mark was
+        there, so the reconciliation serves the queue. Never raises.
+        """
+        try:
+            with self._durable_env() as env:
+                env.cr.execute(
+                    "UPDATE cloud_job_checkpoint SET holds_queue_since = NULL"
+                    " WHERE job_id = %s AND holds_queue_since IS NOT NULL",
+                    (self.job.id,),
+                )
+                released = bool(env.cr.rowcount)
+        except Exception as exc:  # noqa: BLE001 — it expires by itself
+            logging.getLogger("AbstractExecutor").warning(
+                "[job %s] could not let go of the queue its checkpoint held:"
+                " %s", self.job.id, exc,
+            )
+            return
+        if released:
+            self._queue_hold_released = True
 
     @contextlib.asynccontextmanager
     async def _transport_to_close(self, transport):
@@ -3157,6 +3199,8 @@ class AbstractExecutor(ABC):
         :param str directory: :func:`detached_dir`
         :param int wait_s: how long its trap gets after TERM
         :param int index: position of the step in the plan
+        :return: whether ``stop`` said nothing of the step runs any more
+        :rtype: bool
         """
         self._detached_running = None
         self._on_server_index = None
@@ -3189,6 +3233,7 @@ class AbstractExecutor(ABC):
             )
             if not isinstance(exc, Exception):
                 raise
+        return stopped
 
     def _hold_queue_if_past(self, index):
         """Keep the job's queue busy if step *index* is past the point of no return.
