@@ -147,10 +147,14 @@ is unchanged.
   attempt. The next attempt goes on from there with the plan, the
   working directory and the results of the first: no step runs twice, no
   line of the log is lost or repeated. A worker that dies is taken up the
-  same way. A server that cannot be reached while the step runs there
-  makes the job wait 30 s and try again, for up to 10 minutes; past them
-  the job fails and the step is left for later. The same holds between
-  two steps, for an attempt that comes back and cannot connect. A step's
+  same way, except that the step it ran within the request, if any, runs
+  again; a step apart goes on on the server and is not run again.
+  `INSTALL.md` says so for a job running during an upgrade, where it said
+  the job ran again from the start. A server that cannot be reached while
+  the step runs there makes the job wait 30 s and try again, for up to 10
+  minutes; past them the job fails and the step is left for later. The
+  same holds between two steps, for an attempt that comes back and cannot
+  connect. A step's
   directory goes only once its result is recorded, so an attempt that
   dies in between finds the step's end there. The cloud job stays
   running all along.
