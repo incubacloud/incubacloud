@@ -3955,6 +3955,11 @@ msgid "Delivery Key"
 msgstr "Clave de entrega"
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_res_device_log
+msgid "Device Log"
+msgstr "Registro del dispositivo"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__edge_guard_shipped_hash
 msgid ""
 "Digest of the edge guard (ic_guard.yml) last written to this host's proxy "
@@ -5838,6 +5843,11 @@ msgid "Full host setup: checks OS/disk, installs all tools, deploys Traefik."
 msgstr ""
 "Configuración completa del host: comprueba el sistema operativo y el disco, "
 "instala todas las herramientas y despliega Traefik."
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_ir_http
+msgid "HTTP Routing"
+msgstr "Enrutamiento HTTP"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_repo

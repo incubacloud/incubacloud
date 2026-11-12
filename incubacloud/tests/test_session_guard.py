@@ -110,6 +110,16 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         self.ICP = self.env["ir.config_parameter"].sudo()
         self.Closure = self.env["cloud.session.closure"].sudo()
         self.Hold = self.env["cloud.session.hold"].sudo()
+        # Core's own switches and idle limit, whatever layer is installed
+        # beside it: the platform's layers switch every signal on and
+        # lower the limit, and the suites that install them run these
+        # tests too.
+        Guard = type(self.env["cloud.session.guard"])
+        for name in ("_session_guard_default_mode",
+                     "_session_guard_inactivity_limit"):
+            self.startPatcher(patch.object(
+                Guard, name, getattr(guard_module.CloudSessionGuard, name),
+            ))
 
     # -- helpers ---------------------------------------------------------
 
