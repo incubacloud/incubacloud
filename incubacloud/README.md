@@ -201,7 +201,8 @@ This gives you up to 3 concurrent SSH jobs, with **hard isolation** between
 user-initiated work (capacity 2) and background jobs (capacity 1). Within
 ``root.user``, production jobs jump ahead of staging by priority. Each running
 job holds a worker for its whole run, so ``workers`` stays above ``root``'s
-capacity, and ``limit_time_real`` lets a job's commands run their hour. Why
+capacity, and ``limit_time_real`` (at least 900) gives what runs within a
+job's request room, its long steps running on the server apart from it. Why
 each value, the rest of the configuration and a dedicated job runner: the
 repository's ``INSTALL.md``.
 

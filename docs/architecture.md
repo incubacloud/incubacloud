@@ -290,9 +290,43 @@ and runs on its server apart from the request; the job follows it, leaves
 it there when its attempt's time is up, and comes back for it in a later
 attempt. An executor with no step marked runs as before: no checkpoint, no
 park, a dead worker repeats it from the start. Steps are marked one by one,
-each with its own review and QA. Marked so far: «Rebuild Odoo image» of
-`rebuild_instance` and of every rebuild that inherits it (1.0.225,
-11-nov-2026), before the rebuild's point of no return.
+each with its own review and QA.
+
+- **What is marked** (1.0.225, 11/12-nov-2026). A step that, with a large
+  database or a slow server, may last more than 0.4 × `limit_time_real`
+  (360 s with 900): what a step run in the request may start with once the
+  attempt's budget is nearly spent. Not what lasts seconds by nature (a
+  `mv`, an `up -d` of a built image, a short query): each step apart costs
+  a `start`, a `read` a second, a `result`, a `clean` and two writes of the
+  checkpoint. A job of a single step starts with the whole request and may
+  pass 360 s unmarked (a move's cutover). Marked: the rebuild's «Fetch the
+  repositories», «Rebuild Odoo image», «Test new image (safe boot check)»
+  and «Update changed modules», in every rebuild that inherits it (a plan
+  change skips them); the deploy's «Fetch the repositories», «Pull images»
+  (900 s), «Build Odoo image», «Initialize database» and «Initialize module
+  checksums», in every deploy that inherits it; the restore's «Download the
+  archive», «Verify backup file», «Restore database», the update of its
+  modules and «Ensure incubacloud_connect»; the restore from the backup
+  store's duplicity restore, «Import SQL» and update; the dumps, restores
+  and packaging of `backup_create`, `backup_download` and
+  `backup_download_neutralized`; Full Setup's «Install host tools»; and,
+  with `incubacloud_pitr`, «Base copy», «First base copy» and «Wait for the
+  restore». A test (`test_detached_step`) names the executors that mark
+  steps, so a new one is a decision.
+- **What still runs in the request.** Everything that is not a step on the
+  server: an executor's hooks, and in them the relays through the panel by
+  SFTP — a restore's upload, the archive of another job, and an archive
+  handed from one server to another, which go through the panel's disk in
+  `before_execute`; the fetch of a copy or a download into the panel in
+  `after_commands`; the export — and the playbooks, which Ansible runs from
+  the panel. They have what is left of the request: a relay before the
+  steps starts with all of it, and a fetch into the panel is left to a
+  fresh attempt when the steps ran long (`_outcome_needs_room`: an attempt
+  that ran `OUTCOME_ROOM_MIN_ELAPSED_S` and has less than
+  `OUTCOME_ROOM_FACTOR` of the limit left parks at the hooks, only with a
+  plan that has a step marked). A fetch is also read whole into memory,
+  which on Odoo.sh may cut a large copy before the time does. The
+  playbooks measured in production ended within two and a half minutes.
 
 - **The step on the server** (`scripts/detached_step.sh`, its contract in
   its header). `start` runs the command in a session of its own
@@ -303,7 +337,11 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
   without an exit status) or `none`; `result` the tail of stdout; `stop`
   TERM to the session, a wait, KILL; `clean` removes the directory once
   nothing lives. One live step per instance, or per host (exit 73: the job
-  waits 30 s). A server whose logind kills an account's processes at
+  waits 30 s). A hidden job holds a scope of its own, per type
+  (`instance:<id>:<type>`, `_detached_scope`): PITR's daily base copy runs
+  beside a rebuild's step and neither waits for the other; switching PITR
+  on takes its first base copy in the daily copy's scope, so two copies of
+  an instance never run at once. A server whose logind kills an account's processes at
   logout (exit 78), or that lacks `flock`, `setsid`, `timeout`, `pgrep` or
   `pkill` (exit 79), runs the step attached, and that job never parks.
 - **The checkpoint** (`cloud.job.checkpoint`, one row per job, no access
@@ -349,6 +387,28 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
   (20 s for the trap) before its hook, retries a server it cannot reach at
   every pass, and gives up an hour past the step's cap. A step past the
   point of no return is never stopped.
+- **A step left past the point of no return holds its queue.** A job
+  closed while such a step still runs, or while its server could not be
+  asked (the reconciliation's close, a stop that failed), marks its row
+  (`holds_queue_since`): the queue of its instance, or of its host, waits
+  for it as for a running job (`cloud.job._server_holder`, in
+  `_scope_busy`), and the job first in it reads «Queued · waiting for job
+  #N to end on the server». The point of no return is the plan's when the
+  step ran (`no_return_from` in the row). The reconciliation looks at that
+  step at every pass (every 5 minutes), says in the closed job's
+  log the exit status it ended with, deletes the row and serves the queue.
+  Only a row on the server the instance lives on holds: an instance
+  recovered on another server no longer waits for the one that died, and
+  a move's restore, with no point of no return, never holds, so its
+  rollback starts at once. A step before that point is stopped instead,
+  and what it left unheld is covered by `start`'s 73 for the next job's
+  steps apart and by the reconciliation, which stops it once it reaches
+  the server. With the server dead and the instance still on it the hold
+  ends by itself `DETACHED_HOLDS_QUEUE_MAX_S` after the mark (2 h 10 min);
+  to release it sooner, delete the job's row in `cloud_job_checkpoint`
+  (SQL, as the platform): the next pass of the sweep serves the queue.
+  There is no button for it on purpose: it skips what the point of no
+  return protects.
 - **The host's build lock outlives a park.** `HostBuildLockMixin` takes a
   transactional lock, which a park lets go: the checkpoint names the host
   from its first write, and any other build or teardown of the host that
@@ -390,7 +450,7 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
 |---|---|---|
 | `ATTEMPT_BUDGET_FACTOR` | 0.6 | 540 s with 900: leaves 360 s to the longest step run in the request and to the closing hooks |
 | `ATTACHED_STEP_FACTOR` | 0.4 | Budget plus a step started just before it ends fit in the limit |
-| `MIN_LIMIT_TIME_REAL` | 3600 | Only the startup warning reads it. Only the rebuild's image build runs apart so far: a deploy's database initialisation or a long restore may outlast Odoo.sh's 900 s in the request. Down to 900 once every long step runs apart |
+| `MIN_LIMIT_TIME_REAL` | 900 | Only the startup warning reads it. Odoo.sh's limit: every step that may pass 360 s runs apart (12-nov-2026); it was 3600 while only the rebuild's image build did |
 | `PARK_GAP_SECONDS` | 5 | queue_job's postpone; lets the request that parked end first |
 | `DETACHED_POLL_S` | 1 | One `read` a second on the open connection; the log's latency is about today's |
 | `DETACHED_STDOUT_TAIL` | 256 KiB | Tail of a step's stdout kept as its result, in the checkpoint too |
@@ -400,6 +460,8 @@ each with its own review and QA. Marked so far: «Rebuild Odoo image» of
 | `PARKED_OVERDUE_S` | 600 | Two of Odoo.sh's sweeps; then the job says it waits for a slot |
 | `CHANNEL_PROBE_PATIENCE_S` | 120 | One pass of the sweep: with `root:1`, a person's job does not wait for every batch of probes |
 | Step cap on the server | the step's `timeout`, else 3600 s | As in the request; the panel stops a step still running 120 s past it |
+| `DETACHED_HOLDS_QUEUE_MAX_S` | 7800 (2 h 10 min) | The longest a row holds its queue: a step's default cap, the reconciliation's hour after it and ten minutes of its passes (12-nov-2026) |
+| `OUTCOME_ROOM_FACTOR`, `OUTCOME_ROOM_MIN_ELAPSED_S` | 0.85, 60 | A fetch into the panel starts with at least 85% of the request: making an archive and fetching it grow together (12-nov-2026) |
 
 ### Implementing a new executor
 

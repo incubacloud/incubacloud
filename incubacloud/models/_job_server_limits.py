@@ -22,9 +22,10 @@ A step marked ``detached`` runs on its server apart from the request
 its request before the limit: it runs for ``attempt_budget_seconds``, a
 share of ``limit_time_real``, and the job goes on in a later attempt. The
 limit then needs to fit the steps that still run inside the request, not
-a whole build. Only the rebuild's image build runs apart so far, so the
-warning still asks for ``MIN_LIMIT_TIME_REAL``, an hour, and not for
-Odoo.sh's 900 s.
+a whole build. Every long step of a job runs apart since phase 3
+(1.0.225), so the warning asks for ``MIN_LIMIT_TIME_REAL``, Odoo.sh's
+900 s. What still runs inside the request, and so has what is left of it,
+is in ``docs/architecture.md`` («Steps run apart on the server»).
 """
 import logging
 import os
@@ -41,14 +42,22 @@ ODOO_DEFAULT_MEMORY_HARD = 2560 * 1024 * 1024
 JOB_LIMITS_ALERT_CODE = "job_server_limits_too_low"
 
 #: The lowest ``limit_time_real`` the startup warning accepts, in seconds
-#: (11-nov-2026): an hour. Only the rebuild's image build runs apart from
-#: the request so far; a deploy's database initialisation or a long
-#: restore still runs in it and may outlast Odoo.sh's 900 s and die. It
-#: goes down to 900 once every long step runs apart. Below the limit a
+#: (12-nov-2026, phase 3): Odoo.sh's 900. Every step that may outlast
+#: ``ATTACHED_STEP_FACTOR`` of it (360 s) runs apart: the downloads of the
+#: repositories, the image's pull and build, a new database's
+#: initialization, the boot test, the module updates, the restores' loads,
+#: the copies and their packaging, Full Setup's tools and PITR's base
+#: copies and restore wait. Those left in the request that production
+#: ran stayed below it (11-oct to 10-nov-2026). Below the limit a
 #: step that is not run apart, which may start when the attempt's budget
 #: is nearly spent, has too little time left to end. Only the warning
 #: reads it: the budget and a step's share follow the server's limit.
-MIN_LIMIT_TIME_REAL = 3600
+#: What is not a step on the server, and so runs within the request
+#: whatever the limit, is said in ``INSTALL.md``: the relays through the
+#: panel by SFTP and the playbooks; a higher limit leaves them more room.
+#: It was an hour (11-nov-2026) while only the rebuild's image build ran
+#: apart.
+MIN_LIMIT_TIME_REAL = 900
 
 #: The share of ``limit_time_real`` an attempt of a job runs for before it
 #: leaves its step to run on the server and the job goes on in a later
@@ -58,9 +67,9 @@ ATTEMPT_BUDGET_FACTOR = 0.6
 
 #: The share of ``limit_time_real`` a step that is not run apart must stay
 #: under (10-nov-2026): it may start just before the budget is spent, and
-#: budget plus step must fit in the limit. 360 s with 900; today «Initialize
-#: database» and the image build pass it, which is why they are to be run
-#: apart.
+#: budget plus step must fit in the limit. 360 s with 900; «Initialize
+#: database» and the image build passed it, which is why they run apart
+#: (phase 3, 12-nov-2026), as does every step that may.
 ATTACHED_STEP_FACTOR = 0.4
 
 #: The odoo.conf option, in the ``[incubacloud]`` section, that sets the
