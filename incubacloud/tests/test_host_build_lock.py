@@ -382,7 +382,7 @@ class TestTheLockOutlivesAPark(_HostLockBase):
         row.write({'detached_started': True})
         self.env.flush_all()
         with self.assertRaises(RetryableJobError):
-            self._other_build().pre_run_checks()
+            other.pre_run_checks()
 
     def test_the_deferral_names_the_job_that_holds_the_host(self):
         """The log of the build that waits says which job it waits for."""

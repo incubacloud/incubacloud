@@ -171,7 +171,10 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         """Read ended, its directory kept (75): the row stays, the queue goes on."""
         done = os.path.join(self.marks, "ended")
         cls = self._lost(
-            apart=f"echo Apart >> {self.runs}; sleep 6; touch {done}; exit 0",
+            apart=(
+                f"echo Apart >> {self.runs}; echo line-1; sleep 6;"
+                f" touch {done}; exit 0"
+            ),
             _no_return_from="Apart",
         )
         self._reconcile(cls)
@@ -502,7 +505,7 @@ class TestTheCloseSeesHowTheStepEnded(_HoldCase):
         size = 8 * abstract_executor.DETACHED_READ_MAX_BYTES + 512 * 1024
         cls = self._lost(
             apart=(
-                f"echo Apart >> {self.runs}; sleep 2;"
+                f"echo Apart >> {self.runs}; echo line-1; sleep 3;"
                 f" head -c {size} /dev/zero | tr '\\0' a | fold -w 4000; exit 0"
             ),
             _no_return_from="Apart",
