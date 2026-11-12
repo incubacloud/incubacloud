@@ -48,21 +48,19 @@ def _dashboard_files():
 
 class TestDashboardsMatchTheSpa(BaseCase):
 
-    def test_every_shipped_dashboard_is_offered_in_the_panel(self):
-        """uid + filename must line up with the SPA's tab list."""
-        declared = dict(re.findall(
-            r'uid:\s*"([^"]+)",\s*slug:\s*"([^"]+)"',
-            _MONITORING_JS.read_text(),
-        ))
-        shipped = {
-            json.loads(path.read_text())["uid"]: path.stem
-            for path in _dashboard_files()
-        }
-        self.assertEqual(
-            shipped, declared,
-            "the dashboards on disk and the tabs in the SPA disagree; a "
-            "wrong uid renders an empty Grafana frame with no error",
-        )
+    def test_monitoring_embeds_no_dashboard_of_another_tool(self):
+        """Monitoring draws its own boards since 12-nov-2026.
+
+        The dashboards on disk stay on the central until Grafana is
+        retired; the panel no longer frames them, so nothing ties their
+        uids to the SPA any more.
+        """
+        js = _MONITORING_JS.read_text()
+        xml = _MONITORING_JS.with_suffix(".xml").read_text()
+        self.assertNotIn("<iframe", xml)
+        self.assertNotIn("grafana", js.lower())
+        self.assertIn("FleetBoard", js)
+        self.assertIn("HostBoard", js)
 
     def test_traefik_panels_are_backed_by_relabelling_rules(self):
         """A Traefik panel may filter by instance — but only because we
@@ -974,42 +972,45 @@ class TestObservabilityCapabilities(TransactionCase):
 
     def test_off_collects_nothing_and_shows_nothing(self):
         self.settings.write({
-            "metrics_enabled": False, "grafana_base_url": "",
+            "metrics_enabled": False, "metrics_central_url": "",
         })
         self.assertEqual(
             self._caps(),
             {"collect": False, "dashboards": False, "configure": True},
         )
 
-    def test_collecting_without_grafana_offers_no_dashboards(self):
-        """The state the fix is about: real data, nothing to embed.
+    def test_collecting_without_a_central_offers_no_dashboards(self):
+        """Real data on its way, nothing to read it from yet.
 
-        Perfectly valid — the panel still enrols hosts, evaluates rules
-        and reads metrics. What it must not do is offer dashboards.
+        Valid while the central is being deployed. What the panel must
+        not do is offer charts with nowhere to read them.
         """
         self.settings.write({
-            "metrics_enabled": True, "grafana_base_url": "",
+            "metrics_enabled": True, "metrics_central_url": "",
         })
         caps = self._caps()
         self.assertTrue(caps["collect"])
         self.assertFalse(
             caps["dashboards"],
-            "a panel with no Grafana URL reported dashboards, which is "
-            "how the Monitoring section became a dead end",
+            "a panel with no central reported dashboards, which is how "
+            "the Monitoring section became a dead end",
         )
 
-    def test_a_blank_grafana_url_is_not_a_grafana_url(self):
-        """Whitespace is what a paste into an empty field leaves behind,
-        and it builds an embed URL that loads the panel inside itself."""
+    def test_a_blank_central_url_is_not_a_central(self):
+        """Whitespace is what a paste into an empty field leaves behind."""
         self.settings.write({
-            "metrics_enabled": True, "grafana_base_url": "   ",
+            "metrics_enabled": True, "metrics_central_url": "   ",
         })
         self.assertFalse(self._caps()["dashboards"])
 
-    def test_fully_configured_offers_everything(self):
+    def test_a_central_is_all_the_charts_need(self):
+        """The panel draws its own charts: no Grafana URL is asked for
+        (12-nov-2026), so a tenant's panel, which never had one, shows
+        its own servers."""
         self.settings.write({
             "metrics_enabled": True,
-            "grafana_base_url": "https://grafana.example.com",
+            "metrics_central_url": "https://central.example.com/r",
+            "grafana_base_url": "",
         })
         self.assertEqual(
             self._caps(),
@@ -1017,11 +1018,11 @@ class TestObservabilityCapabilities(TransactionCase):
         )
 
     def test_dashboards_require_collection(self):
-        """A URL alone is not dashboards: with collection off there are
-        no series behind them, so the embed would render empty panels."""
+        """A central alone is not dashboards: with collection off no
+        agent sends series, so every chart would be empty."""
         self.settings.write({
             "metrics_enabled": False,
-            "grafana_base_url": "https://grafana.example.com",
+            "metrics_central_url": "https://central.example.com/r",
         })
         self.assertFalse(self._caps()["dashboards"])
 
@@ -1551,7 +1552,7 @@ class TestMonitoringExplainsAnEmptyFleet(BaseCase):
 
     _TEMPLATE = _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.xml"
 
-    def test_the_empty_fleet_is_explained_before_any_dashboard_is_embedded(self):
+    def test_the_empty_fleet_is_explained_before_any_board_is_drawn(self):
         page = ElementTree.parse(  # nosec B314 — our own template, shipped in this repo
             self._TEMPLATE,
         ).find(".//t[@t-name='incubacloud.Monitoring']/div")
@@ -1560,6 +1561,6 @@ class TestMonitoringExplainsAnEmptyFleet(BaseCase):
             if el.tag == "t" and ({"t-if", "t-elif", "t-else"} & set(el.attrib))
         ]
         empty = next(i for i, el in enumerate(branches) if el.get("t-elif") == "!hasHosts")
-        embed = next(i for i, el in enumerate(branches) if el.find(".//iframe") is not None)
-        self.assertLess(empty, embed)
+        board = next(i for i, el in enumerate(branches) if el.find(".//FleetBoard") is not None)
+        self.assertLess(empty, board)
         self.assertIn("No servers yet", ElementTree.tostring(branches[empty], encoding="unicode"))

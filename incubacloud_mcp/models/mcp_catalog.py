@@ -41,9 +41,9 @@ _GIT_HOOKS = (
 )
 
 _METRICS_BOARD = (
-    "The charts and the on-demand readings of an instance's Metrics tab, "
-    "drawn by the panel; no tool reads them yet, read_access_log reads its "
-    "requests."
+    "The charts and the on-demand readings of an instance's or a server's "
+    "Metrics tab and of Monitoring, drawn by the panel; no tool reads them "
+    "yet, read_access_log reads an instance's requests."
 )
 
 #: Core routes no tool calls, each with why.
@@ -93,6 +93,8 @@ CORE_EXCLUDED = {
         _EXCLUDED_FOR_THE_BROWSER.format(tool="read_logs")
     ),
     "/cloud/instance/resource_series": _METRICS_BOARD,
+    "/cloud/host/resource_series": _METRICS_BOARD,
+    "/cloud/fleet/resource_series": _METRICS_BOARD,
     "/cloud/instance/db_activity": _METRICS_BOARD,
     "/cloud/instance/slow_routes": _METRICS_BOARD,
     "/cloud/ping": _FORMS,

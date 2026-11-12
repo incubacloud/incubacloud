@@ -2,183 +2,118 @@
 
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { _t } from "@web/core/l10n/translation";
 
 import { SearchSelect } from "../search_select/search_select";
+import { FleetBoard } from "../metrics/fleet_board";
+import { HostBoard } from "../metrics/host_board";
 
 /**
- * Monitoring — the operator view of the metrics stack (Fase 4 / A10).
+ * Monitoring: the fleet and each server, drawn by the panel from the
+ * metrics central (no frame of another tool since 12-nov-2026).
  *
- * Grafana is embedded rather than reimplemented: rebuilding time-series
- * charts inside the SPA would be weeks of work to end up with something
- * worse than the tool the dashboards are already provisioned for.
+ * Two views. Fleet: every account's servers on the panel that deployed
+ * the central, the panel's own anywhere else (the server decides).
+ * Hosts: one server's board, the same one as its Metrics tab, picked
+ * among the hosts the caller can read.
  *
- * Auth: Grafana runs anonymous **behind the panel's proxy**, and access
- * is gated by the panel itself (this route only renders for users who can
- * manage hosts). A second Grafana session would duplicate the operator's
- * login for no isolation gain — per-account isolation is a different
- * problem (a deferred view for other panels) that needs query-level
- * filtering, not a login prompt.
- *
- * The component degrades honestly: when observability is off or the base
- * URL is unset it says so and points at Settings, instead of rendering a
- * broken iframe.
+ * The boards say themselves when observability is off, has no central
+ * or the central fails; this page only adds the case of a fleet with
+ * no server at all.
  */
 export class Monitoring extends Component {
     static template = "incubacloud.Monitoring";
-    static components = { SearchSelect };
+    static components = { SearchSelect, FleetBoard, HostBoard };
     static props = {};
 
-    // Dashboards provisioned by the central playbook. ``uid`` must match
-    // the JSON files shipped in ansible/files/dashboards/.
-    static DASHBOARDS = [
-        { uid: "ic-fleet", slug: "incubacloud-fleet", label: "Fleet" },
-        { uid: "ic-host", slug: "incubacloud-host", label: "Hosts" },
-        { uid: "ic-instance", slug: "incubacloud-instance", label: "Instances" },
-    ];
-
     setup() {
+        this.views = [
+            { key: "fleet", label: _t("Fleet") },
+            { key: "hosts", label: _t("Hosts") },
+        ];
         this.state = useState({
             loading: true,
             error: "",
-            enabled: false,
-            baseUrl: "",
-            current: Monitoring.DASHBOARDS[0].uid,
+            view: "fleet",
             hosts: [],
-            instances: [],
-            // Which host/instance the embed is pinned to. Empty means
-            // "let Grafana pick", which is what used to happen always.
+            // The host the Hosts view shows, as a string id ("" for none).
             host: "",
-            instance: "",
         });
         onWillStart(() => this.loadConfig());
-    }
-
-    get dashboards() {
-        return Monitoring.DASHBOARDS;
     }
 
     /**
      * True when this panel's own operator edits the observability
      * settings, so pointing them at Settings is actionable advice.
      *
-     * Read from the boot config rather than from the route below on
-     * purpose: ``enabled`` and the base URL are settings that change
-     * while the app is open, so those are re-fetched, whereas who owns
-     * them is a property of the deployment and cannot change under a
-     * running session.
+     * Read from the boot config: who owns the settings is a property of
+     * the deployment and cannot change under a running session.
      */
     get canConfigure() {
         return this.env.features?.observability?.configure !== false;
     }
 
-    /**
-     * True when the fleet has at least one server that can report.
-     *
-     * Without one every dashboard reads "No data": the page explains
-     * why instead of embedding empty charts.
-     */
+    /** True when the fleet has at least one server that can report. */
     get hasHosts() {
         return this.state.hosts.length > 0;
     }
 
+    /** Options for the host picker: the name shown, the id sent. */
     get hostOptions() {
-        return this.state.hosts.map((h) => h.name);
+        return this.state.hosts.map((h) => ({ value: String(h.id), label: h.name }));
     }
 
-    /** Options for the instance picker: the label shown, the name sent. */
-    get instanceOptions() {
-        return this.state.instances.map((i) => ({ value: i.name, label: i.label }));
+    /** The id of the host the Hosts view shows, or 0. */
+    get hostId() {
+        return Number(this.state.host) || 0;
     }
 
-    /** True while a tab that needs a subject is showing. */
-    get needsHost() {
-        return this.state.current === "ic-host";
-    }
-
-    get needsInstance() {
-        return this.state.current === "ic-instance";
-    }
-
-    /** Fetch whether monitoring is configured and where Grafana lives. */
+    /** Fetch the hosts the caller can read. */
     async loadConfig() {
         this.state.loading = true;
         this.state.error = "";
         try {
             const cfg = await rpc("/cloud/monitoring/config", {});
-            this.state.enabled = !!cfg.enabled;
-            this.state.baseUrl = cfg.grafana_base_url || "";
             this.state.hosts = cfg.hosts || [];
-            this.state.instances = cfg.instances || [];
-            // Pin the first of each rather than leaving it blank: a blank
-            // subject is exactly the silent default this fixes.
-            this.state.host = this.state.hosts[0]?.name || "";
-            // A stopped instance charts nothing, so open on one that runs.
-            const first = this.state.instances.find((i) => i.running)
-                || this.state.instances[0];
-            this.state.instance = first?.name || "";
+            // Pin the first one: a blank subject would show nothing.
+            this.state.host = this.state.hosts[0] ? String(this.state.hosts[0].id) : "";
         } catch (err) {
             const msg = err?.data?.message ?? err?.message;
             this.state.error = (typeof msg === "string" && msg)
                 ? msg
-                : "Could not load the monitoring configuration.";
+                : _t("Could not load the monitoring configuration.");
         } finally {
             this.state.loading = false;
         }
     }
 
-    /** The host an instance runs on, so the embed can scope to it. */
-    hostOfInstance(name) {
-        return this.state.instances.find((i) => i.name === name)?.host || "";
+    /**
+     * Switch between the fleet and one server.
+     *
+     * @param {string} key ``fleet`` or ``hosts``
+     */
+    select(key) {
+        this.state.view = key;
     }
 
     /**
-     * Build the embed URL for a dashboard.
+     * Show a server in the Hosts view.
      *
-     * ``kiosk`` strips Grafana's own chrome so the panel supplies the
-     * navigation, and the theme follows the SPA's so the embed does not
-     * flash a light panel inside a dark app.
-     *
-     * The subject is passed explicitly. ``kiosk`` also hides the row where
-     * Grafana would show its own variable pickers, so a dashboard left on
-     * its default rendered one arbitrary host with nothing naming it.
+     * @param {string} value the host's id, as the picker gives it
      */
-    embedUrl(uid) {
-        if (!this.state.baseUrl) return "";
-        const dash = Monitoring.DASHBOARDS.find((d) => d.uid === uid);
-        if (!dash) return "";
-        const theme =
-            document.documentElement.dataset.icTheme === "light"
-                ? "light"
-                : "dark";
-        const base = this.state.baseUrl.replace(/\/+$/, "");
-        let url = `${base}/d/${dash.uid}/${dash.slug}?kiosk&theme=${theme}`;
-        if (uid === "ic-host" && this.state.host) {
-            url += `&var-host=${encodeURIComponent(this.state.host)}`;
-        } else if (uid === "ic-instance" && this.state.instance) {
-            // Both: container names repeat across hosts, so an instance
-            // alone can add up series belonging to two different ones.
-            const host = this.hostOfInstance(this.state.instance);
-            if (host) {
-                url += `&var-host=${encodeURIComponent(host)}`;
-            }
-            url += `&var-instance=${encodeURIComponent(this.state.instance)}`;
+    setHost(value) {
+        this.state.host = value || "";
+    }
+
+    /**
+     * Open a server of the fleet in the Hosts view.
+     *
+     * @param {number} hostId
+     */
+    openHost(hostId) {
+        if (this.state.hosts.some((h) => h.id === hostId)) {
+            this.state.host = String(hostId);
+            this.state.view = "hosts";
         }
-        return url;
-    }
-
-    get currentUrl() {
-        return this.embedUrl(this.state.current);
-    }
-
-    select(uid) {
-        this.state.current = uid;
-    }
-
-    setHost(name) {
-        this.state.host = name || "";
-    }
-
-    setInstance(name) {
-        this.state.instance = name || "";
     }
 }

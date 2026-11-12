@@ -99,6 +99,17 @@ export function formatRate(value) {
 }
 
 /**
+ * Bytes per second, in binary units: a disk's or a network link's
+ * throughput.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
+export function formatByteRate(value) {
+  return _t("%s/s", formatBytes(value));
+}
+
+/**
  * A duration, the way a person reads an age: "45 s", "6 min 12 s",
  * "2 h 5 min".
  *
@@ -121,7 +132,7 @@ export function formatDuration(seconds) {
 
 /**
  * A value in the unit a panel declares (``percent``, ``bytes``,
- * ``seconds``, ``rps``); a plain number otherwise.
+ * ``bytes_rate``, ``seconds``, ``rps``); a plain number otherwise.
  *
  * @param {string|null} unit
  * @param {number} value
@@ -133,6 +144,8 @@ export function formatValue(unit, value) {
       return formatPercent(value);
     case "bytes":
       return formatBytes(value);
+    case "bytes_rate":
+      return formatByteRate(value);
     case "seconds":
       return formatSeconds(value);
     case "rps":

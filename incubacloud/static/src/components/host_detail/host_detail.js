@@ -18,6 +18,10 @@ import { useFormValidation } from "../../utils/use_form_validation";
 import { required, hostname, portRange, when } from "../../utils/validators";
 import { confirmVia } from "../../utils/use_confirm";
 import { HostHardeningModal } from "../host_hardening_modal/host_hardening_modal";
+import { HostBoard } from "../metrics/host_board";
+
+/** Tabs a link may open the page on (``?tab=``). */
+const LINKABLE_TABS = new Set(["overview", "metrics"]);
 
 const TRAEFIK_FILES = [
     { key: "traefik_config_yml",        label: "config.yml" },
@@ -66,11 +70,14 @@ const EMPTY_FORM = () => ({
 });
 
 export class HostDetail extends Component {
-    static props = { host_id: { type: Number, optional: true } };
+    static props = {
+        host_id: { type: Number, optional: true },
+        tab: { type: String, optional: true },
+    };
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal, IcMenu,
+        HostHardeningModal, IcMenu, HostBoard,
     };
 
     /** Rows per page for the server-paginated audit log. */
@@ -85,7 +92,7 @@ export class HostDetail extends Component {
         this.isNew = !this.props.host_id;
 
         this.state = useState({
-            tab: this.isNew ? "general" : "overview",
+            tab: this.isNew ? "general" : (LINKABLE_TABS.has(this.props.tab) ? this.props.tab : "overview"),
             // The job whose "Action required" says why, opened by a click.
             holdOpen: null,
             // Derived server-side and read-only: the ranges the host is
@@ -408,6 +415,24 @@ export class HostDetail extends Component {
     }
 
     // ── Tabs ─────────────────────────────────────────────────────────────
+
+    /**
+     * Whether this person sees the server's Metrics tab: whoever may
+     * read metrics, on a saved host.
+     */
+    get canViewMetrics() {
+        return !this.isNew && !!this.env.permissions?.can_view_metrics;
+    }
+
+    /**
+     * True when this panel's own operator edits the observability
+     * settings, so the board's stubs may point at Settings.
+     *
+     * @see Monitoring#canConfigure — same axis, same reason.
+     */
+    get canConfigureObservability() {
+        return this.env.features?.observability?.configure !== false;
+    }
 
     setTab(tab) {
         this.state.tab = tab;

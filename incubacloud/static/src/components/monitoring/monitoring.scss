@@ -1,29 +1,17 @@
-// The embed needs an explicit height: an iframe has no intrinsic size,
-// so without this it collapses to a few pixels and looks broken.
-.ic-monitoring-frame {
-  padding: 0;
-  overflow: hidden;
-
-  iframe {
-    display: block;
-    inline-size: 100%;
-    // Interpolated so Sass emits the CSS function verbatim instead of
-    // trying to evaluate it: it cannot compare vh with px at compile
-    // time and fails the whole bundle with "Incompatible units".
-    block-size: #{"min(72vh, 900px)"};
-    border: 0;
-  }
+// The view under Monitoring's tabs: the fleet's board or a server's.
+.ic-monitoring-view {
+  margin-block-start: 14px;
 }
 
-// Which host/instance the embed is pinned to. Sits between the tabs and
-// the frame because it changes what the frame shows, and wraps so the
-// picker keeps a usable width on a phone.
+// Which host the Hosts view shows. Sits between the tabs and the board
+// because it changes what the board shows, and wraps so the picker
+// keeps a usable width on a phone.
 .ic-monitoring-subject {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-block: 10px;
+  margin-block: 0 14px;
 
   > :last-child {
     flex: 1 1 220px;

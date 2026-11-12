@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.FleetBoard">
+        <div class="ic-mb ic-fb">
+            <t t-if="!state.board">
+                <t t-call="incubacloud.ChartBoardStates"/>
+            </t>
+            <t t-else="">
+                <!-- Figures -->
+                <section class="ic-mb-section" aria-labelledby="ic-fb-now">
+                    <div class="ic-mb-head">
+                        <div>
+                            <h3 class="ic-mb-h" id="ic-fb-now">The fleet now<span class="ic-fb-scope" t-esc="scopeText"/></h3>
+                        </div>
+                        <t t-call="incubacloud.ChartBoardRange"/>
+                    </div>
+                    <div class="ic-fb-tiles">
+                        <t t-foreach="tiles" t-as="tile" t-key="tile.key">
+                            <div t-att-class="'rl-card ic-fb-tile is-' + tile.tone" t-att-data-tile="tile.key">
+                                <span class="ic-fb-tile-value" t-esc="tile.value"/>
+                                <span class="ic-fb-tile-label" t-esc="tile.label"/>
+                            </div>
+                        </t>
+                    </div>
+                    <p t-if="!hasData" class="ic-mb-empty" t-att-data-silence="state.board.silence?.code">
+                        <span>No data for this period.</span> <t t-esc="silenceText"/>
+                    </p>
+                </section>
+
+                <!-- Busiest servers -->
+                <section class="ic-mb-section" aria-labelledby="ic-fb-busiest">
+                    <h3 class="ic-mb-h" id="ic-fb-busiest">Busiest servers</h3>
+                    <p class="ic-mb-sub">
+                        <t t-if="isZoomed">Zoomed window.</t>
+                        <t t-else="">Drag across a chart to zoom.</t>
+                    </p>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                        <t t-foreach="cards" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- Ingestion -->
+                <section class="ic-mb-section" aria-labelledby="ic-fb-ingest">
+                    <h3 class="ic-mb-h" id="ic-fb-ingest">Are the servers reporting?</h3>
+                    <p class="ic-mb-sub">
+                        A sample at each step of the window
+                        <span class="ic-fb-legend-ok" aria-hidden="true"/>reporting
+                        <span class="ic-fb-legend-silent" aria-hidden="true"/>silent
+                    </p>
+                    <div class="rl-card rl-card-pad" data-panel="ingest">
+                        <p t-if="panelError('ingest')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('ingest')"/>
+                        <div t-elif="timeline.length" class="ic-fb-timeline">
+                            <t t-foreach="timeline" t-as="row" t-key="row.account + ':' + row.host_id">
+                                <div class="ic-fb-tl-row">
+                                    <span class="ic-fb-tl-name">
+                                        <a t-if="canOpenHost(row)" href="#" class="ic-hb-link"
+                                           t-on-click.prevent="() => this.openHost(row)" t-esc="rowName(row)"/>
+                                        <t t-else="" t-esc="rowName(row)"/>
+                                    </span>
+                                    <div class="ic-fb-tl-bar" role="img" t-att-aria-label="rowName(row)">
+                                        <t t-foreach="row.segments" t-as="seg" t-key="seg_index">
+                                            <span t-att-class="'ic-fb-tl-seg is-' + seg.state"
+                                                  t-att-style="segStyle(seg)" t-att-title="segTitle(seg)"/>
+                                        </t>
+                                    </div>
+                                </div>
+                            </t>
+                            <p t-if="timelineHidden" class="ic-mb-empty" t-esc="timelineHiddenText"/>
+                        </div>
+                        <p t-else="" class="ic-mb-empty">No server reported in this window.</p>
+                    </div>
+                </section>
+                <p class="ic-mb-meta" t-if="state.updatedAt" t-esc="metaText"/>
+            </t>
+        </div>
+    </t>
+
+</templates>

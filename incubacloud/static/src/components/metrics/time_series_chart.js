@@ -16,7 +16,18 @@ export const ROLE_TOKENS = {
   memory: "--rl-amber",
   io: "--rl-cyan",
   directory: "--rl-green",
+  load1: "--rl-cyan",
+  load15: "--rl-green",
+  used: "--rl-green",
+  swap: "--rl-amber",
+  read: "--rl-cyan",
+  write: "--rl-amber",
+  received: "--rl-cyan",
+  sent: "--rl-green",
 };
+
+/** Token of the line that adds up what a stacked panel left out. */
+const OTHERS_TOKEN = "--rl-muted";
 
 /** Colours handed out, in order, to lines with no colour of their own. */
 export const SPARE_TOKENS = [
@@ -202,6 +213,9 @@ export class TimeSeriesChart extends Component {
    */
   lineToken(series, spare) {
     const {palette, highlightId} = this.props;
+    if (series.role === "others") {
+      return OTHERS_TOKEN;
+    }
     if (palette === "role") {
       return ROLE_TOKENS[series.role] || SPARE_TOKENS[spare.n++ % SPARE_TOKENS.length];
     }

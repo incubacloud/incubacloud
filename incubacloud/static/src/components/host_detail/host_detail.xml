@@ -197,6 +197,11 @@
                             t-on-click="() => this.setTab('traefik')">Traefik</button>
                     <button t-att-class="state.tab === 'whitelist' ? 'rl-tab active' : 'rl-tab'"
                             t-on-click="() => this.setTab('whitelist')">Whitelist</button>
+                    <t t-if="canViewMetrics">
+                        <button t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
+                                data-tab="metrics"
+                                t-on-click="() => this.setTab('metrics')">Metrics</button>
+                    </t>
                     <t t-if="!isNew and env.permissions?.can_manage_hosts">
                         <button t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
                                 t-on-click="() => this.setTab('activity')">Audit Logs</button>
@@ -801,6 +806,14 @@
                             </div>
                         </t>
 
+                        <!-- ── Metrics: the server's performance, drawn by the
+                             panel from the metrics central. -->
+                        <t t-if="state.tab === 'metrics' and canViewMetrics">
+                            <div class="ic-host-metrics">
+                                <HostBoard hostId="props.host_id" canConfigure="canConfigureObservability"/>
+                            </div>
+                        </t>
+
                         <!-- ── Audit Logs ───────────────────────────────────── -->
                         <t t-if="state.tab === 'activity'">
                             <div class="ic-activity-panel">
@@ -872,8 +885,8 @@
 
                 </div>
 
-                <!-- Footer: purge (activity tab) or save/delete (config tabs); hidden on overview -->
-                <t t-if="state.tab !== 'overview'">
+                <!-- Footer: purge (activity tab) or save/delete (config tabs); hidden on overview and metrics -->
+                <t t-if="state.tab !== 'overview' and state.tab !== 'metrics'">
                     <div class="rl-formfoot">
                         <t t-if="state.tab === 'activity'">
                             <button class="ic-audit-purge-btn"

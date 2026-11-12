@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.HostBoard">
+        <div class="ic-mb ic-hb">
+            <t t-if="!state.board">
+                <t t-call="incubacloud.ChartBoardStates"/>
+            </t>
+            <t t-else="">
+                <!-- What is happening -->
+                <section class="ic-mb-section" aria-labelledby="ic-hb-now">
+                    <div class="ic-mb-head">
+                        <div>
+                            <h3 class="ic-mb-h" id="ic-hb-now">What is happening?</h3>
+                            <p class="ic-mb-sub" t-if="factsText" t-esc="factsText"/>
+                        </div>
+                        <t t-call="incubacloud.ChartBoardRange"/>
+                    </div>
+                    <div t-att-class="'rl-card ic-mb-diag ic-mb-tone-' + diagnosis.tone" role="status">
+                        <t t-if="!diagnosis.current">
+                            <p class="ic-mb-diag-text">The window shown ends in the past: the diagnosis reads only the last 15 minutes up to now. Reset the zoom to see it.</p>
+                        </t>
+                        <t t-elif="!hasData">
+                            <p class="ic-mb-diag-text" t-att-data-silence="state.board.silence?.code">
+                                <span>No data for this period.</span> <t t-esc="silenceText"/>
+                            </p>
+                        </t>
+                        <t t-else="">
+                            <div class="ic-mb-diag-head">
+                                <span t-att-class="'ic-mb-dot ic-mb-dot-' + diagnosis.tone" aria-hidden="true"/>
+                                <strong t-esc="diagnosisHeading"/>
+                                <span class="ic-mb-diag-span">last 15 minutes</span>
+                            </div>
+                            <ul class="ic-mb-findings">
+                                <t t-foreach="diagnosis.findings" t-as="f" t-key="f.code">
+                                    <li t-att-class="'ic-mb-finding ic-mb-tone-' + f.tone" t-att-data-code="f.code" t-esc="f.text"/>
+                                </t>
+                            </ul>
+                        </t>
+                        <p t-att-class="'ic-hb-ingest' + (ingestLate ? ' is-late' : '')" t-esc="ingestText"/>
+                    </div>
+                </section>
+
+                <!-- Load and memory -->
+                <section class="ic-mb-section" aria-labelledby="ic-hb-load">
+                    <h3 class="ic-mb-h" id="ic-hb-load">Load and memory</h3>
+                    <p class="ic-mb-sub">
+                        <t t-if="isZoomed">Zoomed window.</t>
+                        <t t-else="">Drag across a chart to zoom.</t>
+                    </p>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                        <t t-foreach="cardsOf('load')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- Who uses it -->
+                <section class="ic-mb-section" aria-labelledby="ic-hb-use">
+                    <h3 class="ic-mb-h" id="ic-hb-use">Which instance uses it?</h3>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <t t-foreach="cardsOf('use')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                        <div class="rl-card ic-mb-card ic-mb-wide" data-panel="consumers">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Right now</span><span class="ic-mb-hint">last 5 minutes · busiest first</span></div>
+                            <p t-if="panelError('consumers')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('consumers')"/>
+                            <div t-elif="consumers.length" class="ic-mb-tablebox">
+                                <table class="rl-table ic-mb-table">
+                                    <thead>
+                                        <tr><th>Instance</th><th>CPU</th><th>Memory</th><th>Directory</th><th>Requests</th><th>State</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-foreach="consumers" t-as="row" t-key="row.id">
+                                            <tr>
+                                                <td class="ic-mb-cardtitle">
+                                                    <a t-if="canOpen(row)" href="#" class="ic-hb-link"
+                                                       t-on-click.prevent="() => this.openInstance(row)" t-esc="row.name"/>
+                                                    <t t-else="" t-esc="row.name"/>
+                                                </td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">CPU</span><t t-esc="fmtPercent(row.cpu)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Memory</span><t t-esc="fmtBytes(row.memory)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Directory</span><t t-esc="fmtBytes(row.disk)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Requests</span><t t-esc="fmtValue('rps', row.rps)"/></td>
+                                                <td><span class="ic-mb-k">State</span><t t-esc="runText(row)"/></td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p t-else="" class="ic-mb-empty">No instance of this server has reported in the last 5 minutes.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Disk -->
+                <section class="ic-mb-section" aria-labelledby="ic-hb-disk">
+                    <h3 class="ic-mb-h" id="ic-hb-disk">Disk</h3>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <t t-foreach="cardsOf('disk')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- Network and requests -->
+                <section class="ic-mb-section" aria-labelledby="ic-hb-traffic">
+                    <h3 class="ic-mb-h" id="ic-hb-traffic">Network and requests</h3>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <t t-foreach="cardsOf('traffic')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                    </div>
+                </section>
+                <p class="ic-mb-meta" t-if="state.updatedAt" t-esc="metaText"/>
+            </t>
+        </div>
+    </t>
+
+</templates>

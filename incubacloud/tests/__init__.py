@@ -295,5 +295,6 @@ from . import test_panel_defaults
 from . import test_relay_oauth
 from . import test_relay_delivery
 from . import test_resource_series
+from . import test_host_fleet_series
 from . import test_metrics_readings
 from . import test_session_guard

@@ -73,7 +73,9 @@ export function _parseRoute(pathname) {
             if (parts[1] === "new") return { route: "new_host", params: {} };
             const hid = parseInt(parts[1]);
             if (!isNaN(hid)) {
-                return { route: "host_detail", params: { host_id: hid } };
+                // ?tab= opens one of its tabs (Monitoring links to Metrics).
+                const tab = new URLSearchParams(window.location.search).get("tab") || undefined;
+                return { route: "host_detail", params: { host_id: hid, ...(tab ? { tab } : {}) } };
             }
             return { route: "hosts", params: {} };
         }
@@ -127,7 +129,10 @@ export function _buildUrl(route, params = {}) {
         case "instance_detail":   return `${_BASE}/projects/${params.project_id}/instances/${params.instance_id}`;
         case "hosts":             return `${_BASE}/hosts`;
         case "new_host":          return `${_BASE}/hosts/new`;
-        case "host_detail":       return `${_BASE}/hosts/${params.host_id}`;
+        case "host_detail": {
+            const qs = params.tab ? `?tab=${encodeURIComponent(params.tab)}` : "";
+            return `${_BASE}/hosts/${params.host_id}${qs}`;
+        }
 
         case "monitoring":            return `${_BASE}/monitoring`;
         case "settings": {
