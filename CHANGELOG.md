@@ -173,6 +173,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   it. Nothing changes on a host until its next Full Setup; until then
   every host set up before shows *Changes not applied*. IPv4 only:
   `shared` has no IPv6. Spanish translation included.
+  One `apply` runs at a time, under `/run/incubacloud-shared-guard.lock`:
+  the run Full Setup starts and the timer's could otherwise rewrite the
+  chain together and leave a `DROP` first, cutting the host until the
+  next tick; removing the guard stops a tick under way first. A `DOCKER-USER` that `FORWARD` does not jump to (Docker switched
+  to nftables and not restarted) leaves the guard open instead of
+  reporting it on. Docker Compose before 2.24 refuses `mac_address` under
+  a service's network: *Start Traefik* drops the line there and says so,
+  and the guard stays unsupported, naming the version. The Check reads
+  the state the timer last wrote, so a guard that opened after Full
+  Setup raises `shared_guard_open`, and one on again resolves it.
 
 ### Changed
 
