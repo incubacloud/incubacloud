@@ -37,6 +37,19 @@ msgstr ""
 "                    directorio de la instancia,"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_central.py:0
+msgid ""
+"\"%(host)s\" cannot write to the metrics central: it leaves with %(egress)s "
+"and the panel has %(address)s for it, and the central admits only the "
+"panel's servers by their address. Correct the server's address in the panel."
+msgstr ""
+"«%(host)s» no puede escribir en la central de métricas: sale con %(egress)s "
+"y el panel tiene %(address)s para él, y la central solo admite los "
+"servidores del panel por su dirección. Corrija la dirección del servidor en "
+"el panel."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_board.js:0
 msgid "% of the root file system"
@@ -1521,6 +1534,13 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_write_access__anyone
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Any address, with each account's credential"
+msgstr "Cualquier dirección, con la credencial de cada cuenta"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Any size. We lend you a temporary key"
 msgstr "Cualquier tamaño. Le prestamos una clave temporal"
@@ -2569,6 +2589,31 @@ msgid "Cc"
 msgstr "Cc"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_central_reach
+msgid "Central answered the server with"
+msgstr "La central respondió al servidor con"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_central_reach_at
+msgid "Central last checked from the server"
+msgstr "Última comprobación de la central desde el servidor"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_ca_cert
+msgid "Central's certificate authority"
+msgstr "Autoridad de certificación de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_ca_key
+msgid "Central's certificate authority key"
+msgstr "Clave de la autoridad de certificación de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_cert_expires
+msgid "Central's certificate expires"
+msgstr "Caducidad del certificado de la central"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_host
@@ -2584,6 +2629,16 @@ msgstr "Último sondeo del nombre directo de la central"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_state
 msgid "Central's direct name state"
 msgstr "Estado del nombre directo de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_checked_at
+msgid "Central's name last checked"
+msgstr "Última comprobación del nombre de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_state
+msgid "Central's name state"
+msgstr "Estado del nombre de la central"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2689,6 +2744,12 @@ msgstr "Verificar host"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Check installation"
 msgstr "Verificar instalación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+msgid "Check now"
+msgstr "Comprobar ahora"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3541,6 +3602,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Could not check it."
+msgstr "No se pudo comprobar."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid "Could not check the upload."
 msgstr "No se pudo comprobar la subida."
@@ -3832,6 +3899,16 @@ msgid ""
 msgstr ""
 "Crear instancias de staging/dev, desplegar y reconstruir en los proyectos "
 "asignados. Sin terminal, registros ni copias de seguridad."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_central.py:0
+msgid ""
+"Create the A record of %(name)s pointing at %(address)s, with no proxy and "
+"no AAAA record."
+msgstr ""
+"Cree el registro A de %(name)s apuntando a %(address)s, sin proxy y sin "
+"registro AAAA."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5123,6 +5200,15 @@ msgstr "Clave de cifrado"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__passphrase
 msgid "Encryption Passphrase"
 msgstr "Frase de paso de encriptación"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_cert_expires
+msgid ""
+"End of the certificate the last good deployment of the central installed "
+"under its public name."
+msgstr ""
+"Fin del certificado que instaló con el nombre público el último despliegue "
+"correcto de la central."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6639,6 +6725,16 @@ msgid ""
 msgstr ""
 "GitLab no eliminó el webhook: elimínelo allí a mano (Settings → Webhooks) y "
 "después aquí."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_central_reach
+msgid ""
+"HTTP status the central's write URL answered this server at the agents' last"
+" install, without a credential: 401 is right; -1 means no answer."
+msgstr ""
+"Estado HTTP con el que la URL de escritura de la central respondió a este "
+"servidor en la última instalación de los agentes, sin credencial: 401 es lo "
+"correcto; -1 significa que no hubo respuesta."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9423,6 +9519,11 @@ msgstr ""
 "Dejar vacío para AWS S3. Configurar para MinIO, Wasabi, Backblaze, etc."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_egress_ip
+msgid "Leaves with address"
+msgstr "Sale con la dirección"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__letsencrypt
@@ -10017,6 +10118,36 @@ msgstr "Fallos del nombre directo de la central"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_successes
 msgid "Metrics Central Direct Successes"
 msgstr "Aciertos del nombre directo de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_cert_expires
+msgid "Metrics Central Name Cert Expires"
+msgstr "Caducidad del certificado del nombre de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_dns_bad
+msgid "Metrics Central Name Dns Bad"
+msgstr "DNS incorrecto del nombre de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_error
+msgid "Metrics Central Name Error"
+msgstr "Error del nombre de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_failing_since
+msgid "Metrics Central Name Failing Since"
+msgstr "Fallo del nombre de la central desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_failures
+msgid "Metrics Central Name Failures"
+msgstr "Fallos del nombre de la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_name_successes
+msgid "Metrics Central Name Successes"
+msgstr "Aciertos del nombre de la central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_account
@@ -10860,6 +10991,12 @@ msgstr "Normal"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Not answering since %(since)s (%(error)s)."
+msgstr "No responde desde %(since)s (%(error)s)."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Not applied yet."
 msgstr "Todavía sin aplicar."
@@ -11299,6 +11436,13 @@ msgid "One confirmation policy per alert code."
 msgstr "Una política de confirmación por código de alerta."
 
 #. module: incubacloud
+#. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_single_path
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid "One path, without a CDN"
+msgstr "Un solo camino, sin CDN"
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_rate_limit_bucket_uniq
 msgid "One row per rate-limit bucket."
 msgstr "Una fila por bucket de rate-limit."
@@ -11516,6 +11660,25 @@ msgstr ""
 "servidor: %(list)s."
 
 #. module: incubacloud
+#. odoo-javascript
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_write_access__servers
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Only this panel's servers, by their address"
+msgstr "Solo los servidores de este panel, por su dirección"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_write_access
+msgid ""
+"Only this panel's servers: the platform port admits their addresses and no "
+"other. Any address: it admits every address, and each account's credential "
+"is the only barrier; for servers behind NAT or with an address that changes."
+msgstr ""
+"Solo los servidores de este panel: el puerto de plataforma admite sus "
+"direcciones y ninguna otra. Cualquier dirección: admite todas, y la "
+"credencial de cada cuenta es la única barrera; para servidores detrás de NAT"
+" o con una dirección que cambia."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__managed_reservation_id
 msgid ""
 "Opaque id set by an external module that manages this backend. Core does not"
@@ -11626,6 +11789,16 @@ msgid ""
 msgstr ""
 "Sobrescritura opcional del destinatario para los avisos de uso. Si está "
 "vacío, usa el campo ``Notificación a``."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_central.py:0
+msgid ""
+"Or, if its address changes or it is behind NAT, set Who can write to the "
+"central to Any address in Settings › Monitoring."
+msgstr ""
+"O, si su dirección cambia o está detrás de NAT, ponga Quién puede escribir "
+"en la central en Cualquier dirección, en Configuración › Monitorización."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__job_id
@@ -14523,6 +14696,13 @@ msgid "Signing secret"
 msgstr "Secreto de firma"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_ca_key
+msgid ""
+"Signs the central's certificate. Stored encrypted; never leaves the panel."
+msgstr ""
+"Firma el certificado de la central. Se guarda cifrada; nunca sale del panel."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Size"
@@ -15245,6 +15425,73 @@ msgstr ""
 "observabilidad."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_egress_ip
+msgid ""
+"The address this server's traffic leaves with, as the panel saw it at the "
+"agents' last install."
+msgstr ""
+"La dirección con la que sale el tráfico de este servidor, tal como la vio el"
+" panel en la última instalación de los agentes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"The central answers under its public name only, on its server's direct port "
+"and outside any CDN, with a certificate this panel signs. The panel and the "
+"agents move to it once the name answers."
+msgstr ""
+"La central responde solo con su nombre público, en el puerto directo de su "
+"servidor y fuera de toda CDN, con un certificado que firma este panel. El "
+"panel y los agentes pasan a él cuando el nombre responde."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_single_path
+msgid ""
+"The central is published under its public name only, on the platform port of"
+" its server and outside every CDN, with a certificate this panel signs. The "
+"panel and every agent move to that name once it answers. Off: the paths of "
+"before."
+msgstr ""
+"La central se publica solo con su nombre público, en el puerto de plataforma"
+" de su servidor y fuera de toda CDN, con un certificado que firma este "
+"panel. El panel y todos los agentes pasan a ese nombre cuando responde. "
+"Desactivado: los caminos de antes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_central.py:0
+msgid ""
+"The central's certificate expires on %(date)s and could not be renewed: "
+"deploy the central again. When it expires, no agent can write to the "
+"central."
+msgstr ""
+"El certificado de la central caduca el %(date)s y no se ha podido renovar: "
+"despliegue la central de nuevo. Cuando caduque, ningún agente podrá escribir"
+" en la central."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_central.py:0
+msgid ""
+"The central's name %(name)s does not answer (%(layer)s: %(detail)s). The "
+"agents keep what they cannot send in their queues meanwhile."
+msgstr ""
+"El nombre de la central %(name)s no responde (%(layer)s: %(detail)s). "
+"Mientras tanto, los agentes guardan en sus colas lo que no pueden enviar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_central.py:0
+msgid ""
+"The central's name does not answer from its server yet%(detail)s. %(record)s"
+" The panel and the agents keep their current URLs until it does."
+msgstr ""
+"El nombre de la central aún no responde desde su servidor%(detail)s. "
+"%(record)s El panel y los agentes conservan sus URL actuales hasta que "
+"responda."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_settings_direct.py:0
 msgid "The certificate of the direct path %(name)s expires on %(date)s."
@@ -15260,6 +15507,12 @@ msgid ""
 msgstr ""
 "Los gráficos se leen de una central. En Configuración › Monitorización, "
 "elija un host en Dónde corre la central y pulse Activar la observabilidad."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "The check could not be queued."
+msgstr "No se ha podido poner en cola la comprobación."
 
 #. module: incubacloud
 #. odoo-python
@@ -15555,6 +15808,14 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"The panel and the agents use %(url)s; certificate valid until %(date)s."
+msgstr ""
+"El panel y los agentes usan %(url)s; certificado válido hasta el %(date)s."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "The panel could not register the webhook:"
 msgstr "El panel no pudo registrar el webhook:"
@@ -15622,6 +15883,15 @@ msgstr ""
 "que el panel pretende ahora mismo, para que nada de lo que va por detrás se "
 "publique contra una configuración que el anfitrión todavía no está "
 "ejecutando."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_ca_cert
+msgid ""
+"The public half of the authority that signs the central's certificate. The "
+"agents and the panel trust it for the central only."
+msgstr ""
+"La mitad pública de la autoridad que firma el certificado de la central. Los"
+" agentes y el panel confían en ella solo para la central."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_outcome__queue_job_uuid
@@ -15915,6 +16185,16 @@ msgid ""
 msgstr ""
 "El intervalo mostrado termina en el pasado: el diagnóstico solo lee los "
 "últimos 15 minutos hasta ahora. Quite el zoom para verlo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"There is nothing to check: the central needs a public name, One path, "
+"without a CDN, and a server with a direct port."
+msgstr ""
+"No hay nada que comprobar: la central necesita un nombre público, Un solo "
+"camino, sin CDN, y un servidor con puerto directo."
 
 #. module: incubacloud
 #. odoo-python
@@ -22762,6 +23042,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Waiting for the name: %s"
+msgstr "Esperando al nombre: %s"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
 "Warn when an instance is unavailable longer than this during a move. 0 never"
@@ -22819,6 +23105,16 @@ msgstr ""
 " inactividad en horas."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_name_checked_at
+msgid ""
+"When the name was last checked from the central's server. Kept in a system "
+"parameter, not in this row: it moves at every check."
+msgstr ""
+"Cuándo se comprobó el nombre por última vez desde el servidor de la central."
+" Se guarda en un parámetro del sistema, no en esta fila: cambia en cada "
+"comprobación."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
@@ -22855,6 +23151,25 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_write_access
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid "Who can write to the central"
+msgstr "Quién puede escribir en la central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"With One path: only this panel's servers, by their address, or any address "
+"with its account's credential, for servers behind NAT or with an address "
+"that changes."
+msgstr ""
+"Con Un solo camino: solo los servidores de este panel, por su dirección, o "
+"cualquier dirección con la credencial de su cuenta, para servidores detrás "
+"de NAT o con una dirección que cambia."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/github_settings_block.js:0
 msgid ""
 "You are about to overwrite the stored %s. The previous credentials stop "
@@ -22868,6 +23183,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "Zone read and DNS edit on the zone only."
 msgstr "Lectura de la zona y edición del DNS, solo en la zona."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_central.py:0
+msgid "an address the panel could not learn"
+msgstr "una dirección que el panel no ha podido conocer"
 
 #. module: incubacloud
 #: code:addons/incubacloud/models/cloud_session_guard.py:0
