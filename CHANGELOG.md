@@ -388,6 +388,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   with 26. `copier-update` without a job and kind, as a flow planned
   before this release calls it, writes and reads no mark.
   `rebuild.sh clear-unapplied <dir>` without a job is the way out by hand.
+  The mark is written first as a temporary inside `.git` and renamed into
+  place, so a script killed in between leaves nothing a `commit-dirty`
+  could take into the project's repository.
+- **A copy restored from a download on the instance's own host goes
+  through what the other restores do (#96).** A `from_host` restore whose
+  archive was handed over on the same host (a staging refreshed from the
+  production beside it, a pull request preview) returned right after
+  finding the archive: it was not refused over a rebuild's mark, a staging
+  refreshed with its data left live did not take production's encryption
+  keys and could not read the secrets of its new data, and its log did not
+  say which modules it updates. It goes on to all three now, as the
+  cross-host one did.
 - **A server that no longer presents its trusted SSH host key says so
   (#89).** A connection refused because the server presented another
   host key — the server restored from an image, reinstalled or replaced,
