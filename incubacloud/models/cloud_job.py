@@ -2905,7 +2905,9 @@ class CloudJob(models.Model):
         to now), 0 when it did not; ``slot_load`` and ``slot_channel`` are
         what the gate counted when it let it through (``_channel_admits``),
         left as they were when the gate did not count (switched off). For
-        the write that dispatches it, which clears ``channel_wait_since``.
+        the write that dispatches it, which clears ``channel_wait_since``;
+        *job*'s ``slot_wait_s`` is left out of the cache, so that write
+        stores it even when it is 0.
 
         :param job: the ``cloud.job`` being dispatched; for a chain, its
             first step
@@ -2918,6 +2920,10 @@ class CloudJob(models.Model):
                 (fields.Datetime.now() - job.channel_wait_since).total_seconds(),
             ))
         vals = {"slot_wait_s": (job.slot_wait_s or 0) + waited}
+        # Odoo 18 caches an empty integer as 0 and drops a write of the
+        # value it caches: without the cached value, the 0 of a job that
+        # did not wait is stored instead of staying empty.
+        job.invalidate_recordset(["slot_wait_s"])
         admitted = self.env.cr.postcommit.data.get(_ADMITTED_KEY, {}).pop(job.id, None)
         if admitted:
             vals |= {"slot_channel": admitted[0], "slot_load": admitted[1]}
