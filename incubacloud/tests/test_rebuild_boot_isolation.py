@@ -112,6 +112,12 @@ class TestRebuildBootTestIsolation(BaseCase):
         self.assertIn('docker rm -f "$odoo_container"', restore)
         self.assertIn('docker rm -f "$pg_container"', restore)
         self.assertIn('docker network rm "$boot_net"', restore)
+        # The copy and its volume (#91), the volume after what mounts it.
+        self.assertIn('docker rm -f "$copy_container"', restore)
+        self.assertLess(
+            restore.index('docker rm -f "$pg_container"'),
+            restore.index('docker volume rm "$boot_volume"'),
+        )
 
     def test_the_stack_is_restored_from_a_trap(self):
         """``set -e`` must not be able to skip the restore.
@@ -162,3 +168,16 @@ class TestRebuildBootTestIsolation(BaseCase):
         definition the template changed: under v10, the live ``db``,
         restarted in the middle of the test (lab of 22-oct-2026)."""
         self.assertIn("ic_compose_run -d --no-deps", self.block)
+
+    def test_the_database_is_copied_once_into_a_volume(self):
+        """#91 (6-nov-2026): one pg_basebackup straight into ``ic_boot_<id>``
+        on Docker's disk; no second copy through ``docker compose cp`` to
+        the host's /tmp, which may be a small tmpfs, and no ``chown -R``."""
+        self.assertIn('boot_volume="ic_boot_${inst_id}"', self.block)
+        self.assertIn('-v "$boot_volume:/out"', self.block)
+        self.assertIn('-v "$boot_volume:/var/lib/postgresql/data"', self.block)
+        self.assertEqual(self.block.count("--entrypoint pg_basebackup"), 1)
+        self.assertNotIn("docker compose cp", self.block)
+        self.assertNotIn("chown -R", self.block)
+        # The copy keeps its backup_label: it recovers from the backup.
+        self.assertNotIn("/backup_label", self.block)

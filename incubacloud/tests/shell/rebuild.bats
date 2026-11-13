@@ -19,6 +19,21 @@ echo "$tool \$*" >> "\$CALLS"
 STUB
         chmod +x "$TMP/bin/$tool"
     done
+    # What the boot test asks before it copies, answered the same in every
+    # docker stub below (each sources this file after recording the call):
+    # the database's container, its data directory and hba file, its size
+    # (1 GiB unless STUB_DB_KB says) and the free space of Docker's disk
+    # (100 GiB unless STUB_FREE_KB says).
+    export BOOT_ANSWERS="$TMP/boot-answers"
+    cat > "$BOOT_ANSWERS" <<'STUB'
+case "$*" in
+    "compose ps -q db")          echo db123; exit 0 ;;
+    *"SHOW data_directory"*)     echo /var/lib/postgresql/data; exit 0 ;;
+    *"SHOW hba_file"*)           echo /etc/postgres/pg_hba.conf; exit 0 ;;
+    *"du -sk"*)                  printf '%s\t/var/lib/postgresql/data\n' "${STUB_DB_KB:-1048576}"; exit 0 ;;
+    *"df -Pk /out"*)             echo "${STUB_FREE_KB:-104857600}"; exit 0 ;;
+esac
+STUB
     # The boot test asks docker two questions it cannot proceed without:
     # which services were running, so it can put them back, and the exit
     # code of the boot container, which it reads with ``docker wait``. A
@@ -27,6 +42,7 @@ STUB
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
     "wait "*)                     echo 0 ;;
     *"compose config --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
@@ -118,8 +134,13 @@ YAML
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
-    [[ "$calls" == *"pg_basebackup -U odoo -D /tmp/ic_boot_backup_42"* ]]
-    [[ "$calls" == *"postgres-autoconf:17-alpine"* ]]
+    # One copy, by pg_basebackup in a container of its own on the
+    # database's network namespace, straight into a volume (#91).
+    [[ "$calls" == *"--name ic_boot_copy_42 --network container:db123 -v ic_boot_42:/out --user postgres --entrypoint pg_basebackup ghcr.io/tecnativa/postgres-autoconf:17-alpine -h 127.0.0.1 -U odoo -D /out -Fp -X stream --checkpoint=fast --no-sync"* ]]
+    [[ "$calls" == *"-v ic_boot_42:/var/lib/postgresql/data"* ]]
+    [[ "$calls" != *"compose cp"* ]]
+    [[ "$calls" != *"/tmp/ic_boot_42"* ]]
+    [[ "$calls" != *"chown -R"* ]]
     # The database name reaches the boot script as its $0, after the body.
     [[ "$calls" == *'click-odoo-update --database "$0"'* ]]
     [[ "$calls" == *"exit 1 prod"* ]]
@@ -163,6 +184,7 @@ YAML
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
     "network create "*)        exit 1 ;;
     *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
@@ -206,12 +228,13 @@ STUB
 @test "boot-test restores the stack even when a step blows up mid-way" {
     # ``set -e`` skips any cleanup written at the tail of the block, and
     # that is precisely when the stack most needs putting back. Here the
-    # clone copy fails: nothing after it runs, but the trap still does.
+    # copy fails: nothing after it runs, but the trap still does.
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
-    *"compose cp"*)            exit 1 ;;
+    *"pg_basebackup"*)         exit 1 ;;
     *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
     "inspect -f "*) shift 3; printf '%s\n' "$@" ;;
 esac
@@ -225,32 +248,131 @@ STUB
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
 }
 
-@test "boot-test chowns the clone inside a container, never on the host" {
-    # The SSH user lacks CAP_CHOWN, so the chown to UID 70 must run inside
-    # an ephemeral root container over the bind mount.
+@test "boot-test readies the volume for postgres from a container, never on the host" {
+    # The SSH user lacks CAP_CHOWN, and PostgreSQL refuses a data directory
+    # in the 755 Docker creates: owner postgres and 700, set inside a
+    # container over the volume, which also reads its free space.
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
-    [[ "$(cat "$CALLS")" == *"docker run --rm -v /tmp/ic_boot_42:/data alpine chown -R 70:70 /data"* ]]
-}
-
-@test "boot-test removes backup_label inside the db container before copying out" {
-    # Once the mount is chowned to UID 70 the host can't touch it, so
-    # backup_label must be dropped in-container, before docker compose cp.
-    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
-    label_line="$(printf '%s\n' "$calls" | grep -n 'rm -f /tmp/ic_boot_backup_42/backup_label' | head -1 | cut -d: -f1)"
-    cp_line="$(printf '%s\n' "$calls" | grep -n 'compose cp db:/tmp/ic_boot_backup_42' | head -1 | cut -d: -f1)"
-    [ -n "$label_line" ]
-    [ "$label_line" -lt "$cp_line" ]
+    [[ "$calls" == *"docker volume create ic_boot_42"* ]]
+    [[ "$calls" == *"run --rm -v ic_boot_42:/out --user root --entrypoint sh ghcr.io/tecnativa/postgres-autoconf:17-alpine -c chown postgres:postgres /out && chmod 700 /out && df -Pk /out"* ]]
 }
 
-@test "boot-test scrubs both sides before pg_basebackup" {
-    # pg_basebackup refuses a non-empty target, and the host bind mount may
-    # carry a UID-70 dir from an interrupted run — both must be wiped first.
+@test "boot-test keeps the copy's backup_label" {
+    # Without it the copy starts as after a crash, from a checkpoint the
+    # files copied before it may not reach; with it, from the backup.
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"backup_label"* ]]
+}
+
+@test "boot-test removes what a killed run left before it copies" {
+    # A run killed before its trap leaves its containers and its volume;
+    # pg_basebackup refuses a target that is not empty.
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     calls="$(cat "$CALLS")"
     basebackup_line="$(printf '%s\n' "$calls" | grep -n 'pg_basebackup' | head -1 | cut -d: -f1)"
-    host_scrub_line="$(printf '%s\n' "$calls" | grep -n 'rm -rf /host_tmp/ic_boot_42' | head -1 | cut -d: -f1)"
-    [ "$host_scrub_line" -lt "$basebackup_line" ]
+    copy_rm_line="$(printf '%s\n' "$calls" | grep -n 'rm -f ic_boot_copy_42' | head -1 | cut -d: -f1)"
+    volume_rm_line="$(printf '%s\n' "$calls" | grep -n 'volume rm ic_boot_42' | head -1 | cut -d: -f1)"
+    create_line="$(printf '%s\n' "$calls" | grep -n 'volume create ic_boot_42' | head -1 | cut -d: -f1)"
+    [ "$copy_rm_line" -lt "$volume_rm_line" ]
+    [ "$volume_rm_line" -lt "$create_line" ]
+    [ "$create_line" -lt "$basebackup_line" ]
+    # The copy releases before 1.0.228 made inside the database's container.
+    [[ "$calls" == *"compose exec -T db rm -rf /tmp/ic_boot_backup_42"* ]]
+}
+
+@test "boot-test lets the copy in by replication on the loopback, and takes it back" {
+    # postgres-autoconf writes its pg_hba.conf on every start with no
+    # replication rule for 127.0.0.1 (spike of 6-nov-2026): the test adds
+    # one, marked, reloads, and its trap removes that line and reloads.
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    rule='host replication all 127.0.0.1/32 trust # incubacloud boot test'
+    add_line="$(printf '%s\n' "$calls" | grep -nF "printf \"%s\\n\" \"\$1\" >> \"\$2\" sh $rule /etc/postgres/pg_hba.conf" | head -1 | cut -d: -f1)"
+    drop_line="$(printf '%s\n' "$calls" | grep -nF "grep -vxF \"\$1\" \"\$2\"" | head -1 | cut -d: -f1)"
+    basebackup_line="$(printf '%s\n' "$calls" | grep -n 'pg_basebackup' | head -1 | cut -d: -f1)"
+    [ -n "$add_line" ] && [ -n "$drop_line" ]
+    [ "$add_line" -lt "$basebackup_line" ]
+    [ "$drop_line" -gt "$basebackup_line" ]
+    [ "$(grep -c 'SELECT pg_reload_conf()' "$CALLS")" -eq 2 ]
+}
+
+@test "boot-test says what it measured and how long the copy should take" {
+    STUB_DB_KB=$((50 * 1024 * 1024)) run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"the database takes 50.0 GiB, Docker's disk has 100.0 GiB free and the test needs 60.0 GiB"* ]]
+    # 50 GiB at 150 MB/s is about 358 s; the budget an hour and 537 s.
+    [[ "$output" == *"the copy should take about 6 min, and the test has 69 min"* ]]
+    [[ "$output" == *"copied in "* ]]
+}
+
+@test "boot-test stops before copying when the copy does not fit, and puts everything back" {
+    STUB_DB_KB=$((512 * 1024 * 1024)) STUB_FREE_KB=$((300 * 1024 * 1024)) \
+        run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: No room on the server for the boot test: the database takes 512.0 GiB, Docker's disk has 300.0 GiB free and the test needs 568.2 GiB"* ]]
+    [[ "$output" == *"Nothing was changed."* ]]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" != *"pg_basebackup"* ]]
+    [[ "$calls" != *"pg_hba.conf"* ]]
+    [[ "$calls" != *"click-odoo-update"* ]]
+    [[ "$calls" == *"volume rm ic_boot_42"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
+}
+
+@test "boot-test stops before copying when its budget would pass the step's cap" {
+    # 2 TiB at 100 MB/s and an hour is about 7 h: more than a 6 h step.
+    STUB_DB_KB=$((2048 * 1024 * 1024)) STUB_FREE_KB=$((4096 * 1024 * 1024)) \
+        run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod 21600
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: The boot test would need about 7 h for a database of 2048.0 GiB"* ]]
+    [[ "$output" == *"more than the 6 h a step may run"* ]]
+    [[ "$(cat "$CALLS")" != *"pg_basebackup"* ]]
+}
+
+@test "boot-test cuts a copy that runs past its budget, and says so" {
+    cat > "$TMP/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+echo "timeout $*" >> "$CALLS"
+case "$*" in *pg_basebackup*) exit 124 ;; esac
+while [ "${1#-}" != "$1" ]; do shift; done
+shift
+exec "$@"
+STUB
+    chmod +x "$TMP/bin/timeout"
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: The boot test ran past its time budget of 61 min while it copied the database"* ]]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"timeout --kill-after=60 3610 docker run --rm --name ic_boot_copy_42"* ]]
+    [[ "$calls" != *"click-odoo-update"* ]]
+    [[ "$calls" == *"rm -f ic_boot_copy_42"* ]]
+    [[ "$calls" == *"volume rm ic_boot_42"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
+}
+
+@test "boot-test stops when the database is not running, before it copies" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "compose ps -q db") exit 0 ;;
+esac
+. "$BOOT_ANSWERS"
+case "$*" in
+    *"compose config --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*)    printf 'odoo\nsmtp\n' ;;
+    "inspect -f "*)    shift 3; printf '%s\n' "$@" ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: The database of the instance is not running"* ]]
+    [[ "$(cat "$CALLS")" != *"pg_basebackup"* ]]
 }
 
 @test "boot-test propagates a failed boot as a non-zero exit" {
@@ -259,6 +381,7 @@ STUB
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
     *"click-odoo-update"*) exit 1 ;;
 esac
@@ -276,6 +399,7 @@ STUB
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
     "wait "*)                  echo 3 ;;
     *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
@@ -509,6 +633,7 @@ _gatekeeper_docker() {
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
+. "$BOOT_ANSWERS"
 case "$*" in
     "wait "*)                          echo 0 ;;
     *"compose config --services"*)
@@ -589,6 +714,7 @@ _first_gatekeeper_docker() {
     cat > "$TMP/bin/docker" <<STUB
 #!/usr/bin/env bash
 echo "docker \$*" >> "\$CALLS"
+. "\$BOOT_ANSWERS"
 case "\$*" in
     "wait "*)                          echo ${1:-0} ;;
     *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
@@ -636,7 +762,7 @@ STUB
     [ "$status" -ne 0 ]
     [[ "$output" == *"the gatekeeper did not start"* ]]
     calls="$(cat "$CALLS")"
-    [[ "$calls" != *"postgres-autoconf"* ]]
+    [[ "$calls" != *"--name ic_boot_pg_42"* ]]
     [[ "$calls" == *"compose rm -sf gatekeeper"* ]]
     # Whatever was running is put back all the same.
     [[ "$calls" == *"compose start db odoo smtp"* ]]
@@ -656,8 +782,10 @@ STUB
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
     [[ "$calls" == *"network create ic_boot_42"* ]]
-    [[ "$calls" == *"--network ic_boot_42"* ]]
-    [[ "$calls" != *"container:"* ]]
+    [[ "$calls" == *"run -d --name ic_boot_pg_42 --network ic_boot_42"* ]]
+    # Only the copy shares a namespace, the database's.
+    [ "$(grep -c 'container:' "$CALLS")" -eq 1 ]
+    [[ "$calls" == *"--network container:db123"* ]]
 }
 
 # An 8.0 instance after a fetch-repos cut short: trees on disk, a
