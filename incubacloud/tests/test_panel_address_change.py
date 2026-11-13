@@ -150,17 +150,18 @@ class TestThePanelAddressChange(PanelAddressCase):
 
     def test_an_address_of_the_panel_a_layer_knows_admits_it(self):
         with patch.object(
-            type(self.Host), "_hardening_panel_ip", return_value="198.51.100.0/24",
+            type(self.Host), "_hardening_panel_ip", autospec=True,
+            return_value="198.51.100.0/24",
         ):
             self.Host._panel_address_changed(OLD, NEW)
         self.assertFalse(self._alert())
 
     def test_a_second_change_refreshes_the_same_alert(self):
         self.Host._panel_address_changed(OLD, NEW)
-        self.Host._panel_address_changed(NEW, "198.51.100.150")
+        self.Host._panel_address_changed(NEW, "203.0.113.150")
         alert = self._alert()
         self.assertEqual(len(alert), 1)
-        self.assertIn("198.51.100.150", alert.message)
+        self.assertIn("203.0.113.150", alert.message)
         self.assertIn("pa-ready", alert.message)
 
 
@@ -172,7 +173,7 @@ class TestTheOdooShNotice(PanelAddressCase):
 
         fake = MagicMock(spec=Request)
         fake.env = self.env
-        environ = dict(os.environ)
+        environ = os.environ.copy()
         environ.pop("ODOO_STAGE", None)
         if stage:
             environ["ODOO_STAGE"] = stage
