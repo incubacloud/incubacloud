@@ -24,6 +24,7 @@ import yaml
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
+from ..net.trusted_proxies import parse_ranges
 from . import _direct_probe
 from .cloud_host import strip_marked_blocks
 
@@ -561,15 +562,26 @@ class CloudHost(models.Model):
 
     @api.model
     def _direct_extra_peers(self):
-        """Return what a layer above admits on the direct port besides hosts.
+        """Return what is admitted on the direct port besides hosts.
 
-        Core admits nothing more; a layer may add servers it rents out
-        while their reservation lives.
+        Core: with the central on its single name, the addresses in
+        ``metrics_central_operator_sources`` (the panel itself, when it
+        runs outside the fleet), IPv4 only, as the set is. A layer may add
+        servers it rents out while their reservation lives.
 
         :return: CIDR strings.
         :rtype: list
         """
-        return []
+        Settings = self.env["cloud.settings"].sudo()
+        if not Settings._central_single_path():
+            return []
+        sources = parse_ranges(Settings._get_system().metrics_central_operator_sources)
+        return [
+            str(network) for network in (
+                ipaddress.ip_network(entry, strict=False) for entry in sources
+            )
+            if network.version == 4
+        ]
 
     @api.model
     def _direct_peers_entries(self):
@@ -579,6 +591,20 @@ class CloudHost(models.Model):
         """
         hosts, _left_out = self._direct_hosts_entries()
         return sorted_networks(hosts + list(self._direct_extra_peers()))
+
+    def _direct_peers_for_host(self):
+        """Return the list this host's direct port admits.
+
+        The fleet's list, except on the central's host when the central
+        takes writes from any address (``metrics_central_write_access``):
+        there the port admits every address, and each account's
+        credential is the barrier.
+
+        :rtype: list
+        """
+        if len(self) == 1 and self.env["cloud.settings"].sudo()._central_admits_anyone(self):
+            return [_direct_probe.ANY_ADDRESS]
+        return self._direct_peers_entries()
 
     def _direct_admits(self, address):
         """Whether this host has *address* applied, by its own /32.
@@ -616,7 +642,7 @@ class CloudHost(models.Model):
             "http": {
                 "middlewares": {
                     "direct-peers": {
-                        "ipWhiteList": {"sourceRange": self._direct_peers_entries()},
+                        "ipWhiteList": {"sourceRange": self._direct_peers_for_host()},
                     },
                     "direct-hosts": {"ipWhiteList": {"sourceRange": hosts}},
                     "direct-strip": {"headers": {"customRequestHeaders": {
@@ -742,18 +768,31 @@ class CloudHost(models.Model):
         :rtype: list
         """
         self.ensure_one()
-        settings = self.env["cloud.settings"].sudo()._get_system()
-        name = (settings.metrics_central_direct_host or "").strip().lower()
-        if not (name and settings.metrics_central_host_id == self):
+        Settings = self.env["cloud.settings"].sudo()
+        settings = Settings._get_system()
+        if settings.metrics_central_host_id != self:
             return []
-        return [{
-            "prefix": "metrics_central_direct",
-            "name": name,
-            # Refused by the port either way: ``direct-deny``'s 403, or
-            # the 421 a Traefik from 2.11.47 answers first, as the
-            # connection's TLS options (``direct``) are not the router's.
-            "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403,421"],
-        }]
+        names = []
+        name = (settings.metrics_central_direct_host or "").strip().lower()
+        if name:
+            names.append({
+                "prefix": "metrics_central_direct",
+                "name": name,
+                # Refused by the port either way: ``direct-deny``'s 403, or
+                # the 421 a Traefik from 2.11.47 answers first, as the
+                # connection's TLS options (``direct``) are not the router's.
+                "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403,421"],
+            })
+        single = (settings.metrics_central_public_host or "").strip().lower()
+        if Settings._central_single_path() and single != name:
+            names.append({
+                "prefix": _direct_probe.CENTRAL_NAME_PREFIX,
+                "name": single,
+                "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403,421"],
+                # Its certificate is signed by the panel's own authority.
+                "ca": Settings._central_ca_pem(),
+            })
+        return names
 
     def _direct_recently_refused(self):
         """Whether this host turned the direct path down in the last six hours.
@@ -778,6 +817,9 @@ class CloudHost(models.Model):
         if self.direct_path_opt_out or self._direct_recently_refused():
             return ""
         settings = self.env["cloud.settings"].sudo()._get_system()
+        if settings._central_single_in_force():
+            # One path: the remote-write URL is the central's single name.
+            return ""
         url = settings._direct_central_write_url()
         central = settings.metrics_central_host_id
         if not url or not central._direct_admits(self.sudo().ip_address):
@@ -837,7 +879,7 @@ class CloudHost(models.Model):
         if not self.direct_port_shipped:
             return False
         shipped = (self.direct_allowlist_shipped or "").split()
-        return shipped != self._direct_peers_entries()
+        return shipped != self._direct_peers_for_host()
 
     def _direct_untried_probes(self):
         """Return the direct checks on offer that this host's last install never tried.
@@ -1078,9 +1120,9 @@ class CloudHost(models.Model):
         step again, it is closed.
         """
         now = fields.Datetime.now()
-        desired = self._direct_peers_entries()
         Alert = self.env["cloud.alert"].sudo()
         for host in self._direct_sync_targets():
+            desired = host._direct_peers_for_host()
             shipped = (host.direct_allowlist_shipped or "").split()
             behind = shipped != desired
             if not behind:

@@ -455,12 +455,18 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         )
 
     def _direct_port_problem(self):
-        """Return why this run cannot publish the central's direct name, or ''.
+        """Return why this run cannot publish the central's direct or single name, or ''.
+
+        Both are served on the host's platform port (``direct``).
 
         :rtype: str
         """
-        settings = self.env["cloud.settings"].sudo()._get_system()
-        if not (settings.metrics_central_direct_host or "").strip():
+        Settings = self.env["cloud.settings"].sudo()
+        settings = Settings._get_system()
+        if not (
+            (settings.metrics_central_direct_host or "").strip()
+            or Settings._central_single_path()
+        ):
             return ""
         if self._host().direct_port_shipped:
             return ""
@@ -468,6 +474,53 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "The central's host has no direct port applied. Set the port on "
             "the host and press Full Setup."
         )
+
+    def _single_name_vars(self):
+        """Return what the playbook needs to publish the central's single name.
+
+        The name, the port, the operator's sources and a certificate for
+        the name signed now by the panel's authority, which is minted on
+        the durable cursor the first time (it must outlive the job, as the
+        central's other secrets). Empty values publish nothing.
+
+        :rtype: dict
+        """
+        Settings = self.env["cloud.settings"].sudo()
+        empty = {
+            "ic_single_host": "", "ic_central_port": 0,
+            "ic_central_cert": "", "ic_central_key": "",
+            "ic_single_operator_sources": [],
+        }
+        if not Settings._central_single_path():
+            self._leaf_expires = None
+            return empty
+        settings = Settings._get_system()
+        name = settings.metrics_central_public_host.strip().lower()
+        with self._durable_env() as env:
+            cert, key, expires = (
+                env["cloud.settings"].sudo()._get_system()._issue_central_leaf(name)
+            )
+        self._leaf_expires = expires
+        port = self._host().direct_port_shipped
+        self._sys(
+            f"Publishing the central as https://{name}:{port}, with a "
+            f"certificate of this panel's authority valid until "
+            f"{expires:%Y-%m-%d}."
+        )
+        return {
+            "ic_single_host": name,
+            "ic_central_port": port,
+            "ic_central_cert": cert,
+            "ic_central_key": key,
+            # The host itself, a panel beside the central (Docker's DNAT
+            # hands it a container's address) and whoever the operator
+            # names.
+            "ic_single_operator_sources": sorted(set(
+                ["127.0.0.1/32"]
+                + Settings._central_private_ranges()
+                + parse_ranges(settings.metrics_central_operator_sources)
+            )),
+        }
 
     def get_extra_vars(self):
         """Hand retention, credentials and the public name to the playbook."""
@@ -490,6 +543,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "accept no writes from anyone."
             )
         public = self._public_endpoint(settings)
+        single = self._single_name_vars()
         keep_grafana = bool(
             self.env["ir.config_parameter"].sudo().get_param(_KEEP_GRAFANA_PARAM)
         )
@@ -527,6 +581,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "ic_direct_host": (
                 settings.metrics_central_direct_host or ""
             ).strip().lower(),
+            # The single name on the platform port, with its certificate
+            # (``_single_name_vars``). Empty publishes nothing more.
+            **single,
         }
 
     def _public_endpoint(self, settings):
@@ -539,6 +596,10 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """
         host_name = (settings.metrics_central_public_host or "").strip().lower()
         if not host_name:
+            return None
+        if self.env["cloud.settings"].sudo()._central_single_path():
+            # Published on the platform port instead (``_single_name_vars``),
+            # never on 443: the name is outside every CDN.
             return None
         base = f"https://{host_name}"
         return {
@@ -606,7 +667,15 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "metrics_central_host_id": self._host().id,
         }
         public = self._public_endpoint(settings)
-        if public:
+        single = bool(getattr(self, "_leaf_expires", None))
+        if single:
+            vals["metrics_central_cert_expires"] = self._leaf_expires
+        if single and (settings.metrics_central_url or "").strip():
+            # The URLs move to the single name only once it answers from
+            # this host (``cloud.settings._central_name_ready``): until
+            # then, whatever reads and writes keeps going where it went.
+            pass
+        elif public:
             # Published under its own name: the panel and every agent use
             # it, wherever they run. The bridge address below is only
             # right for what runs on this very host.
@@ -632,9 +701,25 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         settings.write(vals)
         self._record_shipped_accounts()
         self._report_grafana_purge()
-        if (settings.metrics_central_direct_host or "").strip():
+        if (settings.metrics_central_direct_host or "").strip() or single:
             # Probe the name now rather than at the cron's next pass.
             self._host()._enqueue_direct_sync("central deployed", chained=True)
+        if single:
+            Settings = self.env["cloud.settings"].sudo()
+            Settings._central_cert_check()
+            if Settings._central_single_in_force():
+                self._sys(
+                    f"The panel and the agents use "
+                    f"{Settings._central_single_base()}; its certificate "
+                    "is renewed."
+                )
+            else:
+                self._sys(
+                    "The panel and the agents move to the central's name "
+                    "once it answers from this server, which the direct "
+                    "path's job checks now. "
+                    + Settings._central_dns_record_text()
+                )
 
         self._sys(
             f"✓ Metrics central is up and observability is enabled "

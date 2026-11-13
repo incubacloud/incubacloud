@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Check, from the host that publishes it, one direct name.
 #
-# Usage: direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>...
+# Usage: direct_probe.sh [--cacert <file>] <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>...
 #
 # The probe of the direct path:
 #
 #   DNS     the name resolves to this host's address and nothing else, and
 #           has no AAAA;
 #   TLS     a handshake on <ipv4>:<port> validates the name's certificate
-#           against the system's roots; its expiry is read too;
+#           against the system's roots, or against <file> alone when
+#           --cacert names one (the panel's own authority, for the
+#           central's single name); its expiry is read too;
 #   routes  each check, sent without credentials, answers its status, or
 #           one of them when several are given (and its body holds WORD
 #           when one is given): vmauth's 401, a JWKS's 200, and for
@@ -31,7 +33,15 @@ set -uo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
 
-ic_require_args 4 "$#" "direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>..."
+usage="direct_probe.sh [--cacert <file>] <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>..."
+cacert=""
+if [ "${1:-}" = "--cacert" ]; then
+    [ "$#" -ge 2 ] || ic_die "usage: $usage"
+    cacert="$2"
+    shift 2
+    [ -r "$cacert" ] || ic_die "cannot read the authority file: $cacert"
+fi
+ic_require_args 4 "$#" "$usage"
 
 name="$1"
 ip="$2"
@@ -70,6 +80,9 @@ fi
 
 url="https://$name:$port"
 resolve=(--resolve "$name:$port:$ip")
+if [ -n "$cacert" ]; then
+    resolve+=(--cacert "$cacert")
+fi
 curl -sS -o /dev/null --max-time 10 "${resolve[@]}" "$url/" 2>/dev/null
 code=$?
 case "$code" in

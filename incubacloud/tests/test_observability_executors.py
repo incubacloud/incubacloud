@@ -59,6 +59,9 @@ class ObservabilityExecutorCase(TransactionCase):
             "metrics_remote_write_token": "shared-secret",
             "metrics_account": "acct_test01",
             "metrics_retention_days": 45,
+            # The paths of before: the single name has tests of its own
+            # (test_central_single_path.py).
+            "metrics_central_single_path": False,
         })
         self.host = self.env["cloud.host"].create({
             "name": "HX",

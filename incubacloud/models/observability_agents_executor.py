@@ -224,6 +224,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             f"({len(instances)} instance(s) to label)."
         )
         offer = host._direct_write_offer()
+        # The single name in force: the agents trust the panel's
+        # authority for it, and the server checks it and asks the panel
+        # which address it leaves with (``_record_central_reach``).
+        central_ca = settings._central_agents_ca()
+        self._checks_central = bool(central_ca)
         # Kept for on_success: what the host tried is judged against them.
         self._direct_probes = host._direct_reach_probes(offer) if offer else []
         account, token = settings._metrics_auth()
@@ -246,6 +251,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 {"url": p["url"], "method": p["method"], "status": p["status"]}
                 for p in self._direct_probes
             ],
+            "ic_central_ca": central_ca,
+            "ic_panel_url": self._panel_url() if central_ca else "",
             # SSH, sudo, fail2ban and auditd: the server's own switch.
             "ic_security_logs": self._sent_security_logs,
             # What tells the panel's own sign-ins and sudo from anyone
@@ -268,6 +275,15 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 for inst in instances
             ],
         }
+
+    def _panel_url(self):
+        """Return the panel's address as the servers reach it.
+
+        :rtype: str
+        """
+        return (
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        ).strip().rstrip("/")
 
     @staticmethod
     def _security_logs_due(host):
@@ -394,6 +410,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         installed = str(facts.get("ic_write_url_installed") or "")
         if installed:
             host.sudo().write({"metrics_agents_write_url": installed})
+        if getattr(self, "_checks_central", False):
+            self._report_central_reach(host, facts)
         probes = getattr(self, "_direct_probes", None) or []
         if probes:
             before = host.direct_reach_urls or ""
@@ -408,6 +426,23 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 self.env["cloud.host"]._direct_path_changed(
                     f"direct URLs reached from {host.name} changed",
                 )
+
+    def _report_central_reach(self, host, facts):
+        """Record and say what the server's own check of the central answered.
+
+        :param host: the ``cloud.host`` installed.
+        :param dict facts: what the playbook exported.
+        """
+        try:
+            status = int(facts.get("ic_central_reach"))
+        except (TypeError, ValueError):
+            status = -1
+        egress = str(facts.get("ic_egress_ip") or "").strip()
+        host._record_central_reach(status, egress)
+        self._sys(
+            f"The central answered this server with {status} (401 is right "
+            f"without a credential); it leaves with {egress or 'an unknown address'}."
+        )
 
     def _report_pg_collector(self, facts):
         """Say in the job's log what became of the database collector.

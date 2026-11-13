@@ -876,7 +876,7 @@ _EMPTY_ANSWERS = {
 
 
 def run_board(scope, values, available, base, user, token,
-              range_key=None, start=None, end=None):
+              range_key=None, start=None, end=None, verify=True):
     """Run every panel of *scope* against the central, in parallel.
 
     A panel that fails does not take the board down: its entry carries
@@ -893,6 +893,8 @@ def run_board(scope, values, available, base, user, token,
     :param str base: the central's read URL.
     :param str user: this panel's metrics account.
     :param str token: its password.
+    :param verify: the central's certificate check
+        (``cloud.settings._central_tls_verify``).
     :returns: ``{"start", "end", "step", "panels": {key: {...}},
         "asked": [keys queried], "timing": {"central_ms"}}``.
     :rtype: dict
@@ -910,7 +912,7 @@ def run_board(scope, values, available, base, user, token,
             if panel["kind"] in ("stat", "table"):
                 raw = promql_query(
                     base, expression, timeout=_CHART_QUERY_TIMEOUT,
-                    token=token, user=user, retries=0,
+                    token=token, user=user, retries=0, verify=verify,
                 )
                 if panel["kind"] == "table":
                     return {"rows": shape_table(panel, raw)}
@@ -918,7 +920,7 @@ def run_board(scope, values, available, base, user, token,
             raw = promql_query_range(
                 base, expression, win_start, win_end, step,
                 timeout=_CHART_QUERY_TIMEOUT, token=token, user=user,
-                retries=0,
+                retries=0, verify=verify,
             )
             if panel["kind"] == "state":
                 return shape_state(panel, raw, win_start, win_end, step)
@@ -983,7 +985,10 @@ def metrics_source(env):
             "error": env._("No metrics central is configured."),
         }
     user, token = settings._metrics_auth()
-    return {"ok": True, "base": base, "user": user, "token": token}
+    return {
+        "ok": True, "base": base, "user": user, "token": token,
+        "verify": settings._central_tls_verify(),
+    }
 
 
 def operator_source(env, base):
@@ -1005,6 +1010,7 @@ def operator_source(env, base):
     return {
         "base": root[: -len(_ACCOUNT_READ_SUFFIX)] + OPERATOR_READ_PREFIX,
         "user": user, "token": token,
+        "verify": env["cloud.settings"].sudo()._central_tls_verify(),
     }
 
 
@@ -1147,6 +1153,7 @@ class CloudInstance(models.Model):
             "instance", values, available,
             source["base"], source["user"], source["token"],
             range_key=range_key, start=start, end=end,
+            verify=source.get("verify", True),
         )
         failure = board_failure(self.env, board, source["user"], source["token"])
         if failure:
@@ -1230,6 +1237,7 @@ class CloudHost(models.Model):
             "host", {"host_id": self.id}, {"host"},
             source["base"], source["user"], source["token"],
             range_key=range_key, start=start, end=end,
+            verify=source.get("verify", True),
         )
         failure = board_failure(self.env, board, source["user"], source["token"])
         if failure:
@@ -1331,6 +1339,7 @@ class CloudHost(models.Model):
                 "fleet", {}, {"fleet"},
                 operator["base"], operator["user"], operator["token"],
                 range_key=range_key, start=start, end=end,
+                verify=operator.get("verify", True),
             )
             if _all_refused(board):
                 # A central deployed before its operator route was open
@@ -1346,6 +1355,7 @@ class CloudHost(models.Model):
                 "fleet", {}, {"fleet"},
                 source["base"], source["user"], source["token"],
                 range_key=range_key, start=start, end=end,
+                verify=source.get("verify", True),
             )
         failure = board_failure(self.env, board, source["user"], source["token"])
         if failure:

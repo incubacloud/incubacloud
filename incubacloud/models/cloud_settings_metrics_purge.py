@@ -222,6 +222,7 @@ class CloudSettings(models.Model):
                 data=[("match[]", selector) for selector in selectors],
                 auth=auth,
                 timeout=_TIMEOUT,
+                verify=self._central_tls_verify(),
             )
             try:
                 response.raise_for_status()

@@ -54,7 +54,8 @@ def central_busy(exc):
     )
 
 
-def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
+def _promql_get(base_url, endpoint, params, timeout, token, user, retries,
+                verify=True):
     """GET ``/api/v1/<endpoint>`` on the metrics backend and return its payload.
 
     The transport half shared by :func:`promql_query` and
@@ -66,6 +67,9 @@ def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
     :param str base_url: metrics backend root.
     :param str endpoint: ``query`` or ``query_range``.
     :param dict params: query-string parameters.
+    :param verify: as ``requests`` takes it; the panel passes
+        ``cloud.settings._central_tls_verify()``, which trusts the
+        central's own authority besides the usual roots.
     :returns: the decoded JSON payload, whose ``status`` is ``success``.
     :raises requests.RequestException: on transport or HTTP failure.
     :raises ValueError: when the backend answers with a PromQL error.
@@ -79,6 +83,7 @@ def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
                 params=params,
                 timeout=timeout,
                 auth=(user, token) if (token and user) else None,
+                verify=verify,
             )
             response.raise_for_status()
         except (requests.ConnectionError, requests.Timeout):
@@ -103,7 +108,7 @@ def _promql_get(base_url, endpoint, params, timeout, token, user, retries):
 
 def promql_query_range(
     base_url, expression, start, end, step, timeout=_QUERY_TIMEOUT,
-    token=None, user=None, retries=1,
+    token=None, user=None, retries=1, verify=True,
 ):
     """Run a PromQL range query and return ``[(labels, points), ...]``.
 
@@ -128,6 +133,7 @@ def promql_query_range(
         {"query": expression, "start": int(start), "end": int(end),
          "step": int(step)},
         timeout=timeout, token=token, user=user, retries=retries,
+        verify=verify,
     )
     series = []
     for item in payload.get("data", {}).get("result", []):
@@ -146,7 +152,7 @@ def promql_query_range(
 
 def promql_query(
     base_url, expression, timeout=_QUERY_TIMEOUT, token=None, user=None,
-    retries=1,
+    retries=1, verify=True,
 ):
     """Run a PromQL instant query and return ``[(labels, value), ...]``.
 
@@ -178,6 +184,7 @@ def promql_query(
     payload = _promql_get(
         base_url, "query", {"query": expression},
         timeout=timeout, token=token, user=user, retries=retries,
+        verify=verify,
     )
     samples = []
     for item in payload.get("data", {}).get("result", []):
@@ -332,6 +339,7 @@ class CloudMetricRule(models.Model):
             return
 
         user, token = settings._metrics_auth()
+        verify = settings._central_tls_verify()
         Alert = self.env["cloud.alert"].sudo()
         rules = self.sudo().search([])
         if not rules:
@@ -339,7 +347,7 @@ class CloudMetricRule(models.Model):
 
         try:
             results = {
-                rule.id: rule._query(base, token=token, user=user)
+                rule.id: rule._query(base, token=token, user=user, verify=verify)
                 for rule in rules
             }
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
@@ -397,7 +405,7 @@ class CloudMetricRule(models.Model):
         }.get(cron.interval_type, 60)
         return 3 * max(cron.interval_number, 1) * unit
 
-    def _query(self, base_url, token=None, user=None):
+    def _query(self, base_url, token=None, user=None, verify=True):
         """Run this rule's PromQL and return ``[(labels, value), ...]``.
 
         Raises on transport/HTTP problems so the caller can treat a dead
@@ -405,10 +413,12 @@ class CloudMetricRule(models.Model):
 
         :param token: password half of this panel's metrics credential.
         :param user: its account — the central filters the result by it.
+        :param verify: the central's certificate check
+            (``cloud.settings._central_tls_verify``).
         """
         self.ensure_one()
         return promql_query(
-            base_url, self.expression, token=token, user=user,
+            base_url, self.expression, token=token, user=user, verify=verify,
         )
 
     def _breached(self, value):

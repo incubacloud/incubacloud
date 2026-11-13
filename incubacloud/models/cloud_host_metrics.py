@@ -143,12 +143,14 @@ class CloudHost(models.Model):
         if not base:
             return None
         user, token = settings._metrics_auth()
+        verify = settings._central_tls_verify()
 
         readings = {}
         try:
             for key in _QUERIES:
                 for labels, value in promql_query(
                     base, _query(key, host_ids), token=token, user=user,
+                    verify=verify,
                 ):
                     raw = (labels or {}).get("host_id")
                     if not raw:
