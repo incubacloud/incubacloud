@@ -1132,28 +1132,38 @@ class CloudInstance(models.Model):
 
     #: Fields a group writes and only the system reads: ``{field: group}``.
     #: Saving the OAuth2 relay's client secret is a developer's, as its
-    #: password is, and nobody reads it back (``_has_field_access``).
+    #: password is, and nobody reads it back (``check_field_access_rights``).
     _WRITE_ONLY_FIELDS = {
         "smtp_relay_oauth_client_secret": "incubacloud.group_cloud_developer",
     }
 
-    def _has_field_access(self, field, operation):
+    def check_field_access_rights(self, operation, field_names):
         """Let a write-only field be written by its group, read by none.
 
         A field of :attr:`_WRITE_ONLY_FIELDS` keeps ``base.group_system``
         on its definition, so ``read``, ``search_read`` and an export
         refuse it to everyone else; writing it asks for the group listed
-        there instead, so the form's save, ``create`` and the constraints
-        that run with it work as for any field.
+        there instead, so the form's save works as for any field. Odoo 18
+        asks this method for every field a write names (19 asks
+        ``_has_field_access`` field by field).
 
-        :param field: the field
         :param str operation: ``read`` or ``write``
-        :rtype: bool
+        :param field_names: the fields asked for; all of them when empty
+        :return: the fields allowed
+        :rtype: list
+        :raise AccessError: when one of them is not
         """
-        group = self._WRITE_ONLY_FIELDS.get(field.name)
-        if group and operation == "write" and not self.env.su:
-            return self.env.user.has_group(group)
-        return super()._has_field_access(field, operation)
+        if operation != "write" or not field_names or self.env.su:
+            return super().check_field_access_rights(operation, field_names)
+        allowed = [
+            name for name in field_names
+            if name in self._WRITE_ONLY_FIELDS
+            and self.env.user.has_group(self._WRITE_ONLY_FIELDS[name])
+        ]
+        rest = [name for name in field_names if name not in allowed]
+        if rest:
+            rest = super().check_field_access_rights(operation, rest)
+        return rest + allowed
 
     def _relay_oauth_renders(self):
         """Whether a deploy renders this instance's relay with OAuth2.
