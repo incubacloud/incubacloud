@@ -107,3 +107,29 @@ class TestCronBotUser(TransactionCase):
             "cron(s) fail the Odoo 19 server-action access gate:\n%s"
             % "\n".join(offenders),
         )
+
+    def test_settings_user_runs_a_bot_cron_manually(self):
+        """A Settings user's "Run manually" on a cron of the bot runs it.
+
+        Odoo 18 wrote ``lastcall`` as the cron's user, and the bot may not
+        write ``ir.cron``: the button ended in an access error.
+        """
+        cron = self.env.ref('incubacloud.cron_capture_secret_keys')
+        self.assertEqual(cron.user_id, self.bot)
+        admin = self.env['res.users'].create({
+            'name': 'Run manually',
+            'login': 'ic-run-manually',
+            'groups_id': [(6, 0, [
+                self.env.ref('base.group_system').id,
+                self.env.ref('incubacloud.group_cloud_manager').id,
+            ])],
+        })
+        cron.lastcall = False
+        self.assertTrue(cron.with_user(admin).method_direct_trigger())
+        self.assertTrue(cron.lastcall)
+
+    def test_run_manually_still_needs_write_on_the_cron(self):
+        """Someone who may not write ``ir.cron`` cannot run one manually."""
+        cron = self.env.ref('incubacloud.cron_capture_secret_keys')
+        with self.assertRaises(AccessError):
+            cron.with_user(self.bot).method_direct_trigger()
