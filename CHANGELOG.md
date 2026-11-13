@@ -183,6 +183,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and the guard stays unsupported, naming the version. The Check reads
   the state the timer last wrote, so a guard that opened after Full
   Setup raises `shared_guard_open`, and one on again resolves it.
+- **A session cookie set from another host of the domain is not used
+  (#111).** Any host under the panel's registrable domain, such as an
+  instance it deployed, can set `session_id` with `Domain=<parent>`; the
+  browser then sends it to the panel beside the panel's own, or alone,
+  and Odoo used the first one listed, which the setter controls with a
+  longer `Path`: a visitor could be served in the setter's account, or
+  kept signed out. `SameSite` and `Secure` do not stop it, and Odoo's
+  rotation of the session at sign-in only stops fixation. Over HTTPS,
+  wherever Odoo sets `session_id` the panel now sets
+  `__Host-session_bind` beside it, a digest of its value with the same
+  lifetime: a `__Host-` cookie can only come from the host itself. Odoo
+  is given only the `session_id` that cookie names, whatever their order;
+  with none, a new anonymous session. Several `session_id` cookies on one
+  request are logged as a warning (`… session cookie(s) without this
+  host's binding not used`). Plain HTTP is unchanged. On the first visit
+  after the update every browser signs in once more: its session predates
+  the binding. The instances themselves are untouched: between two of
+  them under one domain, only a domain of their own on the Public Suffix
+  List separates their cookies.
 
 ### Changed
 
