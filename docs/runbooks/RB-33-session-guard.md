@@ -179,7 +179,9 @@ Odoo's `bad query` ERROR.
 
 New code serving before its update has run has no `cloud_session_closure`
 table: every pin and log fails and is logged, and the requests are served;
-only a close still closes. Updating the module ends it.
+only a close still closes. Without `cloud_session_seen` the history is not
+written (`could not write the history`) and nobody is emailed about a new
+country or browser. Updating the module ends it.
 
 ## The log
 
@@ -229,6 +231,73 @@ SELECT signal, count(*) FROM cloud_session_closure
    AND seen_value IN (reentry_country, reentry_browser) GROUP BY 1;
 ```
 
+## Sessions and access
+
+The page **Sessions and access** (user menu, `/cloud/sessions`) shows a
+user their own sessions and ways in, from Odoo's trace and the guard's
+rows (13-nov-2026, `models/cloud_session_access.py`):
+
+- this session, since when, and the countries and browsers it was used
+  from; the other recent sessions, active or ended;
+- the last closes, with their reason (*It was used from another
+  country*, *another browser*, *Inactivity*) — where the user learns why
+  they had to sign in again, which the sign-in page does not say;
+- the countries and browser families the account has been used from;
+- the ways in that outlive a session, each with **Revoke**: the user's
+  API keys (not two-factor's trusted devices) and, to a manager of the
+  panel, its Git tokens. A layer adds its own.
+- **Sign out everywhere**: every session of the user, this one included,
+  without a password, a second factor or a confirmation. It moves the
+  user's `backchannel_logout_counter`, which is part of the session token
+  (an empty counter changes no token, so adding it signed nobody out),
+  and deletes the sessions Odoo's trace names. API keys and agents are
+  not touched: they are revoked one by one, so nobody breaks their CI by
+  signing out.
+
+Behind a CDN the image usually carries no GeoIP database, so Odoo's trace
+names no country; the guard writes the CDN's country into each row Odoo
+writes (by its English name, as Odoo's GeoIP would), only on rows that
+have none.
+
+### The history and the notices
+
+`cloud.session.seen` keeps, per user, each country and browser family
+their sessions were used from, with when it was first and last seen. The
+guard writes it on the requests it already judges (a new trace), never on
+any other. A country the CDN could not tell, Tor, a request that skipped
+the CDN or a browser the parser cannot name are not kept.
+
+An email goes out, without any question, when:
+
+| Reason | When | To |
+|---|---|---|
+| `country` | the account is used from a country its history does not have | the user |
+| `browser` | the same, with the browser family | the user |
+| `agent` | an API key is created (a layer adds: an agent allowed) | its user and the account's holder |
+| `git_token` | a Git token is saved, or replaced | whoever saved it and the account's holder |
+
+A user with no history of that kind yet only gets it written: no email
+for an account's first sign-in, nor for the first one after this was
+deployed. A country or browser seen on a session that is then closed for
+it is told all the same: it is the only email a user whose cookie was
+used gets. The email says what happened, when, from which country and
+browser, and what to do if it was not them: open Sessions and access,
+sign out everywhere, revoke what they do not recognise, and sign out of
+the account they sign in with (Google, GitHub…) too.
+
+| Parameter (`incubacloud.session_guard.`) | Default | Why (13-nov-2026) |
+|---|---|---|
+| `notices` | `off` in core | `on` or `off`. Core alone may be somebody's ERP, where emailing every user is not ours to decide. The platform's layers default to `on`. |
+| `notice_window_hours` | 24 | At most one email per user and reason in that window, so a trip or a VPN costs one email, not one per request. It is a rate-limit bucket (`session_notice:<user>:<reason>`), and the buckets are swept a day after they start: a larger value is taken as 24. |
+
+The emails are queued and the mail queue woken; nothing is sent while a
+request waits. A notice that fails is logged (`[session-notice]`) and
+what it was about goes on: the history is kept, the key or token made.
+
+The history is personal data under the same rule as Odoo's trace: kept
+while the user's account exists, deleted with a deleted user and, for an
+archived one, at the next daily vacuum.
+
 ## Known limits
 
 - **A thief in the same country with the same browser family** is not
@@ -260,3 +329,6 @@ SELECT signal, count(*) FROM cloud_session_closure
 Set the signal's parameter to `log` (keeps measuring) or `off`. Nothing
 else changes: no session is touched by switching the guard off, and the
 rows stay until their retention.
+
+`incubacloud.session_guard.notices` set to `off` stops the emails at
+once; the history keeps being written while any signal is on.

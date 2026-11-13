@@ -10,6 +10,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Sessions and access (#48)** ([RB-33](docs/runbooks/RB-33-session-guard.md#sessions-and-access)).
+  A page of the user menu (`/cloud/sessions`) shows the user's sessions
+  (since when, countries and browsers, active or ended), the last closes
+  of the session guard with their reason, the countries and browser
+  families the account has been used from, and the ways in that outlive
+  a session, each with *Revoke*: their API keys and, to a manager, the
+  Git tokens. *Sign out everywhere* signs the user out of every session,
+  this one included, with no password, second factor or confirmation:
+  it moves `res.users.backchannel_logout_counter`, now core's and part of
+  the session token (empty until first moved, so no token changed), and
+  leaves API keys alone. The guard keeps each user's countries and
+  browser families seen (`cloud.session.seen`), on the requests it
+  already judges, and writes the CDN's country into Odoo's trace of each
+  session where Odoo's GeoIP found none. With
+  `incubacloud.session_guard.notices` on (off in core alone), an email
+  without any question tells a user of a country or browser their
+  history did not have, and a new API key or Git token to whoever made it
+  and the account's holder (a layer names them); one a day per user and
+  reason (`notice_window_hours`), none for an account with no history
+  yet. The history is deleted with the user, and for an archived user at
+  the next daily vacuum. Spanish translation included.
 - **Start an empty central, and Retire the central (#61).** Settings ›
   Monitoring › *Where the central runs* has the two ways out for a
   central whose server must go, each after a confirmation. Picking
