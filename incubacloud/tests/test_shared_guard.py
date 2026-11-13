@@ -274,6 +274,8 @@ class TestFullSetupAppliesTheGuard(TransactionCase):
             with self.subTest(step=step):
                 self._succeed(step)
                 self.assertTrue(self._active())
+                if step["exit_status"] != 0:
+                    self.assertIn("did not finish (exit 1)", self._active().message)
                 self._succeed({"stdout": "IC_SHARED_GUARD_OFF removed\n", "exit_status": 0})
                 self.assertFalse(self._active())
 
