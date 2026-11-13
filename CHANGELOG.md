@@ -154,12 +154,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   commit fixes. The `synchronize` and the `update` now queue it with a
   push's payload (`trigger: webhook`, the `push_*` keys: the request's
   head commit, its branch and repository, who pushed). Whichever of the
-  two comes first queues the rebuild; the other merges into it while it
-  waits, and queues nothing once it has been dispatched
+  two comes first queues the rebuild; the other queues nothing while
+  that rebuild waits or once it has been dispatched
   (`cloud.repo.event.mixin._queue_push_rebuild`,
   `RebuildInstanceExecutor._carries_push`), which also holds for a push
-  delivered again. A preview still follows its request whether or not it
-  follows pushes (`auto_rebuild`).
+  delivered again. GitHub sends the two almost at once: the second looks
+  for the first's rebuild under the instance's queue lock and in a fresh
+  read as well as in its snapshot, so it finds one committed after its
+  snapshot was taken. A push without a commit is never taken for
+  another. A preview still follows its request whether or not it follows
+  pushes (`auto_rebuild`); `last_auto_rebuild` is written only for an
+  instance that follows them. A lost race while a push, a `synchronize`
+  or an `update` queues its rebuild (a serialization failure, a
+  deadlock) is raised for Odoo to run the request again: a GitHub
+  `synchronize` swallowed it and answered 500 on an aborted transaction,
+  losing the delivery, and a push dropped its rebuild in silence.
 
 ---
 
