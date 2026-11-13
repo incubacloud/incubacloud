@@ -313,23 +313,36 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
         )
         self.assertEqual(self.env.cr.fetchone(), ("true",))
 
+    def _stored_secret(self):
+        """Return the ``database.secret`` row's value, or None without one."""
+        self.env.cr.execute(
+            "SELECT value FROM ir_config_parameter WHERE key = 'database.secret'"
+        )
+        row = self.env.cr.fetchone()
+        return row and row[0]
+
     def test_a_neutralized_copy_signs_with_a_secret_of_its_own(self):
         """``database.secret`` changes, a uuid4 as Odoo creates it.
 
         Odoo signs sessions and links with it, and its own neutralization
         leaves it as it is: a copy restored with ``pg_restore`` and
-        neutralized kept production's.
+        neutralized kept production's. The script deletes it, as
+        PostgreSQL 12 draws no key strong enough without pgcrypto, and
+        the panel creates the copy's when it next loads the registry.
         """
-        before = self.env["ir.config_parameter"].sudo().get_param("database.secret")
+        ICP = self.env["ir.config_parameter"]
+        before = ICP.sudo().get_param("database.secret")
         signed = hmac(self.env(su=True), "neutralize-test", "message")
         self.env.flush_all()
         neutralize_database(self.env.cr)
-        self.env.registry.clear_cache("stable")
-        self.env.cr.execute(
-            "SELECT value FROM ir_config_parameter WHERE key = 'database.secret'"
+        self.assertTrue(
+            self._stored_secret() is None, "production's database.secret is kept",
         )
-        (after,) = self.env.cr.fetchone()
+        ICP._register_hook()
+        self.env.registry.clear_cache()
+        after = self._stored_secret()
         # Compared, never printed: a failure must not show the key.
+        self.assertTrue(after, "the copy has no database.secret")
         self.assertTrue(after != before, "database.secret is still production's")
         parsed = uuid.UUID(after)
         self.assertTrue(
@@ -338,6 +351,14 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
         )
         self.assertNotEqual(
             hmac(self.env(su=True), "neutralize-test", "message"), signed,
+        )
+
+    def test_a_database_with_its_secret_keeps_it_at_load(self):
+        """Loading the registry creates the key only where there is none."""
+        before = self._stored_secret()
+        self.env["ir.config_parameter"]._register_hook()
+        self.assertTrue(
+            self._stored_secret() == before, "a loaded database lost its key",
         )
 
     def test_a_neutralized_copy_reaches_nothing_outside(self):

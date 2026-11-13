@@ -114,15 +114,18 @@ END $$;
 
 -- 9. Odoo's database.secret, the key that signs sessions, signup and reset
 -- links, portal and unsubscribe links, and names the panel's handoffs: the
--- copy gets one of its own, a uuid4 as Odoo creates it. A session or a link
--- of production's does not open the copy, nor one of the copy's
--- production; whoever is signed in to the copy signs in again. Nothing the
--- panel stores is derived from it: a handoff is named from it only while its
--- chain runs, and section 3 cancels the chains. A restore as a copy
--- (click-odoo-restoredb's default) already gives a new one, with
--- database.uuid; odoo neutralize after a pg_restore did not.
-UPDATE ir_config_parameter SET value = gen_random_uuid()::text
- WHERE key = 'database.secret';
+-- copy gets one of its own. A session or a link of production's does not
+-- open the copy, nor one of the copy's production; whoever is signed in to
+-- the copy signs in again. Nothing the panel stores is derived from it: a
+-- handoff is named from it only while its chain runs, and section 3 cancels
+-- the chains. A restore as a copy (click-odoo-restoredb's default) already
+-- gives a new one, with database.uuid; odoo neutralize after a pg_restore
+-- did not. Production's is deleted here and the panel creates the copy's,
+-- a uuid4 as Odoo creates it, when it next loads the database
+-- (models/ir_config_parameter.py): PostgreSQL 12 has no random source
+-- strong enough for a signing key without pgcrypto, which only a
+-- superuser may install there, and random() holds 48 bits.
+DELETE FROM ir_config_parameter WHERE key = 'database.secret';
 
 -- 10. Checkpoints of jobs with steps run apart on a server (1.0.225): a row
 -- says the job may have something running on a server of production's,
