@@ -16,6 +16,7 @@ from psycopg2 import IntegrityError
 from odoo import _, fields, http
 from odoo.exceptions import UserError, ValidationError
 from odoo.http import request
+from odoo.tools.translate import translate_sql_constraint
 
 from ...gitlab.client import GitLabError
 from ...models._git_urls import parse_provider_repo_url
@@ -109,10 +110,16 @@ def _constraint_message(env, exc):
     :return: the constraint's message, translated, or Odoo's generic one
     :rtype: str
     """
-    model = env['cloud.git.provider']
-    if exc.diag.table_name == env['cloud.git.credential']._table:
-        model = env['cloud.git.credential']
-    return model._sql_error_to_message(exc)
+    # Odoo 18 keeps the message of an ``_sql_constraints`` entry in
+    # ``ir.model.constraint``; the credentials' unique index, created in
+    # ``cloud.git.credential.init()``, has none there, so its message is
+    # the route's own.
+    name = exc.diag.constraint_name
+    if name == 'cloud_git_credential_provider_namespace_unique':
+        return _("This provider already has a credential for that namespace.")
+    if name in env.registry._sql_constraints:
+        return translate_sql_constraint(env.cr, name, env.lang or 'en_US')
+    return _("The operation cannot be completed: %s", exc.args[0])
 
 
 def _serialize_provider(provider, with_credentials):
