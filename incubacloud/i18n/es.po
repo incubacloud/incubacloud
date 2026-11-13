@@ -273,6 +273,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(name)s (not verified)"
+msgstr "%(name)s (sin verificar)"
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "%(name)s has an archived copy at %(path)s but no host left to delete it "
@@ -6303,6 +6309,16 @@ msgid "If it was you, there is nothing to do."
 msgstr "Si fue usted, no tiene que hacer nada."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"If you did not expect it, talk to %(by)s, or take away their access to the "
+"panel: Users, then Remove."
+msgstr ""
+"Si no lo esperaba, hable con %(by)s o quítele el acceso al panel: Usuarios "
+"y luego Eliminar."
+
+#. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
 msgid "If you do not recognise it:"
 msgstr "Si no lo reconoce:"
@@ -7304,9 +7320,21 @@ msgid "Revoke"
 msgstr "Revocar"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Revoke only deletes it here: revoke it in GitLab or GitHub too."
+msgstr "Revocar solo lo borra aquí: revóquelo también en GitLab o GitHub."
+
+#. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
 msgid "Revoke there whatever you do not recognise: agents, API keys, tokens."
 msgstr "Revoque allí lo que no reconozca: agentes, claves API, tokens."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "Revoked here. Revoke the token in GitLab or GitHub too."
+msgstr "Revocado aquí. Revoque el token también en GitLab o GitHub."
 
 #. module: incubacloud
 #. odoo-javascript
