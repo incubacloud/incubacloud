@@ -1679,6 +1679,35 @@ class TestAStoppedParkedJobEndedByHand(_StopCase):
         self.assertIn(_NO_EXECUTOR, self._log())
         self.assertEqual(len(self._given_up_alert()), 1)
 
+    def test_no_executor_closes_the_alert_of_the_queue_its_row_held(self):
+        """The row goes, and the alert of the queue it held with it:
+        closed by hand, it would let go of nothing."""
+        cls = self._parked()
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=TestLostContact._refused):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        row = self._row()
+        self.env["cloud.job"]._alert_queue_held(
+            self.job, row, row._data().get("plan") or [],
+        )
+        alert = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_queue_held_unreachable"),
+            ("job_id", "=", self.job.id),
+        ])
+        self.assertEqual(alert.state, "active")
+        with self._closes(held=True), mute_logger(
+            "odoo.addons.incubacloud.models.cloud_job",
+        ):
+            self._reconcile(None)
+        self.assertFalse(self._row())
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolution, "auto")
+
     def test_a_close_that_never_happens_lets_the_row_go_after_30_minutes(self):
         """Closed after the pass's close, with an error: no longer a job
         to close."""

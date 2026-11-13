@@ -336,6 +336,29 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         cls(self.job, self.host)._resume(self._row())
         self.assertFalse(self._row().holds_queue_since)
 
+    def test_a_requeue_that_resumes_the_job_closes_its_alert(self):
+        """The alert of the queue the mark held goes with the mark: the
+        job runs again, and closed by hand it would let go of nothing."""
+        cls = self._parked(_no_return_from="Apart")
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " now() at time zone 'UTC' WHERE job_id = %s", (self.job.id,),
+        )
+        self.env.invalidate_all()
+        row = self._row()
+        self.env["cloud.job"]._alert_queue_held(
+            self.job, row, row._data().get("plan") or [],
+        )
+        alert = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_queue_held_unreachable"),
+            ("job_id", "=", self.job.id),
+        ])
+        self.assertEqual(alert.state, "active")
+        cls(self.job, self.host)._resume(self._row())
+        self.env.invalidate_all()
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolution, "auto")
+
     def test_a_row_marked_past_its_cap_is_not_given_up(self):
         """Marked by a pass well past the step's cap: kept, the queue held."""
         cls = self._lost(_no_return_from="Apart")
