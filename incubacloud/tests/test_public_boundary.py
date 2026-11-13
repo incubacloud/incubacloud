@@ -104,6 +104,9 @@ _ALLOWED_FILES = {
     "incubacloud/static/src/utils/icons.js": (
         2, "an icon's name, which the screens of modules on top ask for",
     ),
+    ".github/scripts/check_migration_versions.py": (
+        4, "Odoo's own grammar of a series (``saas~12``), copied from its migration module",
+    ),
     "incubacloud/models/_relay_oauth.py": (
         1, (
             "the key the relay image's renewer reads the directory ID from, "
