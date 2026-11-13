@@ -8,7 +8,8 @@
 # a static file it cannot parse). With STUB_LOOPING the container looks
 # ``running`` at every check but its restart count grows with each
 # ``restart`` and each check, as a Traefik in a restart loop does, until
-# the previous files come back.
+# the previous files come back. ``compose version --short`` answers
+# STUB_COMPOSE_VERSION, nothing when it is not set.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/proxy_start.sh"
@@ -21,6 +22,7 @@ setup() {
 #!/usr/bin/env bash
 echo "$*" >> "$CALLS"
 case "$*" in
+    "compose version --short") echo "${STUB_COMPOSE_VERSION:-}" ;;
     *" up -d "*)
         if [ -n "${STUB_UP_FAIL:-}" ] && [ ! -e "$CALLS.failed" ]; then
             touch "$CALLS.failed"
@@ -123,4 +125,39 @@ new_files() {
     done
     [ "$(grep -c ' up -d --remove-orphans' "$CALLS")" -eq 2 ]
     [[ "$output" == *"restarting"* ]]
+}
+
+# A compose file with the proxy's fixed address on ``shared``.
+mac_file() {
+    printf '%s\n' \
+        "services:" \
+        "  proxy:" \
+        "    networks:" \
+        "      shared:" \
+        "        mac_address: \"02:69:63:00:00:01\"" \
+        "      private:" \
+        > "$IC_TRAEFIK_DIR/inverseproxy.yaml"
+}
+
+@test "a Compose before 2.24 starts the proxy without its fixed address" {
+    bash "$SCRIPT" keep
+    mac_file
+    STUB_COMPOSE_VERSION=v2.23.3 run bash "$SCRIPT" start
+    [ "$status" -eq 0 ]
+    ! grep -q "mac_address" "$IC_TRAEFIK_DIR/inverseproxy.yaml"
+    grep -qx "      shared:" "$IC_TRAEFIK_DIR/inverseproxy.yaml"
+    grep -qx "      private:" "$IC_TRAEFIK_DIR/inverseproxy.yaml"
+    [[ "$output" == *"WARNING: Docker Compose 2.23.3 is older than 2.24"* ]]
+    # What was put aside keeps the file as it ran.
+    [ "$(cat "$IC_TRAEFIK_DIR/.ic-prev-inverseproxy.yaml")" = "old inverseproxy.yaml" ]
+}
+
+@test "a Compose from 2.24, or one that does not say, keeps the address" {
+    for version in 2.24.0 5.7.0 ""; do
+        mac_file
+        STUB_COMPOSE_VERSION="$version" run bash "$SCRIPT" start
+        [ "$status" -eq 0 ]
+        grep -q 'mac_address: "02:69:63:00:00:01"' "$IC_TRAEFIK_DIR/inverseproxy.yaml"
+        [[ "$output" != *"older than 2.24"* ]]
+    done
 }

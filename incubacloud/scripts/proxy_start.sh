@@ -17,6 +17,12 @@
 # fails. The proxy serves the whole host, so Full Setup must never leave
 # it down. A first setup has nothing to fall back to and simply fails.
 #
+# Docker Compose before 2.24 refuses the whole file for the proxy's
+# fixed address on ``shared`` (``mac_address`` under a service's
+# network): ``start`` drops that line first, with a warning, and the
+# proxy runs without it; the guard on that network (shared_guard.sh)
+# then stays open and says why.
+#
 # IC_TRAEFIK_DIR overrides ~/traefik and IC_PROXY_SETTLE the seconds
 # waited before the check (tests).
 set -euo pipefail
@@ -27,6 +33,8 @@ ic_require_args 1 "$#" "proxy_start.sh <keep|start>"
 
 dir="${IC_TRAEFIK_DIR:-$HOME/traefik}"
 files=(inverseproxy.yaml traefik.yml config.yml)
+# The proxy's fixed address on ``shared`` (``PROXY_SHARED_MAC``).
+proxy_mac="02:69:63:00:00:01"
 
 compose() {
     (cd "$dir" && docker compose -p inverseproxy -f inverseproxy.yaml "$@")
@@ -48,6 +56,18 @@ restarts() {
     docker inspect -f '{{.RestartCount}}' "$id" || true
 }
 
+# Drop the proxy's fixed address from its compose file when Docker
+# Compose is too old to take it.
+drop_mac_for_old_compose() {
+    local old line
+    old="$(ic_compose_older_than 2 24)"
+    [ -n "$old" ] || return 0
+    line="^[[:space:]]*mac_address:[[:space:]]*[\"']?${proxy_mac}[\"']?[[:space:]]*\$"
+    grep -Eq "$line" "$dir/inverseproxy.yaml" || return 0
+    sed -Ei "\#${line}#d" "$dir/inverseproxy.yaml"
+    ic_warn "Docker Compose $old is older than 2.24, which the proxy's fixed address on shared needs: the proxy starts without it, and the guard on that network stays open"
+}
+
 case "$1" in
     keep)
         for f in "${files[@]}"; do
@@ -59,6 +79,7 @@ case "$1" in
         done
         ;;
     start)
+        drop_mac_for_old_compose
         status=0
         compose up -d --remove-orphans && compose restart proxy || status=$?
         if [ "$status" -eq 0 ]; then

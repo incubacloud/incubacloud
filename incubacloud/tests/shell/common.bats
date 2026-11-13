@@ -479,3 +479,21 @@ STUB
     ic_copier update --defaults
     [ "$(cat "$TMP/seen")" = "none update --defaults" ]
 }
+
+@test "ic_compose_older_than names only a Compose under the version asked" {
+    docker() {
+        [ "$*" = "compose version --short" ] || return 2
+        [ -n "${STUB_VERSION:-}" ] || return 1
+        printf '%s\n' "$STUB_VERSION"
+    }
+    for old in 2.23.3 v2.23.0 1.29.2; do
+        STUB_VERSION="$old" run ic_compose_older_than 2 24
+        [ "$status" -eq 0 ]
+        [ "$output" = "${old#v}" ]
+    done
+    for recent in 2.24.0 v2.24.6 2.40.3 5.7.0 "" garbage; do
+        STUB_VERSION="$recent" run ic_compose_older_than 2 24
+        [ "$status" -eq 0 ]
+        [ -z "$output" ]
+    done
+}

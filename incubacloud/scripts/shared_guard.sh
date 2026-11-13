@@ -70,6 +70,8 @@ STATE_FILE="${IC_SHARED_GUARD_STATE:-/run/incubacloud-shared-guard.state}"
 LOCK_FILE="${IC_SHARED_GUARD_LOCK:-/run/incubacloud-shared-guard.lock}"
 # Seconds a run waits for the one before it: an apply takes a few.
 LOCK_WAIT="${IC_SHARED_GUARD_LOCK_WAIT:-30}"
+# The first Compose that takes ``mac_address`` under a service's network.
+COMPOSE_MAC_MIN=(2 24)
 BRIDGE_NF="${IC_BRIDGE_NF_FILE:-/proc/sys/net/bridge/bridge-nf-call-iptables}"
 SYS_NET="${IC_SYS_CLASS_NET:-/sys/class/net}"
 LOG_TAG="incubacloud-shared-guard"
@@ -239,7 +241,7 @@ close_guard() {
 }
 
 do_apply() {
-    local bridge macs mac nf
+    local bridge macs mac nf old
     if ! ipt -S DOCKER-USER >/dev/null 2>&1; then
         remove_rules
         if docker_uses_nftables; then
@@ -285,6 +287,11 @@ do_apply() {
     while IFS= read -r mac; do
         if [ "$mac" != "${MAC,,}" ]; then
             remove_rules
+            old="$(ic_compose_older_than "${COMPOSE_MAC_MIN[@]}")"
+            if [ -n "$old" ]; then
+                report UNSUPPORTED "Docker Compose $old cannot fix the proxy's address on $NETWORK (${COMPOSE_MAC_MIN[0]}.${COMPOSE_MAC_MIN[1]} or later)"
+                return 0
+            fi
             report OPEN "the proxy's address on $NETWORK is ${mac:-none}, not $MAC: run Full Setup"
             return 0
         fi

@@ -229,6 +229,21 @@ ic_require_args() {
     fi
 }
 
+# Print Docker Compose's version when it is older than <major>.<minor>;
+# nothing when it is that one or later, or its version cannot be read.
+# Usage: ic_compose_older_than <major> <minor>
+ic_compose_older_than() {
+    local version
+    version="$(docker compose version --short 2>/dev/null || true)"
+    version="${version#v}"
+    [[ "$version" =~ ^([0-9]+)\.([0-9]+) ]] || return 0
+    if [ "${BASH_REMATCH[1]}" -lt "$1" ] || {
+        [ "${BASH_REMATCH[1]}" -eq "$1" ] && [ "${BASH_REMATCH[2]}" -lt "$2" ]
+    }; then
+        printf '%s\n' "$version"
+    fi
+}
+
 # Print the service list of the compose in the current directory,
 # retrying once. Returns 1 — with docker's own error in the job log —
 # when the command fails both times.
