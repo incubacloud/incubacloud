@@ -6102,9 +6102,11 @@ class CloudJob(models.Model):
         it as what a queued job waits behind; ``_scope_busy`` keeps its
         target busy for the same queue.job. A checkpoint a hook closed and
         kept is the reconciliation's, which alerts if it gives up; while it
-        holds the job's queue (``holds_queue_since``) the job still stops:
-        whether its step stopped on the server is not known yet
-        (13-nov-2026).
+        holds the job's queue (``holds_queue_since``, read as
+        ``_server_holder`` reads it) the job still stops: whether its step
+        stopped on the server is not known yet (13-nov-2026). A mark that
+        holds nothing — the row a move's restore left on a target the
+        instance does not live on — does not.
 
         The checkpoint, and so its half of this and the alert, exists only
         for a job whose plan has a ``detached`` step: a job without one
@@ -6117,20 +6119,29 @@ class CloudJob(models.Model):
         :rtype: set
         """
         Job = self.sudo()
-        Job.flush_model(["state", "queue_job_uuid"])
+        Job.flush_model(["state", "queue_job_uuid", "instance_id", "job_type_id"])
         self.env["queue.job"].sudo().flush_model(["state", "uuid"])
         self.env["cloud.job.checkpoint"].sudo().flush_model(
-            ["job_id", "closed", "holds_queue_since"],
+            ["job_id", "closed", "holds_queue_since", "host_id"],
         )
+        self.env["cloud.instance"].sudo().flush_model(["host_id"])
+        hidden = tuple(self._get_hidden_job_types()) or ("",)
         query = Job._search(expression.AND([domain, [("state", "=", "cancelled")]]))
+        # A closed row stops its job only while it holds the queue, as
+        # ``_server_holder`` reads it: not the row a move's restore left
+        # on a target the instance does not live on, nor a hidden job's.
         self.env.cr.execute(SQL(
             "SELECT j.id FROM cloud_job j WHERE j.id IN %s AND ("
             " EXISTS (SELECT 1 FROM queue_job q"
             "  WHERE q.uuid = j.queue_job_uuid AND q.state IN %s)"
             " OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
             "  WHERE k.job_id = j.id AND (k.closed IS NOT TRUE"
-            "   OR k.holds_queue_since IS NOT NULL)))",
-            query.subselect(), tuple(self._running_states),
+            "   OR (k.holds_queue_since IS NOT NULL"
+            "    AND (j.instance_id IS NULL OR k.host_id = (SELECT i.host_id"
+            "     FROM cloud_instance i WHERE i.id = j.instance_id))"
+            "    AND NOT EXISTS (SELECT 1 FROM cloud_job_type t"
+            "     WHERE t.id = j.job_type_id AND t.code IN %s)))))",
+            query.subselect(), tuple(self._running_states), hidden,
         ))
         return {row[0] for row in self.env.cr.fetchall()}
 
