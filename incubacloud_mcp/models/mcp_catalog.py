@@ -50,6 +50,11 @@ _CENTRAL_HISTORY = (
     "Leaves the metrics central's history behind: a person decides it in "
     "Settings › Monitoring, after a confirmation."
 )
+_SESSIONS = (
+    "Sessions and access, the user's own sessions and ways in: a person's "
+    "page; an agent neither reads them nor signs its user out or revokes "
+    "their access (#48)."
+)
 
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
@@ -142,6 +147,9 @@ CORE_EXCLUDED = {
     "/cloud/mcp/auto_approval/grant": _AUTO_APPROVAL,
     "/cloud/mcp/auto_approval/revoke": _AUTO_APPROVAL,
     "/cloud/mcp/auto_approval/activity": _AUTO_APPROVAL,
+    "/cloud/sessions/get": _SESSIONS,
+    "/cloud/sessions/sign_out_everywhere": _SESSIONS,
+    "/cloud/sessions/revoke": _SESSIONS,
 }
 
 

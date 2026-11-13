@@ -70,7 +70,7 @@ paths = [
 # no generated token has; a new made-up token in a test is added here.
 regexes = [
     '''^gldt-(?:AbC_123\.x|abcdefgh12|deploy1234|deploysave1|mcpread01|supersecret12|tokenOfTheDeploy)$''',
-    '''^glpat-(?:abcdefgh|abcdefgh12|capped1234|groupsave1|hostimport1|othersecret99|readonly12|routes12|secret-token-123|supersecret12|supersecret99|warnsave1)$''',
+    '''^glpat-(?:0123456789abcdef|abcdefgh|abcdefgh12|capped1234|groupsave1|hostimport1|othersecret99|readonly12|routes12|secret-token-123|supersecret12|supersecret99|warnsave1)$''',
 ]
 commits = [
     # password_utils.py historically contained a base64 dev fallback

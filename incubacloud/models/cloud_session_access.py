@@ -32,7 +32,7 @@ import logging
 from datetime import timedelta
 from urllib.parse import urlsplit
 
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from odoo import api, fields, models
 from odoo.http import get_session_max_inactivity, request
@@ -383,7 +383,7 @@ class CloudSessionNotice(models.AbstractModel):
         body = env["ir.qweb"]._render(NOTICE_TEMPLATE, {
             "greeting": _("Hello %(name)s,", name=values["name"]),
             "lead": notice._session_notice_lead(reason, values),
-            "open_page": Markup(_("Open %(page)s and sign out everywhere.")) % {
+            "open_page": escape(_("Open %(page)s and sign out everywhere.")) % {
                 "page": Markup('<a href="%s">%s</a>') % (
                     values["page_url"], _("Sessions and access"),
                 ),
@@ -439,7 +439,7 @@ class CloudSessionNotice(models.AbstractModel):
             if key in ("place", "seen", "door", "panel", "invitee")
         }
         plain = {key: value or "" for key, value in values.items() if key not in bold}
-        return Markup(text) % _OneLine(plain | bold, fold=False)
+        return escape(text) % _OneLine(plain | bold, fold=False)
 
     @api.model
     def _session_notice_subject(self, reason, values):
@@ -583,8 +583,9 @@ class ResUsers(models.Model):
         codes, names = set(filter(None, codes)), set(filter(None, names))
         if not codes and not names:
             return {}
-        Country = self.env["res.country"].sudo().with_context(lang="en_US")
-        found = Country.search(["|", ("code", "in", list(codes)), ("name", "in", list(names))])
+        found = self.env["res.country"].sudo().with_context(lang="en_US").search(
+            ["|", ("code", "in", list(codes)), ("name", "in", list(names))]
+        )
         english = {country.id: country.name for country in found}
         local = found.with_context(lang=self.lang or "en_US")
         result = {}
