@@ -15862,12 +15862,16 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_settings_central.py:0
 msgid ""
 "The central's name no longer answers from its server%(detail)s. %(record)s "
-"No agent can write to the central meanwhile; they keep what they cannot send"
-" in their queues."
+"If the record was changed or deleted, the agents cannot reach the central "
+"and keep what they cannot send in their queues. If it still points at the "
+"server the central is moving from, they go on writing there. A passing "
+"failure of the resolver closes this alert at the next check."
 msgstr ""
 "El nombre de la central ya no responde desde su servidor%(detail)s. "
-"%(record)s Mientras tanto ningún agente puede escribir en la central; "
-"guardan en sus colas lo que no pueden enviar."
+"%(record)s Si el registro se cambió o se borró, los agentes no llegan a la "
+"central y guardan en sus colas lo que no pueden enviar. Si aún apunta al "
+"servidor desde el que se muda la central, siguen escribiendo allí. Un fallo "
+"pasajero del resolutor cierra este aviso en la siguiente comprobación."
 
 #. module: incubacloud
 #. odoo-python
