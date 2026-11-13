@@ -41,6 +41,15 @@ DO $$ BEGIN
     UPDATE cloud_instance SET smtp_relay_oauth_client_secret = NULL;
 EXCEPTION WHEN undefined_column THEN NULL;
 END $$;
+-- The metrics central's certificate authority (1.0.228): production's
+-- agents trust it, so a copy holding its key could stand in for the
+-- central before them. Its certificate and the end of the leaf go with
+-- it, so the copy mints an authority of its own if it ever deploys one.
+DO $$ BEGIN
+    UPDATE cloud_settings SET metrics_ca_key = NULL, metrics_ca_cert = NULL,
+        metrics_central_cert_expires = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;
@@ -84,6 +93,9 @@ END $$;
 DELETE FROM ir_config_parameter WHERE key = 'incubacloud.backup_backend_id';
 DELETE FROM ir_config_parameter WHERE key = 'incubacloud.host_autoassign';
 UPDATE ir_config_parameter SET value = '' WHERE key = 'web.base.url';
+-- The central's URLs of before its single name (1.0.228): production's
+-- way back, which the copy's switch turned off would write as its own.
+DELETE FROM ir_config_parameter WHERE key = 'incubacloud.metrics_central_legacy_urls';
 
 -- 6. The direct path (1.0.200): its DNS token, the central's direct name
 -- (no host of the copy may be offered it) and the dates of production's

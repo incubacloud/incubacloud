@@ -21,6 +21,7 @@ from odoo import fields
 from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
 
+from odoo.addons.incubacloud.controllers import central_egress
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.models import cloud_settings_central as central
 from odoo.addons.incubacloud.models._direct_probe import ANY_ADDRESS
@@ -36,6 +37,7 @@ from odoo.addons.incubacloud.models.sync_direct_path_executor import (
     SyncDirectPathExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+from odoo.addons.incubacloud.tests._agents_playbook import PLAYBOOK
 from odoo.addons.incubacloud.tests._direct import make_host
 from odoo.addons.incubacloud.tests.test_observability_central_public import (
     _compose,
@@ -55,6 +57,7 @@ _DNS = {
     "cert_expires": None, "source": "job",
 }
 _TLS = {"ok": False, "layer": "tls", "detail": "curl 60", "cert_expires": None, "source": "job"}
+_LIGHT_OK = {**_OK, "source": "light"}
 
 
 def _load(pem):
@@ -396,6 +399,41 @@ class TestTheName(SinglePathCase):
         self.assertFalse(self._alert("metrics_central_name_down"))
         self.assertTrue(self._alert("metrics_central_dns_pending"))
 
+    def test_one_check_after_the_record_is_fixed_moves_the_urls(self):
+        """A pending name needs no second check nor half an hour."""
+        self._check(_DNS)
+        self.assertEqual(self.settings.metrics_central_name_state, "failing")
+        _old, new = self._check(_OK)
+        self.assertEqual(new, "ok")
+        self.assertEqual(self.settings.metrics_central_name_state, "ok")
+        self.assertEqual(self.settings.metrics_remote_write_url, SINGLE_WRITE)
+        self.assertFalse(self._alert("metrics_central_dns_pending"))
+
+    def test_a_light_probe_does_not_move_a_pending_name(self):
+        """It reads no DNS: only the complete check may say the record is right."""
+        self._check(_DNS)
+        self._check(_LIGHT_OK)
+        self.assertEqual(self.settings.metrics_remote_write_url, LEGACY_WRITE)
+        self.assertTrue(self._alert("metrics_central_dns_pending"))
+
+    def test_a_record_lost_while_in_use_is_critical_at_once(self):
+        self._check(_OK)
+        self._check(_DNS)
+        alert = self._alert("metrics_central_dns_pending")
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("No agent can write", alert.message)
+        self.assertIn("46.4.0.80", alert.message)
+
+    def test_in_use_one_good_check_closes_the_record_s_alert(self):
+        """The record is right again; leaving failing keeps its hysteresis."""
+        self._check(_OK)
+        self._check(_DNS)
+        self._check(_OK)
+        self.assertFalse(self._alert("metrics_central_dns_pending"))
+        self.assertFalse(self._alert("metrics_central_name_down"))
+        self.assertEqual(self.settings.metrics_central_name_state, "failing")
+        self.assertEqual(self.settings.metrics_remote_write_url, SINGLE_WRITE)
+
     def test_switched_off_the_urls_of_before_come_back(self):
         self._check(_OK)
         self.settings.metrics_central_single_path = False
@@ -558,6 +596,30 @@ class TestTheAgents(SinglePathCase):
         self._install(401)
         self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
 
+    def test_an_answer_that_is_not_an_address_is_dropped(self):
+        """A CDN's challenge page is not shown as the address."""
+        self._install(403, egress="<!DOCTYPE html><title>Just a moment...</title>")
+        self.assertFalse(self.host.metrics_egress_ip)
+        alert = self._alert("metrics_central_writer_outside", self.host)
+        self.assertNotIn("DOCTYPE", alert.message)
+        self.assertIn("an address the panel could not learn", alert.message)
+
+    def test_an_ipv6_answer_is_dropped(self):
+        """The name has an A record only: the port never sees an IPv6 address."""
+        self._install(403, egress="2a01:4f8:c0c:1::1")
+        self.assertFalse(self.host.metrics_egress_ip)
+
+    def test_the_address_is_asked_over_ipv4(self):
+        with open(PLAYBOOK, encoding="utf-8") as handle:
+            tasks = yaml.safe_load(handle)[0]["tasks"]
+        task = next(
+            t for t in tasks
+            if t.get("name") == "Ask the panel which address this server leaves with"
+        )
+        argv = task["ansible.builtin.command"]["argv"]
+        self.assertEqual(argv[:2], ["curl", "-4"])
+        self.assertTrue(argv[-1].endswith("/cloud/egress_ip"))
+
     def test_where_a_layer_fixes_the_choice_the_alert_offers_one_way_out(self):
         with patch.object(
             type(self.env["cloud.settings"]), "_central_write_access_fixed",
@@ -585,6 +647,54 @@ class TestTheAgents(SinglePathCase):
         self.host.metrics_last_seen = now
         self.env["cloud.host"]._central_silent_writers(now)
         self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
+
+    def _silent_beside_a_writer(self):
+        """Leave this test's host silent for an hour while another writes.
+
+        :return: the cron's time.
+        :rtype: datetime
+        """
+        self._check(_OK)
+        other = make_host(self.env, "sp-writer", "46.4.0.82")
+        now = fields.Datetime.now()
+        old = now - timedelta(hours=1)
+        for host, seen in ((self.host, old), (other, now)):
+            host.write({
+                "metrics_agents_state": "installed",
+                "metrics_agents_write_url": SINGLE_WRITE,
+                "metrics_agents_since": old,
+                "metrics_last_seen": seen,
+            })
+        return now
+
+    def test_a_silent_server_its_own_check_got_through_is_not_named(self):
+        """401 leaving with the address the panel has: the list admits it."""
+        now = self._silent_beside_a_writer()
+        self.host.write({"metrics_central_reach": 401, "metrics_egress_ip": "46.4.0.80"})
+        self.assertEqual(self.env["cloud.host"]._central_silent_writers(now), 0)
+        self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
+
+    def test_a_silent_server_the_panel_cannot_reach_is_not_named(self):
+        """Switched off, or its network down: not the list."""
+        now = self._silent_beside_a_writer()
+        self.env["cloud.alert"].sudo().raise_alert(
+            "host_unreachable", "Host unreachable", level="critical", host=self.host,
+        )
+        self.assertEqual(self.env["cloud.host"]._central_silent_writers(now), 0)
+        self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
+
+    def test_switched_off_no_server_is_said_to_be_outside(self):
+        now = self._silent_beside_a_writer()
+        self.settings.metrics_central_single_path = False
+        self.assertEqual(self.env["cloud.host"]._central_silent_writers(now), 0)
+        self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
+
+    def test_switched_off_they_get_what_they_got_before(self):
+        self.settings.metrics_central_single_path = False
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_central_ca"], "")
+        self.assertEqual(extra["ic_panel_url"], "")
+        self.assertEqual(extra["ic_remote_write_url"], LEGACY_WRITE)
 
     def test_all_silent_at_once_is_the_central_not_the_servers(self):
         self._check(_OK)
@@ -631,6 +741,20 @@ class TestTheEgressAnswer(TransactionCase):
         routing = CentralEgressController.egress_ip.original_routing
         self.assertEqual(routing["auth"], "none")
         self.assertEqual(routing["methods"], ["GET"])
+
+    def test_it_answers_without_writing_anything(self):
+        """No rate-limit row per address: IPv6 gives a caller as many as it wants."""
+        fake = MagicMock(spec=Request)
+        fake.env = self.env
+        Limit = self.env["cloud.rate.limit"].sudo()
+        before = Limit.search_count([])
+        with patch.object(central_egress, "request", fake), \
+                patch.object(central_egress, "client_ip", return_value="203.0.113.9"):
+            for _attempt in range(40):
+                central_egress.CentralEgressController().egress_ip()
+        self.assertEqual(Limit.search_count([]), before)
+        self.assertEqual(fake.make_response.call_args.args[0], "203.0.113.9")
+        self.assertNotIn("status", fake.make_response.call_args.kwargs)
 
 
 class TestTheSettingsScreen(SinglePathCase):

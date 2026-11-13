@@ -10,18 +10,19 @@ either raises ``metrics_central_writer_outside`` for that server:
   from the server, with the authority, and expects vmauth's 401; and it
   asks the panel which address it leaves with (``/cloud/egress_ip``);
 * its silence: installed on the single name, nothing from it for 20
-  minutes while other servers write.
+  minutes while other servers write, unless the panel cannot reach it
+  either or its own check got through with the address the panel has
+  (``_central_silence_explained``).
 
 The alert names the address it leaves with, the one the panel has, and
 the two ways out: correct the address in the panel, or let any address
 write (where the panel may choose).
 """
+import ipaddress
 import logging
 from datetime import timedelta
 
 from odoo import _, api, fields, models
-
-from .cloud_host_direct import global_ipv4
 
 _logger = logging.getLogger(__name__)
 
@@ -38,6 +39,24 @@ _PENDING_CHECK_EVERY = timedelta(minutes=10)
 _REACHED = 401
 
 ALERT = "metrics_central_writer_outside"
+
+
+def _egress_address(value):
+    """Return *value* as the IPv4 address it names, or ''.
+
+    What the server was told by ``/cloud/egress_ip``. The central's name
+    has an A record only, so an IPv6 address is not the one the port
+    judges; and a page a CDN answered instead (a challenge) is not an
+    address at all. Neither is kept, nor shown in the alert.
+
+    :param str value: what the server's ask printed.
+    :rtype: str
+    """
+    try:
+        address = ipaddress.ip_address((value or "").strip())
+    except ValueError:
+        return ""
+    return str(address) if address.version == 4 else ""
 
 
 class CloudHost(models.Model):
@@ -104,10 +123,11 @@ class CloudHost(models.Model):
         server's, and says nothing about the list.
 
         :param int status: what the write URL answered, -1 for nothing.
-        :param str egress: the address the panel saw the server with.
+        :param str egress: the address the panel saw the server with;
+            anything but an IPv4 address is dropped (``_egress_address``).
         """
         self.ensure_one()
-        egress = global_ipv4(egress) or (egress or "").strip()[:64]
+        egress = _egress_address(egress)
         self.sudo().write({
             "metrics_central_reach": status,
             "metrics_central_reach_at": fields.Datetime.now(),
@@ -118,6 +138,29 @@ class CloudHost(models.Model):
             Alert.resolve_alert(ALERT, host=self)
         elif status in (403, -1):
             Alert.raise_alert(ALERT, self._central_outside_message(), host=self)
+
+    def _central_silence_explained(self):
+        """Whether this server's silence says nothing about the central's list.
+
+        Its host does not answer the panel either (``host_unreachable``
+        open: switched off, or its network down), or its own last check
+        reached vmauth (401) leaving with the address the panel has for
+        it, which the list admits. The alert would then blame the list
+        for what it did not do, so the silence alone raises nothing; an
+        alert its own check raised stays.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self.env["cloud.alert"].sudo().search_count([
+            ("code", "=", "host_unreachable"), ("state", "=", "active"),
+            ("host_id", "=", self.id),
+        ], limit=1):
+            return True
+        return bool(
+            self.metrics_central_reach == _REACHED
+            and (self.metrics_egress_ip or "") in ("", (self.ip_address or "").strip())
+        )
 
     @api.model
     def _reconcile_central_name(self):
@@ -186,6 +229,8 @@ class CloudHost(models.Model):
             if since and since > now - _SILENT_AFTER:
                 continue
             if not (writing - host):
+                continue
+            if host._central_silence_explained():
                 continue
             Alert.raise_alert(ALERT, host._central_outside_message(), host=host)
             outside += 1
