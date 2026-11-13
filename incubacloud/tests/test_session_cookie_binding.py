@@ -12,7 +12,10 @@ way production makes them: ``proxy_mode`` on and the proxy's
 ``X-Forwarded-Proto: https``.
 """
 import json
+import logging
+import os
 import re
+import time
 from unittest.mock import patch
 
 import requests
@@ -23,6 +26,8 @@ from odoo.tests import new_test_user, tagged
 from odoo.tests.common import BaseCase, HttpCase
 from odoo.tools import config
 
+from odoo.addons.bus.tests.common import WebsocketCase
+from odoo.addons.bus.websocket import WebsocketConnectionHandler
 from odoo.addons.incubacloud.models import http_session_cookie as cookie_module
 
 from .test_real_ip import _OnTheUncorrectedProxyFix
@@ -33,6 +38,56 @@ CHROME = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+#: Spaces ``str.strip()`` removes and a browser keeps as part of a
+#: cookie's name: `` __Host-session_bind`` is not a ``__Host-`` cookie,
+#: so any host of the domain may set it.
+UNICODE_SPACES = ("\u2000", "\u00a0", "\u3000", "\u0085")
+#: Where the cookie module logs the session cookies it does not use.
+LOGGER = "odoo.addons.incubacloud.models.http_session_cookie"
+
+
+def _as_sent(cookie_header):
+    """Return *cookie_header* as a browser sends it and WSGI hands it on.
+
+    The browser sends the bytes in UTF-8, and the WSGI server decodes
+    every header as latin-1.
+
+    :param str cookie_header: the header, with any character.
+    :rtype: str
+    """
+    return cookie_header.encode("utf-8").decode("latin-1")
+
+
+def _spaces_as_sent(through_http_server=False):
+    """Return the spellings of the spaces in front of a name a request
+    can carry, as ``(label, characters)``.
+
+    Each space in UTF-8, as WSGI hands it on (werkzeug 2's
+    ``Request.cookies`` decodes it back, werkzeug 3's does not), and the
+    two of them latin-1 has as one byte, which a host writing its own
+    ``Set-Cookie`` header can put there and WSGI hands on as that very
+    character, the one ``str.strip()`` removes.
+
+    :param bool through_http_server: leave out the one byte 0x85, which
+        Python's HTTP server takes as the end of a header line
+        (``str.splitlines``) before Odoo sees it.
+    :rtype: list[tuple[str, str]]
+    """
+    spellings = [(f"U+{ord(c):04X} in UTF-8", _as_sent(c)) for c in UNICODE_SPACES]
+    spellings += [
+        (f"U+{ord(c):04X} as one byte", c) for c in UNICODE_SPACES
+        if ord(c) < 0x100 and not (through_http_server and c == "\u0085")
+    ]
+    return spellings
+
+
+def _session_expired(cls):
+    """Stand in for ``ir.http._auth_method_user`` on a session Odoo finds
+    expired: raise what it raises then.
+
+    :raises odoo.http.SessionExpiredException: always.
+    """
+    raise odoo.http.SessionExpiredException("Session expired")
 
 
 def _request(cookie_header, scheme="https"):
@@ -71,6 +126,34 @@ class TestBoundSessionId(BaseCase):
         other = cookie_module.binding_of("own")
         self.assertIsNone(cookie_module.bound_session_id(
             _request(f"session_id=tossed; {BINDING}={other}"),
+        ))
+
+    def test_a_binding_named_with_a_unicode_space_is_not_the_binding(self):
+        """werkzeug strips the name to ``__Host-session_bind``; the browser
+        took it from any host of the domain, under another name."""
+        own, tossed = (cookie_module.binding_of(s) for s in ("own", "tossed"))
+        for label, space in _spaces_as_sent():
+            with self.subTest(space=label):
+                beside = (
+                    f"session_id=tossed; {space}{BINDING}={tossed}; "
+                    f"session_id=own; {BINDING}={own}"
+                )
+                self.assertEqual(
+                    cookie_module.bound_session_id(_request(beside)), "own",
+                )
+                alone = f"session_id=tossed; {space}{BINDING}={tossed}"
+                self.assertIsNone(cookie_module.bound_session_id(_request(alone)))
+                session = f"{space}session_id=own; {BINDING}={own}"
+                self.assertIsNone(
+                    cookie_module.bound_session_id(_request(session)),
+                )
+
+    def test_two_bindings_are_none(self):
+        """This host sets one, with ``Path=/`` and no ``Domain``: a browser
+        never holds two."""
+        bind = cookie_module.binding_of("own")
+        self.assertIsNone(cookie_module.bound_session_id(
+            _request(f"session_id=own; {BINDING}={bind}; {BINDING}={bind}"),
         ))
 
     def test_no_session_cookie_is_no_session(self):
@@ -181,6 +264,10 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         self.assertEqual(page.status_code, 200)
         before = _set_cookies(page)
         anonymous = before["session_id"][0]
+        # Stored, as it is once anything is written to it, so that what
+        # the sign-in does to it can be seen.
+        store = odoo.http.root.session_store
+        store.save(store.get(anonymous))
         cookie = f"session_id={anonymous}; {BINDING}={before[BINDING][0]}"
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
         answer = self._open(
@@ -192,19 +279,26 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         after = _set_cookies(answer)
         return anonymous, after["session_id"][0], after
 
+    def _session_info(self, cookie, secure=True):
+        """Ask ``/web/session/get_session_info`` with *cookie*.
+
+        :rtype: requests.Response
+        """
+        return self._open(
+            "/web/session/get_session_info",
+            cookie=cookie,
+            secure=secure,
+            data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
+            headers={"Content-Type": "application/json"},
+        )
+
     def _uid(self, cookie, secure=True):
         """Return the user a request with *cookie* is served as.
 
         :returns: the user id, or ``None`` when the request has no
             signed-in session (Odoo answers ``SessionExpired``, code 100).
         """
-        answer = self._open(
-            "/web/session/get_session_info",
-            cookie=cookie,
-            secure=secure,
-            data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
-            headers={"Content-Type": "application/json"},
-        ).json()
+        answer = self._session_info(cookie, secure).json()
         if "error" in answer:
             self.assertEqual(answer["error"]["code"], 100, answer)
             return None
@@ -219,7 +313,8 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
             "tossed-victim", "tossed-victim-pw",
         )
         self.assertNotEqual(signed_in, anonymous)
-        self.assertIsNone(odoo.http.root.session_store.get(anonymous).get("uid"))
+        store = odoo.http.root.session_store
+        self.assertFalse(os.path.isfile(store.get_session_filename(anonymous)))
         value, attributes = cookies[BINDING]
         self.assertEqual(value, cookie_module.binding_of(signed_in))
         self.assertTrue(attributes.get("secure"))
@@ -244,6 +339,84 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
             with self.subTest(cookie=cookie):
                 self.assertEqual(self._uid(cookie), self.victim.id)
 
+    def test_a_binding_named_with_a_unicode_space_is_ignored(self):
+        """The name werkzeug strips to the binding's, sent the way a
+        browser sends it: UTF-8, read as latin-1 by the WSGI server."""
+        _anonymous, own, cookies = self._sign_in_with_the_form(
+            "tossed-victim", "tossed-victim-pw",
+        )
+        bind = cookies[BINDING][0]
+        tossed = self.authenticate("tossed-attacker", "tossed-attacker-pw").sid
+        forged = cookie_module.binding_of(tossed)
+        for label, space in _spaces_as_sent(through_http_server=True):
+            with self.subTest(space=label):
+                self.assertEqual(self._uid(
+                    f"session_id={tossed}; {space}{BINDING}={forged}; "
+                    f"session_id={own}; {BINDING}={bind}"
+                ), self.victim.id)
+                self.assertIsNone(self._uid(
+                    f"session_id={tossed}; {space}{BINDING}={forged}"
+                ))
+
+    def test_a_tossed_cookie_is_warned_once_per_session(self):
+        _anonymous, own, cookies = self._sign_in_with_the_form(
+            "tossed-victim", "tossed-victim-pw",
+        )
+        tossed = self.authenticate("tossed-attacker", "tossed-attacker-pw").sid
+        cookie = f"session_id={tossed}; session_id={own}; {BINDING}={cookies[BINDING][0]}"
+        with self.assertLogs(LOGGER, logging.DEBUG) as logs:
+            for _ in range(3):
+                self.assertEqual(self._uid(cookie), self.victim.id)
+        levels = [record.levelno for record in logs.records]
+        self.assertEqual(levels.count(logging.WARNING), 1, logs.output)
+        self.assertEqual(levels.count(logging.DEBUG), 2, logs.output)
+
+    def test_the_expired_session_redirect_binds_the_new_session(self):
+        """On an expired session a page answers with a redirection to the
+        login, whose cookie Odoo sets on a ``_Response``
+        (``HttpDispatcher.handle_error``), not through ``_save_session``."""
+        _anonymous, own, cookies = self._sign_in_with_the_form(
+            "tossed-victim", "tossed-victim-pw",
+        )
+        ir_http = type(self.env["ir.http"])
+        with patch.object(ir_http, "_auth_method_user", classmethod(_session_expired)):
+            answer = self._open(
+                "/web/webclient/load_menus",
+                cookie=f"session_id={own}; {BINDING}={cookies[BINDING][0]}",
+            )
+        self.assertIn(answer.status_code, (302, 303), answer.text[:500])
+        sent = answer.raw.headers.getlist("Set-Cookie")
+        self.assertIn("/web/login", answer.headers["Location"])
+        after = _set_cookies(answer)
+        new = after["session_id"][0]
+        self.assertNotEqual(new, own)
+        self.assertIn(BINDING, after, sent)
+        value, attributes = after[BINDING]
+        self.assertEqual(value, cookie_module.binding_of(new))
+        self.assertTrue(attributes.get("secure"))
+        self.assertTrue(after["session_id"][1].get("secure"), sent)
+
+    def test_the_rotation_every_three_hours_binds_the_next_session(self):
+        """Odoo gives a signed-in session a new id once it is three hours
+        old (``_save_session``, a soft rotation); its binding comes with it."""
+        _anonymous, own, cookies = self._sign_in_with_the_form(
+            "tossed-victim", "tossed-victim-pw",
+        )
+        store = odoo.http.root.session_store
+        session = store.get(own)
+        session["create_time"] = time.time() - odoo.http.SESSION_ROTATION_INTERVAL - 60
+        store.save(session)
+        after = _set_cookies(
+            self._session_info(f"session_id={own}; {BINDING}={cookies[BINDING][0]}"),
+        )
+        rotated = after["session_id"][0]
+        self.assertNotEqual(rotated, own)
+        bind = after[BINDING][0]
+        self.assertEqual(bind, cookie_module.binding_of(rotated))
+        self.assertEqual(
+            self._uid(f"session_id={rotated}; {BINDING}={bind}"), self.victim.id,
+        )
+
     def test_a_session_tossed_alone_does_not_sign_anybody_in(self):
         """The visitor without a session of the panel is not put into the
         account of whoever set the cookie (login CSRF)."""
@@ -257,3 +430,58 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         self.assertEqual(
             self._uid(f"session_id={sid}", secure=False), self.attacker.id,
         )
+
+
+@tagged("-at_install", "post_install")
+class TestTheWebsocketHandshake(_OnTheUncorrectedProxyFix, WebsocketCase):
+    """``/websocket`` behind the proxy, which forwards it as ``wss``."""
+
+    def setUp(self):
+        super().setUp()
+        self.startPatcher(patch.dict(config.options.maps[0], {"proxy_mode": True}))
+        new_test_user(
+            self.env, login="ws-victim", password="ws-victim-pw",
+            groups="base.group_user",
+        )
+        new_test_user(
+            self.env, login="ws-attacker", password="ws-attacker-pw",
+            groups="base.group_user",
+        )
+
+    def _handshake_uid(self, cookie):
+        """Open a websocket with *cookie* the way Traefik forwards one.
+
+        :returns: the user the handshake was served as, ``None`` for an
+            anonymous session.
+        """
+        seen = {}
+        opened = WebsocketConnectionHandler.open_connection
+
+        def open_connection(request, version):
+            """Note who the handshake is served as, then open it as Odoo does."""
+            seen["uid"] = request.session.uid
+            seen["secure"] = request.httprequest.is_secure
+            return opened(request, version)
+
+        with patch.object(WebsocketConnectionHandler, "open_connection", open_connection):
+            self.websocket_connect(cookie=cookie, header={
+                "X-Forwarded-Host": self.base_url().split("://", 1)[1],
+                "X-Forwarded-Proto": "wss",
+            })
+        self.assertTrue(seen["secure"], "wss is not taken as HTTPS")
+        return seen["uid"]
+
+    def test_the_bound_session_is_the_websocket_s(self):
+        tossed = self.authenticate("ws-attacker", "ws-attacker-pw").sid
+        # Kept: authenticate() deletes the session it gave last.
+        self.session = None
+        own = self.authenticate("ws-victim", "ws-victim-pw")
+        bind = cookie_module.binding_of(own.sid)
+        self.assertEqual(
+            self._handshake_uid(f"session_id={tossed}; session_id={own.sid}; {BINDING}={bind}"),
+            own.uid,
+        )
+
+    def test_a_session_tossed_alone_is_not_the_websocket_s(self):
+        tossed = self.authenticate("ws-attacker", "ws-attacker-pw").sid
+        self.assertIsNone(self._handshake_uid(f"session_id={tossed}"))
