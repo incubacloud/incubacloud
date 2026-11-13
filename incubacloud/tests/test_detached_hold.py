@@ -1477,6 +1477,33 @@ class TestARowThatHoldsTheQueue(TransactionCase):
             worker.close()
         self.assertFalse(self.Job._cron_runs_now(cron))
 
+    def test_a_cancelled_job_whose_row_holds_nothing_is_not_stopping(self):
+        """Cancelling… only while the row holds the queue: not the row a
+        move's restore left on a target the instance does not live on,
+        nor a hidden job's."""
+        job = self._ended("restore_instance", self.inst, state="cancelled")
+        self.assertEqual(self.Job._stopping_ids([("id", "=", job.id)]), {job.id})
+        target = self.env["cloud.host"].create({
+            "name": "hold-move-target",
+            "ip_address": "192.0.2.97",
+            "user": "odoo",
+            "wildcard_domain": "hold-move-target.example.com",
+        })
+        self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", job.id)],
+        ).write({"host_id": target.id})
+        self.env.flush_all()
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertEqual(self.Job._stopping_ids([("id", "=", job.id)]), set())
+        hidden = self._ended("instance_health", self.other, state="cancelled")
+        self.assertFalse(self.Job._scope_busy(self.other.id, None))
+        self.assertEqual(self.Job._stopping_ids([("id", "=", hidden.id)]), set())
+        # A host job's row holds its host's queue, whatever the instances.
+        host_job = self._ended("host_probe", state="cancelled")
+        self.assertEqual(
+            self.Job._stopping_ids([("id", "=", host_job.id)]), {host_job.id},
+        )
+
     def test_the_waiting_job_says_what_it_waits_for(self):
         """The job queued behind it names it, until the row goes."""
         job = self._ended("deploy_instance", self.inst)
