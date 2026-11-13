@@ -826,14 +826,19 @@ class CloudAlert(models.Model):
         queue held for a server that does not answer
         (``job_queue_held_unreachable``): closing it lets that queue go
         on beside a step that may still run, one decision per job
-        (``cloud.job._release_held_queue_by_hand``). Record rules scope
+        (``cloud.job._release_held_queue_by_hand``). And the alert of a
+        stop whose worker died that nobody closes
+        (``job_stop_unclosed``): closing it closes the job without
+        putting back what it left
+        (``cloud.job._close_unclosed_stop_by_hand``). Record rules scope
         the search; the write access check covers the rest.
         """
+        Job = self.env["cloud.job"]
         domain = [
             ("state", "=", "active"),
             ("code", "not in", (
                 "pip_conflict", "addon_conflict",
-                self.env["cloud.job"]._QUEUE_HELD_ALERT_CODE,
+                Job._QUEUE_HELD_ALERT_CODE, Job._STOP_UNCLOSED_ALERT_CODE,
             )),
         ]
         if level_filter in ("warning", "critical"):

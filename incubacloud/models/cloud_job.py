@@ -131,8 +131,18 @@ _QUEUE_CONTROL_FIELDS = frozenset({
     "blocked_alert_id", "queue_job_uuid", "queue_job_id", "job_type_id",
     "payload", "secret_payload", "instance_id", "host_id",
     "asked_as_superuser", "date_done", "succeeded_before_cancel",
-    "worker_lost_at", "channel_wait_since",
+    "worker_lost_at", "channel_wait_since", "found_dead_seen_at",
 })
+
+#: Of a ``queue_job`` row read as ``q``: the run of a job cancelled while
+#: it ran whose worker queue_job found dead three times
+#: (``requeue_dead_jobs`` fails it ``JobFoundDead``, with SQL). Its stop
+#: is the reconciliation's: it runs the job's hook with no lock held, then
+#: closes it (``_close_lost_job``), which ``queue_job_ext`` stores
+#: ``cancelled`` with no ``exc_name``. Until that close the job holds its
+#: queue and reads *Cancelling…* (``_scope_busy``, ``_stopping_ids``),
+#: and one never closed is said (``_alert_unclosed_stops``; 13-nov-2026).
+_FOUND_DEAD_SQL = "(q.state = 'failed' AND q.exc_name = 'JobFoundDead')"
 
 _CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
 
@@ -374,6 +384,18 @@ class CloudJob(models.Model):
             " for good (_cron_reconcile_lost_jobs): it has put back what"
             " the lost run left, or is doing so, and closes the job next."
             " Cleared when the job starts again."
+        ),
+    )
+    found_dead_seen_at = fields.Datetime(
+        string="Found Dead Seen At",
+        copy=False,
+        readonly=True,
+        help=(
+            "When the sweep of the queues first saw this job cancelled"
+            " while it ran, its worker found dead and the job not closed"
+            " yet: queue_job writes no date when it finds a worker dead,"
+            " and the alert of a stop nobody closes counts from here"
+            " (_alert_unclosed_stops)."
         ),
     )
     date_done = fields.Datetime(
@@ -1877,12 +1899,22 @@ class CloudJob(models.Model):
         ``cancel_job`` writes the flag while the queue.job is still
         ``started``, and the next job must not start beside a run that is
         still winding down (a move's rollback jobs beside the step they
-        cancelled). A chain counts on every target it touches until its
-        last step ends: the running step of a staging's clone may be the
-        download on production while the staging waits for its restore.
-        A job already ended counts while its checkpoint holds the queue: a
-        step past its point of no return still runs on the server
-        (``_server_holder``). Hidden background types never count.
+        cancelled). So does one whose worker queue_job found dead before
+        it stopped (``_FOUND_DEAD_SQL``), until the reconciliation closes
+        it, not when it claims it (``worker_lost_at``): its hook runs
+        between the two with no lock held, and the close lets the queue go
+        in the transaction that serves it (13-nov-2026). Nothing lets it
+        go before: one nobody closes is said by an alert
+        (``_alert_unclosed_stops``), and dismissing it closes the job.
+        A chain counts on every target it touches until its last step
+        ends: the running step of a staging's clone may be the download on
+        production while the staging waits for its restore. Hidden steps
+        of a chain count too, on purpose: the chain is one entry, and a
+        move's fingerprint or freeze holds the move's instance as its
+        visible steps do. A job already ended counts while its checkpoint
+        holds the queue: a step past its point of no return still runs on
+        the server (``_server_holder``). Hidden background types never
+        count on their own.
 
         :rtype: bool
         """
@@ -1892,7 +1924,7 @@ class CloudJob(models.Model):
             "state", "queue_chain_key", "instance_id", "host_id",
             "queue_job_uuid", "job_type_id",
         ])
-        self.env["queue.job"].sudo().flush_model(["state", "uuid"])
+        self.env["queue.job"].sudo().flush_model(["state", "uuid", "exc_name"])
         running = tuple(self._running_states)
         if instance_id:
             scope_sql, params = "{j}.instance_id = %s", [instance_id]
@@ -1901,11 +1933,12 @@ class CloudJob(models.Model):
                 "{j}.host_id = %s AND {j}.instance_id IS NULL", [host_id],
             )
         # ``running`` names a job dispatched and not ended, or one a
-        # person cancelled whose queue.job still runs.
+        # person cancelled whose queue.job still runs or was found dead.
         running_sql = (
             "({j}.state IN %s OR ({j}.state = 'cancelled' AND EXISTS ("
             " SELECT 1 FROM queue_job q"
-            " WHERE q.uuid = {j}.queue_job_uuid AND q.state IN %s)))"
+            " WHERE q.uuid = {j}.queue_job_uuid AND (q.state IN %s"
+            f" OR {_FOUND_DEAD_SQL}))))"
         )
         self.env.cr.execute(
             "SELECT 1 FROM cloud_job j"
@@ -3491,7 +3524,9 @@ class CloudJob(models.Model):
         ``_QUEUE_HELD_ALERT_CODE`` closed by a person lets go of the queue
         its job's checkpoint held (``_release_held_queue_by_hand``); one
         the platform closed found the server back, and lets go of
-        nothing.
+        nothing. A ``_STOP_UNCLOSED_ALERT_CODE`` closed by a person closes
+        its job, a stop nobody closed (``_close_unclosed_stop_by_hand``);
+        one the platform closed found it closed.
         """
         codes = self._queue_holding_alert_codes()
         scopes = set()
@@ -3505,6 +3540,12 @@ class CloudJob(models.Model):
                     alert.job_id,
                     running=bool((alert.payload or {}).get("running")),
                 )
+            ):
+                scopes.add(alert.job_id._scope_of())
+            elif (
+                alert.code == self._STOP_UNCLOSED_ALERT_CODE and alert.job_id
+                and alert.resolution == "manual"
+                and self._close_unclosed_stop_by_hand(alert.job_id)
             ):
                 scopes.add(alert.job_id._scope_of())
         self._schedule_dispatch(scopes)
@@ -3575,8 +3616,10 @@ class CloudJob(models.Model):
         the first of them.
 
         First it says the queues held for a server nobody asks any more
-        (``_alert_unwatched_queue_holds``): another cron than the
-        reconciliation, which would say it otherwise.
+        (``_alert_unwatched_queue_holds``), and those held by a stop whose
+        worker died that nobody closes (``_alert_unclosed_stops``):
+        another cron than the reconciliation, which would close or say
+        them otherwise, and may be what does not run.
 
         :return: how many entries were dispatched
         :rtype: int
@@ -3589,6 +3632,14 @@ class CloudJob(models.Model):
             _logger.exception(
                 "cloud.job: the alerts of the queues held while the"
                 " reconciliation is stopped failed",
+            )
+        try:
+            with self.env.cr.savepoint():
+                self._alert_unclosed_stops()
+        except Exception:
+            # The sweep serves the queues all the same.
+            _logger.exception(
+                "cloud.job: the alerts of the stops nobody closes failed",
             )
         waiting = self.sudo().search([
             ("state", "=", "queued"), ("blocked_alert_id", "=", False),
@@ -3786,6 +3837,23 @@ class CloudJob(models.Model):
     _QUEUE_HELD_ALERT_MINUTES = 30
     #: The alert of a queue held for a server that does not answer.
     _QUEUE_HELD_ALERT_CODE = "job_queue_held_unreachable"
+    #: Minutes a stop whose worker died (``_FOUND_DEAD_SQL``) may hold its
+    #: queue unclosed before an alert asks a person to look (13-nov-2026):
+    #: the reconciliation closes one at its first pass past its grace
+    #: (2 minutes, then a pass every 5), so 30 minutes is some five passes
+    #: that did not: its scheduled action off or not running, a close that
+    #: raises at every pass, a row rewritten that never stands still. A
+    #: server that does not answer does not delay it: the hook gives up on
+    #: it and the close follows. Counted from the sweep's first sight of
+    #: it (``found_dead_seen_at``, at most one sweep, 2 minutes, after the
+    #: death): ``requeue_dead_jobs`` writes no date, not even
+    #: ``date_done``, so the autovacuum of queue_job never deletes the row
+    #: either, and nothing but the close ends the hold.
+    _STOP_UNCLOSED_ALERT_MINUTES = 30
+    #: The alert of a stop whose worker died that nobody closes. Not
+    #: ``_QUEUE_HELD_ALERT_CODE``: dismissing that one deletes a
+    #: checkpoint, dismissing this one closes the job.
+    _STOP_UNCLOSED_ALERT_CODE = "job_stop_unclosed"
     #: Seconds the heartbeat's request may wait at each step (connect,
     #: send, answer): it holds the cron thread every scheduled action
     #: waits for, and a heartbeat service answers in well under one
@@ -5018,6 +5086,181 @@ class CloudJob(models.Model):
         return raised
 
     @api.model
+    def _alert_unclosed_stops(self):
+        """Say the queues held by a stop whose worker died that nobody closes.
+
+        A job cancelled while it ran whose worker queue_job found dead
+        (``_FOUND_DEAD_SQL``) holds its queue until the reconciliation
+        closes it, with no expiry (``_scope_busy``). The sweep of the
+        queues, another scheduled action than the reconciliation, first
+        notes when it first saw each one (``found_dead_seen_at``), on a
+        cursor of its own committed at once, skipping a row someone
+        holds; then raises ``_STOP_UNCLOSED_ALERT_CODE`` (warning, on the
+        job's server and instance, one per job) for every one seen
+        ``_STOP_UNCLOSED_ALERT_MINUTES`` ago, claimed by the
+        reconciliation or not, that holds a queue (not a hidden job, but
+        a hidden step of a chain); and closes, as the platform, the alert
+        of one that is closed now. The alert lets go of nothing: dismissed
+        by hand, it closes the job (``_close_unclosed_stop_by_hand``).
+
+        :return: how many alerts were raised
+        :rtype: int
+        """
+        self.env.flush_all()
+        with self.env.registry.cursor() as cr:
+            cr.execute(
+                "UPDATE cloud_job c SET found_dead_seen_at ="
+                " (now() at time zone 'UTC') FROM ("
+                " SELECT j.id FROM cloud_job j"
+                " JOIN queue_job q ON q.uuid = j.queue_job_uuid"
+                f" WHERE j.state = 'cancelled' AND {_FOUND_DEAD_SQL}"
+                "   AND j.found_dead_seen_at IS NULL"
+                " FOR NO KEY UPDATE OF j SKIP LOCKED) seen"
+                " WHERE c.id = seen.id",
+            )
+        self.env["cloud.job"].invalidate_model(["found_dead_seen_at"])
+        hidden = tuple(self._get_hidden_job_types()) or ("",)
+        self.env.cr.execute(
+            "SELECT j.id, j.found_dead_seen_at FROM cloud_job j"
+            " JOIN queue_job q ON q.uuid = j.queue_job_uuid"
+            " JOIN cloud_job_type t ON t.id = j.job_type_id"
+            f" WHERE j.state = 'cancelled' AND {_FOUND_DEAD_SQL}"
+            "   AND (t.code NOT IN %s OR j.queue_chain_key IS NOT NULL)",
+            (hidden,),
+        )
+        unclosed = dict(self.env.cr.fetchall())
+        Alert = self.env["cloud.alert"].sudo()
+        open_alerts = Alert.search([
+            ("code", "=", self._STOP_UNCLOSED_ALERT_CODE),
+            ("state", "=", "active"),
+        ])
+        for alert in open_alerts.filtered(
+            lambda a: a.job_id.id not in unclosed,
+        ):
+            Alert.resolve_alert(
+                self._STOP_UNCLOSED_ALERT_CODE,
+                host=alert.host_id or None,
+                instance=alert.instance_id or None,
+                key=alert.dedup_key or None,
+            )
+        cutoff = fields.Datetime.now() - timedelta(
+            minutes=self._STOP_UNCLOSED_ALERT_MINUTES,
+        )
+        alerted = set(open_alerts.job_id.ids)
+        raised = 0
+        for job in self.sudo().browse(sorted(unclosed)):
+            seen = unclosed[job.id]
+            if job.id in alerted or not seen or seen > cutoff:
+                continue
+            self._alert_unclosed_stop(job, seen)
+            raised += 1
+        return raised
+
+    @api.model
+    def _alert_unclosed_stop(self, job, seen):
+        """Raise *job*'s ``_STOP_UNCLOSED_ALERT_CODE`` alert.
+
+        Written with ``self.env``.
+
+        :param job: the ``cloud.job``, cancelled, its worker found dead
+        :param seen: when the sweep first saw it so
+        """
+        env = self.env
+        job = job.with_env(env).sudo()
+        host = job.host_id
+        if job.instance_id:
+            queue = env._(
+                "the queue of instance %(name)s", name=job.instance_id.name or "",
+            )
+        else:
+            queue = env._(
+                "the queue of server %(host)s", host=host.name or "",
+            )
+        message = env._(
+            "Job #%(job)s (%(type)s) was cancelled while it ran, and the"
+            " process running it died before it stopped. The reconciliation"
+            " of lost jobs, which puts back what it left and closes it, has"
+            " not closed it since %(since)s: %(queue)s waits for it. Check"
+            " that the scheduled action of the reconciliation runs, and the"
+            " server log for why the close fails. Dismissing this alert"
+            " closes the job without putting back what it left on server"
+            " %(host)s: check the instance and the server by hand, then"
+            " the queue goes on.",
+            job=job.id, type=job.job_type_id.name or job.name,
+            since=fields.Datetime.to_string(seen) + " UTC", queue=queue,
+            host=host.name or "",
+        )
+        env["cloud.alert"].with_context(ic_job_cancelled=False).raise_alert(
+            self._STOP_UNCLOSED_ALERT_CODE,
+            message,
+            level="warning",
+            host=host,
+            instance=job.instance_id or None,
+            job=job,
+            key=str(job.id),
+            payload={"seen_dead_at": fields.Datetime.to_string(seen)},
+        )
+
+    @api.model
+    def _close_unclosed_stop_by_hand(self, job):
+        """Close *job*, a stop whose worker died, as a person decided.
+
+        The person dismissed its ``_STOP_UNCLOSED_ALERT_CODE`` alert: the
+        job is closed as the reconciliation's last step closes it
+        (``_close_lost_job_on``), in this transaction, with no hook —
+        what the lost run left is not put back, and its checkpoint, if
+        any, is deleted rather than cleaned up by a later pass. The job
+        log says so. Both rows are locked without waiting: held by a pass
+        of the reconciliation, which is closing it then, nothing is done
+        here, and if that pass does not close it the next sweep raises
+        the alert again.
+
+        :param job: the ``cloud.job``
+        :return: whether the job was closed
+        :rtype: bool
+        """
+        job = job.sudo()
+        self.env.flush_all()
+        cr = self.env.cr
+        rows = self._lock_lost_job(cr, job.id)
+        if rows is None:
+            return False
+        job_row, queue_row = rows
+        if not (
+            job_row["state"] == "cancelled" and queue_row
+            and queue_row["state"] == "failed"
+            and queue_row["exc_name"] == "JobFoundDead"
+        ):
+            return False
+        case = self._lost_job_succeeded(cr, job_row, "stopped")
+        if not job_row["worker_lost_at"]:
+            cr.execute(
+                "UPDATE cloud_job SET worker_lost_at ="
+                " (now() at time zone 'UTC') WHERE id = %s",
+                (job.id,),
+            )
+        self.env.invalidate_all()
+        self.env["cloud.job.log.chunk"].sudo().create({
+            "job_id": job.id, "source": "system",
+            "content": self.env._(
+                "A person closed the alert of this stop nobody closed: the"
+                " job is closed without putting back what the lost run left"
+                " on its server. Check the instance and the server by hand."
+            ),
+        })
+        self.env.flush_all()
+        closed = self._close_lost_job_on(
+            cr, job.id, claimed=case, release="delete",
+        )
+        self.env.invalidate_all()
+        if closed:
+            _logger.warning(
+                "cloud.job %s: a stop whose worker died was closed by hand,"
+                " without its hook", job.id,
+            )
+        return closed
+
+    @api.model
     def _cron_runs_now(self, cron):
         """Whether a cron worker runs *cron* at this moment.
 
@@ -5074,63 +5317,82 @@ class CloudJob(models.Model):
         :rtype: bool
         """
         with self.env.registry.cursor() as cr:
-            rows = self._lock_lost_job(cr, job_id)
-            if rows is None:
-                return False
-            job_row, queue_row = rows
-            case = self._lost_job_case_of(cr, job_row, queue_row)
-            if case is None and claimed == "stopped_parked" and (
-                job_row["state"] == "cancelled"
-                and (queue_row is None or queue_row["state"] in self._terminal_states)
-            ):
-                case = self._lost_job_succeeded(cr, job_row, claimed)
-            if case is None or not job_row["worker_lost_at"]:
-                return False
-            if release == "delete":
-                cr.execute(
-                    "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
-                    (job_id,),
-                )
-            elif claimed == "stopped_parked" or (
-                claimed == "succeeded" and job_row["state"] == "cancelled"
-            ):
-                cr.execute(
-                    "UPDATE cloud_job_checkpoint SET closed = TRUE,"
-                    " parked = FALSE WHERE job_id = %s AND closed IS NOT TRUE",
-                    (job_id,),
-                )
-            env = self.env(cr=cr)
-            if queue_row is None:
-                self._close_lost_job_without_queue(
-                    env, job_id, succeeded=case == "succeeded",
-                    cancelled=case == "stopped_parked",
-                )
-                return True
-            qjob = env["queue.job"].sudo().browse(queue_row["id"])
-            if case == "succeeded":
-                # Done as a success stored after a stop is: its own row
-                # and the unlink it owed back, the steps after it going.
-                qjob._store_success_before_cancel({"state": "done"})
-            elif case == "failed":
-                qjob.write({
-                    "state": "failed",
-                    "exc_message": self._worker_lost_message(env),
-                })
-            elif case in ("stopped", "stopped_parked"):
-                # Stored failed, which ``queue_job_ext`` turns into the
-                # stop it was, or into done after a success.
-                qjob.write({"state": "failed"})
-            elif case == "cancelled_running":
-                qjob.with_context(ic_cancelled_while_running=True).write(
-                    {"state": "cancelled"},
-                )
-            elif case == "cancelled_waiting":
-                qjob.write({"state": "cancelled"})
-            else:
-                qjob.write({"state": "done"})
-            _logger.info(
-                "cloud.job %s: closed by the reconciliation (%s)", job_id, case,
+            return self._close_lost_job_on(
+                cr, job_id, claimed=claimed, release=release,
             )
+
+    @api.model
+    def _close_lost_job_on(self, cr, job_id, claimed=None, release=None):
+        """``_close_lost_job`` on *cr*: lock, read the case again, close.
+
+        Also the close of a stop nobody closed that a person asked for
+        (``_close_unclosed_stop_by_hand``), on the request's cursor.
+
+        :param cr: the cursor to lock the rows and write the end on
+        :param int job_id: the ``cloud.job``
+        :param claimed: the case step 1 claimed it as, if known
+        :param release: what to do with the checkpoint: ``delete``,
+            ``close`` or None
+        :return: whether the job was closed
+        :rtype: bool
+        """
+        rows = self._lock_lost_job(cr, job_id)
+        if rows is None:
+            return False
+        job_row, queue_row = rows
+        case = self._lost_job_case_of(cr, job_row, queue_row)
+        if case is None and claimed == "stopped_parked" and (
+            job_row["state"] == "cancelled"
+            and (queue_row is None or queue_row["state"] in self._terminal_states)
+        ):
+            case = self._lost_job_succeeded(cr, job_row, claimed)
+        if case is None or not job_row["worker_lost_at"]:
+            return False
+        if release == "delete":
+            cr.execute(
+                "DELETE FROM cloud_job_checkpoint WHERE job_id = %s",
+                (job_id,),
+            )
+        elif claimed == "stopped_parked" or (
+            claimed == "succeeded" and job_row["state"] == "cancelled"
+        ):
+            cr.execute(
+                "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                " parked = FALSE WHERE job_id = %s AND closed IS NOT TRUE",
+                (job_id,),
+            )
+        env = self.env(cr=cr)
+        if queue_row is None:
+            self._close_lost_job_without_queue(
+                env, job_id, succeeded=case == "succeeded",
+                cancelled=case == "stopped_parked",
+            )
+            return True
+        qjob = env["queue.job"].sudo().browse(queue_row["id"])
+        if case == "succeeded":
+            # Done as a success stored after a stop is: its own row
+            # and the unlink it owed back, the steps after it going.
+            qjob._store_success_before_cancel({"state": "done"})
+        elif case == "failed":
+            qjob.write({
+                "state": "failed",
+                "exc_message": self._worker_lost_message(env),
+            })
+        elif case in ("stopped", "stopped_parked"):
+            # Stored failed, which ``queue_job_ext`` turns into the
+            # stop it was, or into done after a success.
+            qjob.write({"state": "failed"})
+        elif case == "cancelled_running":
+            qjob.with_context(ic_cancelled_while_running=True).write(
+                {"state": "cancelled"},
+            )
+        elif case == "cancelled_waiting":
+            qjob.write({"state": "cancelled"})
+        else:
+            qjob.write({"state": "done"})
+        _logger.info(
+            "cloud.job %s: closed by the reconciliation (%s)", job_id, case,
+        )
         return True
 
     @api.model
@@ -6140,8 +6402,9 @@ class CloudJob(models.Model):
         on the job before its executor has stopped what it left on the
         server. Until then the job stops: its queue.job has not ended —
         the run winds down, or the parked job comes back to close itself —
-        or its checkpoint is not closed (a worker found dead before the
-        reconciliation closes it). The lists say *Cancelling…* and name
+        or was found dead and the reconciliation has not closed the job
+        yet (``_FOUND_DEAD_SQL``, with or without a step apart), or its
+        checkpoint is not closed. The lists say *Cancelling…* and name
         it as what a queued job waits behind; ``_scope_busy`` keeps its
         target busy for the same queue.job. A checkpoint a hook closed and
         kept is the reconciliation's, which alerts if it gives up; while it
@@ -6151,11 +6414,10 @@ class CloudJob(models.Model):
         holds nothing — the row a move's restore left on a target the
         instance does not live on — does not.
 
-        The checkpoint, and so its half of this and the alert, exists only
-        for a job whose plan has a ``detached`` step: a job without one
-        whose worker is found dead three times reads false before the
-        reconciliation runs its hook, and its server unreachable when it
-        closes raises no alert.
+        The checkpoint, and so its half of this and the alert of a
+        clean-up given up, exists only for a job whose plan has a
+        ``detached`` step: a job without one whose server is unreachable
+        when the reconciliation closes it raises no alert.
 
         :param list domain: the ``cloud.job`` records to look at
         :return: the ids
@@ -6163,7 +6425,7 @@ class CloudJob(models.Model):
         """
         Job = self.sudo()
         Job.flush_model(["state", "queue_job_uuid", "instance_id", "job_type_id"])
-        self.env["queue.job"].sudo().flush_model(["state", "uuid"])
+        self.env["queue.job"].sudo().flush_model(["state", "uuid", "exc_name"])
         self.env["cloud.job.checkpoint"].sudo().flush_model(
             ["job_id", "closed", "holds_queue_since", "host_id"],
         )
@@ -6176,7 +6438,8 @@ class CloudJob(models.Model):
         self.env.cr.execute(SQL(
             "SELECT j.id FROM cloud_job j WHERE j.id IN %s AND ("
             " EXISTS (SELECT 1 FROM queue_job q"
-            "  WHERE q.uuid = j.queue_job_uuid AND q.state IN %s)"
+            "  WHERE q.uuid = j.queue_job_uuid AND (q.state IN %s"
+            f"   OR {_FOUND_DEAD_SQL}))"
             " OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
             "  WHERE k.job_id = j.id AND (k.closed IS NOT TRUE"
             "   OR (k.holds_queue_since IS NOT NULL"

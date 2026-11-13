@@ -22,6 +22,7 @@ from odoo.addons.incubacloud.models.abstract_executor import (
     JobCancelled,
     JobWorkerLost,
 )
+from odoo.addons.incubacloud.models.cloud_job import _dispatch_scope_fresh
 from odoo.addons.incubacloud.models.deploy_instance_executor import (
     DeployInstanceExecutor,
 )
@@ -522,6 +523,320 @@ class TestAStopIsNotRunAgain(_LostJobCase):
         self.env.invalidate_all()
         self.assertEqual(self.job.state, "started")
         self.assertFalse(self.job.worker_lost_at)
+
+
+class _DeadStopCase(_LostJobCase):
+    """A job cancelled while it ran, whose worker queue_job then found dead."""
+
+    def setUp(self):
+        super().setUp()
+        self.job.cancel_job()
+        self._die()
+
+    def _queued(self, code="restart_instance"):
+        """A job of *code* waiting in the instance's queue.
+
+        :return: the ``cloud.job``
+        """
+        job_type = self.env["cloud.job.type"].search([("code", "=", code)], limit=1)
+        self.assertTrue(job_type, code)
+        job = self.Job.sudo().create({
+            "host_id": self.host.id,
+            "instance_id": self.inst.id,
+            "job_type_id": job_type.id,
+            "name": code,
+        })
+        job.with_context(ic_skip_state_hook=True).write({"state": "queued"})
+        self.env.flush_all()
+        return job
+
+    def _dispatches(self):
+        """Gather the queues the transactions under test ask to serve.
+
+        What their commit would serve (``_schedule_dispatch``): a test's
+        cursors never run what waits for a commit.
+
+        :return: the patcher's context, and the list the scopes go to
+        """
+        scopes = []
+        patcher = patch.object(
+            type(self.Job), "_schedule_dispatch", autospec=True,
+            side_effect=lambda _model, served: scopes.extend(served),
+        )
+        return patcher, scopes
+
+    def _serve(self, scopes):
+        """Serve *scopes* as the commit that asked for them would."""
+        for scope in dict.fromkeys(scopes):
+            _dispatch_scope_fresh(self.env.registry, scope)
+        self.env.invalidate_all()
+
+    def _stopping(self, job=None):
+        """Whether *job* (this one) reads *Cancelling…*."""
+        job = job or self.job
+        return job.id in self.Job._stopping_ids([("id", "=", job.id)])
+
+
+class TestADeadStopHoldsItsQueue(_DeadStopCase):
+    """#96: the queue waits for the reconciliation's close, not its claim.
+
+    The reconciliation runs the job's hook (``on_cancelled_running``)
+    between its claim and its close, with no lock held: a job started
+    beside it would run with what the stop is putting back on the server.
+    """
+
+    def test_it_holds_its_queue_and_the_sweep_starts_nothing(self):
+        waiting = self._queued()
+        self.assertTrue(self.Job._scope_busy(self.inst.id, self.host.id))
+        self.Job._cron_dispatch_queued()
+        self.env.invalidate_all()
+        self.assertEqual(waiting.state, "queued")
+
+    def test_claimed_and_cleaned_up_it_holds_until_its_close(self):
+        """Not let go by ``worker_lost_at``: the hook runs after the claim."""
+        self._age(self.job)
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ) as on_cancelled:
+            self.assertEqual(
+                self.Job._claim_lost_job(self.job.id), ("stopped", False),
+            )
+            self.Job._clean_up_lost_job(self.job.id, "stopped", False)
+        on_cancelled.assert_called_once()
+        self.env.invalidate_all()
+        self.assertTrue(self.job.worker_lost_at)
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+        self.assertTrue(self._stopping())
+
+    def test_its_close_frees_the_queue_and_serves_it_at_once(self):
+        """In the close's own transaction, without waiting for the sweep."""
+        waiting = self._queued()
+        self._age(self.job)
+        patcher, scopes = self._dispatches()
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ), patcher:
+            self.assertEqual(self._reconcile(), 1)
+        self.assertEqual(self.qjob.state, "cancelled")
+        self.assertFalse(self.qjob.exc_name)
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertFalse(self._stopping())
+        self.assertIn((self.inst.id, None), scopes)
+        self._serve(scopes)
+        self.assertEqual(waiting.state, "pending")
+
+    def test_a_step_of_a_chain_holds_the_chain_s_other_queues(self):
+        """A staging's restore cancelled and dead: production, where the
+        chain's download ran, waits too."""
+        other = self.env["cloud.instance"].create({
+            "name": "lost-staging",
+            "project_id": self.inst.project_id.id,
+            "environment": "staging",
+            "host_id": self.host.id,
+        })
+        download = self.Job.sudo().create({
+            "host_id": self.host.id,
+            "instance_id": other.id,
+            "job_type_id": self.env["cloud.job.type"].search(
+                [("code", "=", "backup_download")], limit=1,
+            ).id,
+            "name": "Download",
+            "queue_chain_key": "chain-lost",
+        })
+        download.with_context(ic_skip_state_hook=True).write({"state": "done"})
+        self.job.sudo().write({"queue_chain_key": "chain-lost"})
+        self.env.flush_all()
+        self.assertTrue(self.Job._scope_busy(other.id, None))
+
+    def test_it_reads_cancelling_without_a_step_apart(self):
+        """No checkpoint: the queue.job alone says it still stops."""
+        self.assertFalse(self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", self.job.id)],
+        ))
+        self.assertTrue(self._stopping())
+
+    def test_a_hidden_job_holds_nothing_unless_it_is_a_step_of_a_chain(self):
+        """A chain is one entry, its hidden steps included: a move's
+        fingerprint holds the move's instance as its visible steps do."""
+        hidden = self.env["cloud.job.type"].search(
+            [("code", "=", "move_fingerprint")], limit=1,
+        )
+        self.assertIn(hidden.code, self.Job._get_hidden_job_types())
+        self.job.sudo().write({"job_type_id": hidden.id})
+        self.env.flush_all()
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.job.sudo().write({"queue_chain_key": "chain-move"})
+        self.env.flush_all()
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+
+    def test_a_stop_whose_queue_job_ended_holds_nothing(self):
+        for state in ("cancelled", "done"):
+            with self.subTest(state=state):
+                self.env.flush_all()
+                self.env.cr.execute(
+                    "UPDATE queue_job SET state = %s, exc_name = NULL"
+                    " WHERE id = %s", (state, self.qjob.id),
+                )
+                self.env.invalidate_all()
+                self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+                self.assertFalse(self._stopping())
+
+    def test_a_hook_that_queues_in_its_own_queue_waits_for_the_close(self):
+        """M2: what the hook queues on its instance (a move's rollback)
+        waits while the hook runs, and starts once the job is closed."""
+        self._age(self.job)
+        seen = {}
+
+        async def hook(executor, results, exc):
+            """Read the queue and queue in it, as a rollback would."""
+            Job = executor.env["cloud.job"].sudo()
+            seen["busy"] = Job._scope_busy(self.inst.id, None)
+            seen["job"] = Job.enqueue(
+                self.host.id, self.inst.id, "restart_instance",
+                bypass_running_check=True,
+            )
+            seen["state"] = Job.browse(seen["job"]).state
+
+        patcher, scopes = self._dispatches()
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+            side_effect=hook,
+        ), patcher:
+            self.assertEqual(self._reconcile(), 1)
+        self.assertTrue(seen["busy"])
+        self.assertEqual(seen["state"], "queued")
+        self.assertEqual(self.job.state, "cancelled")
+        self._serve(scopes)
+        self.assertEqual(self.Job.browse(seen["job"]).state, "pending")
+
+
+class TestADeadStopNobodyClosesIsSaid(_DeadStopCase):
+    """M1: the queue it holds is said, and a person can let it go."""
+
+    def _alert(self):
+        """The job's alert of a stop nobody closes."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_stop_unclosed"), ("job_id", "=", self.job.id),
+        ])
+
+    def _seen_ago(self, minutes):
+        """Put the sweep's first sight of the dead stop *minutes* back."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_job SET found_dead_seen_at ="
+            " (now() at time zone 'UTC') - make_interval(mins => %s)"
+            " WHERE id = %s", (minutes, self.job.id),
+        )
+        self.env.invalidate_all()
+
+    def _alerted(self):
+        """The sweep has seen it, and alerts once it has waited long enough.
+
+        :return: the alert
+        """
+        self.Job._cron_dispatch_queued()
+        self._seen_ago(31)
+        self.Job._cron_dispatch_queued()
+        alert = self._alert()
+        self.assertEqual(len(alert), 1)
+        return alert
+
+    def test_the_sweep_alerts_once_nobody_closes_it(self):
+        """Counted from the sweep's first sight of it, the reconciliation
+        never run; the alert asks, and the queue still waits."""
+        self.Job._cron_dispatch_queued()
+        self.env.invalidate_all()
+        self.assertTrue(self.job.found_dead_seen_at)
+        self.assertFalse(self._alert())
+        self._seen_ago(29)
+        self.Job._cron_dispatch_queued()
+        self.assertFalse(self._alert())
+        self._seen_ago(31)
+        self.Job._cron_dispatch_queued()
+        alert = self._alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.state, "active")
+        self.assertEqual(alert.instance_id, self.inst)
+        self.assertEqual(alert.host_id, self.host)
+        self.assertIn(f"#{self.job.id}", alert.message)
+        self.assertIn(self.inst.name, alert.message)
+        self.Job._cron_dispatch_queued()
+        self.assertEqual(len(self._alert()), 1)
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+        self.assertFalse(self.job.worker_lost_at)
+
+    def test_a_stop_claimed_and_never_closed_is_said_too(self):
+        self._age(self.job)
+        self.assertEqual(self.Job._claim_lost_job(self.job.id), ("stopped", False))
+        self._alerted()
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+
+    def test_a_hidden_job_that_holds_nothing_is_not_said(self):
+        hidden = self.env["cloud.job.type"].search(
+            [("code", "=", "instance_health")], limit=1,
+        )
+        self.job.sudo().write({"job_type_id": hidden.id})
+        self.Job._cron_dispatch_queued()
+        self._seen_ago(31)
+        self.Job._cron_dispatch_queued()
+        self.assertFalse(self._alert())
+
+    def test_it_closes_by_itself_once_the_reconciliation_closes_the_job(self):
+        alert = self._alerted()
+        self._age(self.job)
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ):
+            self.assertEqual(self._reconcile(), 1)
+        self.Job._cron_dispatch_queued()
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolution, "auto")
+
+    def test_dismissing_it_closes_the_job_without_its_hook(self):
+        """What the lost run left is not put back: the checkpoint goes,
+        the log says so, and the queue is served."""
+        self.env["cloud.job.checkpoint"].sudo().create({
+            "job_id": self.job.id, "host_id": self.host.id,
+        })
+        waiting = self._queued()
+        alert = self._alerted()
+        patcher, scopes = self._dispatches()
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ) as on_cancelled, patcher:
+            alert.write({"state": "dismissed", "resolution": "manual"})
+        on_cancelled.assert_not_called()
+        self.env.invalidate_all()
+        self.assertEqual(self.job.state, "cancelled")
+        self.assertEqual(self.qjob.state, "cancelled")
+        self.assertFalse(self.env["cloud.job.checkpoint"].sudo().search(
+            [("job_id", "=", self.job.id)],
+        ))
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertFalse(self._stopping())
+        self.assertIn("A person closed the alert", self._log())
+        self._serve(scopes)
+        self.assertEqual(waiting.state, "pending")
+        # Nothing is left for the reconciliation.
+        self._age(self.job)
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ) as again:
+            self.assertEqual(self._reconcile(), 0)
+        again.assert_not_called()
+
+    def test_dismissed_by_the_platform_it_closes_nothing(self):
+        alert = self._alerted()
+        alert.write({"state": "dismissed"})
+        self.env.invalidate_all()
+        self.assertEqual(self.qjob.state, "failed")
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+
+    def test_dismiss_all_leaves_it_open(self):
+        alert = self._alerted()
+        self.env["cloud.alert"].action_dismiss_all()
+        self.assertEqual(alert.state, "active")
 
 
 class TestAStopBetweenTwoTicks(TransactionCase):
