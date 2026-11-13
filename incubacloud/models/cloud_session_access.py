@@ -28,14 +28,17 @@ Core alone sends no notice unless switched on
 somebody's ERP, where emailing every user is not ours to decide. The
 values, and why: ``docs/runbooks/RB-33-session-guard.md``.
 """
+import hmac
 import logging
 from datetime import timedelta
+from hashlib import sha256
 from urllib.parse import urlsplit
 
 from markupsafe import Markup, escape
 
-from odoo import api, fields, models
+from odoo import api, fields, models, tools
 from odoo.http import get_session_max_inactivity, request
+from odoo.tools import SQL
 
 from ..mail_layout import wrap_in_mail_layout
 from .cloud_session_guard import (
@@ -507,11 +510,44 @@ class ResUsers(models.Model):
     def _get_session_token_fields(self):
         """Add the counter to what the session token is made of.
 
-        Odoo leaves an empty value out of the token, so the counter
-        changes no session until it is first moved; and it clears its
-        cache of tokens whenever one of these fields is written.
+        The token leaves it out while it is empty
+        (``_compute_session_token``), so the counter changes no session
+        until it is first moved; and Odoo clears its cache of tokens
+        whenever one of these fields is written.
         """
         return super()._get_session_token_fields() | {"backchannel_logout_counter"}
+
+    @tools.ormcache("sid")
+    def _compute_session_token(self, sid):
+        """Odoo 18's session token, without the counter while it is empty.
+
+        Odoo 19 leaves every empty value out of what the token is made
+        of; Odoo 18 keeps them, so the counter, empty until first moved,
+        would change every user's token when it is added and sign
+        everybody out once. The row is read as Odoo 18 reads it
+        (``_get_session_token_query_params``, which other modules extend)
+        and the counter is dropped from it while empty: the token is then
+        the one Odoo makes without it. The rest is Odoo 18's.
+
+        :param str sid: the session id
+        :return: the token, or False when the user is not found
+        :rtype: str | bool
+        """
+        self.env.cr.execute(SQL(
+            "SELECT %(select)s FROM %(from)s %(joins)s WHERE %(where)s GROUP BY %(group_by)s",
+            **self._get_session_token_query_params(),
+        ))
+        if self.env.cr.rowcount != 1:
+            self.env.registry.clear_cache()
+            return False
+        names = [column.name for column in self.env.cr.description]
+        row = tuple(
+            value
+            for name, value in zip(names, self.env.cr.fetchone(), strict=True)
+            if value is not None or name != "backchannel_logout_counter"
+        )
+        key = ("%s" % (row,)).encode("utf-8")
+        return hmac.new(key, sid.encode("utf-8"), sha256).hexdigest()
 
     # -- Sign out everywhere -------------------------------------------
 

@@ -325,7 +325,7 @@ class TestSessionsPage(_GuardedRequests, HttpCase):
         )
         self.user.invalidate_recordset()
         self.env.registry.clear_cache()
-        with_counter = BaseUsers._compute_session_token(self.user, sid)
+        with_counter = self.user._compute_session_token(sid)
         Users = type(self.env["res.users"])
         without = self.user._get_session_token_fields() - {"backchannel_logout_counter"}
         self.env.registry.clear_cache()
