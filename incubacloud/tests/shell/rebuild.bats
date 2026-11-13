@@ -23,15 +23,33 @@ STUB
     # docker stub below (each sources this file after recording the call):
     # the database's container, its data directory and hba file, its size
     # (1 GiB unless STUB_DB_KB says) and the free space of Docker's disk
-    # (100 GiB unless STUB_FREE_KB says).
+    # (100 GiB unless STUB_FREE_KB says). With STUB_HBA_FILE the hba file
+    # is that one, and the shell the test runs in the database's container
+    # to change it runs here, on it, its temporary file under $TMP.
+    # STUB_COPY_BLOCKS makes the copy say it started, in $TMP/copying, and
+    # last until it is killed.
+    export TMP
     export BOOT_ANSWERS="$TMP/boot-answers"
     cat > "$BOOT_ANSWERS" <<'STUB'
 case "$*" in
     "compose ps -q db")          echo db123; exit 0 ;;
     *"SHOW data_directory"*)     echo /var/lib/postgresql/data; exit 0 ;;
-    *"SHOW hba_file"*)           echo /etc/postgres/pg_hba.conf; exit 0 ;;
+    *"SHOW hba_file"*)           echo "${STUB_HBA_FILE:-/etc/postgres/pg_hba.conf}"; exit 0 ;;
+    "compose exec -T db sh -c "*)
+        if [ -n "${STUB_HBA_FILE:-}" ]; then
+            shift 6
+            body="${1//\/tmp\/ic_boot_hba/$TMP/ic_boot_hba}"
+            shift
+            exec sh -c "$body" "$@"
+        fi ;;
+    *"pg_basebackup"*)
+        if [ -n "${STUB_COPY_BLOCKS:-}" ]; then
+            : > "$TMP/copying"
+            exec /bin/sleep 30
+        fi ;;
     *"du -sk"*)                  printf '%s\t/var/lib/postgresql/data\n' "${STUB_DB_KB:-1048576}"; exit 0 ;;
     *"df -Pk /out"*)             echo "${STUB_FREE_KB:-104857600}"; exit 0 ;;
+    *"State.OOMKilled"*)         echo "${STUB_COPY_OOM:-false}"; exit 0 ;;
 esac
 STUB
     # The boot test asks docker two questions it cannot proceed without:
@@ -290,14 +308,82 @@ STUB
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
-    rule='host replication all 127.0.0.1/32 trust # incubacloud boot test'
+    # Replication for the database's own user, not for ``all``.
+    rule='host replication odoo 127.0.0.1/32 trust # incubacloud boot test'
     add_line="$(printf '%s\n' "$calls" | grep -nF "printf \"%s\\n\" \"\$1\" >> \"\$2\" sh $rule /etc/postgres/pg_hba.conf" | head -1 | cut -d: -f1)"
     drop_line="$(printf '%s\n' "$calls" | grep -nF "grep -vxF \"\$1\" \"\$2\"" | head -1 | cut -d: -f1)"
     basebackup_line="$(printf '%s\n' "$calls" | grep -n 'pg_basebackup' | head -1 | cut -d: -f1)"
-    [ -n "$add_line" ] && [ -n "$drop_line" ]
+    boot_pg_line="$(printf '%s\n' "$calls" | grep -n 'run -d --name ic_boot_pg_42' | head -1 | cut -d: -f1)"
+    [ -n "$add_line" ] && [ -n "$drop_line" ] && [ -n "$boot_pg_line" ]
     [ "$add_line" -lt "$basebackup_line" ]
+    # Out right after the copy, not when the test ends; and once.
     [ "$drop_line" -gt "$basebackup_line" ]
+    [ "$drop_line" -lt "$boot_pg_line" ]
+    [ "$(grep -cF 'grep -vxF' "$CALLS")" -eq 1 ]
     [ "$(grep -c 'SELECT pg_reload_conf()' "$CALLS")" -eq 2 ]
+}
+
+@test "boot-test takes the rule out of a real pg_hba.conf and leaves the rest" {
+    hba="$TMP/pg_hba.conf"
+    printf 'local all all trust\nhost all all 10.0.0.0/8 md5\n' > "$hba"
+    cp "$hba" "$TMP/pg_hba.before"
+    STUB_HBA_FILE="$hba" run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    cmp "$hba" "$TMP/pg_hba.before"
+    [ ! -e "$TMP/ic_boot_hba" ]
+    [[ "$output" != *"WARNING"* ]]
+}
+
+@test "boot-test never empties pg_hba.conf when its temporary copy cannot be written" {
+    # A full disk, the case the test risks: the copy of the file without
+    # the rule cannot be written. The file stays as it is, rule included,
+    # and the log says so, from the drop after the copy and from the trap.
+    hba="$TMP/pg_hba.conf"
+    printf 'local all all trust\n' > "$hba"
+    mkdir "$TMP/ic_boot_hba"
+    STUB_HBA_FILE="$hba" run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    grep -qx 'local all all trust' "$hba"
+    grep -qxF 'host replication odoo 127.0.0.1/32 trust # incubacloud boot test' "$hba"
+    [ "$(grep -c "WARNING: could not take the boot test's replication rule out of the database's $hba" <<<"$output")" -eq 2 ]
+    # No reload of a file the drop did not change.
+    [ "$(grep -c 'SELECT pg_reload_conf()' "$CALLS")" -eq 1 ]
+}
+
+@test "boot-test stopped during the copy takes the rule out first, then the volume" {
+    # A stop sends TERM to the step's whole session and KILL 60 s later:
+    # the rule goes before anything that may take long.
+    hba="$TMP/pg_hba.conf"
+    printf 'local all all trust\n' > "$hba"
+    cp "$hba" "$TMP/pg_hba.before"
+    printf '#!/usr/bin/env bash\necho "sleep $*" >> "$CALLS"\n/bin/sleep 0.1\n' > "$TMP/bin/sleep"
+    chmod +x "$TMP/bin/sleep"
+    STUB_HBA_FILE="$hba" STUB_COPY_BLOCKS=1 \
+        setsid bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod \
+        >"$TMP/out" 2>&1 </dev/null &
+    pid=$!
+    for _ in $(seq 100); do
+        [ -e "$TMP/copying" ] && break
+        /bin/sleep 0.1
+    done
+    [ -e "$TMP/copying" ]
+    grep -qF 'incubacloud boot test' "$hba"
+    pkill -TERM -s "$pid"
+    status=0
+    wait "$pid" || status=$?
+    [ "$status" -ne 0 ]
+    cmp "$hba" "$TMP/pg_hba.before"
+    calls="$(cat "$CALLS")"
+    drop_line="$(printf '%s\n' "$calls" | grep -nF 'grep -vxF' | head -1 | cut -d: -f1)"
+    volume_rm_line="$(printf '%s\n' "$calls" | grep -n 'volume rm ic_boot_42' | tail -1 | cut -d: -f1)"
+    copy_rm_line="$(printf '%s\n' "$calls" | grep -n 'rm -f ic_boot_copy_42' | tail -1 | cut -d: -f1)"
+    basebackup_line="$(printf '%s\n' "$calls" | grep -n 'pg_basebackup' | head -1 | cut -d: -f1)"
+    [ -n "$drop_line" ] && [ -n "$volume_rm_line" ] && [ -n "$copy_rm_line" ]
+    [ "$drop_line" -gt "$basebackup_line" ]
+    [ "$drop_line" -lt "$copy_rm_line" ]
+    [ "$copy_rm_line" -lt "$volume_rm_line" ]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
+    [[ "$calls" != *"click-odoo-update"* ]]
 }
 
 @test "boot-test says what it measured and how long the copy should take" {
@@ -347,11 +433,49 @@ STUB
     [ "$status" -eq 1 ]
     [[ "$output" == *"boot test stopped: The boot test ran past its time budget of 61 min while it copied the database"* ]]
     calls="$(cat "$CALLS")"
-    [[ "$calls" == *"timeout --kill-after=60 3610 docker run --rm --name ic_boot_copy_42"* ]]
+    [[ "$calls" == *"timeout --kill-after=60 3610 docker run --name ic_boot_copy_42"* ]]
     [[ "$calls" != *"click-odoo-update"* ]]
     [[ "$calls" == *"rm -f ic_boot_copy_42"* ]]
     [[ "$calls" == *"volume rm ic_boot_42"* ]]
     [[ "$calls" == *"compose start db odoo smtp"* ]]
+}
+
+# A copy killed by a KILL (137) that was not timeout's, which comes only
+# after the budget and its minute more.
+copy_killed_stub() {
+    cat > "$TMP/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+echo "timeout $*" >> "$CALLS"
+case "$*" in *pg_basebackup*) exit 137 ;; esac
+while [ "${1#-}" != "$1" ]; do shift; done
+shift
+exec "$@"
+STUB
+    chmod +x "$TMP/bin/timeout"
+}
+
+@test "boot-test says a copy the kernel killed ran out of memory" {
+    copy_killed_stub
+    STUB_COPY_OOM=true run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: The copy of the database ran out of memory: the server's kernel killed it after 0 min. Nothing was changed."* ]]
+    [[ "$output" != *"time budget"* ]]
+    calls="$(cat "$CALLS")"
+    # Read before the container goes, and the rule out before both.
+    inspect_line="$(printf '%s\n' "$calls" | grep -n 'State.OOMKilled' | head -1 | cut -d: -f1)"
+    copy_rm_line="$(printf '%s\n' "$calls" | grep -n 'rm -f ic_boot_copy_42' | tail -1 | cut -d: -f1)"
+    drop_line="$(printf '%s\n' "$calls" | grep -nF 'grep -vxF' | head -1 | cut -d: -f1)"
+    [ -n "$inspect_line" ] && [ -n "$drop_line" ]
+    [ "$drop_line" -lt "$inspect_line" ]
+    [ "$inspect_line" -lt "$copy_rm_line" ]
+    [[ "$calls" != *"click-odoo-update"* ]]
+}
+
+@test "boot-test gives both causes of a KILL it cannot tell apart, before the budget" {
+    copy_killed_stub
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"boot test stopped: The copy of the database was killed after 0 min, before its time budget of 61 min ran out: the server ran out of memory, or something removed its container. Nothing was changed."* ]]
 }
 
 @test "boot-test stops when the database is not running, before it copies" {

@@ -192,10 +192,13 @@ case "$op" in
         # ``ai`` embedding index. The copy and the volume's preparation
         # run in it too: one image, with the database's own pg_basebackup.
         pg_image="ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine"
-        # The rule that lets the copy in, marked so the trap removes this
-        # line and no other.
-        hba_rule="host replication all 127.0.0.1/32 trust # incubacloud boot test"
+        # The rule that lets the copy in: replication for the database's
+        # own user only, marked so its removal takes this line and no
+        # other. ``hba_added`` says it may be in the file, from just before
+        # it is written until it is taken out right after the copy.
+        hba_rule="host replication ${pg_user} 127.0.0.1/32 trust # incubacloud boot test"
         hba_file=""
+        hba_added=""
 
         # Whether the test needs the gatekeeper (below) is read from the
         # compose, and a compose that cannot be read says nothing about
@@ -225,15 +228,23 @@ case "$op" in
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
             ic_boot_rc=$?
+            # First of all: a stop gives the trap 60 s before its KILL
+            # (``CANCEL_TERM_WAIT_S``), and removing a volume the size of
+            # the database may take longer than that. Normally gone already,
+            # right after the copy; this is for a test cut during it.
+            if [ -n "$hba_added" ]; then
+                if ic_boot_hba_drop; then
+                    hba_added=""
+                else
+                    ic_boot_hba_warn
+                fi
+            fi
             docker rm -f "$copy_container" 2>/dev/null || true
             docker rm -f "$odoo_container" 2>/dev/null || true
             docker rm -f "$pg_container" 2>/dev/null || true
             docker network rm "$boot_net" 2>/dev/null || true
             # After the containers that mount it.
             docker volume rm "$boot_volume" >/dev/null 2>&1 || true
-            if [ -n "$hba_file" ]; then
-                ic_boot_hba_drop 2>/dev/null || true
-            fi
             if [ -n "${gatekeeper_started:-}" ] && [ "$ic_boot_rc" -ne 0 ]; then
                 # A first boot under the gatekeeper that failed leaves the
                 # stack as it found it: the old egress model, no gatekeeper.
@@ -265,14 +276,25 @@ case "$op" in
         }
         # ic_boot_hba_drop: take the rule ``hba_rule`` out of the live
         # database's pg_hba.conf, in place (the file keeps its owner and
-        # mode), and reload.
-        # shellcheck disable=SC2317  # reached through the EXIT trap
+        # mode), and reload. Each step only after the one before it
+        # worked: a temporary copy that could not be written, or came out
+        # empty (a full disk, the very case this test risks), never
+        # replaces the file, which PostgreSQL would then fail to reload
+        # while it kept the rule in memory. Fails when the rule is still
+        # in the file or the reload failed.
+        # shellcheck disable=SC2317  # reached through the EXIT trap too
         ic_boot_hba_drop() {
             # shellcheck disable=SC2016  # expanded by the container's sh
             docker compose exec -T db sh -c \
-                'grep -vxF "$1" "$2" > /tmp/ic_boot_hba; cat /tmp/ic_boot_hba > "$2"; rm -f /tmp/ic_boot_hba' \
-                sh "$hba_rule" "$hba_file"
-            ic_boot_psql 'SELECT pg_reload_conf()' >/dev/null
+                'grep -vxF "$1" "$2" > /tmp/ic_boot_hba && [ -s /tmp/ic_boot_hba ] && cat /tmp/ic_boot_hba > "$2" && ! grep -qxF "$1" "$2"; rc=$?; rm -f /tmp/ic_boot_hba; exit "$rc"' \
+                sh "$hba_rule" "$hba_file" \
+                && ic_boot_psql 'SELECT pg_reload_conf()' >/dev/null
+        }
+        # ic_boot_hba_warn: say, in the job's log, that the rule could not
+        # be taken out, and how it goes.
+        # shellcheck disable=SC2317  # reached through the EXIT trap too
+        ic_boot_hba_warn() {
+            ic_warn "could not take the boot test's replication rule out of the database's $hba_file: it lets the database's own user copy it over the loopback of its container without a password until the line '$hba_rule' is removed and the configuration reloaded, or the database container restarts"
         }
 
         # What a run killed before its trap left (a job whose worker died,
@@ -333,6 +355,7 @@ case "$op" in
         # adds its own, reloads, and its trap takes it out again.
         hba_file="$(ic_boot_psql 'SHOW hba_file' | tr -d '[:space:]')"
         [ -n "$hba_file" ] || ic_die "could not ask the database for its pg_hba.conf"
+        hba_added=1
         # shellcheck disable=SC2016  # expanded by the container's sh
         docker compose exec -T db sh -c \
             'grep -qxF "$1" "$2" || printf "%s\n" "$1" >> "$2"' \
@@ -347,9 +370,11 @@ case "$op" in
         # crash. Under ``timeout`` with the test's budget; the shell itself
         # says every minute that it still copies, so a test orphaned by a
         # request cut short dies at its next line rather than at the end.
+        # Without ``--rm``: a copy killed with 137 is read afterwards to
+        # tell the kernel's out of memory from the budget, and removed then.
         ic_log "copying the database into the volume $boot_volume"
         copy_started=$SECONDS
-        timeout --kill-after=60 "$budget_s" docker run --rm --name "$copy_container" \
+        timeout --kill-after=60 "$budget_s" docker run --name "$copy_container" \
             --network "container:$db_id" -v "$boot_volume:/out" \
             --user postgres --entrypoint pg_basebackup "$pg_image" \
             -h 127.0.0.1 -U "$pg_user" -D /out -Fp -X stream --checkpoint=fast --no-sync &
@@ -364,11 +389,34 @@ case "$op" in
         done
         copy_rc=0
         wait "$copy_pid" || copy_rc=$?
-        if [ "$copy_rc" -eq 124 ] || [ "$copy_rc" -eq 137 ]; then
+        copied_s=$(( SECONDS - copy_started ))
+        # The rule is needed for the copy alone (Fable's review of #91,
+        # 13-nov-2026): out now rather than when the test ends, hours
+        # later. Not taken out, the trap tries again.
+        if ic_boot_hba_drop; then
+            hba_added=""
+        else
+            ic_boot_hba_warn
+        fi
+        copy_oom=""
+        if [ "$copy_rc" -eq 137 ]; then
+            copy_oom="$(docker inspect -f '{{.State.OOMKilled}}' "$copy_container" 2>/dev/null || true)"
+        fi
+        docker rm -f "$copy_container" >/dev/null 2>&1 || true
+        # 137 is a KILL: timeout's own once the budget and its minute more
+        # ran out, the kernel's out of memory, or someone removing the
+        # container. Docker says the second; the time spent, the first.
+        if [ "$copy_rc" -eq 124 ] \
+            || { [ "$copy_rc" -eq 137 ] && [ "$copied_s" -ge "$budget_s" ]; }; then
             ic_boot_stop "The boot test ran past its time budget of $(( (budget_s + 59) / 60 )) min while it copied the database. Nothing was changed."
         fi
+        if [ "$copy_rc" -eq 137 ] && [ "$copy_oom" = "true" ]; then
+            ic_boot_stop "The copy of the database ran out of memory: the server's kernel killed it after $(( (copied_s + 59) / 60 )) min. Nothing was changed. Free memory on the server, or turn off «Test the new image before applying it» on the instance."
+        fi
+        if [ "$copy_rc" -eq 137 ]; then
+            ic_boot_stop "The copy of the database was killed after $(( (copied_s + 59) / 60 )) min, before its time budget of $(( (budget_s + 59) / 60 )) min ran out: the server ran out of memory, or something removed its container. Nothing was changed."
+        fi
         [ "$copy_rc" -eq 0 ] || ic_die "the copy of the database failed (exit $copy_rc)"
-        copied_s=$(( SECONDS - copy_started ))
         ic_log "copied in ${copied_s} s, about $(( size_bytes / 1000000 / (copied_s > 0 ? copied_s : 1) )) MB/s"
 
         # The throwaway PG lives on a network of its own, never on the
