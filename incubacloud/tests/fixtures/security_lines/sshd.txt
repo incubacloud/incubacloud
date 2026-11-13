@@ -1,0 +1,14 @@
+# The lines Loki holds for source="sshd": the journal's MESSAGE alone, as
+# Fluent Bit sends it (the "sshd-session[pid]: " the journal prints is not
+# part of it). Debian 13, OpenSSH 10.0p2, F0 of the observability plan
+# (9-nov-2026); 203.0.113.10 stands for the panel, 172.31.0.0/16 for the
+# attackers. One line per shape, in this order:
+#   accepted with the panel's key, as root
+#   accepted with another key, as the panel's user, from the loopback
+#   unknown user: the line before the ending, then the ending
+#   existing user with a key that does not open it: the ending alone
+Accepted publickey for root from 203.0.113.10 port 60560 ssh2: ED25519 SHA256:aya+WZfI0ITp74XMk0+4tbzGPANSnRr7f4Xa1l6JSCQ
+Accepted publickey for incubacloud from 127.0.0.1 port 55722 ssh2: ED25519 SHA256:UCjCc0gMRE5lSQ7xQXTn+efUUYHvSob6Kx+Y8kL9fp0
+Invalid user invitado from 172.31.0.2 port 53002
+Connection closed by invalid user invitado 172.31.0.2 port 53002 [preauth]
+Connection closed by authenticating user root 172.31.0.2 port 53008 [preauth]

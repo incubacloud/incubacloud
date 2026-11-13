@@ -395,8 +395,19 @@ itself and its counters never expire).
   module that extends the panel decides otherwise
   (`cloud.host._security_logs_after_upgrade`,
   `_security_logs_available`, `_security_logs_default`).
-- **Reading them.** Through `/lr/` with the account's credential, which
-  no server holds once it is rotated.
+- **Reading them.** Through `/lr/` with the account's credential, which no
+  server holds once it is rotated (`models/logs.py`): the transport of the
+  charts (8 s, one retry, a 429 asked again after a pause and never
+  counted as the central down), 500 lines a page, pages taken by time from
+  the last instant of the one before, included, and a line read twice
+  counted once. Its parsers are anchored at the start of the line; the
+  user names and commands an attacker writes are cut to 32 and 64
+  characters of a closed set before they can reach a message, a sudo
+  record keeps the program without its arguments, and no record carries
+  the line itself. An auditd change is its `SYSCALL` joined to its `PATH`
+  records by server and `audit(seconds:serial)`, once every page is read;
+  a `SYSCALL` whose `PATH` has not arrived in the last 60 s of the window
+  waits for the next pass.
 - **The panel's addresses and uid.** The agents' install reads
   `SSH_CONNECTION` without `become` (sudo clears it) and the panel keeps,
   per server, the last five addresses it came from, each forgotten 30
