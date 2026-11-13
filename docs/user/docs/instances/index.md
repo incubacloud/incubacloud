@@ -21,7 +21,7 @@ one filestore. It belongs to a project and runs on a host.
 
 - **Production instance** — customer-facing. Re-deploys go through the safe-rebuild
   flow (boot test before swap). One per project.
-- **Staging instance** — test copy. Re-deploys are direct. As many as you like:
+- **Staging instance** — test copy. Re-deploys go through the same boot test. As many as you like:
   stagings run on servers you already pay for, so they never count against the
   instance allowance of a SaaS plan.
 - **Odoo version** — one the panel offers, 8.0 to 20.0, taken from the project
@@ -198,14 +198,17 @@ today has no backup to copy until its first nightly run.
 
 ## Auto-update
 
-If you push commits to a connected repo, two settings control what happens:
+If you push commits to a connected repo, these settings control what happens:
 
 - **Auto-rebuild** — trigger a rebuild automatically when commits land on the
   connected branch. Off by default.
 - **Auto-update modules** — during rebuild, run `click-odoo-update` to update
-  only the modules whose checksum changed. On by default.
+  only the modules whose checksum changed. On by default. Off, the rebuild
+  runs no boot test either.
+- **Test the new image before applying it** — the boot test below. On by
+  default.
 
-Both live under `Instance detail → Networking`.
+They live under `Instance detail → Networking`.
 
 **Auto-rebuild** acts on GitHub's push notifications, which reach the panel
 through the [GitHub App](../projects/index.md#private-repositories), and on
@@ -217,6 +220,40 @@ panel must be reachable from the internet.
     a push notification of GitHub or GitLab that arrives while it sleeps only
     wakes it: the push is not acted on. Rebuilding on push needs a paid plan,
     whose control plane never sleeps; on Free, rebuild by hand.
+
+### The boot test
+
+Before a rebuild puts its new image into service, it copies the instance's
+database, boots the new image on the copy and updates the copy's modules. If
+that fails, the rebuild stops and the instance keeps its previous image and
+its database as they were.
+
+The copy is a full one, made with `pg_basebackup` into a Docker volume on the
+server's disk, so it needs room and time. Before copying, the rebuild measures
+the database and the free space of Docker's disk, and the job's log says what
+it found, for example:
+
+```text
+boot test: the database takes 50.0 GiB, Docker's disk has 100.0 GiB free and
+the test needs 60.0 GiB; the copy should take about 6 min, and the test has
+69 min
+```
+
+- **Disk.** The test needs the database's size, a tenth more for what the
+  update writes, and 5 GiB left free for the server's other instances. With
+  less free space the rebuild stops before copying anything, says how much is
+  missing and changes nothing.
+- **Time.** The estimate assumes 150 MB/s; a server with a local disk usually
+  copies at about twice that, and the log gives the real speed once the copy
+  ends. On ext4, count about 30 minutes for every 500 GB. The test has an hour
+  plus the copy at 100 MB/s, and at most six hours: past that the rebuild stops
+  before copying and says so.
+
+For a database too large to copy in reasonable time, turn off **Test the new
+image before applying it**. The rebuild then applies the new image and the
+module update straight to the instance, says so first in its result and leaves
+a warning in Alerts. Turn it back on and the next rebuild that passes the test
+clears the warning.
 
 ## Pull request previews
 
