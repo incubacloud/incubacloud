@@ -27,6 +27,7 @@ from ..models.delete_instance_executor import DeleteInstanceExecutor
 from ..models.host_build_lock import (
     _HOST_BUILD_LOCK_NS,
     BUILD_LOCK_WAIT_MARKER,
+    BUILD_LOCK_YIELD_MAX_S,
     HostBuildLockMixin,
 )
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
@@ -77,6 +78,30 @@ class _HostLockBase(TransactionCase):
             'name': 'Rebuild Instance',
         })
         return RebuildInstanceExecutor(job, self.host)
+
+    def _queued_executor(self, priority=10, age=0):
+        """A rebuild executor whose job a runner started, as queue_job does.
+
+        :param int priority: its queue job's priority
+        :param int age: seconds since its queue job was created
+        """
+        executor = self._executor()
+        self._seq += 1
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': f'build-lock-run-{self._seq}',
+            'name': 'rebuild',
+            'state': 'started',
+            'priority': priority,
+            'date_created': fields.Datetime.now() - timedelta(seconds=age),
+            'method_name': 'execute',
+            'model_name': 'cloud.job',
+            'func_string': 'execute()',
+        })
+        executor.job.sudo().write({
+            'queue_job_uuid': qjob.uuid, 'queue_job_id': qjob.id,
+        })
+        self.env.flush_all()
+        return executor
 
     def _other(self, state='pending', result=None, priority=10,
                code='rebuild_instance', instance=None):
@@ -544,6 +569,17 @@ class TestTheLockOutlivesAPark(_HostLockBase):
         self.assertEqual(executor._held_build_lock_host_id, self.host.id)
 
 
+    def test_a_parked_build_comes_back_before_a_better_one_that_waits(self):
+        """It takes its lock back: what it builds is never given away."""
+        self._park(take_lock=False)
+        self._other(priority=5, result=self._deferred())
+        with patch.object(RebuildInstanceExecutor, 'run', autospec=True) as run:
+            self.parked.job.execute()
+        run.assert_called_once()
+        self.assertEqual(
+            run.call_args.args[0]._held_build_lock_host_id, self.host.id,
+        )
+
 
 class TestTheDeferralSaysWhatItWaitsFor(_HostLockBase):
     """A build deferred by the lock names the job it waits for (#68)."""
@@ -686,3 +722,54 @@ class TestTheListsSayWhatItWaitsFor(_HostLockBase):
             self.assertEqual(by_id[waiting.id]['build_wait']['job_id'], holder.id)
             self.assertIsNone(by_id[plain.id]['build_wait'])
 
+
+class TestABetterJobTakesTheLockFirst(_HostLockBase):
+    """A job does not try the lock while a better one waits for it (#68).
+
+    The reserve's deploys go by ``root.warm`` with priority 15 and the
+    tenants' by ``root.user`` with 10, or 5 in production: in different
+    channels, the lock is the only place they meet.
+    """
+
+    def test_it_gives_way_to_a_better_one_that_waits(self):
+        better = self._other(priority=10, result=self._deferred())
+        executor = self._queued_executor(priority=15)
+        with patch.object(
+            RebuildInstanceExecutor, '_try_host_build_lock', autospec=True,
+        ) as trying:
+            exc = self._deferral(executor)
+        trying.assert_not_called()
+        self.assertEqual(str(exc), self._deferred(better))
+        self.assertEqual(exc.seconds, 30)
+        self.assertTrue(exc.ignore_retry)
+        self.assertEqual(self._waiting_lines(executor.job), [
+            f"Waiting for job #{better.id} to finish building on this server:"
+            " tried again every 30 s.",
+        ])
+
+    def test_one_that_starts_after_waiting_still_counts(self):
+        """Between its start and its try of the lock, or building already."""
+        better = self._other(state='started', priority=10, result=self._deferred())
+        exc = self._deferral(self._queued_executor(priority=15))
+        self.assertEqual(str(exc), self._deferred(better))
+
+    def test_no_way_given_at_the_same_priority_or_to_a_worse_one(self):
+        self._other(priority=10, result=self._deferred())
+        self._other(priority=15, result=self._deferred())
+        self._queued_executor(priority=10).pre_run_checks()  # must not raise
+
+    def test_no_way_given_to_one_cancelled_ended_or_waiting_for_another_thing(self):
+        self._other(state='cancelled', priority=5, result=self._deferred())
+        self._other(state='done', priority=5, result=self._deferred())
+        self._other(priority=5, result="The instance's crons are busy; deferring.")
+        self._queued_executor(priority=15).pre_run_checks()  # must not raise
+
+    def test_it_stops_giving_way_past_the_cap(self):
+        """The reserve is not left unfilled on a host that is always busy."""
+        self._other(priority=10, result=self._deferred())
+        self._deferral(self._queued_executor(
+            priority=15, age=BUILD_LOCK_YIELD_MAX_S - 60,
+        ))
+        self._queued_executor(
+            priority=15, age=BUILD_LOCK_YIELD_MAX_S + 5,
+        ).pre_run_checks()  # must not raise

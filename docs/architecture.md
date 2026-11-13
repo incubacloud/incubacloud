@@ -426,6 +426,21 @@ each with its own review and QA.
   (`build_wait`: the job, only when the reader may read it, and the next
   try). The job's log says it once per job waited for
   (`cloud.job._note_once`, on a cursor of its own).
+- **A better job takes the lock first** (13-nov-2026, #68). Before trying
+  the lock, a job defers the same way while a job of the host with a
+  strictly better `queue_job.priority` waits for it (its `result` has the
+  marker; a `started` one counts, as it is about to try the lock or holds
+  it), for `BUILD_LOCK_YIELD_MAX_S` = 30 minutes after its dispatch: in
+  different channels (a layer's background deploys go by `root.warm` with
+  15, the builds people ask for by `root.user` with 10, or 5 in
+  production), the lock is the only place those jobs meet. Past the cap it
+  tries the lock as before, so background work still runs on a host that
+  is always busy. Equal priorities keep the old order: whoever tries
+  first. A parked job coming back never gives way
+  (`_retake_host_build_lock`). Not solved: a job asked for while a
+  background build already runs waits that whole build, and once the lock
+  is free the host may stay idle up to 30 s while the job that goes first
+  sleeps.
 - **A parked job keeps its slot in its channel.** queue_job's runner does
   not count a job waiting between two attempts, and would give its slot
   away. The dispatcher hands a job to queue_job only while its channel and

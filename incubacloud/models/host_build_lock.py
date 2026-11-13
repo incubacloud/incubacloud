@@ -43,7 +43,19 @@ with ``BUILD_LOCK_WAIT_MARKER`` and names the job when there is one
 (``(job #N)``); queue_job keeps it in ``queue.job.result`` until the job
 ends, and ``cloud.job._build_waits`` reads it there for the lists. The
 job's log says it once per job it waits for.
+
+Who takes the lock once it is free used to be whoever tried first: a
+layer's background deploy (``root.warm``, priority 15) could go before
+two rebuilds people asked for (``root.user``, 10) and make them wait its
+whole build. In different channels, the lock is the only place those
+jobs meet, so the order is kept here: a job does not try the lock while
+a job of strictly better ``queue_job.priority`` waits for it, for at
+most ``BUILD_LOCK_YIELD_MAX_S`` after it was dispatched.
 """
+from datetime import timedelta
+
+from odoo import fields
+
 from odoo.addons.queue_job.exception import RetryableJobError
 
 from .registry import executor_registry
@@ -55,10 +67,19 @@ from .registry import executor_registry
 # COMMIT/ROLLBACK automatically.
 _HOST_BUILD_LOCK_NS = 0x0C70BB1D
 
-#: How every deferral for the lock starts. ``cloud.job._build_waits``
-#: reads it in ``queue.job.result``: the message comes from here alone,
-#: ``(job #N)`` after it when a job is named.
+#: How every deferral for the lock starts. ``cloud.job._build_waits`` and
+#: the order between the jobs that wait read it in ``queue.job.result``:
+#: the message comes from here alone, ``(job #N)`` after it when a job is
+#: named.
 BUILD_LOCK_WAIT_MARKER = "Another build is running on this host"
+
+#: Seconds, from its dispatch (``queue_job.date_created``), during which a
+#: job gives way to a better one that waits for the lock; then it tries
+#: the lock as every job did before (13-nov-2026, #68). On a host that
+#: always has a better build waiting, background deploys would never run.
+#: 30 minutes lets more than one build through first: a build took 5 to
+#: 19 minutes in the run that showed the case.
+BUILD_LOCK_YIELD_MAX_S = 1800
 
 #: Seconds before a deferred job tries again.
 _BUILD_LOCK_RETRY_S = 30
@@ -108,6 +129,11 @@ class HostBuildLockMixin:
         apart of it was left started there (``detached_started``): one
         kept between two steps, for a directory it could not remove or a
         server not reached, builds nothing.
+
+        Before the lock, a job of strictly better priority that waits for
+        it goes first (``_better_build_waiting``): this one defers without
+        trying it. A parked job coming back does not come by here
+        (``_retake_host_build_lock``), so it never gives way what it builds.
         """
         super().pre_run_checks()
         if not self._takes_host_build_lock:
@@ -115,6 +141,9 @@ class HostBuildLockMixin:
         host = self._host()
         if not host:
             return
+        better = self._better_build_waiting(host)
+        if better:
+            raise self._build_lock_deferral(better)
         if not self._try_host_build_lock(host):
             raise self._build_lock_deferral(self._build_running_on(host))
         with self.env["cloud.job"]._fresh_env() as env:
@@ -128,6 +157,49 @@ class HostBuildLockMixin:
             row = env.cr.fetchone()
         if row:
             raise self._build_lock_deferral(row[0])
+
+    def _better_build_waiting(self, host):
+        """Return a job of *host* that waits for its lock with a better priority.
+
+        One whose ``queue.job`` waits or runs (``pending``, ``enqueued``,
+        ``started``), keeps a deferral for the lock in its ``result``, and
+        has a strictly lower ``priority`` than this job's: a started one
+        counts too, as it is about to try the lock or holds it already.
+        None at equal priority, for a job with no ``queue.job``, or once
+        this one was dispatched ``BUILD_LOCK_YIELD_MAX_S`` ago. Read on a
+        fresh cursor: the others' deferrals were committed by their own
+        transactions.
+
+        :param host: the ``cloud.host``
+        :return: the id of the best such job, or None
+        :rtype: int
+        """
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT q.priority, q.date_created FROM queue_job q"
+                " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+                " WHERE c.id = %s",
+                (self.job.id,),
+            )
+            own = env.cr.fetchone()
+            if not own or own[0] is None:
+                return None
+            priority, dispatched = own
+            if dispatched and fields.Datetime.now() - dispatched >= timedelta(
+                seconds=BUILD_LOCK_YIELD_MAX_S,
+            ):
+                return None
+            env.cr.execute(
+                "SELECT c.id FROM cloud_job c"
+                " JOIN queue_job q ON q.uuid = c.queue_job_uuid"
+                " WHERE c.host_id = %s AND c.id != %s"
+                " AND q.state IN ('pending', 'enqueued', 'started')"
+                " AND q.result LIKE %s AND q.priority < %s"
+                " ORDER BY q.priority, c.id LIMIT 1",
+                (host.id, self.job.id, f"{BUILD_LOCK_WAIT_MARKER}%", priority),
+            )
+            row = env.cr.fetchone()
+        return row[0] if row else None
 
     def _build_running_on(self, host):
         """Return the job that holds *host*'s lock, when only one may hold it.
@@ -162,7 +234,7 @@ class HostBuildLockMixin:
         The line goes once per job waited for (``cloud.job._note_once``,
         on a cursor of its own: the deferral rolls the job's transaction
         back). The message starts with ``BUILD_LOCK_WAIT_MARKER``, which
-        the lists read.
+        the lists and the order between waiting jobs read.
 
         :param int job_id: the job waited for, or None when none is known
         :return: the ``RetryableJobError`` to raise; it spends no retry
