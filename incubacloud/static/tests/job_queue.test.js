@@ -7,6 +7,7 @@ import { JobHistory } from "@incubacloud/components/job_history/job_history";
 import { createToastService } from "@incubacloud/toast/toast";
 import {
     announceJob,
+    buildWaitLabel,
     channelWaitLabel,
     enqueueNotice,
     jobStateText,
@@ -225,6 +226,32 @@ describe("job queue — labels", () => {
         }))).toBe("Queued · waiting for a free slot (root.user 1/1)");
         expect(String(jobStateText({ state: "queued", queue_position: 0, server_wait: null })))
             .toBe("Queued · 0 ahead");
+    });
+
+    test("a job another build on its server defers names the job it waits for", () => {
+        const wait = { job_id: 41, until: "2026-11-13 10:00:30" };
+        expect(String(buildWaitLabel(wait))).toBe(
+            "Pending · waiting for job #41 to finish building on this server",
+        );
+        expect(String(buildWaitLabel({ job_id: null, until: wait.until }))).toBe(
+            "Pending · waiting for another build on this server",
+        );
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            expect(String(Object.create(proto).jobStateText({
+                state: "pending", build_wait: wait,
+            }))).toBe("Pending · waiting for job #41 to finish building on this server");
+            expect(proto.jobTone("pending")).toBe("queued");
+        }
+        const history = Object.create(JobHistory.prototype);
+        expect(String(history.rowStateText({ state: "pending", build_wait: wait }))).toBe(
+            "Pending · waiting for job #41 to finish building on this server",
+        );
+        // Only a pending job reads it: queued and started keep their own text.
+        expect(String(jobStateText({ state: "pending", build_wait: null }))).toBe("Pending");
+        expect(String(jobStateText({
+            state: "queued", queue_position: 1, build_wait: wait,
+        }))).toBe("Queued · 1 ahead");
+        expect(String(jobStateText({ state: "started", build_wait: wait }))).toBe("Running");
     });
 
     test("a parked job runs on its server and says when the panel reconnects", () => {

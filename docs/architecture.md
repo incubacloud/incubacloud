@@ -416,6 +416,16 @@ each with its own review and QA.
   from its first write, and any other build or teardown of the host that
   finds it defers 30 s. The parked job takes the lock again when it comes
   back.
+- **A deferral for the lock says what it waits for** (13-nov-2026, #68).
+  The deferral's message starts with `BUILD_LOCK_WAIT_MARKER` and names
+  the job when it knows one: the parked job whose checkpoint holds the
+  host, or the one job of the host whose `queue.job` runs and whose type
+  takes the lock; none when there are several. queue_job keeps it in
+  `queue.job.result` until the job ends, and `cloud.job._build_waits`
+  reads it there for a `pending` job whose `queue.job` waits
+  (`build_wait`: the job, only when the reader may read it, and the next
+  try). The job's log says it once per job waited for
+  (`cloud.job._note_once`, on a cursor of its own).
 - **A parked job keeps its slot in its channel.** queue_job's runner does
   not count a job waiting between two attempts, and would give its slot
   away. The dispatcher hands a job to queue_job only while its channel and
@@ -437,13 +447,14 @@ each with its own review and QA.
   `[incubacloud] channel_gate = off` turns it off without a deploy. In
   tests the gate is open unless the test asks for it (`ic_channel_gate`).
 - **What a person sees.** A parked job reads *Running · on the server,
-  reconnecting at 12:03:05* (`on_server`, `parked_until` of `_format`), one
-  held by the gate *Queued · waiting for a free slot (root.user 1/1)*
-  (`channel_wait`), one cancelled that has not closed yet *Cancelling…*
-  (`stopping`). A parked job 600 s late to come back says so once in its
-  log and raises `job_running_too_long`, naming the channel it waits for;
-  the slow job warning otherwise measures the attempt against 0.75 ×
-  `limit_time_real`.
+  reconnecting at 12:03:05* (`on_server`, `parked_until` of `_format`),
+  one held by the gate *Queued · waiting for a free slot (root.user 1/1)*
+  (`channel_wait`), one another build on its server defers *Pending ·
+  waiting for job #41 to finish building on this server* (`build_wait`),
+  one cancelled that has not closed yet *Cancelling…* (`stopping`). A
+  parked job 600 s late to come back says so once in its log and raises
+  `job_running_too_long`, naming the channel it waits for; the slow job
+  warning otherwise measures the attempt against 0.75 × `limit_time_real`.
 - **At startup**, besides the limits, the log says when `root.user` has no
   capacity of its own and which channels other modules' jobs used in the
   last 30 days: a parked job may wait for those. Only logged: the alert

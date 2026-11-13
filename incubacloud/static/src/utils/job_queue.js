@@ -59,6 +59,22 @@ export function serverWaitLabel(jobId) {
 }
 
 /**
+ * Label of a job another build on its server defers (``build_wait`` of
+ * ``_format``): dispatched, it tries the host's build lock again every
+ * 30 s, and names the job it waits for when the reader may read it.
+ *
+ * @param {{job_id: number|null, until: string|null}} wait the job it
+ *     waits for, and when it tries again
+ * @returns {string} "Pending · waiting for job #41 to finish building on
+ *     this server", or for another build when no job is named
+ */
+export function buildWaitLabel(wait) {
+    return wait.job_id
+        ? _t("Pending · waiting for job #%s to finish building on this server", wait.job_id)
+        : _t("Pending · waiting for another build on this server");
+}
+
+/**
  * Label of a job parked between two attempts: it runs, its step may go
  * on on its server (``on_server``), and the panel connects again at
  * ``parked_until``, written in the reader's time.
@@ -126,13 +142,14 @@ export function jobTone(state, stopping = false) {
  * Text of a job's state in the job lists and the history: its label;
  * for a job waiting in its queue how many entries go before it, the
  * channel slot it waits for when the gate holds it, or the ended job whose
- * step on the server its queue waits for; for a job parked
+ * step on the server its queue waits for; for a job another build on its
+ * server defers, the job it waits for; for a job parked
  * between two attempts, when the panel connects again; for a job
  * cancelled that still stops what it left on its server (``stopping``),
  * "Cancelling…" until it has.
  *
  * @param {{state: string, queue_position?: number, channel_wait?: object|null,
- *     server_wait?: number|null, on_server?: boolean,
+ *     server_wait?: number|null, build_wait?: object|null, on_server?: boolean,
  *     parked_until?: string|null, stopping?: boolean}} job a ``_format``
  *     or ``_format_history`` row
  * @returns {string}
@@ -148,6 +165,9 @@ export function jobStateText(job) {
         return job.server_wait
             ? serverWaitLabel(job.server_wait)
             : queuedLabel(job.queue_position);
+    }
+    if (job.state === "pending" && job.build_wait) {
+        return buildWaitLabel(job.build_wait);
     }
     if (job.state === "started" && job.parked_until) {
         return parkedLabel(job);

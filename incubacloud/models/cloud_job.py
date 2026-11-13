@@ -55,6 +55,7 @@ from ._job_channels import (
     full_channel,
 )
 from ._job_server_limits import conf_section
+from .host_build_lock import BUILD_LOCK_WAIT_MARKER
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .cloud_security_mixin import defaults_as_sent
 from .password_utils import IncubacloudCryptoError, _odoo_conf_path
@@ -1297,14 +1298,26 @@ class CloudJob(models.Model):
     def _note_waiting_for_newer_code(self):
         """Tell the job's log, once, that it waits for a server with newer code.
 
-        Written on a cursor of its own: the job's transaction is rolled
-        back by the retry, and the line is what a person opening the job
-        sees while it waits. A job put back every
-        ``NO_EXECUTOR_RETRY_SECONDS`` gets it on the first postponement
-        only: the later ones find it in the log.
+        A job put back every ``NO_EXECUTOR_RETRY_SECONDS`` gets it on the
+        first postponement only: the later ones find it in the log
+        (``_note_once``).
         """
         self.ensure_one()
-        note = _("Waiting for a server with newer code to pick this job up.")
+        self._note_once(
+            _("Waiting for a server with newer code to pick this job up."),
+        )
+
+    def _note_once(self, note):
+        """Write *note* in the job's log, unless the log already has it.
+
+        Written on a cursor of its own: the job's transaction is rolled
+        back by the retry that follows, and the line is what a person
+        opening the job sees while it waits. A job put back again and
+        again writes it once.
+
+        :param str note: the line, as the panel's own (``system``)
+        """
+        self.ensure_one()
         with read_committed_cursor(self.env.registry) as cr:
             chunks = self.env(cr=cr)["cloud.job.log.chunk"].sudo()
             if not chunks.search_count([
@@ -5253,6 +5266,7 @@ class CloudJob(models.Model):
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
         stopping = self._stopping_ids([("id", "in", self.ids)])
+        build_waits = self._build_waits()
 
         return [
             {
@@ -5297,6 +5311,9 @@ class CloudJob(models.Model):
                 # First in a queue that waits for an ended job's step on
                 # the server: that job's id.
                 "server_wait": server_waits.get(job.id),
+                # Deferred by another build on its server: the job it
+                # waits for, when the reader may read it, and its next try.
+                "build_wait": build_waits.get(job.id),
                 **job._parked_fields(parked.get(job.id)),
                 "user_id": job.create_uid.id,
                 "user_name": job.create_uid.name or "",
@@ -5566,6 +5583,52 @@ class CloudJob(models.Model):
         ))
         return {row[0] for row in self.env.cr.fetchall()}
 
+    def _build_waits(self):
+        """Say which of these jobs another build on their server defers.
+
+        A job ``pending`` whose ``queue.job`` waits (``pending``,
+        ``enqueued``) with a deferral for the host's build lock in its
+        ``result`` (``BUILD_LOCK_WAIT_MARKER``): queue_job keeps the
+        message there until the job ends, and an attempt that runs or
+        ends is no longer waiting. One query for all of them, as for
+        ``_stopping_ids``. The job named in the message is given only
+        when the reader may read it: on a shared server it may be another
+        project's.
+
+        :return: ``{job id: {"job_id": id or None, "until": eta}}``, for
+            those jobs only; ``until`` is when it tries again
+        :rtype: dict
+        """
+        if not self.ids:
+            return {}
+        self.sudo().flush_model(["state", "queue_job_uuid"])
+        self.env["queue.job"].sudo().flush_model(["state", "result", "eta"])
+        self.env.cr.execute(
+            "SELECT c.id, q.result, q.eta FROM cloud_job c"
+            " JOIN queue_job q ON q.uuid = c.queue_job_uuid"
+            " WHERE c.id IN %s AND c.state = 'pending'"
+            " AND q.state IN ('pending', 'enqueued') AND q.result LIKE %s",
+            (tuple(self.ids), f"{BUILD_LOCK_WAIT_MARKER}%"),
+        )
+        rows = self.env.cr.fetchall()
+        named = {}
+        for job_id, result, _eta in rows:
+            found = re.match(
+                re.escape(BUILD_LOCK_WAIT_MARKER) + r" \(job #(\d+)\)", result,
+            )
+            if found:
+                named[job_id] = int(found.group(1))
+        readable = set(
+            self.browse(list(set(named.values())))._filtered_access("read").ids
+        )
+        return {
+            job_id: {
+                "job_id": named[job_id] if named.get(job_id) in readable else None,
+                "until": fields.Datetime.to_string(eta) or None,
+            }
+            for job_id, _result, eta in rows
+        }
+
     def _format_history(self):
         now = fields.Datetime.now()
         places = self._queue_places()
@@ -5573,6 +5636,7 @@ class CloudJob(models.Model):
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
         stopping = self._stopping_ids([("id", "in", self.ids)])
+        build_waits = self._build_waits()
         result = []
         for job in self:
             start = job.create_date
@@ -5611,6 +5675,7 @@ class CloudJob(models.Model):
                     # ``_format``.
                     "channel_wait": waits.get(job.id),
                     "server_wait": server_waits.get(job.id),
+                    "build_wait": build_waits.get(job.id),
                     **job._parked_fields(parked.get(job.id)),
                     "create_date": job.create_date,
                     "write_date": job.write_date,

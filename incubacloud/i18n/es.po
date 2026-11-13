@@ -118,6 +118,7 @@ msgid "%(count)s requests"
 msgstr "%(count)s peticiones"
 
 #. module: incubacloud
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "\"%s\" has not started yet. Cancel it and take it out of the queue?"
@@ -23347,3 +23348,35 @@ msgstr ""
 "Para una central cuyo servidor se ha perdido, o un panel cuyo único servidor"
 " se va: el panel la olvida y la observabilidad se apaga, y así el servidor "
 "se puede borrar."
+
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Pending · waiting for job #%s to finish building on this server"
+msgstr ""
+"Pendiente · esperando a que el trabajo #%s termine de construir en este "
+"servidor"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Pending · waiting for another build on this server"
+msgstr "Pendiente · esperando a otra construcción en este servidor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_build_lock.py:0
+msgid ""
+"Waiting for job #%(job)s to finish building on this server: tried again "
+"every 30 s."
+msgstr ""
+"Esperando a que el trabajo #%(job)s termine de construir en este servidor: "
+"se vuelve a intentar cada 30 s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/host_build_lock.py:0
+msgid ""
+"Waiting for another build on this server to finish: tried again every 30 s."
+msgstr ""
+"Esperando a que termine otra construcción en este servidor: se vuelve a "
+"intentar cada 30 s."
