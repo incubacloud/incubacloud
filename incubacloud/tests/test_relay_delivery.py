@@ -159,7 +159,8 @@ class _RelayCase(TransactionCase):
     def setUp(self):
         """Create the production; durable writes ride the test cursor."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "rdeliv-host", "ip_address": "192.0.2.82", "user": "ubuntu",
             "wildcard_domain": "rdeliv.example.com",

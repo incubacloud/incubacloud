@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { click, queryOne, waitFor } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
-import { allowTranslations, mountWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, mountWithCleanup } from "@web/../tests/web_test_helpers";
 import { relayIcon } from "@incubacloud/utils/icons";
 import { _buildUrl, _parseRoute } from "@incubacloud/app/app";
 import {
@@ -32,7 +32,7 @@ import {
  */
 
 // The labels are lazy translations, read here as text.
-beforeEach(() => allowTranslations());
+beforeEach(() => patchTranslations());
 
 /** An env as the panel gives one: who may see what. */
 const env = (features = {}) => ({ features, permissions: { can_manage_settings: true } });

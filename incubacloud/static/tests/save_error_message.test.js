@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc, RPCError } from "@web/core/network/rpc";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import { ProjectDetail } from "@incubacloud/components/project_detail/project_detail";
@@ -97,7 +97,7 @@ function instanceDetail(isCreate) {
 }
 
 describe("a refused save says why", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     const REASON = "A project name cannot contain '{{', '{%', '{#' or invisible or control characters.";
 

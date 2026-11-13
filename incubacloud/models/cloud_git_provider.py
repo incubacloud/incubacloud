@@ -153,10 +153,13 @@ class CloudGitProvider(models.Model):
     last_check_git = fields.Char(readonly=True)
     last_check_api = fields.Char(readonly=True)
 
-    _authority_unique = models.Constraint(
-        "UNIQUE(authority)",
-        "There is already a Git provider for this server.",
-    )
+    _sql_constraints = [
+        (
+            "authority_unique",
+            "UNIQUE(authority)",
+            "There is already a Git provider for this server.",
+        ),
+    ]
 
     @api.depends("base_url")
     def _compute_authority(self):
@@ -556,10 +559,19 @@ class CloudGitCredential(models.Model):
     token_user = fields.Char(readonly=True)
     expires_on = fields.Date()
 
-    _provider_namespace_unique = models.UniqueIndex(
-        "(provider_id, COALESCE(namespace, ''))",
-        "This provider already has a credential for that namespace.",
-    )
+    def init(self):
+        """Create the unique index on (provider_id, namespace).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "cloud_git_credential_provider_namespace_unique "
+            "ON cloud_git_credential (provider_id, COALESCE(namespace, ''))"
+        )
 
     def _meets(self, wanted):
         """Return whether this credential meets the scopes *wanted*.

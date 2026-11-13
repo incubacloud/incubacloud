@@ -3,7 +3,7 @@ import { click, waitFor } from "@odoo/hoot-dom";
 import { advanceTime, animationFrame } from "@odoo/hoot-mock";
 import { Component, useState, xml } from "@odoo/owl";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
@@ -34,7 +34,7 @@ import { useSafePoll } from "@incubacloud/utils/use_safe_poll";
  */
 
 describe("Metrics formatters", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("bytes in binary units, seconds in ms below one", () => {
         expect(formatBytes(512 * 1024 * 1024)).toBe("512\u00a0MiB");
@@ -60,7 +60,7 @@ describe("Metrics formatters", () => {
 });
 
 describe("TimeSeriesChart helpers", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a gap of more than two steps stays a gap", () => {
         const points = toChartPoints([[0, 1], [30, 2], [300, 3]], 30);
@@ -113,7 +113,7 @@ function boardWith(board) {
 }
 
 describe("MetricsBoard", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("is drawn by the panel, with no frame of another tool", () => {
         expect(MetricsBoard.template).toBe("incubacloud.MetricsBoard");
@@ -203,7 +203,7 @@ describe("MetricsBoard", () => {
 });
 
 describe("OnDemandPanel, mounted", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("reads when pressed, and a second reading waits for the first", async () => {
         const asked = [];

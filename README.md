@@ -10,7 +10,7 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 
 | | |
 |---|---|
-| **Install and update the panel** | [INSTALL.md](INSTALL.md) — what the panel adds to your Odoo 19.0: dependencies, settings, proxy, a dedicated job runner, safe updates |
+| **Install and update the panel** | [INSTALL.md](INSTALL.md) — what the panel adds to your Odoo 18.0: dependencies, settings, proxy, a dedicated job runner, safe updates |
 | **Use it** | [docs.incubacloud.io](https://docs.incubacloud.io/) — hosts, projects, instances, backups, agents |
 | **How it is built** | [architecture](docs/architecture.md), [API endpoints](docs/api-endpoints.md), [MCP server](docs/mcp.md), [assistant](docs/assistant.md), [observability](docs/observability-operations.md), [runbooks](docs/runbooks/README.md), [roadmap](docs/roadmap.md) |
 | **Contribute** | [CONTRIBUTING.md](CONTRIBUTING.md), [CLA.md](CLA.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |

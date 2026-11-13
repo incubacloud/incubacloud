@@ -254,7 +254,7 @@ class TestReadingRoutes(HttpCase):
         ):
             self.env["res.users"].create({
                 "name": login, "login": login, "password": login,
-                "group_ids": [(6, 0, [
+                "groups_id": [(6, 0, [
                     self.env.ref("base.group_user").id, self.env.ref(group).id,
                 ])],
             })

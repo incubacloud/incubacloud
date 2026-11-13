@@ -316,7 +316,8 @@ class TestTheLockOutlivesAPark(_HostLockBase):
     def setUp(self):
         """A rebuild of the fixture instance, run by queue_job."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.parked = self._executor()
         self.qjob = self.env['queue.job'].sudo().create({
             'uuid': 'build-lock-parked',

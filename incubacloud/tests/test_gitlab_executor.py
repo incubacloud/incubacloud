@@ -370,7 +370,8 @@ class TestRequirementsOfAnUnreachableGitLab(_GitLabExecutorCase):
     def setUp(self):
         super().setUp()
         # The job's durable cursor rides on the test's transaction.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         project = self.env["cloud.project"].create({"name": "J5"})
         self.instance = self.env["cloud.instance"].create({
             "name": "j5-inst", "project_id": project.id,

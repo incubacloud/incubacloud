@@ -1039,7 +1039,8 @@ class TestPreviewReopenedAtOnce(_CommentCase):
 
     def test_two_deliveries_at_once_leave_one_preview_and_no_alert(self):
         """The loser of the unique name finds the winner's preview and says nothing."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self._preview(name='pr-7', state='deploying')
         Event = type(self.env['cloud.github.event'])
         with patch.object(

@@ -158,7 +158,8 @@ class TestStepsApart(TransactionCase):
     def setUp(self):
         """The host, its job, and a place for what the steps leave."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "apart-host",
             "ip_address": "192.0.2.94",

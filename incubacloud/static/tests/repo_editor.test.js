@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { getTemplate } from "@web/core/templates";
 import {
@@ -277,7 +277,7 @@ function gitlabEditor(caps = {}, repo = {}) {
 }
 
 describe("RepoEditor — the webhook of a GitLab line", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("the saved capabilities say what a push does", () => {
         expect(gitlabEditor().pushRebuild).toBe("no_hook");
@@ -340,7 +340,7 @@ describe("RepoEditor — the webhook of a GitLab line", () => {
 });
 
 describe("RepoEditor — who changes a saved line's URL", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     /**
      * A RepoEditor stand-in for a reader with *permissions*.

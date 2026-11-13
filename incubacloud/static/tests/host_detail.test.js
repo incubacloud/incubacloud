@@ -967,7 +967,7 @@ describe("HostDetail — login types without sshpass", () => {
     ).get;
 
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
     });
 
     /**

@@ -325,7 +325,8 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
     def setUp(self):
         """An Administrator, a developer whose key connected, and a consultant."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.admin = self._cloud_user("ar-admin", group="group_cloud_manager")
         self.dev = self._cloud_user("ar-dev", group="group_cloud_developer")
         self.other = self._cloud_user("ar-other", group="group_cloud_developer")
@@ -537,10 +538,10 @@ class TestAutoApprovalRules(AutoApprovalMixin, McpUsersMixin, TransactionCase):
         """Up: paused until another is granted; down: nothing more is allowed."""
         rule = self._grant(self.dev, self.credential)
         manager = self.env.ref("incubacloud.group_cloud_manager")
-        self.dev.sudo().write({"group_ids": [(4, manager.id)]})
+        self.dev.sudo().write({"groups_id": [(4, manager.id)]})
         self.assertEqual(rule._state(), "paused_role")
         self.assertFalse(self.Rule._active_for(self.dev.id, self.credential))
-        self.dev.sudo().write({"group_ids": [(3, manager.id)]})
+        self.dev.sudo().write({"groups_id": [(3, manager.id)]})
         self.assertEqual(rule._state(), "active")
         self.assertEqual(rule.role_at_grant, "developer")
 
@@ -872,7 +873,8 @@ class TestCredentialsSeen(AutoApprovalMixin, McpUsersMixin, TransactionCase):
     def setUp(self):
         """Two users."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.dev = self._cloud_user("cs-dev")
         self.other = self._cloud_user("cs-other")
         self.Seen = self.env["incubacloud.mcp.credential"]

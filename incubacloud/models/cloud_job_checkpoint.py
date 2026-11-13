@@ -117,10 +117,9 @@ class CloudJobCheckpoint(models.Model):
              " carried state.",
     )
 
-    _job_uniq = models.Constraint(
-        "unique(job_id)",
-        "A job has one checkpoint.",
-    )
+    _sql_constraints = [
+        ("job_uniq", "unique(job_id)", "A job has one checkpoint."),
+    ]
 
     def _data(self):
         """Return the row's ``data`` as a dict, empty when there is none.

@@ -3,7 +3,7 @@ import { click, waitFor } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, useSubEnv, xml } from "@odoo/owl";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
@@ -108,7 +108,7 @@ async function mountPanel(alert) {
 }
 
 describe("Pip conflict dialog — Edit Manually", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("is drawn as the panel's secondary button", async () => {
         await mountPanel(pipAlert({ instance_id: 6, project_id: 5 }));

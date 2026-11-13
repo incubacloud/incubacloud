@@ -165,10 +165,20 @@ class McpAutoApproval(models.Model):
     use_count = fields.Integer(readonly=True, default=0)
     last_used_at = fields.Datetime(readonly=True)
 
-    _live_uniq = models.UniqueIndex(
-        "(user_id, credential) WHERE revoked_at IS NULL",
-        "A credential has one live auto-approval rule at most.",
-    )
+    def init(self):
+        """Create the partial unique index on (user_id, credential).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it: a credential has one live rule at most.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "incubacloud_mcp_auto_approval_live_uniq "
+            "ON incubacloud_mcp_auto_approval (user_id, credential) "
+            "WHERE revoked_at IS NULL"
+        )
 
     # ── No one writes a rule but this model ───────────────────────────────
 
@@ -733,9 +743,19 @@ class McpCredential(models.Model):
     first_seen = fields.Datetime(readonly=True)
     last_seen = fields.Datetime(readonly=True, index=True)
 
-    _user_client_uniq = models.UniqueIndex(
-        "(user_id, client)", "A credential is recorded once per user."
-    )
+    def init(self):
+        """Create the unique index on (user_id, client).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it. :meth:`_seen`'s ``ON CONFLICT`` relies on it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "incubacloud_mcp_credential_user_client_uniq "
+            "ON incubacloud_mcp_credential (user_id, client)"
+        )
 
     @api.model
     def _seen(self, principal, client_name=""):

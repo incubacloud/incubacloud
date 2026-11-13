@@ -166,7 +166,7 @@ function px(style, property) {
 }
 
 describe("MultiSelect — menu placement", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a field near the top opens its menu below", () => {
         const style = placed(100, 140, 720)._menuStyle();

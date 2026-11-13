@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { RlSelect } from "@incubacloud/components/rl_select/rl_select";
 
 /**
@@ -41,7 +41,7 @@ function px(style, property) {
 }
 
 describe("RlSelect — menu placement", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a trigger near the top opens its menu below, as before", () => {
         const style = select(100, 136, 720)._computeDropdownStyle();

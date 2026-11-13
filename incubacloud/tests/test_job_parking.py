@@ -104,7 +104,8 @@ class _ParkingCase(TransactionCase):
     def setUp(self):
         """The host, its job, and a place for what the steps leave."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "parking-host",
             "ip_address": "192.0.2.95",
@@ -624,7 +625,8 @@ class TestAParkedPostponeIsNotMirrored(TransactionCase):
     def setUp(self):
         """A started job and its queue job."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         host = self.env["cloud.host"].create({
             "name": "postpone-host",
             "ip_address": "192.0.2.96",

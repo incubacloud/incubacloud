@@ -260,7 +260,8 @@ class _TwoRepoResync(JobEndAssertions, TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         project = self.env['cloud.project'].create({'name': 'ic project'})
         self.instance = self.env['cloud.instance'].create({
             'name': 'ic',

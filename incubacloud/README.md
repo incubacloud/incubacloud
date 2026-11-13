@@ -94,7 +94,7 @@ Executor pattern:
 Requirements
 ------------
 
-- Odoo 19.0
+- Odoo 18.0
 - `queue_job` (OCA)
 - Python: the repository's `requirements.txt` (`asyncssh`, `cryptography`,
   `ansible-core`, `ansible-runner`, `boto3`, `PyYAML`, `bcrypt`, `joserfc`…)

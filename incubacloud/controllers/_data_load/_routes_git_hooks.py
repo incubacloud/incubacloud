@@ -116,7 +116,7 @@ class GitHooksMixin:
                 continue
         raise AccessError(_("You cannot edit a project this webhook serves."))
 
-    @http.route(['/cloud/get_git_hooks'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_git_hooks'], type='json', auth='user')
     def cloud_get_git_hooks(self):
         """Return the panel's GitLab webhooks, their state and last delivery.
 
@@ -135,7 +135,7 @@ class GitHooksMixin:
             'hooks': [_serialize_hook(h, can_manage) for h in hooks],
         }
 
-    @http.route(['/cloud/register_git_hook'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/register_git_hook'], type='json', auth='user')
     def cloud_register_git_hook(self, line_model, line_id, scope='project'):
         """Create or reuse the webhook of a GitLab line's path, and register it.
 
@@ -227,7 +227,7 @@ class GitHooksMixin:
         """, (provider_id, scope, path))
         return Hook.browse(cr.fetchone()[0])
 
-    @http.route(['/cloud/reveal_git_hook_secret'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/reveal_git_hook_secret'], type='json', auth='user')
     def cloud_reveal_git_hook_secret(self, hook_id, rotate=False):
         """Return a webhook's URL and secret to paste in GitLab; audited.
 
@@ -254,7 +254,7 @@ class GitHooksMixin:
         })
         return {'ok': True, 'url': hook._url(), 'secret': secret}
 
-    @http.route(['/cloud/verify_git_hook'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/verify_git_hook'], type='json', auth='user')
     def cloud_verify_git_hook(self, hook_id):
         """Ask GitLab for a test delivery and return without waiting for it.
 
@@ -267,7 +267,7 @@ class GitHooksMixin:
         self._check_can_edit_hook(hook)
         return hook._request_test()
 
-    @http.route(['/cloud/delete_git_hook'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_git_hook'], type='json', auth='user')
     def cloud_delete_git_hook(self, hook_id):
         """Delete a webhook in GitLab (when it is the panel's) and in the panel.
 
@@ -316,7 +316,7 @@ class GitHooksMixin:
         hook.unlink()
         return {'ok': True, 'warning': warning}
 
-    @http.route(['/cloud/reprocess_git_event'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/reprocess_git_event'], type='json', auth='user')
     def cloud_reprocess_git_event(self, event_id):
         """Dispatch again a GitLab delivery whose dispatch failed.
 

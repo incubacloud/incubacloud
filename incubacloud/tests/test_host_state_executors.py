@@ -118,7 +118,8 @@ class TestHostProbeJudgement(HostStateCase):
         the alerts name no job: the mocked one has no row.
         """
         if not getattr(self, "_in_test_mode", False):
-            self.registry_enter_test_mode()
+            self.registry.enter_test_mode(self.cr)
+            self.addCleanup(self.registry.leave_test_mode)
             self._in_test_mode = True
         ex.job.env = self.env
         ex.job.id = False

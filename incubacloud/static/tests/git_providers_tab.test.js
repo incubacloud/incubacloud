@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { getTemplate } from "@web/core/templates";
 import {
@@ -81,7 +81,7 @@ async function confirmDelete(comp) {
 }
 
 describe("GitProvidersTab — delete", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a refused delete says why under its provider, not in the test's result", async () => {
         patchWithCleanup(rpc, {
@@ -131,7 +131,7 @@ function hook(vals = {}) {
 }
 
 describe("GitProvidersTab — webhooks", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a delivery counts when it is not older than the request", () => {
         const at = "2026-11-08 10:00:05";

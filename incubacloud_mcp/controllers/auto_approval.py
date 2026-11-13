@@ -50,7 +50,7 @@ class McpAutoApprovalController(http.Controller):
             raise AccessError(request.env._("No such auto-approval rule."))
         return rule
 
-    @http.route("/cloud/mcp/auto_approval/list", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/auto_approval/list", type="json", auth="user")
     def auto_approval_list(self):
         """The rules: every rule for an Administrator, the user's own otherwise."""
         Rule = self._rules()
@@ -69,14 +69,14 @@ class McpAutoApprovalController(http.Controller):
             "recommended_days": RECOMMENDED_DAYS,
         }
 
-    @http.route("/cloud/mcp/auto_approval/candidates", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/auto_approval/candidates", type="json", auth="user")
     def auto_approval_candidates(self):
         """The users and credentials a rule may be granted to. Administrators."""
         Rule = self._rules()
         request.env["cloud.security.mixin"]._check_can_manage_settings()
         return {"users": Rule._candidates()}
 
-    @http.route("/cloud/mcp/auto_approval/grant", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/auto_approval/grant", type="json", auth="user")
     def auto_approval_grant(
         self,
         user_id=None,
@@ -111,14 +111,14 @@ class McpAutoApprovalController(http.Controller):
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "rule": rule._format()[0]}
 
-    @http.route("/cloud/mcp/auto_approval/revoke", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/auto_approval/revoke", type="json", auth="user")
     def auto_approval_revoke(self, rule_id=None):
         """Revoke a rule: an Administrator any, anyone else their own."""
         rule = self._visible_rule(rule_id)
         rule.with_env(request.env)._revoke_by_person()
         return {"ok": True, "rule": rule._format()[0]}
 
-    @http.route("/cloud/mcp/auto_approval/activity", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/auto_approval/activity", type="json", auth="user")
     def auto_approval_activity(self, rule_id=None, offset=0, limit=20):
         """A page of what a rule approved, with its grant and revocation."""
         rule = self._visible_rule(rule_id)

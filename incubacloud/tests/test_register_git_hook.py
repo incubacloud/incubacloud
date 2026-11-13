@@ -28,10 +28,8 @@ class TestRegisterGitHook(_RoutesCase):
         READ COMMITTED cursor of their own, which then rides on the test's.
         """
         super().setUp()
-        self.registry_enter_test_mode()
-        # The routes run under a stand-in request, which carries no test
-        # cursor cookie.
-        self.http_request_allow_all = True
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.env["ir.config_parameter"].sudo().set_param(
             "web.base.url", "https://panel.example.com",
         )

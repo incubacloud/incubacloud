@@ -490,7 +490,8 @@ class TestCloudJobWaitsForNewerCode(TransactionCase):
         super().setUp()
         # The log line goes on a cursor of its own, which in a test is
         # the test's transaction.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'newer-code-host',
             'ip_address': '10.0.0.12',

@@ -160,7 +160,7 @@ def _serialize_provider(provider, with_credentials):
 class GitProvidersMixin:
     """Routes of Settings → Git providers."""
 
-    @http.route(['/cloud/get_git_providers'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_git_providers'], type='json', auth='user')
     def cloud_get_git_providers(self):
         """Return the panel's Git providers and where it may connect.
 
@@ -183,7 +183,7 @@ class GitProvidersMixin:
             ],
         }
 
-    @http.route(['/cloud/save_git_provider'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_git_provider'], type='json', auth='user')
     def cloud_save_git_provider(self, vals):
         """Add or edit a provider and its credentials, all or nothing.
 
@@ -304,7 +304,7 @@ class GitProvidersMixin:
         (provider.credential_ids - kept).unlink()
         return fresh
 
-    @http.route(['/cloud/delete_git_provider'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_git_provider'], type='json', auth='user')
     def cloud_delete_git_provider(self, provider_id):
         """Delete a provider no repository line uses.
 
@@ -335,7 +335,7 @@ class GitProvidersMixin:
         provider.unlink()
         return {'ok': True}
 
-    @http.route(['/cloud/test_git_provider'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/test_git_provider'], type='json', auth='user')
     def cloud_test_git_provider(self, provider_id, url):
         """Test a provider with a repository of it, on both channels.
 

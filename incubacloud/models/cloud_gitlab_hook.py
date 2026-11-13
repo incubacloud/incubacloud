@@ -138,11 +138,14 @@ class CloudGitLabHook(models.Model):
     verify_requested_at = fields.Datetime(copy=False)
     last_status_check = fields.Datetime(copy=False)
 
-    _path_uniq = models.Constraint(
-        "unique (provider_id, scope, path)",
-        "One webhook per provider, scope and path.",
-    )
-    _key_uniq = models.Constraint("unique (hook_key)", "The routing key is unique.")
+    _sql_constraints = [
+        (
+            "path_uniq",
+            "unique (provider_id, scope, path)",
+            "One webhook per provider, scope and path.",
+        ),
+        ("key_uniq", "unique (hook_key)", "The routing key is unique."),
+    ]
 
     def unlink(self):
         """Delete webhooks, and resolve the alerts of each: disabled, repository moved.

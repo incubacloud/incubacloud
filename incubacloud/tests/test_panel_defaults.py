@@ -86,7 +86,7 @@ class TestPersonalDefaultsArePanelAdministrators(_QueueCase):
         self.assertEqual(saved.json_value, '"saved"')
         # Odoo asks a user who sets a default on a model to be able to
         # create its records (odoo/odoo#296759): a contact's, to create contacts.
-        self.consultant.group_ids = [
+        self.consultant.groups_id = [
             (4, self.env.ref("base.group_partner_manager").id),
         ]
         Default.set("res.partner", "comment", "mine", user_id=True)

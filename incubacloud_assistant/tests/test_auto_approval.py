@@ -271,10 +271,7 @@ class TestAssistantAutoApproval(AutoApprovalAllowedMixin, EngineMixin, Transacti
     def test_the_assistant_cannot_grant_a_rule(self):
         """The grant route, reached from a tool's request, refuses it."""
         Dispatch = self.env["incubacloud.mcp.dispatch"].with_user(self.admin)
-        with (
-            patch.object(self, "http_request_allow_all", True),
-            tool_request(Dispatch.env, "Assistant (conversation 1)"),
-        ):
+        with tool_request(Dispatch.env, "Assistant (conversation 1)"):
             with self.assertRaises(AccessError):
                 Dispatch._call(
                     "/cloud/mcp/auto_approval/grant",
