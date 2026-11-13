@@ -40,6 +40,7 @@ deployment, kept with that deployment.
 | [RB-35](RB-35-central-name.md) | The central's single name: pending, down, its certificate, a server left out | high | `metrics_central_dns_pending`, `metrics_central_name_down`, `metrics_central_cert_expiring`, `metrics_central_writer_outside`, `metrics_central_acme_same_name` |
 | [RB-36](RB-36-move-the-central-by-hand.md) | Move the central to another server by hand, with its history | planned | The central's server is to be freed, or the central needs a bigger one |
 | [RB-38](RB-38-scheduled-actions-heartbeat.md) | The heartbeat of the scheduled actions | planned · critical | Setting up a panel for daily use, a heartbeat service saying the panel's pings stopped |
+| [RB-39](RB-39-proxy-network-guard.md) | The guard on the proxy network | planned · warning | A host's first Full Setup with 1.0.228, a `shared_guard_open` alert, an instance that cannot reach another one, turning the guard off |
 
 ## Conventions
 

@@ -147,6 +147,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `update_settings` changes it only with approval. Spanish translation
   included.
 
+### Security
+
+- **The instances of a host no longer reach each other on the proxy's
+  network (#95)** ([RB-39](docs/runbooks/RB-39-proxy-network-guard.md)).
+  Every instance's `odoo` joins `inverseproxy_shared`, and Docker let any
+  of them open the 8069 and 8072 of every other instance awake on the same
+  host, past the CDN, the proxy's routers and its per-address limits; the
+  host's `icc` does not reach a compose network. The proxy now joins it
+  with a fixed, locally administered MAC (`02:69:63:00:00:01`); the
+  upgrade adds it to each host's stored compose file, and the host's next
+  Full Setup recreates the proxy with it. Full Setup then runs *Isolate
+  the instances on the proxy network*: `scripts/shared_guard.sh` puts a
+  chain `IC-SHARED`, jumped to from `DOCKER-USER` for the network's
+  bridge, that lets replies and the proxy's MAC through and drops the
+  rest, and a systemd timer applies it again every minute, as the rules
+  do not survive a reboot. It fails open: while the running proxy has
+  another address or is not running, or the firewall has no
+  `DOCKER-USER`, no MAC match (`xt_mac`) or bridged packets outside
+  iptables, the chain is removed and the reason given. The step never
+  fails the setup; a guard left open raises `shared_guard_open`
+  (warning). A host switch, *Only the proxy may open connections to the
+  instances* (`cloud.host.shared_guard`, on by default, existing hosts
+  included), has Full Setup remove it instead, and the teardown removes
+  it. Nothing changes on a host until its next Full Setup; until then
+  every host set up before shows *Changes not applied*. IPv4 only:
+  `shared` has no IPv6. Spanish translation included.
+
 ### Changed
 
 - **Odoo 8.0 is offered** for new projects and instances: its run of the
