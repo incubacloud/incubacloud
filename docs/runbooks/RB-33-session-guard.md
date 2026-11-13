@@ -245,7 +245,9 @@ rows (13-nov-2026, `models/cloud_session_access.py`):
 - the countries and browser families the account has been used from;
 - the ways in that outlive a session, each with **Revoke**: the user's
   API keys (not two-factor's trusted devices) and, to a manager of the
-  panel, its Git tokens. A layer adds its own.
+  panel, its Git tokens. A layer adds its own. Revoking a Git token
+  deletes the panel's copy only: the page says to revoke it in GitLab or
+  GitHub too.
 - **Sign out everywhere**: every session of the user, this one included,
   without a password, a second factor or a confirmation. It moves the
   user's `backchannel_logout_counter`, which is part of the session token
@@ -283,7 +285,12 @@ it is told all the same: it is the only email a user whose cookie was
 used gets. The email says what happened, when, from which country and
 browser, and what to do if it was not them: open Sessions and access,
 sign out everywhere, revoke what they do not recognise, and sign out of
-the account they sign in with (Google, GitHub…) too.
+the account they sign in with (Google, GitHub…) too. The account's
+holder, told of a way in somebody else opened, cannot see or revoke it on
+their own page: their email names who opened it and says to talk to
+them, or to take away their access to the panel (Users, then Remove).
+A notice runs in a savepoint: a database error in it (two keys created at
+once, their holder's quota row in conflict) is rolled back alone.
 
 | Parameter (`incubacloud.session_guard.`) | Default | Why (13-nov-2026) |
 |---|---|---|
@@ -332,3 +339,7 @@ rows stay until their retention.
 
 `incubacloud.session_guard.notices` set to `off` stops the emails at
 once; the history keeps being written while any signal is on.
+
+A layer that kept a `backchannel_logout_counter` of its own drops it in
+the release that brings core's, and the two deploy together: rolling one
+back means rolling back the other.
