@@ -87,9 +87,10 @@ gateway on 443 removed), check that everything still writing through it moves:
 
 The reconciliation re-applies a server whose agents' URL differs from the panel's;
 it does not compare the authority. A server installed with the name's URL and no
-authority, or with an authority since rotated, refuses the central's certificate:
-it raises `metrics_central_writer_outside` through its silence, and the TLS error is
-in its vmagent's log. Re-apply its agents: on the panel, set the host's
+authority, or with an authority since rotated, refuses the central's certificate.
+No alert names it reliably: its silence is put down to its last 401, so it does not
+raise `metrics_central_writer_outside`. Look for it by `metrics_last_seen` falling
+behind, and the TLS error is in its vmagent's log. Re-apply its agents: on the panel, set the host's
 `metrics_agents_revision` to 0 and the reconciliation re-applies it at its next pass
 (the same lever the operations guide uses when the security logs change).
 
