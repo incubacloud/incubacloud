@@ -5,12 +5,23 @@ created ``state='open'`` and may transition to ``closed`` exactly once
 (with ``closed_at`` and ``close_reason``). The ``write`` override refuses
 any other mutation; the ACL denies ``unlink`` below ``base.group_system``.
 
+The one exception is retention: the daily vacuum, which runs as the
+superuser, deletes closed rows older than
+``cloud.settings.host_session_retention_days`` (365 by default, 0 keeps
+them all). Open rows are never deleted, whatever their age. A row of a
+deleted user stays until then, as it is the proof of who came in;
+``user_id`` is required, so its foreign key restricts deleting a user
+who still has rows. Deleting rows never conflicts with ``host_id``'s
+``ondelete='restrict'``, which only stops deleting a host that has them.
+
 Session input and output are NOT recorded: a shell receives credentials
 on stdin (psql, sudo, curl with tokens), and persisting them in the
 database would be a worse hole than the one it closes. The audit covers
 who, when, from where and for how long — enough for forensics.
 """
-from odoo import _, fields, models
+from datetime import timedelta
+
+from odoo import _, api, fields, models
 from odoo.exceptions import AccessError
 
 
@@ -54,3 +65,29 @@ class CloudHostSession(models.Model):
                     "Invalid host session state transition.",
                 ))
         return super().write(vals)
+
+    @api.autovacuum
+    def _gc_expired_sessions(self):
+        """Delete closed sessions older than the retention window.
+
+        Run by the daily vacuum as the superuser: the only deletion of
+        these rows. A closed row ages from ``closed_at`` (from
+        ``opened_at`` when it has none); open rows are never touched.
+        ``host_session_retention_days`` of 0 keeps every row.
+
+        :returns: the number of rows deleted
+        :rtype: int
+        """
+        days = self.env['cloud.settings'].sudo()._get().host_session_retention_days
+        if not days or days <= 0:
+            return 0
+        cutoff = fields.Datetime.now() - timedelta(days=days)
+        expired = self.sudo().search([
+            ('state', '=', 'closed'),
+            '|',
+            ('closed_at', '<', cutoff),
+            '&', ('closed_at', '=', False), ('opened_at', '<', cutoff),
+        ])
+        count = len(expired)
+        expired.unlink()
+        return count

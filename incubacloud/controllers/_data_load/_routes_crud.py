@@ -1895,6 +1895,9 @@ class CrudMixin:
             ),
             'job_log_retention_days': settings.job_log_retention_days or 0,
             'job_retention_days': settings.job_retention_days or 0,
+            'host_session_retention_days': (
+                settings.host_session_retention_days or 0
+            ),
             'move_frozen_source_hours': settings.move_frozen_source_hours or 0,
             'move_cut_alert_seconds': settings.move_cut_alert_seconds or 0,
             'staging_autopurge_days': (
@@ -1978,6 +1981,7 @@ class CrudMixin:
         self, autoassign_enabled=None, default_backup_backend_id=None,
         audit_log_retention_days=None, job_log_retention_days=None,
         job_retention_days=None, staging_autopurge_days=None,
+        host_session_retention_days=None,
         move_frozen_source_hours=None, move_cut_alert_seconds=None,
         default_backup_alert_threshold_pct=None,
         github_event_retention_days=None, github_event_truncate_days=None,
@@ -2055,6 +2059,8 @@ class CrudMixin:
                 for name, value, default in (
                     ('job_log_retention_days', job_log_retention_days, 30),
                     ('job_retention_days', job_retention_days, 180),
+                    ('host_session_retention_days',
+                     host_session_retention_days, 365),
                     ('github_event_retention_days', github_event_retention_days, 90),
                     ('github_event_truncate_days', github_event_truncate_days, 7),
                     ('move_frozen_source_hours', move_frozen_source_hours, 48),

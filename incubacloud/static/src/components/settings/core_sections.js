@@ -155,6 +155,12 @@ settingsBlocks.add("core-logs", {
             synonyms: ["job logs", "output", "purge", "retention"],
         },
         {
+            id: "host_session_retention_days", type: "number", unit: days, min: 0,
+            block: _t("Panel records"), label: _t("Host shell session retention"),
+            help: _t("Who opened a shell on a host, when and from where. Counted from the close; open sessions are never purged. 0 keeps them all."),
+            synonyms: ["host shell", "console", "sessions", "audit", "purge", "retention"],
+        },
+        {
             id: "github_event_truncate_days", type: "number", unit: days, min: 0,
             block: _t("GitHub events"), label: _t("Payload truncation"),
             help: _t("The raw webhook payload is replaced by a short stub after this."),

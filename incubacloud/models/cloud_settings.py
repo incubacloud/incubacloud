@@ -116,6 +116,18 @@ class CloudSettings(models.Model):
              'purging entirely (table will grow unbounded).',
     )
 
+    # cloud.host.session rows are the audit of who opened a shell on a
+    # host, and are otherwise immutable and undeletable below the system
+    # group. A year keeps a full cycle for forensics; the daily vacuum
+    # deletes closed rows past it (13-nov-2026).
+    host_session_retention_days = fields.Integer(
+        string='Host shell session retention (days)',
+        default=365,
+        help='Number of days to keep the audit rows of closed host shell '
+             'sessions (cloud.host.session), counted from their close. '
+             'Open sessions are never purged. Set to 0 to keep them all.',
+    )
+
     # ── Moves between hosts ───────────────────────────────────────────────
 
     move_frozen_source_hours = fields.Integer(
