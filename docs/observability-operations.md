@@ -840,17 +840,28 @@ minutes and with **Check now** under the name. When it passes, the panel writes
 `https://<name>:<port>/r` and `…/w/api/v1/write` as its URLs, keeps the earlier two in
 the system parameter `incubacloud.metrics_central_legacy_urls`, and the
 reconciliation re-applies every server's agents with the new URL and the authority.
+One check that passes is enough, even after failed ones: the two good checks 30
+minutes apart that bring a direct name out of *Failing* protect a name in use from
+flapping, and a name not in use yet has nobody on it. Only this complete check, which
+reads DNS from the central's server, moves the URLs; the light probe never does.
+
 From then on, two failed checks in a row raise `metrics_central_name_down` (critical,
 with the layer: `connect`, `tls` or `route`); a DNS answer that is not the central's
-server raises `metrics_central_dns_pending` again, with the record to fix, as after a
-move to another server. There is no path to fall back to;
+server (a CDN's proxy turned back on, the record deleted, or left behind after a move
+to another server) raises `metrics_central_dns_pending` again, critical at once, with
+the record to fix: every agent writes to the name. One complete check that passes
+(**Check now**) closes it; the name's state leaves *Failing* after two good checks
+30 minutes apart, as a direct name's. There is no path to fall back to;
 the agents' queues (512 MB per URL for vmagent, 64 MB for Fluent Bit) hold what they
 cannot send. See [RB-35](runbooks/RB-35-central-name.md).
 
 A central that was published on 443 under the same name stops answering there at
-the deployment that turns the switch on: nothing is published on 443 with it. Its
-record already points at the server, so the check that deployment queues moves the
-URLs within the minute; until then the agents queue.
+the deployment that turns the switch on: nothing is published on 443 with it. Where
+the name's record already points at the central's server, with no CDN proxy, the
+check that deployment queues moves the URLs within the minute, and until then the
+agents queue. Where the name goes through a CDN, the agents keep writing through it
+to 443, which no longer answers: change the record (the server's address, no proxy,
+no AAAA) before turning the switch on, or at once after, and press **Check now**.
 
 **The way back.** Turning the switch off puts back the two URLs kept, and the
 reconciliation re-applies the agents to them. A central's direct name, while set, is
@@ -869,10 +880,16 @@ not shown.
 With the servers only, a server whose traffic leaves with an address the port does not
 admit cannot write. Its agents' install checks the central from the server (401 is the
 central reached) and asks the panel which address it leaves with
-(`GET /cloud/egress_ip`, answered without a session, 30 per minute and address); a 403
-or no answer, or 20 minutes without its metrics while other servers write, raises
+(`GET /cloud/egress_ip`, over IPv4 with `curl -4`, as the name has an A record only;
+answered without a session and without writing anything). The panel keeps the answer
+only when it is an IPv4 address: a page a CDN answered instead (a challenge) is
+dropped, and the alert then says the panel could not learn it. A 403 or no answer,
+or 20 minutes without its metrics while other servers write, raises
 `metrics_central_writer_outside` for that server, with both addresses and the two ways
-out: correct the server's address in the panel, or let any address write.
+out: correct the server's address in the panel, or let any address write. The
+silence alone raises nothing while the panel cannot reach that server either
+(`host_unreachable` open: switched off, or its network down), or while its own last
+check got 401 leaving with the address the panel has for it.
 
 **The operator's routes** (`/admin-r/`, `/admin-d/`) answer under the name on the
 platform port to the server itself, the private ranges (a panel beside the central
