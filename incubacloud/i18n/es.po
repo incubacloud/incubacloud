@@ -17926,6 +17926,11 @@ msgid "Username for accessing the cloud host."
 msgstr "Nombre de usuario para acceder al host cloud."
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_res_users_apikeys
+msgid "Users API Keys"
+msgstr "Claves API de los usuarios"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__member_ids
 msgid ""
 "Users assigned to this project. Stakeholders and Consultants can only see "
