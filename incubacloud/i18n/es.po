@@ -15493,6 +15493,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_central.py:0
+msgid ""
+"The central's name no longer answers from its server%(detail)s. %(record)s "
+"No agent can write to the central meanwhile; they keep what they cannot send"
+" in their queues."
+msgstr ""
+"El nombre de la central ya no responde desde su servidor%(detail)s. "
+"%(record)s Mientras tanto ningún agente puede escribir en la central; "
+"guardan en sus colas lo que no pueden enviar."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_settings_direct.py:0
 msgid "The certificate of the direct path %(name)s expires on %(date)s."
 msgstr "El certificado del camino directo %(name)s caduca el %(date)s."
