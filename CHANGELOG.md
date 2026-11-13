@@ -364,6 +364,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **A rebuild that ends before its restart leaves a mark on the server,
+  and nothing puts its untried work in service (#96)**
+  ([RB-42](docs/runbooks/RB-42-rebuild-left-unapplied.md)). A rebuild
+  stopped, failed in its build or boot test, or whose worker died, left the
+  files copier rewrote and the image it built on the server, untried, and
+  a Start, a restore or a move recreated the containers from them; only
+  the job's log warned. `rebuild.sh copier-update` now writes
+  `.incubacloud-unapplied` (`job`, `kind`, `at`) in the instance's
+  directory right before copier, kept out of the project's repository,
+  and the restart removes it in the same command once it worked. With a
+  `build` mark: Start and Restart start the containers the instance has
+  instead of recreating them, the job done with a warning (exit 27), or
+  start nothing and fail without marking the instance in error when those
+  containers are not the services the rewritten compose declares (26);
+  the restores (backup, upload, link, another instance, point in time)
+  are refused before any step runs (an upload or a link's archive may
+  have come into the job's directory, which goes with the job); a move is
+  postponed before its source stops
+  (`unapplied`), without an alert. A `files` mark, which a layer's flow
+  that builds no image writes (`_builds_image = False`), holds nothing back
+  and never takes the place of a rebuild's: its copier-update stops there
+  with 26. `copier-update` without a job and kind, as a flow planned
+  before this release calls it, writes and reads no mark.
+  `rebuild.sh clear-unapplied <dir>` without a job is the way out by hand.
 - **A server that no longer presents its trusted SSH host key says so
   (#89).** A connection refused because the server presented another
   host key — the server restored from an image, reinstalled or replaced,
