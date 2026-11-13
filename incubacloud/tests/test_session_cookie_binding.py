@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import re
-import time
 from unittest.mock import patch
 
 import requests
@@ -380,7 +379,7 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         ir_http = type(self.env["ir.http"])
         with patch.object(ir_http, "_auth_method_user", classmethod(_session_expired)):
             answer = self._open(
-                "/web/webclient/load_menus",
+                "/web/webclient/load_menus/1",
                 cookie=f"session_id={own}; {BINDING}={cookies[BINDING][0]}",
             )
         self.assertIn(answer.status_code, (302, 303), answer.text[:500])
@@ -395,26 +394,26 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         self.assertTrue(attributes.get("secure"))
         self.assertTrue(after["session_id"][1].get("secure"), sent)
 
-    def test_the_rotation_every_three_hours_binds_the_next_session(self):
-        """Odoo gives a signed-in session a new id once it is three hours
-        old (``_save_session``, a soft rotation); its binding comes with it."""
+    def test_signing_out_rotates_the_session_and_binds_the_next_one(self):
+        """Odoo 18 gives a session a new id when it signs out
+        (``Session.logout`` asks for the rotation that ``_save_session``
+        makes), and has no rotation by age; the binding of the next
+        session comes with it."""
         _anonymous, own, cookies = self._sign_in_with_the_form(
             "tossed-victim", "tossed-victim-pw",
         )
-        store = odoo.http.root.session_store
-        session = store.get(own)
-        session["create_time"] = time.time() - odoo.http.SESSION_ROTATION_INTERVAL - 60
-        store.save(session)
-        after = _set_cookies(
-            self._session_info(f"session_id={own}; {BINDING}={cookies[BINDING][0]}"),
+        answer = self._open(
+            "/web/session/logout",
+            cookie=f"session_id={own}; {BINDING}={cookies[BINDING][0]}",
         )
+        self.assertEqual(answer.status_code, 303, answer.text[:500])
+        after = _set_cookies(answer)
         rotated = after["session_id"][0]
         self.assertNotEqual(rotated, own)
         bind = after[BINDING][0]
         self.assertEqual(bind, cookie_module.binding_of(rotated))
-        self.assertEqual(
-            self._uid(f"session_id={rotated}; {BINDING}={bind}"), self.victim.id,
-        )
+        self.assertIsNone(self._uid(f"session_id={rotated}; {BINDING}={bind}"))
+        self.assertIsNone(self._uid(f"session_id={own}; {BINDING}={cookies[BINDING][0]}"))
 
     def test_a_session_tossed_alone_does_not_sign_anybody_in(self):
         """The visitor without a session of the panel is not put into the
