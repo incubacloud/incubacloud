@@ -1003,6 +1003,24 @@ _mark() {
     grep -qx 'job=512' "$DIR/.incubacloud-unapplied"
 }
 
+@test "a mark cut between its write and its rename leaves git nothing to see" {
+    _instance_repo_for_the_mark
+    local real_mv
+    real_mv="$(command -v mv)"
+    cat > "$TMP/bin/mv" <<STUB
+#!/usr/bin/env bash
+case "\$*" in *incubacloud-unapplied*) exit 1 ;; esac
+exec "$real_mv" "\$@"
+STUB
+    chmod +x "$TMP/bin/mv"
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    rm -f "$TMP/bin/mv"
+    [ "$status" -ne 0 ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    ls "$DIR"/.git/.incubacloud-unapplied.tmp.*
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=all)" ]
+}
+
 @test "copier-update lays no mark on a tree it refuses as dirty" {
     _instance_repo_for_the_mark
     printf 'edited on the host\n' >> "$DIR/prod.yaml"

@@ -11,11 +11,13 @@ restores refuse before anything runs.
 """
 import asyncio
 import shlex
+from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from odoo.tests.common import BaseCase, TransactionCase
 
+from ..models import restore_instance_executor
 from ..models.abstract_executor import (
     COMPOSE_OP_EXIT_PREVIOUS_BUILD,
     COMPOSE_OP_EXIT_UNAPPLIED,
@@ -209,6 +211,108 @@ class TestRestoresRefuseOverAMark(_MarkCase):
         self.assertFalse(Path(staged).exists())
         asyncio.run(executor.on_abort(caught.exception))
         self.assertEqual(self.inst.status, "ok")
+
+    def _other_mode(self, mode, inst=None, host=None):
+        """A *mode* restore of *inst*, its source and checks stood in for.
+
+        What each mode takes from its payload is real, what it asks the
+        host and the panel's link checker is not: the refusal is the
+        subject. ``from_job`` gets an attachment on a job of its own;
+        ``from_host`` a download of production on *host* (this host by
+        default: the copy handed over next to it).
+
+        :return: ``(executor, patches)``: the patches to run it under, by
+            name; ``take_keys`` stands for ``_take_source_secret_key``
+        """
+        inst = inst or self.inst
+        payload = {"mode": mode}
+        if mode in ("from_job", "from_host"):
+            source = self.env["cloud.job"].create({
+                "name": "backup_download", "host_id": (host or self.host).id,
+                "instance_id": self.inst.id,
+                "job_type_id": self.env["cloud.job.type"].search(
+                    [("code", "=", "backup_download")], limit=1,
+                ).id,
+            })
+            payload["source_job_id"] = source.id
+            if mode == "from_job":
+                self.env["ir.attachment"].create({
+                    "name": "backup.zip", "res_model": "cloud.job",
+                    "res_id": source.id, "raw": b"PK\x05\x06" + b"\0" * 18,
+                })
+            elif inst != self.inst:
+                payload["share_secret_key"] = True
+        executor = self._executor("restore_instance", payload, inst=inst)
+        source_host = MagicMock(spec=SSHTransport)
+        source_host.download_file = AsyncMock()
+
+        @asynccontextmanager
+        async def get_transport(_host):
+            """The source's host, for a cross-host handoff."""
+            yield source_host
+
+        cls = type(executor)
+        patches = {
+            "regular": patch.object(cls, "_check_regular_file", autospec=True),
+            "room": patch.object(cls, "_check_room", autospec=True),
+            "disks": patch.object(cls, "_disks", autospec=True),
+            "link": patch.object(cls, "_checked_link", autospec=True),
+            "curl": patch.object(
+                cls, "_curl_config_content", autospec=True, return_value="",
+            ),
+            "private": patch.object(cls, "_upload_private_files", autospec=True),
+            "take_keys": patch.object(cls, "_take_source_secret_key", autospec=True),
+            "largest": patch.object(
+                restore_instance_executor, "largest_archive", return_value=1 << 30,
+            ),
+            "described": patch.object(
+                restore_instance_executor, "described", return_value="",
+            ),
+            "source": patch.object(type(self.host), "get_transport", get_transport),
+        }
+        return executor, patches
+
+    def test_every_other_mode_refuses_after_its_own_work(self):
+        """B4: the refusal follows every mode. A copy handed over on its
+        own host returned before it, and before the source's keys: a
+        staging refreshed from production next to it skipped both."""
+        staging = self.env["cloud.instance"].create({
+            "name": "markstg", "project_id": self.inst.project_id.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed", "status": "ok",
+        })
+        other = self.env["cloud.host"].create({
+            "name": "mark-other", "ip_address": "192.0.2.97", "user": "root",
+            "wildcard_domain": "other.example.com",
+        })
+        for mode, inst, host in (
+            ("from_job", None, None),
+            ("from_host", None, None),
+            ("from_host", staging, None),
+            ("from_host", staging, other),
+            ("rsync", None, None),
+            ("from_url", None, None),
+        ):
+            with self.subTest(mode=mode, inst=(inst or self.inst).name,
+                              host=(host or self.host).name):
+                executor, patches = self._other_mode(mode, inst, host)
+                with ExitStack() as stack:
+                    mocks = {k: stack.enter_context(p) for k, p in patches.items()}
+                    refusal = self._refused(executor, _host_answering(_BUILD_MARK, 26))
+                self.assertIn("rebuild #400", str(refusal))
+                mocks["take_keys"].assert_not_called()
+
+    def test_a_staging_refreshed_on_productions_host_takes_its_keys(self):
+        staging = self.env["cloud.instance"].create({
+            "name": "markstg", "project_id": self.inst.project_id.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed", "status": "ok",
+        })
+        executor, patches = self._other_mode("from_host", staging)
+        with ExitStack() as stack:
+            mocks = {k: stack.enter_context(p) for k, p in patches.items()}
+            asyncio.run(executor.before_execute(_host_answering("", 0)))
+        mocks["take_keys"].assert_called_once()
 
     def test_a_plan_changes_mark_does_not_refuse(self):
         executor = self._executor("backup_restore", {"time": "2026-11-12T02:00:00"})

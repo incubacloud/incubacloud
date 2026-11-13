@@ -183,7 +183,10 @@ case "$op" in
                 printf '[incubacloud] ERROR: %s\n' "$(ic_unapplied_message)" >&2
                 exit "$IC_EXIT_UNAPPLIED"
             fi
-            mark_tmp="$dir/$IC_UNAPPLIED_FILE.tmp.$$"
+            # Written inside .git, where no commit-dirty can take it in
+            # when the script dies between the write and the rename; the
+            # same filesystem, so the rename stays atomic.
+            mark_tmp="$dir/.git/$IC_UNAPPLIED_FILE.tmp.$$"
             printf 'job=%s\nkind=%s\nat=%s\n' "$job" "$kind" \
                 "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$mark_tmp"
             mv -f "$mark_tmp" "$dir/$IC_UNAPPLIED_FILE"

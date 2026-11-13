@@ -865,29 +865,32 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 # already where _remote_path() points. The "Verify backup
                 # file" step confirms it exists.
                 # Not its path: no other account should learn it.
+                # No ``return`` here: what follows the modes (the mark's
+                # refusal, the source's keys) holds for this one too; a
+                # staging refreshed on production's host skipped both.
                 self._sys("Using the backup handed over on this host.")
-                return
-            # Cross-host: relay through the core's *disk* — both SFTP
-            # legs stream file-to-file, so memory stays flat no matter
-            # the archive size. The source copy is only removed in
-            # on_success, which keeps a failed restore retryable.
-            self._sys(
-                f"Fetching backup from {source.host_id.name}…"
-            )
-            fd, local_path = tempfile.mkstemp(
-                prefix=".incubacloud-handoff-", suffix=".zip",
-            )
-            os.close(fd)
-            try:
-                async with source.host_id.get_transport() as src_transport:
-                    await src_transport.download_file(src_path, local_path)
-                await self._ensure_job_dir(transport)
-                self._sys("Uploading backup to this host via SFTP…")
-                await transport.upload_file(local_path, self._remote_path())
-            finally:
-                with suppress(OSError):
-                    Path(local_path).unlink()
-            self._sys("✓ Backup transferred to this host.")
+            else:
+                # Cross-host: relay through the core's *disk* — both SFTP
+                # legs stream file-to-file, so memory stays flat no matter
+                # the archive size. The source copy is only removed in
+                # on_success, which keeps a failed restore retryable.
+                self._sys(
+                    f"Fetching backup from {source.host_id.name}…"
+                )
+                fd, local_path = tempfile.mkstemp(
+                    prefix=".incubacloud-handoff-", suffix=".zip",
+                )
+                os.close(fd)
+                try:
+                    async with source.host_id.get_transport() as src_transport:
+                        await src_transport.download_file(src_path, local_path)
+                    await self._ensure_job_dir(transport)
+                    self._sys("Uploading backup to this host via SFTP…")
+                    await transport.upload_file(local_path, self._remote_path())
+                finally:
+                    with suppress(OSError):
+                        Path(local_path).unlink()
+                self._sys("✓ Backup transferred to this host.")
 
         elif mode == 'rsync':
             agreed = self._rsync_path()
