@@ -184,6 +184,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security
 
+- **Odoo says who may frame a page, adding to the policy it already
+  sends (#75).** Every response served through `ir.http` gains a
+  `frame-ancestors` directive appended to its own
+  `Content-Security-Policy`, so a file Odoo serves (`/web/content`,
+  `/web/image`) keeps its `default-src 'none'` and an SVG uploaded to the
+  database still cannot run a script. A response that names its ancestors
+  already is left as it is (the agents' approval page keeps `'none'`, the
+  sign-in its `'self'`); one that sends only `X-Frame-Options` gets the
+  same policy as the directive (`DENY` as `'none'`, as the web client
+  does); any other gets `'self'` and `X-Frame-Options: SAMEORIGIN`. Being
+  the application's, it holds behind any proxy, on Odoo.sh and on a
+  server of one's own. A reverse proxy should not set
+  `Content-Security-Policy` or `X-Frame-Options` in front of Odoo: on
+  Traefik v2.11, `contentSecurityPolicy` replaces the whole header and
+  `customFrameOptionsValue` overrides a page's `DENY`. The modules' static
+  files and the routes of a request without a database are left as Odoo
+  sends them.
 - **The instances of a host no longer reach each other on the proxy's
   network (#95)** ([RB-39](docs/runbooks/RB-39-proxy-network-guard.md)).
   Every instance's `odoo` joins `inverseproxy_shared`, and Docker let any
