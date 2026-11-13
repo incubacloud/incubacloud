@@ -20,6 +20,7 @@ setup() {
     : > "$CALLS"
     # Docker's chain, with the RETURN older releases append to it.
     printf '%s\n' "-j RETURN" > "$IPT_DIR/DOCKER-USER"
+    printf '%s\n' "-j DOCKER-USER" "-j DOCKER-FORWARD" > "$IPT_DIR/FORWARD"
     export IC_SHARED_GUARD_DIR="$TMP/lib/incubacloud-shared-guard"
     export IC_SYSTEMD_DIR="$TMP/systemd"
     export IC_SHARED_GUARD_STATE="$TMP/state"
@@ -209,6 +210,18 @@ expected_chain() {
     [ "$status" -eq 0 ]
     [[ "${lines[-1]}" == "IC_SHARED_GUARD_UNSUPPORTED Docker writes its rules with nftables: there is no DOCKER-USER chain" ]]
     [ ! -e "$IPT_DIR/IC-SHARED" ]
+}
+
+@test "a DOCKER-USER that FORWARD does not jump to: open, nothing applied" {
+    bash "$SCRIPT" apply
+    printf '%s\n' "-j DOCKER-FORWARD" > "$IPT_DIR/FORWARD"
+    run bash "$SCRIPT" apply
+    [ "$status" -eq 0 ]
+    [[ "${lines[-1]}" == "IC_SHARED_GUARD_OPEN FORWARD does not jump to DOCKER-USER" ]]
+    [ ! -e "$IPT_DIR/IC-SHARED" ]
+    [ "$(cat "$IPT_DIR/DOCKER-USER")" = "-j RETURN" ]
+    FAKE_BACKEND=nftables run bash "$SCRIPT" apply
+    [[ "${lines[-1]}" == "IC_SHARED_GUARD_UNSUPPORTED Docker writes its rules with nftables: FORWARD does not jump to DOCKER-USER" ]]
 }
 
 @test "two applies at once leave the chain whole" {

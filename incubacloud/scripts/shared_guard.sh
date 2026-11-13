@@ -24,9 +24,12 @@
 # start Docker refused that brought the previous files back), when it is
 # not running, when the network or its bridge is not there, and when the
 # firewall cannot do it: no ``DOCKER-USER`` (Docker's nftables backend),
-# no MAC match (``xt_mac``), or bridged packets that never reach iptables
-# (``bridge-nf-call-iptables`` is not 1). A guard on another address would
-# drop the proxy's own connections and cut every instance of the host.
+# no MAC match (``xt_mac``), a ``FORWARD`` that does not jump to
+# ``DOCKER-USER`` (Docker switched to nftables and not restarted, or the
+# chain made by another tool), or bridged packets that never reach
+# iptables (``bridge-nf-call-iptables`` is not 1). A guard on another
+# address would drop the proxy's own connections and cut every instance
+# of the host.
 #
 # * ``install`` (Full Setup): copies this script and its library to
 #   ``/usr/local/lib/incubacloud-shared-guard``, writes a systemd service
@@ -243,6 +246,16 @@ do_apply() {
             report UNSUPPORTED "Docker writes its rules with nftables: there is no DOCKER-USER chain"
         else
             report UNSUPPORTED "there is no DOCKER-USER chain"
+        fi
+        return 0
+    fi
+    # A DOCKER-USER that FORWARD does not jump to filters nothing.
+    if ! ipt -C FORWARD -j DOCKER-USER 2>/dev/null; then
+        remove_rules
+        if docker_uses_nftables; then
+            report UNSUPPORTED "Docker writes its rules with nftables: FORWARD does not jump to DOCKER-USER"
+        else
+            report OPEN "FORWARD does not jump to DOCKER-USER"
         fi
         return 0
     fi
