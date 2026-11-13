@@ -22269,6 +22269,11 @@ msgid "Queued · waiting for job #%s to end on the server"
 msgstr "En cola · esperando a que el trabajo #%s acabe en el servidor"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__step_alive_since
+msgid "Step Alive Since"
+msgstr "Paso en marcha desde"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_checkpoint__holds_queue_since
 msgid "Holds Queue Since"
 msgstr "Retiene la cola desde"
@@ -22412,6 +22417,18 @@ msgid ""
 msgstr ""
 "Cuándo intentó la conciliación por última vez llegar al servidor para "
 "limpiar tras el trabajo terminado, sin conseguirlo."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__step_alive_since
+msgid ""
+"When the reconciliation first found the step the row holds the queue for "
+"still running on a server that answered: past the job's point of no return, "
+"or outliving its stop. The alert of the held queue counts from it."
+msgstr ""
+"Cuándo encontró la conciliación por primera vez en marcha, en un servidor "
+"que respondía, el paso por el que la fila retiene la cola: pasado el punto "
+"sin retorno del trabajo, o tras sobrevivir a su parada. La alerta de la cola "
+"retenida cuenta desde entonces."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__holds_queue_since
@@ -24285,6 +24302,18 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
+"A person closed the alert of the step that still ran on the server and let "
+"this job's queue go on: the panel never saw that step end, and no longer "
+"cleans up after it. Check the server's /tmp by hand."
+msgstr ""
+"Una persona cerró la alerta del paso que seguía en marcha en el servidor y "
+"dejó seguir la cola de este trabajo: el panel nunca vio terminar ese paso, y "
+"ya no limpia lo que dejó. Revise a mano el /tmp del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
 "A person closed the alert of the server that did not answer and let this "
 "job's queue go on: whether its step stopped there was never confirmed, and "
 "the panel no longer cleans up after it. Check the server's /tmp by hand."
@@ -24304,6 +24333,42 @@ msgstr "la cola de la instancia %(name)s"
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "the queue of server %(host)s"
 msgstr "la cola del servidor %(host)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s (%(type)s) ended while a step it left on server %(host)s was "
+"past the point of no return, and that step still runs there: %(queue)s waits "
+"for it to end. The panel has seen it running since %(since)s and looks "
+"again at every pass; this alert closes by itself once the step ends. On the "
+"server, %(left)s. If it will not end, stop it by hand, then dismiss this "
+"alert: the queue goes on."
+msgstr ""
+"El trabajo #%(job)s (%(type)s) terminó cuando un paso que dejó en el "
+"servidor %(host)s ya había pasado el punto sin retorno, y ese paso sigue en "
+"marcha allí: %(queue)s espera a que termine. El panel lo ve en marcha desde "
+"%(since)s y vuelve a mirarlo en cada pasada; esta alerta se cierra sola "
+"cuando el paso termina. En el servidor, %(left)s. Si no va a terminar, "
+"deténgalo a mano y luego descarte esta alerta: la cola seguirá."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s (%(type)s) ended, and the panel could not stop a step it left "
+"on server %(host)s: that step still runs there, and %(queue)s waits for it "
+"to end. The panel has seen it running since %(since)s and tries again at "
+"every pass; this alert closes by itself once the step ends. On the server, "
+"%(left)s; if it does not stop, kill its processes. Then dismiss this alert: "
+"the queue goes on."
+msgstr ""
+"El trabajo #%(job)s (%(type)s) terminó y el panel no pudo detener un paso "
+"que dejó en el servidor %(host)s: ese paso sigue en marcha allí y %(queue)s "
+"espera a que termine. El panel lo ve en marcha desde %(since)s y lo vuelve a "
+"intentar en cada pasada; esta alerta se cierra sola cuando el paso termina. "
+"En el servidor, %(left)s; si no se detiene, mate sus procesos. Después "
+"descarte esta alerta: la cola seguirá."
 
 #. module: incubacloud
 #. odoo-python

@@ -963,6 +963,101 @@ class TestAServerThatDoesNotAnswerHoldsTheQueue(_HoldCase):
             self._reconcile(cls, connect=_connect)
         self._still_held_for_the_server(following, dispatch)
 
+    def _failing_stop(self):
+        """A connection to this machine on which ``ctl.sh stop`` fails."""
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+
+        async def _run(command, timeout=3600):
+            """``stop`` says something of the step still runs."""
+            if "ctl.sh stop" in command:
+                return CommandResult(stdout="still there", exit_status=1)
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            yield transport
+
+        return _connect
+
+    def _alive_ago(self, minutes):
+        """Put the first read that saw the step alive *minutes* back."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET step_alive_since ="
+            " (now() at time zone 'UTC') - make_interval(mins => %s)"
+            " WHERE job_id = %s", (minutes, self.job.id),
+        )
+        self.env.invalidate_all()
+
+    def _active_held_alert(self):
+        """The open alert of the held queue, if any."""
+        return self._held_alert().filtered(lambda a: a.state == "active")
+
+    def test_a_step_seen_alive_for_30_minutes_raises_the_alert(self):
+        """(14) Past the point of no return on a server that answers: counted
+        from the first read that saw it alive; closing it by hand lets go."""
+        cls = self._lost(_no_return_from="Apart")
+        self._back_days_later(cls)
+        self._reconcile(cls)
+        self.assertTrue(self._row().step_alive_since)
+        self.assertFalse(self._active_held_alert())
+        self._alive_ago(29)
+        self._reconcile(cls)
+        self.assertFalse(self._active_held_alert())
+        self._alive_ago(31)
+        self._reconcile(cls)
+        alert = self._active_held_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertIn("still runs", alert.message)
+        self.assertIn("past the point of no return", alert.message)
+        self.assertIn(self.directory, alert.message)
+        self.assertIn("dismiss this alert", alert.message)
+        self.assertEqual(alert.payload["running"], "past_no_return")
+        # Seen again: the same alert.
+        self._reconcile(cls)
+        self.assertEqual(len(self._active_held_alert()), 1)
+        self.assertTrue(self._busy())
+        Job = type(self.env["cloud.job"])
+        with patch.object(Job, "_schedule_dispatch", autospec=True) as dispatch:
+            alert.write({"state": "dismissed", "resolution": "manual"})
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        self.assertTrue(any(
+            "A person closed the alert of the step that still ran" in line
+            for line in self._log()
+        ))
+        self.assertTrue(any(
+            {tuple(scope) for scope in call.args[1]} == {self._scope()}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
+
+    def test_a_step_that_outlives_its_stop_raises_it_and_it_closes_at_its_end(self):
+        """(14) Its stop fails at every pass: alerted; stopped later, closed."""
+        cls = self._lost()
+        self._back_days_later(cls)
+        failing = self._failing_stop()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=failing)
+        self.assertFalse(self._active_held_alert())
+        self._alive_ago(31)
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=failing)
+        alert = self._active_held_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertIn("could not stop", alert.message)
+        self.assertIn("still runs", alert.message)
+        self.assertEqual(alert.payload["running"], "not_stopped")
+        self.assertTrue(self._busy())
+        # The server stops it at last: the row goes, the alert closes.
+        self._reconcile(cls)
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        self.assertFalse(self._active_held_alert())
+        self.assertEqual(alert.resolution, "auto")
+
     def test_a_step_past_the_point_is_not_said_to_be_stopped(self):
         """(B4) Past the point of no return, the alert says to let it end."""
         cls = self._lost(_no_return_from="Apart")

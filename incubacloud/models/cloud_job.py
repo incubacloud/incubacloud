@@ -3494,13 +3494,16 @@ class CloudJob(models.Model):
             elif (
                 alert.code == self._QUEUE_HELD_ALERT_CODE and alert.job_id
                 and alert.resolution == "manual"
-                and self._release_held_queue_by_hand(alert.job_id)
+                and self._release_held_queue_by_hand(
+                    alert.job_id,
+                    running=bool((alert.payload or {}).get("running")),
+                )
             ):
                 scopes.add(alert.job_id._scope_of())
         self._schedule_dispatch(scopes)
 
     @api.model
-    def _release_held_queue_by_hand(self, job):
+    def _release_held_queue_by_hand(self, job, running=False):
         """Let go of the queue *job*'s checkpoint holds, as a person decided.
 
         The person closed the ``_QUEUE_HELD_ALERT_CODE`` alert: the row is
@@ -3511,6 +3514,8 @@ class CloudJob(models.Model):
         run of the job again has a row of its own.
 
         :param job: the ``cloud.job``
+        :param bool running: the alert said the step still ran on a server
+            that answered, not that the server did not answer
         :return: whether a row was deleted
         :rtype: bool
         """
@@ -3527,15 +3532,22 @@ class CloudJob(models.Model):
         if not self.env.cr.fetchall():
             return False
         self.env["cloud.job.checkpoint"].invalidate_model()
-        self.env["cloud.job.log.chunk"].sudo().create({
-            "job_id": job.id,
-            "source": "system",
-            "content": self.env._(
+        if running:
+            content = self.env._(
+                "A person closed the alert of the step that still ran on the"
+                " server and let this job's queue go on: the panel never saw"
+                " that step end, and no longer cleans up after it. Check the"
+                " server's /tmp by hand."
+            )
+        else:
+            content = self.env._(
                 "A person closed the alert of the server that did not"
                 " answer and let this job's queue go on: whether its step"
                 " stopped there was never confirmed, and the panel no longer"
                 " cleans up after it. Check the server's /tmp by hand."
-            ),
+            )
+        self.env["cloud.job.log.chunk"].sudo().create({
+            "job_id": job.id, "source": "system", "content": content,
         })
         _logger.warning(
             "cloud.job %s: its queue was let go by hand, its server never"
@@ -4345,12 +4357,18 @@ class CloudJob(models.Model):
                         # A server that answered with the step the row
                         # holds the queue for still alive is looked at
                         # again at the next pass, and the queue waits for
-                        # the job, not for the server to answer.
+                        # the job, not for the server to answer. The
+                        # alert of the held queue counts from the first
+                        # read that saw the step alive.
+                        now = fields.Datetime.now()
+                        alive = executor._left_running or (
+                            self._holds_for_a_live_step(executor, row)
+                        )
                         executor._write_checkpoint({
-                            "reconcile_tried_at": (
-                                False if executor._left_running
-                                or self._holds_for_a_live_step(executor, row)
-                                else fields.Datetime.now()
+                            "reconcile_tried_at": False if alive else now,
+                            "step_alive_since": (
+                                (row.step_alive_since or now) if alive
+                                else False
                             ),
                         })
                 if case == "checkpoint":
@@ -4411,7 +4429,12 @@ class CloudJob(models.Model):
         an outage longer than the cap, the step may still run past the
         point of no return, or outlive its stop; given up, the next job
         would start beside it. Each pass reads it again, and the step's
-        own ``timeout`` ends it.
+        own ``timeout`` ends it; ``_QUEUE_HELD_ALERT_MINUTES`` after the
+        first read that saw it alive (``step_alive_since``) the same alert
+        says it still runs there (``_alert_queue_held`` with *running*):
+        a process that outlives its KILL would hold the queue for good,
+        and nothing holds a queue for good unsaid. It closes by itself
+        once the step ends, and closed by hand lets the queue go.
 
         A row that held the job's queue (``holds_queue_since``) serves the
         queue once it is gone, as the end of a job does, or once the close
@@ -4425,7 +4448,7 @@ class CloudJob(models.Model):
         # (``_hold_queue``, on a cursor of its own) after the row was read.
         # A cursor that read the row before still sees it as it was: what
         # this pass did is the executor's to say.
-        row.invalidate_recordset(["holds_queue_since"])
+        row.invalidate_recordset(["holds_queue_since", "step_alive_since"])
         released = executor._queue_hold_released
         marked = executor._queue_hold_marked
         held = bool(row.holds_queue_since) or released or marked
@@ -4436,22 +4459,37 @@ class CloudJob(models.Model):
             and not released
             and self._checkpoint_holds_queue(executor.job, row, marked=marked)
         )
+        live = self._holds_for_a_live_step(executor, row)
+        # This pass's own write is on another cursor: a first sighting
+        # reads as now.
+        alive_since = row.step_alive_since or fields.Datetime.now()
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
-        elif not waiting and not self._holds_for_a_live_step(executor, row):
+        elif not waiting and not live:
             self._give_up_if_past_cap(executor, row)
         Job = self.with_env(row.env)
+        due = fields.Datetime.now() - timedelta(
+            minutes=self._QUEUE_HELD_ALERT_MINUTES,
+        )
         try:
             with row.env.cr.savepoint():
-                if not waiting:
-                    Job._resolve_queue_held_alert(executor.job)
-                elif held_since <= fields.Datetime.now() - timedelta(
-                    minutes=self._QUEUE_HELD_ALERT_MINUTES,
-                ):
+                if waiting and held_since <= due:
                     Job._alert_queue_held(
                         executor.job, row,
                         executor._checkpoint_data.get("plan") or [],
                     )
+                elif live and alive_since <= due:
+                    Job._alert_queue_held(
+                        executor.job, row,
+                        executor._checkpoint_data.get("plan") or [],
+                        running=(
+                            "past_no_return" if executor._left_running
+                            else "not_stopped"
+                        ),
+                        alive_since=alive_since,
+                    )
+                elif not waiting:
+                    Job._resolve_queue_held_alert(executor.job)
         except Exception:
             # The row and the queue are as the pass left them; the next
             # pass raises or closes the alert again.
@@ -4471,7 +4509,9 @@ class CloudJob(models.Model):
         running (``_left_running``), or its stop left it alive
         (``not_stopped``), and the row still holds the job's queue: the
         server answered, so the queue waits for the step to end, not for
-        the server, and the row is not given up (``_forget_or_give_up``).
+        the server, and the row is not given up (``_forget_or_give_up``);
+        ``_QUEUE_HELD_ALERT_MINUTES`` after the first read that saw it
+        alive (``step_alive_since``) its alert says so.
 
         :param executor: the job's executor, after ``_close_on_server``
         :param row: the job's ``cloud.job.checkpoint``
@@ -4693,7 +4733,10 @@ class CloudJob(models.Model):
         return step, directory, paths, left
 
     @api.model
-    def _alert_queue_held(self, job, row, plan, reconcile_last=None):
+    def _alert_queue_held(
+        self, job, row, plan, reconcile_last=None, running=None,
+        alive_since=None,
+    ):
         """Ask a person to look at a queue held for a server that does not answer.
 
         *job* ended with a step that may still run on its server, which
@@ -4709,6 +4752,13 @@ class CloudJob(models.Model):
         reconciliation has not run for as long (*reconcile_last*,
         ``_alert_unwatched_queue_holds``), and nothing is trying.
 
+        Raised too, with its own text, for a step the reconciliation
+        found still running on a server that answers (*running*), as long
+        after the first read that saw it alive (``_forget_or_give_up``):
+        past the point of no return and not ended, or outliving its stop.
+        Closing it by hand lets the queue go as well; it closes by itself
+        once the step ends.
+
         Written with ``self.env``.
 
         :param job: the ``cloud.job``
@@ -4716,6 +4766,10 @@ class CloudJob(models.Model):
         :param list plan: the checkpoint's plan, ``[label, command, opts]``
         :param reconcile_last: for the sweep, when the reconciliation last
             ran (``False`` when it never did); None for the reconciliation
+        :param running: for a step seen alive on a server that answers,
+            why it still runs: ``past_no_return`` or ``not_stopped``
+        :param alive_since: with *running*, the first read that saw it
+            alive
         """
         env = self.env
         job = job.with_env(env).sudo()
@@ -4731,7 +4785,37 @@ class CloudJob(models.Model):
                 "the queue of server %(host)s", host=host.name or "",
             )
         on_server = "; ".join(left) or env._("look for what the job left in /tmp")
-        if reconcile_last is None:
+        since = (
+            fields.Datetime.to_string(alive_since) + " UTC" if alive_since
+            else ""
+        )
+        if running == "past_no_return":
+            message = env._(
+                "Job #%(job)s (%(type)s) ended while a step it left on server"
+                " %(host)s was past the point of no return, and that step"
+                " still runs there: %(queue)s waits for it to end. The panel"
+                " has seen it running since %(since)s and looks again at"
+                " every pass; this alert closes by itself once the step ends."
+                " On the server, %(left)s. If it will not end, stop it by"
+                " hand, then dismiss this alert: the queue goes on.",
+                job=job.id, type=job.job_type_id.name or job.name,
+                host=host.name or "", queue=queue, since=since,
+                left=on_server,
+            )
+        elif running:
+            message = env._(
+                "Job #%(job)s (%(type)s) ended, and the panel could not stop"
+                " a step it left on server %(host)s: that step still runs"
+                " there, and %(queue)s waits for it to end. The panel has"
+                " seen it running since %(since)s and tries again at every"
+                " pass; this alert closes by itself once the step ends. On"
+                " the server, %(left)s; if it does not stop, kill its"
+                " processes. Then dismiss this alert: the queue goes on.",
+                job=job.id, type=job.job_type_id.name or job.name,
+                host=host.name or "", queue=queue, since=since,
+                left=on_server,
+            )
+        elif reconcile_last is None:
             message = env._(
                 "Server %(host)s does not answer, and job #%(job)s (%(type)s)"
                 " may still run a step there: %(queue)s waits until the panel"
@@ -4771,6 +4855,11 @@ class CloudJob(models.Model):
                 "directory": directory,
                 "paths": paths,
                 "held_since": fields.Datetime.to_string(row.holds_queue_since),
+                "running": running,
+                "alive_since": (
+                    fields.Datetime.to_string(alive_since) if alive_since
+                    else None
+                ),
             },
         )
 
