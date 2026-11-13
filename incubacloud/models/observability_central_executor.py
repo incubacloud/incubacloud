@@ -660,6 +660,16 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "with that server, or by hand with `docker compose -p "
                 "incubacloud-central down -v` there."
             )
+            if public:
+                # Not checked here: behind a CDN the name answers with the
+                # CDN's addresses, and a host's own address may be one only
+                # the panel reaches.
+                self._sys(
+                    f"⚠ {public['host']} must point at {self._host().name} "
+                    f"({self._host().ip_address}) in DNS: until it does, the "
+                    "panel and the agents still reach the central on "
+                    f"{left_behind.name}."
+                )
         self._resolve_alert("metrics_central_failed")
 
     def _report_grafana_purge(self):

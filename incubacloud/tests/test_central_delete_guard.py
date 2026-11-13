@@ -211,7 +211,12 @@ class TestStartAnEmptyCentral(CentralGuardCase):
             )
         self.assertFalse(self._jobs("deploy_metrics_central"))
 
-    def test_its_deployment_moves_the_panel_and_says_what_it_left(self):
+    def _deploy_empty_on_other(self):
+        """Run the success of an empty central's deployment on HY.
+
+        :return: what the job's log says, one line each
+        :rtype: list
+        """
         executor = self._make(ObservabilityCentralExecutor)
         executor.job.host_id = self.other
         executor.job.payload = {"discard_history": True}
@@ -222,14 +227,48 @@ class TestStartAnEmptyCentral(CentralGuardCase):
         }
         executor._shipped_accounts = []
         asyncio.run(executor.on_success({}))
+        return lines
+
+    def test_its_deployment_moves_the_panel_and_says_what_it_left(self):
+        lines = self._deploy_empty_on_other()
         self.settings.invalidate_recordset()
         self.assertEqual(self.settings.metrics_central_host_id, self.other)
         self.assertIn("The central on HX is left as it was", "\n".join(lines))
+        self.assertNotIn("in DNS", "\n".join(lines))
         # HX is no longer the central's: it may go.
         self.host.write({"active": False})
 
+    def test_under_a_public_name_it_says_to_point_the_dns(self):
+        """The panel and the agents use the name, which still names HX."""
+        self.settings.metrics_central_public_host = "metrics.example.com"
+        lines = self._deploy_empty_on_other()
+        self.assertIn(
+            "metrics.example.com must point at HY (10.0.0.41) in DNS",
+            "\n".join(lines),
+        )
+
+    def test_a_retry_does_not_carry_the_flag(self):
+        """Retried later, it would start an empty central nobody asked for
+        then, wherever the central had gone meanwhile."""
+        answer = self._call("cloud_monitoring_empty_central", host_id=self.other.id)
+        job = self.env["cloud.job"].browse(answer["job_id"])
+        job.sudo().write({"state": "failed"})
+        retry = self.env["cloud.job"].browse(job.retry_job())
+        self.assertEqual(retry.retry_of_id, job)
+        self.assertNotIn("discard_history", retry.payload or {})
+        self.assertEqual(job.payload, {"discard_history": True})
+
 
 class TestRetireTheCentral(CentralGuardCase):
+
+    def setUp(self):
+        super().setUp()
+        # Core's answer: a layer installed beside it may refuse (the
+        # platform's master does), and is tested where it does.
+        self.refusal = self.startPatcher(patch.object(
+            type(self.env["cloud.settings"]), "_central_retire_refusal",
+            autospec=True, return_value="",
+        ))
 
     def test_it_forgets_the_central_and_switches_observability_off(self):
         answer = self._call("cloud_monitoring_retire_central")
@@ -245,6 +284,59 @@ class TestRetireTheCentral(CentralGuardCase):
         # The way out of the refusal: the server may go now.
         self.host.write({"active": False})
         self.assertFalse(self.host.active)
+
+    def test_it_forgets_the_public_name_the_accounts_and_the_alerts(self):
+        """A later deployment elsewhere would publish under the old name,
+        whose DNS still points here; the alerts would have nobody to close
+        them."""
+        direct = "direct.metrics.example.com"
+        self.settings.write({
+            "metrics_central_public_host": "metrics.example.com",
+            "metrics_accounts_deployed": "ic-a\nic-b",
+        })
+        # By SQL: writing the direct name queues its sync and re-applies
+        # the fleet, nothing this test is about.
+        self.env.cr.execute(
+            "UPDATE cloud_settings SET metrics_central_direct_host = %s "
+            "WHERE id = %s", [direct, self.settings.id],
+        )
+        self.settings.invalidate_recordset(["metrics_central_direct_host"])
+        Alert = self.env["cloud.alert"]
+        alerts = (
+            Alert.raise_alert("metrics_central_failed", "x", host=self.host)
+            | Alert.raise_alert("metrics_acl_sync_failed", "x", host=self.host)
+            | Alert.raise_alert("direct_path_down", "x", key=direct)
+        )
+        self.assertEqual(len(alerts), 3)
+        answer = self._call("cloud_monitoring_retire_central")
+        self.assertIs(answer["ok"], True)
+        self.settings.invalidate_recordset()
+        self.assertFalse(self.settings.metrics_central_public_host)
+        self.assertFalse(self.settings.metrics_accounts_deployed)
+        self.assertEqual(set(alerts.mapped("state")), {"dismissed"})
+
+    def test_the_settings_say_whether_it_may_be_retired(self):
+        data = self._call("cloud_get_general_settings")
+        self.assertIs(data["metrics_central_retirable"], True)
+
+    def test_a_layer_may_refuse_it(self):
+        """The platform's master: its central serves every tenant."""
+        self.refusal.return_value = "Not here."
+        answer = self._call("cloud_monitoring_retire_central")
+        data = self._call("cloud_get_general_settings")
+        self.assertEqual(answer, {"ok": False, "error": "Not here."})
+        self.assertIs(data["metrics_central_retirable"], False)
+        self.assertEqual(self.settings.metrics_central_host_id, self.host)
+
+    def test_forgetting_it_needs_no_person(self):
+        """What a forced removal of the server calls, after its own checks."""
+        self.assertEqual(
+            self.env["cloud.settings"]._forget_metrics_central(), "HX",
+        )
+        self.settings.invalidate_recordset()
+        self.assertFalse(self.settings.metrics_central_host_id)
+        self.assertFalse(self.settings.metrics_enabled)
+        self.assertEqual(self.env["cloud.settings"]._forget_metrics_central(), "")
 
     def test_nothing_to_retire(self):
         self.settings.metrics_central_host_id = False

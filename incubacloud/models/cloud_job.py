@@ -5918,13 +5918,23 @@ class CloudJob(models.Model):
         # while the first waits or runs is refused. It runs with the
         # credential the failed job held (a restore from a URL's), kept
         # encrypted apart from the payload as there.
+        payload = self.payload
+        if isinstance(payload, dict) and "discard_history" in payload:
+            # Start an empty central was asked for once, after the person
+            # confirmed, against the central of that moment: a retry runs
+            # as an ordinary deployment, refused while the central runs on
+            # another host (``pre_run_checks``).
+            payload = {
+                key: value for key, value in payload.items()
+                if key != "discard_history"
+            }
         new_job = self._create_queued(
             {
                 "name": self.name,
                 "host_id": self.host_id.id,
                 "job_type_id": self.job_type_id.id,
                 "instance_id": self.instance_id.id if self.instance_id else False,
-                "payload": self.payload,
+                "payload": payload,
                 "secret_payload": self.sudo().secret_payload,
                 "retry_of_id": self.id,
                 "queue_head": True,

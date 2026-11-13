@@ -139,7 +139,7 @@
                     <SettingRow id="'observability_status'" plain="true">
                         <span class="ic-set-ro" t-esc="observabilityStatus"/>
                     </SettingRow>
-                    <SettingRow t-if="state.centralHost" id="'central_retire'" button="true">
+                    <SettingRow t-if="state.centralHost and state.centralRetirable" id="'central_retire'" button="true">
                         <t t-set-slot="action">
                             <button type="button" class="rl-btn rl-btn-danger rl-btn-sm"
                                     t-att-disabled="state.retiringCentral || null"
