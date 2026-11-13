@@ -585,7 +585,19 @@ class CloudGitHubEvent(models.Model):
                     )
 
         elif action == 'synchronize':
-            # New commit pushed to the PR branch → rebuild existing preview instances
+            # New commit pushed to the PR branch → rebuild existing preview
+            # instances, whether or not they follow pushes (auto_rebuild).
+            # The rebuild names the commit as its push's does: whichever
+            # of the two GitHub delivers first queues it, and the other
+            # becomes the same rebuild (_queue_push_rebuild).
+            push_info = {
+                'push_repo': repo_full,
+                'push_branch': head_ref,
+                'push_sha': (pr.get('head', {}).get('sha') or '')[:7],
+                'push_message': '',
+                'push_by': (payload.get('sender') or {}).get('login', ''),
+                'push_provider': 'github',
+            }
             for inst in self._pr_previews(repo_full, pr_number):
                 # Skip closed ones being deleted, archived instances and
                 # those on a deactivated/deleted host — rebuilding them
@@ -600,13 +612,11 @@ class CloudGitHubEvent(models.Model):
                     if _normalize_url(repo.url) == repo_norm and repo.branch != head_ref:
                         repo.write({'branch': head_ref, 'commit_sha': False})
                 try:
-                    self.env['cloud.job'].enqueue(
-                        inst.host_id.id, inst.id, job_type,
-                    )
-                    _logger.info(
-                        "PR preview rebuild triggered for %s (PR #%s)",
-                        inst.name, pr_number,
-                    )
+                    if self._queue_push_rebuild(inst, job_type, push_info):
+                        _logger.info(
+                            "PR preview rebuild triggered for %s (PR #%s)",
+                            inst.name, pr_number,
+                        )
                 except Exception:
                     _logger.exception(
                         "Failed to enqueue PR rebuild for %s", inst.name,

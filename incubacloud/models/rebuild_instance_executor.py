@@ -594,6 +594,28 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         return True
 
     @classmethod
+    def _carries_push(cls, payload, push):
+        """Return whether a rebuild's payload was asked for *push*.
+
+        Its head push or one merged into it (``coalesced_pushes``) is the
+        same delivery (:meth:`_push_identity`). A rebuild no push asked
+        for carries none.
+
+        :param dict payload: a rebuild's payload
+        :param dict push: a push's payload keys
+        :rtype: bool
+        """
+        payload = payload or {}
+        if payload.get('trigger') not in ('webhook', 'coalesced'):
+            return False
+        wanted = cls._push_identity(push)
+        pushes = [payload, *(payload.get('coalesced_pushes') or [])]
+        return any(
+            cls._push_identity(known) == wanted
+            for known in pushes if isinstance(known, dict)
+        )
+
+    @classmethod
     def _pushed_shas(cls, payload):
         """Return the commits a push's rebuild was asked for, as pushed.
 

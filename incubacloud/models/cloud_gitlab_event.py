@@ -577,17 +577,30 @@ class CloudGitLabEvent(models.Model):
 
         Each one open, active, deployed and on an active host has its
         line of the merge request's project follow the source branch,
-        and its rebuild queued in a savepoint of its own; its note is
-        reconciled. A rebuild that cannot be queued is logged and the
-        others go on. The failures are returned, not raised: raising
-        would undo, in the dispatch's savepoint, the rebuilds already
-        queued.
+        and its rebuild queued in a savepoint of its own, whether or not
+        it follows pushes (``auto_rebuild``); its note is reconciled. The
+        rebuild names the merge request's last commit as its push's does:
+        whichever of the two GitLab delivers first queues it, and the
+        other becomes the same rebuild (:meth:`_queue_push_rebuild`). A
+        rebuild that cannot be queued is logged and the others go on. The
+        failures are returned, not raised: raising would undo, in the
+        dispatch's savepoint, the rebuilds already queued.
 
         :param dict review: what :meth:`_process_merge_request` read
         :return: the exceptions of the previews whose rebuild failed
         :rtype: list
         """
         Note = self.env["cloud.gitlab.mr.note"]
+        summary = self._summary()
+        head = summary.get("last_commit") or {}
+        push_info = {
+            "push_repo": review["path"],
+            "push_branch": review["branch"],
+            "push_sha": (head.get("id") or "")[:7],
+            "push_message": (head.get("title") or "")[:80],
+            "push_by": summary.get("user_username", ""),
+            "push_provider": "gitlab",
+        }
         failures = []
         for inst in self._mr_previews(review):
             if inst.pr_state == "closed" or not (inst.active and inst.deployed
@@ -603,7 +616,7 @@ class CloudGitLabEvent(models.Model):
                                 and line.repo_path == review["path"]
                                 and line.branch != review["branch"]):
                             line.write({"branch": review["branch"], "commit_sha": False})
-                    self.env["cloud.job"].enqueue(inst.host_id.id, inst.id, job_type)
+                    queued = self._queue_push_rebuild(inst, job_type, push_info)
                     Note._enqueue(inst)
             except Exception as exc:
                 if is_concurrency_error(exc):
@@ -611,9 +624,10 @@ class CloudGitLabEvent(models.Model):
                 _logger.exception("Failed to enqueue MR rebuild for %s", inst.name)
                 failures.append(exc)
                 continue
-            _logger.info(
-                "MR preview rebuild triggered for %s (!%s)", inst.name, review["iid"],
-            )
+            if queued:
+                _logger.info(
+                    "MR preview rebuild triggered for %s (!%s)", inst.name, review["iid"],
+                )
         return failures
 
     def _close_mr_previews(self, review):

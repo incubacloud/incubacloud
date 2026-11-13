@@ -12,8 +12,12 @@ import logging
 from odoo import SUPERUSER_ID, api, fields, models
 
 from ._concurrency import read_committed_cursor
+from .registry import executor_registry
 
 _logger = logging.getLogger(__name__)
+
+#: A job dispatched to queue_job and not ended yet.
+_DISPATCHED_STATES = ("pending", "enqueued", "wait_dependencies", "started")
 
 
 class CloudRepoEventMixin(models.AbstractModel):
@@ -114,7 +118,6 @@ class CloudRepoEventMixin(models.AbstractModel):
         :return: the names of the instances whose rebuild was queued
         :rtype: list
         """
-        now = fields.Datetime.now()
         triggered = []
         for repo in lines:
             inst = repo.instance_id
@@ -128,22 +131,72 @@ class CloudRepoEventMixin(models.AbstractModel):
             job_type = self._rebuild_job_type(inst)
             if not job_type:
                 continue
-            # A push always queues its rebuild. One that arrives while a
-            # rebuild runs waits in the instance's queue; one that
-            # arrives while a push's rebuild waits merges into it
-            # (``RebuildInstanceExecutor._merge_queued_payload``), so
-            # no commit is built twice and none is dropped.
             try:
                 with self.env.cr.savepoint():
-                    self.env['cloud.job'].enqueue(
-                        inst.host_id.id, inst.id, job_type,
-                        payload={'trigger': 'webhook', **push_info},
-                    )
-                    inst.write({'last_auto_rebuild': now})
+                    queued = self._queue_push_rebuild(inst, job_type, push_info)
             except Exception:
                 _logger.exception(
                     "Failed to enqueue auto-rebuild for %s", inst.name,
                 )
                 continue
-            triggered.append(inst.name)
+            if queued:
+                triggered.append(inst.name)
         return triggered
+
+    def _queue_push_rebuild(self, inst, job_type, push_info):
+        """Queue the rebuild of *inst* a push asks for, unless one runs for it.
+
+        A push queues its rebuild. One that arrives while a rebuild runs
+        waits in the instance's queue; one that arrives while a push's
+        rebuild waits merges into it
+        (``RebuildInstanceExecutor._merge_queued_payload``), so no commit
+        is built twice and none is dropped. One whose rebuild was already
+        dispatched (:meth:`_push_being_built`) queues nothing: a
+        preview's commit comes as a push and as the pull request's
+        ``synchronize`` or the merge request's ``update``, which name the
+        same commit. ``last_auto_rebuild`` is written when a rebuild is
+        queued or merged into.
+
+        No savepoint of its own: the caller runs it in one.
+
+        :param inst: the ``cloud.instance`` to rebuild
+        :param str job_type: the job code :meth:`_rebuild_job_type` named
+        :param dict push_info: the ``push_*`` keys of the job's payload
+        :return: whether a rebuild was queued or merged into
+        :rtype: bool
+        """
+        if self._push_being_built(inst, job_type, push_info):
+            _logger.info(
+                "Rebuild of %s for %s@%s already dispatched: not queued again",
+                inst.name, push_info.get('push_repo'), push_info.get('push_sha'),
+            )
+            return False
+        self.env['cloud.job'].enqueue(
+            inst.host_id.id, inst.id, job_type,
+            payload={'trigger': 'webhook', **push_info},
+        )
+        inst.write({'last_auto_rebuild': fields.Datetime.now()})
+        return True
+
+    def _push_being_built(self, inst, job_type, push_info):
+        """Return whether a dispatched rebuild of *inst* was asked for this push.
+
+        Dispatched and not ended: it fetches its branches once it runs,
+        after the push it names, so it builds that commit or a later one.
+        The type's executor says whether a payload names the push
+        (``_carries_push``); a type without it never does.
+
+        :param inst: the ``cloud.instance``
+        :param str job_type: the rebuild's job code
+        :param dict push_info: the ``push_*`` keys of the push
+        :rtype: bool
+        """
+        carries = getattr(executor_registry.get(job_type), '_carries_push', None)
+        if not carries:
+            return False
+        jobs = self.env['cloud.job'].sudo().search([
+            ('instance_id', '=', inst.id),
+            ('job_type_id.code', '=', job_type),
+            ('state', 'in', _DISPATCHED_STATES),
+        ])
+        return any(carries(job.payload, push_info) for job in jobs)
