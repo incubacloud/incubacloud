@@ -11,10 +11,27 @@ import hashlib
 import hmac
 from unittest.mock import patch
 
+from odoo import api
 from odoo.exceptions import AccessError
-from odoo.service.model import call_kw, get_public_method
+from odoo.service.model import get_public_method
 
 from .test_cloud_security import CloudSecurityBase
+
+
+def call_kw(model, name, args, kwargs):
+    """Call *name* on *model* as Odoo 18's ``/web/dataset/call_kw`` does.
+
+    Odoo 18's ``odoo.api.call_kw`` does not look at whether the method is
+    public: the route asks ``get_public_method`` first, as done here.
+
+    :param model: the recordset the method is called on
+    :param str name: the method's name
+    :param list args: its positional arguments, ids first when not ``@api.model``
+    :param dict kwargs: its keyword arguments
+    :return: what the method returns, as RPC would send it
+    """
+    get_public_method(model, name)
+    return api.call_kw(model, name, args, kwargs)
 
 SERVICE = "cloud.github.credential.service"
 

@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from odoo import fields
 from odoo.exceptions import AccessError, UserError
-from odoo.service.model import call_kw
+from odoo.api import call_kw
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
 from odoo.addons.incubacloud.models import _relay_oauth
