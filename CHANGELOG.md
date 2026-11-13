@@ -146,6 +146,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   at each ping. A neutralized copy loses it, and the MCP's
   `update_settings` changes it only with approval. Spanish translation
   included.
+- **Odoo.sh's notice that the panel's address changed**
+  ([RB-40](docs/runbooks/RB-40-panel-address-change.md)). A hardened host
+  with a list of allowed SSH addresses admits the panel by the address its
+  last hardening came from, and refused it once the panel left with
+  another, with nothing saying why. When Odoo.sh moves a project's
+  production it calls `GET /_odoo.sh/ip-change` with `old` and `new`; the
+  panel now raises `panel_address_changed`, critical, naming the hardened
+  hosts whose list (or the panel's address a module that extends it
+  knows) does not admit the new address, every hardened host with a list
+  when no new address comes. It changes no host: the request carries no
+  credential. The route answers only where `ODOO_STAGE` is `production`,
+  404 elsewhere, Odoo.sh's staging and development branches included. A
+  host leaves the alert once its list admits the new address, it is
+  hardened again after the change or it is archived; the alert closes
+  when none is left. Spanish translation included.
 
 ### Security
 
