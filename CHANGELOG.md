@@ -132,7 +132,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   The MCP's `update_settings` can change it, asking for approval each
   time, like the audit retention. Spanish translation included.
 - **A heartbeat for the scheduled actions (#83)**
-  ([RB-37](docs/runbooks/RB-37-scheduled-actions-heartbeat.md)).
+  ([RB-38](docs/runbooks/RB-38-scheduled-actions-heartbeat.md)).
   Settings › Logs & retention › *Scheduled actions* › *Heartbeat URL*
   (`cron_heartbeat_url`, empty by default): each pass of the
   reconciliation of lost jobs that ends, every 5 minutes, sends one `GET`
