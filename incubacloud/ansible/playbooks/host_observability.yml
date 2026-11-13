@@ -613,7 +613,9 @@
                     uri: {{ ic_logs_url | urlsplit('path') | to_json }}
                     tls: {{ 'on' if (ic_logs_url | urlsplit('scheme')) == 'https' else 'off' }}
                     tls.verify: on
-                    {% if ic_central_ca %}tls.ca_file: /etc/central-ca.pem{% endif %}
+              {% if ic_central_ca %}
+                    tls.ca_file: /etc/central-ca.pem
+              {% endif %}
                     http_user: {{ ic_remote_write_user | to_json }}
                     http_passwd: {{ ic_remote_write_token | to_json }}
                     labels: log_type=security

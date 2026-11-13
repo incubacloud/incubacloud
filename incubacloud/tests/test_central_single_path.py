@@ -37,6 +37,7 @@ from odoo.addons.incubacloud.models.sync_direct_path_executor import (
     SyncDirectPathExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+from odoo.addons.incubacloud.tests import _agents_playbook as agents_playbook
 from odoo.addons.incubacloud.tests._agents_playbook import PLAYBOOK
 from odoo.addons.incubacloud.tests._direct import make_host
 from odoo.addons.incubacloud.tests.test_observability_central_public import (
@@ -344,6 +345,49 @@ class TestTheComposeFile(BaseCase):
         ))["services"]["vmauth"]["labels"]
         self.assertIn("traefik.http.routers.ic-central.rule", labels)
         self.assertIn("traefik.http.routers.ic-central-direct.rule", labels)
+
+
+class TestTheAgentsFiles(BaseCase):
+    """What the agents' playbook writes with and without the authority.
+
+    Rendered as Ansible renders it (``trim_blocks`` on): an inline
+    ``{% if %}`` in Fluent Bit's YAML left its indentation to the next
+    line and broke the file in both modes (spike of 13-nov-2026).
+    """
+
+    _CA = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+
+    def _loki(self, **overrides):
+        """Fluent Bit's Loki output, parsed."""
+        files = agents_playbook.fluent_bit_files(**overrides)
+        return yaml.safe_load(files["fluent-bit.yaml"])["pipeline"]["outputs"][0]
+
+    def _vmagent(self, **overrides):
+        """vmagent's service in the agents' compose file, parsed."""
+        compose = yaml.safe_load(agents_playbook.render(
+            "Write the agents compose file", **agents_playbook.defaults(**overrides),
+        ))
+        return compose["services"]["vmagent"]
+
+    def test_fluent_bit_without_the_authority_is_valid_yaml(self):
+        loki = self._loki(ic_central_ca="")
+        self.assertNotIn("tls.ca_file", loki)
+        self.assertEqual(loki["http_user"], "acct")
+
+    def test_fluent_bit_with_the_authority_trusts_its_file(self):
+        loki = self._loki(ic_central_ca=self._CA)
+        self.assertEqual(loki["tls.ca_file"], "/etc/central-ca.pem")
+        self.assertEqual(loki["http_user"], "acct")
+
+    def test_vmagent_trusts_the_authority_only_when_given(self):
+        flag = "-remoteWrite.tlsCAFile=/etc/central-ca.pem"
+        self.assertNotIn(flag, self._vmagent(ic_central_ca="")["command"])
+        vmagent = self._vmagent(ic_central_ca=self._CA)
+        self.assertIn(flag, vmagent["command"])
+        self.assertIn(
+            "/home/incubacloud/observability/central-ca.pem:/etc/central-ca.pem:ro",
+            vmagent["volumes"],
+        )
 
 
 class TestTheName(SinglePathCase):
