@@ -4341,13 +4341,18 @@ class CloudJob(models.Model):
                     asyncio.run(executor._close_on_server(
                         DETACHED_RECONCILE_WAIT_S, say_again=say,
                     ))
-                    if executor._detached_left_alive and not executor._left_running:
-                        # A server that answered, its step past the point
-                        # of no return still running, is looked at again
-                        # at the next pass: the queue waits for it.
-                        executor._write_checkpoint(
-                            {"reconcile_tried_at": fields.Datetime.now()},
-                        )
+                    if executor._detached_left_alive:
+                        # A server that answered with the step the row
+                        # holds the queue for still alive is looked at
+                        # again at the next pass, and the queue waits for
+                        # the job, not for the server to answer.
+                        executor._write_checkpoint({
+                            "reconcile_tried_at": (
+                                False if executor._left_running
+                                or self._holds_for_a_live_step(executor, row)
+                                else fields.Datetime.now()
+                            ),
+                        })
                 if case == "checkpoint":
                     self._forget_or_give_up(executor, row)
                 elif resumed:
@@ -4401,6 +4406,13 @@ class CloudJob(models.Model):
         pass that reaches the server, or whose row no longer holds, closes
         that alert.
 
+        Nor is a row that holds the queue for a step the pass found alive
+        on a server that answered (``_holds_for_a_live_step``): back after
+        an outage longer than the cap, the step may still run past the
+        point of no return, or outlive its stop; given up, the next job
+        would start beside it. Each pass reads it again, and the step's
+        own ``timeout`` ends it.
+
         A row that held the job's queue (``holds_queue_since``) serves the
         queue once it is gone, as the end of a job does, or once the close
         let go of the queue and kept the row for a directory left behind
@@ -4426,7 +4438,7 @@ class CloudJob(models.Model):
         )
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
-        elif not waiting:
+        elif not waiting and not self._holds_for_a_live_step(executor, row):
             self._give_up_if_past_cap(executor, row)
         Job = self.with_env(row.env)
         try:
@@ -4450,6 +4462,32 @@ class CloudJob(models.Model):
         if held and (released or not executor._checkpoint):
             job = executor.job.sudo()
             job._schedule_dispatch({job._scope_of()})
+
+    @api.model
+    def _holds_for_a_live_step(self, executor, row):
+        """Whether a pass that reached the server left *row* holding for a live step.
+
+        The close found the step past the point of no return still
+        running (``_left_running``), or its stop left it alive
+        (``not_stopped``), and the row still holds the job's queue: the
+        server answered, so the queue waits for the step to end, not for
+        the server, and the row is not given up (``_forget_or_give_up``).
+
+        :param executor: the job's executor, after ``_close_on_server``
+        :param row: the job's ``cloud.job.checkpoint``
+        :rtype: bool
+        """
+        return bool(
+            executor._detached_left_alive
+            and (
+                executor._left_running
+                or executor._left_alive_why == "not_stopped"
+            )
+            and not executor._queue_hold_released
+            and self._checkpoint_holds_queue(
+                executor.job, row, marked=executor._queue_hold_marked,
+            )
+        )
 
     @api.model
     def _give_up_if_past_cap(self, executor, row):
@@ -4602,7 +4640,9 @@ class CloudJob(models.Model):
         """Say what *job* may have left on its server, from its checkpoint alone.
 
         The step apart, when it had started there (``detached_started``),
-        with its directory and the command that stops it; the job's
+        with its directory and the command that stops it, or, past the
+        point of no return the plan had (``no_return_from``), that it is
+        to be let end, as stopping it leaves its work half done; the job's
         working directory and the secrets it staged. Read from the row
         only, so a job without an executor is said the same way.
 
@@ -4626,8 +4666,20 @@ class CloudJob(models.Model):
         paths = list(data.get("private_uploads") or ())
         if data.get("job_dir"):
             paths.append(data["job_dir"])
+        labels = [entry[0] for entry in plan]
+        no_return = data.get("no_return_from")
+        past = bool(
+            no_return in labels and index >= labels.index(no_return)
+        )
         left = []
-        if directory:
+        if directory and past:
+            left.append(env._(
+                "the step '%(step)s' is past the point of no return and may"
+                " still run in %(dir)s: stopping it would leave its work half"
+                " done, so let it end, then remove the directory",
+                step=step[0], dir=directory,
+            ))
+        elif directory:
             left.append(env._(
                 "the step '%(step)s' may still run in %(dir)s; stop it with"
                 " `bash %(dir)s/ctl.sh stop %(dir)s 20`, then remove the"

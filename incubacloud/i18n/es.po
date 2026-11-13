@@ -20186,6 +20186,18 @@ msgstr ""
 "%(dir)s/ctl.sh stop %(dir)s 20` y luego elimine el directorio"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"the step '%(step)s' is past the point of no return and may still run in "
+"%(dir)s: stopping it would leave its work half done, so let it end, then "
+"remove the directory"
+msgstr ""
+"el paso «%(step)s» ya pasó el punto sin retorno y puede que siga en marcha "
+"en %(dir)s: detenerlo dejaría su trabajo a medias, así que deje que termine "
+"y luego elimine el directorio"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "this host's own override, below"
