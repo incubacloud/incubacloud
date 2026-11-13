@@ -649,6 +649,48 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         self.Closure._gc_session_closures()
         self.assertEqual(self._rows().mapped("seen_value"), ["PT"])
 
+    # -- #74: an archived user's sessions do not come back -----------------
+
+    def _accepted_after_coming_back(self, archive):
+        """Trace a session of the fixture user, archive the user with
+        *archive*, run the daily vacuum and reactivate the user.
+
+        Odoo's session token includes ``active``: a session left on disk
+        is accepted again, with no trace left for "Log out from all
+        devices" to find it by (review of #74).
+
+        :param archive: callable that archives the fixture user
+        :return: whether the session is accepted after the reactivation
+        :rtype: bool
+        """
+        sid = self._sign_in()
+        self.assertTrue(self._check(sid, CHROME))
+        Log = self.env["res.device.log"].sudo()
+        self.assertTrue(Log.search([("user_id", "=", self.user.id)]))
+        archive()
+        self.env.flush_all()
+        Log._gc_device_log_of_gone_users()
+        self.env.invalidate_all()
+        self.assertFalse(Log.search([("user_id", "=", self.user.id)]))
+        self.user.action_unarchive()
+        return self._check(sid, CHROME)
+
+    def test_a_session_of_an_archived_user_does_not_come_back(self):
+        self.assertFalse(self._accepted_after_coming_back(self.user.action_archive))
+
+    def test_the_vacuum_deletes_the_sessions_of_a_user_archived_before(self):
+        """A user archived before archiving deleted the sessions, or in
+        SQL: the vacuum deletes them before their trace."""
+        def archive():
+            self.env.flush_all()
+            self.env.cr.execute(
+                "UPDATE res_users SET active = FALSE WHERE id = %s",
+                (self.user.id,),
+            )
+            self.env.invalidate_all()
+
+        self.assertFalse(self._accepted_after_coming_back(archive))
+
 
 @tagged("-at_install", "post_install")
 class TestRecordsGoWithTheAccount(TransactionCase):
