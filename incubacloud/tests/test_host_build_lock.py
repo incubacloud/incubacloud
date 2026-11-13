@@ -691,7 +691,7 @@ class TestTheListsSayWhatItWaitsFor(_HostLockBase):
         self.assertEqual((running | ended | busy | plain)._build_waits(), {})
 
     def test_the_job_ahead_only_for_a_reader_who_may_read_it(self):
-        """On a shared host it may be another project's, or another tenant's."""
+        """On a shared host the job ahead may be another project's."""
         elsewhere = self.env['cloud.project'].create({'name': 'build-lock-elsewhere'})
         holder = self._other(state='started', instance=self.env['cloud.instance'].create({
             'name': 'build-lock-elsewhere',
@@ -727,9 +727,9 @@ class TestTheListsSayWhatItWaitsFor(_HostLockBase):
 class TestABetterJobTakesTheLockFirst(_HostLockBase):
     """A job does not try the lock while a better one waits for it (#68).
 
-    The reserve's deploys go by ``root.warm`` with priority 15 and the
-    tenants' by ``root.user`` with 10, or 5 in production: in different
-    channels, the lock is the only place they meet.
+    A background build may queue with priority 15 and the rebuilds people
+    ask for with 10, or 5 in production: in different channels, the lock
+    is the only place they meet.
     """
 
     def test_it_gives_way_to_a_better_one_that_waits(self):
