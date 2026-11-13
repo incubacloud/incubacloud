@@ -20,6 +20,9 @@ import yaml
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.cloud_host_edge_guard import edge_guard_digest
+from odoo.addons.incubacloud.models.cloud_host_shared_guard import (
+    SHARED_GUARD_ALERT,
+)
 from odoo.addons.incubacloud.models.host_probe_executor import (
     GIT_MIN,
     LOW_DISK_ALERT,
@@ -321,6 +324,82 @@ class TestTheCheckReadsTheEdgeGuard(HostStateCase):
         self.assertIs(task["failed_when"], False)
         exported = plays[0]["tasks"][-1]["ansible.builtin.set_stats"]["data"]
         self.assertIn("ic_edge_guard_sha256", exported)
+
+
+class TestTheCheckReadsTheProxyNetworkGuard(HostStateCase):
+    """The playbook exports the last state the guard on the proxy network
+    wrote; the Check raises ``shared_guard_open`` when it says open or
+    unsupported and resolves it when it says on, so a guard that opened
+    after Full Setup reaches the panel."""
+
+    def _check(self, line, **host_vals):
+        host = self._host(**host_vals)
+        facts = _probe_facts()
+        if line is not None:
+            facts["ic_shared_guard_state"] = line
+        ex = self._executor(HostProbeExecutor, host=host, facts=facts)
+        ex._missing_tools = []
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        return host
+
+    def _active(self, host):
+        return self.env["cloud.alert"].search([
+            ("host_id", "=", host.id),
+            ("code", "=", SHARED_GUARD_ALERT),
+            ("state", "=", "active"),
+        ])
+
+    def test_a_guard_that_opened_raises_its_alert(self):
+        host = self._check(
+            "IC_SHARED_GUARD_UNSUPPORTED the firewall has no MAC match (xt_mac)",
+        )
+        alert = self._active(host)
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn("the firewall has no MAC match (xt_mac)", alert.message)
+
+    def test_a_guard_on_again_resolves_it(self):
+        host = self._check("IC_SHARED_GUARD_OPEN the proxy is not running on x")
+        self.assertTrue(self._active(host))
+        ex = self._executor(
+            HostProbeExecutor, host=host,
+            facts=_probe_facts() | {
+                "ic_shared_guard_state": "IC_SHARED_GUARD_ON bridge br-x, proxy m",
+            },
+        )
+        ex._missing_tools = []
+        ex.parse_results({})
+        _run(ex.on_success({}))
+        self.assertFalse(self._active(host))
+
+    def test_no_line_or_the_switch_off_says_nothing(self):
+        for line, vals in (
+            (None, {}),
+            ("", {}),
+            ("IC_SHARED_GUARD_OPEN x", {"shared_guard": False}),
+        ):
+            host = self._check(line, **vals)
+            self.assertFalse(self._active(host))
+
+    def test_the_playbook_reads_the_file_the_guard_writes(self):
+        root = Path(__file__).resolve().parents[1]
+        plays = yaml.safe_load(
+            (root / "ansible" / "playbooks" / "host_probe.yml").read_text(),
+        )
+        task = next(
+            t for t in plays[0]["tasks"]
+            if t["name"] == "Read the last state of the guard on the proxy network"
+        )
+        path = task["ansible.builtin.command"]["argv"][1]
+        self.assertIn(
+            f'STATE_FILE="${{IC_SHARED_GUARD_STATE:-{path}}}"',
+            (root / "scripts" / "shared_guard.sh").read_text(),
+        )
+        self.assertIs(task["changed_when"], False)
+        self.assertIs(task["failed_when"], False)
+        exported = plays[0]["tasks"][-1]["ansible.builtin.set_stats"]["data"]
+        self.assertIn("ic_shared_guard_state", exported)
 
 
 class TestDockerPruneSummary(HostStateCase):

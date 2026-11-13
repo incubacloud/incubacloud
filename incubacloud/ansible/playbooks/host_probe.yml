@@ -62,6 +62,20 @@
       changed_when: false
       check_mode: false
 
+    - name: Read the last state of the guard on the proxy network
+      # The line its timer wrote at its last change of state
+      # (shared_guard.sh); nothing when the guard is not installed, or
+      # the host rebooted and the first tick has not run. The executor
+      # keeps the guard's alert in step with it.
+      ansible.builtin.command:
+        argv:
+          - cat
+          - /run/incubacloud-shared-guard.state
+      register: ic_shared_guard
+      failed_when: false
+      changed_when: false
+      check_mode: false
+
     - name: Collapse the tool probe into a name → version map
       ansible.builtin.set_fact:
         ic_tool_versions: >-
@@ -82,3 +96,6 @@
           ic_edge_guard_sha256: >-
             {{ (ic_edge_guard.stdout.split() | first)
                if ic_edge_guard.rc == 0 and ic_edge_guard.stdout else '' }}
+          ic_shared_guard_state: >-
+            {{ (ic_shared_guard.stdout | trim)
+               if ic_shared_guard.rc == 0 else '' }}

@@ -3,6 +3,11 @@ import re
 from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
 from .cloud_host_edge_guard import edge_guard_digest
+from .cloud_host_shared_guard import (
+    SHARED_GUARD_ALERT,
+    SHARED_GUARD_MARKER,
+    shared_guard_verdict,
+)
 
 #: Free disk, in GB, under which the Check says the host is short of it.
 #: The same figure as ``cloud.host._MIN_DISK_FREE_GB``, under which no new
@@ -64,7 +69,9 @@ class HostProbeExecutor(AnsibleExecutor):
 
     The playbook also reads the digest of the host's edge guard
     (``ic_guard.yml``); when it is missing or differs from the panel's
-    render, ``push_edge_guard`` is queued behind the Check.
+    render, ``push_edge_guard`` is queued behind the Check. And the last
+    state the guard on the proxy network wrote, which keeps its alert in
+    step after Full Setup (``_check_shared_guard``).
     """
 
     _job_type = "host_probe"
@@ -236,6 +243,7 @@ class HostProbeExecutor(AnsibleExecutor):
             host.write({"status": "compatible"})
             self._sys("✓ Host is compatible and ready for deployments.")
         self._check_edge_guard()
+        self._check_shared_guard()
 
     def _check_edge_guard(self):
         """Queue the edge guard when the host's file is missing or differs.
@@ -260,6 +268,37 @@ class HostProbeExecutor(AnsibleExecutor):
         )
         if host._enqueue_edge_guard("host check", chained=True):
             self._sys("Queued the edge guard for this host.")
+
+    def _check_shared_guard(self):
+        """Keep ``shared_guard_open`` in step with the host's guard.
+
+        Full Setup raises or resolves the alert with what its step left;
+        afterwards the guard's minute timer may open it (a reboot onto a
+        kernel without ``xt_mac``, the proxy recreated by hand with
+        another address) or close it again, and writes each change to
+        its state file. The Check reads that line: open or unsupported
+        raises the alert with the reason, on resolves it. Only on a host
+        whose switch is on; a host with no line (the guard not
+        installed, a reboot before the first tick) says nothing.
+        """
+        host = self.job.host_id
+        if not host.shared_guard:
+            return
+        line = (self.playbook_facts().get("ic_shared_guard_state") or "").strip()
+        if not line.startswith(SHARED_GUARD_MARKER):
+            return
+        state, reason = shared_guard_verdict({"stdout": line, "exit_status": 0})
+        if state == "ON":
+            self._resolve_alert(SHARED_GUARD_ALERT)
+            self._sys("✓ Guard on the proxy network: on.")
+        elif state in ("OPEN", "UNSUPPORTED"):
+            message = (
+                f"The guard on the proxy network is open ({reason}): the "
+                "instances on this host can reach each other directly. "
+                "RB-39 says what to check."
+            )
+            self._sys(f"⚠ {message}")
+            self._alert(SHARED_GUARD_ALERT, message, level="warning")
 
     async def on_cancelled_running(self, results, exc):
         """A probe stopped halfway found nothing: the host keeps its status.
