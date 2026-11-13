@@ -787,6 +787,16 @@ class CloudSettings(models.Model):
              "read-only route. Empty: only the central's host itself, "
              'which is right while the panel runs there.',
     )
+    security_geoip = fields.Boolean(
+        string="Show the country of addresses",
+        default=True,
+        help="The country of the addresses in the servers' security logs, "
+             "looked up on the panel itself: no address leaves it. It uses "
+             "Odoo's GeoIP database when the server has one; otherwise the "
+             "panel downloads DB-IP's free country database (CC BY 4.0) "
+             "once a month. Off: no country is shown and nothing is "
+             "downloaded.",
+    )
 
     # ── Metrics account helpers ────────────────────────────────────────────
 

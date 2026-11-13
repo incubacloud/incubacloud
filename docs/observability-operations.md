@@ -421,6 +421,20 @@ itself and its counters never expire).
 - **What it costs.** See *Costs and sizing*. Fluent Bit runs as root with
   every capability dropped but reading files, a read-only filesystem and
   no port published; its credential is in a 0600 file.
+- **The country of an address** (`models/geoip.py`, not shown yet).
+  Looked up on the panel, and only the country: no address leaves it.
+  From Odoo's `geoip_country_db` when that file is there (Odoo.sh ships
+  one; a Doodba image does not); otherwise from DB-IP's IP to Country
+  Lite (CC BY 4.0), which the daily *Refresh the GeoIP database* cron
+  downloads once a month from `download.db-ip.com` and keeps as an
+  attachment of the settings. While a month's file is not published, the
+  month before is taken. The download is HTTPS to that host alone (a
+  redirect elsewhere is refused), at most 32 MB, 64 MB uncompressed, in
+  60 s; a file that does not open as a country database never replaces
+  the one kept. Private, loopback and link-local addresses are *local*.
+  The setting *Show the country of addresses* (`security_geoip`, on by
+  default) turns both the lookup and the download off. A country from
+  DB-IP is shown with its attribution, `geoip.ATTRIBUTION`.
 
 ## The panel's own charts
 
