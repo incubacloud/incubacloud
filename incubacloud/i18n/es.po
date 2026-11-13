@@ -1850,6 +1850,19 @@ msgid "Asked With Superuser Rights"
 msgstr "Pedido con derechos de superusuario"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__cron_heartbeat_url
+msgid ""
+"Asked for (GET) at the end of each good pass of the reconciliation of lost "
+"jobs, every 5 minutes, so a heartbeat service warns when the panel's "
+"scheduled actions stop. https on port 443, to a public address. Empty: "
+"nothing is sent."
+msgstr ""
+"Se pide (GET) al final de cada pasada correcta de la conciliación de "
+"trabajos perdidos, cada 5 minutos, para que un servicio de latido avise "
+"cuando las acciones planificadas del panel se detengan. https en el puerto "
+"443, a una dirección pública. Vacío: no se envía nada."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_type__queue_collapse
 msgid ""
 "Asked for again while one of this type waits in the queue with the same "
@@ -1859,6 +1872,17 @@ msgstr ""
 "Si se vuelve a pedir mientras uno de este tipo espera en la cola con la "
 "misma carga para el mismo destino, no se crea un segundo trabajo: se "
 "devuelve el que espera."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"Asked for every 5 minutes while the scheduled actions run, so the service "
+"behind it warns when they stop. Empty: nothing is sent."
+msgstr ""
+"Se pide cada 5 minutos mientras las acciones planificadas funcionan, para "
+"que el servicio que hay detrás avise cuando se detengan. Vacío: no se envía "
+"nada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6303,10 +6327,27 @@ msgid "HTTP Routing"
 msgstr "Enrutamiento HTTP"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid "Heartbeat URL"
+msgstr "URL de latido"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_session_access.py:0
 msgid "Hello %(name)s,"
 msgstr "Hola, %(name)s:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"How long the panel keeps its own records, how instance logs are kept and "
+"read, and who hears when the scheduled actions stop."
+msgstr ""
+"Cuánto conserva el panel sus propios registros, cómo se guardan y se leen "
+"los logs de las instancias, y quién se entera cuando las acciones "
+"planificadas se detienen."
 
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
@@ -7389,8 +7430,15 @@ msgstr "Escáneres"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
 msgid "Scheduled actions"
 msgstr "Acciones planificadas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__cron_heartbeat_url
+msgid "Scheduled actions heartbeat URL"
+msgstr "URL de latido de las acciones planificadas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15732,6 +15780,24 @@ msgstr ""
 "ámbito 'repo', o configure una GitHub App."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+msgid ""
+"The panel's scheduled actions often share one thread, so one that never ends"
+" holds all the others, the ones that would raise an alert included. With a "
+"URL here, each pass of the reconciliation of lost jobs that ends well asks "
+"for it, every 5 minutes; a heartbeat service (healthchecks.io, Better Stack,"
+" Cronitor) warns when the asks stop. The URL must be https on port 443, to a"
+" public address."
+msgstr ""
+"Las acciones planificadas del panel suelen compartir un solo hilo, así que "
+"una que nunca termina retiene a todas las demás, también a las que darían "
+"una alerta. Con una URL aquí, cada pasada correcta de la conciliación de "
+"trabajos perdidos la pide, cada 5 minutos; un servicio de latido "
+"(healthchecks.io, Better Stack, Cronitor) avisa cuando dejan de llegar. La "
+"URL debe ser https en el puerto 443, a una dirección pública."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/metrics_diagnosis.py:0
 msgid ""
@@ -16681,6 +16747,12 @@ msgid ""
 msgstr ""
 "Siguen funcionando aunque cierre la sesión en todas partes. Revoque los que "
 "no reconozca."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "This URL cannot be used: %s."
+msgstr "No se puede usar esta URL: %s."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -22937,16 +23009,6 @@ msgstr "Hasta dónde lee hacia atrás una búsqueda en los logs."
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
 msgid "How it works"
 msgstr "Cómo funciona"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
-msgid ""
-"How long the panel keeps its own records, and how instance logs are kept and"
-" read."
-msgstr ""
-"Cuánto conserva el panel sus propios registros, y cómo se guardan y se leen "
-"los logs de las instancias."
 
 #. module: incubacloud
 #. odoo-javascript
