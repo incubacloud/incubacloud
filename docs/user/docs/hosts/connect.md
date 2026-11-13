@@ -268,7 +268,9 @@ gets one this way: see [Panel on an internal network](internal-network.md#certif
 
 The alert *This panel's outgoing address changed* names the hosts whose
 list of allowed SSH addresses does not include the panel's new address.
-For each one:
+First check the new address against Odoo.sh's email or your project's
+page on Odoo.sh: the notice proves nothing by itself, and when the alert
+gives no address, find it there. Then, for each host:
 
 1. Open a shell on the host from your provider's console and let the new
    address in: `sudo nft add element inet filter ic_ssh_allow '{ <new address> }'`
@@ -276,8 +278,9 @@ For each one:
 2. In the panel, click **Apply Hardening** on the host. The run comes from
    the new address and keeps it for the next reboots.
 
-The alert lets go of a host once it is hardened again or its list includes
-the new address, and closes when none is left. On Odoo.sh, to avoid it, do
+The alert lets go of a host once it is hardened again, and closes when
+none is left. Editing the host's allowed SSH IPs alone does not: the host
+gets the list only with the next **Apply Hardening**. On Odoo.sh, to avoid it, do
 not make Odoo.sh's address a host's only way in: leave the list empty (SSH
 open to any address, key only) or add an address of yours that does not
 change.

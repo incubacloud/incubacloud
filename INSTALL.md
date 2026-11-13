@@ -62,9 +62,10 @@ only your office network reaches has a page of its own there:
   Odoo.sh it changes when Odoo.sh moves the project's production. Odoo.sh
   then calls `/_odoo.sh/ip-change` on the database and the panel raises a
   critical alert, *panel_address_changed*, naming the hosts whose list does
-  not admit the new address. It changes no host: let the new address in
-  from each host's console, then run *Apply Hardening*
-  ([RB-40](docs/runbooks/RB-40-panel-address-change.md)). On Odoo.sh, do
+  not admit the new address. It changes no host: check the new address
+  against Odoo.sh's email or the project's page on Odoo.sh, let it in from
+  each host's console, then run *Apply Hardening*
+  ([RB-41](docs/runbooks/RB-41-panel-address-change.md)). On Odoo.sh, do
   not make its current address a host's only way in: leave the list empty
   (SSH open, key only) or add an address of yours that does not move.
 

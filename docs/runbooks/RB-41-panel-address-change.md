@@ -1,4 +1,4 @@
-# RB-40 — The panel's outgoing address changed
+# RB-41 — The panel's outgoing address changed
 
 **Severity:** critical (`panel_address_changed`) · **When:** the alert is
 raised, Odoo.sh writes that the address of the project's production
@@ -23,7 +23,8 @@ On Odoo.sh, when the address of a production instance changes, the
 platform calls `GET /_odoo.sh/ip-change?old=<old>&new=<new>` on the
 database. The panel then raises `panel_address_changed`, critical, naming
 the hardened hosts whose list does not admit the new address. With no new
-address given, it names every hardened host with a list.
+address given, or one that is not a public address, it names every
+hardened host with a list.
 
 The route answers only where `ODOO_STAGE` is `production` (Odoo.sh's
 production); elsewhere it answers 404. Odoo.sh's platform answers 403 to
@@ -34,12 +35,25 @@ Odoo.sh's documentation does not say whether the request comes before or
 after the change; read it as after. The panel may already be out of the
 hosts it names.
 
+The same notice again (same old and new address) is ignored, whether the
+alert is still open or closed. A notice of another change closes the open
+alert and raises it again, so that it is sent again.
+
+## Check the new address first
+
+The request proves nothing about who sent it. Before you let any address
+into a host, check it against what Odoo.sh shows the project's
+administrators: the email Odoo.sh sends when the address changes, or the
+project's page on Odoo.sh. When the alert names no new address, find it
+there.
+
 ## Let the panel in again
 
 For each host the alert names:
 
 1. Open a shell on the host from your provider's console (or by SSH from
-   an address its list admits) and let the new address in, live:
+   an address its list admits) and let the new address in, live, once
+   checked:
 
    ```bash
    sudo nft add element inet filter ic_ssh_allow '{ <new address> }'
@@ -53,12 +67,17 @@ For each host the alert names:
    the new address and keeps it in the rules the host loads at boot: the
    change of step 1 alone is lost at the next reboot.
 
-The alert drops a host once it is hardened again after the change, once
-its list admits the new address, or once it is archived; it closes when
-none is left.
+The alert drops a host once it is hardened again after the change; once
+the list it last confirmed admits the new address; or once it is
+archived, deleted or no longer hardened. It closes when none is left.
 
-The alert names the new address when Odoo.sh gave it. Odoo.sh also
-writes to the project's administrators when the address changes.
+The list judged is the one the host confirmed: the one its last hardening
+applied, or the one it answered to a live change of the list made by a
+module that extends the panel. An edit of the host's *allowed SSH IPs* by
+hand reaches the host only with the next hardening run, so it does not
+take the host out of the alert, and a host whose list was edited since
+its last hardening is named, whatever the field says: what it lets in is
+unknown until *Apply Hardening* runs.
 
 ## Avoid it
 
