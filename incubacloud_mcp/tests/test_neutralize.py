@@ -36,7 +36,7 @@ class TestNeutralizeMcp(TransactionCase):
     def _neutralize(self):
         """Neutralize the database as ``odoo neutralize`` does, then forget caches."""
         neutralize_database(self.env.cr)
-        self.env.registry.clear_cache("stable")
+        self.env.registry.clear_cache()
         self.env.invalidate_all()
 
     def _params(self):
