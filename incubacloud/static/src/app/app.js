@@ -16,6 +16,7 @@ import { legacySection } from "../components/settings/settings_registry";
 import "../components/settings/core_sections";
 import { BackupBackendsList } from "../components/backup_backend_detail/backup_backends_list";
 import { BackupBackendDetail } from "../components/backup_backend_detail/backup_backend_detail";
+import { SessionsAccess } from "../components/sessions_access/sessions_access";
 import { SlideOver } from "../components/slide_over/slide_over";
 import { AppHeader } from "../components/app_header/app_header";
 import { ProjectSidebar } from "../components/project_sidebar/project_sidebar";
@@ -81,6 +82,8 @@ export function _parseRoute(pathname) {
         }
         case "monitoring":
             return { route: "monitoring", params: {} };
+        case "sessions":
+            return { route: "sessions", params: {} };
         case "settings": {
             // /cloud/settings/<section>#<field>; ?tab= is a link from
             // before the sections, which Settings maps to one.
@@ -135,6 +138,7 @@ export function _buildUrl(route, params = {}) {
         }
 
         case "monitoring":            return `${_BASE}/monitoring`;
+        case "sessions":              return `${_BASE}/sessions`;
         case "settings": {
             const section = params.section || legacySection(params.tab);
             const path = section ? `${_BASE}/settings/${section}` : `${_BASE}/settings`;
@@ -169,7 +173,7 @@ export function _refreshesNavCounts(fromUrl, toUrl) {
 }
 
 export class Chrome extends Component {
-    static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, Monitoring, SlideOver, MainComponentsContainer, ToastContainer };
+    static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, Monitoring, SessionsAccess, SlideOver, MainComponentsContainer, ToastContainer };
 
     get isInsideProject() {
         const r = this.state.route;

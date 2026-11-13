@@ -142,6 +142,9 @@
 <t t-if="state.route === 'monitoring' and env.permissions?.can_view_metrics">
                         <Monitoring/>
                     </t>
+                    <t t-if="state.route === 'sessions'">
+                        <SessionsAccess/>
+                    </t>
                     <t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
                         <Settings section="state.params.section" field="state.params.field" tab="state.params.tab"/>
                     </t>

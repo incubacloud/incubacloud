@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The notices of "Sessions and access"
+        (``cloud.session.notice._session_notice_queue``): rendered in the
+        recipient's language, then put in the company layout
+        (``mail_layout``). The sentences that carry names (``greeting``,
+        ``lead``, ``open_page``) are whole sentences translated in
+        Python, each name escaped into them, so that a language may put
+        the names where its grammar wants them; the rest is translated
+        here. Nothing in it asks anything (the platform owner's decision,
+        11-nov-2026): it says what happened and what to do if it was not
+        the recipient.
+    -->
+    <template id="mail_session_notice" name="IncubaCloud: sessions and access notice">
+<div>
+    <p style="margin:0 0 12px;" t-out="greeting"/>
+    <p style="margin:0 0 12px;" t-out="lead"/>
+    <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="margin:0 0 16px;font-size:13px;">
+        <tr>
+            <td style="padding:2px 16px 2px 0;color:#5a6661;">When</td>
+            <td style="padding:2px 0;" t-out="when"/>
+        </tr>
+        <tr t-if="country">
+            <td style="padding:2px 16px 2px 0;color:#5a6661;">Country</td>
+            <td style="padding:2px 0;" t-out="country"/>
+        </tr>
+        <tr t-if="device">
+            <td style="padding:2px 16px 2px 0;color:#5a6661;">Browser</td>
+            <td style="padding:2px 0;" t-out="device"/>
+        </tr>
+    </table>
+    <p style="margin:0 0 12px;">If it was you, there is nothing to do.</p>
+    <p style="margin:0 0 6px;">If you do not recognise it:</p>
+    <ol style="margin:0 0 12px;padding-left:20px;">
+        <li t-out="open_page"/>
+        <li>Revoke there whatever you do not recognise: agents, API keys, tokens.</li>
+        <li>Sign out of the sessions of the account you sign in with too (Google, GitHub…): whoever took one session cookie usually holds the others.</li>
+    </ol>
+</div>
+    </template>
+</odoo>

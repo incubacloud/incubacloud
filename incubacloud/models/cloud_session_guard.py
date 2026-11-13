@@ -174,6 +174,24 @@ RETRIED_ERRORS = (pg_errors.SerializationFailure, pg_errors.DeadlockDetected)
 CLOSED_MARK = "incubacloud_session_guard_closed"
 
 
+def known_country(code):
+    """Return whether *code* names a country a user's history can keep.
+
+    :param str code: what :meth:`CloudSessionGuard._seen_country` read
+    :rtype: bool
+    """
+    return bool(code) and code not in (COUNTRY_UNKNOWN, COUNTRY_TOR, COUNTRY_DIRECT)
+
+
+def known_browser(family):
+    """Return whether *family* is a browser family a user's history can keep.
+
+    :param str family: what :meth:`CloudSessionGuard._seen_browser` read
+    :rtype: bool
+    """
+    return bool(family) and family != BROWSER_UNKNOWN
+
+
 def judge_country(pinned, seen):
     """Return what a country seen means against the one pinned.
 
@@ -509,15 +527,17 @@ class CloudSessionGuard(models.AbstractModel):
             for trace in traces
         ):
             return
-        judged = (
-            ("country", judge_country, self._seen_country),
-            ("browser", judge_browser, self._seen_browser),
-        )
-        for signal, judge, seen_of in judged:
+        seen_values = {
+            "country": self._seen_country(request),
+            "browser": self._seen_browser(request),
+        }
+        self._session_guard_remember(request, uid, seen_values, first=not traces)
+        judged = (("country", judge_country), ("browser", judge_browser))
+        for signal, judge in judged:
             if modes[signal] == "off":
                 continue
             pinned = pin.get(signal) or ""
-            seen = seen_of(request)
+            seen = seen_values[signal]
             verdict = judge(pinned, seen)
             if verdict == "adopt":
                 pin = pin | {signal: seen}
@@ -604,6 +624,107 @@ class CloudSessionGuard(models.AbstractModel):
             _logger.exception(
                 "[session-guard] could not record the re-entry of user %s", uid,
             )
+
+    @api.model
+    def _session_guard_remember(self, request, uid, seen, first):
+        """Write the country and browser family of *request* into the
+        user's history, and tell the user of one never seen before.
+
+        Only on a request that adds a trace, as the comparison: no other
+        request pays for it. On a cursor of its own, as the guard's rows.
+        A user with no history of that kind yet only gets it written: no
+        notice for an account's first sign-in, nor for the first one
+        after this was deployed. A new country or browser seen on a
+        session's first request is told only where
+        ``_session_notice_on_sign_in`` says so. Bookkeeping: a failure is
+        logged and the check goes on; a notice that fails keeps the
+        history.
+
+        :param request: the request being authenticated
+        :param int uid: the session's user
+        :param dict seen: ``country`` and ``browser`` as this request shows
+            them (:meth:`_seen_country`, :meth:`_seen_browser`)
+        :param bool first: whether this is the session's first trace
+        """
+        values = [
+            (kind, seen[kind])
+            for kind, known in (("country", known_country), ("browser", known_browser))
+            if known(seen[kind])
+        ]
+        if not values:
+            return
+        Notice = self.env["cloud.session.notice"]
+        tell = Notice._session_notices_on() and (
+            not first or Notice._session_notice_on_sign_in()
+        )
+        origin = {
+            "country": seen["country"] if known_country(seen["country"]) else "",
+            "browser": seen["browser"],
+            "platform": request.httprequest.user_agent.platform or "",
+        }
+
+        def remember(guard):
+            """Write the history; tell of what it did not have."""
+            news = guard._session_guard_seen_write(uid, values)
+            if not (news and tell):
+                return
+            user = guard.env["res.users"].browse(uid)
+            for kind, _value in news:
+                try:
+                    with guard.env.cr.savepoint():
+                        guard.env["cloud.session.notice"]._session_notify(
+                            user, kind, {}, origin=origin,
+                        )
+                except RETRIED_ERRORS:
+                    raise
+                except Exception:  # noqa: BLE001 - the history is kept
+                    _logger.exception(
+                        "[session-guard] could not tell user %s of a new %s",
+                        uid, kind,
+                    )
+
+        try:
+            self._session_guard_own(remember)
+        except Exception:  # noqa: BLE001 - bookkeeping never stops a request
+            _logger.exception(
+                "[session-guard] could not write the history of user %s", uid,
+            )
+
+    @api.model
+    def _session_guard_seen_write(self, uid, values):
+        """Write *values* into the history of *uid*; return the new ones
+        of a kind the history already had.
+
+        :param int uid: the user
+        :param list values: ``(kind, value)`` pairs
+        :return: the ``(kind, value)`` pairs never seen before, leaving
+            out a kind seen for the first time
+        :rtype: list
+        """
+        cr = self.env.cr
+        now = fields.Datetime.now()
+        news = []
+        for kind, value in values:
+            cr.execute("""
+                INSERT INTO cloud_session_seen
+                       (user_id, kind, value, first_seen, last_seen,
+                        create_uid, write_uid, create_date, write_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, kind, value)
+                DO UPDATE SET last_seen = EXCLUDED.last_seen,
+                              write_date = EXCLUDED.write_date
+                RETURNING (xmax = 0)
+            """, (uid, kind, value, now, now, SUPERUSER_ID, SUPERUSER_ID,
+                  now, now), log_exceptions=False)
+            if not cr.fetchone()[0]:
+                continue
+            cr.execute("""
+                SELECT 1 FROM cloud_session_seen
+                 WHERE user_id = %s AND kind = %s AND value != %s LIMIT 1
+            """, (uid, kind, value))
+            if cr.fetchone():
+                news.append((kind, value))
+        return news
 
     def _session_guard_new_cursor(self):
         """Return a new cursor that may write, apart from the request's.

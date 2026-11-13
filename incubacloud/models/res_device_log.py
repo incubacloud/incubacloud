@@ -32,11 +32,13 @@ all devices" no longer sees it (review of #74, 13-nov-2026).
 """
 import logging
 import re
+from contextlib import nullcontext
 
 from odoo import api, http, models
 from odoo.http import SessionExpiredException, root
 
-from .cloud_session_guard import CLOSED_MARK, SESSION_IDENTIFIER_LENGTH
+from ..net import real_ip
+from .cloud_session_guard import CLOSED_MARK, SESSION_IDENTIFIER_LENGTH, known_country
 
 _logger = logging.getLogger(__name__)
 
@@ -73,7 +75,69 @@ class ResDeviceLog(models.Model):
                 "the request goes on", request.session.uid,
             )
             self.env.cr.rollback()
-        return super()._update_device(request)
+        before = self._ic_traces(request)
+        result = super()._update_device(request)
+        if self._ic_traces(request) != before:
+            self._ic_fill_country(request)
+        return result
+
+    @api.model
+    def _ic_traces(self, request):
+        """Return the session's traces as they stand, to tell whether
+        Odoo wrote a row (a new trace, or one refreshed after an hour).
+
+        :param request: the request being authenticated
+        :rtype: list
+        """
+        return [
+            (trace.get("platform"), trace.get("browser"),
+             trace.get("ip_address"), trace.get("last_activity"))
+            for trace in request.session.get("_trace") or []
+        ]
+
+    @api.model
+    def _ic_fill_country(self, request):
+        """Give the row Odoo just wrote the country the CDN states.
+
+        Odoo writes the country its GeoIP finds, and behind a CDN the
+        image usually carries no GeoIP database: the row would name none,
+        and "Sessions and access" shows the countries of each session.
+        Only behind a CDN with its country header (``net/real_ip``), as
+        the session guard reads it, and only on rows with no country:
+        one source per database. By its English name, as Odoo's GeoIP
+        writes it. On the cursor Odoo wrote with: a new one when the
+        request's is read-only. A failure is logged; the request goes on.
+
+        :param request: the request being authenticated
+        """
+        if not (real_ip.installed() and real_ip.country_header()):
+            return
+        try:
+            code = self.env["cloud.session.guard"]._seen_country(request)
+            if not known_country(code):
+                return
+            name = self.env["res.country"].sudo().with_context(lang="en_US").search(
+                [("code", "=", code)], limit=1,
+            ).name
+            if not name:
+                return
+            if self.env.cr.readonly:
+                self.env.cr.rollback()
+                cursor = self.env.registry.cursor(readonly=False)
+            else:
+                cursor = nullcontext(self.env.cr)
+            with cursor as cr:
+                cr.execute("""
+                    UPDATE res_device_log SET country = %s
+                     WHERE session_identifier = %s AND ip_address = %s
+                       AND country IS NULL
+                """, (name, request.session.sid[:SESSION_IDENTIFIER_LENGTH],
+                      request.httprequest.remote_addr))
+        except Exception:  # noqa: BLE001 - never a 403 of ours
+            _logger.exception(
+                "[session-guard] could not write the country of a session of "
+                "user %s", request.session.uid,
+            )
 
     @api.model
     def _delete_stored_sessions(self, identifiers):

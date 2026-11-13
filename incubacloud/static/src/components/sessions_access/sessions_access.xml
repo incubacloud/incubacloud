@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud.SessionsAccess">
+    <div class="rl-page rl-page--narrow ic-sessions">
+        <div class="rl-phead">
+            <div class="rl-htext">
+                <h1 class="rl-ptitle">Sessions and access</h1>
+                <p class="rl-psub">Where your account is signed in, and the ways in that do not depend on a session.</p>
+            </div>
+        </div>
+
+        <t t-if="state.loading">
+            <div class="rl-stub" role="status" aria-live="polite">
+                <span class="rl-spin" aria-hidden="true"/>
+                <h3>Loading…</h3>
+            </div>
+        </t>
+        <t t-elif="state.error or !state.data">
+            <div class="rl-stub" role="alert">
+                <h3>Could not load your sessions.</h3>
+                <button class="rl-btn rl-btn-ghost" t-on-click="() => this.load()">Try again</button>
+            </div>
+        </t>
+        <t t-else="">
+            <t t-set="data" t-value="state.data"/>
+
+            <!-- This session, and Sign out everywhere -->
+            <section class="rl-card rl-card-pad ic-sessions-section">
+                <h3>This session</h3>
+                <t t-set="current" t-value="currentSession"/>
+                <p t-if="current" class="ic-sessions-line">
+                    <span class="rl-dim">Open since</span> <t t-esc="when(current.first)"/>
+                    <t t-if="current.countries.length"> · <t t-esc="joined(current.countries)"/></t>
+                    · <t t-esc="device(current)"/>
+                </p>
+                <div class="ic-sessions-everywhere">
+                    <t t-if="data.everywhere.mode === 'link'">
+                        <p class="rl-psub" t-esc="data.everywhere.help"/>
+                        <a class="rl-btn rl-btn-danger" t-att-href="data.everywhere.url"
+                           target="_blank" rel="noopener" t-esc="data.everywhere.label"/>
+                    </t>
+                    <t t-else="">
+                        <p class="rl-psub">Signs you out of every session of your account, this one included. Agents and API keys keep working: revoke them one by one below.</p>
+                        <button class="rl-btn rl-btn-danger" t-att-disabled="state.busy"
+                                t-on-click="() => this.signOutEverywhere()">
+                            Sign out everywhere
+                        </button>
+                    </t>
+                </div>
+            </section>
+
+            <!-- The other sessions -->
+            <section class="rl-card rl-card-pad ic-sessions-section">
+                <h3>Recent sessions</h3>
+                <p t-if="!otherSessions.length" class="rl-dim">No other session.</p>
+                <ul t-else="" class="ic-sessions-list">
+                    <li t-foreach="otherSessions" t-as="session" t-key="session_index" class="ic-sessions-row">
+                        <div class="ic-sessions-main">
+                            <div class="ic-sessions-name" t-esc="device(session)"/>
+                            <div class="rl-dim">
+                                <t t-if="session.countries.length"><t t-esc="joined(session.countries)"/> · </t>
+                                <span>Last used</span> <t t-esc="when(session.last)"/>
+                            </div>
+                        </div>
+                        <span t-if="session.active" class="rl-pill ic-sessions-pill">In use</span>
+                        <span t-else="" class="rl-pill rl-pill--bare ic-sessions-pill">Ended</span>
+                    </li>
+                </ul>
+            </section>
+
+            <!-- Closes -->
+            <section class="rl-card rl-card-pad ic-sessions-section">
+                <h3>Sessions closed</h3>
+                <p class="rl-psub">A session is closed, without asking, when it is used from another country or another browser, or after a long time unused. Signing in again is enough.</p>
+                <p t-if="!data.closes.length" class="rl-dim">None closed lately.</p>
+                <ul t-else="" class="ic-sessions-list">
+                    <li t-foreach="data.closes" t-as="close" t-key="close_index" class="ic-sessions-row">
+                        <div class="ic-sessions-main">
+                            <div class="ic-sessions-name" t-esc="reasonLabel(close.reason)"/>
+                            <div class="rl-dim">
+                                <t t-esc="when(close.when)"/>
+                                <t t-if="close.from and close.to"> · <t t-esc="close.from"/> → <t t-esc="close.to"/></t>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </section>
+
+            <!-- Countries and browsers -->
+            <section class="rl-card rl-card-pad ic-sessions-section">
+                <h3>Countries and browsers</h3>
+                <p class="rl-psub">Where your account has been used from. A new one is told to you by email.</p>
+                <div class="ic-sessions-seen">
+                    <div>
+                        <div class="rl-dim">Countries</div>
+                        <p t-if="!data.seen.countries.length">—</p>
+                        <p t-else="" t-esc="joined(data.seen.countries.map((row) => row.name))"/>
+                    </div>
+                    <div>
+                        <div class="rl-dim">Browsers</div>
+                        <p t-if="!data.seen.browsers.length">—</p>
+                        <p t-else="" t-esc="joined(data.seen.browsers.map((row) => row.name))"/>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Ways in -->
+            <section class="rl-card rl-card-pad ic-sessions-section">
+                <h3>Ways in</h3>
+                <p class="rl-psub">They keep working after you sign out everywhere. Revoke any you do not recognise.</p>
+                <p t-if="!data.doors.length" class="rl-dim">None.</p>
+                <ul t-else="" class="ic-sessions-list">
+                    <li t-foreach="data.doors" t-as="door" t-key="door.kind + ':' + door.id" class="ic-sessions-row">
+                        <div class="ic-sessions-main">
+                            <div class="ic-sessions-name">
+                                <span class="rl-dim"><t t-esc="door.kind_label"/>:</span> <t t-esc="door.name"/>
+                            </div>
+                            <div class="rl-dim">
+                                <t t-if="door.detail"><t t-esc="door.detail"/> · </t>
+                                <span>Created</span> <t t-esc="when(door.created)"/>
+                                <t t-if="door.last_used"> · <span>Last used</span> <t t-esc="when(door.last_used)"/></t>
+                            </div>
+                        </div>
+                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.busy"
+                                t-on-click="() => this.revoke(door)">Revoke</button>
+                    </li>
+                </ul>
+                <p t-foreach="data.links" t-as="link" t-key="link_index" class="ic-sessions-link">
+                    <span t-if="link.help" class="rl-dim" t-esc="link.help"/>
+                    <a t-att-href="link.url" target="_blank" rel="noopener" t-esc="link.label"/>
+                </p>
+            </section>
+        </t>
+    </div>
+</t>
+
+</templates>

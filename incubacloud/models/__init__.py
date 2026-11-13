@@ -64,6 +64,7 @@ from . import cloud_instance_session
 from . import cloud_host_session
 from . import cloud_session_guard
 from . import res_device_log
+from . import cloud_session_access
 from . import cloud_host_terminal_route
 from . import queue_job_ext
 

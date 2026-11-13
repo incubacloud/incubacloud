@@ -298,6 +298,12 @@ export class AppHeader extends Component {
         return false;
     }
 
+    /** Open Sessions and access. */
+    goToSessions() {
+        this.state.showUserMenu = false;
+        this.env.navigate("sessions");
+    }
+
     onAvatarLoad() {
         this.state.avatarLoaded = true;
     }

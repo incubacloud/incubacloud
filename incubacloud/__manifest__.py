@@ -70,6 +70,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/alert_policy_data.xml",
         "data/instance_liveness_cron.xml",
         "data/mail_digest_templates.xml",
+        "data/mail_session_notice.xml",
         "data/notification_digest_cron.xml",
         "data/traefik_templates.xml",
         "data/move_recovery_cron.xml",
