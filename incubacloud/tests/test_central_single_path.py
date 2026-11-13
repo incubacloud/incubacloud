@@ -10,9 +10,11 @@ the central's host, and the switch turned off puts back what they used.
 import asyncio
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import requests
 import yaml
 
 from odoo import fields
@@ -100,7 +102,10 @@ class TestTheAuthority(BaseCase):
         )
         self.assertIn("PRIVATE KEY", leaf_key)
         self.assertLess(
-            abs((expires - datetime.utcnow()) - central.LEAF_LIFETIME),
+            abs(
+                (expires - datetime.now(timezone.utc).replace(tzinfo=None))
+                - central.LEAF_LIFETIME
+            ),
             timedelta(minutes=5),
         )
 
@@ -110,10 +115,9 @@ class TestTheAuthority(BaseCase):
         cert, _key = central.mint_authority("test CA")
         with tempfile.TemporaryDirectory() as directory:
             path = central.ca_bundle_path(cert, directory)
-            with open(path, encoding="utf-8") as bundle:
-                text = bundle.read()
-            with open(certifi.where(), encoding="utf-8") as roots:
-                self.assertIn(roots.read().strip()[:200], text)
+            text = Path(path).read_text(encoding="utf-8")
+            roots = Path(certifi.where()).read_text(encoding="utf-8")
+            self.assertIn(roots.strip()[:200], text)
             self.assertIn(cert.strip(), text)
             # Named by the authority: the same file the next time.
             self.assertEqual(central.ca_bundle_path(cert, directory), path)
@@ -201,8 +205,7 @@ class TestTheSettings(SinglePathCase):
     def test_verify_is_a_bundle_with_the_authority(self):
         cert, _key = self.settings._ensure_metrics_ca()
         path = self.env["cloud.settings"]._central_tls_verify()
-        with open(path, encoding="utf-8") as bundle:
-            self.assertIn(cert.strip(), bundle.read())
+        self.assertIn(cert.strip(), Path(path).read_text(encoding="utf-8"))
 
     def test_a_central_recorded_before_keeps_the_switch_off(self):
         """The update leaves a running central on the paths it had."""
@@ -385,6 +388,13 @@ class TestTheName(SinglePathCase):
         alert = self._alert("metrics_central_name_down")
         self.assertEqual(alert.level, "critical")
         self.assertIn("tls", alert.message)
+
+    def test_a_record_pointing_elsewhere_once_in_use_is_pending_not_down(self):
+        """After a move to another server, the record is the step left."""
+        self._check(_OK)
+        self._check(_DNS)
+        self.assertFalse(self._alert("metrics_central_name_down"))
+        self.assertTrue(self._alert("metrics_central_dns_pending"))
 
     def test_switched_off_the_urls_of_before_come_back(self):
         self._check(_OK)
@@ -592,7 +602,7 @@ class TestTheAgents(SinglePathCase):
 class TestTheReads(TransactionCase):
 
     def test_a_query_verifies_with_what_it_is_given(self):
-        response = MagicMock()
+        response = MagicMock(spec=requests.Response)
         response.json.return_value = {"status": "success", "data": {"result": []}}
         with patch(
             "odoo.addons.incubacloud.models.cloud_metric_rule.requests.get",

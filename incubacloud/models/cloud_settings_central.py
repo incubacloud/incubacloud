@@ -24,6 +24,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from odoo import _, api, fields, models
 from odoo.tools.sql import column_exists
@@ -101,7 +102,7 @@ def mint_authority(common_name, now=None):
     key = ec.generate_private_key(ec.SECP256R1())
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     public = key.public_key()
-    cert = (
+    cert_pem = (
         x509.CertificateBuilder()
         .subject_name(subject)
         .issuer_name(subject)
@@ -118,8 +119,9 @@ def mint_authority(common_name, now=None):
         ), critical=True)
         .add_extension(x509.SubjectKeyIdentifier.from_public_key(public), critical=False)
         .sign(key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+        .decode()
     )
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode()
     key_pem = key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -152,7 +154,7 @@ def issue_leaf(ca_cert_pem, ca_key_pem, name, now=None):
     key = ec.generate_private_key(ec.SECP256R1())
     public = key.public_key()
     not_after = now + LEAF_LIFETIME
-    cert = (
+    cert_pem = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)]))
         .issuer_name(ca_cert.subject)
@@ -177,8 +179,9 @@ def issue_leaf(ca_cert_pem, ca_key_pem, name, now=None):
             critical=False,
         )
         .sign(ca_key, hashes.SHA256())
+        .public_bytes(serialization.Encoding.PEM)
+        .decode()
     )
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode()
     key_pem = key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -204,21 +207,17 @@ def ca_bundle_path(ca_pem, directory=None):
     import certifi
 
     digest = hashlib.sha256(ca_pem.encode()).hexdigest()[:16]
-    path = os.path.join(
-        directory or tempfile.gettempdir(), f"incubacloud-central-ca-{digest}.pem",
-    )
-    if os.path.exists(path):
-        return path
-    with open(certifi.where(), encoding="utf-8") as roots:
-        bundle = roots.read().rstrip("\n") + "\n" + ca_pem.strip() + "\n"
-    handle, staged = tempfile.mkstemp(
-        dir=os.path.dirname(path), prefix=".incubacloud-central-ca-",
-    )
+    path = Path(directory or tempfile.gettempdir()) / f"incubacloud-central-ca-{digest}.pem"
+    if path.exists():
+        return str(path)
+    roots = Path(certifi.where()).read_text(encoding="utf-8")
+    bundle = roots.rstrip("\n") + "\n" + ca_pem.strip() + "\n"
+    handle, staged = tempfile.mkstemp(dir=path.parent, prefix=".incubacloud-central-ca-")
     with os.fdopen(handle, "w", encoding="utf-8") as out:
         out.write(bundle)
     os.chmod(staged, 0o644)
     os.replace(staged, path)
-    return path
+    return str(path)
 
 
 class CloudSettings(models.Model):
@@ -615,11 +614,12 @@ class CloudSettings(models.Model):
     def _central_name_alerts(self, old_state, new_state, outcome):
         """Raise or close the alerts of the single name after a check.
 
-        Not in force yet: a failure keeps ``metrics_central_dns_pending``
-        open, a success moves the URLs (:meth:`_central_name_ready`). In
-        force: entering ``failing`` raises ``metrics_central_name_down``,
-        critical, with the layer; ``ok`` closes it. There is no path to
-        fall back to.
+        Not in force yet, or a DNS answer that is not the central's
+        server: ``metrics_central_dns_pending``, naming the record. A
+        success moves the URLs (:meth:`_central_name_ready`). In force:
+        entering ``failing`` on any other layer raises
+        ``metrics_central_name_down``, critical, with the layer; ``ok``
+        closes both. There is no path to fall back to.
 
         :param str old_state: before the check.
         :param str new_state: after it.
@@ -630,9 +630,13 @@ class CloudSettings(models.Model):
             return
         if new_state == "ok":
             Alert.resolve_alert("metrics_central_name_down")
+            Alert.resolve_alert("metrics_central_dns_pending")
             self._central_name_ready()
             return
-        if not self._central_single_in_force():
+        if not self._central_single_in_force() or outcome.get("layer") == "dns":
+            # Not in use yet, or a record that does not point at the
+            # central's server: after a move to another server, the record
+            # is the step left (RB-35). The alert names it.
             self._central_dns_pending(outcome)
             return
         if new_state == "failing" and old_state != "failing":
