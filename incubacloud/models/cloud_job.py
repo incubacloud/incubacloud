@@ -36,7 +36,6 @@ from .abstract_executor import (
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
     DETACHED_GIVE_UP_AFTER_CAP_S,
-    DETACHED_HOLDS_QUEUE_MAX_S,
     DETACHED_RECONCILE_WAIT_S,
     DETACHED_STOP_WAIT_S,
     PARKED_OVERDUE_S,
@@ -1932,18 +1931,21 @@ class CloudJob(models.Model):
         """Return the ended job whose step on the server holds one queue.
 
         A job closed while a step past its point of no return was left
-        running, or could not be asked (``holds_queue_since``,
-        ``AbstractExecutor._hold_queue``): its queue waits for that step
-        as for a running job, until the reconciliation finds it ended and
-        deletes the row, or ``DETACHED_HOLDS_QUEUE_MAX_S`` after the mark,
-        so that a row nobody removes (a stopped cron, an executor gone)
-        does not hold it for good. A step before the point of no return
-        never holds: it is stopped, and a move's rollback must not wait
-        for a server that is gone. Nor does the row of a server the
-        instance does not live on: every step with a point of no return
-        runs on its instance's server, and an instance recovered on
-        another one no longer waits for the one that died. Hidden
-        background types never hold.
+        running, or while a step that may still run could not be asked
+        (``holds_queue_since``, ``AbstractExecutor._hold_queue``): its
+        queue waits for that step as for a running job, until the
+        reconciliation finds it ended or stops it and deletes the row, or
+        a person lets it go (``_release_held_queue_by_hand``). No expiry
+        (13-nov-2026): if the server does not come back nothing of the
+        instance can run there, and if it does the step and the next job
+        must not run together. A row nobody looks at any more is said by
+        an alert (``_alert_unwatched_queue_holds``); an executor no longer
+        installed deletes its row at once (``_clean_up_lost_job``). The
+        row of a server the instance does not live on holds nothing: an
+        instance recovered on another one no longer waits for the one
+        that died, and a move's rollback does not wait for its target.
+        Hidden background types never hold (``_checkpoint_holds_queue``
+        says the same of one row).
 
         :param int instance_id: the instance whose queue to look at, or
         :param int host_id: the host whose host-level queue to look at
@@ -1964,20 +1966,43 @@ class CloudJob(models.Model):
             scope_sql, params = (
                 "j.host_id = %s AND j.instance_id IS NULL", [host_id],
             )
-        since = fields.Datetime.now() - timedelta(
-            seconds=DETACHED_HOLDS_QUEUE_MAX_S,
-        )
         self.env.cr.execute(
             "SELECT j.id FROM cloud_job_checkpoint k"
             " JOIN cloud_job j ON j.id = k.job_id"
             " JOIN cloud_job_type t ON t.id = j.job_type_id"
             f" WHERE {scope_sql} AND t.code NOT IN %s"
-            " AND j.state NOT IN %s AND k.holds_queue_since > %s"
+            " AND j.state NOT IN %s AND k.holds_queue_since IS NOT NULL"
             " ORDER BY k.holds_queue_since, j.id LIMIT 1",
-            (*params, hidden, tuple(self._running_states), since),
+            (*params, hidden, tuple(self._running_states)),
         )
         row = self.env.cr.fetchone()
         return row[0] if row else 0
+
+    @api.model
+    def _checkpoint_holds_queue(self, job, row, marked=False):
+        """Whether *row*, *job*'s checkpoint, keeps the job's queue busy.
+
+        What ``_server_holder`` reads for one row: marked
+        (``holds_queue_since``, or *marked*), the job ended, of a type
+        that is not hidden, and for an instance job on the server the
+        instance lives on.
+
+        :param job: the ``cloud.job``
+        :param row: its ``cloud.job.checkpoint``
+        :param bool marked: the caller marked the row on a cursor whose
+            write this one may not see (``_queue_hold_marked``)
+        :rtype: bool
+        """
+        job = job.sudo()
+        if not (row.holds_queue_since or marked):
+            return False
+        if job.state in self._running_states:
+            return False
+        if job.job_type_id.code in self._get_hidden_job_types():
+            return False
+        if job.instance_id:
+            return row.host_id == job.instance_id.host_id
+        return True
 
     @api.model
     def _queue_held_by(self, instance_id, host_id):
@@ -2664,6 +2689,32 @@ class CloudJob(models.Model):
             if holders[scope]:
                 waits[job_id] = holders[scope]
         return waits
+
+    @api.model
+    def _unanswered_holders(self, holder_ids):
+        """Say which of the jobs holding a queue wait for a server that does not answer.
+
+        Of *holder_ids* (``_server_waits``), those whose checkpoint the
+        reconciliation tried and could not reach the server for
+        (``reconcile_tried_at``): the first job of their queue says it
+        waits for the server to answer, not for the job to end. Before
+        the reconciliation's first try it says the general text.
+
+        :param holder_ids: ids of ended jobs that hold a queue
+        :return: those whose server did not answer
+        :rtype: set
+        """
+        if not holder_ids:
+            return set()
+        self.env["cloud.job.checkpoint"].sudo().flush_model(
+            ["job_id", "reconcile_tried_at"],
+        )
+        self.env.cr.execute(
+            "SELECT job_id FROM cloud_job_checkpoint WHERE job_id IN %s"
+            " AND reconcile_tried_at IS NOT NULL",
+            (tuple(holder_ids),),
+        )
+        return {row[0] for row in self.env.cr.fetchall()}
 
     def _channel_wait(self):
         """Say what this job, held back by the gate, waits for.
@@ -3429,14 +3480,68 @@ class CloudJob(models.Model):
 
         Called by ``cloud.alert.write`` for every alert dismissed. Only
         the codes that hold a queue, on a job, matter; the dispatcher
-        itself decides whether the queue is free now.
+        itself decides whether the queue is free now. A
+        ``_QUEUE_HELD_ALERT_CODE`` closed by a person lets go of the queue
+        its job's checkpoint held (``_release_held_queue_by_hand``); one
+        the platform closed found the server back, and lets go of
+        nothing.
         """
         codes = self._queue_holding_alert_codes()
         scopes = set()
         for alert in alerts.sudo():
             if alert.code in codes and alert.job_id:
                 scopes.add(alert.job_id._scope_of())
+            elif (
+                alert.code == self._QUEUE_HELD_ALERT_CODE and alert.job_id
+                and alert.resolution == "manual"
+                and self._release_held_queue_by_hand(alert.job_id)
+            ):
+                scopes.add(alert.job_id._scope_of())
         self._schedule_dispatch(scopes)
+
+    @api.model
+    def _release_held_queue_by_hand(self, job):
+        """Let go of the queue *job*'s checkpoint holds, as a person decided.
+
+        The person closed the ``_QUEUE_HELD_ALERT_CODE`` alert: the row is
+        deleted, not only its mark, which the reconciliation's next pass
+        would write again; the job log says so. What the job left on its
+        server is not cleaned up any more: the alert said what to stop and
+        remove there. Only a row that holds the queue of an ended job: a
+        run of the job again has a row of its own.
+
+        :param job: the ``cloud.job``
+        :return: whether a row was deleted
+        :rtype: bool
+        """
+        job = job.sudo()
+        self.sudo().flush_model(["state"])
+        self.env["cloud.job.checkpoint"].sudo().flush_model()
+        self.env.cr.execute(
+            "DELETE FROM cloud_job_checkpoint k USING cloud_job j"
+            " WHERE k.job_id = %s AND j.id = k.job_id"
+            " AND k.holds_queue_since IS NOT NULL AND j.state NOT IN %s"
+            " RETURNING k.id",
+            (job.id, tuple(self._running_states)),
+        )
+        if not self.env.cr.fetchall():
+            return False
+        self.env["cloud.job.checkpoint"].invalidate_model()
+        self.env["cloud.job.log.chunk"].sudo().create({
+            "job_id": job.id,
+            "source": "system",
+            "content": self.env._(
+                "A person closed the alert of the server that did not"
+                " answer and let this job's queue go on: whether its step"
+                " stopped there was never confirmed, and the panel no longer"
+                " cleans up after it. Check the server's /tmp by hand."
+            ),
+        })
+        _logger.warning(
+            "cloud.job %s: its queue was let go by hand, its server never"
+            " confirmed its step stopped", job.id,
+        )
+        return True
 
     @api.model
     def _cron_dispatch_queued(self):
@@ -3450,9 +3555,22 @@ class CloudJob(models.Model):
         woken in (``_waiter_order``): the first slot that frees goes to
         the first of them.
 
+        First it says the queues held for a server nobody asks any more
+        (``_alert_unwatched_queue_holds``): another cron than the
+        reconciliation, which would say it otherwise.
+
         :return: how many entries were dispatched
         :rtype: int
         """
+        try:
+            with self.env.cr.savepoint():
+                self._alert_unwatched_queue_holds()
+        except Exception:
+            # The sweep serves the queues all the same.
+            _logger.exception(
+                "cloud.job: the alerts of the queues held while the"
+                " reconciliation is stopped failed",
+            )
         waiting = self.sudo().search([
             ("state", "=", "queued"), ("blocked_alert_id", "=", False),
         ])
@@ -3640,6 +3758,15 @@ class CloudJob(models.Model):
     #: kept unclosed it read *Cancelling…*, held its host's build lock and
     #: was cleaned up again at every pass (13-nov-2026).
     _RECONCILE_CLOSE_PATIENCE_MINUTES = 30
+    #: Minutes a checkpoint holds its queue for a server that does not
+    #: answer before an alert asks a person to look (13-nov-2026): three
+    #: tries of the reconciliation (``_RECONCILE_CHECKPOINT_RETRY_MINUTES``).
+    #: A server's reboot takes less, an outage of its provider more. The
+    #: hold does not end with the alert: closing it by hand ends it
+    #: (``_release_held_queue_by_hand``).
+    _QUEUE_HELD_ALERT_MINUTES = 30
+    #: The alert of a queue held for a server that does not answer.
+    _QUEUE_HELD_ALERT_CODE = "job_queue_held_unreachable"
 
     @staticmethod
     def _worker_lost_message(env):
@@ -4267,6 +4394,13 @@ class CloudJob(models.Model):
         line in the job log and, for a cancelled job, an alert
         (``_alert_cleanup_given_up``).
 
+        A row that holds the job's queue for a server that did not answer
+        is never given up (13-nov-2026): it is tried at every pass until
+        the server answers, and ``_QUEUE_HELD_ALERT_MINUTES`` after the
+        mark an alert asks a person to look (``_alert_queue_held``). A
+        pass that reaches the server, or whose row no longer holds, closes
+        that alert.
+
         A row that held the job's queue (``holds_queue_since``) serves the
         queue once it is gone, as the end of a job does, or once the close
         let go of the queue and kept the row for a directory left behind
@@ -4277,13 +4411,42 @@ class CloudJob(models.Model):
         """
         # As the database has it now: this pass may have set it
         # (``_hold_queue``, on a cursor of its own) after the row was read.
+        # A cursor that read the row before still sees it as it was: what
+        # this pass did is the executor's to say.
         row.invalidate_recordset(["holds_queue_since"])
         released = executor._queue_hold_released
-        held = bool(row.holds_queue_since) or released
+        marked = executor._queue_hold_marked
+        held = bool(row.holds_queue_since) or released or marked
+        held_since = row.holds_queue_since or fields.Datetime.now()
+        waiting = (
+            executor._detached_left_alive
+            and executor._left_alive_why == "unreachable"
+            and not released
+            and self._checkpoint_holds_queue(executor.job, row, marked=marked)
+        )
         if not executor._detached_left_alive:
             executor._forget_checkpoint()
-        else:
+        elif not waiting:
             self._give_up_if_past_cap(executor, row)
+        Job = self.with_env(row.env)
+        try:
+            with row.env.cr.savepoint():
+                if not waiting:
+                    Job._resolve_queue_held_alert(executor.job)
+                elif held_since <= fields.Datetime.now() - timedelta(
+                    minutes=self._QUEUE_HELD_ALERT_MINUTES,
+                ):
+                    Job._alert_queue_held(
+                        executor.job, row,
+                        executor._checkpoint_data.get("plan") or [],
+                    )
+        except Exception:
+            # The row and the queue are as the pass left them; the next
+            # pass raises or closes the alert again.
+            _logger.exception(
+                "cloud.job %s: the alert of its held queue failed",
+                executor.job.id,
+            )
         if held and (released or not executor._checkpoint):
             job = executor.job.sudo()
             job._schedule_dispatch({job._scope_of()})
@@ -4292,7 +4455,8 @@ class CloudJob(models.Model):
     def _give_up_if_past_cap(self, executor, row):
         """Delete a row whose server was not reached, once well past its cap.
 
-        The alert is raised on the durable cursor that deletes the row,
+        Not called for a row that holds its queue for a server that did
+        not answer (``_forget_or_give_up``). The alert is raised on the durable cursor that deletes the row,
         in a savepoint: an alert that fails lets the row go all the same
         (kept, it would be given up again at every pass), and a commit
         that fails keeps both, so the next pass gives the row up again and
@@ -4382,29 +4546,7 @@ class CloudJob(models.Model):
         job = job.with_env(env).sudo()
         if job.state != "cancelled":
             return
-        index = row.next_index
-        step = plan[index] if index < len(plan) else None
-        directory = (
-            detached_dir(env, job.id, row.queue_job_uuid or "", index)
-            if step and (step[2] or {}).get("detached") and row.detached_started
-            else None
-        )
-        data = row._data()
-        paths = list(data.get("private_uploads") or ())
-        if data.get("job_dir"):
-            paths.append(data["job_dir"])
-        left = []
-        if directory:
-            left.append(env._(
-                "the step '%(step)s' may still run in %(dir)s; stop it with"
-                " `bash %(dir)s/ctl.sh stop %(dir)s 20`, then remove the"
-                " directory",
-                step=step[0], dir=directory,
-            ))
-        if paths:
-            left.append(env._(
-                "remove %(paths)s", paths=" ".join(paths),
-            ))
+        step, directory, paths, left = self._left_on_server(job, row, plan)
         host = row.host_id or job.host_id
         if reason == "past_no_return":
             why = env._(
@@ -4454,6 +4596,202 @@ class CloudJob(models.Model):
                 "paths": paths,
             },
         )
+
+    @api.model
+    def _left_on_server(self, job, row, plan):
+        """Say what *job* may have left on its server, from its checkpoint alone.
+
+        The step apart, when it had started there (``detached_started``),
+        with its directory and the command that stops it; the job's
+        working directory and the secrets it staged. Read from the row
+        only, so a job without an executor is said the same way.
+
+        :param job: the ``cloud.job``, in ``self.env``
+        :param row: the job's ``cloud.job.checkpoint``
+        :param list plan: the checkpoint's plan, ``[label, command, opts]``
+        :return: ``(step, directory, paths, left)``: the plan's step at
+            ``next_index`` or None, its directory or None, the paths to
+            remove, and the sentences that say what to do on the server
+        :rtype: tuple
+        """
+        env = self.env
+        index = row.next_index
+        step = plan[index] if index < len(plan) else None
+        directory = (
+            detached_dir(env, job.id, row.queue_job_uuid or "", index)
+            if step and (step[2] or {}).get("detached") and row.detached_started
+            else None
+        )
+        data = row._data()
+        paths = list(data.get("private_uploads") or ())
+        if data.get("job_dir"):
+            paths.append(data["job_dir"])
+        left = []
+        if directory:
+            left.append(env._(
+                "the step '%(step)s' may still run in %(dir)s; stop it with"
+                " `bash %(dir)s/ctl.sh stop %(dir)s 20`, then remove the"
+                " directory",
+                step=step[0], dir=directory,
+            ))
+        if paths:
+            left.append(env._(
+                "remove %(paths)s", paths=" ".join(paths),
+            ))
+        return step, directory, paths, left
+
+    @api.model
+    def _alert_queue_held(self, job, row, plan, reconcile_last=None):
+        """Ask a person to look at a queue held for a server that does not answer.
+
+        *job* ended with a step that may still run on its server, which
+        has not answered since: its checkpoint keeps its queue busy, with
+        no end (``_server_holder``), and ``_QUEUE_HELD_ALERT_MINUTES``
+        after the mark the ``_QUEUE_HELD_ALERT_CODE`` alert says so,
+        whatever the job's end, on its server and its instance, one per
+        job (``raise_alert`` by the job's key refreshes it). It says what
+        to stop and remove on the server (``_left_on_server``), and that
+        closing the alert lets the queue go on
+        (``_release_held_queue_by_hand``). Raised by the reconciliation,
+        which keeps trying; or by the sweep of the queues when the
+        reconciliation has not run for as long (*reconcile_last*,
+        ``_alert_unwatched_queue_holds``), and nothing is trying.
+
+        Written with ``self.env``.
+
+        :param job: the ``cloud.job``
+        :param row: the job's ``cloud.job.checkpoint``
+        :param list plan: the checkpoint's plan, ``[label, command, opts]``
+        :param reconcile_last: for the sweep, when the reconciliation last
+            ran (``False`` when it never did); None for the reconciliation
+        """
+        env = self.env
+        job = job.with_env(env).sudo()
+        row = row.with_env(env)
+        step, directory, paths, left = self._left_on_server(job, row, plan)
+        host = row.host_id or job.host_id
+        if job.instance_id:
+            queue = env._(
+                "the queue of instance %(name)s", name=job.instance_id.name or "",
+            )
+        else:
+            queue = env._(
+                "the queue of server %(host)s", host=host.name or "",
+            )
+        on_server = "; ".join(left) or env._("look for what the job left in /tmp")
+        if reconcile_last is None:
+            message = env._(
+                "Server %(host)s does not answer, and job #%(job)s (%(type)s)"
+                " may still run a step there: %(queue)s waits until the panel"
+                " confirms it stopped, and the panel keeps trying. On the"
+                " server, %(left)s. If the server will not come back, or once"
+                " you have stopped the step by hand, dismiss this alert: the"
+                " queue goes on.",
+                host=host.name or "", job=job.id,
+                type=job.job_type_id.name or job.name, queue=queue,
+                left=on_server,
+            )
+        else:
+            message = env._(
+                "The reconciliation of lost jobs has not run since"
+                " %(since)s, so nothing checks whether job #%(job)s"
+                " (%(type)s) still runs a step on server %(host)s: %(queue)s"
+                " waits. Turn the scheduled action of the reconciliation back"
+                " on; or, once you have stopped the step by hand, dismiss this"
+                " alert: the queue goes on. On the server, %(left)s.",
+                since=(
+                    fields.Datetime.to_string(reconcile_last) + " UTC"
+                    if reconcile_last else env._("it was installed")
+                ),
+                job=job.id, type=job.job_type_id.name or job.name,
+                host=host.name or "", queue=queue, left=on_server,
+            )
+        env["cloud.alert"].with_context(ic_job_cancelled=False).raise_alert(
+            self._QUEUE_HELD_ALERT_CODE,
+            message,
+            level="warning",
+            host=host,
+            instance=job.instance_id or None,
+            job=job,
+            key=str(job.id),
+            payload={
+                "step": step[0] if step else None,
+                "directory": directory,
+                "paths": paths,
+                "held_since": fields.Datetime.to_string(row.holds_queue_since),
+            },
+        )
+
+    @api.model
+    def _resolve_queue_held_alert(self, job):
+        """Close *job*'s ``_QUEUE_HELD_ALERT_CODE`` alert, if one is open.
+
+        For a row that no longer holds a queue for a server that does not
+        answer: the server answered, or the row went. Closed as the
+        platform (``resolution`` ``auto``), which lets go of nothing
+        (``_on_holding_alert_closed``). Written with ``self.env``.
+
+        :param job: the ``cloud.job``
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        for alert in Alert.search([
+            ("code", "=", self._QUEUE_HELD_ALERT_CODE),
+            ("job_id", "=", job.id),
+            ("state", "=", "active"),
+        ]):
+            Alert.resolve_alert(
+                self._QUEUE_HELD_ALERT_CODE,
+                host=alert.host_id or None,
+                instance=alert.instance_id or None,
+                key=alert.dedup_key or None,
+            )
+
+    @api.model
+    def _alert_unwatched_queue_holds(self):
+        """Say the queues held while the reconciliation does not run.
+
+        A held queue ends only when the reconciliation reaches the server
+        or a person closes its alert, and the reconciliation raises that
+        alert (``_forget_or_give_up``). With its scheduled action off, or
+        not run for ``_QUEUE_HELD_ALERT_MINUTES``, nothing would say a
+        queue waits: the sweep of the queues, another scheduled action,
+        raises the alert then for every row marked that long ago, holding
+        its queue, without one open (``_alert_queue_held``).
+
+        :return: how many alerts were raised
+        :rtype: int
+        """
+        cron = self.env.ref(
+            "incubacloud.cron_cloud_job_reconcile_lost", raise_if_not_found=False,
+        )
+        cron = cron.sudo() if cron else None
+        cutoff = fields.Datetime.now() - timedelta(
+            minutes=self._QUEUE_HELD_ALERT_MINUTES,
+        )
+        if cron and cron.active and cron.lastcall and cron.lastcall >= cutoff:
+            return 0
+        rows = self.env["cloud.job.checkpoint"].sudo().search([
+            ("holds_queue_since", "!=", False),
+            ("holds_queue_since", "<=", cutoff),
+        ])
+        if not rows:
+            return 0
+        open_ids = set(self.env["cloud.alert"].sudo().search([
+            ("code", "=", self._QUEUE_HELD_ALERT_CODE),
+            ("job_id", "in", rows.job_id.ids),
+            ("state", "=", "active"),
+        ]).job_id.ids)
+        raised = 0
+        for row in rows:
+            job = row.job_id
+            if job.id in open_ids or not self._checkpoint_holds_queue(job, row):
+                continue
+            self._alert_queue_held(
+                job, row, row._data().get("plan") or [],
+                reconcile_last=(cron.lastcall if cron else False) or False,
+            )
+            raised += 1
+        return raised
 
     @api.model
     def _close_lost_job(self, job_id, claimed=None, release=None):
@@ -5259,6 +5597,7 @@ class CloudJob(models.Model):
         parked = self._parked_rows()
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
+        unanswered = self._unanswered_holders(set(server_waits.values()))
         stopping = self._stopping_ids([("id", "in", self.ids)])
         build_waits = self._build_waits()
 
@@ -5305,6 +5644,8 @@ class CloudJob(models.Model):
                 # First in a queue that waits for an ended job's step on
                 # the server: that job's id.
                 "server_wait": server_waits.get(job.id),
+                # That job's server did not answer the reconciliation.
+                "server_unanswered": server_waits.get(job.id) in unanswered,
                 # Deferred by another build on its server: the job it
                 # waits for, when the reader may read it, and its next try.
                 "build_wait": build_waits.get(job.id),
@@ -5550,7 +5891,10 @@ class CloudJob(models.Model):
         reconciliation closes it). The lists say *Cancelling…* and name
         it as what a queued job waits behind; ``_scope_busy`` keeps its
         target busy for the same queue.job. A checkpoint a hook closed and
-        kept is the reconciliation's, which alerts if it gives up.
+        kept is the reconciliation's, which alerts if it gives up; while it
+        holds the job's queue (``holds_queue_since``) the job still stops:
+        whether its step stopped on the server is not known yet
+        (13-nov-2026).
 
         The checkpoint, and so its half of this and the alert, exists only
         for a job whose plan has a ``detached`` step: a job without one
@@ -5565,14 +5909,17 @@ class CloudJob(models.Model):
         Job = self.sudo()
         Job.flush_model(["state", "queue_job_uuid"])
         self.env["queue.job"].sudo().flush_model(["state", "uuid"])
-        self.env["cloud.job.checkpoint"].sudo().flush_model(["job_id", "closed"])
+        self.env["cloud.job.checkpoint"].sudo().flush_model(
+            ["job_id", "closed", "holds_queue_since"],
+        )
         query = Job._search(Domain.AND([domain, [("state", "=", "cancelled")]]))
         self.env.cr.execute(SQL(
             "SELECT j.id FROM cloud_job j WHERE j.id IN %s AND ("
             " EXISTS (SELECT 1 FROM queue_job q"
             "  WHERE q.uuid = j.queue_job_uuid AND q.state IN %s)"
             " OR EXISTS (SELECT 1 FROM cloud_job_checkpoint k"
-            "  WHERE k.job_id = j.id AND k.closed IS NOT TRUE))",
+            "  WHERE k.job_id = j.id AND (k.closed IS NOT TRUE"
+            "   OR k.holds_queue_since IS NOT NULL)))",
             query.subselect(), tuple(self._running_states),
         ))
         return {row[0] for row in self.env.cr.fetchall()}
@@ -5629,6 +5976,7 @@ class CloudJob(models.Model):
         parked = self._parked_rows()
         waits = self._channel_waits()
         server_waits = self._server_waits(places)
+        unanswered = self._unanswered_holders(set(server_waits.values()))
         stopping = self._stopping_ids([("id", "in", self.ids)])
         build_waits = self._build_waits()
         result = []
@@ -5669,6 +6017,9 @@ class CloudJob(models.Model):
                     # ``_format``.
                     "channel_wait": waits.get(job.id),
                     "server_wait": server_waits.get(job.id),
+                    "server_unanswered": (
+                        server_waits.get(job.id) in unanswered
+                    ),
                     "build_wait": build_waits.get(job.id),
                     **job._parked_fields(parked.get(job.id)),
                     "create_date": job.create_date,

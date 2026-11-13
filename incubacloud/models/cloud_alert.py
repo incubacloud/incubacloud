@@ -822,12 +822,19 @@ class CloudAlert(models.Model):
 
         Conflict alerts (``pip_conflict`` / ``addon_conflict``) are
         excluded — they gate deploys and have their own Resolve flow,
-        so a bulk sweep must never silence them. Record rules scope
+        so a bulk sweep must never silence them. So is the alert of a
+        queue held for a server that does not answer
+        (``job_queue_held_unreachable``): closing it lets that queue go
+        on beside a step that may still run, one decision per job
+        (``cloud.job._release_held_queue_by_hand``). Record rules scope
         the search; the write access check covers the rest.
         """
         domain = [
             ("state", "=", "active"),
-            ("code", "not in", ("pip_conflict", "addon_conflict")),
+            ("code", "not in", (
+                "pip_conflict", "addon_conflict",
+                self.env["cloud.job"]._QUEUE_HELD_ALERT_CODE,
+            )),
         ]
         if level_filter in ("warning", "critical"):
             domain.append(("level", "=", level_filter))

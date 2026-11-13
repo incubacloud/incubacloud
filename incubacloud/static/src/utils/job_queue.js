@@ -49,12 +49,21 @@ export function channelWaitLabel(wait) {
 /**
  * Label of a job first in a queue that waits for a step an ended job left
  * running on its server (``server_wait`` of ``_format``): past its point
- * of no return, the step is let end before the next job starts.
+ * of no return, the step is let end before the next job starts; on a
+ * server that does not answer (``server_unanswered``), the panel waits
+ * for it to answer and confirm the step stopped.
  *
  * @param {number} jobId the ended job's id
- * @returns {string} "Queued · waiting for job #41 to end on the server"
+ * @param {boolean} [unanswered] the reconciliation could not reach that
+ *     job's server
+ * @returns {string} "Queued · waiting for job #41 to end on the server",
+ *     or "Queued · waiting for the server to answer, to confirm job #41
+ *     stopped"
  */
-export function serverWaitLabel(jobId) {
+export function serverWaitLabel(jobId, unanswered = false) {
+    if (unanswered) {
+        return _t("Queued · waiting for the server to answer, to confirm job #%s stopped", jobId);
+    }
     return _t("Queued · waiting for job #%s to end on the server", jobId);
 }
 
@@ -149,7 +158,8 @@ export function jobTone(state, stopping = false) {
  * "Cancelling…" until it has.
  *
  * @param {{state: string, queue_position?: number, channel_wait?: object|null,
- *     server_wait?: number|null, build_wait?: object|null, on_server?: boolean,
+ *     server_wait?: number|null, server_unanswered?: boolean,
+ *     build_wait?: object|null, on_server?: boolean,
  *     parked_until?: string|null, stopping?: boolean}} job a ``_format``
  *     or ``_format_history`` row
  * @returns {string}
@@ -163,7 +173,7 @@ export function jobStateText(job) {
             return channelWaitLabel(job.channel_wait);
         }
         return job.server_wait
-            ? serverWaitLabel(job.server_wait)
+            ? serverWaitLabel(job.server_wait, job.server_unanswered)
             : queuedLabel(job.queue_position);
     }
     if (job.state === "pending" && job.build_wait) {

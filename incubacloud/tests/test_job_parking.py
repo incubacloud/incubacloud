@@ -936,8 +936,9 @@ class TestAParkedJobIsStopped(_StopCase):
         # No hook a second time.
         self.assertEqual(sum(1 for e in cls.instances if e.closed), 1)
 
-    def test_a_server_never_reached_again_is_given_up(self):
-        """Past the step's cap and an hour, the row goes, with a line."""
+    def test_a_server_never_reached_again_holds_its_queue(self):
+        """Its step started there: past the step's cap and an hour, the row
+        stays and holds the queue, with no give-up (13-nov-2026)."""
         cls = self._parked()
         self.job.cancel_job()
         self.env.flush_all()
@@ -965,35 +966,26 @@ class TestAParkedJobIsStopped(_StopCase):
         )
         self._retry_due()
         self._reconcile(cls, connect=TestLostContact._refused)
-        self.assertFalse(self._row())
-        self.assertTrue(any("gives up on it" in line for line in self._log()))
-        # The operator is told what may still be on the server, and how
-        # to stop it: the job's log is one nobody reads again.
-        alert = self._given_up_alert()
-        self.assertEqual(len(alert), 1)
-        self.assertEqual(alert.host_id, self.host)
-        self.assertEqual(alert.level, "warning")
-        self.assertIn(f"#{self.job.id}", alert.message)
-        self.assertIn(self.host.name, alert.message)
-        self.assertIn("has not answered since", alert.message)
-        self.assertIn(
-            f"`bash {self.directory}/ctl.sh stop {self.directory} 20`",
-            alert.message,
-        )
-        self.assertIn(cls.instances[0]._job_dir_path, alert.message)
-        self.assertEqual(alert.payload["directory"], self.directory)
-        self.assertIn(cls.instances[0]._job_dir_path, alert.payload["paths"])
-        # Said the first time and when it gave up, not at every pass.
+        row = self._row()
+        self.assertTrue(row)
+        self.assertTrue(row.holds_queue_since)
+        self.assertTrue(self.env["cloud.job"]._scope_busy(None, self.host.id))
+        self.assertFalse(any("gives up on it" in line for line in self._log()))
+        self.assertFalse(self._given_up_alert())
+        # Said by the close that marked it, not at every pass.
         unreachable = [
             line for line in self._log()
             if line.startswith("The server could not be reached to stop")
         ]
-        self.assertEqual(len(unreachable), 2)
+        self.assertEqual(len(unreachable), 1)
 
-    def _due_to_give_up(self):
+    def _due_to_give_up(self, started=True):
         """Cancelled, closed without reaching its server, an hour past the cap.
 
-        :return: the executor class; the next pass gives the row up
+        :param bool started: its step had started on the server; when not,
+            the row holds no queue (cancelled between two steps)
+        :return: the executor class; the next pass gives the row up when
+            the step had not started
         """
         cls = self._parked()
         self.job.cancel_job()
@@ -1005,8 +997,14 @@ class TestAParkedJobIsStopped(_StopCase):
             "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
         })
         self._reconcile(cls, connect=TestLostContact._refused)
+        if not started:
+            self._not_started()
         self._past_the_cap()
         return cls
+
+    def _not_started(self):
+        """The row as one of a job cancelled between two steps: no mark."""
+        self._row().write({"detached_started": False, "holds_queue_since": False})
 
     def _past_the_cap(self):
         """Put the step's start and the job's close three hours back."""
@@ -1021,7 +1019,7 @@ class TestAParkedJobIsStopped(_StopCase):
 
     def test_an_alert_that_fails_lets_the_row_go(self):
         """Kept, the row would be given up again at every pass."""
-        cls = self._due_to_give_up()
+        cls = self._due_to_give_up(started=False)
         with patch.object(
             type(self.env["cloud.alert"]), "raise_alert", autospec=True,
             side_effect=RuntimeError("the alert broke"),
@@ -1035,7 +1033,7 @@ class TestAParkedJobIsStopped(_StopCase):
 
     def test_the_alert_raised_again_is_the_same_one(self):
         """A pass whose commit failed gives the row up again: one alert."""
-        cls = self._due_to_give_up()
+        cls = self._due_to_give_up(started=False)
         row = self._row()
         plan = row._data()["plan"]
         Job = self.env["cloud.job"]
@@ -1078,6 +1076,8 @@ class TestAParkedJobIsStopped(_StopCase):
         self._reconcile(cls, connect=TestLostContact._refused)
         self.assertEqual(self.job.state, "failed")
         self.assertTrue(self._row())
+        # A step that started holds its queue instead (test_detached_hold).
+        self._not_started()
         self._past_the_cap()
         self._reconcile(cls, connect=TestLostContact._refused)
         self.assertFalse(self._row())

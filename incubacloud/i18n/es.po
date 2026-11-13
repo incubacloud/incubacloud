@@ -22405,14 +22405,16 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__holds_queue_since
 msgid ""
 "Since when the row keeps its job's queue busy: a step past the job's point "
-"of no return was left running, or could not be asked, when the job was "
-"closed. Counted by cloud.job._scope_busy until the row goes or "
-"DETACHED_HOLDS_QUEUE_MAX_S pass."
+"of no return was left running, or a step that may still run could not be "
+"asked, when the job was closed. Counted by cloud.job._scope_busy until the "
+"row goes: the reconciliation finds the step ended or stops it, or a person "
+"closes the alert of the held queue."
 msgstr ""
 "Desde cuándo la fila mantiene ocupada la cola de su trabajo: al cerrarse el "
-"trabajo, un paso pasado su punto de no retorno quedó en marcha o no se pudo "
-"consultar. cloud.job._scope_busy la cuenta hasta que la fila desaparece o "
-"pasan DETACHED_HOLDS_QUEUE_MAX_S."
+"trabajo, un paso pasado su punto de no retorno quedó en marcha, o no se pudo "
+"consultar un paso que quizá siga en marcha. cloud.job._scope_busy la cuenta "
+"hasta que la fila desaparece: la conciliación encuentra el paso terminado o "
+"lo detiene, o una persona cierra la alerta de la cola retenida."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_checkpoint__step_started_at
@@ -24266,3 +24268,73 @@ msgstr ""
 "%(name)s, obtenido cuando el nombre se publicaba en el 443. El proxy sirve "
 "ese o el del panel tras cada recarga, y los agentes lo rechazan: elimínelo "
 "del almacén como indica RB-35."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"A person closed the alert of the server that did not answer and let this "
+"job's queue go on: whether its step stopped there was never confirmed, and "
+"the panel no longer cleans up after it. Check the server's /tmp by hand."
+msgstr ""
+"Una persona cerró la alerta del servidor que no respondía y dejó seguir la "
+"cola de este trabajo: nunca se confirmó que su paso se detuviera allí, y el "
+"panel ya no limpia lo que dejó. Revise a mano el /tmp del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "the queue of instance %(name)s"
+msgstr "la cola de la instancia %(name)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "the queue of server %(host)s"
+msgstr "la cola del servidor %(host)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Server %(host)s does not answer, and job #%(job)s (%(type)s) may still run a "
+"step there: %(queue)s waits until the panel confirms it stopped, and the "
+"panel keeps trying. On the server, %(left)s. If the server will not come "
+"back, or once you have stopped the step by hand, dismiss this alert: the "
+"queue goes on."
+msgstr ""
+"El servidor %(host)s no responde y puede que el trabajo #%(job)s (%(type)s) "
+"siga ejecutando un paso en él: %(queue)s espera hasta que el panel confirme "
+"que se detuvo, y el panel lo sigue intentando. En el servidor, %(left)s. Si "
+"el servidor no va a volver, o cuando haya detenido el paso a mano, descarte "
+"esta alerta: la cola seguirá."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"The reconciliation of lost jobs has not run since %(since)s, so nothing "
+"checks whether job #%(job)s (%(type)s) still runs a step on server %(host)s: "
+"%(queue)s waits. Turn the scheduled action of the reconciliation back on; "
+"or, once you have stopped the step by hand, dismiss this alert: the queue "
+"goes on. On the server, %(left)s."
+msgstr ""
+"La conciliación de los trabajos perdidos no se ejecuta desde %(since)s, así "
+"que nada comprueba si el trabajo #%(job)s (%(type)s) sigue ejecutando un "
+"paso en el servidor %(host)s: %(queue)s espera. Vuelva a activar la acción "
+"planificada de la conciliación; o, cuando haya detenido el paso a mano, "
+"descarte esta alerta: la cola seguirá. En el servidor, %(left)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "it was installed"
+msgstr "su instalación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Queued · waiting for the server to answer, to confirm job #%s stopped"
+msgstr ""
+"En cola · esperando a que el servidor responda, para confirmar que el "
+"trabajo #%s se detuvo"
