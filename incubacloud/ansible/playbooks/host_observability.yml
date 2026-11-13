@@ -739,6 +739,10 @@
                 - '-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token'
                 # Survive a central outage instead of dropping samples.
                 - '-remoteWrite.maxDiskUsagePerURL=512MB'
+                # The queue in the volume below, not in the container's
+                # layer: a re-apply recreates the container, and the queue
+                # went with it (spike of 13-nov-2026).
+                - '-remoteWrite.tmpDataPath=/vmagentdata'
           {% if ic_central_ca %}
                 # The central's single name: its certificate is signed by
                 # the panel's authority, trusted here for it alone.

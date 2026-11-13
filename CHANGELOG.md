@@ -118,6 +118,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **vmagent keeps its queue across a re-apply.** Its compose file mounted
+  a volume at `/vmagentdata` that it did not use: without
+  `-remoteWrite.tmpDataPath` the queue of what the central had not taken
+  yet lived in the container, and every re-apply of the agents, which
+  recreates it, lost it. It now lives in that volume. `AGENTS_REVISION`
+  is 3: the update re-applies every installed server's agents, five per
+  pass of the observability cron, whatever the central's switch; only
+  vmagent is recreated, which stops its scraping for a few seconds and
+  drops what its queue held at that moment, one last time. A new
+  remote-write URL still starts a queue of its own.
 - **A job cancelled while parked keeps its checkpoint until its close
   (#71).** The reconciliation let it go while cleaning up, before the
   close; a close that then found the job's rows held, or raised, left a

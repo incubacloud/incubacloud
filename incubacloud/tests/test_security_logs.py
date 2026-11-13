@@ -314,8 +314,9 @@ class TestTheExecutorAndTheSwitch(CorePermissionMixin, ObservabilityExecutorCase
         )
         self.assertIn("cadvisor, vmagent did not", errors[0])
 
-    def test_the_revision_is_two(self):
-        self.assertEqual(AGENTS_REVISION, 2)
+    def test_the_revision_is_three(self):
+        """Three since vmagent keeps its queue in its volume (13-nov-2026)."""
+        self.assertEqual(AGENTS_REVISION, 3)
 
     def _succeed(self, sent, **facts):
         executor = self._make(ObservabilityAgentsExecutor)

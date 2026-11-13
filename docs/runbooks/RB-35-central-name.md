@@ -10,6 +10,8 @@ on its server's platform port (`https://metrics.example.com:9443`), with a
 certificate the panel's own authority signs. There is no other path to fall back to:
 while the name does not answer, the agents keep what they cannot send in their queues
 (512 MB per URL for vmagent, 64 MB for Fluent Bit) and send it when it answers again.
+vmagent keeps its queue in its volume, so a re-apply of the agents keeps it too; a new
+URL starts a queue of its own.
 See the operations guide, "The single path".
 
 ## Symptoms

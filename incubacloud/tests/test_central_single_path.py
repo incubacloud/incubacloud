@@ -467,6 +467,14 @@ class TestTheAgentsFiles(BaseCase):
         self.assertEqual(loki["tls.ca_file"], "/etc/central-ca.pem")
         self.assertEqual(loki["http_user"], "acct")
 
+    def test_vmagent_keeps_its_queue_in_its_volume(self):
+        """A re-apply recreates the container: the queue must not live in it (H4)."""
+        for ca in ("", self._CA):
+            with self.subTest(authority=bool(ca)):
+                vmagent = self._vmagent(ic_central_ca=ca)
+                self.assertIn("-remoteWrite.tmpDataPath=/vmagentdata", vmagent["command"])
+                self.assertIn("vmagent-data:/vmagentdata", vmagent["volumes"])
+
     def test_vmagent_trusts_the_authority_only_when_given(self):
         flag = "-remoteWrite.tlsCAFile=/etc/central-ca.pem"
         self.assertNotIn(flag, self._vmagent(ic_central_ca="")["command"])
