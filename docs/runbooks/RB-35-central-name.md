@@ -117,9 +117,12 @@ server's agents refuse the central and queue: do it at a quiet hour, all at once
 4. Where a module that extends the panel sends the authority to other panels, it
    sends the new one with its next push; each of those panels must re-apply its own
    servers' agents the same way.
-5. Check: `metrics_last_seen` moves on every host, the charts read, and no
-   `metrics_central_writer_outside` stays open. The panel's own reads use a bundle
-   named by the authority's digest, so they take the new one at once.
+5. Check each host's `metrics_last_seen`: a host where it does not move after its
+   re-apply still refuses the central, so re-apply it again (step 3). Go by
+   `metrics_last_seen` alone: `metrics_central_writer_outside` does not name these
+   servers, as their last 401 from the address the panel has explains their silence.
+   The panel's own reads use a bundle named by the authority's digest, so they take
+   the new one at once.
 
 ## Rollback
 
