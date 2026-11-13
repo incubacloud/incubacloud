@@ -954,11 +954,14 @@ class CloudHost(models.Model):
             and h.metrics_agents_write_url != public,
         )
         healthy = settings._direct_central_healthy()
+        # On the central's single name an empty record is a URL of before,
+        # never the one in force: those hosts move too.
+        unrecorded = "" if settings._central_single_in_force() else public
         queued = 0
         for host in hosts:
             if not host._observability_target():
                 continue
-            installed = host.metrics_agents_write_url or public
+            installed = host.metrics_agents_write_url or unrecorded
             if installed != host._metrics_remote_write_url():
                 reason = "direct path changed"
             elif host._direct_untried_probes():

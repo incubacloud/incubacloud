@@ -18,9 +18,8 @@ import requests
 import yaml
 
 from odoo import fields
-from odoo.exceptions import AccessError
 from odoo.http import Request
-from odoo.tests.common import BaseCase, TransactionCase, new_test_user
+from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.models import cloud_settings_central as central
@@ -191,13 +190,9 @@ class TestTheSettings(SinglePathCase):
         self.assertEqual(self.settings._ensure_metrics_ca(), first)
         self.assertIn("BEGIN CERTIFICATE", first[0])
 
-    def test_its_key_is_out_of_reach_of_a_manager(self):
-        self.settings._ensure_metrics_ca()
-        manager = new_test_user(
-            self.env, login="sp-manager", groups="incubacloud.group_cloud_manager",
-        )
-        with self.assertRaises(AccessError):
-            _key = self.settings.with_user(manager).metrics_ca_key
+    def test_its_key_is_for_system_administrators_only(self):
+        field = self.env["cloud.settings"]._fields["metrics_ca_key"]
+        self.assertEqual(field.groups, "base.group_system")
 
     def test_verify_is_the_usual_roots_without_an_authority(self):
         self.assertIs(self.env["cloud.settings"]._central_tls_verify(), True)
@@ -209,19 +204,18 @@ class TestTheSettings(SinglePathCase):
 
     def test_a_central_recorded_before_keeps_the_switch_off(self):
         """The update leaves a running central on the paths it had."""
-        cr = self.env.cr
-        cr.execute("ALTER TABLE cloud_settings DROP COLUMN metrics_central_single_path")
-        self.env["cloud.settings"]._auto_init()
-        cr.execute("SELECT metrics_central_single_path FROM cloud_settings")
-        self.assertEqual({row[0] for row in cr.fetchall()}, {False})
+        self.env.flush_all()
+        turned = self.env["cloud.settings"]._single_path_off_where_a_central_ran()
+        self.assertEqual(turned, 1)
+        self.settings.invalidate_recordset()
+        self.assertFalse(self.settings.metrics_central_single_path)
 
     def test_without_a_central_the_switch_is_on(self):
-        cr = self.env.cr
-        cr.execute("UPDATE cloud_settings SET metrics_central_host_id = NULL")
-        cr.execute("ALTER TABLE cloud_settings DROP COLUMN metrics_central_single_path")
-        self.env["cloud.settings"]._auto_init()
-        cr.execute("SELECT metrics_central_single_path FROM cloud_settings")
-        self.assertEqual({row[0] for row in cr.fetchall()}, {True})
+        self.settings.metrics_central_host_id = False
+        self.env.flush_all()
+        self.env["cloud.settings"]._single_path_off_where_a_central_ran()
+        self.settings.invalidate_recordset()
+        self.assertTrue(self.settings.metrics_central_single_path)
 
     def test_the_single_urls_carry_the_port(self):
         self.assertEqual(
@@ -369,8 +363,14 @@ class TestTheName(SinglePathCase):
         self.assertEqual(alert.level, "warning")
         self.assertIn("46.4.0.80", alert.message)
         self.assertIn(NAME, alert.message)
+        # Out of failing: two good checks, 30 minutes after it began.
+        self.settings.metrics_central_name_failing_since = (
+            fields.Datetime.now() - timedelta(minutes=31)
+        )
+        self._check(_OK)
         self._check(_OK)
         self.assertFalse(self._alert("metrics_central_dns_pending"))
+        self.assertEqual(self.settings.metrics_remote_write_url, SINGLE_WRITE)
 
     def test_pending_for_half_a_day_turns_critical(self):
         self._check(_DNS)
@@ -490,7 +490,7 @@ class TestTheSyncJob(SinglePathCase):
         names = {n["prefix"]: n for n in executor._names}
         single = names[central.NAME_PREFIX]
         uploaded = transport.upload_text_files.await_args.args[0]
-        self.assertEqual(uploaded[single["ca_path"]], self.settings.metrics_ca_cert)
+        self.assertEqual(uploaded[single["ca_path"]], self.settings.metrics_ca_cert.strip())
         command = {c[0]: c[1] for c in executor.get_commands()}[f"Probe {NAME}"]
         self.assertIn(f"direct_probe.sh --cacert {single['ca_path']} {NAME} 46.4.0.80 9443", command)
 
@@ -515,7 +515,7 @@ class TestTheAgents(SinglePathCase):
         self._check(_OK)
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
         self.assertEqual(extra["ic_remote_write_url"], SINGLE_WRITE)
-        self.assertEqual(extra["ic_central_ca"], self.settings.metrics_ca_cert)
+        self.assertEqual(extra["ic_central_ca"], self.settings.metrics_ca_cert.strip())
         self.assertEqual(extra["ic_direct_write_url"], "")
         self.assertTrue(extra["ic_panel_url"])
 

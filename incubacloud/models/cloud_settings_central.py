@@ -290,20 +290,34 @@ class CloudSettings(models.Model):
         changes for a running central on update). Only when the column is
         new, so a switch turned on later is never turned back.
         """
-        cr = self.env.cr
-        new = not column_exists(cr, self._table, "metrics_central_single_path")
+        new = not column_exists(self.env.cr, self._table, "metrics_central_single_path")
         result = super()._auto_init()
-        if new and column_exists(cr, self._table, "metrics_central_host_id"):
-            cr.execute(
-                f"UPDATE {self._table} SET metrics_central_single_path = FALSE "  # noqa: S608 — fixed name
-                "WHERE metrics_central_host_id IS NOT NULL"
-            )
-            if cr.rowcount:
-                _logger.info(
-                    "[metrics] a central was already recorded: its single "
-                    "path stays off until it is turned on",
-                )
+        if new:
+            self._single_path_off_where_a_central_ran()
         return result
+
+    def _single_path_off_where_a_central_ran(self):
+        """Turn the single path off on a settings row that records a central.
+
+        What the update does once, when the switch's column is created
+        (:meth:`_auto_init`). With SQL: the registry is still being built.
+
+        :return: how many rows it turned off.
+        :rtype: int
+        """
+        cr = self.env.cr
+        if not column_exists(cr, self._table, "metrics_central_host_id"):
+            return 0
+        cr.execute(
+            f"UPDATE {self._table} SET metrics_central_single_path = FALSE "  # noqa: S608 — fixed name
+            "WHERE metrics_central_host_id IS NOT NULL"
+        )
+        if cr.rowcount:
+            _logger.info(
+                "[metrics] a central was already recorded: its single "
+                "path stays off until it is turned on",
+            )
+        return cr.rowcount
 
     def _compute_metrics_central_name_checked_at(self):
         """Show when the central's name was last checked."""
