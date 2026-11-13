@@ -101,6 +101,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   through a payload key (`discard_history`) that `enqueue` refuses to
   anyone without superuser rights, so `call_kw` and the MCP cannot set it.
   On the central's own host, or with no central, it deploys as before.
+- **Tests: a Chrome that hangs before the page opens is stopped before
+  the second run.** A browser test based on `ChromeStartRetry`
+  (`incubacloud/tests/_browser.py`) runs once more, with one warning in
+  the log, when Chrome does not answer the cookies or the order to open
+  the page. When it hung on the first cookie it was left running beside
+  the new one until Odoo killed it at the end of the test. It is now
+  stopped first, as Odoo closes its own. Any other failure, and a second
+  hang, fail as before. The mixin's tests run Odoo's `browser_js` over a
+  simulated Chrome.
 
 ---
 
