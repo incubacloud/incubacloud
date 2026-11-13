@@ -144,6 +144,24 @@ class TestGuardedTools(
         )
         self.assertEqual(ICP.get_param("incubacloud.audit_log_retention_days"), "1")
 
+    def test_the_host_shell_retention_asks_from_what_to_what_and_changes_once_approved(
+        self,
+    ):
+        """Shortening the host shell retention says from what to what, and
+        changes once approved."""
+        settings = self.env["cloud.settings"]._get()
+        settings.host_session_retention_days = 365
+        args = {"section": "general", "values": {"host_session_retention_days": 30}}
+        first = self._call_tool(self.key, "update_settings", args, FORM_CAPABILITIES)
+        self.assertIn(
+            '"host_session_retention_days": 365 → 30',
+            first["inputRequests"]["confirm"]["params"]["message"],
+        )
+        self.assertFalse(
+            self._confirmed_call(self.key, "update_settings", args)["isError"]
+        )
+        self.assertEqual(settings.host_session_retention_days, 30)
+
     def test_an_ordinary_setting_asks_nothing(self):
         """A setting that is not a security one changes without asking."""
         result = self._call_tool(

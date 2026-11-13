@@ -17,6 +17,7 @@ SAVE_GENERAL_PARAMS = (
     "autoassign_enabled",
     "default_backup_backend_id",
     "audit_log_retention_days",
+    "host_session_retention_days",
     "job_log_retention_days",
     "job_retention_days",
     "staging_autopurge_days",
@@ -63,8 +64,8 @@ MCP_KEYS = ("mcp_oauth_issuer", "mcp_resource")
 #: General settings that always ask for approval (D2). Who may write to
 #: the central opens its port to every address when set to ``anyone``.
 SENSITIVE_GENERAL = (
-    "audit_log_retention_days", "trusted_proxy_ranges",
-    "metrics_central_write_access",
+    "audit_log_retention_days", "host_session_retention_days",
+    "trusted_proxy_ranges", "metrics_central_write_access",
 )
 #: General settings that ask for approval when lowered: with fewer hours the
 #: copies a move froze on their old servers are removed sooner (0: at the
@@ -393,7 +394,7 @@ class McpToolsSettings(models.AbstractModel):
     def _sensitive_changes(self, args):
         """Return ``[(field, current, new)]`` of the security settings changed.
 
-        D2: the audit retention, the trusted proxy ranges, every rate
+        D2: the audit and host shell retentions, the trusted proxy ranges, every rate
         limit, the agents' issuer and MCP URL, and what ``get_config``
         hides on this panel (observability, on a managed panel); and the hours a
         move's frozen copy is kept, when lowered (``LOWERED_ASKS_GENERAL``).

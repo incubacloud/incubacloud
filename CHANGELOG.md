@@ -117,7 +117,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the only way these rows are deleted; they stay immutable, and the
   access rules still deny deleting them below the system group. A row of
   a user since removed stays until then: it is the proof of who came in.
-  Spanish translation included.
+  The MCP's `update_settings` can change it, asking for approval each
+  time, like the audit retention. Spanish translation included.
 
 ### Changed
 
