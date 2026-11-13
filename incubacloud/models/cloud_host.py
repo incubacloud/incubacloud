@@ -142,6 +142,13 @@ def strip_marked_blocks(text, mark):
     return "".join(kept)
 
 
+#: Context key of a write of ``allowed_ssh_ips`` that keeps the list the
+#: host itself answered (``_ssh_allowlist_change``), not an edit by hand,
+#: which reaches the host only with the next hardening run
+#: (``ssh_allowlist_unconfirmed``).
+SSH_ALLOWLIST_CONFIRMED = "ssh_allowlist_confirmed"
+
+
 def _ssh_allow_entries(raw):
     """Split an ``allowed_ssh_ips`` value into its entries.
 
@@ -2269,7 +2276,9 @@ class CloudHost(models.Model):
         changes live and in the ruleset the host boots with, nothing is
         restarted, and an open session survives. The list the host then
         allows is kept in ``allowed_ssh_ips``, so a later hardening run,
-        which rebuilds the list from that field, does not undo it.
+        which rebuilds the list from that field, does not undo it; kept
+        as confirmed (``SSH_ALLOWLIST_CONFIRMED``), the host's own answer
+        and no edit by hand.
 
         Synchronous on purpose: the panel that moves to another host
         calls it, from its old host, on each of its customer's servers
@@ -2353,12 +2362,16 @@ class CloudHost(models.Model):
         # move did not start (QA, 20-oct-2026).
         with read_committed_cursor(self.env.registry) as cr:
             durable = api.Environment(cr, self.env.uid, self.env.context)
-            durable["cloud.host"].sudo().browse(self.id).write(
+            durable["cloud.host"].sudo().with_context(
+                **{SSH_ALLOWLIST_CONFIRMED: True},
+            ).browse(self.id).write(
                 {"allowed_ssh_ips": match.group(1).strip()},
             )
         # Not flushed: a value this transaction still meant to write is
         # older than the host's own answer, just kept.
-        self.invalidate_recordset(["allowed_ssh_ips"], flush=False)
+        self.invalidate_recordset(
+            ["allowed_ssh_ips", "ssh_allowlist_unconfirmed"], flush=False,
+        )
         _logger.info(
             "SSH allowlist of host %s (%s %s): %s",
             self.name, op, ", ".join(ips), match.group(1),

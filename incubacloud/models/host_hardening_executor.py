@@ -412,6 +412,9 @@ class HostHardeningExecutor(AnsibleExecutor):
             # whether 80/443 were closed to all but the trusted proxies.
             "hardening_recipe": self._recipe_fingerprint(),
             "hardening_cdn_only": bool(self._http_allowlist),
+            # The run built the host's SSH list from allowed_ssh_ips: an
+            # edit made by hand before it is on the host now.
+            "ssh_allowlist_unconfirmed": False,
         }
         if self._is_first_run:
             vals["port"] = self._new_port
