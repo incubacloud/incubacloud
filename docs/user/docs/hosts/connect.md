@@ -105,6 +105,14 @@ again later.
 Create the host, then click **Trust SSH Key** in its action bar. Green = we
 got in, and the panel keeps the host's key to check it on every connection.
 
+If the server later presents another key — restored from an image,
+reinstalled or replaced — the panel refuses to connect, revokes the trusted
+key and raises a critical alert; jobs on the host stop. Click **Trust SSH
+Key** again once you know why the key changed, and compare the fingerprint
+it shows with the server's own, which
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` prints from your
+provider's console.
+
 ### 4. Run `Check`
 
 This probes the host: kernel, distro, free disk, RAM, Docker presence.

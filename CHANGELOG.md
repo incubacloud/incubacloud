@@ -199,6 +199,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **A server that no longer presents its trusted SSH host key says so
+  (#89).** A connection refused because the server presented another
+  host key — the server restored from an image, reinstalled or replaced,
+  or something else answering at its address — failed every job and
+  scheduled action on the host with asyncssh's `Host key is not trusted`,
+  and nobody was told. The panel now revokes the trusted key, keeping its
+  fingerprint, audits the refusal and raises the critical
+  `host_key_revoked` in words of its own; the job fails saying the likely
+  causes and the way out. *Trust SSH Key* restores trust and, the key it
+  captures being another one, raises `host_key_changed` for a person to
+  confirm: nothing trusts the presented key on its own. Only a refusal
+  of the key the connection checked revokes: one trusted meanwhile stays.
+  Covered: what connects through the host's transport (jobs, scheduled
+  actions, actions on the host's page); an Ansible-backed job connects
+  through OpenSSH and still fails with its `Host key verification
+  failed`.
 - **vmagent keeps its queue across a re-apply.** Its compose file mounted
   a volume at `/vmagentdata` that it did not use: without
   `-remoteWrite.tmpDataPath` the queue of what the central had not taken
