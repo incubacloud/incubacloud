@@ -6141,15 +6141,17 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__revoked_key_fingerprint
 msgid ""
-"Fingerprint of the key dropped by the last endpoint change. Kept so the next"
-" capture can be compared against it: an identical fingerprint proves the "
-"machine did not change, which is the one check that does not depend on an "
-"external channel. Cleared once that comparison has been made."
+"Fingerprint of the key dropped by the last endpoint change, or because the "
+"server no longer presented it. Kept so the next capture can be compared "
+"against it: an identical fingerprint proves the machine did not change, "
+"which is the one check that does not depend on an external channel. Cleared "
+"once that comparison has been made."
 msgstr ""
-"Huella de la clave descartada por el último cambio de endpoint. Se conserva "
-"para poder comparar la siguiente captura contra ella: una huella idéntica "
-"demuestra que la máquina no cambió, que es la única comprobación que no "
-"depende de un canal externo. Se borra una vez hecha esa comparación."
+"Huella de la clave descartada por el último cambio de endpoint, o porque el "
+"servidor dejó de presentarla. Se conserva para poder comparar la siguiente "
+"captura contra ella: una huella idéntica demuestra que la máquina no cambió,"
+" que es la única comprobación que no depende de un canal externo. Se borra "
+"una vez hecha esa comparación."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__last_rebuild_fingerprint
@@ -14506,6 +14508,29 @@ msgstr ""
 "sigue siendo la misma máquina."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"SSH host key revoked for '%(name)s': the server at %(ip)s:%(port)s did not "
+"present the trusted key (%(fingerprint)s), so the panel refused to connect. "
+"This is expected after the server was restored from an image, reinstalled or"
+" replaced; if none of that happened, something else may be answering at that"
+" address. Jobs on this host fail until you run 'Trust SSH Key'. Run it once "
+"you know why the key changed: the panel then shows the new key's "
+"fingerprint, which you can compare with the server's own, for example from "
+"your provider's console."
+msgstr ""
+"Se revocó la clave SSH de host de '%(name)s': el servidor en %(ip)s:%(port)s"
+" no presentó la clave confiada (%(fingerprint)s), así que el panel rechazó "
+"la conexión. Es lo esperado si el servidor se restauró desde una imagen, se "
+"reinstaló o se sustituyó; si no ocurrió nada de eso, puede que otra máquina "
+"esté respondiendo en esa dirección. Los trabajos en este host fallarán hasta"
+" que ejecute 'Confiar clave SSH'. Ejecútelo cuando sepa por qué cambió la "
+"clave: el panel le mostrará entonces la huella de la clave nueva, que puede "
+"comparar con la del propio servidor, por ejemplo desde la consola de su "
+"proveedor."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "SSH host key trusted: %s"
@@ -16475,6 +16500,25 @@ msgid ""
 msgstr ""
 "La receta de seguridad no se ha aplicado a este host desde el panel. "
 "«Aplicar hardening» la instala; es opcional."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"The server '%(name)s' at %(ip)s:%(port)s did not present its trusted SSH "
+"host key, so the connection was refused before anything was sent. This is "
+"expected after the server was restored from an image, reinstalled or "
+"replaced; if none of that happened, something else may be answering at that "
+"address. Jobs on this host stop until you run 'Trust SSH Key' on its page, "
+"once you know why the key changed."
+msgstr ""
+"El servidor '%(name)s' en %(ip)s:%(port)s no presentó su clave SSH de host "
+"confiada, así que la conexión se rechazó antes de enviar nada. Es lo "
+"esperado si el servidor se restauró desde una imagen, se reinstaló o se "
+"sustituyó; si no ocurrió nada de eso, puede que otra máquina esté "
+"respondiendo en esa dirección. Los trabajos en este host se detienen hasta "
+"que ejecute 'Confiar clave SSH' en su página, cuando sepa por qué cambió la "
+"clave."
 
 #. module: incubacloud
 #. odoo-python
