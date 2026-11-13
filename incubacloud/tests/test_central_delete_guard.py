@@ -42,6 +42,11 @@ class CentralGuardCase(ObservabilityExecutorCase):
 
     def setUp(self):
         super().setUp()
+        # Jobs already in the database (a copy of production has some)
+        # are not the test's: _jobs counts only those created after this.
+        self._first_job_id = (
+            self.env["cloud.job"].search([], order="id desc", limit=1).id or 0
+        )
         self.settings.write({"metrics_central_host_id": self.host.id})
         self.other = self.env["cloud.host"].create({
             "name": "HY",
@@ -60,8 +65,14 @@ class CentralGuardCase(ObservabilityExecutorCase):
             return getattr(self.controller, method)(**kwargs)
 
     def _jobs(self, code, host=None):
-        """Return the jobs of type *code* on *host* (any host when None)."""
-        domain = [("job_type_id.code", "=", code)]
+        """Return the jobs of type *code* created by this test on *host*.
+
+        :param host: restrict to this host; any host when None
+        """
+        domain = [
+            ("job_type_id.code", "=", code),
+            ("id", ">", self._first_job_id),
+        ]
         if host is not None:
             domain.append(("host_id", "=", host.id))
         return self.env["cloud.job"].search(domain)
@@ -169,6 +180,9 @@ class TestTheRoutesRefuse(CentralGuardCase):
         self.assertFalse((job.payload or {}).get("discard_history"))
 
 
+# post_install: test_the_flag_is_refused_to_anyone_but_the_platform creates
+# a user, as TestRetireTheCentral does (see the note below).
+@tagged("post_install", "-at_install")
 class TestStartAnEmptyCentral(CentralGuardCase):
 
     def test_it_queues_the_deployment_with_the_flag(self):
@@ -325,7 +339,7 @@ class TestRetireTheCentral(CentralGuardCase):
         self.assertIs(data["metrics_central_retirable"], True)
 
     def test_a_layer_may_refuse_it(self):
-        """The platform's master: its central serves every tenant."""
+        """A layer whose central serves other panels."""
         self.refusal.return_value = "Not here."
         answer = self._call("cloud_monitoring_retire_central")
         data = self._call("cloud_get_general_settings")
