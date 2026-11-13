@@ -662,9 +662,10 @@ class QueueJob(models.Model):
         """Return what a new attempt of *cjob* clears as it starts.
 
         In the transaction that commits before it runs: what an earlier
-        attempt recorded is not its own — a success before a stop, and
-        the reconciliation's claim (a job requeued by hand after it,
-        whose next death is a new one). Nothing for another state.
+        attempt recorded is not its own — a success before a stop, the
+        reconciliation's claim and the sweep's first sight of a dead stop
+        (a job requeued by hand after them, whose next death is a new
+        one, alerted on from its own sight). Nothing for another state.
 
         :param cjob: the ``cloud.job`` whose mirror is written
         :param str new_state: the state being mirrored
@@ -675,7 +676,10 @@ class QueueJob(models.Model):
             return {}
         return {
             name: False
-            for name in ("succeeded_before_cancel", "worker_lost_at")
+            for name in (
+                "succeeded_before_cancel", "worker_lost_at",
+                "found_dead_seen_at",
+            )
             if cjob[name]
         }
 

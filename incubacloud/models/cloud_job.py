@@ -395,7 +395,7 @@ class CloudJob(models.Model):
             " while it ran, its worker found dead and the job not closed"
             " yet: queue_job writes no date when it finds a worker dead,"
             " and the alert of a stop nobody closes counts from here"
-            " (_alert_unclosed_stops)."
+            " (_alert_unclosed_stops). Cleared when the job starts again."
         ),
     )
     date_done = fields.Datetime(
@@ -5202,12 +5202,25 @@ class CloudJob(models.Model):
         The person dismissed its ``_STOP_UNCLOSED_ALERT_CODE`` alert: the
         job is closed as the reconciliation's last step closes it
         (``_close_lost_job_on``), in this transaction, with no hook —
-        what the lost run left is not put back, and its checkpoint, if
-        any, is deleted rather than cleaned up by a later pass. The job
-        log says so. Both rows are locked without waiting: held by a pass
+        what the lost run left is not put back. Its checkpoint, if any,
+        is closed, not deleted: it is all that names a step apart that
+        may still run on the server, and closed it is only a server to
+        clean (``checkpoint``), which the reconciliation's next pass
+        stops and removes, holding the queue if the step is past its
+        point of no return, and alerting with the command if it gives up
+        (13-nov-2026). The job log says so, with the state its instance
+        or server is left in, which no hook put back; and, in the server's
+        log too, when the reconciliation had claimed the job and runs now:
+        its hook may still be putting things back beside the next job of
+        the queue. That is not refused: a hook that hangs is one reason
+        for the alert. Every row is locked without waiting: held by a pass
         of the reconciliation, which is closing it then, nothing is done
         here, and if that pass does not close it the next sweep raises
         the alert again.
+
+        A close that raises at every pass of the reconciliation raises
+        here too, and the dismissal with it: dismissing the alert does
+        not mend that cause, which the server's log names.
 
         :param job: the ``cloud.job``
         :return: whether the job was closed
@@ -5226,7 +5239,26 @@ class CloudJob(models.Model):
             and queue_row["exc_name"] == "JobFoundDead"
         ):
             return False
+        cr.execute(
+            "SELECT id FROM cloud_job_checkpoint WHERE job_id = %s",
+            (job.id,),
+        )
+        checkpoint_ids = tuple(row[0] for row in cr.fetchall())
+        if checkpoint_ids:
+            cr.execute(
+                "SELECT id FROM cloud_job_checkpoint WHERE id IN %s"
+                " FOR NO KEY UPDATE SKIP LOCKED", (checkpoint_ids,),
+            )
+            if len(cr.fetchall()) < len(checkpoint_ids):
+                return False
         case = self._lost_job_succeeded(cr, job_row, "stopped")
+        cron = self.env.ref(
+            "incubacloud.cron_cloud_job_reconcile_lost", raise_if_not_found=False,
+        )
+        hook_running = bool(
+            job_row["worker_lost_at"] and cron
+            and self._cron_runs_now(cron.sudo())
+        )
         if not job_row["worker_lost_at"]:
             cr.execute(
                 "UPDATE cloud_job SET worker_lost_at ="
@@ -5234,23 +5266,62 @@ class CloudJob(models.Model):
                 (job.id,),
             )
         self.env.invalidate_all()
-        self.env["cloud.job.log.chunk"].sudo().create({
-            "job_id": job.id, "source": "system",
-            "content": self.env._(
-                "A person closed the alert of this stop nobody closed: the"
-                " job is closed without putting back what the lost run left"
-                " on its server. Check the instance and the server by hand."
-            ),
-        })
-        self.env.flush_all()
-        closed = self._close_lost_job_on(
-            cr, job.id, claimed=case, release="delete",
+        lines = [self.env._(
+            "A person closed the alert of this stop nobody closed: the"
+            " job is closed without putting back what the lost run left"
+            " on its server."
+        )]
+        if checkpoint_ids:
+            lines.append(self.env._(
+                "What its step apart left on the server is stopped and"
+                " removed by the next pass of the reconciliation of lost"
+                " jobs."
+            ))
+        if hook_running:
+            lines.append(self.env._(
+                "The reconciliation is running now and may still be"
+                " putting back what the lost run left, beside the next job"
+                " of the queue."
+            ))
+        target = job.instance_id or job.host_id
+        state = target and target._fields["state"].convert_to_export(
+            target.state, target,
         )
+        if job.instance_id:
+            lines.append(self.env._(
+                "Instance %(name)s is left %(state)s: check it and the"
+                " server by hand.",
+                name=target.name or "", state=state,
+            ))
+        elif target:
+            lines.append(self.env._(
+                "Server %(name)s is left %(state)s: check it by hand.",
+                name=target.name or "", state=state,
+            ))
+        self.env["cloud.job.log.chunk"].sudo().create({
+            "job_id": job.id, "source": "system", "content": " ".join(lines),
+        })
+        if hook_running:
+            _logger.warning(
+                "cloud.job %s: a stop whose worker died is closed by hand"
+                " while the reconciliation is running: its hook may still"
+                " put things back beside the next job of the queue", job.id,
+            )
+        self.env.flush_all()
+        if checkpoint_ids:
+            # Only a server to clean from now on: closed, it reads neither
+            # as a job to close nor as *Cancelling…*.
+            cr.execute(
+                "UPDATE cloud_job_checkpoint SET closed = TRUE,"
+                " parked = FALSE WHERE id IN %s", (checkpoint_ids,),
+            )
+        closed = self._close_lost_job_on(cr, job.id, claimed=case)
         self.env.invalidate_all()
         if closed:
             _logger.warning(
                 "cloud.job %s: a stop whose worker died was closed by hand,"
-                " without its hook", job.id,
+                " without its hook; %s %s is left %s", job.id,
+                target._name, target.id, target.state or "",
             )
         return closed
 
