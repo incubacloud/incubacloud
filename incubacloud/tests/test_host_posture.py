@@ -766,6 +766,15 @@ class TestHardeningRecordsWhatItApplied(TransactionCase):
         # And still the failure it used to clear.
         self.assertIn("hardening_failed", codes)
 
+    def test_a_run_confirms_a_list_edited_by_hand(self):
+        """The run builds the host's list from the field: what was typed
+        since the last run is on the host now."""
+        host = self._host()
+        host.write({"allowed_ssh_ips": "203.0.113.7"})
+        self.assertTrue(host.ssh_allowlist_unconfirmed)
+        self._run_on_success(host)
+        self.assertFalse(host.ssh_allowlist_unconfirmed)
+
     def test_a_run_whose_login_proof_fails_records_nothing(self):
         host = self._host(hardening_recipe="0123456789ab")
         with self.assertRaises(RuntimeError):
