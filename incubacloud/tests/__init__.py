@@ -257,6 +257,7 @@ from . import test_instance_memory_settings
 from . import test_edge_guard_document
 from . import test_edge_guard_job
 from . import test_edge_guard_migration
+from . import test_shared_guard
 from . import test_probe_verdict_migration
 from . import test_website_info_router
 from . import test_host_generated_key

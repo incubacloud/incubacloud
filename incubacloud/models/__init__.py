@@ -44,6 +44,7 @@ from . import cloud_host_observability
 from . import cloud_host_direct
 from . import cloud_host_central
 from . import cloud_host_edge_guard
+from . import cloud_host_shared_guard
 from . import cloud_settings_direct
 from . import cloud_settings_central
 from . import cloud_host_posture

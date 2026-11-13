@@ -5,6 +5,11 @@ services:
     image: traefik:v2.11
     networks:
       shared:
+        # A fixed, locally administered address: the host's guard on this
+        # network (shared_guard.sh) lets only this address open
+        # connections to the instances. Without it Docker draws a new one
+        # at every restart and recreate of the proxy.
+        mac_address: "02:69:63:00:00:01"
       private:
       public:
     ports:

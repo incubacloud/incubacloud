@@ -47,6 +47,12 @@ from .cloud_host_direct import (
     publishes_direct_port,
 )
 from .cloud_host_edge_guard import EDGE_GUARD_STAGED, edge_guard_digest
+from .cloud_host_shared_guard import (
+    SHARED_GUARD_ALERT,
+    SHARED_GUARD_SETTLED,
+    SHARED_GUARD_STEP,
+    shared_guard_verdict,
+)
 from .deploy_instance_executor import GIT_HELPER_IMAGE
 from .host_probe_executor import (
     LOW_DISK_ALERT,
@@ -536,6 +542,18 @@ class FullSetupExecutor(
                 # host (proxy_start.sh).
                 self.run_script("proxy_start.sh", ["start"]),
             ),
+            (
+                # Once the proxy runs with its fixed address on ``shared``:
+                # the guard checks that address before it closes anything,
+                # and opens again when it differs (a refused start brought
+                # the previous files back, say). Never fatal: either way
+                # the host serves; ``on_success`` says how it was left.
+                SHARED_GUARD_STEP,
+                self.run_script(
+                    "shared_guard.sh",
+                    ["install" if host.shared_guard else "uninstall"],
+                ),
+            ),
             # ── Phase 4: Whitelist ────────────────────────────────────
             (
                 "Create globalwhitelist directory",
@@ -740,12 +758,45 @@ class FullSetupExecutor(
                     edge_guard_digest(host._shipped_edge_guard_yml()),
                 'edge_guard_shipped_at': fields.Datetime.now(),
             })
+        self._report_shared_guard(results)
         self._chain_observability()
         if host.direct_port:
             # The list and the probes of the port this run published, at
             # the head of the queue: it is part of this setup.
             if host._enqueue_direct_sync("host setup", chained=True):
                 self._sys("Queued the direct list for this host.")
+
+    def _report_shared_guard(self, results):
+        """Say how the guard step left the host, and keep its alert in step.
+
+        Guarded as asked, or removed as asked, resolves
+        ``shared_guard_open``. Left open (the proxy without its fixed
+        address, a firewall without the MAC match or without Docker's
+        ``DOCKER-USER``) or not run to the end raises it as a warning: the
+        host serves, and its instances still reach each other. A run
+        without the step (a test, a layer that dropped it) says nothing.
+
+        :param dict results: the run's results, by step label
+        """
+        if SHARED_GUARD_STEP not in (results or {}):
+            return
+        state, reason = shared_guard_verdict(results[SHARED_GUARD_STEP])
+        if state in SHARED_GUARD_SETTLED:
+            self._resolve_alert(SHARED_GUARD_ALERT)
+            self._sys(
+                "✓ The instances on the proxy network are isolated."
+                if state == "ON" else
+                "✓ The guard on the proxy network is off, as set on this host."
+            )
+            return
+        detail = f" ({reason})" if reason else ""
+        message = (
+            "The guard on the proxy network was left open"
+            f"{detail}: the instances on this host can reach each other "
+            "directly. Full Setup applies it again; RB-39 says what to check."
+        )
+        self._sys(f"⚠ {message}")
+        self._alert(SHARED_GUARD_ALERT, message, level="warning")
 
     def _chain_observability(self):
         """Queue the metrics agents for a freshly prepared host.

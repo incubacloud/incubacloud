@@ -60,6 +60,13 @@ PUBLIC_KEY_COMMENT = "incubacloud"
 #: Geolocation is on for the zone; without it the header is absent and
 #: no country is compared. 12-nov-2026.
 CDN_COUNTRY_HEADERS = {"cf-connecting-ip": "CF-IPCountry"}
+#: The address the proxy has on the ``shared`` network, which every
+#: instance on the host joins. Fixed and locally administered (the second
+#: bit of the first byte), so no card has it: the host's guard on that
+#: network (``scripts/shared_guard.sh``) lets only this source open
+#: connections there. Docker draws a new one at each restart of the proxy
+#: otherwise, and a guard on the old one cut the whole host (13-nov-2026).
+PROXY_SHARED_MAC = "02:69:63:00:00:01"
 
 
 class HostKeyChanged(asyncssh.HostKeyNotVerifiable):
@@ -967,6 +974,7 @@ class CloudHost(models.Model):
             "behind_cdn",
             "tls_default_cert",
             "cdn_client_ca",
+            "shared_guard",
         ]
 
     def _render_config_snapshot(self):
@@ -3045,6 +3053,81 @@ class CloudHost(models.Model):
         return inverseproxy_yaml
 
     @staticmethod
+    def _add_proxy_shared_mac(inverseproxy_yaml):
+        """Return the proxy's compose file with its fixed address on ``shared``.
+
+        The host's guard on that network admits connections only from
+        ``PROXY_SHARED_MAC``, and fails open while the running proxy has
+        another one: a host stored before 1.0.228 gets the address the
+        next Full Setup ships. Added as the first key under the ``shared``
+        entry of the ``proxy`` service's ``networks`` map. A file that
+        already gives that entry a ``mac_address``, lists the networks as
+        a sequence, or has no such entry, is left alone: the guard then
+        stays open and Full Setup says so.
+
+        :param str inverseproxy_yaml: the host's stored compose file
+        :return: the file with the address, or the input untouched
+        :rtype: str
+        """
+        import re
+
+        if not inverseproxy_yaml:
+            return inverseproxy_yaml
+        service = re.search(
+            r"^(?P<sindent>[ \t]+)proxy:[ \t]*\n", inverseproxy_yaml,
+            re.MULTILINE,
+        )
+        if not service:
+            return inverseproxy_yaml
+        depth = len(service.group("sindent"))
+        lines = inverseproxy_yaml[service.end():].splitlines(keepends=True)
+        offset = service.end()
+        networks_depth = None
+        entry_depth = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+            if not stripped or stripped.startswith("#"):
+                offset += len(line)
+                continue
+            if indent <= depth:
+                break  # left the proxy service
+            if networks_depth is None:
+                if stripped == "networks:":
+                    networks_depth = indent
+                offset += len(line)
+                continue
+            if indent <= networks_depth:
+                break  # left the networks map
+            if entry_depth is None:
+                if stripped.startswith("- "):
+                    break  # a list of names takes no per-network settings
+                entry_depth = indent
+            if indent == entry_depth and stripped == "shared:":
+                children = []
+                for child in lines[i + 1:]:
+                    if not child.strip() or child.strip().startswith("#"):
+                        continue
+                    if len(child) - len(child.lstrip()) <= indent:
+                        break
+                    children.append(child)
+                if any(c.strip().startswith("mac_address:") for c in children):
+                    return inverseproxy_yaml
+                child_indent = (
+                    children[0][:len(children[0]) - len(children[0].lstrip())]
+                    if children else line[:indent] + "  "
+                )
+                at = offset + len(line)
+                return (
+                    inverseproxy_yaml[:at]
+                    + ("" if line.endswith("\n") else "\n")
+                    + f'{child_indent}mac_address: "{PROXY_SHARED_MAC}"\n'
+                    + inverseproxy_yaml[at:]
+                )
+            offset += len(line)
+        return inverseproxy_yaml
+
+    @staticmethod
     def _add_proxy_protect_label(inverseproxy_yaml):
         """Return the proxy's compose file with the prune's protection label.
 
@@ -4599,6 +4682,22 @@ class CloudHost(models.Model):
                 vals["traefik_inverseproxy_yaml"] = with_protect
                 _logger.info(
                     "Protected the proxy from the prune for host: %s", host.name,
+                )
+
+            # 1.0.228: the guard on the shared network admits only the
+            # proxy's fixed address; shipped by the next Full Setup.
+            with_mac = self._add_proxy_shared_mac(
+                vals.get(
+                    "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
+                ),
+            )
+            if with_mac != vals.get(
+                "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
+            ):
+                vals["traefik_inverseproxy_yaml"] = with_mac
+                _logger.info(
+                    "Gave the proxy its fixed address on the shared network "
+                    "for host: %s", host.name,
                 )
 
             if vals:

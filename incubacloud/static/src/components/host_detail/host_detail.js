@@ -61,6 +61,7 @@ const EMPTY_FORM = () => ({
     trusted_proxy_ranges:     "",
     block_direct_access:      false,
     cdn_client_ca:            "",
+    shared_guard:             true,
     direct_port:              0,
     direct_path_opt_out:      false,
     tls_default_cert:         "",
@@ -355,6 +356,7 @@ export class HostDetail extends Component {
                 trusted_proxy_ranges:     host.trusted_proxy_ranges || "",
                 block_direct_access:      host.block_direct_access || false,
                 cdn_client_ca:            host.cdn_client_ca || "",
+                shared_guard:             host.shared_guard !== false,
                 direct_port:              host.direct_port || 0,
                 direct_path_opt_out:      host.direct_path_opt_out || false,
                 // Saved hosts only: a new one starts with the panel's default.
