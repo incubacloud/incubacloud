@@ -47,7 +47,7 @@ Built on Odoo Community: the panel itself uses no Enterprise modules, so you don
 ### Instance lifecycle
 
 - **Deploy** instances via [copier](https://copier.readthedocs.io/) with automatic module initialization
-- Odoo 9.0 to 20.0 offered, each series described once (`_odoo_versions.py`): its PostgreSQL range (16 to 18 for 20.0, 14 to 18 for 16.0 to 19.0, 12 up to 13, 16 or 17 for 11.0 to 15.0, 12 alone for 9.0 and 10.0), the tool that dumps and loads its database (`click-odoo-contrib` up to 19.0, `odoo db` on 20.0) and the doodba template it needs
+- Odoo 8.0 to 20.0 offered, each series described once (`_odoo_versions.py`): its PostgreSQL range (16 to 18 for 20.0, 14 to 18 for 16.0 to 19.0, 12 up to 13, 16 or 17 for 11.0 to 15.0, 12 alone for 8.0 to 10.0), the tool that dumps and loads its database (`click-odoo-contrib` up to 19.0, `odoo db` on 20.0) and the doodba template it needs
 - **Safe rebuild**: new Docker images are tested with a boot test against a cloned database before applying — if it fails, the instance keeps the old image
 - **Auto-update modules** via `click-odoo-update` checksums (only changed modules are updated)
 - Start, stop, restart and delete operations

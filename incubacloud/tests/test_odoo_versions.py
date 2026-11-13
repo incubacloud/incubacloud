@@ -81,16 +81,12 @@ class TestTheSeriesCards(BaseCase):
             # to cloning in the image (8-nov-2026). Every series
             # fetches its repositories before the build: all but 19.0
             # from core 1.0.222, 19.0 too from 1.0.224.
-            "8.0": card(
-                ("12", "12", "12"), "sql", debian_archive=True,
-                headless="--no-xmlrpc", beyond_template=True,
-                image_git_safe=False,
-            ),
-            # Offered since 11-nov-2026, their run of the series having
-            # passed on the production image of 9-nov-2026; 8.0 waits for
-            # its run to be repeated.
+            # Offered since 11-nov-2026 (8.0 since 13-nov-2026, its run of
+            # the series having passed with the fix of Connect as user),
+            # their run of the series having passed on the production
+            # image of 9-nov-2026.
             **dict.fromkeys(
-                ("9.0", "10.0"),
+                ("8.0", "9.0", "10.0"),
                 card(
                     ("12", "12", "12"), "sql", debian_archive=True,
                     headless="--no-xmlrpc", beyond_template=True,
@@ -850,6 +846,11 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
 
     def setUp(self):
         super().setUp()
+        # Every series is offered today, so 8.0 is held back here as it
+        # was until core 1.0.227.
+        self.startPatcher(patch.dict(
+            versions.VERSIONS, {"8.0": {**versions.VERSIONS["8.0"], "offered": False}},
+        ))
         pin_template(self.env, "v10.0.8")
         self.offered = ", ".join(versions.offered_versions("v10.0.8"))
         self.manager = self._create_user("import_manager", "group_cloud_manager")
