@@ -289,19 +289,28 @@ class CloudSessionClosure(models.Model):
 
     @api.autovacuum
     def _gc_session_closures(self):
-        """Delete the rows older than ``log_retention_days``, and the
-        anti-loop holds that ended as long ago."""
+        """Delete the rows older than ``log_retention_days``, the
+        anti-loop holds that ended as long ago, and both of an archived
+        user.
+
+        A deleted user's rows go with the user (``ondelete``); an
+        archived user's account is closed, and the countries and
+        browsers these rows name are kept no longer than it (#74).
+        """
         days = self.env["cloud.session.guard"]._session_guard_value(
             "log_retention_days",
         )
         cutoff = fields.Datetime.now() - timedelta(days=days)
-        self.env.cr.execute(
-            "DELETE FROM cloud_session_closure WHERE create_date < %s",
-            (cutoff,),
-        )
-        self.env.cr.execute(
-            "DELETE FROM cloud_session_hold WHERE until < %s", (cutoff,),
-        )
+        self.env.cr.execute("""
+            DELETE FROM cloud_session_closure
+             WHERE create_date < %s
+                OR user_id IN (SELECT id FROM res_users WHERE active IS NOT TRUE)
+        """, (cutoff,))
+        self.env.cr.execute("""
+            DELETE FROM cloud_session_hold
+             WHERE until < %s
+                OR user_id IN (SELECT id FROM res_users WHERE active IS NOT TRUE)
+        """, (cutoff,))
 
 
 class CloudSessionHold(models.Model):

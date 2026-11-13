@@ -16,6 +16,13 @@ sign-in and the sign-out included (review of 12-nov-2026, A2).
 On a route open to visitors (``auth='public'`` or ``'none'``) a close is
 served as Odoo serves a session it no longer accepts there: signed out,
 as a visitor, instead of sent to the sign-in (M1 of the same review).
+
+Odoo keeps the trace of a user's sessions, with the address, country and
+browser of each, for good: its own vacuum only drops the repeated rows of
+one session, and deleting a user only empties the rows' user. The
+privacy policy keeps them while the user's account exists (#74, 13-nov-
+2026), so the daily vacuum deletes the rows of a user who is deleted or
+archived.
 """
 import logging
 
@@ -57,6 +64,25 @@ class ResDeviceLog(models.Model):
             )
             self.env.cr.rollback()
         return super()._update_device(request)
+
+    @api.autovacuum
+    def _gc_device_log_of_gone_users(self):
+        """Delete the traces of the users who are gone.
+
+        A deleted user's rows are left with no user (the column's foreign
+        key sets it empty); an archived user cannot sign in, and their
+        account is closed. In SQL: ``res.device`` is a view over the same
+        table, and the user's archived state is not read through the ORM.
+        """
+        self.env.cr.execute("""
+            DELETE FROM res_device_log
+             WHERE user_id IS NULL
+                OR user_id IN (SELECT id FROM res_users WHERE active IS NOT TRUE)
+        """)
+        _logger.info(
+            "[session-guard] deleted %d device log rows of users who are gone",
+            self.env.cr.rowcount,
+        )
 
 
 class IrHttp(models.AbstractModel):

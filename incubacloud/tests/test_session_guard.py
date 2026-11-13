@@ -651,6 +651,80 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
 
 
 @tagged("-at_install", "post_install")
+class TestRecordsGoWithTheAccount(TransactionCase):
+    """#74: the trace of a user's sessions, with the countries and
+    browsers it names, is kept while the user's account exists. The
+    daily vacuum deletes those of a user who is deleted or archived, and
+    leaves those of anybody else."""
+
+    def setUp(self):
+        super().setUp()
+        Users = self.env["res.users"]
+        self.kept, self.archived, self.deleted = (
+            Users.create({"name": login, "login": login})
+            for login in ("records-kept", "records-archived", "records-deleted")
+        )
+        self.Log = self.env["res.device.log"].sudo()
+        self.Closure = self.env["cloud.session.closure"].sudo()
+        self.Hold = self.env["cloud.session.hold"].sudo()
+        for user in (self.kept, self.archived, self.deleted):
+            self._records(user)
+
+    def _records(self, user):
+        """Give *user* a trace, a close and a hold, all of this week."""
+        self.Log.create({
+            "session_identifier": f"sid-{user.login}",
+            "platform": "linux", "browser": "chrome",
+            "ip_address": HOME, "country": "Spain",
+            "user_id": user.id,
+            "first_activity": fields.Datetime.now(),
+            "last_activity": fields.Datetime.now(),
+        })
+        self.Closure.create({
+            "user_id": user.id, "session_identifier": f"sid-{user.login}",
+            "signal": "country", "action": "closed",
+            "pinned_value": "ES", "seen_value": "FR",
+        })
+        self.Hold.create({
+            "user_id": user.id, "signal": "country", "pair": "ES|FR",
+            "until": fields.Datetime.now() + timedelta(days=7),
+        })
+
+    def _vacuum(self):
+        """Run the daily vacuum of the three models, as Odoo's does."""
+        vacuum = getattr(type(self.Log), "_gc_device_log_of_gone_users", None)
+        self.assertTrue(
+            vacuum and getattr(vacuum, "_autovacuum", False),
+            "nothing in the daily vacuum deletes a gone user's traces",
+        )
+        self.env.flush_all()
+        self.Log._gc_device_log_of_gone_users()
+        self.Closure._gc_session_closures()
+        self.env.invalidate_all()
+
+    def _left(self, identifier):
+        """Return what is left of the session *identifier*'s records."""
+        return (
+            self.Log.search_count([("session_identifier", "=", identifier)]),
+            self.Closure.search_count([("session_identifier", "=", identifier)]),
+        )
+
+    def test_an_archived_user_s_records_go(self):
+        self.archived.action_archive()
+        self._vacuum()
+        self.assertEqual(self._left("sid-records-archived"), (0, 0))
+        self.assertFalse(self.Hold.search([("user_id", "=", self.archived.id)]))
+        self.assertEqual(self._left("sid-records-kept"), (1, 1))
+        self.assertTrue(self.Hold.search([("user_id", "=", self.kept.id)]))
+
+    def test_a_deleted_user_s_records_go(self):
+        self.deleted.unlink()
+        self._vacuum()
+        self.assertEqual(self._left("sid-records-deleted"), (0, 0))
+        self.assertEqual(self._left("sid-records-kept"), (1, 1))
+
+
+@tagged("-at_install", "post_install")
 class TestParallelClosesOnRealConnections(TransactionCase):
     """Review of the result, A1, and its re-review: parallel requests of
     the same user, each on a connection of its own, as in production.
