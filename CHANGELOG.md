@@ -93,6 +93,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   central, the panel or the agents do changes: no deployment and no agent
   is queued for it. Turning it on, with a public name, is a step of its
   own.
+
+  **A server whose agents trust another authority is re-applied.** Each
+  host records the SHA-256 fingerprint of the authority its agents were
+  installed with (`cloud.host.metrics_agents_ca_fingerprint`), and the
+  reconciliation re-applies one whose fingerprint is not the authority in
+  force, as it already did one whose URL was not: a server installed with
+  the name's URL before the authority reached its panel, or with an
+  authority since rotated. Setting `metrics_agents_revision` to 0 by hand
+  is now only the fallback (RB-35). Without an authority in force (the
+  switch off, or between forgetting it and the next deployment of the
+  central) nothing is re-applied for it, and a host installed before has
+  no fingerprint, so the update re-applies nothing.
 - **Whether the central fits on a host.** Picking a host under *Where the
   central runs* shows a note from its last measures: free disk for the
   servers that would send and the retention, memory (4 GB alone, 8 GB with
