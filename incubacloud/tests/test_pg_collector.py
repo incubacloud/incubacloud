@@ -306,7 +306,13 @@ class TestTheCollectorComesOff(BaseCase):
         block = _task(teardown, "Remove the database collector")
         self.assertIn("rescue", block)
         self.assertIn("ic_pg_collector_files", block["when"])
-        inside = {id(t) for t in _all_tasks(block["block"])}
+        # Every use of sudo sits in a block whose rescue lets the
+        # teardown go on: the collector's, and the proxy network guard's.
+        inside = {
+            id(t)
+            for rescued in _all_tasks(teardown["tasks"]) if "rescue" in rescued
+            for t in _all_tasks(rescued["block"])
+        }
         for task in _all_tasks(teardown["tasks"]):
             if "become" in task:
                 self.assertIn(id(task), inside, task["name"])
