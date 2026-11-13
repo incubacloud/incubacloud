@@ -124,6 +124,31 @@ confirm:
 To keep the history while changing servers, see *Where the central runs*
 in the [operations guide](https://github.com/incubacloud/incubacloud/blob/19.0/docs/observability-operations.md#where-the-central-runs).
 
+### The central's public name
+
+When servers other than the central's own write to it, the central needs a
+public name, for example `metrics.example.com`:
+
+1. Give the central's server a direct port (9443, for example) and run
+   Full Setup on it.
+2. Create an A record for the name pointing at that server, **without a
+   CDN proxy and without an AAAA record**.
+3. In Settings → Monitoring → *Advanced…*, write the name under
+   *Central's public name*, keep *One path, without a CDN* on, save, and
+   enable observability on that server.
+
+The central then answers on `https://metrics.example.com:9443`, with a
+certificate your panel signs and renews itself; your servers trust it
+for the central only. The panel and the agents move to the name once it
+answers from the central's server: until then the note under the name
+says which record it waits for, and *Check now* checks it again.
+
+*Who can write to the central* decides who may reach that port: only your
+panel's servers, by their address (the default), or any address with its
+credential, for servers behind NAT or whose address changes. If one of
+your servers cannot write, the panel raises an alert with the address
+that server leaves with and the address the panel has for it.
+
 ### Hosted on Odoo.sh
 
 Odoo.sh does not let you run the central, so a panel installed there
@@ -132,11 +157,10 @@ prepared as described above, chosen under *Where the central runs*. The
 same holds for any self-hosted panel that cannot run the central beside
 it. On IncubaCloud's SaaS the central is included for your tenants.
 
-If you have hosts other than the one running the central, they need a
-public HTTPS address to push to; set it under *Advanced*. The local
+If you have hosts other than the one running the central, give the
+central a public name ([above](#the-centrals-public-name)): the local
 address the button fills in is only reachable from the central's own
-host. Or give the central a direct name and its host a direct port: your
-hosts then push to it without a CDN in between, on a port only they may open.
+host.
 
 ## What is not here
 

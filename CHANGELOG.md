@@ -27,6 +27,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   point at the new server first, in its confirmation and in the job's log.
   A retry of its job is an ordinary deployment: it does not carry
   `discard_history`.
+- **The central's single path (#61).** Settings › Monitoring ›
+  *Advanced…* › **One path, without a CDN**: with a public name, the
+  central is published under it only, outside every CDN, on its server's
+  platform port (the direct entrypoint): `https://<name>:<port>/r` and
+  `…/w/api/v1/write`. Its certificate is signed by the panel's own
+  authority (`metrics_ca_cert`, its key encrypted and for system
+  administrators only), one year at a time, renewed by the reconciliation
+  60 days before its end; the agents trust the authority for the central
+  alone (vmagent's `-remoteWrite.tlsCAFile`, Fluent Bit's `tls.ca_file`)
+  and the panel's reads trust it besides the usual roots. The panel and
+  the agents move to the name only once `sync_direct_path` has checked it
+  from the central's server (`direct_probe.sh --cacert`); the earlier URLs
+  are kept for the way back, which is turning the switch off. Alerts
+  `metrics_central_dns_pending` (the record to create),
+  `metrics_central_name_down` and `metrics_central_cert_expiring`;
+  **Check now** under the name; RB-34. **Who can write to the central**:
+  only the panel's servers by their address (the default), or any address
+  with each account's credential, which opens that one port to every
+  address; a layer may fix it. A server the port refuses raises
+  `metrics_central_writer_outside` with the address it leaves with, which
+  its agents' install asks the panel (`GET /cloud/egress_ip`, public,
+  rate limited). RB-35 moves a central by hand with its history. Spanish
+  translation included.
+
+  **It stays off on update.** The update adds
+  `cloud.settings.metrics_central_single_path`, off where a central was
+  already recorded and on in a new database, and with it off nothing the
+  central, the panel or the agents do changes: no deployment and no agent
+  is queued for it. Turning it on, with a public name, is a step of its
+  own.
 - **Whether the central fits on a host.** Picking a host under *Where the
   central runs* shows a note from its last measures: free disk for the
   servers that would send and the retention, memory (4 GB alone, 8 GB with

@@ -182,6 +182,15 @@ Give the central a server of its own, registered in the panel and prepared
 with Full Setup, and choose it in Settings → Monitoring → *Where the central
 runs*. See [Monitoring](https://docs.incubacloud.io/reference/monitoring/#where-to-run-the-central).
 
+For servers that are not the central's to write to it, the central needs a
+public name: an A record pointing at its server, with no CDN proxy and no
+AAAA record, and a direct port on that server (9443, for example), set on
+the server and applied with Full Setup. The URLs carry the port
+(`https://metrics.example.com:9443/…`), so the servers must be able to reach
+it outbound. Write the name in Settings → Monitoring → *Advanced…* →
+*Central's public name*, with *One path, without a CDN* on; the panel moves
+to it once the name answers ([operations guide](docs/observability-operations.md#the-single-path-one-name-the-platform-port-the-panels-authority)).
+
 > **Keep a copy of the encryption key somewhere else.** Every secret the
 > panel stores is encrypted with it: the hosts' SSH keys and passwords, GitHub
 > tokens, the backup destinations' keys and passphrases. A copy of the panel's
