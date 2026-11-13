@@ -439,6 +439,14 @@ class CloudHost(models.Model):
              "installed before the direct path, with the remote-write URL "
              "in Settings.",
     )
+    metrics_agents_ca_fingerprint = fields.Char(
+        string="Agents trust the authority",
+        readonly=True,
+        copy=False,
+        help="SHA-256 fingerprint of the central's certificate authority "
+             "this host's agents were installed with. Empty: installed "
+             "without one, trusting the system's roots.",
+    )
     direct_reach_ok = fields.Boolean(
         string="Direct path reached from the host", readonly=True, copy=False,
     )
@@ -928,15 +936,23 @@ class CloudHost(models.Model):
 
     @api.model
     def _reconcile_direct_agents(self):
-        """Re-apply the agents whose URL no longer matches the direct path.
+        """Re-apply the agents whose URL or authority no longer match the panel's.
 
-        Three cases: a host installed with another URL than the one it is
+        Four cases: a host installed with another URL than the one it is
         offered now (the path came, went, or the host turned it down six
-        hours ago); a host with a direct check it never tried (the panel's
-        name appeared after its install); a host on the direct path gone
-        quiet while the central is healthy (``_direct_silent``), which the
-        install tries again and drops to the public path if it must. An
-        empty recorded URL is the remote-write URL of before this version.
+        hours ago); a host whose agents trust another authority for the
+        central than the one they are installed with now
+        (``metrics_agents_ca_fingerprint`` against the settings'
+        ``_central_agents_ca``: installed with the single name's URL before
+        the authority reached the panel, or since rotated); a host with a
+        direct check it never tried (the panel's name appeared after its
+        install); a host on the direct path gone quiet while the central
+        is healthy (``_direct_silent``), which the install tries again and
+        drops to the public path if it must. An empty recorded URL is the
+        remote-write URL of before this version. Without an authority in
+        force (the single name off, or an authority forgotten until the
+        next deployment of the central mints one) nothing is re-applied
+        for it: a change of URL is what moves those hosts.
 
         :return: how many installs were queued.
         :rtype: int
@@ -957,6 +973,7 @@ class CloudHost(models.Model):
         # On the central's single name an empty record is a URL of before,
         # never the one in force: those hosts move too.
         unrecorded = "" if settings._central_single_in_force() else public
+        authority = settings._central_agents_ca_fingerprint()
         queued = 0
         for host in hosts:
             if not host._observability_target():
@@ -964,6 +981,8 @@ class CloudHost(models.Model):
             installed = host.metrics_agents_write_url or unrecorded
             if installed != host._metrics_remote_write_url():
                 reason = "direct path changed"
+            elif authority and (host.metrics_agents_ca_fingerprint or "") != authority:
+                reason = "central authority changed"
             elif host._direct_untried_probes():
                 reason = "direct path to try"
             elif (

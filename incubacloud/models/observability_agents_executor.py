@@ -258,6 +258,8 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         # which address it leaves with (``_record_central_reach``).
         central_ca = settings._central_agents_ca()
         self._checks_central = bool(central_ca)
+        # Kept for on_success: the host records which authority it trusts.
+        self._sent_central_ca_fingerprint = settings._central_agents_ca_fingerprint()
         # Kept for on_success: what the host tried is judged against them.
         self._direct_probes = host._direct_reach_probes(offer) if offer else []
         account, token = settings._metrics_auth()
@@ -439,6 +441,7 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         installed = str(facts.get("ic_write_url_installed") or "")
         if installed:
             host.sudo().write({"metrics_agents_write_url": installed})
+        self._record_central_ca(host)
         if getattr(self, "_checks_central", False):
             self._report_central_reach(host, facts)
         probes = getattr(self, "_direct_probes", None) or []
@@ -455,6 +458,24 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 self.env["cloud.host"]._direct_path_changed(
                     f"direct URLs reached from {host.name} changed",
                 )
+
+    def _record_central_ca(self, host):
+        """Record on *host* the fingerprint of the authority this install gave its agents.
+
+        Empty for none. The reconciliation compares it with the one in
+        force (``cloud.settings._central_agents_ca_fingerprint``) and
+        re-applies the host when they differ. Nothing is written when this
+        executor did not render the install's variables (a job resumed
+        elsewhere): the host keeps what it had.
+
+        :param host: the ``cloud.host`` the install ran on.
+        """
+        sent = getattr(self, "_sent_central_ca_fingerprint", None)
+        if sent is None:
+            return
+        fingerprint = sent or False
+        if (host.metrics_agents_ca_fingerprint or False) != fingerprint:
+            host.sudo().write({"metrics_agents_ca_fingerprint": fingerprint})
 
     def _report_central_reach(self, host, facts):
         """Record and say what the server's own check of the central answered.
