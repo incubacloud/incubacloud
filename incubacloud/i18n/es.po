@@ -24648,6 +24648,9 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Server %(name)s is left %(state)s: check it by hand."
 msgstr "El servidor %(name)s queda en estado %(state)s: revíselo a mano."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_host_panel_address.py:0
 msgid ""
 "This panel's outgoing address changed from %(old)s to %(new)s. These hosts "
