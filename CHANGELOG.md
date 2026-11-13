@@ -178,8 +178,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   out the boot test alone, says first in its result that its image went
   into service untested, and raises `boot_test_skipped` (warning) on the
   instance; the next rebuild whose boot test ran resolves it. The panel,
-  `/cloud/save_instance` and the MCP's `update_instance` take it. Spanish
-  translation included.
+  `/cloud/save_instance` and the MCP's `update_instance` take it, and
+  each change leaves a *Config changed* line in the audit trail, with who
+  made it. Spanish translation included.
 
 ### Security
 
@@ -257,18 +258,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   container, `docker compose cp` to the host's `/tmp` and the `chown -R`
   are gone, so the test needs the database's size once, not twice, and
   about half the time. The copy keeps its `backup_label` and recovers from
-  the backup. For it the test adds a replication rule on the loopback to
-  the database's `pg_hba.conf` and reloads, and takes it out again at the
-  end. Before copying, the job's log always gives the database's size, the
+  the backup. For it the test adds a replication rule on the loopback, for
+  the database's own user, to the database's `pg_hba.conf` and reloads,
+  and takes it out again right after the copy; a test stopped during the
+  copy takes it out first of all. The file is replaced only by a copy
+  without the rule that could be written and is not empty, and a rule
+  that could not be taken out is said in the job's log. Before copying, the job's log always gives the database's size, the
   free space of Docker's disk, what the test needs and how long the copy
   should take; the test stops there, with the instance untouched and the
   reason as the job's error, when the copy does not fit (`size × 1.1 +
   5 GiB`) or its budget (an hour plus the copy at 100 MB/s) would not end
   inside its cap, six hours instead of the hour every step had. The copy
   and the boot run under that budget, and the log gives the copy's real
-  speed. The daily maintenance removes the copies a test killed before its
-  trap left: volumes `ic_boot_<id>` no container uses, a day old, and the
-  `/tmp/ic_boot_<id>` of older releases. The guides describe the boot test
+  speed. A copy killed (exit 137) says whether the kernel ran out of
+  memory, as Docker records it, or it ran past its budget; when it can
+  tell neither, it names both. The daily maintenance removes what a test
+  killed before its trap left, a day old: first its containers
+  (`ic_boot_copy_<id>`, `ic_boot_pg_<id>`, `ic_boot_odoo_<id>`), which
+  hold the volume, then the volumes `ic_boot_<id>` no container uses and
+  the test's network, and the `/tmp/ic_boot_<id>` of older releases. The guides describe the boot test
   as it runs: the copy made by `createdb -T` they described never existed,
   and a staging's rebuild goes through it too.
 - **Odoo 8.0 is offered** for new projects and instances: its run of the
