@@ -328,6 +328,12 @@ class TestTheDeployment(SinglePathCase):
         self.assertFalse(self._alert(ACME_SAME_NAME_ALERT, self.host))
         self.assertTrue([line for line in self.lines if "could not be read" in line])
 
+    def test_a_store_that_cannot_be_read_keeps_an_open_alert(self):
+        """Nothing shows the certificate was removed: the alert stays."""
+        self._deployed(ic_acme_same_name="found")
+        self._deployed(ic_acme_same_name="unread")
+        self.assertTrue(self._alert(ACME_SAME_NAME_ALERT, self.host))
+
     def test_the_store_is_looked_at_under_the_single_name_only(self):
         task = _central_task("Look for a stored certificate of the single name")
         self.assertEqual(task["when"], "ic_single_host | length > 0")

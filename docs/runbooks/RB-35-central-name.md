@@ -218,5 +218,9 @@ the panel's certificate on 443 too, and a CDN in front refuses it. Then:
   certificate for it: the certificate that gets in the way when the switch is turned
   on again (above).
 
+Only the save that turns the switch off queues that deployment. A name emptied in
+a later save, with the switch already off, queues nothing: the certificate stays on
+443 until the central is deployed again, so deploy it by hand then.
+
 The earlier paths must still exist: the public name on 443, a direct name, or a
 route kept by hand. In a rehearsal the way back took about three minutes.
