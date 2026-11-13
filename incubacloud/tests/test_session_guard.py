@@ -106,7 +106,7 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         super().setUp()
         self.user = self.env["res.users"].create({
             "name": "Guarded", "login": "guarded", "password": "guarded-pw",
-            "group_ids": [(6, 0, [self.env.ref("base.group_user").id])],
+            "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
         })
         self.ICP = self.env["ir.config_parameter"].sudo()
         self.Closure = self.env["cloud.session.closure"].sudo()

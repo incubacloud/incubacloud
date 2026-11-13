@@ -258,7 +258,8 @@ class TestTheFreshAttemptFetchesWhatTheFirstMade(_BackupCase):
         :return: the executor, and the paths its fetch read and fetched
         :rtype: tuple
         """
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         first = self._executor(cls, inst, payload)
         plan = [
             [step[0], step[1], step[2] if len(step) == 3 else {}]

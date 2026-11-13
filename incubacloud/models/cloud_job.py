@@ -15,7 +15,7 @@ from psycopg2 import OperationalError
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, UserError
-from odoo.fields import Domain
+from odoo.osv import expression
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.tools import SQL, clean_context
 from odoo.tools import config as odoo_config
@@ -5368,7 +5368,7 @@ class CloudJob(models.Model):
         Job.flush_model(["state", "queue_job_uuid"])
         self.env["queue.job"].sudo().flush_model(["state", "uuid"])
         self.env["cloud.job.checkpoint"].sudo().flush_model(["job_id", "closed"])
-        query = Job._search(Domain.AND([domain, [("state", "=", "cancelled")]]))
+        query = Job._search(expression.AND([domain, [("state", "=", "cancelled")]]))
         self.env.cr.execute(SQL(
             "SELECT j.id FROM cloud_job j WHERE j.id IN %s AND ("
             " EXISTS (SELECT 1 FROM queue_job q"

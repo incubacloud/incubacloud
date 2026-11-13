@@ -1858,7 +1858,8 @@ class TestTheMovedPortOutlivesTheFailedJob(JobEndAssertions, TransactionCase):
     def setUp(self):
         """A real host on port 22 with a trusted key, and its job."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host, self.job = make_probe_job(self.env, name="moved")
         self.host.sudo().known_hosts_key = (
             "192.0.2.77 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMovedPortKey"

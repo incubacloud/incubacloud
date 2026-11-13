@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { useEnv, useState } from "@odoo/owl";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
@@ -261,7 +261,7 @@ describe("HostsDashboard — silent vs. visible refresh", () => {
  * ``this`` without the service/mount stack.
  */
 describe("HostsDashboard — live usage", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
     const card = Object.create(HostsDashboard.prototype);
     // A panel that can turn metrics on, as core's.
     card.env = { features: {} };
@@ -359,7 +359,7 @@ describe("HostsDashboard — live usage", () => {
  * holds the state.
  */
 describe("HostsDashboard — what a card paints", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     const base = {
         status: "compatible", ip_address: "10.0.0.1", region: "", tags: [],

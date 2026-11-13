@@ -263,7 +263,7 @@ async function mountBoard(res, { canConfigure = true, permissions = {} } = {}) {
 
 describe("MetricsBoard, mounted", () => {
     preloadBundle("web.chartjs_lib");
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("off: says how to turn it on, and opens Settings", async () => {
         const { navigated } = await mountBoard(

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "@odoo/hoot";
 import { click, waitFor } from "@odoo/hoot-dom";
 import { advanceTime, animationFrame } from "@odoo/hoot-mock";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
     preloadBundle,
@@ -39,7 +39,7 @@ function boardWith(Cls, board, props = {}) {
 }
 
 describe("HostBoard", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("reads its server's board in one route", () => {
         const comp = boardWith(HostBoard, null, { hostId: 3 });
@@ -123,7 +123,7 @@ describe("HostBoard", () => {
 });
 
 describe("FleetBoard", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("another account's server carries its account on the operator's board", () => {
         const comp = boardWith(FleetBoard, { scope: "operator", panels: { load: { series: [
@@ -193,7 +193,7 @@ const ENV = {
 
 describe("Boards, mounted", () => {
     preloadBundle("web.chartjs_lib");
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a server's board off says how to turn it on and stops asking", async () => {
         const { asked } = answer({
