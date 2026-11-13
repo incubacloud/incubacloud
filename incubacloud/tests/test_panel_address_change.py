@@ -261,7 +261,11 @@ class TestTheListTheHostConfirmed(PanelAddressCase):
             yield transport
 
         with patch.object(type(host), "get_transport", _open):
-            return host._ssh_allowlist_change(op, ips)
+            result = host._ssh_allowlist_change(op, ips)
+        # The host's answer and the judgement it led to were written in
+        # another environment: read them afresh.
+        self.env.invalidate_all()
+        return result
 
     def test_a_host_whose_list_admits_the_new_address_leaves_the_alert(self):
         self.Host._panel_address_changed(OLD, NEW)
