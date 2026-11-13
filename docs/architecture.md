@@ -412,17 +412,24 @@ each with its own review and QA.
   minutes, every 10 for a server that did not answer), says in the closed
   job's log the exit status it ended with, or stops it (TERM, 20 s,
   KILL), deletes the row and serves the queue. Only a row on the server
-  the instance lives on holds: an instance recovered on another server no
-  longer waits for the one that died, and the row a move's restore left
-  on its target holds nothing while the instance lives on its source, so
-  the rollback starts at once. The hold has no expiry, and the row that
-  holds for a server that does not answer is never given up.
+  the instance lives on holds: the row a move's restore left on its
+  target holds nothing while the instance lives on its source, so the
+  rollback starts at once. The hold has no expiry, and the row that
+  holds for a server that does not answer is never given up. Nor is one
+  the reconciliation reaches with its step still alive, past the point
+  of no return or outliving its stop, however old its dates (a server
+  back after an outage longer than the step's cap): each pass reads it
+  again until the step's own `timeout` ends it, and the first job of the
+  queue reads «waiting for job #N to end on the server» again
+  (`reconcile_tried_at` cleared).
   `_QUEUE_HELD_ALERT_MINUTES` = 30 after the mark (three tries of the
   reconciliation: a server's reboot takes less, an outage of its provider
   more) the reconciliation raises `job_queue_held_unreachable` (warning,
   on the server and the instance, one per job): the server does not
   answer, the queue waits, what may still run with its directory and the
-  command that stops it, the paths left, and that dismissing the alert
+  command that stops it (past the point of no return, that stopping it
+  leaves its work half done and it is to be let end), the paths left, and
+  that dismissing the alert
   lets the queue go on. Dismissing it by hand (`resolution = manual`)
   deletes the row (not only the mark, which the next pass would write
   again), says so in the job's log and serves the queue
@@ -434,8 +441,11 @@ each with its own review and QA.
   queues (`_cron_dispatch_queued`, another scheduled action) raises the
   same alert for every mark that old without one, saying the
   reconciliation is not running. The server cannot be deleted while it
-  has the job (`cloud_job.host_id` is required): dismissing the alert, or
-  recovering the instance on another server, is the way out.
+  has the job (`cloud_job.host_id` is required), and a move of the
+  instance (`move_to_host`) is no way out either: its chain is the
+  instance's jobs, which queue behind the row, and it dumps the database
+  on the source. Dismissing the alert is the way out, and before its 30
+  minutes there is none.
 - **The host's build lock outlives a park.** `HostBuildLockMixin` takes a
   transactional lock, which a park lets go: the checkpoint names the host
   from its first write, and any other build or teardown of the host that

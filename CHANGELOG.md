@@ -157,10 +157,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the point of no return alike: if the server comes back, the step and
   the next job must not run together. The hold used to expire 2 h 10 min
   after it began (`DETACHED_HOLDS_QUEUE_MAX_S`, removed), and before the
-  point of no return there was none. Such a row is never given up. After
-  30 minutes the warning alert `job_queue_held_unreachable`, on the
-  server and the instance, says the queue waits, what to stop and remove
-  on the server, and that dismissing it lets the queue go on: dismissed
+  point of no return there was none. Such a row is never given up, nor
+  is one whose server comes back after a long outage with the step still
+  alive, past the point of no return or outliving its stop: the queue
+  waits for the step's own end. After 30 minutes the warning alert
+  `job_queue_held_unreachable`, on the server and the instance, says the
+  queue waits, what to stop and remove on the server (a step past the
+  point of no return is to be let end), and that dismissing it lets the
+  queue go on, the only way out: dismissed
   by hand it deletes the job's checkpoint, says so in the job's log and
   serves the queue; *Dismiss all* leaves it open, and it closes by itself
   when the server answers. The sweep of the queues raises it too while
