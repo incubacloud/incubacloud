@@ -364,6 +364,27 @@ Every other path goes to Odoo as it is. A panel behind a CDN also needs the
 visitor's address corrected:
 [RB-25](docs/runbooks/RB-25-visitor-address-behind-a-cdn.md).
 
+### HTTPS as Odoo sees it
+
+The session cookie's `Secure` and the panel's defense against a session
+cookie set by another host of its domain (the `__Host-session_bind` cookie,
+see [CHANGELOG.md](CHANGELOG.md)) both need Odoo to see the request as
+HTTPS. Odoo believes `X-Forwarded-Proto` only with `proxy_mode = True` and
+when the request also carries `X-Forwarded-Host`. Without them every request
+looks like plain HTTP: the panel works, but sets neither, and nothing says
+so. Behind your own proxy, it is the proxy that must send both headers; on
+Odoo.sh, the platform's.
+
+To check it, open the login page over HTTPS and read the cookies it sets:
+
+```bash
+curl -s -o /dev/null -D - https://<panel>/web/login | grep -i '^set-cookie'
+```
+
+`session_id` comes with `Secure`, and `__Host-session_bind` beside it. A
+`session_id` without `Secure` is a request Odoo took for plain HTTP: look at
+`proxy_mode` and at the two headers the proxy sends.
+
 ## Recommended configuration
 
 ### A dedicated job runner
