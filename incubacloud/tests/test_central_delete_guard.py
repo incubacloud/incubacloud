@@ -106,7 +106,7 @@ class TestTheModelRefuses(CentralGuardCase):
         self.assertFalse(self.other.exists())
 
     def test_a_central_recorded_on_an_archived_host_protects_nothing(self):
-        """Before 1.0.227 nothing stopped archiving it: there is no central."""
+        """Before 1.0.228 nothing stopped archiving it: there is no central."""
         self.settings.metrics_central_host_id = self.other
         self.env.cr.execute(
             "UPDATE cloud_host SET active = false WHERE id = %s", [self.other.id],

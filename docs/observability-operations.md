@@ -421,6 +421,70 @@ this server: run it and enable observability again."
 check reads. The central needs about 1–2 GB depending on the number of
 servers (see Costs and sizing).
 
+**Whether it fits.** Picking a host under *Where the central runs* shows
+a note, never a refusal (`/cloud/monitoring/central_sizing`,
+`models/_central_sizing.py`), from the host's last measures (its metrics
+agents) and the servers that would send to the central, the host
+included. The figures, of 13-nov-2026, take the upper end of a running
+fleet's (≈ 1.7 GB of VictoriaMetrics and Loki for two servers after three
+months): disk ≈ 0.8 GB per sending server per 90 days of retention plus
+2 GB; memory 4 GB on a host of its own, 8 GB on one with instances, with
+at least 1.5 GB not assigned to them; 2 cores. Past 20 sending servers
+nothing is measured, and the note says so; a retention of 0 keeps
+everything, and the note says the disk grows without end. A host never
+measured reads *Not measured yet*. Change the figures there and here
+together.
+
+**The central's server cannot leave the fleet.** Since 1.0.228 the host
+in `metrics_central_host_id` cannot be deleted or archived: the model
+refuses (`cloud.host._check_not_metrics_central`, on `unlink` and on
+`write({'active': False})`), `/cloud/delete_host` refuses before queuing
+the teardown (so the MCP's `delete_host` reads the same refusal), a
+`delete_host` job queued before refuses to run (`JobRefused`), and the
+foreign key is `ondelete='restrict'`. Every other change to that host,
+and every job on it, runs as before. A central recorded on a host that
+was archived before 1.0.228 protects nothing.
+
+**Not on another host while it runs.** *Enable observability* on a host
+other than the central's used to start an empty central there and move
+the panel to it, leaving the history behind, unread. The route and the
+job (`ObservabilityCentralExecutor.pre_run_checks`, inherited by the
+account sync) now refuse it: "The central runs on X…". On the central's
+own host, and with no central at all, it deploys as before, and so does
+the reconciliation cron.
+
+Two ways out, both in Settings › Monitoring, both with a confirmation:
+
+- **Start an empty central.** Picking another host turns the button into
+  *Start an empty central* (`/cloud/monitoring/empty_central`). It
+  queues the same deployment with `discard_history` in its payload, the
+  only thing that lets the job run on another host. `enqueue` refuses
+  that key to any caller without superuser rights
+  (`cloud.job._check_internal_queue_flags`), so neither `call_kw` nor the
+  MCP can set it. When it ends, the panel reads and writes the new,
+  empty central; the old one is left as it was on its server, its
+  history with it, and the job's log says so. The old server can then
+  be deleted, or the stack removed by hand there with
+  `docker compose -p incubacloud-central down -v`.
+- **Retire the central (the history is lost).** For a central whose
+  server is lost, or a panel whose only server is going
+  (`/cloud/monitoring/retire_central`, `cloud.settings.retire_metrics_central`):
+  the panel forgets the host, empties the query and remote-write URLs and
+  switches observability off. Nothing runs on the server. Refused while a
+  deployment or an account sync of the central waits or runs, which would
+  record the host again. Agents already installed keep sending to the
+  old address until observability is enabled on another host.
+
+**To keep the history**, by hand: start the empty central on the new
+host, then stop VictoriaMetrics and Loki on both servers
+(`docker compose -p incubacloud-central stop victoriametrics loki`; vmauth
+answers 502 and the agents keep what they send), copy the contents of the
+two volumes, `incubacloud-central_vmdata` and
+`incubacloud-central_lokidata`, from the old server to the new one, and
+start them again on the new one (`docker compose -p incubacloud-central
+up -d`). Delete the old server only once the new central answers with the
+old series.
+
 **Odoo.sh** does not let the central run, so a panel there needs a
 metrics server of its own, prepared as above.
 
@@ -443,17 +507,19 @@ below is only for a central next to the panel.
    on the central** with the panel's public address (`/32`): it opens the series deletion
    and the cross-account read (`/admin-r/`) to that address, under the
    name.
-5. Re-run *Enable observability* against the new host. When the job
-   answers, the panel's query URL and the agents' remote-write URL point
-   at the new name.
+5. Pick the new host under *Where the central runs* and press *Start an
+   empty central* (*Enable observability* is refused there while the
+   central runs on the old host). When the job answers, the panel's query
+   URL and the agents' remote-write URL point at the new name.
 6. Hosts enrolled before the move are re-applied on their own once the new
    central's host has applied the list and its direct name answers.
 7. Remove `metrics-gateway.yml` from the old host's Traefik and
    decommission the old stack.
 
 Historical series are not migrated by this procedure. If you need them,
-copy the VictoriaMetrics data volume across before step 5 — otherwise
-expect the charts to start from the moment of the switch.
+copy the central's two volumes across before step 5 ("To keep the
+history" above) — otherwise expect the charts to start from the moment of
+the switch. The old host can be deleted once the new central runs.
 
 What the deployment publishes under the name is what the hand-written
 gateway publishes (next section), with one difference: the operator's
