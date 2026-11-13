@@ -226,3 +226,151 @@ class TestPushMerge(_PushCase):
             [p['push_repo'] for p in waiting.payload['coalesced_pushes']],
             ['owner/repo', 'owner/addons'],
         )
+
+
+def _synchronize_payload(clone_url, branch, sha, number=7):
+    """A ``pull_request`` ``synchronize`` body: *sha* pushed to *branch*."""
+    return json.dumps({
+        'action': 'synchronize',
+        'installation': {'id': 4242},
+        'sender': {'login': 'dev'},
+        'pull_request': {
+            'number': number,
+            'base': {'ref': 'main', 'repo': {'clone_url': clone_url}},
+            'head': {
+                'ref': branch, 'sha': sha,
+                'repo': {'clone_url': clone_url},
+            },
+        },
+        'repository': {'clone_url': clone_url, 'full_name': 'owner/repo'},
+    })
+
+
+class TestPullRequestSynchronize(_PushCase):
+    """A commit pushed to a pull request's branch rebuilds its preview once.
+
+    GitHub delivers a ``push`` and a ``pull_request`` ``synchronize`` for
+    it, in either order. The synchronize names the commit as the push
+    does, so the two ask for one rebuild, and the preview follows its
+    pull request whether or not it follows pushes (``auto_rebuild``).
+    """
+
+    HEAD = 'feat/x'
+    SHA = 'abc1234def5678'
+
+    def setUp(self):
+        """Add the panel's App and an open preview of pull request #7."""
+        super().setUp()
+        App = self.env['cloud.github.app']
+        App.search([]).unlink()
+        App.create({
+            'app_id': '12345', 'private_key': 'not a key',
+            'installation_id': '4242',
+        })
+        self.preview = self.env['cloud.instance'].create({
+            'name': 'pr-7',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+            'auto_rebuild': True,
+            'state': 'deployed',
+            'pr_number': 7,
+            'pr_repo': 'owner/repo',
+            'pr_head_branch': self.HEAD,
+            'pr_state': 'open',
+        })
+        self.env['cloud.instance.repo'].create({
+            'instance_id': self.preview.id,
+            'url': self.REPO_URL,
+            'branch': self.HEAD,
+        })
+        self.deliveries = 0
+
+    def _deliver(self, event_type, payload):
+        """Record and process one delivery; return the preview's rebuilds."""
+        self.deliveries += 1
+        event = self.env['cloud.github.event'].create({
+            'event_type': event_type,
+            'delivery_id': f'sync-{self.id()}-{self.deliveries}',
+            'payload': payload,
+        })
+        event._dispatch(json.loads(payload))
+        self.assertTrue(event.processed)
+        return self.Job.search([
+            ('instance_id', '=', self.preview.id),
+            ('job_type_id', '=', self.rebuild_type.id),
+        ], order='id asc')
+
+    def _push_head(self, sha=None):
+        """Deliver the push of *sha* to the pull request's branch."""
+        return self._deliver('push', _push_payload(
+            self.REPO_URL, self.HEAD, sha or self.SHA,
+        ))
+
+    def _synchronize(self, sha=None):
+        """Deliver the pull request's ``synchronize`` for *sha*."""
+        return self._deliver('pull_request', _synchronize_payload(
+            self.REPO_URL, self.HEAD, sha or self.SHA,
+        ))
+
+    def _running_on_preview(self, payload=None):
+        """A rebuild of the preview created ``started``, as if running."""
+        return self.Job.create({
+            'name': 'rebuild',
+            'host_id': self.host.id,
+            'instance_id': self.preview.id,
+            'job_type_id': self.rebuild_type.id,
+            'state': 'started',
+            'payload': payload or {},
+        })
+
+    def test_the_push_then_its_synchronize_queue_one_rebuild(self):
+        rebuilds = self._push_head()
+        self.assertEqual(len(rebuilds), 1)
+        self.assertEqual(rebuilds.state, 'pending')
+        self.assertEqual(self._synchronize(), rebuilds)
+
+    def test_the_synchronize_then_its_push_queue_one_rebuild(self):
+        rebuilds = self._synchronize()
+        self.assertEqual(len(rebuilds), 1)
+        self.assertEqual(rebuilds.state, 'pending')
+        self.assertEqual(self._push_head(), rebuilds)
+
+    def test_during_a_rebuild_the_push_and_its_synchronize_wait_as_one(self):
+        running = self._running_on_preview()
+        self._push_head()
+        waiting = self._synchronize() - running
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting.state, 'queued')
+        self.assertEqual(waiting.payload['push_sha'], 'abc1234')
+        self.assertNotIn('coalesced_pushes', waiting.payload)
+
+    def test_the_synchronize_names_its_commit(self):
+        """With auto_rebuild off, the push queues nothing and the
+        synchronize's rebuild says which commit it was asked for, as a
+        push's does: the fix of a failed preview supersedes the failure."""
+        self.preview.auto_rebuild = False
+        self.assertFalse(self._push_head())
+        rebuild = self._synchronize()
+        self.assertEqual(len(rebuild), 1)
+        payload = rebuild.payload
+        self.assertEqual(payload['trigger'], 'webhook')
+        self.assertEqual(payload['push_repo'], 'owner/repo')
+        self.assertEqual(payload['push_branch'], self.HEAD)
+        self.assertEqual(payload['push_sha'], 'abc1234')
+        self.assertEqual(payload['push_by'], 'dev')
+        self.assertEqual(payload['push_provider'], 'github')
+        self.assertEqual(
+            RebuildInstanceExecutor._pushed_shas(payload), {'abc1234'},
+        )
+
+    def test_a_new_commit_waits_behind_the_rebuild_of_the_previous_one(self):
+        running = self._running_on_preview({
+            'trigger': 'webhook', 'push_repo': 'owner/repo',
+            'push_branch': self.HEAD, 'push_sha': 'old0001',
+            'push_message': '', 'push_by': 'dev', 'push_provider': 'github',
+        })
+        waiting = self._synchronize() - running
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting.state, 'queued')
+        self.assertEqual(waiting.payload['push_sha'], 'abc1234')
