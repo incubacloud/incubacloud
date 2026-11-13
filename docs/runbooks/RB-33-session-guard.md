@@ -201,7 +201,11 @@ values (`hits` counts the requests that repeated it):
 The rows of a user who is archived go at the next daily vacuum, and those
 of a deleted one with the user; so does Odoo's trace of their sessions
 (`res.device.log`), which Odoo itself keeps for good. The privacy policy
-keeps both while the user's account exists (#74, 13-nov-2026).
+keeps both while the user's account exists (#74, 13-nov-2026). Archiving
+a user deletes their stored sessions, and the vacuum deletes those its
+rows name before the rows: Odoo's session token includes `active`, so a
+session left on disk would be accepted again on reactivating the user,
+with no row left for "Log out from all devices" to find it by.
 
 How to read it:
 
