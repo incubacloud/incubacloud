@@ -86,12 +86,11 @@ class CloudHost(models.Model):
         :return: what ``write`` returns
         """
         if "allowed_ssh_ips" in vals and "ssh_allowlist_unconfirmed" not in vals:
-            vals = dict(
-                vals,
-                ssh_allowlist_unconfirmed=not self.env.context.get(
+            vals = vals | {
+                "ssh_allowlist_unconfirmed": not self.env.context.get(
                     SSH_ALLOWLIST_CONFIRMED,
                 ),
-            )
+            }
         result = super().write(vals)
         if _SETTLING_FIELDS.intersection(vals):
             self.env["cloud.host"]._judge_pending_panel_address_change()
@@ -176,7 +175,7 @@ class CloudHost(models.Model):
             return
         if not self._judge_panel_address_change(change):
             self.env["ir.config_parameter"].sudo().set_param(
-                CHANGE_PARAM, json.dumps(dict(change, settled=True)),
+                CHANGE_PARAM, json.dumps(change | {"settled": True}),
             )
 
     @api.model
