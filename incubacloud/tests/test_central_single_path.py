@@ -179,6 +179,12 @@ class SinglePathCase(ObservabilityExecutorCase):
         self.env.invalidate_all()
         return result
 
+    def _jobs(self, code):
+        """Return the jobs of type *code* on the central's host."""
+        return self.env["cloud.job"].search([
+            ("host_id", "=", self.host.id), ("job_type_id.code", "=", code),
+        ])
+
     def _alert(self, code, host=None):
         """Return the active alert *code*, for *host* when given."""
         domain = [("code", "=", code), ("state", "=", "active")]
@@ -485,6 +491,28 @@ class TestTheName(SinglePathCase):
         self.assertEqual(self.settings.metrics_central_url, LEGACY_READ)
         self.assertEqual(self.settings.metrics_remote_write_url, LEGACY_WRITE)
         self.assertEqual(self.env["cloud.settings"]._central_legacy_urls(), {})
+
+    def test_switched_off_the_central_is_deployed_again(self):
+        """Its certificate stays in force on every entrypoint until then (H2)."""
+        self._check(_OK)
+        self.settings.metrics_central_single_path = False
+        self.assertTrue(self._jobs("deploy_metrics_central"))
+
+    def test_switched_off_before_the_move_the_central_is_deployed_again(self):
+        """The certificate is installed at the deployment, not at the move."""
+        self.settings.metrics_central_single_path = False
+        self.assertTrue(self._jobs("deploy_metrics_central"))
+
+    def test_switched_off_without_a_name_nothing_is_deployed(self):
+        self.settings.metrics_central_public_host = False
+        self.settings.metrics_central_single_path = False
+        self.assertFalse(self._jobs("deploy_metrics_central"))
+
+    def test_switched_off_with_observability_off_nothing_is_deployed(self):
+        """The deployment would switch observability on."""
+        self.settings.metrics_enabled = False
+        self.settings.metrics_central_single_path = False
+        self.assertFalse(self._jobs("deploy_metrics_central"))
 
     def test_switched_off_the_name_moves_nothing(self):
         self.settings.metrics_central_single_path = False
