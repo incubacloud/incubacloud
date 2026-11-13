@@ -332,19 +332,25 @@ class TestTheCheckReadsTheProxyNetworkGuard(HostStateCase):
     unsupported and resolves it when it says on, so a guard that opened
     after Full Setup reaches the panel."""
 
-    def _check(self, line, **host_vals):
-        host = self._host(**host_vals)
+    # Its alerts filed in the test's transaction, as the judgement's are.
+    _alerting = TestHostProbeJudgement._alerting
+
+    def _check(self, line, host=None, **host_vals):
+        host = host or self._host(**host_vals)
         facts = _probe_facts()
         if line is not None:
             facts["ic_shared_guard_state"] = line
-        ex = self._executor(HostProbeExecutor, host=host, facts=facts)
+        ex = self._alerting(
+            self._executor(HostProbeExecutor, host=host, facts=facts),
+        )
         ex._missing_tools = []
         ex.parse_results({})
         _run(ex.on_success({}))
         return host
 
     def _active(self, host):
-        return self.env["cloud.alert"].search([
+        """Return the active guard alerts of *host*."""
+        return self.env["cloud.alert"].sudo().search([
             ("host_id", "=", host.id),
             ("code", "=", SHARED_GUARD_ALERT),
             ("state", "=", "active"),
@@ -362,15 +368,7 @@ class TestTheCheckReadsTheProxyNetworkGuard(HostStateCase):
     def test_a_guard_on_again_resolves_it(self):
         host = self._check("IC_SHARED_GUARD_OPEN the proxy is not running on x")
         self.assertTrue(self._active(host))
-        ex = self._executor(
-            HostProbeExecutor, host=host,
-            facts=_probe_facts() | {
-                "ic_shared_guard_state": "IC_SHARED_GUARD_ON bridge br-x, proxy m",
-            },
-        )
-        ex._missing_tools = []
-        ex.parse_results({})
-        _run(ex.on_success({}))
+        self._check("IC_SHARED_GUARD_ON bridge br-x, proxy m", host=host)
         self.assertFalse(self._active(host))
 
     def test_no_line_or_the_switch_off_says_nothing(self):
