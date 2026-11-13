@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from odoo.modules.neutralize import neutralize_database
-from odoo.tests.common import BaseCase, TransactionCase
+from odoo.tests.common import BaseCase, TransactionCase, tagged
 from odoo.tools import mute_logger
 
 from ..models import _job_server_limits
@@ -61,6 +61,10 @@ def _job(env, name="checkpoint"):
     })
 
 
+# After the install: Odoo 18 runs a module's at_install tests while it is
+# still "to install", and neutralize_database skips such a module's
+# neutralize.sql, so a fresh install would leave the row in place.
+@tagged("post_install", "-at_install")
 class TestJobCheckpoint(TransactionCase):
     """The row: encrypted, one per job, gone with the job and from a copy."""
 
