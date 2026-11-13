@@ -1422,6 +1422,61 @@ class TestARowThatHoldsTheQueue(TransactionCase):
         self.assertFalse(self._held_alert(young))
         self.assertFalse(self._held_alert(unheld))
 
+    def test_the_sweep_counts_late_up_to_its_own_last_run(self):
+        """The panel back from a stop longer than the wait: the first sweep
+        finds the reconciliation no later than itself, and says nothing;
+        one that ran that long without it does."""
+        job = self._ended("deploy_instance", self.inst)
+        self._marked_ago(job, 120)
+        now = fields.Datetime.now()
+        self._reconcile_cron().write({
+            "active": True, "lastcall": now - timedelta(minutes=62),
+        })
+        sweep = self.env.ref("incubacloud.cron_job_queue_dispatch")
+        back = self.Job.with_context(
+            cron_id=sweep.id, lastcall=now - timedelta(minutes=60),
+        )
+        self.assertEqual(back._alert_unwatched_queue_holds(), 0)
+        self.assertFalse(self._held_alert(job))
+        running = self.Job.with_context(
+            cron_id=sweep.id, lastcall=now - timedelta(minutes=2),
+        )
+        self.assertEqual(running._alert_unwatched_queue_holds(), 1)
+        self.assertTrue(self._held_alert(job))
+
+    def test_the_sweep_says_nothing_while_a_pass_runs(self):
+        """A pass longer than the wait has not written its lastcall yet."""
+        job = self._ended("deploy_instance", self.inst)
+        self._marked_ago(job, 40)
+        self._reconcile_cron().write({
+            "active": True,
+            "lastcall": fields.Datetime.now() - timedelta(minutes=35),
+        })
+        with patch.object(
+            type(self.Job), "_cron_runs_now", autospec=True, return_value=True,
+        ):
+            self.assertEqual(self.Job._alert_unwatched_queue_holds(), 0)
+        self.assertFalse(self._held_alert(job))
+        self.assertEqual(self.Job._alert_unwatched_queue_holds(), 1)
+
+    def test_a_cron_a_worker_holds_reads_as_running(self):
+        """The worker's lock on the cron's row, read without waiting and
+        not kept: the worker's own lock is taken after the read."""
+        cron = self._reconcile_cron()
+        self.assertFalse(self.Job._cron_runs_now(cron))
+        worker = self.registry.cursor()
+        try:
+            # NOWAIT: a lock the read kept fails here, it does not hang.
+            worker.execute(
+                "SELECT 1 FROM ir_cron WHERE id = %s FOR NO KEY UPDATE NOWAIT",
+                (cron.id,),
+            )
+            self.assertTrue(self.Job._cron_runs_now(cron))
+        finally:
+            worker.rollback()
+            worker.close()
+        self.assertFalse(self.Job._cron_runs_now(cron))
+
     def test_the_waiting_job_says_what_it_waits_for(self):
         """The job queued behind it names it, until the row goes."""
         job = self._ended("deploy_instance", self.inst)
@@ -1454,6 +1509,34 @@ class TestARowThatHoldsTheQueue(TransactionCase):
             [("job_id", "=", job.id)],
         ).unlink()
         self.assertIsNone(first._format()[0]["server_wait"])
+
+
+class TestARunThatEndedMeanwhile(TransactionCase):
+    """The sweep's read of a cron whose run ended after its snapshot.
+
+    A class of its own: the run's write, committed by another connection,
+    would make any later write of the cron's row in this transaction fail.
+    """
+
+    def test_it_reads_as_running(self):
+        """PostgreSQL refuses the lock of a row written since the
+        transaction began: the cron ran, and the transaction goes on."""
+        cron = self.env.ref("incubacloud.cron_cloud_job_reconcile_lost").sudo()
+        self.env.cr.execute("SELECT 1")
+        worker = self.registry.cursor()
+        try:
+            worker.execute("SET LOCAL lock_timeout = '5s'")
+            # The end of a run writes the row (``_reschedule_later``); the
+            # same values, so the database is left as it was.
+            worker.execute(
+                "UPDATE ir_cron SET lastcall = lastcall WHERE id = %s",
+                (cron.id,),
+            )
+            worker.commit()
+        finally:
+            worker.close()
+        self.assertTrue(self.env["cloud.job"]._cron_runs_now(cron))
+        self.env.cr.execute("SELECT 1")
 
 
 class TestTheScopeOfAStepApart(TransactionCase):
