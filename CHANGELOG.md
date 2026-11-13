@@ -108,6 +108,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   from what queue_job keeps of the deferral; nothing is stored. The MCP's
   `get_job` and `list_jobs` answer `build_wait`. Spanish translation
   included.
+- **The host shell's audit has a retention (#78).** Settings › Logs &
+  retention › Panel records › *Host shell session retention*
+  (`host_session_retention_days`, 365 days by default): the daily vacuum
+  deletes the `cloud.host.session` rows of shells closed longer ago,
+  counted from their close. Open sessions are never deleted, and 0 keeps
+  every row. The rows were kept for ever. The vacuum, as the superuser, is
+  the only way these rows are deleted; they stay immutable, and the
+  access rules still deny deleting them below the system group. A row of
+  a user since removed stays until then: it is the proof of who came in.
+  Spanish translation included.
 
 ### Changed
 

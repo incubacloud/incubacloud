@@ -128,7 +128,7 @@ incubacloud_assistant/        # The AI assistant in the panel: see assistant.md
 | `cloud.github.event` | Immutable webhook audit log (drives auto-rebuilds) |
 | `cloud.terminal.route` | Terminal subprocess routing (encrypted auth token, owner) |
 | `cloud.host.terminal.route` | Host-shell subprocess routing (same shape, its own table) |
-| `cloud.host.session` | Immutable audit of host-shell sessions: who, when, client IP, user agent — never the content |
+| `cloud.host.session` | Immutable audit of host-shell sessions: who, when, client IP, user agent — never the content; closed rows past `host_session_retention_days` (365) deleted by the daily vacuum |
 | `cloud.connect.token` | One-time session token for connect-as |
 
 Supporting models: `cloud.project.repo`, `cloud.instance.repo`, `cloud.instance.domain`, `cloud.instance.backup`, `cloud.instance.session`, `cloud.tag`, `cloud.host.tag`, `cloud.instance.tag`, `cloud.host.whitelist`, `cloud.instance.whitelist`, `cloud.github.credential.service`, `cloud.security.mixin` (abstract). `res.users` is extended with notification preferences; `queue.job` with the state bridge.
@@ -835,7 +835,7 @@ A copy of a panel (development, QA, a neutralized download, a staging of a partn
 - **Audit trail**: `cloud.audit.log` records who did what, filterable per instance/host, with configurable retention and a manager-only purge.
 - **Rate limiting**: DB-backed counters protect the public endpoints (webhook, health), the restore upload and terminal opens. Caps are tunable in Settings → Rates.
 - **Web terminal**: PTY subprocesses are isolated per session with an encrypted routing token; only the owning user can attach. Idle sessions are reaped (see RB-03).
-- **Host shell**: a login shell on the machine itself, for Administrators only (`_check_can_manage_hosts`) — the role that already runs root there through every host job, with the same key. Same subprocess isolation as the web terminal, its own cap (3/min per user and per host), one open session per user and host, and an immutable `cloud.host.session` row per session. What is typed is not recorded: a shell receives passwords on stdin. Only `host_terminal_session.py` may open a command-less PTY; `test_terminal_session.py` fails the build if one appears anywhere else.
+- **Host shell**: a login shell on the machine itself, for Administrators only (`_check_can_manage_hosts`) — the role that already runs root there through every host job, with the same key. Same subprocess isolation as the web terminal, its own cap (3/min per user and per host), one open session per user and host, and an immutable `cloud.host.session` row per session, kept `host_session_retention_days` (365 by default, Settings → Logs & retention; 0 keeps all) after the session closes and then deleted by the daily vacuum (`_gc_expired_sessions`, as the superuser: the only deletion of these rows; open rows are never deleted; decided 13-nov-2026). What is typed is not recorded: a shell receives passwords on stdin. Only `host_terminal_session.py` may open a command-less PTY; `test_terminal_session.py` fails the build if one appears anywhere else.
 
 ### Sessions that change hands
 
