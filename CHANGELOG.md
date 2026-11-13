@@ -145,6 +145,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   stopped first, as Odoo closes its own. Any other failure, and a second
   hang, fail as before. The mixin's tests run Odoo's `browser_js` over a
   simulated Chrome.
+- **A commit pushed to a pull or merge request's branch rebuilds its
+  preview once (#35).** GitHub sends a `push` and a `pull_request`
+  `synchronize` for it, GitLab a push and a merge request `update`; the
+  second queued a rebuild of its own, with no payload, as one asked for
+  by hand: the preview was rebuilt twice, that rebuild did not say which
+  commit it built, and it did not replace the failure of a preview the
+  commit fixes. The `synchronize` and the `update` now queue it with a
+  push's payload (`trigger: webhook`, the `push_*` keys: the request's
+  head commit, its branch and repository, who pushed). Whichever of the
+  two comes first queues the rebuild; the other merges into it while it
+  waits, and queues nothing once it has been dispatched
+  (`cloud.repo.event.mixin._queue_push_rebuild`,
+  `RebuildInstanceExecutor._carries_push`), which also holds for a push
+  delivered again. A preview still follows its request whether or not it
+  follows pushes (`auto_rebuild`).
 
 ---
 
