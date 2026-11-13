@@ -5493,6 +5493,19 @@ msgid "Every account on the central"
 msgstr "Todas las cuentas de la central"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Every instance on this host shares a network with the proxy. With this on, "
+"the host's firewall keeps one instance from reaching another directly, past "
+"the proxy and the CDN. Applied, or removed, by Full Setup."
+msgstr ""
+"Todas las instancias de este host comparten una red con el proxy. Con esta "
+"opción, el firewall del host impide que una instancia llegue directamente a "
+"otra, saltándose el proxy y la CDN. Lo aplica, o lo quita, la configuración "
+"completa."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_collect_pg
 msgid ""
 "Every minute, each instance's database connections, running queries, lock "
@@ -12047,6 +12060,19 @@ msgid "Only staging instances expire."
 msgstr "Solo caducan las instancias de staging."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__shared_guard
+msgid ""
+"Only the host's proxy may open connections to the instances on the network "
+"they share with it, so one instance cannot reach another one's Odoo "
+"directly. Applied, or removed, by the next Full Setup. Turn it off only if "
+"the guard gets in the way; see RB-39."
+msgstr ""
+"Solo el proxy del host puede abrir conexiones con las instancias en la red "
+"que comparten con él, de modo que una instancia no puede llegar directamente"
+" al Odoo de otra. Lo aplica, o lo quita, la siguiente configuración "
+"completa. Desactívelo solo si la protección estorba; consulte RB-39."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -12055,6 +12081,12 @@ msgid ""
 msgstr ""
 "Solo la plataforma puede poner un trabajo a la cabeza de su cola o hacerlo "
 "pasar por una cola retenida por un fallo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Only the proxy may open connections to the instances"
+msgstr "Solo el proxy puede abrir conexiones con las instancias"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12963,6 +12995,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_proxy
 msgid "Proxy"
 msgstr "Proxy"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Proxy network"
+msgstr "Red del proxy"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__public_key
@@ -24240,6 +24278,11 @@ msgid ""
 msgstr ""
 "Aún sin medir: el disco, la memoria y los núcleos del servidor se leen de "
 "sus agentes de métricas."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__shared_guard
+msgid "Isolate Instances on the Proxy Network"
+msgstr "Aislar las instancias en la red del proxy"
 
 #. module: incubacloud
 #. odoo-javascript
