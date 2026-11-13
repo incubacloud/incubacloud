@@ -137,7 +137,7 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
             real_ip.PROXY_OPTION: "",
             real_ip.COUNTRY_OPTION: "CF-IPCountry",
         }, odoo.http))
-        self.startPatcher(patch.dict(config.options.maps[0], {"proxy_mode": True}))
+        self.startPatcher(patch.dict(config.options, {"proxy_mode": True}))
 
     def _sign_in(self, **extra):
         """Open a session of the fixture user, traced as a browser's is.
@@ -174,14 +174,13 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         :rtype: bool
         """
         self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            accepted = self._ask(sid, agent, visitor, country)
+        accepted = self._ask(sid, agent, visitor, country)
         self.env.invalidate_all()
         return accepted
 
     def _ask(self, sid, agent, visitor=None, country=None):
-        """Ask ``/web/session/check`` with session *sid*, from any thread,
-        inside ``allow_requests``: the test server refuses any other.
+        """Ask ``/web/session/check`` with session *sid*, from any thread:
+        Odoo 18's test server takes a request without its test cookie.
 
         :return: whether the session was still accepted
         :rtype: bool
@@ -294,11 +293,10 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         :rtype: requests.Response
         """
         self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            response = requests.get(
-                self.base_url() + path, headers={"User-Agent": agent},
-                cookies={"session_id": sid}, allow_redirects=False, timeout=30,
-            )
+        response = requests.get(
+            self.base_url() + path, headers={"User-Agent": agent},
+            cookies={"session_id": sid}, allow_redirects=False, timeout=30,
+        )
         self.env.invalidate_all()
         return response
 
@@ -328,13 +326,12 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         other = self._sign_in()
         self.assertTrue(self._check(other, CHROME))
         self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            answer = requests.post(
-                self.base_url() + "/web/webclient/version_info",
-                data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
-                headers={"User-Agent": FIREFOX, "Content-Type": "application/json"},
-                cookies={"session_id": other}, timeout=30,
-            ).json()
+        answer = requests.post(
+            self.base_url() + "/web/webclient/version_info",
+            data=json.dumps({"jsonrpc": "2.0", "method": "call", "params": {}}),
+            headers={"User-Agent": FIREFOX, "Content-Type": "application/json"},
+            cookies={"session_id": other}, timeout=30,
+        ).json()
         self.env.invalidate_all()
         self.assertIn("result", answer)
         self.assertIsNone(self._stored(other).uid)
@@ -552,8 +549,7 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         self.env.flush_all()
         with patch.object(Guard, "_session_guard_closed", autospec=True) as closed, \
                 patch.object(odoo.http.Request, "_post_init", autospec=True,
-                             side_effect=post_init), \
-                self.allow_requests(all_requests=True):
+                             side_effect=post_init):
             threads = [threading.Thread(target=ask) for _ in range(3)]
             for thread in threads:
                 thread.start()
