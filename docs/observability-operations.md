@@ -845,7 +845,7 @@ with the layer: `connect`, `tls` or `route`); a DNS answer that is not the centr
 server raises `metrics_central_dns_pending` again, with the record to fix, as after a
 move to another server. There is no path to fall back to;
 the agents' queues (512 MB per URL for vmagent, 64 MB for Fluent Bit) hold what they
-cannot send. See [RB-34](runbooks/RB-34-central-name.md).
+cannot send. See [RB-35](runbooks/RB-35-central-name.md).
 
 A central that was published on 443 under the same name stops answering there at
 the deployment that turns the switch on: nothing is published on 443 with it. Its
@@ -881,7 +881,7 @@ in **Who may delete series and read the fleet on the central**; the operator's
 credential and the deletion key still guard them.
 
 To move a central with its history to another server by hand, see
-[RB-35](runbooks/RB-35-move-the-central-by-hand.md).
+[RB-36](runbooks/RB-36-move-the-central-by-hand.md).
 
 ## cAdvisor version requirement (do not pin it back)
 

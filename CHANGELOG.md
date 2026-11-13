@@ -42,13 +42,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   are kept for the way back, which is turning the switch off. Alerts
   `metrics_central_dns_pending` (the record to create),
   `metrics_central_name_down` and `metrics_central_cert_expiring`;
-  **Check now** under the name; RB-34. **Who can write to the central**:
+  **Check now** under the name; RB-35. **Who can write to the central**:
   only the panel's servers by their address (the default), or any address
   with each account's credential, which opens that one port to every
   address; a layer may fix it. A server the port refuses raises
   `metrics_central_writer_outside` with the address it leaves with, which
   its agents' install asks the panel (`GET /cloud/egress_ip`, public,
-  rate limited). RB-35 moves a central by hand with its history. Spanish
+  rate limited). RB-36 moves a central by hand with its history. Spanish
   translation included.
 
   **It stays off on update.** The update adds
