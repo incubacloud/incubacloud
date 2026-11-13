@@ -914,9 +914,11 @@ class PitrRestoreExecutor(_PitrExecutor):
         First asks the host whether this job's restore is already there:
         queue_job runs a job that died once more, and its restore may be
         under way with the database stopped (where listing the copies
-        would fail) or done.
+        would fail) or done. A restore that is not refuses to start over
+        what a rebuild left unapplied (``_refuse_unapplied_rebuild``).
 
         :raise ValueError: when no base copy does
+        :raise UnappliedRebuild: over a rebuild left unapplied
         """
         if (self.job.payload or {}).get("follow"):
             return
@@ -933,6 +935,10 @@ class PitrRestoreExecutor(_PitrExecutor):
         # A lock of its own with no process is a restore of this job that
         # was lost: not "nothing there".
         self._probed = known.get("lock") != str(self.job.id)
+        # A restore not started yet: before it stops anything, as its
+        # update and its ``up`` would use what a rebuild left unapplied on
+        # the server (#96). One already under way is followed above.
+        await self._refuse_unapplied_rebuild(transport, d, "restoring it")
         command = self.run_script("pitr.sh", ["list", d, user])
         result = await transport.run(command, timeout=300)
         cluster, bases = parse_bases(result.stdout)

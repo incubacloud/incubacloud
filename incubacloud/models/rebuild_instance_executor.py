@@ -90,6 +90,14 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     # a stop is refused. A deploy has none: a new instance stopped
     # halfway is removed.
     _no_return_from = _LABEL_UPDATE
+    #: Whether this flow builds the image and tries it before its restart
+    #: («Rebuild Odoo image», the boot test, the update). It names the
+    #: mark ``rebuild.sh copier-update`` lays before copier (#96): ``build``
+    #: takes the place of any other job's, ``files`` stops at a rebuild's
+    #: (exit 26) and holds nothing back. A layer that drops the build says
+    #: so here, and a test checks every registered subclass against its
+    #: steps.
+    _builds_image = True
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -168,7 +176,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 self.run_script(
                     "rebuild.sh",
                     ["copier-update", d, tmp_answers,
-                     self._copier_template()[1]],
+                     self._copier_template()[1], self.job.id,
+                     "build" if self._builds_image else "files"],
                     env=self._copier_settings_env(),
                 ),
             ),
@@ -426,10 +435,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     --remove-orphans drops containers no longer in the compose
             #     file (e.g. backup or smtp when the operator removes the
             #     corresponding service from the instance config) so they
-            #     don't linger.
+            #     don't linger. Once it worked, the mark copier-update laid
+            #     goes, in the same command: a failed restart keeps it.
             (
                 _LABEL_RESTART,
-                f"cd {d} && docker compose up -d --remove-orphans",
+                self._clearing_unapplied(
+                    f"cd {d} && docker compose up -d --remove-orphans", d,
+                ),
             ),
             # 13. Set web.base.url and report.url in ir.config_parameter
             #     (shared with deploy via the same script; base_url arrives
@@ -816,22 +828,25 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         «Rebuild Odoo image» retags the image, which neither the boot test
         nor «Update changed modules» has passed yet. Ended between the
         first and «Restart instance», the instance runs its previous
-        build, but whatever recreates its containers (``docker compose up``:
-        a Start, a restore, a move) would start them with those files and
-        that image. Only a warning, decided on 6-nov-2026: a rebuild that
-        fails at the same point (the build, the boot test) leaves the
-        same, and a block that covers both belongs on the host, where
-        ``compose_op.sh up`` would honour it whatever closed the job.
-        Ended once «Update changed modules» had started (a worker that
-        died there, a stop that came without the job's lock), the database
-        may be ahead of the image that runs: Odoo stores each module it
-        updates as it goes.
+        build. Since #96 the server keeps a mark of it, laid by
+        ``rebuild.sh copier-update`` and lifted by the restart, whatever
+        closed the job: a Start or Restart brings back the previous build
+        without recreating anything (``compose_op.sh``), and restores and
+        moves are refused until a rebuild passes. Ended once «Update
+        changed modules» had started (a worker that died there, a stop that
+        came without the job's lock), the database may be ahead of the
+        image that runs: Odoo stores each module it updates as it goes.
 
         :param results: what the steps answered, or None
         :return: whether there was something to say
         :rtype: bool
         """
         left = self._left_unapplied(results)
+        held = (
+            " The server keeps a mark of it: Start brings back the previous"
+            " build without recreating anything, and restores and moves are"
+            " refused until a rebuild passes."
+        )
         if left == _LABEL_UPDATE:
             self._sys(
                 "⚠ This rebuild updated the modules of the instance's"
@@ -839,7 +854,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 " the image it built, and ended before restarting the"
                 " instance: its running containers still have the previous"
                 " image over that database. Rebuild it to put the new image"
-                " in service."
+                " in service." + held
             )
         elif left == _LABEL_BUILD:
             self._sys(
@@ -847,16 +862,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 " (copier) and may have rebuilt its image, which was neither"
                 " boot-tested nor applied to its database's modules; it"
                 " ended before restarting the instance, which runs its"
-                " previous build. Starting or restoring the instance would"
-                " recreate its containers with them: rebuild it first."
+                " previous build. Rebuild it to apply them." + held
             )
         elif left == _LABEL_COPIER:
             self._sys(
                 "⚠ This rebuild rewrote the instance's files on its server"
                 " (copier) and ended before restarting it: the instance runs"
-                " its previous build. Starting or restoring it would"
-                " recreate its containers with the rewritten files: rebuild"
-                " it first."
+                " its previous build. Rebuild it to apply them." + held
             )
         return bool(left)
 

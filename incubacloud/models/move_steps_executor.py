@@ -13,12 +13,17 @@ from odoo import fields
 
 from .abstract_executor import (
     CANCELLED_WHILE_RUNNING,
+    COMPOSE_OP_EXIT_UNAPPLIED,
+    UNAPPLIED_RUNBOOK,
     AbstractSSHExecutor,
     JobRefused,
+    parse_unapplied_mark,
 )
 
 #: Label of the count of what runs inside the instance.
 QUIET_LABEL = "Count what runs inside the instance"
+#: Label of the question for the mark of a rebuild left unapplied (#96).
+UNAPPLIED_LABEL = "Look for a rebuild left unapplied"
 #: Label of the source's count.
 FINGERPRINT_LABEL = "Count rows and files"
 #: Label of the old copy's stop.
@@ -118,6 +123,11 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
     count inside the instance that could not be read postpones the move
     the same way (``unknown``), rather than failing it: nothing stopped,
     and a failed move is rolled back with a critical alert and paused.
+    So does the mark of a rebuild left unapplied on the source
+    (``unapplied``, #96): the destination is deployed from the panel's
+    configuration, which is that rebuild's, and its restore would update
+    the database to an image nothing tried. It goes first, and a mark
+    that cannot be read postpones as ``unknown``.
 
     The step writes nothing on its own job: its hooks run on a cursor
     that commits before the job's transaction stores it ``done``, and a
@@ -128,15 +138,24 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
     _job_type = "move_quiet_check"
 
     def get_commands(self):
-        """Count inside the instance only when a layer gives the SQL."""
+        """Look for a rebuild left unapplied, then count inside the instance.
+
+        The count only when a layer gives the SQL.
+        """
         inst = self._inst()
-        sql = inst._move_quiet_sql() if inst else ""
-        if not sql:
+        if not inst:
             return []
-        return [(
-            QUIET_LABEL,
-            self.run_script("move_steps.sh", ["quiet", *self._db_args(inst), sql]),
+        cmds = [(
+            UNAPPLIED_LABEL,
+            self.run_script("rebuild.sh", ["check-unapplied", self._inst_dir(inst)]),
         )]
+        sql = inst._move_quiet_sql()
+        if sql:
+            cmds.append((
+                QUIET_LABEL,
+                self.run_script("move_steps.sh", ["quiet", *self._db_args(inst), sql]),
+            ))
+        return cmds
 
     def parse_results(self, results):
         """Never fail on the count: one that could not be read postpones.
@@ -186,6 +205,38 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
             ("job_type_id.code", "not in", Job._get_hidden_job_types()),
         ])
 
+    @staticmethod
+    def _unapplied_verdict(results):
+        """Return ``(reason, detail)`` for a rebuild left unapplied, or None.
+
+        Only a rebuild's mark (``build``): a plan change's left no image
+        nothing tried.
+
+        :param dict results: what the commands printed
+        :rtype: tuple | None
+        """
+        data = results.get(UNAPPLIED_LABEL)
+        if data is None or data.get("exit_status") == 0:
+            return None
+        mark = (
+            parse_unapplied_mark(data.get("stdout"))
+            if data.get("exit_status") == COMPOSE_OP_EXIT_UNAPPLIED else None
+        )
+        if mark is None:
+            return (
+                "unknown",
+                "whether a rebuild left the instance unapplied could not be"
+                f" read (exit status {data.get('exit_status')})",
+            )
+        if mark["kind"] != "build":
+            return None
+        return (
+            "unapplied",
+            f"rebuild #{mark['job']} left rewritten files and an image on the"
+            " server that were not applied: rebuild the instance, then move"
+            f" it ({UNAPPLIED_RUNBOOK})",
+        )
+
     def _verdict(self, results):
         """Return ``(reason, detail)`` when the move must wait, or None.
 
@@ -193,6 +244,9 @@ class MoveQuietCheckExecutor(_MoveSourceStep):
         :rtype: tuple | None
         """
         inst = self._inst()
+        unapplied = self._unapplied_verdict(results)
+        if unapplied:
+            return unapplied
         problem = self._count_problem(results)
         if problem:
             return "unknown", problem

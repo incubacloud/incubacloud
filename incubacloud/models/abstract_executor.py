@@ -109,6 +109,20 @@ def compose_own_container(service):
 #: through the routes odoo has (``instance_unresponsive``).
 COMPOSE_OP_EXIT_UNCHECKED = 24
 
+#: A script refused to go on because a rebuild left its rewritten files
+#: and its image unapplied on the server (the mark of
+#: ``scripts/lib/common.sh``, #96): ``compose_op.sh`` when the previous
+#: build cannot be started as it was, ``tenant_push.sh`` before booting the
+#: image, ``rebuild.sh check-unapplied`` when there is a mark at all.
+#: Nothing was run.
+COMPOSE_OP_EXIT_UNAPPLIED = 26
+#: ``compose_op.sh`` started the existing containers, the previous build,
+#: instead of recreating them from what a rebuild left unapplied. Start and
+#: Restart take it for done, with a warning.
+COMPOSE_OP_EXIT_PREVIOUS_BUILD = 27
+#: Where the way out of the mark by hand is written down, for the messages.
+UNAPPLIED_RUNBOOK = "docs/runbooks/RB-42-rebuild-left-unapplied.md"
+
 #: Label of the step that brings a restored database's modules up to the
 #: instance's code (:meth:`AbstractExecutor._update_restored_modules_step`),
 #: the rebuild's own label for the same update.
@@ -652,6 +666,33 @@ class JobRefused(RuntimeError):
     log scrapers that page on ERROR lines are not handed a decision the
     job already reported as its own failure.
     """
+
+
+class UnappliedRebuild(JobRefused):
+    """The server holds what a rebuild left unapplied, and this job would use it.
+
+    Raised before any step ran (``_refuse_unapplied_rebuild``): nothing
+    changed on the server.
+    """
+
+
+def parse_unapplied_mark(stdout):
+    """Return the mark ``rebuild.sh check-unapplied`` printed, or None.
+
+    :param str stdout: the command's output; the mark is its line
+        ``IC_UNAPPLIED job=<id> kind=<kind>``
+    :return: ``{'job': str, 'kind': str}``, or None when it printed none
+    :rtype: dict | None
+    """
+    for line in reversed((stdout or "").splitlines()):
+        line = line.strip()
+        if not line.startswith("IC_UNAPPLIED "):
+            continue
+        fields_ = dict(
+            part.split("=", 1) for part in line.split()[1:] if "=" in part
+        )
+        return {"job": fields_.get("job") or "?", "kind": fields_.get("kind") or "build"}
+    return None
 
 
 def _is_refusal(exc):
@@ -3806,6 +3847,148 @@ class AbstractExecutor(ABC):
             " what may be wrong until the instance is restarted."
         )
         return {key: data for key, data in results.items() if key != label}
+
+    def _accept_previous_build(self, results, label):
+        """Return *results* without step *label* if it started the previous build.
+
+        For a ``parse_results`` whose step *label* runs ``compose_op.sh``
+        to start containers, with ``COMPOSE_OP_EXIT_PREVIOUS_BUILD`` among
+        its ``continue_on``: a rebuild left its files and image unapplied,
+        and the script started the containers the instance had instead of
+        recreating them. The instance runs, so the step is left out of
+        what counts as failed, and the job log says what runs (#96).
+
+        :param dict results: ``{label: {'stdout': str, 'exit_status': int}}``
+        :param str label: the label of the step that runs ``compose_op.sh``
+        :return: *results*, without *label* when it exited
+            ``COMPOSE_OP_EXIT_PREVIOUS_BUILD``
+        :rtype: dict
+        """
+        step = results.get(label) or {}
+        if step.get('exit_status') != COMPOSE_OP_EXIT_PREVIOUS_BUILD:
+            return results
+        self._sys(
+            f"⚠ '{label}' started the instance's previous build: a rebuild"
+            " left rewritten files and an image on its server that were not"
+            " applied, and they were not used. Rebuild the instance to put"
+            " them in service; until then restores and moves are refused."
+        )
+        return {key: data for key, data in results.items() if key != label}
+
+    @staticmethod
+    def _unapplied_refusal(results, label):
+        """Return the error of step *label* refused by a rebuild left unapplied.
+
+        For a step that runs ``compose_op.sh`` and exited
+        ``COMPOSE_OP_EXIT_UNAPPLIED``: nothing was started, because the
+        containers the instance has are not the services the rewritten
+        compose declares, and recreating them would use what the rebuild
+        left untried.
+
+        :param dict results: what the steps answered, by label
+        :param str label: the step's label
+        :return: the error, or None when the step did not exit so
+        :rtype: str | None
+        """
+        step = results.get(label) or {}
+        if step.get('exit_status') != COMPOSE_OP_EXIT_UNAPPLIED:
+            return None
+        return (
+            f"'{label}' did not start anything: a rebuild left rewritten"
+            " files and an image on the instance's server that were not"
+            " applied, and its containers no longer match the services"
+            " they declare, so its previous build cannot be started as it"
+            " was. Rebuild the instance; to start it from those files as"
+            f" they are, lift the mark by hand ({UNAPPLIED_RUNBOOK})."
+        )
+
+    async def _read_unapplied_mark(self, transport, d):
+        """Ask the server for the mark of a rebuild left unapplied in *d*.
+
+        ``rebuild.sh check-unapplied``, from a ``before_execute``: the
+        scripts are uploaded first, as such a hook must (#96).
+
+        :param transport: the open transport
+        :param str d: the instance's directory on the server
+        :return: ``{'job', 'kind'}`` (``parse_unapplied_mark``), or None
+            when there is none
+        :rtype: dict | None
+        :raises JobRefused: when the server could not be asked
+        """
+        command = self.run_script("rebuild.sh", ["check-unapplied", d])
+        await self._upload_scripts(transport)
+        result = await transport.run(command, timeout=120)
+        if result.exit_status == 0:
+            return None
+        mark = (
+            parse_unapplied_mark(result.stdout)
+            if result.exit_status == COMPOSE_OP_EXIT_UNAPPLIED else None
+        )
+        if mark is None:
+            raise JobRefused(
+                "Whether a rebuild left this instance's files unapplied on"
+                " its server could not be read (exit status"
+                f" {result.exit_status})."
+            )
+        return mark
+
+    async def _refuse_unapplied_rebuild(self, transport, d, action):
+        """Refuse the job when the server holds what a rebuild left unapplied.
+
+        For a ``before_execute``, before anything is touched (#96): a
+        restore loads and updates the database with the image the server
+        tags, and starts its containers from the files it holds, which a
+        rebuild left untried when it ended before its restart; a move
+        deploys its destination from the same configuration. Only a
+        ``build`` mark refuses: a plan change's (``files``) left no
+        untried image.
+
+        :param transport: the open transport
+        :param str d: the instance's directory on the server
+        :param str action: what the job would do, for the message
+            ("restoring it")
+        :raises UnappliedRebuild: with a ``build`` mark
+        :raises JobRefused: when the server could not be asked
+        """
+        try:
+            mark = await self._read_unapplied_mark(transport, d)
+        except JobRefused as exc:
+            raise JobRefused(
+                f"Refused: {exc} Nothing was changed; try again."
+            ) from exc
+        if not mark or mark["kind"] != "build":
+            return
+        self._sys(
+            f"The server holds what rebuild #{mark['job']} left unapplied."
+        )
+        raise UnappliedRebuild(
+            f"Refused: rebuild #{mark['job']} left rewritten files and an"
+            " image on this instance's server that were neither boot-tested"
+            f" nor applied to its database, and {action} would use them."
+            " Rebuild the instance first. To use them as they are, the mark"
+            f" can be lifted by hand ({UNAPPLIED_RUNBOOK}). Nothing was"
+            " changed."
+        )
+
+    def _clearing_unapplied(self, command, d):
+        """Return *command*, then the lift of this job's unapplied mark.
+
+        For the step that puts what a rebuild rewrote in service (its
+        restart): the mark ``rebuild.sh copier-update`` laid for this job
+        goes once the command succeeded, in the same shell, so a restart
+        that failed keeps it (#96). A mark of another job stays. Between
+        the two the step can still be cut (a worker that dies in between):
+        the mark then stays over a rebuild already applied, Start brings
+        back what runs (27), restores and moves are refused, and the next
+        rebuild lifts it.
+
+        :param str command: the step's command
+        :param str d: the instance's directory on the server
+        :return: the command to run instead
+        :rtype: str
+        """
+        clear = self.run_script("rebuild.sh", ["clear-unapplied", d, self.job.id])
+        return f"{command} && {clear}"
 
     def _update_restored_modules_step(self, d, inst):
         """Return the step that updates a restored database to this code.

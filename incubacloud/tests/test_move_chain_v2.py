@@ -250,14 +250,62 @@ class TestQuietCheck(_MoveCase):
     def test_the_count_inside_runs_only_when_a_layer_gives_its_sql(self):
         chain = self._chain()
         check = self._running(chain, "move_quiet_check")
-        self.assertEqual(self._executor(check).get_commands(), [])
+        (mark,) = self._executor(check).get_commands()
+        self.assertEqual(mark[0], "Look for a rebuild left unapplied")
         with patch.object(
             type(self.inst), "_move_quiet_sql", autospec=True,
             return_value="SELECT 0;",
         ):
-            (step,) = self._executor(check).get_commands()
+            (mark, step) = self._executor(check).get_commands()
+        self.assertIn("rebuild.sh check-unapplied", mark[1])
         self.assertIn("move_steps.sh", step[1])
         self.assertIn("quiet", step[1])
+
+    def test_a_rebuild_left_unapplied_postpones_the_move_before_the_source_stops(self):
+        """#96, M1: the destination would come from that rebuild's
+        configuration and its restore update the database to an untried
+        image. Postponed, not failed: no alert, no pause, the source never
+        stopped, and the hook hears why."""
+        chain = self._chain(trigger="window")
+        check = self._running(chain, "move_quiet_check")
+        executor = self._executor(check)
+        results = {"Look for a rebuild left unapplied": {
+            "stdout": "IC_UNAPPLIED job=400 kind=build\n", "exit_status": 26,
+        }}
+        self.assertEqual(executor.parse_results(results), [])
+        asyncio.run(executor.on_success(results))
+        outcome = self._postponed_outcome()
+        self.assertEqual(outcome["reason"], "unapplied")
+        self.assertIn("rebuild #400", outcome["detail"])
+        self.assertEqual(outcome["trigger"], "window")
+        self.assertEqual(set((chain - check).mapped("state")), {"cancelled"})
+        self.assertFalse(self.Job.search([
+            ("instance_id", "=", self.inst.id),
+            ("job_type_id.code", "=", "start_instance"),
+        ]))
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("instance_id", "=", self.inst.id),
+            ("code", "in", ("move_stuck", "job_failed")),
+        ]))
+
+    def test_a_plan_changes_mark_lets_the_move_go_on(self):
+        """#96, M2: a ``files`` mark left no image nothing tried."""
+        chain = self._chain()
+        check = self._running(chain, "move_quiet_check")
+        results = {"Look for a rebuild left unapplied": {
+            "stdout": "IC_UNAPPLIED job=401 kind=files\n", "exit_status": 26,
+        }}
+        asyncio.run(self._executor(check).on_success(results))
+        self.assertFalse(self._postponed_outcome())
+        self.assertFalse(self.inst.move_rollback_in_progress)
+
+    def test_a_mark_that_could_not_be_read_postpones_as_unknown(self):
+        chain = self._chain()
+        check = self._running(chain, "move_quiet_check")
+        results = {"Look for a rebuild left unapplied": {
+            "stdout": "", "exit_status": 255,
+        }}
+        self.assertEqual(self._executor(check)._verdict(results)[0], "unknown")
 
     def test_requests_postpone_through_the_layers_answer(self):
         chain = self._chain(trigger="idle")
