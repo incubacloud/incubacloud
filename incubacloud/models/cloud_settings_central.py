@@ -791,16 +791,51 @@ class CloudSettings(models.Model):
                 Alert.resolve_alert(code)
         return name
 
+    @api.model
+    def _central_redeploy_after_switch_off(self):
+        """Queue a deployment of the central, which takes its single name off.
+
+        The certificate and the TLS document the single name left on the
+        central's server stay in force until a deployment removes them;
+        while they do, the name's certificate is what the server answers
+        on every entrypoint, 443 included, and a CDN in front of the name
+        refuses it (526 at Cloudflare; spike of 13-nov-2026). Not with
+        observability off, as the deployment would switch it on; not on a
+        central's server that is gone. A failure to queue is logged and
+        leaves the caller's transaction usable.
+
+        :return: the job id, or False.
+        """
+        settings = self._get_system()
+        host = settings.metrics_central_host_id.sudo()
+        if not (settings.metrics_enabled and host and host.active):
+            return False
+        self.env.flush_all()
+        try:
+            with self.env.cr.savepoint():
+                return self.env["cloud.job"].sudo().enqueue(
+                    host.id, False, "deploy_metrics_central",
+                )
+        except Exception as exc:  # noqa: BLE001 — never fail the switch
+            _logger.warning(
+                "[metrics] could not queue the central's deployment on %s "
+                "after its single path was turned off: %s", host.name, exc,
+            )
+            return False
+
     def write(self, vals):
         """Start the single name over, or go back, when its switch or name moves.
 
         A new name, or the switch turned on, has proved nothing yet: its
         check starts over. The switch turned off puts back the URLs of
-        before, if they had moved.
+        before, if they had moved, and deploys the central again where the
+        single name was published (``_central_redeploy_after_switch_off``).
         """
         switched_off = "metrics_central_single_path" in vals and not vals[
             "metrics_central_single_path"
         ] and any(rec.metrics_central_single_path for rec in self)
+        # Read before the write: whether a single name was being published.
+        was_published = switched_off and self._central_single_path()
         restart = (
             "metrics_central_public_host" in vals
             and any(
@@ -824,4 +859,6 @@ class CloudSettings(models.Model):
             host = self._get_system().metrics_central_host_id.sudo()
             if host and host.direct_port_shipped:
                 host._enqueue_direct_sync("central's single path changed")
+        if was_published:
+            self._central_redeploy_after_switch_off()
         return result
