@@ -6,6 +6,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.228] — 2026-11-13
+
+### Changed
+
+- **Odoo 8.0 is offered** for new projects and instances: its run of the
+  series passed with the fix of Connect as user, which opens the session
+  with a password of its own on a series that has no session token. The
+  panel now offers 8.0 to 20.0; 7.0 stays retired. The user guide gives
+  the range 8.0 to 20.0 and the PostgreSQL range of each series.
+
+### Fixed
+
+- **A job cancelled while parked keeps its checkpoint until its close
+  (#71).** The reconciliation let it go while cleaning up, before the
+  close; a close that then found the job's rows held, or raised, left a
+  job nothing named any more: it never closed, and the steps after it
+  waited for good. The close now lets the row go with the job's end.
+  One whose clean-up raises is closed all the same, its row closed for
+  a later pass, instead of being closed again at every pass. A close
+  tried and not done 30 minutes after the job was taken up has the row
+  closed, with an error in the server's log; a job taken up again after
+  more than that without a pass is tried once more first. A job whose
+  type has no executor any more says once in its log that nothing can
+  clean what it left, and a cancelled one raises `job_cleanup_given_up`.
+  Spanish translation included.
+- **The trace of a user's sessions goes with the user (#74).** Odoo
+  keeps the trace of every session (`res.device.log`, with its address,
+  country and browser) for good, and the privacy policy keeps it while
+  the user's account exists. The daily vacuum now deletes the trace of a
+  user who is deleted or archived, with the session guard's closes and
+  holds of an archived one. Archiving a user deletes their stored
+  sessions, and the vacuum deletes those the trace names before the
+  trace: Odoo's session token includes `active`, so a session left on
+  disk was accepted again once the user was reactivated, and with its
+  trace gone *Log out from all devices* could not find it.
+
+---
+
 ## [1.0.227] — 2026-11-12
 
 A server's page has a **Metrics** tab, and **Monitoring** draws the fleet
@@ -177,11 +215,6 @@ before updating (`docs/observability-operations.md`, "Undo").
 
 ### Changed
 
-- **Odoo 8.0 is offered** for new projects and instances: its run of the
-  series passed with the fix of Connect as user, which opens the session
-  with a password of its own on a series that has no session token. The
-  panel now offers 8.0 to 20.0; 7.0 stays retired. The user guide gives
-  the range 8.0 to 20.0 and the PostgreSQL range of each series.
 - **Monitoring appears wherever there is a central to read.** The
   `dashboards` axis of `_observability_capabilities()` asks for a
   central URL instead of a Grafana URL, so a managed panel that reads a
@@ -294,19 +327,6 @@ before updating (`docs/observability-operations.md`, "Undo").
   any more. Kept unclosed, a job cancelled while parked was taken up at
   every pass of 5 minutes, its server cleaned again and a line added to
   its log each time, and it read *Cancelling…* for good.
-- **A job cancelled while parked keeps its checkpoint until its close
-  (#71).** The reconciliation let it go while cleaning up, before the
-  close; a close that then found the job's rows held, or raised, left a
-  job nothing named any more: it never closed, and the steps after it
-  waited for good. The close now lets the row go with the job's end.
-  One whose clean-up raises is closed all the same, its row closed for
-  a later pass, instead of being closed again at every pass. A close
-  tried and not done 30 minutes after the job was taken up has the row
-  closed, with an error in the server's log; a job taken up again after
-  more than that without a pass is tried once more first. A job whose
-  type has no executor any more says once in its log that nothing can
-  clean what it left, and a cancelled one raises `job_cleanup_given_up`.
-  Spanish translation included.
 - The Spanish texts call the metrics central *la central* throughout.
 
 ### Security

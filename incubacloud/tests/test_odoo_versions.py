@@ -847,7 +847,7 @@ class TestAnImportTakesTheSeriesOfItsCode(CloudSecurityBase):
     def setUp(self):
         super().setUp()
         # Every series is offered today, so 8.0 is held back here as it
-        # was until core 1.0.227.
+        # was until core 1.0.228.
         self.startPatcher(patch.dict(
             versions.VERSIONS, {"8.0": {**versions.VERSIONS["8.0"], "offered": False}},
         ))
