@@ -199,7 +199,7 @@
       changed_when: false
       when: ic_central_ca | length > 0
 
-    - name: Ask the panel which address this server leaves with
+    - name: Ask the panel which address this server leaves with  # noqa: command-instead-of-module
       # Over IPv4, as the central's name is reached (an A record and no
       # AAAA): a server with IPv6 would otherwise reach the panel by it
       # and be told an address the central never sees. The uri module
