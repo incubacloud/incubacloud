@@ -56,7 +56,7 @@ from ._job_channels import (
 from ._job_server_limits import conf_section
 from .cloud_job_no_return import NO_RETURN_LOCK_NAMESPACE
 from .cloud_security_mixin import defaults_as_sent
-from .password_utils import IncubacloudCryptoError
+from .password_utils import IncubacloudCryptoError, _odoo_conf_path
 from .registry import executor_registry
 from .res_users_ext import as_platform, telegram_markdown
 from .transport import DEFAULT_SSH_COMMAND_TIMEOUT
@@ -2450,7 +2450,7 @@ class CloudJob(models.Model):
         ):
             return False
         try:
-            section = conf_section(odoo_config.get("config"))
+            section = conf_section(_odoo_conf_path())
         except IncubacloudCryptoError:
             section = {}
         value = (section.get(CHANNEL_GATE_OPTION) or "on").strip().lower()

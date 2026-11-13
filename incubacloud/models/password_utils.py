@@ -112,10 +112,14 @@ def _key_error_message():
 def _odoo_conf_path():
     """Return the path of the configuration file Odoo was started with.
 
+    Odoo 18 keeps it in ``config.rcfile``, whether it came from ``-c``,
+    ``ODOO_RC`` or the default ``~/.odoorc``; its ``config`` option holds
+    only what ``-c`` gave, and is empty otherwise.
+
     :return: the path, or ``None`` when Odoo names none
     :rtype: str | None
     """
-    return config.get("config") or None
+    return config.rcfile or None
 
 
 def _read_conf_section(path):

@@ -687,17 +687,15 @@ class TestSecretKeySources(BaseCase):
 class TestOdooConfPath(BaseCase):
     """The path of odoo.conf comes from Odoo's own option, read for real.
 
-    Odoo 19 keeps it in ``config["config"]``; the older ``rcfile``
-    attribute is deprecated. The function is not mocked here: a mock
-    would hide a rename of the option.
+    Odoo 18 keeps it in ``config.rcfile``, also when it came from
+    ``ODOO_RC``, as on Doodba; its ``config`` option is empty then. The
+    function is not mocked here: a mock would hide a rename of the option.
     """
 
     def test_it_is_the_option_odoo_was_started_with(self):
-        self.assertEqual(pw_mod._odoo_conf_path(), config.get("config"))
+        self.assertEqual(pw_mod._odoo_conf_path(), config.rcfile)
         self.assertIsInstance(pw_mod._odoo_conf_path(), str)
 
     def test_it_follows_a_change_of_the_option(self):
-        previous = config["config"]
-        self.addCleanup(config.__setitem__, "config", previous)
-        config["config"] = "/etc/odoo/elsewhere.conf"
-        self.assertEqual(pw_mod._odoo_conf_path(), "/etc/odoo/elsewhere.conf")
+        with patch.object(config, "rcfile", "/etc/odoo/elsewhere.conf"):
+            self.assertEqual(pw_mod._odoo_conf_path(), "/etc/odoo/elsewhere.conf")

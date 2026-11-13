@@ -175,13 +175,17 @@ def conf_section(path):
 def _configured_budget(options):
     """Return the budget odoo.conf sets in ``[incubacloud]``, or None.
 
-    :param options: Odoo's configuration; its ``config`` names the file
+    :param options: Odoo's configuration, whose ``rcfile`` names the file
+        (Odoo 18: its ``config`` option holds only what ``-c`` gave), or
+        a dict whose ``config`` names it
     :return: whole seconds, or None when the option is not set or is not
         a number of seconds (then logged)
     :rtype: int | None
     """
     try:
-        section = conf_section(options.get("config"))
+        section = conf_section(
+            getattr(options, "rcfile", None) or options.get("config"),
+        )
     except IncubacloudCryptoError:
         return None
     raw = (section.get(ATTEMPT_BUDGET_OPTION) or "").strip()
