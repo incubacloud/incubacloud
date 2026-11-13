@@ -60,21 +60,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and the panel's reads trust it besides the usual roots. The panel and
   the agents move to the name only once `sync_direct_path` has checked it
   from the central's server (`direct_probe.sh --cacert`); the earlier URLs
-  are kept for the way back, which is turning the switch off; one check
-  that passes moves them, also after failed ones. Alerts
+  are kept for the way back, which is turning the switch off: it puts them
+  back and queues a deployment of the central, which takes the name's
+  certificate off its server's proxy (until then the proxy answers the
+  name with it on 443 too, and a CDN in front refuses it). One check that
+  passes moves them, also after failed ones. Alerts
   `metrics_central_dns_pending` (the record to create; critical at once
-  when the name in use loses it), `metrics_central_name_down` and
-  `metrics_central_cert_expiring`; **Check now** under the name; RB-35,
-  with how to rotate the authority. A neutralized copy loses the
+  when the name in use loses it, checked again by the observability cron
+  while it is open, and worded for a resolver failing for a moment or a
+  move still pointing at the earlier server), `metrics_central_name_down`,
+  `metrics_central_cert_expiring` and `metrics_central_acme_same_name`
+  (each deployment looks in its server's proxy's ACME store for a
+  certificate of the name, which Traefik would serve by turns with the
+  panel's; it says so and leaves the store alone); **Check now** under the
+  name; RB-35, with how to rotate the authority, the order of the cut, the
+  way back and how to prune the store. A neutralized copy loses the
   authority and the URLs kept. **Who can write to the central**:
   only the panel's servers by their address (the default), or any address
   with each account's credential, which opens that one port to every
   address; a layer may fix it. A server the port refuses raises
   `metrics_central_writer_outside` with the address it leaves with, which
   its agents' install asks the panel over IPv4 (`GET /cloud/egress_ip`,
-  public, writing nothing); only an IPv4 address is kept. A server the
-  panel cannot reach, or whose own check got through, is not blamed on
-  the list for its silence. RB-36 moves a central by hand with its
+  public, writing nothing); only an IPv4 address is kept. A server whose
+  check refused the certificate it was answered with is named for that,
+  not for its address. A server the panel cannot reach, or whose own check
+  got through, is not blamed on the list for its silence. RB-36 moves a central by hand with its
   history. Spanish translation included.
 
   **It stays off on update.** The update adds

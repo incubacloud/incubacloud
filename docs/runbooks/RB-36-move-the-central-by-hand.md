@@ -27,7 +27,9 @@ central's public name and `PORT` its platform port.
 1. **Start an empty central on `DEST`** (Settings › Monitoring › *Where the central
    runs*). It deploys the stack there with the same credentials and a certificate for
    `NAME`, and records `DEST` as the central. `NAME` still points at `ORIGIN`, which
-   goes on receiving and serving: the panel says the DNS is pending and keeps its URLs.
+   goes on receiving and serving: the panel raises `metrics_central_dns_pending`
+   (critical, as the name is in use) with the record to point at `DEST`, and keeps its
+   URLs. The agents go on writing to `ORIGIN`.
    Until the record changes, an account the panel adds is written on `DEST` only, so do
    the rest of this procedure in one go.
 2. Stop the stores on both, `DEST` first; vmauth stays and answers 502, the agents
@@ -55,7 +57,20 @@ central's public name and `PORT` its platform port.
      -u operator:… "https://NAME:PORT/admin-r/api/v1/query?query=count(up)"
    ```
 5. **Point `NAME`'s A record at `DEST`.** The panel's next check (or **Check now**)
-   closes the pending alert, and the queues empty into `DEST`.
+   closes the pending alert once `DEST`'s resolvers return the new address (about a
+   minute in a rehearsal). **The agents do not follow the record yet**: each keeps its
+   connection to `ORIGIN` open and goes on posting there, where vmauth answers 503
+   (and 403 once it stops), and queues. When the record resolves to `DEST` from the
+   servers too, close those connections by restarting `ORIGIN`'s proxy:
+   ```bash
+   cd ~/traefik && docker compose -p inverseproxy -f inverseproxy.yaml restart proxy
+   ```
+   The agents reconnect through DNS to `DEST` and their queues empty there (under a
+   minute in the rehearsal, with no gap in the series). The restart cuts whatever else
+   that proxy serves for a few seconds; where `ORIGIN` also runs the panel or
+   instances, do it at the quiet hour this procedure already asks for. Deleting the
+   port's connections with `conntrack` would spare the restart, but it has not been
+   tried.
 6. **72 hours later**, on `ORIGIN` and by hand: check that the panel's central is
    `DEST` and that `DEST` answers, then
    `docker compose -p incubacloud-central down -v` and `rm -rf ~/observability-central`.
@@ -67,4 +82,5 @@ central's public name and `PORT` its platform port.
   *Start an empty central* on `ORIGIN`: the stack comes up on the volumes it has, with
   the history.
 - **After step 5, within the 72 hours:** point the record back at `ORIGIN` and do the
-  same. What was written on `DEST` since the change is lost.
+  same, then restart `DEST`'s proxy as in step 5 so the agents follow the record. What
+  was written on `DEST` since the change is lost.

@@ -37,7 +37,7 @@ deployment, kept with that deployment.
 | [RB-31](RB-31-bump-relay-oauth-image.md) | Bump the relay-oauth image | planned | A `relay-oauth:` issue from the weekly versions check, an advisory for a library in the image, a new docker-mailserver for the relays |
 | [RB-32](RB-32-git-repositories-on-the-host.md) | The repositories downloaded on the host | warning | «Fetch the repositories» fails or runs out of time, a series goes back to cloning in the image, the PAT is rotated, instances still to rebuild |
 | [RB-33](RB-33-session-guard.md) | The session guard | planned | Switching it on, users signed out more than once, a `session_guard_antiloop` alert, setting a signal to log only |
-| [RB-35](RB-35-central-name.md) | The central's single name: pending, down, its certificate, a server left out | high | `metrics_central_dns_pending`, `metrics_central_name_down`, `metrics_central_cert_expiring`, `metrics_central_writer_outside` |
+| [RB-35](RB-35-central-name.md) | The central's single name: pending, down, its certificate, a server left out | high | `metrics_central_dns_pending`, `metrics_central_name_down`, `metrics_central_cert_expiring`, `metrics_central_writer_outside`, `metrics_central_acme_same_name` |
 | [RB-36](RB-36-move-the-central-by-hand.md) | Move the central to another server by hand, with its history | planned | The central's server is to be freed, or the central needs a bigger one |
 
 ## Conventions

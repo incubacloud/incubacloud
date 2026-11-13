@@ -849,22 +849,37 @@ From then on, two failed checks in a row raise `metrics_central_name_down` (crit
 with the layer: `connect`, `tls` or `route`); a DNS answer that is not the central's
 server (a CDN's proxy turned back on, the record deleted, or left behind after a move
 to another server) raises `metrics_central_dns_pending` again, critical at once, with
-the record to fix: every agent writes to the name. One complete check that passes
-(**Check now**) closes it; the name's state leaves *Failing* after two good checks
-30 minutes apart, as a direct name's. There is no path to fall back to;
-the agents' queues (512 MB per URL for vmagent, in its volume so a re-apply
-keeps it; 64 MB for Fluent Bit) hold what they cannot send. See [RB-35](runbooks/RB-35-central-name.md).
+the record to fix: every agent writes to the name. A resolver of the central's server
+failing for a moment gives the same answer, so while the alert is open the
+observability cron checks the name again every 15 minutes, and the alert does not
+claim that no agent writes. One complete check that passes (**Check now**) closes it;
+the name's state leaves *Failing* after two good checks 30 minutes apart, as a direct
+name's. There is no path to fall back to; the agents' queues (512 MB per URL for
+vmagent, in its volume so a re-apply keeps it; 64 MB for Fluent Bit) hold what they
+cannot send. See [RB-35](runbooks/RB-35-central-name.md).
 
 A central that was published on 443 under the same name stops answering there at
 the deployment that turns the switch on: nothing is published on 443 with it. Where
 the name's record already points at the central's server, with no CDN proxy, the
 check that deployment queues moves the URLs within the minute, and until then the
 agents queue. Where the name goes through a CDN, the agents keep writing through it
-to 443, which no longer answers: change the record (the server's address, no proxy,
-no AAAA) before turning the switch on, or at once after, and press **Check now**.
+to 443, which no longer answers: the name's certificate is in the server's default TLS
+store, which every entrypoint shares, and the CDN refuses it. Change the record (the
+server's address, no proxy, no AAAA) first, wait until the central's server resolves
+it, and then turn the switch on; RB-35, "Before cutting the earlier path", gives the
+order and the times measured.
 
-**The way back.** Turning the switch off puts back the two URLs kept, and the
-reconciliation re-applies the agents to them. A central's direct name, while set, is
+A certificate ACME obtained for the name while it was published on 443 stays in the
+proxy's store, and Traefik then serves it or the panel's after each reload: the
+agents refuse the first. Each deployment under the single name looks for it in the
+store and, when it is there, says so in its log and raises
+`metrics_central_acme_same_name`; it does not edit the store, which RB-35 says how
+to prune.
+
+**The way back.** Turning the switch off puts back the two URLs kept, the
+reconciliation re-applies the agents to them, and a deployment of the central is
+queued at once: until it removes the name's certificate, the proxy answers the name
+with it on 443 too. A central's direct name, while set, is
 published beside the single name on the same port, so both work during a transition.
 
 **Who can write to the central.** *Only this panel's servers, by their address* (the
@@ -886,7 +901,9 @@ only when it is an IPv4 address: a page a CDN answered instead (a challenge) is
 dropped, and the alert then says the panel could not learn it. A 403 or no answer,
 or 20 minutes without its metrics while other servers write, raises
 `metrics_central_writer_outside` for that server, with both addresses and the two ways
-out: correct the server's address in the panel, or let any address write. The
+out: correct the server's address in the panel, or let any address write. A server
+whose check refused the certificate it was answered with is named that way instead,
+without addresses: the port let it in. The
 silence alone raises nothing while the panel cannot reach that server either
 (`host_unreachable` open: switched off, or its network down), or while its own last
 check got 401 leaving with the address the panel has for it.
