@@ -251,17 +251,28 @@ class CorePermissionMixin:
 
     def setUp(self):
         """Put core's own permission, new server's default and update's
-        value on the model, over any layer's."""
+        value on the model, over any layer's.
+
+        The patches are undone after the check of the model's attributes
+        that Odoo 18's ``TransactionCase.setUp`` adds, not before: it
+        would see them as left on the class.
+        """
         model = type(self.env["cloud.host"])
-        for name in (
-            "_security_logs_available",
-            "_security_logs_default",
-            "_security_logs_after_upgrade",
-        ):
-            patcher = patch.object(model, name, getattr(CoreCloudHost, name))
+        patchers = [
+            patch.object(model, name, getattr(CoreCloudHost, name))
+            for name in (
+                "_security_logs_available",
+                "_security_logs_default",
+                "_security_logs_after_upgrade",
+            )
+        ]
+        for patcher in patchers:
             patcher.start()
-            self.addCleanup(patcher.stop)
-        super().setUp()
+        try:
+            super().setUp()
+        finally:
+            for patcher in patchers:
+                self.addCleanup(patcher.stop)
 
 
 class TestTheExecutorAndTheSwitch(CorePermissionMixin, ObservabilityExecutorCase):
