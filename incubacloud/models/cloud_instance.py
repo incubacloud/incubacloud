@@ -2733,7 +2733,7 @@ class CloudInstance(models.Model):
         """
         return ["res_users", "ir_config_parameter", "ir_attachment"]
 
-    def _on_move_cutover(self, origin_host, cut_seconds=None):
+    def _on_move_cutover(self, origin_host, cut_seconds=None, trigger=None):
         """Hook fired on a successful host-move cutover, after ``host_id``
         has flipped to the destination.
 
@@ -2746,6 +2746,11 @@ class CloudInstance(models.Model):
         :param cut_seconds: how long the instance was unavailable, from
             the drain of its source to the destination answering
             healthy (``move_last_cut_seconds``), or None when unknown
+        :param trigger: what started the move (``idle``, ``window``,
+            ``now`` or ``manual``), read from its own chain before the
+            cutover cleared the markers (``_move_trigger``). Optional: a
+            layer whose override does not take it is called without it
+            (``MoveCutoverExecutor``)
         """
 
     def _on_move_rolled_back(self, target_host=None, outcome=None):
@@ -2793,22 +2798,24 @@ class CloudInstance(models.Model):
         outcome.update(extra)
         return outcome
 
-    def _last_move_options(self):
-        """Return the options the instance's latest move was asked with.
+    def _move_trigger(self):
+        """Return what started the move under way.
 
-        They travel in the payload of the chain's ``move_quiet_check``
-        (``move_to_host``), the only step every move has before its cut:
-        a hook that runs once the markers are cleared still reads them.
+        Its options travel in the payload of the chain's
+        ``move_quiet_check`` (``move_to_host``), the only step every move
+        has before its cut. Read from the chain the markers name, so
+        before they are cleared: never another move's check.
 
-        :return: the options, ``trigger`` included; {} when none
-        :rtype: dict
+        :return: ``idle``, ``window``, ``now`` or ``manual``, the last
+            when the chain or its option is missing
+        :rtype: str
         """
         self.ensure_one()
-        check = self.env["cloud.job"].sudo().search([
-            ("instance_id", "=", self.id),
-            ("job_type_id.code", "=", "move_quiet_check"),
-        ], order="id desc", limit=1)
-        return dict((check.payload or {}).get("move_options") or {})
+        check = self._get_move_chain_jobs().sudo().filtered(
+            lambda job: job.job_type_id.code == "move_quiet_check",
+        )[:1]
+        options = (check.payload or {}).get("move_options") or {}
+        return options.get("trigger") or "manual"
 
     def move_to_host(self, target_host, move_options=None):
         """Move this deployed instance to ``target_host``, preserving data.
@@ -2858,7 +2865,7 @@ class CloudInstance(models.Model):
 
         :param target_host: the ``cloud.host`` to move to
         :param move_options: what the caller tells the move, kept in the
-            payload of its ``move_quiet_check`` (``_last_move_options``):
+            payload of its ``move_quiet_check`` (``_move_trigger``):
             ``trigger`` (``idle``, ``window``, ``now`` or ``manual``, the
             last when missing) says what started it
         :return: ``{'ok': True, 'job_id': <first step of the chain>}``

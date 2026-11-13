@@ -16,7 +16,7 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import yaml
 
@@ -500,6 +500,52 @@ class TestTheCutIsMeasured(_MoveCase):
         self.assertFalse(self.inst.move_cut_started_at)
         self.assertEqual(hook.call_args.args[1], self.source)
         self.assertAlmostEqual(hook.call_args.kwargs["cut_seconds"], 30, delta=5)
+        # No chain to read it from: what an operator's move says.
+        self.assertEqual(hook.call_args.kwargs["trigger"], "manual")
+
+    def _cut_over_chain(self, **options):
+        """Cut over a whole move asked with *options*; return the hook."""
+        chain = self._chain(**options)
+        with patch.object(
+            type(self.inst), "_on_move_cutover", autospec=True,
+        ) as hook:
+            asyncio.run(
+                self._executor(self._step(chain, "move_cutover")).on_success({}),
+            )
+        return hook
+
+    def test_the_cutover_hands_the_trigger_of_its_own_chain(self):
+        """Read from the chain before the cutover clears its markers."""
+        # An older move's check, last by id, says something else.
+        older = self._job("move_quiet_check", self.source, payload={
+            "move_options": {"trigger": "now"},
+        })
+        hook = self._cut_over_chain(trigger="window")
+        self.assertEqual(hook.call_args.kwargs["trigger"], "window")
+        self.assertFalse(self.inst.move_chain_job_ids)
+        self.assertTrue(older.exists())
+
+    def test_a_move_asked_with_no_trigger_was_an_operators(self):
+        hook = self._cut_over_chain()
+        self.assertEqual(hook.call_args.kwargs["trigger"], "manual")
+
+    def test_a_layer_that_predates_the_trigger_still_cuts_over(self):
+        """Its override is called without it, during a deploy of both."""
+
+        def before_the_trigger(self, origin_host, cut_seconds=None):
+            """The hook's signature before ``trigger``."""
+
+        chain = self._chain(trigger="idle")
+        with patch.object(
+            type(self.inst), "_on_move_cutover",
+            new=create_autospec(before_the_trigger),
+        ) as hook:
+            asyncio.run(
+                self._executor(self._step(chain, "move_cutover")).on_success({}),
+            )
+        self.assertEqual(self.inst.host_id, self.target)
+        self.assertEqual(hook.call_args.args[1], self.source)
+        self.assertNotIn("trigger", hook.call_args.kwargs)
 
     def test_a_slow_cut_alerts_until_one_is_under_budget(self):
         self.env["cloud.settings"].sudo()._get().move_cut_alert_seconds = 20

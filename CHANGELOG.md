@@ -286,6 +286,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   its source, and its job, cancelled, reads *Cancelled*. Spanish
   translation included.
 
+- **The cutover hands the move's trigger to its hook.**
+  `_on_move_cutover(origin_host, cut_seconds=None, trigger=None)`: the
+  cutover reads what started the move (`idle`, `window`, `now` or
+  `manual`) from its own chain's `move_quiet_check`, before it clears the
+  markers (`cloud.instance._move_trigger`). `_last_move_options`, which
+  searched for the instance's latest `move_quiet_check` once the markers
+  were gone, is removed. An override that does not take `trigger` is
+  called without it, so a layer deployed apart from this core does not
+  fail a cutover that worked.
+
 ### Fixed
 
 - **A server that no longer presents its trusted SSH host key says so

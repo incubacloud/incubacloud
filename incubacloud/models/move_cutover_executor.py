@@ -1,7 +1,26 @@
+import inspect
+
 from odoo import fields
 
 from .abstract_executor import AbstractSSHExecutor, JobRefused
 from .delete_instance_executor import DeleteInstanceExecutor
+
+
+def _takes_keyword(method, name):
+    """Whether *method* can be called with the keyword argument *name*.
+
+    :param method: a bound method
+    :param str name: the argument
+    :rtype: bool
+    """
+    return any(
+        param.kind is inspect.Parameter.VAR_KEYWORD
+        or (param.name == name and param.kind in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        ))
+        for param in inspect.signature(method).parameters.values()
+    )
 
 
 class MoveCutoverExecutor(AbstractSSHExecutor):
@@ -83,6 +102,8 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         cut_seconds = (
             (fields.Datetime.now() - started).total_seconds() if started else None
         )
+        # From the chain the markers name, before they are cleared.
+        trigger = inst._move_trigger()
         # With ``sudo``: the markers are the platform's
         # (``cloud.instance._check_guarded_vals``).
         inst.sudo().write({
@@ -119,8 +140,12 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
             else:
                 Alert.resolve_alert("move_slow_cut", instance=inst)
         # Hook: a layer may re-point DNS at the new host IP and finish
-        # what it owns. Core is a no-op.
-        inst._on_move_cutover(origin, cut_seconds=cut_seconds)
+        # what it owns. Core is a no-op. An override written before
+        # ``trigger`` (a layer deployed apart from this core) is called
+        # without it rather than failing a cutover that worked.
+        hook = inst._on_move_cutover
+        extra = {"trigger": trigger} if _takes_keyword(hook, "trigger") else {}
+        hook(origin, cut_seconds=cut_seconds, **extra)
         self._call_addon_hook(inst, "_after_restore_hook", "move")
         # Nothing re-pointed DNS: say so loudly. The move succeeded but
         # the instance answers on a new IP, so it is unreachable until a
