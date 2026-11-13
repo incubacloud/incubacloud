@@ -2614,6 +2614,22 @@
               t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
             />
                     </div>
+                    <div class="rl-ftoggle rl-full" t-if="state.form.auto_update">
+                        <div>
+                            <div
+                class="rl-tl-label"
+              >Test the new image before applying it</div>
+                            <div
+                class="rl-th"
+              >boots the new image on a copy of the database first; with large databases on ext4 it takes about 30 minutes for every 500 GB. Off, the rebuild applies it straight away and says so.</div>
+                        </div>
+                        <button
+              type="button"
+              t-att-class="'rl-sw' + (state.form.boot_test ? ' on' : '')"
+              aria-label="Toggle the boot test"
+              t-on-click="() => { state.form.boot_test = !state.form.boot_test; state.saved = false; }"
+            />
+                    </div>
                     <t t-if="(state.form.odoo_proxy || 'traefik') === 'traefik'">
                         <div class="rl-ftoggle rl-full">
                             <div>

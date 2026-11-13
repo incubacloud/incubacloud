@@ -235,6 +235,21 @@ class CloudInstance(models.Model):
         "Disabling also skips the safe boot test that relies on "
         "click-odoo-update.",
     )
+    # Its own switch since #91 (decided on 6-nov-2026): before it the only
+    # way to skip the test was to turn off ``auto_update``, which leaves
+    # the modules unapplied too.
+    boot_test = fields.Boolean(
+        string="Test the New Image Before Applying It",
+        default=True,
+        help="Before a rebuild puts its new image into service, it boots "
+        "the image on a copy of the database and updates the copy's "
+        "modules: if that fails, the instance is left as it was. With "
+        "large databases on ext4 the copy takes about 30 minutes for "
+        "every 500 GB. Turned off, the rebuild applies the image and "
+        "the module update straight to the instance, says so first in "
+        "its result and leaves a warning. Independent of Auto-Update "
+        "Modules on Rebuild; with that off there is no boot test either.",
+    )
 
     # ── Smart rebuild fingerprint ─────────────────────────────────────────
     rebuild_fingerprint = fields.Char(

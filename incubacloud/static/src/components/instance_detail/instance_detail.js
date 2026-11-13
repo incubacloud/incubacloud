@@ -600,6 +600,7 @@ export class InstanceDetail extends JobsMixin(
       autopurge_exempt: inst.autopurge_exempt || false,
       website_info_public: inst.website_info_public || false,
       auto_update: inst.auto_update !== false,
+      boot_test: inst.boot_test !== false,
       repos: (inst.repos || []).map((r) => ({...r})),
       whitelist: [...(inst.whitelist || [])],
     };
@@ -696,6 +697,7 @@ export class InstanceDetail extends JobsMixin(
           autopurge_exempt: false,
           website_info_public: false,
           auto_update: true,
+          boot_test: true,
           repos,
           // Seeded on the server from the chosen host, so the create
           // form has nothing to show and nothing to send.

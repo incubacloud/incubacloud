@@ -2227,6 +2227,26 @@ msgid "Base domain for wildcard certificates (e.g. *.example.com)."
 msgstr "Dominio base para certificados comodín (ej. *.example.com)."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__boot_test
+msgid ""
+"Before a rebuild puts its new image into service, it boots the image on a "
+"copy of the database and updates the copy's modules: if that fails, the "
+"instance is left as it was. With large databases on ext4 the copy takes "
+"about 30 minutes for every 500 GB. Turned off, the rebuild applies the image"
+" and the module update straight to the instance, says so first in its result"
+" and leaves a warning. Independent of Auto-Update Modules on Rebuild; with "
+"that off there is no boot test either."
+msgstr ""
+"Antes de que una reconstrucción ponga en servicio su imagen nueva, la "
+"arranca sobre una copia de la base de datos y actualiza los módulos de la "
+"copia: si eso falla, la instancia queda como estaba. Con bases de datos "
+"grandes en ext4 la copia tarda unos 30 minutos por cada 500 GB. Si lo "
+"desactiva, la reconstrucción aplica la imagen y la actualización de módulos "
+"directamente a la instancia, lo indica al principio de su resultado y deja "
+"un aviso. Es independiente de «Auto-actualizar módulos al reconstruir»; si "
+"desactiva esa opción, tampoco hay prueba de arranque."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Behind the shipped templates"
@@ -7657,6 +7677,17 @@ msgstr ""
 "Las tareas esperan memoria el %(pct)s%% del tiempo: el servidor está "
 "expulsando páginas de todas sus instancias. Mueva una instancia a otro "
 "servidor o dé más memoria a este."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__boot_test
+msgid "Test the New Image Before Applying It"
+msgstr "Probar la imagen nueva antes de aplicarla"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Test the new image before applying it"
+msgstr "Probar la imagen nueva antes de aplicarla"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17411,6 +17442,12 @@ msgstr ""
 "Activar o desactivar las vistas previas de pull requests y merge requests"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Toggle the boot test"
+msgstr "Activar/desactivar la prueba de arranque"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__token
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__token
 msgid "Token"
@@ -19352,6 +19389,18 @@ msgstr "según su configuración general de arriba."
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid "blocks %s"
 msgstr "bloquea a %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"boots the new image on a copy of the database first; with large databases on"
+" ext4 it takes about 30 minutes for every 500 GB. Off, the rebuild applies "
+"it straight away and says so."
+msgstr ""
+"arranca primero la imagen nueva sobre una copia de la base de datos; con "
+"bases de datos grandes en ext4 tarda unos 30 minutos por cada 500 GB. Si lo "
+"desactiva, la reconstrucción la aplica directamente y lo indica."
 
 #. module: incubacloud
 #. odoo-javascript

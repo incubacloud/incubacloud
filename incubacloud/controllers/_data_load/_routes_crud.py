@@ -2584,6 +2584,7 @@ class CrudMixin:
             'stop_is_expected': inst.stop_is_expected,
             'auto_rebuild': inst.auto_rebuild,
             'auto_update': inst.auto_update,
+            'boot_test': inst.boot_test,
             'autopurge_exempt': inst.autopurge_exempt,
             # A preview's request, for the project's list: «PR #n» on
             # GitHub, «MR !n» on GitLab.
@@ -2795,7 +2796,8 @@ class CrudMixin:
         'smtp_relay_auth', 'smtp_relay_oauth_directory_id',
         'smtp_relay_oauth_client_id', 'smtp_relay_oauth_client_secret',
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
-        'backup_backend_id', 'auto_rebuild', 'auto_update', 'tag_ids',
+        'backup_backend_id', 'auto_rebuild', 'auto_update', 'boot_test',
+        'tag_ids',
         'autopurge_exempt',
         # The exception to the edge guard; never on create: an instance
         # is born with /website/info blocked.

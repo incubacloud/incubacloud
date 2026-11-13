@@ -186,6 +186,10 @@ _UPDATE_INSTANCE = obj(
         "odoo_conf": string("The [options] of the instance's odoo.conf."),
         "auto_rebuild": boolean("Rebuild on a push to a branch it deploys."),
         "auto_update": boolean("Update the modules on a rebuild."),
+        "boot_test": boolean(
+            "Boot a rebuild's new image on a copy of the database before"
+            " applying it (with auto_update on)."
+        ),
         "autopurge_exempt": boolean("Keep this staging from the automatic purge."),
         "website_info_public": boolean(
             "Let anyone open Odoo's /website/info (installed apps and version);"

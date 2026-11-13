@@ -59,6 +59,7 @@ from . import (
     test_log_classification,
     test_rebuild_fingerprint,
     test_rebuild_boot_isolation,
+    test_rebuild_boot_test_switch,
     test_cloud_host,
     test_host_autoassign,
     test_pluggable_actions,

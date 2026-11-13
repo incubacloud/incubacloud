@@ -91,6 +91,7 @@ HOOK_HELPERS = {
                     "instance row its hook already wrote",
     "_record_state": "the state-only health probe's reading of the instance",
     "_report_cpu_clamps": "tells the operator what the render limited to the host",
+    "_report_boot_test": "warns that a rebuild's image went into service untested",
     "_adopt_moved_ssh_port": "the port a failed hardening left sshd on, "
                              "which the job's rollback must not take back",
 }
