@@ -471,7 +471,7 @@ class TestPullRequestSynchronize(_PushCase):
         self.assertEqual(rebuilds.payload['push_sha'], 'abc1234')
 
     def test_a_push_without_a_commit_is_not_taken_for_another(self):
-        running = self._running_on_preview(dict(self._head_push(), push_sha=''))
+        running = self._running_on_preview(self._head_push() | {'push_sha': ''})
         waiting = self._deliver('pull_request', _synchronize_payload(
             self.REPO_URL, self.HEAD, '',
         )) - running
