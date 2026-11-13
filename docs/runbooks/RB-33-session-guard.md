@@ -198,6 +198,11 @@ values (`hits` counts the requests that repeated it):
 | `reentry_window_hours` | 24 | A sign-in a day after the close says nothing about it. |
 | `log_retention_days` | 90 | Enough for the fortnightly and monthly reviews; holds that ended as long ago go with them. |
 
+The rows of a user who is archived go at the next daily vacuum, and those
+of a deleted one with the user; so does Odoo's trace of their sessions
+(`res.device.log`), which Odoo itself keeps for good. The privacy policy
+keeps both while the user's account exists (#74, 13-nov-2026).
+
 How to read it:
 
 | What follows the close | Reading |
