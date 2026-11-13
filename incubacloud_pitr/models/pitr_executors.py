@@ -1179,7 +1179,8 @@ class PitrRestoreExecutor(_PitrExecutor):
         restore goes on to the end instead (``done``).
 
         The hook holds the job's queue while it waits (``_scope_busy``
-        counts a cancelled job whose queue.job runs). One the host has not
+        counts a cancelled job whose queue.job runs, or was found dead
+        until the reconciliation closes the job). One the host has not
         finished undoing within the wait, or that could not be asked, is
         handed to a job of the same type, which follows it to its end
         (``_follow_on``). Alerts are raised again, for what the stop left
