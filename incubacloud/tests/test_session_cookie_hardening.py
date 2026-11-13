@@ -25,7 +25,11 @@ from odoo.http import FutureResponse, Request, _Response
 from odoo.tests.common import BaseCase, TransactionCase
 
 from ..models.cloud_host import CloudHost, _read_traefik_template
-from ..models.http_session_cookie import SAMESITE_LAX_COOKIES
+from ..models.http_session_cookie import (
+    BINDING_COOKIE,
+    SAMESITE_LAX_COOKIES,
+    binding_of,
+)
 
 
 def _mock_request(is_secure):
@@ -46,9 +50,12 @@ def _mock_request(is_secure):
     return request
 
 
-def _cookie_header(response):
-    """Return the single ``Set-Cookie`` value the response carries."""
-    values = response.headers.getlist('Set-Cookie')
+def _cookie_header(response, key='session_id'):
+    """Return the single ``Set-Cookie`` value the response carries for *key*."""
+    values = [
+        value for value in response.headers.getlist('Set-Cookie')
+        if value.startswith(f'{key}=')
+    ]
     assert len(values) == 1, values
     return values[0]
 
@@ -58,10 +65,30 @@ class TestSessionCookieAttributes(BaseCase):
 
     def _future_cookie(self, key, is_secure, **kwargs):
         """Set *key* on a real ``FutureResponse`` and return the header."""
+        return _cookie_header(self._future_response(key, is_secure, **kwargs), key)
+
+    def _future_response(self, key, is_secure, **kwargs):
+        """Set *key* on a real ``FutureResponse`` and return the response."""
         with patch('odoo.http.request', _mock_request(is_secure)):
             response = FutureResponse()
             response.set_cookie(key, 'value', **kwargs)
-        return _cookie_header(response)
+        return response
+
+    def test_session_cookie_over_https_brings_its_binding(self):
+        """Only this host can set a ``__Host-`` cookie: it names the
+        session, with the session cookie's ``SameSite``."""
+        response = self._future_response('session_id', True, samesite='Strict')
+        header = _cookie_header(response, BINDING_COOKIE)
+        self.assertTrue(header.startswith(f'{BINDING_COOKIE}={binding_of("value")};'))
+        for attribute in ('Secure', 'HttpOnly', 'Path=/', 'SameSite=Strict'):
+            self.assertIn(attribute, header)
+        self.assertNotIn('Domain', header)
+
+    def test_no_binding_over_http_nor_for_other_cookies(self):
+        for key, is_secure in (('session_id', False), ('frontend_lang', True)):
+            with self.subTest(key=key, is_secure=is_secure):
+                response = self._future_response(key, is_secure)
+                self.assertEqual(len(response.headers.getlist('Set-Cookie')), 1)
 
     def test_session_cookie_over_https_is_secure_and_lax(self):
         header = self._future_cookie('session_id', True)
