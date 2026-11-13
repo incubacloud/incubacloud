@@ -162,14 +162,25 @@ and their queue for the earlier URL is not carried to the new one.
 
 ## A server installed without the authority, or with another
 
-The reconciliation re-applies a server whose agents' URL differs from the panel's;
-it does not compare the authority. A server installed with the name's URL and no
-authority, or with an authority since rotated, refuses the central's certificate.
-No alert names it reliably: its silence is put down to its last 401, so it does not
+Each server records the SHA-256 fingerprint of the authority its agents were
+installed with (`metrics_agents_ca_fingerprint` on the host; empty for none), and
+the reconciliation re-applies a server whose fingerprint is not the one the panel
+installs now, as it does one whose URL is not ("central authority changed" in the
+log). A server installed with the name's URL before the authority reached its
+panel, or with an authority since rotated, is re-applied at the next pass (every
+15 minutes) without anyone's hand. Without an authority in force nothing is
+re-applied for it: with the switch off the agents get none, and while rotating,
+between forgetting the authority and the deployment that mints the next one, the
+servers stay as they are.
+
+A server whose re-apply did not take still refuses the central's certificate. No
+alert names it reliably: its silence is put down to its last 401, so it does not
 raise `metrics_central_writer_outside`. Look for it by `metrics_last_seen` falling
-behind, and the TLS error is in its vmagent's log. Re-apply its agents: on the panel, set the host's
-`metrics_agents_revision` to 0 and the reconciliation re-applies it at its next pass
-(the same lever the operations guide uses when the security logs change).
+behind; the TLS error is in its vmagent's log. Only then, as a fallback (a panel on
+code older than the fingerprint, or a re-apply that failed), re-apply it by hand:
+on the panel, set the host's `metrics_agents_revision` to 0 and the reconciliation
+re-applies it at its next pass (the same lever the operations guide uses when the
+security logs change).
 
 ## Rotate the authority
 
@@ -188,19 +199,20 @@ server's agents refuse the central and queue: do it at a quiet hour, all at once
    ```
 2. Deploy the central again (*Enable observability* on its server). It mints a new
    authority and signs a certificate with it; Traefik loads it without a restart.
-3. Re-apply every server's agents: set `metrics_agents_revision` to 0 on every
-   installed, active host and commit. The reconciliation re-applies five per pass
-   (every 15 minutes); `host._enqueue_observability("authority rotated")` in the same
-   shell queues one at once.
+3. The reconciliation re-applies every server's agents at its next pass (every 15
+   minutes): their recorded fingerprint is the old authority's. To queue them at
+   once, run `env["cloud.host"]._reconcile_direct_agents()` in an Odoo shell on
+   the panel and commit.
 4. Where a module that extends the panel sends the authority to other panels, it
-   sends the new one with its next push; each of those panels must re-apply its own
-   servers' agents the same way.
-5. Check each host's `metrics_last_seen`: a host where it does not move after its
-   re-apply still refuses the central, so re-apply it again (step 3). Go by
-   `metrics_last_seen` alone: `metrics_central_writer_outside` does not name these
-   servers, as their last 401 from the address the panel has explains their silence.
-   The panel's own reads use a bundle named by the authority's digest, so they take
-   the new one at once.
+   sends the new one with its next push, and each of those panels re-applies its own
+   servers the same way.
+5. Check each host's `metrics_agents_ca_fingerprint` (the new one once its re-apply
+   ended) and `metrics_last_seen`: a host where it does not move after its re-apply
+   still refuses the central. Go by `metrics_last_seen`:
+   `metrics_central_writer_outside` does not name these servers, as their last 401
+   from the address the panel has explains their silence. A host left behind is
+   re-applied by hand as in the section above. The panel's own reads use a bundle
+   named by the authority's digest, so they take the new one at once.
 
 ## Rollback
 

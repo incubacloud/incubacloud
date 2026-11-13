@@ -840,6 +840,10 @@ minutes and with **Check now** under the name. When it passes, the panel writes
 `https://<name>:<port>/r` and `…/w/api/v1/write` as its URLs, keeps the earlier two in
 the system parameter `incubacloud.metrics_central_legacy_urls`, and the
 reconciliation re-applies every server's agents with the new URL and the authority.
+Each server records the fingerprint of the authority it was installed with
+(`metrics_agents_ca_fingerprint`), and the reconciliation also re-applies one whose
+fingerprint is not the authority in force: one installed before the authority reached
+its panel, or with an authority since rotated (RB-35).
 One check that passes is enough, even after failed ones: the two good checks 30
 minutes apart that bring a direct name out of *Failing* protect a name in use from
 flapping, and a name not in use yet has nobody on it. Only this complete check, which
