@@ -187,6 +187,10 @@ class CloudHost(models.Model):
         Called by the observability cron (every 15 minutes). A name not in
         force yet is checked from the central's host, through
         ``sync_direct_path``, when its last check is over ten minutes old.
+        So is a name in use while ``metrics_central_dns_pending`` is open:
+        one failure of the central's resolver raises it, critical, and the
+        next good check closes it; left to the sync's hourly cron, a false
+        alert stayed open up to an hour (spike of 13-nov-2026).
 
         :return: how many servers are said to be outside.
         :rtype: int
@@ -199,13 +203,26 @@ class CloudHost(models.Model):
         now = fields.Datetime.now()
         if (
             Settings._central_single_path()
-            and not Settings._central_single_in_force()
+            and (
+                not Settings._central_single_in_force()
+                or self._central_dns_pending_open()
+            )
             and central and central.active and central.direct_port_shipped
         ):
             checked = settings.metrics_central_name_checked_at
             if not checked or now - checked >= _PENDING_CHECK_EVERY:
                 central._enqueue_direct_sync("central's name pending")
         return self._central_silent_writers(now)
+
+    @api.model
+    def _central_dns_pending_open(self):
+        """Whether ``metrics_central_dns_pending`` is open.
+
+        :rtype: bool
+        """
+        return bool(self.env["cloud.alert"].sudo().search_count([
+            ("code", "=", "metrics_central_dns_pending"), ("state", "=", "active"),
+        ], limit=1))
 
     @api.model
     def _central_silent_writers(self, now):

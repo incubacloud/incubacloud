@@ -601,7 +601,11 @@ class CloudSettings(models.Model):
         With the name in use, critical from the start: every agent writes
         to it, and a record that no longer points at the central's server
         (a CDN's proxy turned back on, the record deleted) leaves the
-        whole fleet writing nowhere. Not in use yet, a warning, critical
+        whole fleet writing nowhere. The message does not say they cannot
+        write: the same answer comes from a resolver failing for a moment,
+        or from a move whose record still points at the earlier server,
+        which goes on receiving (spike of 13-nov-2026); the observability
+        cron checks again while it is open. Not in use yet, a warning, critical
         after ``DNS_PENDING_CRITICAL`` when a central was already serving
         under other URLs (the panel and the agents are fine on those, but
         the move is stuck).
@@ -618,8 +622,11 @@ class CloudSettings(models.Model):
                 "metrics_central_dns_pending",
                 _(
                     "The central's name no longer answers from its server%(detail)s. "
-                    "%(record)s No agent can write to the central meanwhile; "
-                    "they keep what they cannot send in their queues.",
+                    "%(record)s If the record was changed or deleted, the agents "
+                    "cannot reach the central and keep what they cannot send in "
+                    "their queues. If it still points at the server the central "
+                    "is moving from, they go on writing there. A passing failure "
+                    "of the resolver closes this alert at the next check.",
                     detail=detail, record=record,
                 ),
                 level="critical",

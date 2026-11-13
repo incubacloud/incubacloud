@@ -553,8 +553,39 @@ class TestTheName(SinglePathCase):
         self._check(_DNS)
         alert = self._alert("metrics_central_dns_pending")
         self.assertEqual(alert.level, "critical")
-        self.assertIn("No agent can write", alert.message)
         self.assertIn("46.4.0.80", alert.message)
+        # A passing resolver failure, or a move with the record still on
+        # the earlier server, gives the same answer: it does not say that
+        # no agent can write.
+        self.assertNotIn("No agent can write", alert.message)
+        self.assertIn("server the central is moving from", alert.message)
+        self.assertIn("passing failure of the resolver", alert.message)
+
+    def _cron_checks(self):
+        """Run the cron's pass on a name last checked 11 minutes ago.
+
+        :return: whether it asked the central's host to check the name.
+        :rtype: bool
+        """
+        self.env["cloud.settings"]._direct_note_checked(
+            central.NAME_PREFIX, fields.Datetime.now() - timedelta(minutes=11),
+        )
+        self.env.invalidate_all()
+        with patch.object(
+            type(self.host), "_enqueue_direct_sync", autospec=True, return_value=1,
+        ) as enqueue:
+            self.env["cloud.host"]._reconcile_central_name()
+        return self.host in [call.args[0] for call in enqueue.call_args_list]
+
+    def test_in_use_the_open_record_alert_is_checked_by_the_cron(self):
+        """Not left to the hourly sync: a false alert closes within minutes."""
+        self._check(_OK)
+        self._check(_DNS)
+        self.assertTrue(self._cron_checks())
+
+    def test_in_use_without_the_alert_the_cron_leaves_it_to_the_sync(self):
+        self._check(_OK)
+        self.assertFalse(self._cron_checks())
 
     def test_in_use_one_good_check_closes_the_record_s_alert(self):
         """The record is right again; leaving failing keeps its hysteresis."""
