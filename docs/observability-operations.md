@@ -852,8 +852,8 @@ to another server) raises `metrics_central_dns_pending` again, critical at once,
 the record to fix: every agent writes to the name. One complete check that passes
 (**Check now**) closes it; the name's state leaves *Failing* after two good checks
 30 minutes apart, as a direct name's. There is no path to fall back to;
-the agents' queues (512 MB per URL for vmagent, 64 MB for Fluent Bit) hold what they
-cannot send. See [RB-35](runbooks/RB-35-central-name.md).
+the agents' queues (512 MB per URL for vmagent, in its volume so a re-apply
+keeps it; 64 MB for Fluent Bit) hold what they cannot send. See [RB-35](runbooks/RB-35-central-name.md).
 
 A central that was published on 443 under the same name stops answering there at
 the deployment that turns the switch on: nothing is published on 443 with it. Where

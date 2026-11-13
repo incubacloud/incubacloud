@@ -89,7 +89,9 @@ def _as_list(value):
 #: 2. 12-nov-2026: Fluent Bit sends the security logs, and counts them,
 #:    where the server's switch is on; promtail, the proxy's access log
 #:    and the Docker socket leave every server.
-AGENTS_REVISION = 2
+#: 3. 13-nov-2026: vmagent keeps its queue in its volume
+#:    (``-remoteWrite.tmpDataPath``), so a re-apply no longer loses it.
+AGENTS_REVISION = 3
 
 
 class ObservabilityAgentsExecutor(AnsibleExecutor):
