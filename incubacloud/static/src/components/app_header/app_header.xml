@@ -170,6 +170,9 @@
                         <button class="ic-header-user-action" t-on-click="openNotifModal">
                             <i class="fa fa-bell-o" aria-hidden="true"/> Notifications
                         </button>
+                        <button class="ic-header-user-action" t-on-click="goToSessions">
+                            <i class="fa fa-shield" aria-hidden="true"/> Sessions and access
+                        </button>
                         <div class="ic-header-user-sep"/>
                         <button class="ic-header-user-action" t-on-click="toggleTheme">
                             <t t-if="state.theme === 'light'"><i class="fa fa-moon-o" aria-hidden="true"/> Dark theme</t>

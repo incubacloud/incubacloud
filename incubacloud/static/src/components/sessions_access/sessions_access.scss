@@ -1,0 +1,75 @@
+// Sessions and access. Built on the relay classes; only the rows and
+// the two columns of countries and browsers are its own.
+.ic-sessions {
+    .ic-sessions-section {
+        margin-bottom: 16px;
+
+        h3 {
+            margin: 0 0 8px;
+            font-size: 15px;
+        }
+    }
+
+    .ic-sessions-line {
+        margin: 0 0 12px;
+    }
+
+    .ic-sessions-everywhere {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .ic-sessions-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .ic-sessions-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px 16px;
+        padding: 10px 0;
+        border-top: 1px solid var(--rl-line);
+
+        &:first-child {
+            border-top: 0;
+        }
+    }
+
+    .ic-sessions-main {
+        flex: 1 1 240px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .ic-sessions-name {
+        font-weight: 500;
+    }
+
+    .ic-sessions-pill {
+        flex: 0 0 auto;
+    }
+
+    .ic-sessions-seen {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px 24px;
+
+        p {
+            margin: 4px 0 0;
+        }
+    }
+
+    .ic-sessions-link {
+        margin: 12px 0 0;
+
+        a {
+            margin-left: 4px;
+        }
+    }
+}
