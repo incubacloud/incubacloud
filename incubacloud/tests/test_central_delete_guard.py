@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 from odoo.exceptions import AccessError, UserError
 from odoo.http import Request
 from odoo.tests import new_test_user
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.models._central_sizing import (
@@ -259,6 +259,11 @@ class TestStartAnEmptyCentral(CentralGuardCase):
         self.assertEqual(job.payload, {"discard_history": True})
 
 
+# post_install: test_only_a_manager_may creates a user, and creating
+# res.users at_install trips over the ``res_partner.autopost_bills`` NOT
+# NULL column (account loads later) — same constraint as
+# test_audit_tracked_mixin.
+@tagged("post_install", "-at_install")
 class TestRetireTheCentral(CentralGuardCase):
 
     def setUp(self):
