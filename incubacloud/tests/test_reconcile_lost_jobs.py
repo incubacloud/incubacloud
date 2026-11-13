@@ -524,6 +524,19 @@ class TestAStopIsNotRunAgain(_LostJobCase):
         self.assertEqual(self.job.state, "started")
         self.assertFalse(self.job.worker_lost_at)
 
+    def test_a_new_attempt_clears_the_sweep_s_sight_of_a_dead_stop(self):
+        """B2: requeued by hand and dead again, it is a new death: its
+        alert counts from the sweep's new sight, not the old one."""
+        self.env.cr.execute(
+            "UPDATE cloud_job SET found_dead_seen_at = now() WHERE id = %s",
+            (self.job.id,),
+        )
+        self._die(sql=_REQUEUED)
+        self.qjob.write({"state": "started"})
+        self.env.invalidate_all()
+        self.assertEqual(self.job.state, "started")
+        self.assertFalse(self.job.found_dead_seen_at)
+
 
 class _DeadStopCase(_LostJobCase):
     """A job cancelled while it ran, whose worker queue_job then found dead."""
@@ -742,12 +755,24 @@ class TestADeadStopNobodyClosesIsSaid(_DeadStopCase):
         self.assertEqual(len(alert), 1)
         return alert
 
+    def _write_date(self):
+        """The job's ``write_date``, as the database has it."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT write_date FROM cloud_job WHERE id = %s", (self.job.id,),
+        )
+        return self.env.cr.fetchone()[0]
+
     def test_the_sweep_alerts_once_nobody_closes_it(self):
         """Counted from the sweep's first sight of it, the reconciliation
-        never run; the alert asks, and the queue still waits."""
+        never run; the alert asks, and the queue still waits. The sight
+        leaves ``write_date`` alone: the reconciliation's margin counts
+        from it."""
+        written = self._write_date()
         self.Job._cron_dispatch_queued()
         self.env.invalidate_all()
         self.assertTrue(self.job.found_dead_seen_at)
+        self.assertEqual(self._write_date(), written)
         self.assertFalse(self._alert())
         self._seen_ago(29)
         self.Job._cron_dispatch_queued()
@@ -793,38 +818,124 @@ class TestADeadStopNobodyClosesIsSaid(_DeadStopCase):
         self.assertEqual(alert.state, "dismissed")
         self.assertEqual(alert.resolution, "auto")
 
-    def test_dismissing_it_closes_the_job_without_its_hook(self):
-        """What the lost run left is not put back: the checkpoint goes,
-        the log says so, and the queue is served."""
-        self.env["cloud.job.checkpoint"].sudo().create({
-            "job_id": self.job.id, "host_id": self.host.id,
+    def _checkpoint(self):
+        """The job's checkpoint, as a step apart would have left it."""
+        return self.env["cloud.job.checkpoint"].sudo().create({
+            "job_id": self.job.id, "host_id": self.host.id, "parked": True,
         })
-        waiting = self._queued()
-        alert = self._alerted()
+
+    def _dismiss(self, alert):
+        """Dismiss *alert* by hand, its job's hook watched.
+
+        :return: the hook's mock, and the scopes the close asked to serve
+        """
         patcher, scopes = self._dispatches()
         with patch.object(
             DeployInstanceExecutor, "on_cancelled_running", autospec=True,
         ) as on_cancelled, patcher:
             alert.write({"state": "dismissed", "resolution": "manual"})
-        on_cancelled.assert_not_called()
         self.env.invalidate_all()
+        return on_cancelled, scopes
+
+    def test_dismissing_it_closes_the_job_without_its_hook(self):
+        """What the lost run left is not put back by a hook: the
+        checkpoint is closed, not deleted, the log says so and names
+        the instance's state, and the queue is served."""
+        row = self._checkpoint()
+        waiting = self._queued()
+        alert = self._alerted()
+        on_cancelled, scopes = self._dismiss(alert)
+        on_cancelled.assert_not_called()
         self.assertEqual(self.job.state, "cancelled")
         self.assertEqual(self.qjob.state, "cancelled")
+        self.assertTrue(row.exists())
+        self.assertTrue(row.closed)
+        self.assertFalse(row.parked)
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertFalse(self._stopping())
+        log = self._log()
+        self.assertIn("A person closed the alert", log)
+        self.assertIn(f"Instance {self.inst.name} is left Deploying", log)
+        self._serve(scopes)
+        self.assertEqual(waiting.state, "pending")
+
+    def test_dismissed_its_step_apart_is_cleaned_up_by_the_next_pass(self):
+        """M1: the closed checkpoint is only a server to clean
+        (``checkpoint``): the next pass stops and removes what it names,
+        with no ``on_cancelled_running``, and deletes it."""
+        self._checkpoint()
+        self._dismiss(self._alerted())
+        self._age(self.job)
+        self.assertEqual(
+            self.Job._claim_lost_job(self.job.id), ("checkpoint", False),
+        )
+        cases = []
+        clean_up = type(self.Job)._clean_up_lost_job
+
+        def spy(model, job_id, case, resumed):
+            """Note the case the pass takes the job up as."""
+            cases.append(case)
+            return clean_up(model, job_id, case, resumed)
+
+        with patch.object(
+            DeployInstanceExecutor, "on_cancelled_running", autospec=True,
+        ) as again, patch.object(
+            AbstractExecutor, "_close_on_server", autospec=True,
+        ) as on_server, patch.object(
+            type(self.Job), "_clean_up_lost_job", autospec=True,
+            side_effect=spy,
+        ):
+            self.assertEqual(self._reconcile(), 0)
+        again.assert_not_called()
+        on_server.assert_called_once()
+        self.assertEqual(cases, ["checkpoint"])
+        self.assertIn("something left on its server", self._log())
         self.assertFalse(self.env["cloud.job.checkpoint"].sudo().search(
             [("job_id", "=", self.job.id)],
         ))
-        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
-        self.assertFalse(self._stopping())
-        self.assertIn("A person closed the alert", self._log())
-        self._serve(scopes)
-        self.assertEqual(waiting.state, "pending")
-        # Nothing is left for the reconciliation.
+        self.assertEqual(self.job.state, "cancelled")
+
+    def test_without_a_checkpoint_nothing_is_left_for_the_reconciliation(self):
+        self._dismiss(self._alerted())
         self._age(self.job)
         with patch.object(
             DeployInstanceExecutor, "on_cancelled_running", autospec=True,
         ) as again:
             self.assertEqual(self._reconcile(), 0)
         again.assert_not_called()
+
+    def test_dismissed_while_the_reconciliation_runs_its_hook_it_says_so(self):
+        """B1: claimed, and the reconciliation runs now: the close goes on
+        (a hook that hangs is a reason for the alert), said in the job's
+        log and the server's."""
+        self._age(self.job)
+        self.assertEqual(
+            self.Job._claim_lost_job(self.job.id), ("stopped", False),
+        )
+        alert = self._alerted()
+        with patch.object(
+            type(self.Job), "_cron_runs_now", autospec=True, return_value=True,
+        ), self.assertLogs(
+            "odoo.addons.incubacloud.models.cloud_job", "WARNING",
+        ) as logs:
+            on_cancelled, _scopes = self._dismiss(alert)
+        on_cancelled.assert_not_called()
+        self.assertEqual(self.qjob.state, "cancelled")
+        self.assertIn("reconciliation is running", self._log())
+        self.assertTrue(any(
+            "reconciliation is running" in line for line in logs.output
+        ))
+
+    def test_dismissed_with_the_reconciliation_idle_it_says_nothing_of_it(self):
+        self._age(self.job)
+        self.Job._claim_lost_job(self.job.id)
+        alert = self._alerted()
+        with patch.object(
+            type(self.Job), "_cron_runs_now", autospec=True, return_value=False,
+        ):
+            self._dismiss(alert)
+        self.assertEqual(self.qjob.state, "cancelled")
+        self.assertNotIn("reconciliation is running", self._log())
 
     def test_dismissed_by_the_platform_it_closes_nothing(self):
         alert = self._alerted()
