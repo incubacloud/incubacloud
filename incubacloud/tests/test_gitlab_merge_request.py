@@ -28,7 +28,7 @@ from odoo.addons.incubacloud.models.restore_instance_executor import (
     RestoreInstanceExecutor,
 )
 
-from ._gitlab_hooks import AFTER, BEFORE, GitLabHookCase
+from ._gitlab_hooks import AFTER, BEFORE, GitLabHookCase, push_body
 
 PROJECT_ID = 101
 FORK_ID = 202
@@ -579,6 +579,65 @@ class TestUpdateAndClose(_MergeRequestCase):
         self.assertFalse(self.env["cloud.job"].search([
             ("instance_id", "=", preview.id),
         ]))
+
+
+class TestUpdateAndItsPush(_MergeRequestCase):
+    """New commits on a merge request's branch rebuild its preview once.
+
+    GitLab delivers a «Push Hook» and a merge request ``update`` for them,
+    in either order. The update names the commit as the push does, so the
+    two ask for one rebuild, and the preview follows its merge request
+    whether or not it follows pushes (``auto_rebuild``).
+    """
+
+    def setUp(self):
+        """Add an open preview whose line follows the merge request's branch."""
+        super().setUp()
+        self.preview = self._preview()
+        self.env["cloud.instance.repo"].create({
+            "instance_id": self.preview.id,
+            "url": f"https://gitlab.com/{self.PATH}.git", "branch": "feature-x",
+        })
+
+    def _push_branch(self):
+        """Deliver the push of AFTER to the merge request's branch."""
+        event = self._event(push_body(branch="feature-x"), key="push-1")
+        event._dispatch_safely()
+        self.assertTrue(event.processed)
+        return self._rebuilds(self.preview)
+
+    def _update(self):
+        """Deliver the merge request's ``update`` with new commits."""
+        event = self._mr(action="update", oldrev=BEFORE, key="update-1")
+        self.assertTrue(event.processed)
+        return self._rebuilds(self.preview)
+
+    def test_the_push_then_the_update_queue_one_rebuild(self):
+        rebuilds = self._push_branch()
+        self.assertEqual(len(rebuilds), 1)
+        self.assertEqual(self._update(), rebuilds)
+        self.assertEqual(len(self._note_jobs()), 1)
+
+    def test_the_update_then_the_push_queue_one_rebuild(self):
+        rebuilds = self._update()
+        self.assertEqual(len(rebuilds), 1)
+        self.assertEqual(self._push_branch(), rebuilds)
+
+    def test_the_update_names_its_commit(self):
+        """With auto_rebuild off, the push queues nothing and the
+        update's rebuild says which commit it was asked for."""
+        self.preview.auto_rebuild = False
+        self.assertFalse(self._push_branch())
+        rebuild = self._update()
+        self.assertEqual(len(rebuild), 1)
+        payload = rebuild.payload
+        self.assertEqual(payload["trigger"], "webhook")
+        self.assertEqual(payload["push_repo"], self.PATH)
+        self.assertEqual(payload["push_branch"], "feature-x")
+        self.assertEqual(payload["push_sha"], AFTER[:7])
+        self.assertEqual(payload["push_message"], "feat: x")
+        self.assertEqual(payload["push_by"], "dev")
+        self.assertEqual(payload["push_provider"], "gitlab")
 
 
 class TestNoteJob(_MergeRequestCase):
