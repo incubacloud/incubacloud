@@ -241,6 +241,25 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         )
         self.assertTrue(both["isError"])
 
+    def test_an_instance_s_secrets_come_as_flags_and_never_as_values(self):
+        """``get_instance`` says which secrets the instance holds with its
+        ``has_<field>`` flags, and holds neither the fields nor their values.
+
+        What the browser walk of an agent reading an instance asserts on a
+        real panel, here on the fixture's instance.
+        """
+        payload = self._payload(
+            self._call_tool(
+                self.key, "get_instance", {"instance_id": self.production.id}
+            )
+        )
+        self.assertIs(payload["has_odoo_admin_password"], True)
+        self.assertIs(payload["has_postgres_password"], True)
+        for field in ("odoo_admin_password", "postgres_password"):
+            with self.subTest(field=field):
+                self.assertNotIn(field, payload)
+        self._assert_no_secret(json.dumps(payload))
+
     def test_an_outsider_does_not_see_the_instance(self):
         """A stakeholder outside the project reads nothing of its instance."""
         outsider = self._cloud_user("mcp-read-outsider", group="group_cloud_user")
