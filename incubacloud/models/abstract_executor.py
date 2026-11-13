@@ -408,19 +408,11 @@ DETACHED_RECONCILE_WAIT_S = 20
 
 #: How long after a step's cap the reconciliation stops trying to reach
 #: its server, in seconds (10-nov-2026): the cap's own ``timeout`` killed
-#: the step long before, and the checkpoint is then given up.
+#: the step long before, and the checkpoint is then given up. Not a row
+#: that holds its queue for a server that does not answer: that one is
+#: tried until the server answers or a person lets it go (13-nov-2026,
+#: ``cloud.job._give_up_if_past_cap``).
 DETACHED_GIVE_UP_AFTER_CAP_S = 3600
-
-#: How long the checkpoint a step past its job's point of no return left
-#: running keeps the job's queue busy, in seconds, counted from when it
-#: began to (12-nov-2026): a step's default cap
-#: (``DEFAULT_SSH_COMMAND_TIMEOUT``), the reconciliation's give-up after
-#: it (``DETACHED_GIVE_UP_AFTER_CAP_S``) and ten minutes of its passes.
-#: Past it the queue goes on even with the row still there: a stopped
-#: cron, or an executor no longer installed, must not hold it for good.
-DETACHED_HOLDS_QUEUE_MAX_S = (
-    DEFAULT_SSH_COMMAND_TIMEOUT + DETACHED_GIVE_UP_AFTER_CAP_S + 600
-)
 
 #: How long a parked job waits for its next attempt, in seconds (9-nov-2026).
 #: queue_job's runner wakes at the job's ``eta`` exactly, so the gap is not
@@ -867,6 +859,10 @@ class AbstractExecutor(ABC):
     # ended, or stopped it, and let go of the queue it held
     # (``_release_queue_hold``): the queue is served though the row stays.
     _queue_hold_released = False
+    # This executor marked the checkpoint as holding its queue
+    # (``_hold_queue``): the reconciliation's own cursor may not see the
+    # mark, written on another one after it read the row.
+    _queue_hold_marked = False
 
     #: Attributes of the executor its closing hooks read and that are set
     #: before its steps: kept in the checkpoint, and set again on an attempt
@@ -2526,8 +2522,11 @@ class AbstractExecutor(ABC):
         stays for a later pass, and it keeps the job's queue busy
         (``_hold_queue``). So does everything when the server cannot be
         reached (``_detached_left_alive``, and why in
-        ``_left_alive_why``), and such a step keeps the queue busy then
-        too.
+        ``_left_alive_why``), and a step that may still run there keeps
+        the queue busy then too, before or past the point of no return
+        (13-nov-2026): if the server comes back, the step and the next job
+        must not run together. A step found ended, or stopped, lets go of
+        a mark an earlier close left.
 
         :param int wait_s: how long the step's trap gets after TERM
         :param transport: a transport to the job's server already open, or
@@ -2572,14 +2571,16 @@ class AbstractExecutor(ABC):
                     stopped = await self._stop_detached(
                         transport, directory, wait_s=wait_s, index=index,
                     )
-                    if past and (settled or stopped):
+                    if settled or stopped:
                         # Nothing of it runs: a directory left behind
                         # keeps the row, not the queue.
                         self._release_queue_hold()
                     settled = True
                 await self._clean_ended_steps(transport, index)
                 if self._detached_left_alive:
-                    self._left_alive_why = "not_stopped"
+                    # A stop the server stopped answering to says so
+                    # itself (``_stop_detached``).
+                    self._left_alive_why = self._left_alive_why or "not_stopped"
                     return
                 paths = list(self._private_uploads)
                 if self._job_dir_created:
@@ -2592,7 +2593,7 @@ class AbstractExecutor(ABC):
         except Exception as exc:  # noqa: BLE001 — the row stays for later
             self._detached_left_alive = True
             self._left_alive_why = "unreachable"
-            if past and not settled and self._step_may_run():
+            if not settled and self._step_may_run():
                 self._hold_queue()
             logging.getLogger("AbstractExecutor").warning(
                 "[job %s] could not reach its server to close what it left"
@@ -2678,10 +2679,13 @@ class AbstractExecutor(ABC):
     def _hold_queue(self):
         """Mark the job's checkpoint as keeping the job's queue busy.
 
-        For a step past the point of no return left running, or that
-        could not be asked: ``cloud.job._scope_busy`` counts the row until
-        it goes or ``DETACHED_HOLDS_QUEUE_MAX_S`` pass from the first
-        mark. A mark already there is kept. Never raises.
+        For a step past the point of no return left running, or one that
+        may still run on a server that could not be asked:
+        ``cloud.job._scope_busy`` counts the row until it goes — the
+        reconciliation finds the step ended or stops it, or a person lets
+        it go (``cloud.job._release_held_queue_by_hand``). It does not
+        expire (13-nov-2026). A mark already there is kept. Sets
+        ``_queue_hold_marked``. Never raises.
         """
         try:
             with self._durable_env() as env:
@@ -2690,6 +2694,7 @@ class AbstractExecutor(ABC):
                     " COALESCE(holds_queue_since, %s) WHERE job_id = %s",
                     (fields.Datetime.now(), self.job.id),
                 )
+                self._queue_hold_marked = bool(env.cr.rowcount)
         except Exception as exc:  # noqa: BLE001 — the 73 of start remains
             logging.getLogger("AbstractExecutor").warning(
                 "[job %s] could not mark its checkpoint as holding its queue:"
@@ -2721,6 +2726,7 @@ class AbstractExecutor(ABC):
             return
         if released:
             self._queue_hold_released = True
+            self._queue_hold_marked = False
 
     @contextlib.asynccontextmanager
     async def _transport_to_close(self, transport):
@@ -2775,6 +2781,16 @@ class AbstractExecutor(ABC):
             env.cr.execute(
                 "DELETE FROM cloud_job_checkpoint WHERE id = %s", (row.id,),
             )
+            try:
+                with env.cr.savepoint():
+                    # Its server answered: an alert of a queue held for
+                    # it, if any, no longer says the truth.
+                    env["cloud.job"]._resolve_queue_held_alert(self.job)
+            except Exception:  # noqa: BLE001 — the row goes all the same
+                logging.getLogger("AbstractExecutor").exception(
+                    "[job %s] could not close the alert of its held queue",
+                    self.job.id,
+                )
         self._stale_checkpoint = None
 
     #: A checkpoint of the job this attempt does not take up
@@ -2824,7 +2840,10 @@ class AbstractExecutor(ABC):
         reconciliation (``_detached_left_alive``).
 
         A resumed attempt that could not connect parks at the step it was
-        to go on from, whether or not a step runs on the server.
+        to go on from, whether or not a step runs on the server. A job
+        that fails with a step on the server keeps its queue busy
+        (``_hold_queue``), before or past the point of no return: the
+        step may still run there (13-nov-2026).
 
         :param Exception exc: the transient connection error
         :return: the ``JobParked`` to raise, or None to fail
@@ -2842,9 +2861,9 @@ class AbstractExecutor(ABC):
         grace = self._contact_grace_s()
         if (now - since).total_seconds() >= grace:
             self._detached_left_alive = True
-            if running and self._past_no_return(index):
-                # It may still run, past the point of no return: the next
-                # job of the queue must not start beside it.
+            if running:
+                # It may still run: the next job of the queue must not
+                # start beside it.
                 self._hold_queue()
             left = "the step is" if running else "what the job left there is"
             self._sys(
@@ -3238,7 +3257,11 @@ class AbstractExecutor(ABC):
         to the job log. Never raises: the error on its way up is the one
         to report. What could not be stopped or removed is left, with the
         job's checkpoint, to whoever reaches the server next
-        (``_detached_left_alive``).
+        (``_detached_left_alive``). A stop the server answered and that
+        failed keeps the job's queue busy past the point of no return
+        only (``_hold_queue_if_past``); one the server stopped answering
+        to, whatever the step (``_left_alive_why`` ``unreachable``,
+        13-nov-2026).
 
         :param transport: the job's open transport
         :param str directory: :func:`detached_dir`
@@ -3271,7 +3294,10 @@ class AbstractExecutor(ABC):
         except BaseException as exc:
             self._detached_left_alive = True
             if not stopped:
-                self._hold_queue_if_past(index)
+                # The step may still run, and the server did not answer.
+                self._left_alive_why = "unreachable"
+                if index is not None and self._checkpoint:
+                    self._hold_queue()
             logging.getLogger("AbstractExecutor").warning(
                 "[job %s] could not stop its step in %s: %s: %s",
                 self.job.id, directory, type(exc).__name__, exc,

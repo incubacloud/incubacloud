@@ -110,10 +110,11 @@ class CloudJobCheckpoint(models.Model):
     )
     holds_queue_since = fields.Datetime(
         help="Since when the row keeps its job's queue busy: a step past"
-             " the job's point of no return was left running, or could not"
-             " be asked, when the job was closed. Counted by"
-             " cloud.job._scope_busy until the row goes or"
-             " DETACHED_HOLDS_QUEUE_MAX_S pass.",
+             " the job's point of no return was left running, or a step"
+             " that may still run could not be asked, when the job was"
+             " closed. Counted by cloud.job._scope_busy until the row goes:"
+             " the reconciliation finds the step ended or stops it, or a"
+             " person closes the alert of the held queue.",
     )
     build_lock_host_id = fields.Many2one(
         "cloud.host",

@@ -228,6 +228,26 @@ describe("job queue — labels", () => {
             .toBe("Queued · 0 ahead");
     });
 
+    test("a job queued behind a server that does not answer says it waits for the server", () => {
+        expect(String(serverWaitLabel(41, true))).toBe(
+            "Queued · waiting for the server to answer, to confirm job #41 stopped",
+        );
+        for (const proto of [InstanceDetail.prototype, HostDetail.prototype]) {
+            const comp = Object.create(proto);
+            expect(String(comp.jobStateText({
+                state: "queued", queue_position: 0, server_wait: 41, server_unanswered: true,
+            }))).toBe("Queued · waiting for the server to answer, to confirm job #41 stopped");
+        }
+        const history = Object.create(JobHistory.prototype);
+        expect(String(history.rowStateText({
+            state: "queued", queue_position: 0, server_wait: 41, server_unanswered: true,
+        }))).toBe("Queued · waiting for the server to answer, to confirm job #41 stopped");
+        // Before the reconciliation's first try: the general text.
+        expect(String(jobStateText({
+            state: "queued", queue_position: 0, server_wait: 41, server_unanswered: false,
+        }))).toBe("Queued · waiting for job #41 to end on the server");
+    });
+
     test("a job another build on its server defers names the job it waits for", () => {
         const wait = { job_id: 41, until: "2026-11-13 10:00:30" };
         expect(String(buildWaitLabel(wait))).toBe(

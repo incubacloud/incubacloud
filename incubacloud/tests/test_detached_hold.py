@@ -6,10 +6,12 @@ back to it. A step past the job's point of no return is not stopped
 then: it is left to end (``_close_on_server``). Its queue must not start
 the next job beside it, so the checkpoint that step leaves keeps the
 queue busy (``holds_queue_since``) until the reconciliation finds the
-step ended, or until it expires. A step before the point of no return is
-stopped, or left to the reconciliation if the server cannot be reached:
-it never keeps the queue, so the rollback of a move whose new server is
-gone is not held back.
+step ended. A step before the point of no return is stopped; when its
+server cannot be reached it may still run there, and it keeps the queue
+too (13-nov-2026), with no expiry: until the server answers, or a person
+closes the alert that asks them to look. Only on the server its instance
+lives on: the rollback of a move whose new server is gone is not held
+back.
 
 Whoever closes the job sees how the step ended when the server says so:
 its real exit status, not a step that "did not end". A hidden job's step
@@ -29,6 +31,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import asyncssh
+import psycopg2
 
 from odoo import fields
 from odoo.tests.common import TransactionCase
@@ -37,11 +40,13 @@ from odoo.tools import mute_logger
 from odoo.addons.queue_job.exception import JobError
 
 from ..models import abstract_executor
-from ..models.abstract_executor import DETACHED_HOLDS_QUEUE_MAX_S
 from ..models.restore_instance_executor import RestoreInstanceExecutor
 from ..models.transport import CommandResult
 from .test_detached_step import _Apart, _local_transport
 from .test_job_parking import _TRAPPED, _Parking, _ParkingCase, _StopCase
+
+#: Far past the expiry a mark once had (2 h 10 min): a week.
+_LONG_AGO_S = 7 * 24 * 3600
 
 
 @contextlib.asynccontextmanager
@@ -213,8 +218,8 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
             for call in dispatch.call_args_list
         ), dispatch.call_args_list)
 
-    def test_a_server_that_cannot_be_reached_holds_it_until_it_expires(self):
-        """Not known to have ended: held, but no longer than the expiry."""
+    def test_a_server_that_cannot_be_reached_holds_it_with_no_expiry(self):
+        """Not known to have ended: held, however long ago the mark."""
         cls = self._lost(_no_return_from="Apart")
         with mute_logger("AbstractExecutor"):
             self._reconcile(cls, connect=_refused)
@@ -239,13 +244,14 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         self.env.cr.execute(
             "UPDATE cloud_job_checkpoint SET holds_queue_since ="
             " holds_queue_since - make_interval(secs => %s) WHERE job_id = %s",
-            (DETACHED_HOLDS_QUEUE_MAX_S + 1, self.job.id),
+            (_LONG_AGO_S, self.job.id),
         )
         self.env.invalidate_all()
-        self.assertFalse(self._busy())
+        self.assertTrue(self._busy())
 
-    def test_a_step_before_the_point_of_no_return_never_holds_it(self):
-        """Its server gone, the queue goes on (a move's restore: below)."""
+    def test_a_step_before_the_point_of_no_return_holds_it_too(self):
+        """Its server gone, the step may still run: the queue waits (a
+        move's restore, whose instance lives elsewhere: below)."""
         cls = self._lost()
         with mute_logger("AbstractExecutor"):
             self._reconcile(cls, connect=_refused)
@@ -253,8 +259,8 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         row = self._row()
         self.assertTrue(row)
         self.assertTrue(row.reconcile_tried_at)
-        self.assertFalse(row.holds_queue_since)
-        self.assertFalse(self._busy())
+        self.assertTrue(row.holds_queue_since)
+        self.assertTrue(self._busy())
 
     def test_a_step_stopped_holds_nothing(self):
         """Before the point of no return, reached: stopped, the row gone."""
@@ -330,8 +336,8 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
         cls(self.job, self.host)._resume(self._row())
         self.assertFalse(self._row().holds_queue_since)
 
-    def test_a_mark_set_by_the_pass_that_gives_up_serves_the_queue(self):
-        """The row marked and deleted in one pass: the queue is served."""
+    def test_a_row_marked_past_its_cap_is_not_given_up(self):
+        """Marked by a pass well past the step's cap: kept, the queue held."""
         cls = self._lost(_no_return_from="Apart")
         with mute_logger("AbstractExecutor"):
             self._reconcile(cls, connect=_refused)
@@ -351,11 +357,12 @@ class TestAStepLeftToEndHoldsItsQueue(_HoldCase):
             Job, "_schedule_dispatch", autospec=True,
         ) as dispatch, mute_logger("AbstractExecutor"):
             self._reconcile(cls, connect=_refused)
-        self.assertFalse(self._row())
-        self.assertTrue(any(
-            {tuple(scope) for scope in call.args[1]} == {self._scope()}
-            for call in dispatch.call_args_list
-        ), dispatch.call_args_list)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertTrue(row.holds_queue_since)
+        self.assertTrue(self._busy())
+        dispatch.assert_not_called()
+        self.assertFalse(any("gives up on it" in line for line in self._log()))
 
 
 class TestAMoveRestoreUndoneDoesNotHoldItsQueue(_HoldCase):
@@ -438,21 +445,32 @@ class TestAMoveRestoreUndoneDoesNotHoldItsQueue(_HoldCase):
             self._reconcile(RestoreInstanceExecutor, connect=_refused)
         self.assertEqual(self.job.state, "failed")
         self.assertTrue(self._row())
-        self.assertFalse(self._row().holds_queue_since)
+        # Marked, as any step that may still run: the instance lives on
+        # its source, so the row of the target holds nothing.
+        self.assertTrue(self._row().holds_queue_since)
+        self.assertFalse(self._busy())
         # The rollback's clean-up of the target removes the move's marks.
         self.inst.sudo().write({"move_target_host_id": False})
         self.env.flush_all()
         self._retry_due()
 
     def test_the_target_still_gone(self):
-        """Another pass that cannot reach it: no mark, the queue free."""
+        """Another pass that cannot reach it: the queue free, no alert."""
         self._cut_then_undone()
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " holds_queue_since - interval '1 hour' WHERE job_id = %s",
+            (self.job.id,),
+        )
         with mute_logger("AbstractExecutor"):
             self._reconcile(RestoreInstanceExecutor, connect=_refused)
         row = self._row()
         self.assertTrue(row)
-        self.assertFalse(row.holds_queue_since)
         self.assertFalse(self._busy())
+        self.assertFalse(self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_queue_held_unreachable"),
+            ("job_id", "=", self.job.id),
+        ]))
 
     def test_the_target_back(self):
         """A pass that reaches it: the load is stopped, the row gone."""
@@ -559,8 +577,321 @@ class TestTheCloseSeesHowTheStepEnded(_HoldCase):
         self.assertEqual(executor._running_step, "Apart")
 
 
+class TestAServerThatDoesNotAnswerHoldsTheQueue(_HoldCase):
+    """A step that may still run on a server that does not answer (#79).
+
+    One rule, before or past the point of no return, whatever the job's
+    end: its queue waits, with no expiry, until the server answers or a
+    person closes the alert that asks them to look.
+    """
+
+    _CODE = "job_queue_held_unreachable"
+
+    def _cancelled_unreached(self, **attrs):
+        """Cancelled while parked with its step running, closed unreached.
+
+        :return: the executor class
+        """
+        cls = self._parked(**attrs)
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=_refused), mute_logger("AbstractExecutor"):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self.env.invalidate_all()
+        self.assertEqual(self.job.state, "cancelled")
+        return cls
+
+    def _next(self):
+        """A job queued behind it, in the host's queue."""
+        job = self.env["cloud.job"].sudo().create({
+            "host_id": self.host.id,
+            "job_type_id": self.job.job_type_id.id,
+            "name": "Next",
+        })
+        job.with_context(ic_skip_state_hook=True).write({"state": "queued"})
+        self.env.flush_all()
+        return job
+
+    def _held_alert(self):
+        """The alert of the held queue, open or closed."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", self._CODE), ("job_id", "=", self.job.id),
+        ])
+
+    def _marked_ago(self, minutes):
+        """Put the row's mark *minutes* back, and its last try past its spacing."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " (now() at time zone 'UTC') - make_interval(mins => %s)"
+            " WHERE job_id = %s", (minutes, self.job.id),
+        )
+        self.env.invalidate_all()
+        self._retry_due()
+
+    def _unreached_pass(self, cls):
+        """One pass of the reconciliation that cannot reach the server."""
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_refused)
+
+    def _alerted(self):
+        """Cancelled, unreached, and 31 minutes later a pass: the alert is up.
+
+        :return: the executor class
+        """
+        cls = self._cancelled_unreached()
+        self._unreached_pass(cls)
+        self._marked_ago(31)
+        self._unreached_pass(cls)
+        self.assertEqual(len(self._held_alert()), 1)
+        return cls
+
+    def test_a_step_before_the_point_of_no_return_holds_the_queue(self):
+        """(1) Closed with a mark; the queue busy; the next job not dispatched."""
+        self._cancelled_unreached()
+        row = self._row()
+        self.assertTrue(row.closed)
+        self.assertTrue(row.holds_queue_since)
+        self.assertTrue(self._busy())
+        following = self._next()
+        self.env["cloud.job"]._dispatch_next(None, self.host.id)
+        self.assertEqual(following.state, "queued")
+
+    def test_cancelled_between_two_steps_holds_nothing(self):
+        """(2) No step started on the server: no mark."""
+        cls = self._class(self._plan(), spend_at="step:1")
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertFalse(self._row().detached_started)
+        self.job.cancel_job()
+        self.env.flush_all()
+        self.qjob.write({"state": "started"})
+        with self._connected(cls, connect=_refused), mute_logger("AbstractExecutor"):
+            self.job.execute()
+        self.qjob.write({
+            "state": "done", "result": abstract_executor.CANCELLED_WHILE_RUNNING,
+        })
+        self.env.invalidate_all()
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+
+    def test_a_connection_lost_after_the_stop_holds_nothing(self):
+        """(3) The step stopped, then the server drops in the clean-up."""
+        cls = self._cancelled_unreached()
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+
+        async def _run(command, timeout=3600):
+            """The job's files cannot be removed: the server is gone."""
+            if command.startswith("rm -rf "):
+                raise asyncssh.ConnectionLost("Connection lost")
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            yield transport
+
+        self._retry_due()
+        with mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_connect)
+        row = self._row()
+        self.assertTrue(row)
+        self.assertFalse(row.holds_queue_since)
+        self.assertFalse(self._busy())
+        self.assertIn("trapped", self._log())
+
+    def test_past_its_cap_the_row_is_not_given_up(self):
+        """(6) An hour past the cap, still unreached: kept, held, no give-up."""
+        cls = self._cancelled_unreached()
+        self._unreached_pass(cls)
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '3 hours'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self._row().write({
+            "step_started_at": fields.Datetime.now() - timedelta(hours=3),
+        })
+        self._retry_due()
+        self._unreached_pass(cls)
+        self.assertTrue(self._row().holds_queue_since)
+        self.assertTrue(self._busy())
+        self.assertFalse(any("gives up on it" in line for line in self._log()))
+        self.assertFalse(self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_cleanup_given_up"), ("job_id", "=", self.job.id),
+        ]))
+
+    def test_past_its_cap_a_row_left_for_its_files_is_given_up(self):
+        """(6) The server answers, the step is stopped, its files stay: as before."""
+        cls = self._cancelled_unreached()
+        self._unreached_pass(cls)
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '3 hours'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self._row().write({
+            "step_started_at": fields.Datetime.now() - timedelta(hours=3),
+        })
+        self._retry_due()
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+
+        async def _run(command, timeout=3600):
+            """``rm`` of the job's files fails."""
+            if command.startswith("rm -rf "):
+                return CommandResult(stdout="", exit_status=1)
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            yield transport
+
+        self._reconcile(cls, connect=_connect)
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        given_up = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_cleanup_given_up"), ("job_id", "=", self.job.id),
+        ])
+        self.assertEqual(len(given_up), 1)
+        self.assertIn("could not be removed", given_up.message)
+
+    def test_the_alert_comes_after_30_minutes_once(self):
+        """(7) None before, one after, the same one on the next pass."""
+        cls = self._cancelled_unreached()
+        self._unreached_pass(cls)
+        self._marked_ago(29)
+        self._unreached_pass(cls)
+        self.assertFalse(self._held_alert())
+        self._marked_ago(31)
+        self._unreached_pass(cls)
+        alert = self._held_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.state, "active")
+        self.assertEqual(alert.level, "warning")
+        self.assertEqual(alert.host_id, self.host)
+        self.assertEqual(alert.dedup_key, str(self.job.id))
+        self.assertIn(f"#{self.job.id}", alert.message)
+        self.assertIn(self.host.name, alert.message)
+        self.assertIn("does not answer", alert.message)
+        self.assertIn(
+            f"`bash {self.directory}/ctl.sh stop {self.directory} 20`",
+            alert.message,
+        )
+        self.assertIn(cls.instances[0]._job_dir_path, alert.message)
+        self.assertIn("dismiss this alert", alert.message)
+        self.assertEqual(alert.payload["directory"], self.directory)
+        self._retry_due()
+        self._unreached_pass(cls)
+        self.assertEqual(len(self._held_alert()), 1)
+        # Still held: the alert asks, it does not let go.
+        self.assertTrue(self._busy())
+
+    def test_a_job_that_failed_raises_it_too(self):
+        """(7) Not cancelled: its contact lost, the queue held all the same."""
+        cls = self._lost()
+        self._unreached_pass(cls)
+        self.assertEqual(self.job.state, "failed")
+        self._marked_ago(31)
+        self._unreached_pass(cls)
+        self.assertEqual(len(self._held_alert()), 1)
+
+    def test_the_server_back_lets_go_and_closes_the_alert(self):
+        """(8) Stopped, the row gone, the alert closed, the queue served."""
+        cls = self._alerted()
+        following = self._next()
+        self._retry_due()
+        Job = type(self.env["cloud.job"])
+        with patch.object(Job, "_schedule_dispatch", autospec=True) as dispatch:
+            self._reconcile(cls)
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        self.assertFalse(Path(self.directory).exists())
+        self.assertIn("trapped", self._log())
+        alert = self._held_alert()
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolution, "auto")
+        self.assertTrue(any(
+            {tuple(scope) for scope in call.args[1]} == {self._scope()}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
+        self.env["cloud.job"]._dispatch_next(None, self.host.id)
+        self.assertNotEqual(following.state, "queued")
+
+    def test_closing_the_alert_by_hand_lets_go(self):
+        """(9) The row deleted, a line in the log, the queue served; for good."""
+        cls = self._alerted()
+        Job = type(self.env["cloud.job"])
+        with patch.object(Job, "_schedule_dispatch", autospec=True) as dispatch:
+            self._held_alert().write({"state": "dismissed", "resolution": "manual"})
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+        self.assertTrue(any(
+            "A person closed the alert of the server" in line
+            for line in self._log()
+        ))
+        self.assertTrue(any(
+            {tuple(scope) for scope in call.args[1]} == {self._scope()}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
+        # No row, no mark: a later pass finds nothing to hold the queue with.
+        self._unreached_pass(cls)
+        self.assertFalse(self._row())
+        self.assertFalse(self._busy())
+
+    def test_closed_by_the_platform_the_row_stays(self):
+        """(9) A close that is not a person's lets go of nothing."""
+        self._alerted()
+        self.env["cloud.job"]._resolve_queue_held_alert(self.job)
+        self.assertEqual(self._held_alert().resolution, "auto")
+        self.assertTrue(self._row().holds_queue_since)
+        self.assertTrue(self._busy())
+
+    def test_dismiss_all_leaves_it_open(self):
+        """(10) One decision per job, never in a bulk sweep."""
+        self._alerted()
+        self.env["cloud.alert"].action_dismiss_all()
+        self.assertEqual(self._held_alert().state, "active")
+        self.assertTrue(self._busy())
+
+    def test_the_job_reads_cancelling_and_the_queue_says_why(self):
+        """(11) Stopping while it holds; the first behind it names the server."""
+        cls = self._cancelled_unreached()
+        self.assertTrue(self._row().closed)
+        stopping = self.env["cloud.job"]._stopping_ids([("id", "=", self.job.id)])
+        self.assertEqual(stopping, {self.job.id})
+        self.assertTrue(self.job._format()[0]["stopping"])
+        self.assertTrue(self.job._format_history()[0]["stopping"])
+        following = self._next()
+        row = following._format()[0]
+        self.assertEqual(row["server_wait"], self.job.id)
+        # Before the reconciliation's first try: the general text.
+        self.assertFalse(row["server_unanswered"])
+        self._unreached_pass(cls)
+        self.env.invalidate_all()
+        self.assertTrue(following._format()[0]["server_unanswered"])
+        self.assertTrue(following._format_history()[0]["server_unanswered"])
+
+    def test_deleting_the_server_is_not_a_way_out(self):
+        """(13) A job keeps its server (``host_id`` is required): the alert is."""
+        self._cancelled_unreached()
+        with self.assertRaises(psycopg2.IntegrityError), mute_logger(
+            "odoo.sql_db",
+        ), self.env.cr.savepoint():
+            self.host.unlink()
+        self.assertTrue(self._row().holds_queue_since)
+        self.assertTrue(self._busy())
+
+
 class TestALostServerPastTheGrace(_ParkingCase):
-    """A job that gives up on the server of its step holds its queue if past the point of no return."""
+    """A job that gives up on the server of its step holds its queue."""
 
     def _losing(self):
         """A transport whose second read of the step loses the connection."""
@@ -604,9 +935,31 @@ class TestALostServerPastTheGrace(_ParkingCase):
         """The step may still run: the queue waits for it."""
         self.assertTrue(self._given_up("Apart").holds_queue_since)
 
-    def test_before_it_it_does_not(self):
-        """The 73 of ``start`` and the reconciliation cover the rest."""
+    def test_before_it_it_holds_too(self):
+        """The step may still run there as well (13-nov-2026)."""
         row = self._given_up(None)
+        self.assertTrue(row)
+        self.assertTrue(row.holds_queue_since)
+
+    def test_with_no_step_on_the_server_it_does_not(self):
+        """A resumed attempt between two steps: nothing of it runs there."""
+        cls = self._class(self._plan(), spend_at="step:2")
+        self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
+        self.assertFalse(self._row().detached_started)
+        with mute_logger("AbstractExecutor"):
+            self.assertIsInstance(
+                self._execute(cls, connect=_refused), abstract_executor.JobParked,
+            )
+        self._row().write({
+            "lost_contact_since": fields.Datetime.now() - timedelta(
+                seconds=abstract_executor.DETACHED_CONTACT_GRACE_S + 1,
+            ),
+        })
+        with mute_logger("AbstractExecutor"):
+            self.assertIsInstance(
+                self._execute(cls, connect=_refused), JobError,
+            )
+        row = self._row()
         self.assertTrue(row)
         self.assertFalse(row.holds_queue_since)
 
@@ -647,10 +1000,34 @@ class TestAStopThatFailsPastThePointHoldsTheQueue(_ParkingCase):
         self.assertTrue(row.holds_queue_since)
 
     def test_before_it_it_does_not(self):
-        """Left to the reconciliation, the queue free."""
+        """The server answered: left to the reconciliation, the queue free."""
         row = self._failed_stop(None)
         self.assertTrue(row.closed)
         self.assertFalse(row.holds_queue_since)
+
+    def test_a_stop_the_server_does_not_answer_holds_it_before_it_too(self):
+        """The stop itself loses the server: the step may still run."""
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+        reads = {"n": 0}
+
+        async def _run(command, timeout=3600):
+            """A read that cannot be used, then a stop the server drops."""
+            if "ctl.sh read" in command:
+                reads["n"] += 1
+                if reads["n"] == 2:
+                    raise RuntimeError("an answer that cannot be read")
+            if "ctl.sh stop" in command:
+                raise asyncssh.ConnectionLost("Connection lost")
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+        cls = self._class(self._plan(apart=_TRAPPED.format(runs=self.runs)))
+        with mute_logger("AbstractExecutor"):
+            self.assertIsInstance(self._execute(cls, transport), JobError)
+        row = self._row()
+        self.assertTrue(row.closed)
+        self.assertTrue(row.holds_queue_since)
 
 
 class TestARowThatHoldsTheQueue(TransactionCase):
@@ -759,15 +1136,74 @@ class TestARowThatHoldsTheQueue(TransactionCase):
         self._ended("deploy_instance", self.inst, state="cancelled")
         self.assertTrue(self.Job._scope_busy(self.inst.id, None))
 
-    def test_a_mark_past_its_expiry_holds_nothing(self):
-        """A stopped cron or an executor gone does not hold it for good."""
+    def test_a_mark_does_not_expire(self):
+        """However old: only the server, or a person, lets it go."""
         job = self._ended("deploy_instance", self.inst)
         self.env.cr.execute(
             "UPDATE cloud_job_checkpoint SET holds_queue_since ="
             " holds_queue_since - make_interval(secs => %s) WHERE job_id = %s",
-            (DETACHED_HOLDS_QUEUE_MAX_S + 1, job.id),
+            (_LONG_AGO_S, job.id),
         )
-        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+        self.assertEqual(self.Job._server_holder(self.inst.id, None), job.id)
+
+    def _held_alert(self, job):
+        """The alert of *job*'s held queue."""
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", "job_queue_held_unreachable"), ("job_id", "=", job.id),
+        ])
+
+    def _marked_ago(self, job, minutes):
+        """Put *job*'s mark *minutes* back."""
+        self.env.cr.execute(
+            "UPDATE cloud_job_checkpoint SET holds_queue_since ="
+            " (now() at time zone 'UTC') - make_interval(mins => %s)"
+            " WHERE job_id = %s", (minutes, job.id),
+        )
+        self.env.invalidate_all()
+
+    def _reconcile_cron(self):
+        """The reconciliation's scheduled action."""
+        return self.env.ref("incubacloud.cron_cloud_job_reconcile_lost").sudo()
+
+    def test_the_sweep_says_a_hold_the_stopped_reconciliation_leaves(self):
+        """R1: the reconciliation's scheduled action off, the sweep alerts, once."""
+        self.registry_enter_test_mode()
+        job = self._ended("deploy_instance", self.inst)
+        self._marked_ago(job, 31)
+        cron = self._reconcile_cron()
+        cron.write({"lastcall": fields.Datetime.now()})
+        self.Job._cron_dispatch_queued()
+        self.assertFalse(self._held_alert(job))
+        cron.write({"active": False})
+        self.Job._cron_dispatch_queued()
+        alert = self._held_alert(job)
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.instance_id, self.inst)
+        self.assertEqual(alert.host_id, self.host)
+        self.assertIn("reconciliation of lost jobs has not run", alert.message)
+        self.assertIn(self.inst.name, alert.message)
+        self.Job._cron_dispatch_queued()
+        self.assertEqual(len(self._held_alert(job)), 1)
+        # The alert asks; the queue still waits.
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+
+    def test_the_sweep_alerts_once_the_reconciliation_has_not_run_for_long(self):
+        """R1: on, but its last run 31 minutes back; not for a younger mark,
+        nor for a row that holds nothing."""
+        job = self._ended("deploy_instance", self.inst)
+        young = self._ended("deploy_instance", self.other)
+        unheld = self._ended("rebuild_instance", self.inst, holds=False)
+        self._marked_ago(job, 31)
+        self._marked_ago(young, 10)
+        self._reconcile_cron().write({
+            "active": True,
+            "lastcall": fields.Datetime.now() - timedelta(minutes=31),
+        })
+        self.assertEqual(self.Job._alert_unwatched_queue_holds(), 1)
+        self.assertTrue(self._held_alert(job))
+        self.assertFalse(self._held_alert(young))
+        self.assertFalse(self._held_alert(unheld))
 
     def test_the_waiting_job_says_what_it_waits_for(self):
         """The job queued behind it names it, until the row goes."""
