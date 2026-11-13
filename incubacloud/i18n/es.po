@@ -81,6 +81,30 @@ msgid "% of the time some task waited"
 msgstr "% del tiempo que alguna tarea esperó"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(actor)s invited %(invitee)s to %(panel)s."
+msgstr "%(actor)s ha invitado a %(invitee)s a %(panel)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(actor)s saved a Git token on %(place)s, for %(door)s."
+msgstr "%(actor)s ha guardado un token de Git en %(place)s, para %(door)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(browser)s on %(platform)s"
+msgstr "%(browser)s en %(platform)s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "%(browsers)s on %(platforms)s"
+msgstr "%(browsers)s en %(platforms)s"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.js:0
 msgid ""
@@ -199,6 +223,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(invitee)s was invited to %(panel)s"
+msgstr "Se ha invitado a %(invitee)s a %(panel)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "%(invitee)s was invited to %(panel)s."
+msgstr "Se ha invitado a %(invitee)s a %(panel)s."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "%(label)s '%(value)s' is invalid. Use a valid PostgreSQL identifier (1-63 "
@@ -278,6 +314,16 @@ msgid ""
 msgstr ""
 "%(name)s se archivó sin destino de copias, así que no hay nada que "
 "restaurar. Sus datos se destruyeron junto con los contenedores."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"%(owner)s connected the agent %(door)s to %(panel)s: it can use that panel "
+"on their behalf."
+msgstr ""
+"%(owner)s ha conectado el agente %(door)s a %(panel)s: puede usar ese panel "
+"en su nombre."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -850,6 +896,13 @@ msgstr ""
 "la producción y luego clónela desde el menú lateral."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_session_seen__value
+msgid "A country code, or a browser family as Odoo's parser names it."
+msgstr ""
+"Un código de país, o una familia de navegador tal como la nombra el "
+"analizador de Odoo."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
@@ -1005,6 +1058,16 @@ msgid "A sample at each step of the window"
 msgstr "Una muestra en cada paso del intervalo"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid ""
+"A session is closed, without asking, when it is used from another country or"
+" another browser, or after a long time unused. Signing in again is enough."
+msgstr ""
+"Una sesión se cierra, sin preguntar, cuando se usa desde otro país o desde "
+"otro navegador, o tras mucho tiempo sin usarse. Basta con volver a entrar."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -1030,6 +1093,12 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_gitlab_hook.py:0
 msgid "A test was asked for a moment ago: wait a few seconds."
 msgstr "Se pidió una prueba hace un momento: espere unos segundos."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "API key"
+msgstr "Clave API"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1487,6 +1556,13 @@ msgstr "Ya importada"
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
 msgid "Also allow my IP (%(ip)s)"
 msgstr "Permitir también mi IP (%(ip)s)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "An API key named %(door)s was created on %(place)s for %(owner)s."
+msgstr ""
+"Se ha creado en %(place)s una clave API llamada %(door)s para %(owner)s."
 
 #. module: incubacloud
 #. odoo-python
@@ -1949,6 +2025,11 @@ msgid "Back to Projects"
 msgstr "Volver a proyectos"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__backchannel_logout_counter
+msgid "Backchannel Logout Counter"
+msgstr "Contador de cierre de sesión"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "Backend connection test failed"
@@ -2181,8 +2262,16 @@ msgstr "Rama a usar para despliegues."
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__browser
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_hold__signal__browser
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_seen__kind__browser
 msgid "Browser"
 msgstr "Navegador"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Browsers"
+msgstr "Navegadores"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3700,6 +3789,12 @@ msgid "Could not load the monitoring configuration."
 msgstr "No se pudo cargar la configuración de la monitorización."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Could not load your sessions."
+msgstr "No se pudieron cargar sus sesiones."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not parse repository configuration."
@@ -3774,6 +3869,18 @@ msgid "Could not read the proxy log."
 msgstr "No se pudo leer el registro del proxy."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "Could not revoke it."
+msgstr "No se pudo revocar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "Could not sign out everywhere."
+msgstr "No se pudo cerrar la sesión en todas partes."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid ""
@@ -3803,10 +3910,29 @@ msgid "Count"
 msgstr "Cantidad"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Countries"
+msgstr "Países"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Countries and browsers"
+msgstr "Países y navegadores"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__country
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_hold__signal__country
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_seen__kind__country
 msgid "Country"
 msgstr "País"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_session_seen
+msgid "Country or browser a user's sessions were used from"
+msgstr "País o navegador desde el que se usaron las sesiones de un usuario"
 
 #. module: incubacloud
 #: model:cloud.job.type,description:incubacloud.move_fingerprint
@@ -3944,6 +4070,12 @@ msgid "Create your first project to start managing Odoo instances."
 msgstr "Cree su primer proyecto para comenzar a gestionar instancias de Odoo."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Created"
+msgstr "Creado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__create_uid
@@ -3980,6 +4112,7 @@ msgstr "Cree su primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
@@ -4019,6 +4152,7 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__create_date
 msgid "Created on"
 msgstr "Creado el"
 
@@ -4933,6 +5067,8 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__display_name
 msgid "Display Name"
 msgstr "Nombre para mostrar"
 
@@ -5209,6 +5345,12 @@ msgid ""
 msgstr ""
 "Fin del certificado que instaló con el nombre público el último despliegue "
 "correcto de la central."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Ended"
+msgstr "Terminada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5995,6 +6137,11 @@ msgid "Firewall Admits Only Trusted Proxies"
 msgstr "El cortafuegos solo admite los proxies de confianza"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__first_seen
+msgid "First Seen"
+msgstr "Visto por primera vez"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "First run."
@@ -6134,9 +6281,55 @@ msgstr ""
 "instala todas las herramientas y despliega Traefik."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Git token"
+msgstr "Token de Git"
+
+#. module: incubacloud
 #: model:ir.model,name:incubacloud.model_ir_http
 msgid "HTTP Routing"
 msgstr "Enrutamiento HTTP"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Hello %(name)s,"
+msgstr "Hola, %(name)s:"
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+msgid "If it was you, there is nothing to do."
+msgstr "Si fue usted, no tiene que hacer nada."
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+msgid "If you do not recognise it:"
+msgstr "Si no lo reconoce:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "In use"
+msgstr "En uso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "It was used from another browser"
+msgstr "Se usó desde otro navegador"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "It was used from another country"
+msgstr "Se usó desde otro país"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Last used"
+msgstr "Último uso"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6147,10 +6340,40 @@ msgstr ""
 "real."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "New API key on %(place)s: %(door)s"
+msgstr "Nueva clave API en %(place)s: %(door)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "New Git token on %(place)s"
+msgstr "Nuevo token de Git en %(place)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "New access to %(place)s"
+msgstr "Nuevo acceso a %(place)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "New agent connected to %(panel)s: %(door)s"
+msgstr "Nuevo agente conectado a %(panel)s: %(door)s"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "No data"
 msgstr "Sin datos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "No other session."
+msgstr "No hay más sesiones."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6163,6 +6386,42 @@ msgstr "Sin lecturas en los últimos 15 minutos (la última, %s)."
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
 msgid "No reading yet."
 msgstr "Aún no hay lecturas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "None closed lately."
+msgstr "Ninguna cerrada últimamente."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "None."
+msgstr "Ninguno."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Open %(page)s and sign out everywhere."
+msgstr "Abra %(page)s y cierre la sesión en todas partes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Open since"
+msgstr "Abierta desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__backchannel_logout_counter
+msgid ""
+"Part of the session token: moving it signs every session of the user out at "
+"once (Sign out everywhere; on a layer, a logout another database sends). "
+"Empty until first moved, so that adding it changed nobody's token."
+msgstr ""
+"Forma parte del token de sesión: al moverlo se cierran a la vez todas las "
+"sesiones del usuario (Cerrar sesión en todas partes; en una capa, un cierre "
+"de sesión que envía otra base de datos). Vacío hasta que se mueve por "
+"primera vez, para que añadirlo no cambiara el token de nadie."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6386,6 +6645,12 @@ msgstr "Ningún servidor informó en este intervalo."
 #: code:addons/incubacloud/models/metrics_diagnosis.py:0
 msgid "Normal: no resource of this server looks saturated."
 msgstr "Normal: ningún recurso de este servidor parece saturado."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Recent sessions"
+msgstr "Sesiones recientes"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7034,6 +7299,23 @@ msgstr "Quitar el zoom"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Revoke"
+msgstr "Revocar"
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+msgid "Revoke there whatever you do not recognise: agents, API keys, tokens."
+msgstr "Revoque allí lo que no reconozca: agentes, claves API, tokens."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "Revoked."
+msgstr "Revocado."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_board.xml:0
 msgid "Right now"
 msgstr "Ahora mismo"
@@ -7086,6 +7368,26 @@ msgstr "Servidor: espera por recursos"
 #: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "Servers reporting"
 msgstr "Servidores que informan"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_session_notice
+msgid "Session and access notices"
+msgstr "Avisos de sesiones y accesos"
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Sessions and access"
+msgstr "Sesiones y accesos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Sessions closed"
+msgstr "Sesiones cerradas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7161,6 +7463,31 @@ msgstr "Parte del disco raíz de este servidor en uso en el tiempo"
 msgid "Share of time each container was held back by its CPU quota"
 msgstr ""
 "Parte del tiempo que cada contenedor estuvo frenado por su cuota de CPU"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Sign out everywhere"
+msgstr "Cerrar sesión en todas partes"
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+msgid ""
+"Sign out of the sessions of the account you sign in with too (Google, "
+"GitHub…): whoever took one session cookie usually holds the others."
+msgstr ""
+"Cierre también las sesiones de la cuenta con la que entra (Google, GitHub…):"
+" quien se llevó una cookie de sesión suele tener también las demás."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid ""
+"Signs you out of every session of your account, this one included. Agents "
+"and API keys keep working: revoke them one by one below."
+msgstr ""
+"Cierra todas las sesiones de su cuenta, también esta. Los agentes y las "
+"claves API siguen funcionando: revóquelos uno a uno más abajo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8205,6 +8532,8 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_queue_job__id
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_notice__id
 msgid "ID"
 msgstr "ID"
 
@@ -8431,7 +8760,9 @@ msgstr ""
 "events, que reconstruiría."
 
 #. module: incubacloud
+#. odoo-javascript
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_session_closure__signal__inactivity
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
 msgid "Inactivity"
 msgstr "Inactividad"
 
@@ -9211,6 +9542,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_git_credential__kind
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_git_provider__kind
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__kind
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__kind
 msgid "Kind"
 msgstr "Tipo"
 
@@ -9293,6 +9625,7 @@ msgstr "Última huella de reconstrucción"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_closure__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__last_seen
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__last_seen
 msgid "Last Seen"
 msgstr "Visto por última vez"
 
@@ -9353,6 +9686,7 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_uid
 msgid "Last Updated by"
 msgstr "Última actualización por"
 
@@ -9393,6 +9727,7 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__write_date
 msgid "Last Updated on"
 msgstr "Última actualización el"
 
@@ -9713,6 +10048,7 @@ msgstr "Cargando usuarios…"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
 msgid "Loading…"
 msgstr "Cargando…"
 
@@ -16200,6 +16536,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "There is a new way in to %(place)s."
+msgstr "Hay un nuevo acceso a %(place)s."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid ""
 "There is nothing to check: the central needs a public name, One path, "
@@ -16263,6 +16605,16 @@ msgstr ""
 "                                        panel. No queda nada de ellas en marcha; lo que queda es la\n"
 "                                        copia de seguridad de abajo, y revivir una la vuelve a desplegar y\n"
 "                                        restaura esa copia dentro."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid ""
+"They keep working after you sign out everywhere. Revoke any you do not "
+"recognise."
+msgstr ""
+"Siguen funcionando aunque cierre la sesión en todas partes. Revoque los que "
+"no reconozca."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16645,6 +16997,12 @@ msgid ""
 msgstr ""
 "Este servidor dejó de enviar métricas el %s. Compruebe que está encendido y "
 "accesible."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "This session"
+msgstr "Esta sesión"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -17124,6 +17482,7 @@ msgstr "Rangos de proxy de confianza (excepción)"
 #: code:addons/incubacloud/static/src/components/metrics/chart_board.xml:0
 #: code:addons/incubacloud/static/src/components/metrics/metrics_board.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
 msgid "Try again"
 msgstr "Intentar de nuevo"
 
@@ -17293,6 +17652,12 @@ msgstr "Intervalo de gráfico desconocido: %s"
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Unknown data source: %s"
 msgstr "Fuente de datos desconocida: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.js:0
+msgid "Unknown device"
+msgstr "Dispositivo desconocido"
 
 #. module: incubacloud
 #. odoo-python
@@ -17506,6 +17871,7 @@ msgstr "Comandos útiles:"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_session_hold__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__user_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__user_id
 msgid "User"
 msgstr "Usuario"
 
@@ -17539,6 +17905,11 @@ msgid ""
 msgstr ""
 "Usuarios asignados a este proyecto. Los interesados y los consultores solo "
 "ven los proyectos de los que son miembros."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_session_seen__value
+msgid "Value"
+msgstr "Valor"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__delivery_id
@@ -17764,6 +18135,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid "Ways in"
+msgstr "Accesos"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "We install a temporary key on the host that can only write your backup into "
@@ -17946,6 +18323,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "What to receive"
 msgstr "Qué recibir"
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_session_notice
+msgid "When"
+msgstr "Cuándo"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__usage_last_seen
@@ -18223,6 +18605,24 @@ msgstr ""
 "``_transition()``, que rechaza los saltos no permitidos. Reconstruir, "
 "restaurar, mover, iniciar y detener ocurren *dentro* de 'deployed': son "
 "operaciones, no estados."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid ""
+"Where your account has been used from. A new one is told to you by email."
+msgstr ""
+"Desde dónde se ha usado su cuenta. Si aparece uno nuevo, se le avisa por "
+"correo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/sessions_access/sessions_access.xml:0
+msgid ""
+"Where your account is signed in, and the ways in that do not depend on a "
+"session."
+msgstr ""
+"Dónde está abierta su cuenta y los accesos que no dependen de una sesión."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
@@ -18568,6 +18968,38 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
 msgid "Your IP (%(ip)s) is already allowed."
 msgstr "Su IP (%(ip)s) ya está permitida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"Your account on %(place)s was used from %(seen)s, a browser it had not been "
+"used from before."
+msgstr ""
+"Su cuenta en %(place)s se ha usado desde %(seen)s, un navegador desde el que"
+" no se había usado antes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid ""
+"Your account on %(place)s was used from %(seen)s, a country it had not been "
+"used from before."
+msgstr ""
+"Su cuenta en %(place)s se ha usado desde %(seen)s, un país desde el que no "
+"se había usado antes."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Your account was used from a new browser: %(seen)s"
+msgstr "Su cuenta se ha usado desde un navegador nuevo: %(seen)s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "Your account was used from a new country: %(seen)s"
+msgstr "Su cuenta se ha usado desde un país nuevo: %(seen)s"
 
 #. module: incubacloud
 #. odoo-python
@@ -19722,6 +20154,12 @@ msgstr "traefik.yml es obligatorio"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "ubuntu"
 msgstr "ubuntu"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_session_access.py:0
+msgid "unknown"
+msgstr "desconocido"
 
 #. module: incubacloud
 #. odoo-python
