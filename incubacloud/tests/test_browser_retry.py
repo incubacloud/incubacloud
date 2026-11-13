@@ -3,11 +3,10 @@
 Odoo's own ``browser_js`` runs here for real; only Chrome is simulated,
 built from Odoo's ``ChromeBrowser`` so each step answers as told.
 """
-from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
 from odoo.tests import common, tagged
-from odoo.tests.common import ChromeBrowser, ChromeBrowserException, HttpCase, NoScreencast
+from odoo.tests.common import ChromeBrowser, ChromeBrowserException, HttpCase
 
 from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
@@ -31,13 +30,12 @@ class TestChromeStartRetry(ChromeStartRetry, HttpCase):
 
         :param answers: side effects by method name, e.g.
             ``set_cookie=[_hung("Network.setCookie")]``.
-        :return: a ``MagicMock(spec=ChromeBrowser)`` with the two objects
-            Odoo's ``browser_js`` enters: its cleanup and screencaster.
+        :return: a ``MagicMock(spec=ChromeBrowser)`` without screencasts,
+            the attribute Odoo 18's ``browser_js`` reads that the class
+            does not declare.
         """
         chrome = MagicMock(spec=ChromeBrowser)
-        chrome.cleanup = ExitStack()
-        chrome.screencaster = MagicMock(spec=NoScreencast)
-        chrome.stop.side_effect = chrome.cleanup.close
+        chrome.screencasts_dir = None
         for name, effect in answers.items():
             getattr(chrome, name).side_effect = effect
         return chrome
@@ -56,6 +54,8 @@ class TestChromeStartRetry(ChromeStartRetry, HttpCase):
         return None, built.call_count
 
     def test_a_chrome_hung_on_the_first_cookie_is_stopped_and_a_new_one_runs(self):
+        """Odoo 18's ``browser_js`` stops every Chrome it built, the hung
+        one too, once."""
         hung, fresh = self._chrome(set_cookie=[_hung("Network.setCookie")]), self._chrome()
         with self.assertLogs(_LOGGER, "WARNING") as logs:
             self.assertEqual(self._run(hung, fresh), (None, 2))
@@ -63,8 +63,7 @@ class TestChromeStartRetry(ChromeStartRetry, HttpCase):
         hung.stop.assert_called_once_with()
         hung.navigate_to.assert_not_called()
         fresh.navigate_to.assert_called_once()
-        fresh.stop.assert_not_called()
-        self.assertIsNone(self._chrome_of_this_run)
+        fresh.stop.assert_called_once_with()
 
     def test_a_chrome_hung_on_the_session_cookie_gets_one_more_run(self):
         hung = self._chrome(set_cookie=[None, _hung("Network.setCookie")])
@@ -101,4 +100,4 @@ class TestChromeStartRetry(ChromeStartRetry, HttpCase):
                     raised, built = self._run(chrome)
                 self.assertIsInstance(raised, raises)
                 self.assertEqual(built, 1)
-                chrome.stop.assert_not_called()
+                chrome.stop.assert_called_once_with()

@@ -22,48 +22,26 @@ class ChromeStartRetry:
     """Mixin for an ``HttpCase``: run ``browser_js`` again, once, when
     Chrome did not answer before the page was opened."""
 
-    #: The Chrome the running ``browser_js`` drives, as Odoo hands it to
-    #: ``allow_requests``; None outside ``browser_js``.
-    _chrome_of_this_run = None
-
-    def allow_requests(self, browser=None, all_requests=False):
-        """Odoo's ``allow_requests``, noting the Chrome it is given.
-
-        ``browser_js`` hands its Chrome here before it takes charge of
-        closing it: when Chrome hangs on this very cookie, nothing closes
-        it, and the note is what ``browser_js`` stops it by.
-
-        :param browser: the ``ChromeBrowser`` the cookie is set on, if any.
-        :param all_requests: passed on to Odoo's.
-        :return: Odoo's context manager.
-        """
-        if browser is not None:
-            self._chrome_of_this_run = browser
-        return super().allow_requests(browser=browser, all_requests=all_requests)
-
     def browser_js(self, *args, **kwargs):
         """Run Odoo's ``browser_js``; once more on a Chrome that hung at the start.
 
-        The hung Chrome is stopped before the second run, which builds a
-        new one. When Odoo had already closed it, stopping it does nothing.
+        Odoo 18's ``browser_js`` sets the cookies inside the ``try`` whose
+        ``finally`` stops its Chrome, so a Chrome that hung on one is
+        already stopped, and the second run builds a new one. (19 sets
+        them before, and its mixin stops the hung Chrome itself.)
 
         :return: what Odoo's ``browser_js`` returns.
         :raises TimeoutError: a timeout after the page was opened, or a
             second one before it.
         """
         try:
-            try:
-                return super().browser_js(*args, **kwargs)
-            except TimeoutError as exc:
-                if not str(exc).startswith(_BEFORE_THE_PAGE):
-                    raise
-                _logger.warning(
-                    "Chrome did not answer %s before the page was opened;"
-                    " running the test once more on a new one",
-                    str(exc).split("(", 1)[0],
-                )
-            if self._chrome_of_this_run is not None:
-                self._chrome_of_this_run.stop()
             return super().browser_js(*args, **kwargs)
-        finally:
-            self._chrome_of_this_run = None
+        except TimeoutError as exc:
+            if not str(exc).startswith(_BEFORE_THE_PAGE):
+                raise
+            _logger.warning(
+                "Chrome did not answer %s before the page was opened;"
+                " running the test once more on a new one",
+                str(exc).split("(", 1)[0],
+            )
+        return super().browser_js(*args, **kwargs)
