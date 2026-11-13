@@ -108,6 +108,16 @@ describe("SessionsAccess", () => {
         expect(comp.toasts).toEqual([["success", "Revoked."]]);
     });
 
+    test("revoking a Git token says to revoke it at the Git server too", async () => {
+        const fresh = { ok: true, sessions: [], closes: [], doors: [], links: [] };
+        answering("/cloud/sessions/revoke", fresh);
+        const comp = page({ sessions: SESSIONS, doors: [{ kind: "git_token", id: 7 }] });
+        await comp.revoke({ kind: "git_token", id: 7 });
+        expect(comp.toasts).toEqual([
+            ["success", "Revoked here. Revoke the token in GitLab or GitHub too."],
+        ]);
+    });
+
     test("a refused Revoke keeps the page as it was", async () => {
         answering("/cloud/sessions/revoke", { ok: false });
         const data = { sessions: SESSIONS, doors: [{ kind: "api_key", id: 4 }] };

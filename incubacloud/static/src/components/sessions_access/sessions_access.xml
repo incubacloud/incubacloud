@@ -121,6 +121,7 @@
                                 <span>Created</span> <t t-esc="when(door.created)"/>
                                 <t t-if="door.last_used"> · <span>Last used</span> <t t-esc="when(door.last_used)"/></t>
                             </div>
+                            <div t-if="door.note" class="rl-dim" t-esc="door.note"/>
                         </div>
                         <button class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.busy"
                                 t-on-click="() => this.revoke(door)">Revoke</button>

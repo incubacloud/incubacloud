@@ -12,9 +12,10 @@ from unittest.mock import patch
 import requests
 
 import odoo.http
+from odoo.addons.base.models.res_users import ResUsers as BaseUsers
 from odoo.tests import new_test_user, tagged
 from odoo.tests.common import HttpCase
-from odoo.tools import config
+from odoo.tools import config, mute_logger
 
 from odoo.addons.incubacloud.models import cloud_session_access as access_module
 from odoo.addons.incubacloud.models import cloud_session_guard as guard_module
@@ -24,6 +25,16 @@ from .test_real_ip import EDGE, TRUSTED, _OnTheUncorrectedProxyFix
 from .test_session_guard import CHROME, FIREFOX, HOME
 
 PARAM = "incubacloud.session_guard."
+NOTICE_LOGGER = "odoo.addons.incubacloud.models.cloud_session_access"
+
+
+def _fail_in_the_database(notice, user, reason):
+    """Stand in for the quota of a notice: a statement the database
+    refuses, as a serialization failure on the rate-limit row would be.
+
+    The transaction is left aborted unless a savepoint rolls it back.
+    """
+    notice.env.cr.execute("SELECT 1 / 0")
 
 
 class _GuardedRequests(_OnTheUncorrectedProxyFix):
@@ -305,6 +316,33 @@ class TestSessionsPage(_GuardedRequests, HttpCase):
         self.env.flush_all()
         self.assertNotEqual(self.user._compute_session_token(sid), before)
 
+    def test_an_empty_counter_leaves_odoo_s_token_as_it_was(self):
+        """Adding the counter signed nobody out: while it is empty, the
+        token is the one Odoo makes from its own fields, without it."""
+        sid = "y" * 64
+        self.env.cr.execute(
+            "UPDATE res_users SET backchannel_logout_counter = NULL WHERE id = %s",
+            (self.user.id,),
+        )
+        self.user.invalidate_recordset()
+        self.env.registry.clear_cache()
+        with_counter = BaseUsers._compute_session_token(self.user, sid)
+        Users = type(self.env["res.users"])
+        without = self.user._get_session_token_fields() - {"backchannel_logout_counter"}
+        self.env.registry.clear_cache()
+        with patch.object(Users, "_get_session_token_fields", lambda self: without):
+            odoo_s = BaseUsers._compute_session_token(self.user, sid)
+        self.env.registry.clear_cache()
+        self.assertTrue(with_counter)
+        self.assertEqual(with_counter, odoo_s)
+        # A new user's counter is empty too.
+        other = new_test_user(self.env, login="seen-new", groups="base.group_user")
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT backchannel_logout_counter FROM res_users WHERE id = %s", (other.id,),
+        )
+        self.assertIsNone(self.env.cr.fetchone()[0])
+
     def test_revoke_an_api_key_of_one_s_own_only(self):
         Keys = self.env["res.users.apikeys"]
         Keys.with_user(self.user).sudo()._generate(
@@ -336,6 +374,49 @@ class TestSessionsPage(_GuardedRequests, HttpCase):
             "browser", "Firefox on Linux", datetime.now() + timedelta(days=1),
         )
         self.assertEqual(self.user._ic_doors(), [])
+
+    def _git_token(self):
+        """Save a Git token on the panel, as its manager would.
+
+        :rtype: cloud.git.credential
+        """
+        Provider = type(self.env["cloud.git.provider"])
+        with patch.object(Provider, "_check_public_address", autospec=True):
+            provider = self.env["cloud.git.provider"].create({
+                "name": "GitLab.com", "base_url": "https://gitlab.com",
+            })
+        return self.env["cloud.git.credential"].create({
+            "provider_id": provider.id, "namespace": "acme",
+            "token": "glpat-0123456789abcdef",
+        })
+
+    def test_a_git_token_is_revoked_by_a_manager_only(self):
+        credential = self._git_token()
+        self.assertFalse(self.user._ic_revoke_door("git_token", credential.id))
+        self.assertTrue(credential.exists())
+        self.assertNotIn("git_token", [door["kind"] for door in self.user._ic_doors()])
+        manager = new_test_user(
+            self.env, login="seen-git-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        doors = [door for door in manager._ic_doors() if door["kind"] == "git_token"]
+        self.assertEqual([door["id"] for door in doors], [credential.id])
+        # Revoke deletes the panel's copy; the token lives on at the server.
+        self.assertIn("GitLab or GitHub", doors[0]["note"])
+        self.assertTrue(manager._ic_revoke_door("git_token", credential.id))
+        self.assertFalse(credential.exists())
+        self.assertFalse(manager._ic_revoke_door("git_token", credential.id))
+
+    def test_browsers_and_systems_have_their_proper_names(self):
+        for raw, name in (
+            ("macos", "macOS"), ("iphone", "iPhone"), ("ipad", "iPad"),
+            ("chromeos", "ChromeOS"), ("windows", "Windows"), ("android", "Android"),
+            ("linux", "Linux"), ("chrome", "Chrome"), ("firefox", "Firefox"),
+            ("safari", "Safari"), ("edge", "Edge"), ("newbrowser", "Newbrowser"),
+            ("", ""), (None, ""),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(access_module.proper_name(raw), name)
 
 
 @tagged("-at_install", "post_install")
@@ -391,6 +472,103 @@ class TestNewWaysInAreTold(_GuardedRequests, HttpCase):
             sorted([holder.partner_id.email_formatted, manager.partner_id.email_formatted]),
         )
         self.assertIn("GitLab.com · acme", told[0].body_html)
+
+    def test_the_holder_is_told_whom_to_talk_to(self):
+        """The holder's page does not list a member's key: their email
+        names who made it instead of asking them to revoke it."""
+        self.ICP.set_param(PARAM + "notices", "on")
+        holder = new_test_user(
+            self.env, login="seen-holder", email="seen-holder@example.com",
+            groups="base.group_user",
+        )
+        Notice = type(self.env["cloud.session.notice"])
+        with patch.object(Notice, "_session_notice_holders", lambda self: holder):
+            self.env["res.users.apikeys"].with_user(self.user).sudo()._generate(
+                None, "ci", datetime.now() + timedelta(days=1),
+            )
+        to_holder = self.env["mail.mail"].sudo().search(
+            [("email_to", "ilike", "seen-holder@example.com")],
+        )
+        self.assertEqual(len(to_holder), 1)
+        self.assertIn(f"talk to {self.user.name}", to_holder.body_html)
+        self.assertIn("Users, then Remove", to_holder.body_html)
+        self.assertNotIn("If it was you", to_holder.body_html)
+        self.assertNotIn("sign out everywhere", to_holder.body_html)
+        # Its own user is told what to do as always.
+        mine = self._mails()
+        self.assertIn("If it was you", mine.body_html)
+        self.assertNotIn("talk to", mine.body_html)
+
+    def test_a_name_with_a_new_line_or_markup_stays_text(self):
+        self.ICP.set_param(PARAM + "notices", "on")
+        self.env["res.users.apikeys"].with_user(self.user).sudo()._generate(
+            None, "ci\r\nBcc: x@example.com <b>bold</b>",
+            datetime.now() + timedelta(days=1),
+        )
+        mail = self._mails()
+        self.assertEqual(len(mail), 1)
+        self.assertNotIn("\n", mail.subject)
+        self.assertNotIn("\r", mail.subject)
+        self.assertTrue(mail.subject.endswith(": ci Bcc: x@example.com <b>bold</b>"))
+        self.assertNotIn("<b>bold</b>", mail.body_html)
+        self.assertIn("&lt;b&gt;bold&lt;/b&gt;", mail.body_html)
+
+    def test_a_notice_failing_in_the_database_keeps_the_key(self):
+        """A database error in the notice (two keys at once and the
+        holder's quota row conflicting) rolls back alone: the key is
+        made and the request goes on."""
+        self.ICP.set_param(PARAM + "notices", "on")
+        Notice = type(self.env["cloud.session.notice"])
+        with (
+            patch.object(
+                Notice, "_session_notice_within_quota", autospec=True,
+                side_effect=_fail_in_the_database,
+            ),
+            mute_logger(NOTICE_LOGGER, "odoo.sql_db"),
+        ):
+            self.env["res.users.apikeys"].with_user(self.user).sudo()._generate(
+                None, "ci", datetime.now() + timedelta(days=1),
+            )
+        keys = self.env["res.users.apikeys"].sudo().search([("user_id", "=", self.user.id)])
+        self.assertEqual(keys.mapped("name"), ["ci"])
+        self.assertFalse(self._mails())
+
+    def test_a_notice_failing_in_the_database_keeps_the_git_token(self):
+        self.ICP.set_param(PARAM + "notices", "on")
+        # Saved by a person: the test's own user is the inactive superuser,
+        # whom no notice is sent to, and the quota would not be reached.
+        manager = new_test_user(
+            self.env, login="seen-git-saver", email="seen-git-saver@example.com",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        Provider = type(self.env["cloud.git.provider"])
+        with patch.object(Provider, "_check_public_address", autospec=True):
+            provider = self.env["cloud.git.provider"].create({
+                "name": "GitLab.com", "base_url": "https://gitlab.com",
+            })
+        Notice = type(self.env["cloud.session.notice"])
+        with (
+            patch.object(
+                Notice, "_session_notice_within_quota", autospec=True,
+                side_effect=_fail_in_the_database,
+            ),
+            mute_logger(NOTICE_LOGGER, "odoo.sql_db"),
+        ):
+            self.env["cloud.git.credential"].with_user(manager).create({
+                "provider_id": provider.id, "namespace": "acme",
+                "token": "glpat-0123456789abcdef",
+            })
+        self.assertEqual(
+            self.env["cloud.git.credential"].search_count([("provider_id", "=", provider.id)]),
+            1,
+        )
+
+    def test_the_notice_names_the_system_properly(self):
+        self.ICP.set_param(PARAM + "notices", "on")
+        self.env["cloud.session.notice"]._session_notify(
+            self.user, "browser", {}, origin={"browser": "safari", "platform": "iphone"},
+        )
+        self.assertIn("Safari on iPhone", self._mails().body_html)
 
     def test_nothing_is_told_while_notices_are_off(self):
         self.env["res.users.apikeys"].with_user(self.user).sudo()._generate(

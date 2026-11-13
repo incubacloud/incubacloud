@@ -151,7 +151,11 @@ export class SessionsAccess extends Component {
             const res = await rpc("/cloud/sessions/revoke", { kind: door.kind, door_id: door.id });
             if (res?.ok) {
                 this.state.data = res;
-                this.env.toast?.success(_t("Revoked."));
+                this.env.toast?.success(
+                    door.kind === "git_token"
+                        ? _t("Revoked here. Revoke the token in GitLab or GitHub too.")
+                        : _t("Revoked."),
+                );
             } else {
                 this.env.toast?.error(_t("Could not revoke it."));
             }
