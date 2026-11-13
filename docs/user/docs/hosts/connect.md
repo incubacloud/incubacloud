@@ -209,6 +209,12 @@ Before you apply it:
   own address allows only itself and the host's allowed SSH IPs; tick
   **Also allow my IP** to add yours. A panel that does not know its address
   leaves SSH open to any address, key-only.
+- **If the panel's address changes**, a host with a list of allowed SSH
+  addresses refuses it: the list admits the panel by the address the
+  hardening came from. On Odoo.sh this happens when Odoo.sh moves your
+  project's production; Odoo.sh tells the panel, and a critical alert names
+  the hosts that may refuse it. The panel changes no host by itself: see
+  [The panel's address changed](#the-panels-address-changed).
 
 Afterwards the panel reaches the host as the operator user on the new port.
 Re-running it is safe: every step checks the host before it changes anything.
@@ -257,6 +263,24 @@ gets one this way: see [Panel on an internal network](internal-network.md#certif
 
 ??? note "Hardening refuses to start: sudo asks for a password"
     The user needs `NOPASSWD` in its sudoers line.
+
+### The panel's address changed
+
+The alert *This panel's outgoing address changed* names the hosts whose
+list of allowed SSH addresses does not include the panel's new address.
+For each one:
+
+1. Open a shell on the host from your provider's console and let the new
+   address in: `sudo nft add element inet filter ic_ssh_allow '{ <new address> }'`
+   (`ic_ssh_allow6` for an IPv6 address).
+2. In the panel, click **Apply Hardening** on the host. The run comes from
+   the new address and keeps it for the next reboots.
+
+The alert lets go of a host once it is hardened again or its list includes
+the new address, and closes when none is left. On Odoo.sh, to avoid it, do
+not make Odoo.sh's address a host's only way in: leave the list empty (SSH
+open to any address, key only) or add an address of yours that does not
+change.
 
 ## See also
 

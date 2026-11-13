@@ -56,6 +56,17 @@ only your office network reaches has a page of its own there:
   carries its own token) and AI agents that call from their provider's servers
   (`/mcp`) need it reachable over HTTPS, from the internet or, for a GitLab of
   your own, from its network; everything else works on an internal network.
+- **The panel's own address:** a hardened host with a list of allowed SSH
+  addresses admits the panel by the address its last hardening came from.
+  If the panel's outgoing address changes, those hosts refuse it. On
+  Odoo.sh it changes when Odoo.sh moves the project's production. Odoo.sh
+  then calls `/_odoo.sh/ip-change` on the database and the panel raises a
+  critical alert, *panel_address_changed*, naming the hosts whose list does
+  not admit the new address. It changes no host: let the new address in
+  from each host's console, then run *Apply Hardening*
+  ([RB-40](docs/runbooks/RB-40-panel-address-change.md)). On Odoo.sh, do
+  not make its current address a host's only way in: leave the list empty
+  (SSH open, key only) or add an address of yours that does not move.
 
 ### Resources
 
