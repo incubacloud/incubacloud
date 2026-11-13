@@ -289,8 +289,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   on the server and the instance): the reconciliation's scheduled action
   off, or a close that fails at every pass. The alert closes by itself
   once the job is closed; dismissing it by hand closes the job without
-  putting back what it left, as its log says, and *Dismiss all* leaves
-  it open. Spanish translation included.
+  its hook, so what it left is not put back, and *Dismiss all* leaves it
+  open. A step it ran apart is not forgotten then: its checkpoint is
+  closed, and the reconciliation's next pass stops and removes it as for
+  any ended job, holding the queue if the step is past its point of no
+  return. The job's log names the state the instance or the server is
+  left in, which no hook put back, and says so, in the server's log
+  too, when the reconciliation is running its hook at that moment. A
+  close that fails at every pass fails the dismissal too: dismissing
+  does not mend that cause. A job requeued by hand that dies again is
+  alerted on 30 minutes after its new death, not at once.
+  Spanish translation included.
   **Before upgrading**, count those jobs, read only, on every database
   that runs the panel; it should return 0, and the queue of each one
   found waits from the upgrade until the reconciliation closes it:
