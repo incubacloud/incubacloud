@@ -847,6 +847,11 @@ move to another server. There is no path to fall back to;
 the agents' queues (512 MB per URL for vmagent, 64 MB for Fluent Bit) hold what they
 cannot send. See [RB-34](runbooks/RB-34-central-name.md).
 
+A central that was published on 443 under the same name stops answering there at
+the deployment that turns the switch on: nothing is published on 443 with it. Its
+record already points at the server, so the check that deployment queues moves the
+URLs within the minute; until then the agents queue.
+
 **The way back.** Turning the switch off puts back the two URLs kept, and the
 reconciliation re-applies the agents to them. A central's direct name, while set, is
 published beside the single name on the same port, so both work during a transition.
