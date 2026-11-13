@@ -639,6 +639,24 @@ class TestUpdateAndItsPush(_MergeRequestCase):
         self.assertEqual(payload["push_by"], "dev")
         self.assertEqual(payload["push_provider"], "gitlab")
 
+    def test_a_lost_race_in_the_push_reaches_odoo_s_retry(self):
+        """Skipped, the push's rebuild would be dropped in silence."""
+        event = self._event(push_body(branch="feature-x"), key="push-race")
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", side_effect=_LostRace("lost"),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            event._dispatch_safely()
+
+    def test_a_lost_race_in_the_update_reaches_odoo_s_retry(self):
+        event = self._event(
+            mr_body(action="update", oldrev=BEFORE), "Merge Request Hook",
+            key="update-race",
+        )
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", side_effect=_LostRace("lost"),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            event._dispatch_safely()
+
 
 class TestNoteJob(_MergeRequestCase):
     """``cloud.gitlab.mr.note._job_reconcile`` against a mocked GitLab."""
