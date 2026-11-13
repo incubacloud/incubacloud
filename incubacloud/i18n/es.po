@@ -24564,3 +24564,55 @@ msgid "Queued · waiting for the server to answer, to confirm job #%s stopped"
 msgstr ""
 "En cola · esperando a que el servidor responda, para confirmar que el "
 "trabajo #%s se detuvo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__found_dead_seen_at
+msgid "Found Dead Seen At"
+msgstr "Proceso muerto visto el"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__found_dead_seen_at
+msgid ""
+"When the sweep of the queues first saw this job cancelled while it ran, its "
+"worker found dead and the job not closed yet: queue_job writes no date when "
+"it finds a worker dead, and the alert of a stop nobody closes counts from "
+"here (_alert_unclosed_stops)."
+msgstr ""
+"Fecha en que el barrido de las colas vio por primera vez este trabajo "
+"cancelado mientras se ejecutaba, con su proceso hallado muerto y el trabajo "
+"aún sin cerrar: queue_job no escribe ninguna fecha cuando halla muerto un "
+"proceso, y la alerta de una detención que nadie cierra cuenta desde aquí "
+"(_alert_unclosed_stops)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Job #%(job)s (%(type)s) was cancelled while it ran, and the process running "
+"it died before it stopped. The reconciliation of lost jobs, which puts back "
+"what it left and closes it, has not closed it since %(since)s: %(queue)s "
+"waits for it. Check that the scheduled action of the reconciliation runs, "
+"and the server log for why the close fails. Dismissing this alert closes the"
+" job without putting back what it left on server %(host)s: check the "
+"instance and the server by hand, then the queue goes on."
+msgstr ""
+"El trabajo #%(job)s (%(type)s) se canceló mientras se ejecutaba, y el "
+"proceso que lo ejecutaba murió antes de detenerse. La conciliación de los "
+"trabajos perdidos, que deshace lo que dejó y lo cierra, no lo ha cerrado "
+"desde %(since)s: %(queue)s lo espera. Compruebe que la acción planificada de"
+" la conciliación se ejecuta y busque en el registro del servidor por qué "
+"falla el cierre. Descartar esta alerta cierra el trabajo sin deshacer lo que"
+" dejó en el servidor %(host)s: revise a mano la instancia y el servidor; "
+"después la cola seguirá."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"A person closed the alert of this stop nobody closed: the job is closed "
+"without putting back what the lost run left on its server. Check the "
+"instance and the server by hand."
+msgstr ""
+"Una persona cerró la alerta de esta detención que nadie cerraba: el trabajo "
+"se cierra sin deshacer lo que dejó la ejecución perdida en su servidor. "
+"Revise a mano la instancia y el servidor."
