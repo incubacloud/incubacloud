@@ -16914,7 +16914,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_instance_frozen_copy.py:0
 msgid "This instance has no frozen copy to clean."
 msgstr "Esta instancia no tiene ninguna copia congelada que limpiar."
 
