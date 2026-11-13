@@ -1322,6 +1322,21 @@ msgstr ""
 "corre allí."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__security_geoip
+msgid ""
+"The country of the addresses in the servers' security logs, looked up on the"
+" panel itself: no address leaves it. It uses Odoo's GeoIP database when the "
+"server has one; otherwise the panel downloads DB-IP's free country database "
+"(CC BY 4.0) once a month. Off: no country is shown and nothing is "
+"downloaded."
+msgstr ""
+"El país de las direcciones de los registros de seguridad de los servidores, "
+"consultado en el propio panel: ninguna dirección sale de él. Usa la base de "
+"datos GeoIP de Odoo cuando el servidor la tiene; si no, el panel descarga "
+"una vez al mes la base de datos de países gratuita de DB-IP (CC BY 4.0). "
+"Desactivado: no se muestra ningún país y no se descarga nada."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_allowlist_shipped
 msgid ""
 "Addresses the host admits on its direct port, in nftables and in Traefik, "
@@ -13283,6 +13298,11 @@ msgid "Read staging logins"
 msgstr "Leer los inicios de sesión de los stagings"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_geoip_refresh_ir_actions_server
+msgid "Refresh the GeoIP database"
+msgstr "Actualizar la base de datos GeoIP"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.js:0
 msgid "Reading instance configuration..."
@@ -23995,6 +24015,11 @@ msgstr "La instalación de los agentes de métricas en este host falló."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
 msgid "Who may delete series and read the fleet on the central"
 msgstr "Quién puede borrar series y leer la flota en la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__security_geoip
+msgid "Show the country of addresses"
+msgstr "Mostrar el país de las direcciones"
 
 #. module: incubacloud
 #. odoo-javascript

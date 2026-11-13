@@ -69,6 +69,12 @@ IncubaCloud does not redistribute them.
 | node_exporter v1.8.2 | The Prometheus authors | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Host metrics. | [prometheus/node_exporter](https://github.com/prometheus/node_exporter) |
 | cAdvisor v0.55.1 | Google | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) | Container metrics. | [google/cadvisor](https://github.com/google/cadvisor) |
 
+## Data the panel downloads
+
+| Component | Author | Licence | How IncubaCloud uses it | Project |
+|---|---|---|---|---|
+| IP to Country Lite | DB-IP.com | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | When the panel's Odoo has no GeoIP database of its own, the panel downloads this database once a month, unmodified, keeps it in its own database and looks up there the country of the addresses in the servers' security logs; no address is sent anywhere. Wherever a country from it is shown, the panel shows "IP Geolocation by DB-IP". | [db-ip.com](https://db-ip.com) |
+
 ## Image IncubaCloud builds
 
 `ghcr.io/incubacloud/relay-oauth`, the relay of an instance that signs in to

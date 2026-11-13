@@ -50,6 +50,7 @@ from . import cloud_settings_agents
 from . import cloud_host_posture
 from . import cloud_host_panel_address
 from . import cloud_settings_metrics_purge
+from . import geoip
 from . import cloud_instance_backup
 from . import cloud_restore_upload_grant
 from . import restore_upload_key_executors

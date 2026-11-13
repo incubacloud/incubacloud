@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Daily, so a month DB-IP has not published yet is tried again
+             the next day; models/geoip.py downloads at most once a month,
+             and nothing when security_geoip is off or Odoo has its own
+             GeoIP database. -->
+        <record id="cron_geoip_refresh" model="ir.cron">
+            <field name="name">Refresh the GeoIP database</field>
+            <field name="model_id" ref="model_cloud_settings"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_geoip_refresh()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+        </record>
+
+    </data>
+</odoo>
