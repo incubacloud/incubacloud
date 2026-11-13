@@ -36,11 +36,23 @@ limits. Their databases and Sablier are not on that network.
 - **It fails open.** The chain is removed, and the reason given, when the
   running proxy has another address on `shared`, is not running, the
   network or its bridge is not there, or the firewall cannot do it: no
-  `DOCKER-USER` chain (Docker's nftables backend), no MAC match
-  (`xt_mac`), or bridged packets that skip iptables
-  (`net.bridge.bridge-nf-call-iptables` not 1). A guard on an address the
-  proxy no longer has would drop the proxy's own connections and cut every
-  instance of the host.
+  `DOCKER-USER` chain (Docker's nftables backend), a `FORWARD` that does
+  not jump to `DOCKER-USER`, no MAC match (`xt_mac`), or bridged packets
+  that skip iptables (`net.bridge.bridge-nf-call-iptables` not 1). A guard
+  on an address the proxy no longer has would drop the proxy's own
+  connections and cut every instance of the host.
+- **One run at a time.** Each `apply` holds
+  `/run/incubacloud-shared-guard.lock`, so the run Full Setup starts and
+  the timer's cannot rewrite the chain together (two at once could leave
+  a `DROP` first and cut the host until the next tick). A run that waits
+  more than 30 s for it exits 1 and leaves the rules as they are.
+- **Docker Compose 2.24 or later** sets the proxy's address
+  (`mac_address` under a service's network). An older one refuses the
+  whole file, so *Start Traefik* drops that line first and says so in its
+  log: the proxy runs without the address and the guard stays open, with
+  the Compose version as the reason. An engine before Docker 25 may not
+  apply the address either: the guard then stays open, naming the address
+  the proxy got.
 - **Full Setup** runs *Isolate the instances on the proxy network* right
   after *Start Traefik*. It copies the script to
   `/usr/local/lib/incubacloud-shared-guard/`, installs
@@ -51,6 +63,12 @@ limits. Their databases and Sablier are not on that network.
   applies nothing. The step never fails the setup: a guard left open
   raises `shared_guard_open` (warning) with the reason, and a run that
   closes it, or removes it as asked, resolves it.
+- **The Check** (host page) reads the last state the timer wrote,
+  `/run/incubacloud-shared-guard.state`: open or unsupported raises
+  `shared_guard_open` with the reason, on resolves it. So a guard that
+  opened after Full Setup (a reboot onto a kernel without `xt_mac`, the
+  proxy recreated by hand) reaches the panel at the next Check; between
+  two Checks only the host's system log has it.
 - **The switch:** host page › *General* › *Proxy network* › *Only the
   proxy may open connections to the instances* (`cloud.host.shared_guard`), on by
   default. It is part of the host's configuration: changed, the host
@@ -120,6 +138,16 @@ The alert names the reason, as the log does.
 - **`there is no DOCKER-USER chain`**, with or without *Docker writes its
   rules with nftables*: Docker runs with `"firewall-backend": "nftables"`.
   The guard does not support it yet; turn it off on that host.
+- **`FORWARD does not jump to DOCKER-USER`**: the chain is there but no
+  packet goes through it (`sudo iptables -S FORWARD` lacks
+  `-A FORWARD -j DOCKER-USER`). With *Docker writes its rules with
+  nftables* Docker was switched to nftables and the old chain stayed
+  behind: as above. Without it, Docker has not written its rules yet, or
+  something removed the jump: `sudo systemctl restart docker` puts it back
+  (the instances restart with it).
+- **`Docker Compose … cannot fix the proxy's address`**: the host's
+  Compose is older than 2.24. Update Docker and its Compose plugin from
+  Docker's repository, then run Full Setup.
 - **`bridged packets do not reach iptables`**: `br_netfilter` is not
   loaded or `net.bridge.bridge-nf-call-iptables` is 0, so no rule sees
   traffic between containers of one network. Docker usually sets both;
@@ -127,7 +155,10 @@ The alert names the reason, as the log does.
 - **`the incubacloud-shared-guard timer could not be installed`** or
   **`exit …`**: the setup's user could not write to
   `/etc/systemd/system` or `/usr/local/lib`, or `sudo -n` asked for a
-  password. Fix that and run Full Setup.
+  password. Fix that and run Full Setup. `another run of the guard kept
+  its lock` in the step's log means a run of the timer was still going
+  after 30 s: see what holds it (`sudo fuser -v
+  /run/incubacloud-shared-guard.lock`) and run Full Setup again.
 
 `… has IPv6, which this guard does not cover` in the step's log means the
 network was given IPv6: the guard only filters IPv4, and the same rules
