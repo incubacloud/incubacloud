@@ -587,7 +587,7 @@ class CloudSettings(models.Model):
         """Say why the central may not be retired from this panel, or ''.
 
         Core: it may. A layer whose central serves more than this panel
-        (the platform's master, whose central every tenant writes to)
+        (a layer whose central other panels write to)
         answers why not; the settings then offer no *Retire the central*.
 
         :rtype: str
