@@ -7011,11 +7011,13 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_central_reach
 msgid ""
 "HTTP status the central's write URL answered this server at the agents' last"
-" install, without a credential: 401 is right; -1 means no answer."
+" install, without a credential: 401 is right; -1 means no answer, -2 a "
+"certificate the panel's authority did not sign."
 msgstr ""
 "Estado HTTP con el que la URL de escritura de la central respondió a este "
 "servidor en la última instalación de los agentes, sin credencial: 401 es lo "
-"correcto; -1 significa que no hubo respuesta."
+"correcto; -1 significa que no hubo respuesta, y -2, un certificado que la "
+"autoridad del panel no firmó."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -24184,3 +24186,31 @@ msgid ""
 msgstr ""
 "Esperando a que termine otra construcción en este servidor: se vuelve a "
 "intentar cada 30 s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_central.py:0
+msgid ""
+"\"%(host)s\" cannot write to the metrics central: the central's server "
+"answers its name with a certificate the panel's authority did not sign. Look"
+" for another certificate of the same name in the store of that server's "
+"proxy (RB-35)."
+msgstr ""
+"«%(host)s» no puede escribir en la central de métricas: el servidor de la "
+"central responde a su nombre con un certificado que la autoridad del panel "
+"no firmó. Busque otro certificado con el mismo nombre en el almacén del "
+"proxy de ese servidor (RB-35)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/observability_central_executor.py:0
+msgid ""
+"The certificate store of the proxy on %(host)s holds a certificate for "
+"%(name)s, obtained when the name was published on 443. The proxy serves it "
+"or the panel's after each reload, and the agents refuse it: remove it from "
+"the store as RB-35 says."
+msgstr ""
+"El almacén de certificados del proxy de %(host)s guarda un certificado para "
+"%(name)s, obtenido cuando el nombre se publicaba en el 443. El proxy sirve "
+"ese o el del panel tras cada recarga, y los agentes lo rechazan: elimínelo "
+"del almacén como indica RB-35."

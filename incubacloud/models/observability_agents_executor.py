@@ -19,8 +19,35 @@ from odoo.exceptions import UserError
 from . import _direct_probe
 from .abstract_executor import CANCELLED_WHILE_RUNNING
 from .ansible_executor import AnsibleExecutor
+from .cloud_host_central import CERT_REFUSED
 
 _logger = logging.getLogger(__name__)
+
+
+#: What the uri module's message says when the server refused the
+#: certificate it was answered with (Python's ``ssl``), lowercased.
+_CERT_REFUSED_MARKS = ("certificate_verify_failed", "certificate verify failed")
+
+
+def _central_reach_status(facts):
+    """Return the status the server's check of the central answered.
+
+    The HTTP status, or -1 for no answer, as the playbook exports it; a
+    failed check whose message says the certificate was refused is
+    ``CERT_REFUSED`` instead, so the alert does not ask to correct an
+    address the port admitted.
+
+    :param dict facts: what the playbook exported.
+    :rtype: int
+    """
+    try:
+        status = int(facts.get("ic_central_reach"))
+    except (TypeError, ValueError):
+        status = -1
+    error = str(facts.get("ic_central_reach_error") or "").lower()
+    if status == -1 and any(mark in error for mark in _CERT_REFUSED_MARKS):
+        return CERT_REFUSED
+    return status
 
 
 def _truthy(value):
@@ -433,14 +460,14 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         :param host: the ``cloud.host`` installed.
         :param dict facts: what the playbook exported.
         """
-        try:
-            status = int(facts.get("ic_central_reach"))
-        except (TypeError, ValueError):
-            status = -1
+        status = _central_reach_status(facts)
         egress = str(facts.get("ic_egress_ip") or "").strip()
         host._record_central_reach(status, egress)
+        answer = {-1: "no answer", CERT_REFUSED: "a certificate it refused"}.get(
+            status, str(status),
+        )
         self._sys(
-            f"The central answered this server with {status} (401 is right "
+            f"The central answered this server with {answer} (401 is right "
             f"without a credential); it leaves with {egress or 'an unknown address'}."
         )
 
