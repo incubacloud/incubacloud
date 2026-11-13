@@ -1365,10 +1365,20 @@ button:active:not(:disabled),
 
         // The state shrinks and wraps rather than run past the card: a
         // job parked between two attempts says when the panel reconnects.
-        td:nth-child(1) { order: 1; flex: 0 1 auto; }
+        td:nth-child(1) {
+            order: 1;
+            flex: 0 1 auto;
+            // A long state wraps inside its share of the line instead of
+            // taking all of it and leaving the name a sliver.
+            max-width: 60%;
+            .rl-pill { white-space: normal; }
+        }
         td:nth-child(2) {
             order: 2;
-            flex: 1 1 0;
+            // A basis of its own: a long state cannot squeeze the name
+            // into a column a letter wide, the name goes to the next line.
+            flex: 1 1 9em;
+            min-width: 9em;
             font-weight: 600;
             font-size: 13.5px;
             white-space: normal;
@@ -1412,6 +1422,7 @@ button:active:not(:disabled),
         // job's name gets a line of its own instead of a sliver between.
         @media (max-width: 480px) {
             &::before { display: none; }
+            td:nth-child(1) { max-width: none; }
             td:nth-child(2) { order: 4; flex-basis: 100%; }
         }
     }
