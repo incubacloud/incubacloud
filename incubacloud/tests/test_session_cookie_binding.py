@@ -198,7 +198,7 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
 
     def setUp(self):
         super().setUp()
-        self.startPatcher(patch.dict(config.options.maps[0], {"proxy_mode": True}))
+        self.startPatcher(patch.dict(config.options, {"proxy_mode": True}))
         self.victim = new_test_user(
             self.env, login="tossed-victim", password="tossed-victim-pw",
             groups="base.group_user",
@@ -241,15 +241,14 @@ class TestCookieTossing(_OnTheUncorrectedProxyFix, HttpCase):
         :rtype: requests.Response
         """
         self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            response = requests.request(
-                "POST" if data is not None else "GET",
-                self.base_url() + path,
-                data=data,
-                headers=self._headers(cookie, secure) | (headers or {}),
-                allow_redirects=False,
-                timeout=30,
-            )
+        response = requests.request(
+            "POST" if data is not None else "GET",
+            self.base_url() + path,
+            data=data,
+            headers=self._headers(cookie, secure) | (headers or {}),
+            allow_redirects=False,
+            timeout=30,
+        )
         self.env.invalidate_all()
         return response
 
@@ -438,7 +437,7 @@ class TestTheWebsocketHandshake(_OnTheUncorrectedProxyFix, WebsocketCase):
 
     def setUp(self):
         super().setUp()
-        self.startPatcher(patch.dict(config.options.maps[0], {"proxy_mode": True}))
+        self.startPatcher(patch.dict(config.options, {"proxy_mode": True}))
         new_test_user(
             self.env, login="ws-victim", password="ws-victim-pw",
             groups="base.group_user",

@@ -1383,7 +1383,8 @@ class TestARowThatHoldsTheQueue(TransactionCase):
 
     def test_the_sweep_says_a_hold_the_stopped_reconciliation_leaves(self):
         """R1: the reconciliation's scheduled action off, the sweep alerts, once."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         job = self._ended("deploy_instance", self.inst)
         self._marked_ago(job, 31)
         cron = self._reconcile_cron()

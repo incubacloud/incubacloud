@@ -1005,7 +1005,8 @@ class TestRefusedKeyRevokesTrust(KnownHostsCase):
         super().setUp()
         # The revocation is written on a cursor of its own, which has to
         # see this test's host.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
 
     def _alerts(self, host, code="host_key_revoked"):
         return self.env["cloud.alert"].search(

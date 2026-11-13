@@ -62,7 +62,7 @@ jobs:
         # Odoo runs a migrations/<version>/ folder only if it is at most
         # the manifest version; a higher one is never run and nothing
         # reports it.
-        run: python3 .github/scripts/check_migration_versions.py .
+        run: python3 .github/scripts/check_migration_versions.py --series 18.0 .
 
       - name: Mock-spec ratchet
         # Decision log P18.3: test doubles stand in for real APIs, so

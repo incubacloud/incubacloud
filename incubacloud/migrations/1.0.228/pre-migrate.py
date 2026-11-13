@@ -7,11 +7,11 @@ transaction that stored a row pointing at it. From this version the same
 rule is a unique index with a predicate, under the same name.
 
 The constraint is dropped here, before the module's tables are set up.
-Left in place, its index has that same name and no comment, and Odoo
-keeps an index of the right name without a comment as it finds it, so
-the rule would stay a constraint. The update then creates the partial
-index (``models.UniqueIndex`` of ``cloud.instance``) in the same
-transaction.
+Left in place, its index has that same name, and ``CREATE UNIQUE INDEX
+IF NOT EXISTS`` would keep it as it finds it, so the rule would stay a
+constraint. The update then creates the partial index (``init()`` of
+``cloud.instance``, as Odoo 18 has no ``models.UniqueIndex``) in the
+same transaction.
 
 Idempotent: once dropped there is no constraint of that name, and an
 index of that name is not one.
