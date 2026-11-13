@@ -70,6 +70,11 @@ backup over an instance whose code you are going to rebuild anyway.
 
 3. Start, restore or move the instance again.
 
+A layer that holds a move postponed for `unapplied` until a rebuild passes
+is not told that the mark was removed by hand: its move keeps waiting for
+a rebuild, which it queues again each time the move's window passes, and
+the operator is alerted then. Rebuild the instance once it can pass.
+
 ## Rollback
 
 Nothing to roll back: the mark is a marker file, not part of the stack. The
