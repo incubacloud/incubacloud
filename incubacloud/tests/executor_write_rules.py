@@ -79,6 +79,8 @@ HOOK_HELPERS = {
     "_write_own_job": "the job's own row, in the transaction that stores it done",
     "_record_frozen_copy": "records the copy a move froze, or failed to freeze",
     "_record_shipped_accounts": "records the ACL a successful run shipped",
+    "_record_central_ca": "records the central's authority a successful "
+                          "install gave the host's agents",
     "_sync_backup_records": "mirrors the listed backups after success",
     "_alert_on_purge_failure": "alerts on a failed teardown",
     "_stamp_core_commit": "stamps the core release a run shipped",
