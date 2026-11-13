@@ -6079,6 +6079,16 @@ msgid "No reading yet."
 msgstr "Aún no hay lecturas."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"Point %(name)s at %(target)s in DNS first: until it does, the panel and the "
+"agents still reach the central on %(central)s."
+msgstr ""
+"Apunte antes %(name)s a %(target)s en el DNS: hasta que lo haga, el panel y "
+"los agentes siguen llegando a la central de %(central)s."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__ram_usage
 msgid "RAM Usage %"
 msgstr "Uso de RAM %"
