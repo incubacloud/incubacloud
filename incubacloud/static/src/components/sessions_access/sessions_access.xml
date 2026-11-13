@@ -30,7 +30,7 @@
                 <h3>This session</h3>
                 <t t-set="current" t-value="currentSession"/>
                 <p t-if="current" class="ic-sessions-line">
-                    <span class="rl-dim">Open since</span> <t t-esc="when(current.first)"/>
+                    <span class="rl-dim">Open since</span> <t t-esc="dateShown(current.first)"/>
                     <t t-if="current.countries.length"> · <t t-esc="joined(current.countries)"/></t>
                     · <t t-esc="device(current)"/>
                 </p>
@@ -60,7 +60,7 @@
                             <div class="ic-sessions-name" t-esc="device(session)"/>
                             <div class="rl-dim">
                                 <t t-if="session.countries.length"><t t-esc="joined(session.countries)"/> · </t>
-                                <span>Last used</span> <t t-esc="when(session.last)"/>
+                                <span>Last used</span> <t t-esc="dateShown(session.last)"/>
                             </div>
                         </div>
                         <span t-if="session.active" class="rl-pill ic-sessions-pill">In use</span>
@@ -79,7 +79,7 @@
                         <div class="ic-sessions-main">
                             <div class="ic-sessions-name" t-esc="reasonLabel(close.reason)"/>
                             <div class="rl-dim">
-                                <t t-esc="when(close.when)"/>
+                                <t t-esc="dateShown(close.when)"/>
                                 <t t-if="close.from and close.to"> · <t t-esc="close.from"/> → <t t-esc="close.to"/></t>
                             </div>
                         </div>
@@ -118,8 +118,8 @@
                             </div>
                             <div class="rl-dim">
                                 <t t-if="door.detail"><t t-esc="door.detail"/> · </t>
-                                <span>Created</span> <t t-esc="when(door.created)"/>
-                                <t t-if="door.last_used"> · <span>Last used</span> <t t-esc="when(door.last_used)"/></t>
+                                <span>Created</span> <t t-esc="dateShown(door.created)"/>
+                                <t t-if="door.last_used"> · <span>Last used</span> <t t-esc="dateShown(door.last_used)"/></t>
                             </div>
                             <div t-if="door.note" class="rl-dim" t-esc="door.note"/>
                         </div>

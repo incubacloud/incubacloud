@@ -81,7 +81,7 @@ export class SessionsAccess extends Component {
      * @param {string} value naive UTC, as Odoo sends it
      * @returns {string}
      */
-    when(value) {
+    dateShown(value) {
         const date = parseUTC(value);
         if (!date) return "";
         return date.toLocaleString(userLocale(), {
