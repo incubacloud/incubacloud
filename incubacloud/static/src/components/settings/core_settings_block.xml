@@ -63,6 +63,7 @@
                     </SettingField>
                     <SettingField id="'job_retention_days'" form="form"/>
                     <SettingField id="'job_log_retention_days'" form="form"/>
+                    <SettingField id="'host_session_retention_days'" form="form"/>
                 </SettingsBlock>
                 <SettingsBlock title.translate="GitHub events"
                                how.translate="Webhook payloads are large (100 KB and more for a monorepo push). After the truncation period the raw payload is replaced by a short stub; after the deletion period the row goes. Unprocessed or failed events are never deleted. 0 turns either off.">

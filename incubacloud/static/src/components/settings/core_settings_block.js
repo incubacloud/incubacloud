@@ -27,6 +27,7 @@ export const CORE_PARTS = Object.freeze({
     ],
     logs: [
         "audit_log_retention_days", "job_retention_days", "job_log_retention_days",
+        "host_session_retention_days",
         "github_event_truncate_days", "github_event_retention_days",
         "odoo_log_archive_days", "container_log_max_size", "container_log_max_file",
         "log_download_max_mb", "log_search_max_files", "log_search_timeout_s",
@@ -56,6 +57,7 @@ const DEFAULTS = {
     audit_log_retention_days: 90,
     job_retention_days: 180,
     job_log_retention_days: 30,
+    host_session_retention_days: 365,
     github_event_truncate_days: 7,
     github_event_retention_days: 90,
     odoo_log_archive_days: 60,

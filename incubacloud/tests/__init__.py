@@ -195,6 +195,7 @@ from . import test_running_probe_lock_real_cursors
 from . import test_host_terminal_session
 from . import test_cloud_host_terminal_route
 from . import test_host_session_reconcile
+from . import test_host_session_retention
 from . import test_host_terminal_controller
 from . import test_host_shell_takeover_migration
 from . import test_job_brief
