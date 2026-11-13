@@ -8,13 +8,27 @@ folds it into the push-triggered rebuild waiting on the instance, if
 any. Every push stays visible in the job (``coalesced_pushes``) and the
 head — the push the job list shows — is the first one.
 """
+import contextlib
 import json
+from unittest.mock import patch
+
+from psycopg2 import errors as pg_errors
 
 from odoo.tests.common import TransactionCase
 
 from ..models.cloud_job import _webhook_fields
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
 from .test_cloud_job import _run_after_commit
+
+
+#: An id no job of this transaction has: a row only a fresh read sees.
+_UNSEEN_ID = 2**31 - 1
+
+
+class _LostRace(pg_errors.SerializationFailure):
+    """A serialization failure as PostgreSQL raises it, with its code."""
+
+    pgcode = "40001"
 
 
 def _push_payload(clone_url, branch, sha, message="fix: something"):
@@ -374,3 +388,126 @@ class TestPullRequestSynchronize(_PushCase):
         self.assertEqual(len(waiting), 1)
         self.assertEqual(waiting.state, 'queued')
         self.assertEqual(waiting.payload['push_sha'], 'abc1234')
+
+    def _head_push(self, sha=None):
+        """The payload keys of the push of *sha* to the pull request's branch."""
+        return {
+            'trigger': 'webhook', 'push_repo': 'owner/repo',
+            'push_branch': self.HEAD, 'push_sha': (sha or self.SHA)[:7],
+            'push_message': '', 'push_by': 'dev', 'push_provider': 'github',
+        }
+
+    def _rebuild_in(self, state, sha=None):
+        """A rebuild of the preview for the push of *sha*, created in *state*."""
+        return self.Job.create({
+            'name': 'rebuild',
+            'host_id': self.host.id,
+            'instance_id': self.preview.id,
+            'job_type_id': self.rebuild_type.id,
+            'state': state,
+            'payload': self._head_push(sha),
+        })
+
+    @contextlib.contextmanager
+    def _committed_after_the_snapshot(self, state, sha=None):
+        """Let a fresh read see a rebuild of the push of *sha* in *state*.
+
+        The other delivery's rebuild, committed after this one's snapshot
+        was taken: in production only a READ COMMITTED read sees it. Under
+        tests the read shares the transaction, so it is added to what the
+        reads of payloads return, wherever their domain asks for *state*.
+        """
+        Job = type(self.Job)
+        read = Job._fresh_rows
+        row = {'id': _UNSEEN_ID, 'payload': self._head_push(sha)}
+
+        def with_the_other(job_model, domain, fnames=()):
+            """The real fresh read, plus the other delivery's rebuild."""
+            rows = read(job_model, domain, fnames)
+            states = next((
+                leaf[2] for leaf in domain
+                if isinstance(leaf, (list, tuple)) and leaf[0] == 'state'
+            ), ())
+            if 'payload' in fnames and state in states:
+                rows = [*rows, row]
+            return rows
+
+        with patch.object(
+            Job, '_fresh_rows', autospec=True, side_effect=with_the_other,
+        ):
+            yield
+
+    def test_a_lost_race_in_the_synchronize_reaches_odoo_s_retry(self):
+        """Raised, not swallowed: the transaction is aborted, and the
+        request is run again from a fresh snapshot."""
+        with patch.object(
+            type(self.Job), 'enqueue', autospec=True, side_effect=_LostRace('lost'),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            self._synchronize()
+
+    def test_a_lost_race_in_a_push_reaches_odoo_s_retry(self):
+        """Skipped, the push's rebuild would be dropped in silence."""
+        with patch.object(
+            type(self.Job), 'enqueue', autospec=True, side_effect=_LostRace('lost'),
+        ), self.assertRaises(pg_errors.SerializationFailure):
+            self._push_head()
+
+    def test_a_synchronize_sees_the_rebuild_its_push_committed_meanwhile(self):
+        """The two deliveries at once: the push's rebuild, dispatched and
+        committed after the synchronize's snapshot, is found."""
+        with self._committed_after_the_snapshot('pending'):
+            self.assertFalse(self._synchronize())
+
+    def test_a_push_sees_the_rebuild_its_synchronize_queued_meanwhile(self):
+        """Waiting behind a job, committed after the push's snapshot."""
+        with self._committed_after_the_snapshot('queued'):
+            self.assertFalse(self._push_head())
+
+    def test_a_rebuild_of_another_commit_committed_meanwhile_is_not_it(self):
+        with self._committed_after_the_snapshot('pending', sha='other01'):
+            rebuilds = self._synchronize()
+        self.assertEqual(len(rebuilds), 1)
+        self.assertEqual(rebuilds.payload['push_sha'], 'abc1234')
+
+    def test_a_push_without_a_commit_is_not_taken_for_another(self):
+        running = self._running_on_preview(dict(self._head_push(), push_sha=''))
+        waiting = self._deliver('pull_request', _synchronize_payload(
+            self.REPO_URL, self.HEAD, '',
+        )) - running
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting.state, 'queued')
+
+    def test_a_preview_not_following_pushes_keeps_no_auto_rebuild_date(self):
+        self.preview.write({'auto_rebuild': False, 'last_auto_rebuild': False})
+        self.assertEqual(len(self._synchronize()), 1)
+        self.assertFalse(self.preview.last_auto_rebuild)
+
+    def _assert_the_twin_queues_after(self, state):
+        """The later delivery queues the commit's rebuild once more.
+
+        :param str state: how the rebuild of the first delivery ended
+        """
+        ended = self._rebuild_in(state)
+        again = self._synchronize() - ended
+        self.assertEqual(len(again), 1)
+        self.assertEqual(again.payload['push_sha'], 'abc1234')
+
+    def test_the_twin_after_the_rebuild_failed_queues(self):
+        self._assert_the_twin_queues_after('failed')
+
+    def test_the_twin_after_the_rebuild_was_cancelled_queues(self):
+        self._assert_the_twin_queues_after('cancelled')
+
+    def test_a_force_push_back_to_the_commit_being_built(self):
+        """A → B → A with A's rebuild running: B waits and builds the
+        branch's head when it starts; the second A queues nothing."""
+        first = 'aaaa111ffff'
+        running = self._rebuild_in('started', sha=first)
+        waiting = self._push_head(sha='bbbb222ffff') - running
+        self.assertEqual(len(waiting), 1)
+        self.assertEqual(waiting.state, 'queued')
+        self._push_head(sha=first)
+        rebuilds = self._synchronize(sha=first)
+        self.assertEqual(rebuilds, running | waiting)
+        self.assertEqual(waiting.payload['push_sha'], 'bbbb222')
+        self.assertNotIn('coalesced_pushes', waiting.payload)
