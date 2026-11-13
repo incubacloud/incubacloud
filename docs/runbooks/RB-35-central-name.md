@@ -197,8 +197,10 @@ server's agents refuse the central and queue: do it at a quiet hour, all at once
             "metrics_central_cert_expires": False})
    env.cr.commit()
    ```
-2. Deploy the central again (*Enable observability* on its server). It mints a new
-   authority and signs a certificate with it; Traefik loads it without a restart.
+2. Deploy the central again (*Enable observability* on its server) right after step 1,
+   with nothing in between. It mints a new authority and signs a certificate with it;
+   Traefik loads it without a restart. Until it does, the panel has no authority, and
+   anything sent to a layer above in that window carries the earlier URLs.
 3. The reconciliation re-applies every server's agents at its next pass (every 15
    minutes): their recorded fingerprint is the old authority's. To queue them at
    once, run `env["cloud.host"]._reconcile_direct_agents()` in an Odoo shell on
