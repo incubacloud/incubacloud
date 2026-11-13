@@ -149,7 +149,9 @@ TOOLS = (
         "get_job",
         "A job: its state, what it waits behind and its log, in pages. A "
         "cancelled job reads stopping=true while what it left on its server "
-        "is still being stopped. The log "
+        "is still being stopped. A pending job another build on its server "
+        "defers reads build_wait: the job it waits for (job_id, null when "
+        "the user may not read it) and when it tries again (until). The log "
         "is a clean view of the panel's: terminal colour codes are taken out, "
         "and consecutive lines that differ only in their numbers (download or "
         "extraction progress) show as the first and the last of them, with "
@@ -571,6 +573,12 @@ class McpToolsRead(models.AbstractModel):
         )
         return {
             **company,
+            # Deferred by another build on its server: what for
+            # (``cloud.job._build_waits``), as the lists say it.
+            "build_wait": self.env["cloud.job"]
+            .browse(args["job_id"])
+            ._build_waits()
+            .get(args["job_id"]),
             "log": self._job_log_page(
                 args["job_id"], args.get("offset"), args.get("limit"), args.get("page")
             ),

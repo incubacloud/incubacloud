@@ -158,7 +158,9 @@ TOOLS = (
         "The jobs the user can see, newest first, in pages: of one instance "
         "(instance_id), of one server (host_id) or of the whole panel, filtered "
         "by state, dates or category (operational by default; admin are the "
-        "background ones). The panel reads at most the newest 200 that match.",
+        "background ones). The panel reads at most the newest 200 that match. "
+        "A pending job another build on its server defers reads build_wait, "
+        "as in get_job.",
         _USER,
         obj(
             {

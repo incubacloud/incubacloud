@@ -308,6 +308,62 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         )
         self.assertIs(payload["stopping"], False)
 
+    def test_a_job_deferred_by_the_build_lock_says_what_it_waits_for(self):
+        """get_job reads build_wait while another build on its server
+        defers the job, naming that build, and none once it runs."""
+        from odoo.addons.incubacloud.models.host_build_lock import (
+            BUILD_LOCK_WAIT_MARKER,
+        )
+
+        holder = (
+            self.env["cloud.job"]
+            .sudo()
+            .create(
+                {
+                    "name": "holder",
+                    "instance_id": self.staging.id,
+                    "host_id": self.host.id,
+                    "job_type_id": self.job_type.id,
+                    "state": "started",
+                }
+            )
+        )
+        qjob = (
+            self.env["queue.job"]
+            .sudo()
+            .create(
+                {
+                    "uuid": "mcp-read-build-wait",
+                    "name": "build wait",
+                    "state": "pending",
+                    "result": f"{BUILD_LOCK_WAIT_MARKER} (job #{holder.id});"
+                    " deferring.",
+                    "method_name": "execute",
+                    "model_name": "cloud.job",
+                    "func_string": "execute()",
+                }
+            )
+        )
+        self.job.sudo().with_context(ic_skip_state_hook=True).write(
+            {"queue_job_uuid": qjob.uuid, "state": "pending"}
+        )
+        self.env.flush_all()
+        payload = self._payload(
+            self._call_tool(self.key, "get_job", {"job_id": self.job.id})
+        )
+        self.assertEqual(payload["build_wait"]["job_id"], holder.id)
+        self.env.cr.execute(
+            "UPDATE queue_job SET state = 'started' WHERE id = %s", (qjob.id,)
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'started' WHERE id = %s", (self.job.id,)
+        )
+        self.env.invalidate_all()
+        payload = self._payload(
+            self._call_tool(self.key, "get_job", {"job_id": self.job.id})
+        )
+        self.assertIsNone(payload["build_wait"])
+
     def test_a_job_s_raw_output_is_for_the_technical_roles(self):
         """A project manager reads the panel's own lines of a job's log, and
         not its raw output; a developer reads both."""
