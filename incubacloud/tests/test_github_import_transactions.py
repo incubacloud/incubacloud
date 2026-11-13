@@ -25,6 +25,12 @@ from odoo.addons.incubacloud.models._repo_requirements import (
     consume_hourly_quota,
 )
 
+#: Where the check made where repositories are set asks GitHub for the
+#: modules of each one.
+_DETECT_ON_SAVE = (
+    "odoo.addons.incubacloud.models.cloud_instance.detect_addon_conflicts"
+)
+
 
 class TestGitHubImportTransactions(TransactionCase):
     """Locks, durable quotas and ORM creation keep their route contract."""
@@ -273,6 +279,58 @@ class TestGitHubImportTransactions(TransactionCase):
         instance = self.env["cloud.instance"].browse(result["instance_id"])
         self.assertFalse(instance.host_id)
         self.assertTrue(result.get("host_warning"))
+
+    def test_a_module_in_two_repositories_is_said_and_raises_its_alert(self):
+        """Two repositories that define one module: the import's answer says
+        so, and the instance carries one critical ``addon_conflict`` alert
+        naming the module and both repositories.
+
+        What the browser walk of an import with a module twice asserts on a
+        real panel; GitHub's listing of the modules is the canned answer.
+        """
+        conflicts = [{"addon": "demo_addon", "repos": ["acme-addons", "acme-extra"]}]
+        inspected = {
+            "ok": True,
+            "repo_name": "conflict-demo",
+            "repo_type": "simple",
+            "repos_data": [
+                {
+                    "url": "https://github.com/acme/acme-addons.git",
+                    "branch": "19.0",
+                    "alias": "acme-addons",
+                    "addons": "",
+                },
+                {
+                    "url": "https://github.com/acme/acme-extra.git",
+                    "branch": "19.0",
+                    "alias": "acme-extra",
+                    "addons": "",
+                },
+            ],
+            "copier": {},
+            "pip_deps": "",
+            "apt_deps": "",
+            "odoo_conf": "",
+            "odoo_version": "19.0",
+            "submodules": [],
+        }
+        with patch.object(routes, "request", self.request), \
+                patch.object(odoo_http, "request", self.request), \
+                patch(_DETECT_ON_SAVE, autospec=True, return_value=conflicts):
+            result = self.controller._create_bounded_github_import(inspected)
+        self.assertTrue(result["ok"], result)
+        self.assertIn(
+            "1 module(s) are defined in more than one repository: demo_addon.",
+            result["addon_conflict_warning"],
+        )
+        alerts = self.env["cloud.alert"].search([
+            ("code", "=", "addon_conflict"),
+            ("instance_id", "=", result["instance_id"]),
+            ("state", "=", "active"),
+        ])
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts.level, "critical")
+        self.assertEqual(alerts.conflict_data, conflicts)
 
     def test_creation_deadline_rolls_back_partial_records(self):
         """An expired local deadline inside the savepoint leaves no project."""
