@@ -28,6 +28,13 @@ STATES = [
 #: system parameter (``cloud.settings._direct_checked_at``).
 SUFFIXES = ("state", "failures", "successes", "failing_since", "dns_bad")
 
+#: The prefix the central's single name is kept under in ``cloud.settings``.
+CENTRAL_NAME_PREFIX = "metrics_central_name"
+
+#: What admits every address on a direct port: the central's host when its
+#: central takes writes from any address.
+ANY_ADDRESS = "0.0.0.0/0"
+
 FAILING_AFTER = 2
 OK_AFTER = 2
 MIN_FAILING = timedelta(minutes=30)

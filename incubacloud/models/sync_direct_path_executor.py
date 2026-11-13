@@ -56,7 +56,7 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
     async def before_execute(self, transport):
         """Render the list and the document now, and stage the document."""
         host = self._host()
-        self._peers = host._direct_peers_entries()
+        self._peers = host._direct_peers_for_host()
         self._hosts, self._left_out = host._direct_hosts_entries()
         self._document = host._shipped_direct_yml()
         self._names = host._direct_published_names()
@@ -71,9 +71,13 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
                 "and stay as they are."
             )
             self._names = []
-        await self._upload_files(
-            transport, {self._job_path(_STAGED): self._document},
-        )
+        uploads = {self._job_path(_STAGED): self._document}
+        for index, name in enumerate(self._names):
+            if name.get("ca"):
+                # The probe trusts this file alone for that name.
+                name["ca_path"] = self._job_path(f"probe-ca-{index}.pem")
+                uploads[name["ca_path"]] = name["ca"]
+        await self._upload_files(transport, uploads)
         self._sys(
             f"Direct list for {host.name}: {len(self._peers)} entr"
             f"{'y' if len(self._peers) == 1 else 'ies'}, "
@@ -98,11 +102,12 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
             (_READ_BACK, f"cat {DIRECT_DYNAMIC_FILE}"),
         ]
         for name in self._names:
+            cacert = ["--cacert", name["ca_path"]] if name.get("ca_path") else []
             commands.append((
                 f"Probe {name['name']}",
                 self.run_script(
                     "direct_probe.sh",
-                    [name["name"], self._address, port, *name["checks"]],
+                    [*cacert, name["name"], self._address, port, *name["checks"]],
                 ),
             ))
         return commands

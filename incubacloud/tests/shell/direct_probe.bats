@@ -22,6 +22,7 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         -o) out="$2"; shift ;;
         -w) fmt="$2"; shift ;;
+        --cacert) echo "$2" >> "${STUB_CACERT_LOG:-/dev/null}"; shift ;;
         -X|--max-time|--resolve) shift ;;
         https://*) url="$1" ;;
     esac
@@ -138,4 +139,35 @@ probe() {
         run bash "$SCRIPT" direct.metrics.example.test 46.4.0.60 9443 "$check"
         [ "$status" -ne 0 ]
     done
+}
+
+@test "with --cacert every request trusts that file" {
+    echo "PEM" > "$TMP/ca.pem"
+    export STUB_CACERT_LOG="$TMP/cacert.log"
+    run bash "$SCRIPT" --cacert "$TMP/ca.pem" metrics.example.test 46.4.0.60 9443 \
+        POST:/w/api/v1/write:401 GET:/flags:403,421
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"IC_DIRECT_TLS ok"* ]]
+    [[ "$output" == *"IC_DIRECT_ROUTE POST /w/api/v1/write 401 ok"* ]]
+    # The handshake and both checks.
+    [ "$(grep -c "$TMP/ca.pem" "$TMP/cacert.log")" -eq 3 ]
+}
+
+@test "without --cacert no request names a file" {
+    export STUB_CACERT_LOG="$TMP/cacert.log"
+    probe
+    [ ! -s "$TMP/cacert.log" ]
+}
+
+@test "an authority file it cannot read is refused before anything is asked" {
+    run bash "$SCRIPT" --cacert "$TMP/missing.pem" metrics.example.test 46.4.0.60 9443 \
+        POST:/w/api/v1/write:401
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"cannot read the authority file"* ]]
+    [[ "$output" != *"IC_DIRECT_DNS"* ]]
+}
+
+@test "--cacert without a file is refused" {
+    run bash "$SCRIPT" --cacert
+    [ "$status" -eq 1 ]
 }

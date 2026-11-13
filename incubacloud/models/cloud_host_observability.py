@@ -383,8 +383,12 @@ class CloudHost(models.Model):
         self._reconcile_direct_agents()
         # And those whose last install ran an older playbook.
         self._reconcile_agents_revision()
-        # And the central, when its last deployment ran an older one.
+        # And the central, when its last deployment ran an older one or
+        # its certificate is to be renewed.
         self._reconcile_central_revision()
+        # The single name's pending check, and whether a server writes
+        # from outside the central's list.
+        self._reconcile_central_name()
 
     @api.model
     def _reconcile_central_revision(self):
@@ -402,10 +406,15 @@ class CloudHost(models.Model):
 
         :return: the queued job id, or ``False``.
         """
-        settings = self.env["cloud.settings"].sudo()._get_system()
+        Settings = self.env["cloud.settings"].sudo()
+        settings = Settings._get_system()
         if not settings.metrics_enabled:
             return False
-        if (settings.metrics_central_revision or 0) >= CENTRAL_REVISION:
+        behind = (settings.metrics_central_revision or 0) < CENTRAL_REVISION
+        # Under its single name, also when its certificate is to be
+        # renewed (``LEAF_RENEW_BEFORE``), or was never issued.
+        renew = Settings._central_cert_due()
+        if not (behind or renew):
             return False
         host = settings.metrics_central_host_id.sudo()
         if not (host and host.active):
@@ -437,9 +446,10 @@ class CloudHost(models.Model):
             )
             return False
         _logger.info(
-            "[metrics] the central on %s is on revision %s, behind %s: "
-            "deploying it again", host.name,
+            "[metrics] the central on %s is on revision %s (code %s), its "
+            "certificate %s: deploying it again", host.name,
             settings.metrics_central_revision or 0, CENTRAL_REVISION,
+            "to renew" if renew else "current",
         )
         return job_id
 

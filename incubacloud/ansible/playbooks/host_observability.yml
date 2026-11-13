@@ -36,6 +36,13 @@
     ic_direct_write_url: ""
     ic_direct_logs_write_url: ""
     ic_direct_probes: []
+    # The panel's authority for the central's single name, once the URLs
+    # above are on it: vmagent and Fluent Bit trust it for the central
+    # alone, never through the system's store. Empty: the system's roots.
+    ic_central_ca: ""
+    # Where the server asks which address it leaves with, with the
+    # single name in force (``/cloud/egress_ip``). Empty asks nothing.
+    ic_panel_url: ""
     ic_remote_write_token: ""
     # User half of the credential, and the account this panel writes as.
     # The central overwrites the label from whoever authenticates, so
@@ -160,6 +167,47 @@
           "{{ ic_direct_write_url if (ic_direct_ok | bool) else ic_remote_write_url }}"
         ic_logs_url:
           "{{ ic_direct_logs_write_url if (ic_direct_ok | bool) else ic_logs_write_url }}"
+
+    - name: Write the central's authority
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/central-ca.pem"
+        content: "{{ ic_central_ca }}"
+        mode: "0644"
+      when: ic_central_ca | length > 0
+
+    - name: Remove the central's authority, not used
+      ansible.builtin.file:
+        path: "{{ ic_obs_dir }}/central-ca.pem"
+        state: absent
+      when: ic_central_ca | length == 0
+
+    - name: Check the central from this server
+      # vmauth's 401 without a credential is the central reached. A 403,
+      # or no answer, is the platform port refusing this server's
+      # address: the install goes on (vmagent queues and retries), and
+      # the panel says it with the address below. Only a warning: a
+      # server just added may not be on the list yet.
+      ansible.builtin.uri:
+        url: "{{ ic_write_url }}"
+        method: POST
+        status_code: [401]
+        ca_path: "{{ ic_obs_dir }}/central-ca.pem"
+        validate_certs: true
+        timeout: 10
+      register: ic_central_try
+      failed_when: false
+      changed_when: false
+      when: ic_central_ca | length > 0
+
+    - name: Ask the panel which address this server leaves with
+      ansible.builtin.uri:
+        url: "{{ ic_panel_url }}/cloud/egress_ip"
+        return_content: true
+        timeout: 10
+      register: ic_egress
+      failed_when: false
+      changed_when: false
+      when: ic_panel_url | length > 0
 
     - name: Decide whether this server sends its security logs
       ansible.builtin.set_fact:
@@ -556,6 +604,7 @@
                     uri: {{ ic_logs_url | urlsplit('path') | to_json }}
                     tls: {{ 'on' if (ic_logs_url | urlsplit('scheme')) == 'https' else 'off' }}
                     tls.verify: on
+                    {% if ic_central_ca %}tls.ca_file: /etc/central-ca.pem{% endif %}
                     http_user: {{ ic_remote_write_user | to_json }}
                     http_passwd: {{ ic_remote_write_token | to_json }}
                     labels: log_type=security
@@ -644,6 +693,9 @@
                 - /var/log:/var/log:ro
                 # The journal reader needs the machine id to find it.
                 - /etc/machine-id:/etc/machine-id:ro
+          {% if ic_central_ca %}
+                - {{ ic_obs_dir }}/central-ca.pem:/etc/central-ca.pem:ro
+          {% endif %}
           {% endif %}
 
             vmagent:
@@ -676,9 +728,17 @@
                 - '-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token'
                 # Survive a central outage instead of dropping samples.
                 - '-remoteWrite.maxDiskUsagePerURL=512MB'
+          {% if ic_central_ca %}
+                # The central's single name: its certificate is signed by
+                # the panel's authority, trusted here for it alone.
+                - '-remoteWrite.tlsCAFile=/etc/central-ca.pem'
+          {% endif %}
               volumes:
                 - {{ ic_obs_dir }}/scrape.yml:/etc/scrape.yml:ro
                 - {{ ic_obs_dir }}/.remote_write_token:/etc/remote_write_token:ro
+          {% if ic_central_ca %}
+                - {{ ic_obs_dir }}/central-ca.pem:/etc/central-ca.pem:ro
+          {% endif %}
                 - vmagent-data:/vmagentdata
               depends_on:
                 - node-exporter
@@ -1178,3 +1238,7 @@
           ic_direct_report:
             "{{ ic_direct_report if ic_direct_report is string else (ic_direct_report | to_json)
             }}"
+          # The single name in force: what the central answered this
+          # server (401 is right) and the address it leaves with.
+          ic_central_reach: "{{ ic_central_try.status | default(-1) }}"
+          ic_egress_ip: "{{ (ic_egress.content | default('')) | trim | truncate(64, true, '') }}"
