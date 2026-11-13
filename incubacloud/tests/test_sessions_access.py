@@ -79,7 +79,7 @@ class _GuardedRequests(_OnTheUncorrectedProxyFix):
             real_ip.PROXY_OPTION: "",
             real_ip.COUNTRY_OPTION: "CF-IPCountry",
         }, odoo.http))
-        self.startPatcher(patch.dict(config.options.maps[0], {"proxy_mode": True}))
+        self.startPatcher(patch.dict(config.options, {"proxy_mode": True}))
 
     def _sign_in(self):
         """Open a session of the fixture user, traced as a browser's is.
@@ -107,13 +107,12 @@ class _GuardedRequests(_OnTheUncorrectedProxyFix):
                 "CF-IPCountry": country,
             })
         self.env.flush_all()
-        with self.allow_requests(all_requests=True):
-            answer = requests.post(
-                self.base_url() + path,
-                data=json.dumps({"jsonrpc": "2.0", "method": "call",
-                                 "params": params or {}}),
-                headers=headers, cookies={"session_id": sid}, timeout=30,
-            ).json()
+        answer = requests.post(
+            self.base_url() + path,
+            data=json.dumps({"jsonrpc": "2.0", "method": "call",
+                             "params": params or {}}),
+            headers=headers, cookies={"session_id": sid}, timeout=30,
+        ).json()
         self.env.invalidate_all()
         return answer
 
