@@ -336,6 +336,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   were gone, is removed. An override that does not take `trigger` is
   called without it, so a layer deployed apart from this core does not
   fail a cutover that worked.
+- **The help of `cloud.host.frame_ancestors` says what the list costs.**
+  Measured on Traefik v2.11: the `frameguard` middleware replaces the whole
+  `Content-Security-Policy` of every response on the host, so an
+  application's own policy goes with it, Odoo's `default-src 'none'` on the
+  files it serves and a page's `frame-ancestors 'none'` included. The help
+  now says to set the list only on a host whose applications send no policy
+  worth keeping, and no longer gives an embedded dashboard as the example of
+  two lists one host cannot hold.
 
 ### Fixed
 
