@@ -12,7 +12,7 @@ from unittest.mock import patch
 import requests
 
 import odoo.http
-from odoo.addons.base.models.res_users import ResUsers as BaseUsers
+from odoo.addons.base.models.res_users import Users as BaseUsers
 from odoo.tests import new_test_user, tagged
 from odoo.tests.common import HttpCase
 from odoo.tools import config, mute_logger
