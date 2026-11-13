@@ -24576,13 +24576,13 @@ msgid ""
 "When the sweep of the queues first saw this job cancelled while it ran, its "
 "worker found dead and the job not closed yet: queue_job writes no date when "
 "it finds a worker dead, and the alert of a stop nobody closes counts from "
-"here (_alert_unclosed_stops)."
+"here (_alert_unclosed_stops). Cleared when the job starts again."
 msgstr ""
 "Fecha en que el barrido de las colas vio por primera vez este trabajo "
 "cancelado mientras se ejecutaba, con su proceso hallado muerto y el trabajo "
 "aún sin cerrar: queue_job no escribe ninguna fecha cuando halla muerto un "
 "proceso, y la alerta de una detención que nadie cierra cuenta desde aquí "
-"(_alert_unclosed_stops)."
+"(_alert_unclosed_stops). Se borra cuando el trabajo vuelve a empezar."
 
 #. module: incubacloud
 #. odoo-python
@@ -24610,9 +24610,41 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
 "A person closed the alert of this stop nobody closed: the job is closed "
-"without putting back what the lost run left on its server. Check the "
-"instance and the server by hand."
+"without putting back what the lost run left on its server."
 msgstr ""
 "Una persona cerró la alerta de esta detención que nadie cerraba: el trabajo "
-"se cierra sin deshacer lo que dejó la ejecución perdida en su servidor. "
-"Revise a mano la instancia y el servidor."
+"se cierra sin deshacer lo que dejó la ejecución perdida en su servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"What its step apart left on the server is stopped and removed by the next "
+"pass of the reconciliation of lost jobs."
+msgstr ""
+"Lo que dejó en el servidor su paso aparte lo detiene y lo elimina la "
+"siguiente pasada de la conciliación de los trabajos perdidos."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"The reconciliation is running now and may still be putting back what the "
+"lost run left, beside the next job of the queue."
+msgstr ""
+"La conciliación se está ejecutando ahora y puede que siga deshaciendo lo que"
+" dejó la ejecución perdida, junto al siguiente trabajo de la cola."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Instance %(name)s is left %(state)s: check it and the server by hand."
+msgstr ""
+"La instancia %(name)s queda en estado %(state)s: revise a mano la instancia "
+"y el servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Server %(name)s is left %(state)s: check it by hand."
+msgstr "El servidor %(name)s queda en estado %(state)s: revíselo a mano."
