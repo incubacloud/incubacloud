@@ -582,6 +582,18 @@ class CloudSettings(models.Model):
             host=central.name,
         )
 
+    @api.model
+    def _central_retire_refusal(self):
+        """Say why the central may not be retired from this panel, or ''.
+
+        Core: it may. A layer whose central serves more than this panel
+        (the platform's master, whose central every tenant writes to)
+        answers why not; the settings then offer no *Retire the central*.
+
+        :rtype: str
+        """
+        return ""
+
     def retire_metrics_central(self):
         """Forget the metrics central, its history with it.
 
@@ -594,14 +606,18 @@ class CloudSettings(models.Model):
         observability is enabled again on another host.
 
         Refused while a deployment or an account sync of the central
-        waits or runs: it would record the host again when it ends.
+        waits or runs: it would record the host again when it ends; and
+        where a layer refuses it (``_central_retire_refusal``).
 
         :return: the name of the host the central ran on
         :rtype: str
-        :raises UserError: when there is no central to retire, or a job
-            of the central is still to end
+        :raises UserError: when there is no central to retire, a job of
+            the central is still to end, or this panel may not retire it
         """
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
+        refusal = self._central_retire_refusal()
+        if refusal:
+            raise UserError(refusal)
         settings = self._get_system()
         host = settings.metrics_central_host_id.sudo()
         if not host:
@@ -621,12 +637,45 @@ class CloudSettings(models.Model):
                 "it to end, or cancel it, and retire the central then.",
                 host=host.name,
             ))
+        return self._forget_metrics_central()
+
+    @api.model
+    def _forget_metrics_central(self):
+        """Forget the metrics central and what the panel said about it.
+
+        What *Retire the central* does once its checks passed, and what a
+        layer calls when the central's server leaves the fleet without a
+        person asking (a forced removal). Besides the host and the URLs:
+        the public name, so that a central deployed later on another host
+        does not publish itself under a name whose DNS still points at
+        this one; the list of accounts on the central, which is the old
+        central's; and the central's open alerts, which nothing would
+        close any more. The direct name stays: it is probed before it is
+        used.
+
+        :return: the name of the host the central ran on, '' when there
+            was none
+        :rtype: str
+        """
+        settings = self._get_system()
+        host = settings.metrics_central_host_id.sudo()
+        if not host:
+            return ""
+        # The key its alerts were raised with (``_direct_alerts``).
+        direct = settings.metrics_central_direct_host or ""
         settings.write({
             "metrics_central_host_id": False,
             "metrics_central_url": False,
             "metrics_remote_write_url": False,
             "metrics_enabled": False,
+            "metrics_central_public_host": False,
+            "metrics_accounts_deployed": False,
         })
+        Alert = self.env["cloud.alert"].sudo()
+        for code in ("metrics_central_failed", "metrics_acl_sync_failed"):
+            Alert.resolve_alert(code, host=host)
+        if direct:
+            settings._direct_forget_alerts(direct)
         self.env["cloud.audit.log"].sudo().create({
             "action": "Metrics central retired",
             "details": host.name,

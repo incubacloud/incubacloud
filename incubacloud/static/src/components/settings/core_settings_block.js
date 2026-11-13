@@ -159,6 +159,8 @@ export class CoreSettingsBlock extends Component {
             deployingCentral: false,
             // Where the central runs now ({id, name}), or null.
             centralHost: null,
+            // Whether Retire the central is offered here.
+            centralRetirable: false,
             // What the picked host offers the central, or null.
             centralSizing: null,
             retiringCentral: false,
@@ -201,6 +203,7 @@ export class CoreSettingsBlock extends Component {
             this.state.hasAcmeDnsToken = Boolean(data.has_acme_dns_token);
             this.state.centralDirect = data.metrics_central_direct || null;
             this.state.centralHost = data.metrics_central_host || null;
+            this.state.centralRetirable = Boolean(data.metrics_central_retirable);
             if (part === "monitoring") {
                 // The central's destination picker. The rest of the page
                 // works without it.
@@ -426,12 +429,21 @@ export class CoreSettingsBlock extends Component {
         const empty = this.centralAction === "empty";
         if (empty) {
             const target = this.state.hosts.find((h) => h.id === hostId)?.name || "";
+            let message = _t(
+                "Start an empty central on %(target)s? The central on %(central)s is left as it is, with the metrics history and the security logs, and the panel no longer reads it: the charts start empty. %(central)s can then be deleted, and the history goes with it.",
+                { target, central: this.state.centralHost.name },
+            );
+            const publicName = this.state.form.metrics_central_public_host;
+            if (publicName) {
+                // The panel and the agents reach the central by that name.
+                message += " " + _t(
+                    "Point %(name)s at %(target)s in DNS first: until it does, the panel and the agents still reach the central on %(central)s.",
+                    { name: publicName, target, central: this.state.centralHost.name },
+                );
+            }
             const confirmed = await confirmVia(this.state, {
                 title: _t("Start an empty central"),
-                message: _t(
-                    "Start an empty central on %(target)s? The central on %(central)s is left as it is, with the metrics history and the security logs, and the panel no longer reads it: the charts start empty. %(central)s can then be deleted, and the history goes with it.",
-                    { target, central: this.state.centralHost.name },
-                ),
+                message,
                 confirmLabel: _t("Start an empty central"),
                 isDanger: true,
             });

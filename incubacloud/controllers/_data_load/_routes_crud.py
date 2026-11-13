@@ -1950,6 +1950,9 @@ class CrudMixin:
             'metrics_central_host': (
                 {'id': central.id, 'name': central.name} if central else False
             ),
+            # Whether Retire the central is offered: a layer may keep a
+            # central that serves more than this panel.
+            'metrics_central_retirable': not Settings._central_retire_refusal(),
             # ── Edge ───────────────────────────────────────────────────
             # The override plus what actually applies and where it comes
             # from, because the field alone says nothing about the list
