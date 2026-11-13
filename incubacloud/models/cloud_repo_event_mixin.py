@@ -11,7 +11,7 @@ import logging
 
 from odoo import SUPERUSER_ID, api, fields, models
 
-from ._concurrency import read_committed_cursor
+from ._concurrency import is_concurrency_error, read_committed_cursor
 from .registry import executor_registry
 
 _logger = logging.getLogger(__name__)
@@ -111,7 +111,9 @@ class CloudRepoEventMixin(models.AbstractModel):
         Each enqueue runs in a savepoint of its own: one that fails
         (a database error included) is logged and skipped without
         aborting the transaction the others and the event are written
-        in.
+        in. A lost race (``is_concurrency_error``) is raised instead, for
+        Odoo to run the request again from a fresh snapshot: skipped, it
+        would drop the rebuild in silence.
 
         :param lines: the ``cloud.instance.repo`` lines the push matched
         :param dict push_info: the ``push_*`` keys of the job's payload
@@ -134,7 +136,9 @@ class CloudRepoEventMixin(models.AbstractModel):
             try:
                 with self.env.cr.savepoint():
                     queued = self._queue_push_rebuild(inst, job_type, push_info)
-            except Exception:
+            except Exception as exc:
+                if is_concurrency_error(exc):
+                    raise
                 _logger.exception(
                     "Failed to enqueue auto-rebuild for %s", inst.name,
                 )
@@ -144,20 +148,22 @@ class CloudRepoEventMixin(models.AbstractModel):
         return triggered
 
     def _queue_push_rebuild(self, inst, job_type, push_info):
-        """Queue the rebuild of *inst* a push asks for, unless one runs for it.
+        """Queue the rebuild of *inst* a push asks for, unless one already has it.
 
         A push queues its rebuild. One that arrives while a rebuild runs
         waits in the instance's queue; one that arrives while a push's
         rebuild waits merges into it
         (``RebuildInstanceExecutor._merge_queued_payload``), so no commit
-        is built twice and none is dropped. One whose rebuild was already
-        dispatched (:meth:`_push_being_built`) queues nothing: a
-        preview's commit comes as a push and as the pull request's
-        ``synchronize`` or the merge request's ``update``, which name the
-        same commit. ``last_auto_rebuild`` is written when a rebuild is
-        queued or merged into.
+        is built twice and none is dropped. One that a rebuild waiting or
+        dispatched was already asked for (:meth:`_push_rebuild_exists`)
+        queues nothing: a preview's commit comes as a push and as the
+        pull request's ``synchronize`` or the merge request's ``update``,
+        which name the same commit. ``last_auto_rebuild`` is written when
+        a rebuild is queued or merged into for an instance that follows
+        pushes (``auto_rebuild``).
 
-        No savepoint of its own: the caller runs it in one.
+        No savepoint of its own: the caller runs it in one, and raises a
+        lost race (``is_concurrency_error``) again.
 
         :param inst: the ``cloud.instance`` to rebuild
         :param str job_type: the job code :meth:`_rebuild_job_type` named
@@ -165,9 +171,9 @@ class CloudRepoEventMixin(models.AbstractModel):
         :return: whether a rebuild was queued or merged into
         :rtype: bool
         """
-        if self._push_being_built(inst, job_type, push_info):
+        if self._push_rebuild_exists(inst, job_type, push_info):
             _logger.info(
-                "Rebuild of %s for %s@%s already dispatched: not queued again",
+                "Rebuild of %s for %s@%s already asked for: not queued again",
                 inst.name, push_info.get('push_repo'), push_info.get('push_sha'),
             )
             return False
@@ -175,16 +181,31 @@ class CloudRepoEventMixin(models.AbstractModel):
             inst.host_id.id, inst.id, job_type,
             payload={'trigger': 'webhook', **push_info},
         )
-        inst.write({'last_auto_rebuild': fields.Datetime.now()})
+        if inst.auto_rebuild:
+            inst.write({'last_auto_rebuild': fields.Datetime.now()})
         return True
 
-    def _push_being_built(self, inst, job_type, push_info):
-        """Return whether a dispatched rebuild of *inst* was asked for this push.
+    def _push_rebuild_exists(self, inst, job_type, push_info):
+        """Return whether a rebuild of *inst* waiting or dispatched has this push.
 
-        Dispatched and not ended: it fetches its branches once it runs,
-        after the push it names, so it builds that commit or a later one.
-        The type's executor says whether a payload names the push
-        (``_carries_push``); a type without it never does.
+        Dispatched and not ended, it fetches its branches once it runs,
+        after the push it names, so it builds that commit or a later one;
+        waiting, it fetches them later still. The type's executor says
+        whether a payload names the push (``_carries_push``); a type
+        without it never does, nor does a push with no commit
+        (``push_sha`` empty), which would take any other one without a
+        commit for itself.
+
+        The instance's queue lock (``cloud.job._lock_scopes``, which
+        ``enqueue`` takes again) is taken first, and the jobs are read in
+        this transaction's snapshot and in a fresh READ COMMITTED read
+        (``cloud.job._fresh_rows``): GitHub delivers a commit's push and
+        its ``synchronize`` almost at once, and the one whose snapshot
+        predates the other's commit sees its rebuild only there. The one
+        that takes the lock second waits for the first to commit, then
+        finds its rebuild. Nothing is written on the job found, so the
+        fresh read is safe here where the merge's write is not
+        (``cloud.job._check_queue_admission``).
 
         :param inst: the ``cloud.instance``
         :param str job_type: the rebuild's job code
@@ -192,11 +213,15 @@ class CloudRepoEventMixin(models.AbstractModel):
         :rtype: bool
         """
         carries = getattr(executor_registry.get(job_type), '_carries_push', None)
-        if not carries:
+        if not carries or not push_info.get('push_sha'):
             return False
-        jobs = self.env['cloud.job'].sudo().search([
+        Job = self.env['cloud.job'].sudo()
+        Job._lock_scopes({Job._scope_of_step(inst.id, inst.host_id.id)})
+        domain = [
             ('instance_id', '=', inst.id),
             ('job_type_id.code', '=', job_type),
-            ('state', 'in', _DISPATCHED_STATES),
-        ])
-        return any(carries(job.payload, push_info) for job in jobs)
+            ('state', 'in', ('queued', *_DISPATCHED_STATES)),
+        ]
+        payloads = [job.payload for job in Job.search(domain)]
+        payloads += [row['payload'] for row in Job._fresh_rows(domain, ['payload'])]
+        return any(carries(payload, push_info) for payload in payloads)

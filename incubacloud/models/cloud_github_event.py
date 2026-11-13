@@ -608,18 +608,29 @@ class CloudGitHubEvent(models.Model):
                 job_type = self._rebuild_job_type(inst)
                 if not job_type:
                     continue
-                for repo in inst.repo_ids:
-                    if _normalize_url(repo.url) == repo_norm and repo.branch != head_ref:
-                        repo.write({'branch': head_ref, 'commit_sha': False})
+                # A savepoint per preview: a rebuild that cannot be queued
+                # leaves the others and the event's own writes. A lost race
+                # is raised, for Odoo to run the request again from a fresh
+                # snapshot: set aside, the transaction would be aborted and
+                # the delivery lost.
                 try:
-                    if self._queue_push_rebuild(inst, job_type, push_info):
-                        _logger.info(
-                            "PR preview rebuild triggered for %s (PR #%s)",
-                            inst.name, pr_number,
-                        )
-                except Exception:
+                    with self.env.cr.savepoint():
+                        for repo in inst.repo_ids:
+                            if (_normalize_url(repo.url) == repo_norm
+                                    and repo.branch != head_ref):
+                                repo.write({'branch': head_ref, 'commit_sha': False})
+                        queued = self._queue_push_rebuild(inst, job_type, push_info)
+                except Exception as exc:
+                    if is_concurrency_error(exc):
+                        raise
                     _logger.exception(
                         "Failed to enqueue PR rebuild for %s", inst.name,
+                    )
+                    continue
+                if queued:
+                    _logger.info(
+                        "PR preview rebuild triggered for %s (PR #%s)",
+                        inst.name, pr_number,
                     )
 
         elif action == 'closed':
