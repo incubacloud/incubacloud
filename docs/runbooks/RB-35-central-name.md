@@ -2,7 +2,8 @@
 
 **Severity:** high when `metrics_central_name_down` is raised; warning otherwise.
 **Typical trigger:** `metrics_central_dns_pending`, `metrics_central_name_down`,
-`metrics_central_cert_expiring`, `metrics_central_writer_outside`.
+`metrics_central_cert_expiring`, `metrics_central_writer_outside`,
+`metrics_central_acme_same_name`.
 **Who runs it:** platform manager.
 
 With **One path, without a CDN** on, the central answers under its public name only,
@@ -21,7 +22,11 @@ See the operations guide, "The single path".
   panel and the agents keep their earlier URLs. The alert names the record to create
   and the layer that failed. **Critical at once when the name is in use**: its record
   no longer points at the central's server (a CDN's proxy turned back on, the record
-  deleted, or left behind after a move), and no agent can write.
+  deleted, or left behind after a move), or the central's server failed to resolve it
+  for a moment. Whether the agents still write depends on where the record points:
+  during a move (RB-36) they go on writing to the server the central leaves. While the
+  alert is open, the observability cron checks the name again every 15 minutes, so a
+  passing failure of the resolver closes it within minutes.
 - **`metrics_central_name_down` (critical).** The name was in use and two checks in a
   row failed. The layer is in the alert: `dns`, `connect`, `tls` or `route`.
 - **`metrics_central_cert_expiring` (critical).** The certificate under the name has
@@ -31,7 +36,15 @@ See the operations guide, "The single path".
   the address it leaves with and the one the panel has for it, or says the panel could
   not learn it (the server's ask over IPv4 failed, or a CDN answered it). Silence alone
   raises nothing for a server the panel cannot reach either (`host_unreachable`), or
-  whose own last check got 401 with the address the panel has.
+  whose own last check got 401 with the address the panel has. When the server's check
+  refused the certificate it was answered with, the port let it in: the alert says so
+  instead of naming addresses, and the cause is usually the next symptom.
+- **`metrics_central_acme_same_name` (warning).** The central's deployment found a
+  certificate for the name in the ACME store of its server's proxy, obtained when the
+  name was published on 443 with a certificate of its own. Traefik then serves that
+  certificate or the panel's after each reload, and the agents refuse the first: the
+  checks fail at `tls` by turns. The deployment says it in its log too, and says when
+  it could not read the store.
 
 ## Diagnosis
 
@@ -65,13 +78,47 @@ the name.
   port in.
 - **`tls`.** The files above are missing or Traefik did not load them: deploy the
   central again (*Enable observability* on the same server). A proxy kept by hand must
-  mount `~/traefik/certs` at `/etc/certs` and watch `dynamic/`.
+  mount `~/traefik/certs` at `/etc/certs` and watch `dynamic/`. If it answers with
+  another certificate of the name now and then, see the next item.
+- **A certificate of the same name in the proxy's store.** The panel does not edit the
+  store: it holds every name's key and belongs to the proxy. First make sure nothing
+  asks a certificate resolver for the name any more (a route on 443 kept by hand, the
+  labels of an older deployment), or the proxy obtains it again. Then, on the central's
+  server, in `~/traefik` (replace `NAME`):
+  ```bash
+  P="docker compose -p inverseproxy -f inverseproxy.yaml"
+  STORE=/etc/traefik/acme/acme.json
+  umask 077
+  $P exec -T proxy cat $STORE > acme.json.bak     # every key the proxy holds
+  python3 -c '
+  import json, sys
+  name, store = sys.argv[1], json.load(open(sys.argv[2]))
+  for resolver in store.values():
+      if isinstance(resolver, dict) and resolver.get("Certificates"):
+          resolver["Certificates"] = [
+              c for c in resolver["Certificates"]
+              if name not in [c["domain"].get("main")] + (c["domain"].get("sans") or [])
+          ]
+  json.dump(store, sys.stdout, indent=2)
+  ' NAME acme.json.bak > acme.json.new
+  $P exec -T proxy sh -c "cat > $STORE" < acme.json.new   # keeps the file's mode
+  $P restart proxy
+  $P exec -T proxy grep -c -F '"NAME"' $STORE             # 0
+  rm -f acme.json.bak acme.json.new
+  ```
+  Traefik reads the store only when it starts and does not write it back when it
+  stops, so the restart is what makes it forget the certificate; it cuts whatever else
+  the proxy serves for a few seconds. Deploy the central again: its log no longer
+  mentions the store, and the alert closes. Where the restart is not acceptable, a
+  name the proxy never obtained a certificate for avoids the problem.
 - **`route`.** vmauth did not answer 401: look at the central's last deployment and
   `docker compose -p incubacloud-central ps` on its server.
 - **Certificate expiring.** Read why the central's last deployments failed and deploy
   it again; the new certificate loads without a restart.
-- **A server left out.** Correct the server's address in the panel if it is wrong
-  (the address it leaves with is in the alert), and *Sync Direct Path* runs on its own.
+- **A server left out.** When the alert says the server refused the central's
+  certificate, see the item above. Otherwise, correct the server's address in the
+  panel if it is wrong (the address it leaves with is in the alert), and *Sync Direct
+  Path* runs on its own.
   A server behind NAT, or whose address changes, needs *Who can write to the central*
   set to *Any address*, where the panel offers it.
 
@@ -84,6 +131,34 @@ gateway on 443 removed), check that everything still writing through it moves:
   name's write URL on every installed, active host.
 - Where a module that extends the panel sends these URLs to other panels, each of
   them installs the authority; the module's own guide says how to check it.
+- The proxy of the central's server holds no certificate of the name in its ACME
+  store (`grep -c -F '"NAME"'` as above gives 0).
+
+Where the name goes through a CDN today, the cut cannot wait for the switch: from the
+deployment that turns it on, the proxy answers the name with the panel's certificate
+on every entrypoint, 443 included, and the CDN refuses it (Cloudflare answers 526).
+So change the record first and turn the switch on after:
+
+1. **The record.** The name's A record to the central's server, without the CDN's
+   proxy and without an AAAA record. What went through the CDN stops answering here.
+2. **Wait for the central's server to resolve it.** Its resolvers can answer the old
+   and the new address by turns for a while (from half a minute to two minutes in a
+   rehearsal):
+   ```bash
+   for ns in $(awk '/^nameserver/{print $2}' /etc/resolv.conf); do
+     dig +short @"$ns" NAME
+   done
+   ```
+   Every line is the central's address.
+3. **The switch.** Set the public name, turn **One path, without a CDN** on and save;
+   deploy the central. The direct path's job that follows the deployment checks the
+   name and moves the URLs (25 seconds in the rehearsal), the reconciliation re-applies
+   the agents, and a module that sends the URLs to other panels sends them. In the
+   rehearsal every agent wrote under the name about two minutes after the record
+   changed. **Check now** is needed only when that check failed on DNS.
+
+What writes through the CDN has no path from step 1 until its agents are re-applied,
+and their queue for the earlier URL is not carried to the new one.
 
 ## A server installed without the authority, or with another
 
@@ -130,6 +205,18 @@ server's agents refuse the central and queue: do it at a quiet hour, all at once
 ## Rollback
 
 Turn **One path, without a CDN** off and save. The panel puts back the URLs it used
-before the name (kept in `incubacloud.metrics_central_legacy_urls`) and the
-reconciliation re-applies every server's agents to them. Those paths must still exist:
-the public name on 443, a direct name, or a hand-written gateway.
+before the name (kept in `incubacloud.metrics_central_legacy_urls`), the
+reconciliation re-applies every server's agents to them, and a deployment of the
+central is queued at once. That deployment matters: until it removes the name's
+certificate and its TLS document from the proxy, the proxy answers the name with
+the panel's certificate on 443 too, and a CDN in front refuses it. Then:
+
+- Where the name went through a CDN, put the CDN's proxy back on its record.
+- Where the public name was empty before the switch (the central reached through a
+  route on 443 kept by hand), empty it in the same save. With a name and the switch
+  off, the deployment publishes the central on 443 under it, and may obtain an ACME
+  certificate for it: the certificate that gets in the way when the switch is turned
+  on again (above).
+
+The earlier paths must still exist: the public name on 443, a direct name, or a
+route kept by hand. In a rehearsal the way back took about three minutes.
