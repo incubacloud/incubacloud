@@ -92,6 +92,7 @@ case "$1 $2" in
     "ps -q") [ -n "${FAKE_NO_PROXY:-}" ] || echo proxyid ;;
     "inspect -f") echo "${FAKE_PROXY_MAC:-02:69:63:00:00:01}" ;;
     "info --format") echo "${FAKE_BACKEND:-iptables}" ;;
+    "compose version") echo "${FAKE_COMPOSE_VERSION:-5.7.0}" ;;
 esac
 STUB
     cat > "$TMP/bin/id" <<'STUB'
@@ -222,6 +223,18 @@ expected_chain() {
     [ "$(cat "$IPT_DIR/DOCKER-USER")" = "-j RETURN" ]
     FAKE_BACKEND=nftables run bash "$SCRIPT" apply
     [[ "${lines[-1]}" == "IC_SHARED_GUARD_UNSUPPORTED Docker writes its rules with nftables: FORWARD does not jump to DOCKER-USER" ]]
+}
+
+@test "a Compose too old for the proxy's address: unsupported, not a Full Setup away" {
+    FAKE_COMPOSE_VERSION=v2.23.3 FAKE_PROXY_MAC=02:42:ac:14:00:02 run bash "$SCRIPT" apply
+    [ "$status" -eq 0 ]
+    [[ "${lines[-1]}" == "IC_SHARED_GUARD_UNSUPPORTED Docker Compose 2.23.3 cannot fix the proxy's address on inverseproxy_shared (2.24 or later)" ]]
+    [ ! -e "$IPT_DIR/IC-SHARED" ]
+    # Recent enough, or not readable: the address is what to fix.
+    for version in 2.24.0 5.7.0 ""; do
+        FAKE_COMPOSE_VERSION="$version" FAKE_PROXY_MAC=02:42:ac:14:00:02 run bash "$SCRIPT" apply
+        [[ "${lines[-1]}" == "IC_SHARED_GUARD_OPEN the proxy's address on inverseproxy_shared is 02:42:ac:14:00:02"* ]]
+    done
 }
 
 @test "two applies at once leave the chain whole" {

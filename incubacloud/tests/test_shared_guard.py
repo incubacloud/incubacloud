@@ -31,6 +31,7 @@ _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "data" / "traefik" / "inverseproxy.yaml"
 _TEARDOWN = _ROOT / "ansible" / "playbooks" / "host_teardown.yml"
 _SCRIPT = _ROOT / "scripts" / "shared_guard.sh"
+_PROXY_START = _ROOT / "scripts" / "proxy_start.sh"
 
 #: A compose file stored before 1.0.228, with the proxy's networks as a map.
 _LEGACY = (
@@ -80,6 +81,10 @@ class TestTheProxyHasAFixedAddress(TransactionCase):
         self.assertIn(
             f'MAC="${{IC_PROXY_SHARED_MAC:-{PROXY_SHARED_MAC}}}"',
             _SCRIPT.read_text(),
+        )
+        # proxy_start.sh drops that same line under a Compose too old.
+        self.assertIn(
+            f'proxy_mac="{PROXY_SHARED_MAC}"', _PROXY_START.read_text(),
         )
 
     def test_a_stored_copy_gains_it(self):
