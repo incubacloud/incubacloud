@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { SessionsAccess } from "@incubacloud/components/sessions_access/sessions_access";
 
@@ -60,7 +60,7 @@ const SESSIONS = [
 ];
 
 describe("SessionsAccess", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a close says why, in the words of the page", () => {
         expect(String(SessionsAccess.reasonLabel("country"))).toBe("It was used from another country");

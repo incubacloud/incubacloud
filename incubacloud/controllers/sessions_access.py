@@ -10,7 +10,7 @@ from odoo.http import request
 
 class SessionsAccess(http.Controller):
 
-    @http.route("/cloud/sessions/get", type="jsonrpc", auth="user", methods=["POST"])
+    @http.route("/cloud/sessions/get", type="json", auth="user", methods=["POST"])
     def cloud_sessions_get(self):
         """Return what "Sessions and access" shows the signed-in user.
 
@@ -19,7 +19,7 @@ class SessionsAccess(http.Controller):
         return {"ok": True, **request.env.user._ic_sessions_and_access()}
 
     @http.route(
-        "/cloud/sessions/sign_out_everywhere", type="jsonrpc", auth="user",
+        "/cloud/sessions/sign_out_everywhere", type="json", auth="user",
         methods=["POST"],
     )
     def cloud_sessions_sign_out_everywhere(self):
@@ -38,7 +38,7 @@ class SessionsAccess(http.Controller):
         request.session.logout(keep_db=True)
         return {"ok": True, "redirect": "/web/login"}
 
-    @http.route("/cloud/sessions/revoke", type="jsonrpc", auth="user", methods=["POST"])
+    @http.route("/cloud/sessions/revoke", type="json", auth="user", methods=["POST"])
     def cloud_sessions_revoke(self, kind, door_id):
         """Revoke one of the user's ways in.
 

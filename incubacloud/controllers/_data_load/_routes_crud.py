@@ -2311,7 +2311,7 @@ class CrudMixin:
             )
         return {'ok': True, 'job_id': job_id}
 
-    @http.route(['/cloud/monitoring/empty_central'], type='jsonrpc',
+    @http.route(['/cloud/monitoring/empty_central'], type='json',
                 auth='user')
     def cloud_monitoring_empty_central(self, host_id):
         """Start an empty central on *host_id*, leaving the history behind.
@@ -2358,7 +2358,7 @@ class CrudMixin:
         })
         return {'ok': True, 'job_id': job_id}
 
-    @http.route(['/cloud/monitoring/retire_central'], type='jsonrpc',
+    @http.route(['/cloud/monitoring/retire_central'], type='json',
                 auth='user')
     def cloud_monitoring_retire_central(self):
         """Forget the metrics central, after the person confirmed.
@@ -2373,7 +2373,7 @@ class CrudMixin:
             return {'ok': False, 'error': exc.args[0]}
         return {'ok': True, 'host': name}
 
-    @http.route(['/cloud/monitoring/central_sizing'], type='jsonrpc',
+    @http.route(['/cloud/monitoring/central_sizing'], type='json',
                 auth='user')
     def cloud_monitoring_central_sizing(self, host_id):
         """Say whether the central fits on *host_id*: a note, not a refusal.
