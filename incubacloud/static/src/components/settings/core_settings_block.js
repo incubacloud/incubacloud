@@ -31,6 +31,7 @@ export const CORE_PARTS = Object.freeze({
         "github_event_truncate_days", "github_event_retention_days",
         "odoo_log_archive_days", "container_log_max_size", "container_log_max_file",
         "log_download_max_mb", "log_search_max_files", "log_search_timeout_s",
+        "cron_heartbeat_url",
     ],
     edge: ["trusted_proxy_ranges"],
     monitoring: [
@@ -66,6 +67,7 @@ const DEFAULTS = {
     log_download_max_mb: 64,
     log_search_max_files: 60,
     log_search_timeout_s: 30,
+    cron_heartbeat_url: "",
     trusted_proxy_ranges: "",
     metrics_enabled: false,
     metrics_central_url: "",

@@ -42,6 +42,7 @@ SAVE_GENERAL_PARAMS = (
     "metrics_central_write_access",
     "move_frozen_source_hours",
     "move_cut_alert_seconds",
+    "cron_heartbeat_url",
 )
 #: What ``save_core_rate_limits`` accepts.
 CORE_RATE_KEYS = (
@@ -62,10 +63,13 @@ GITHUB_APP_KEYS = ("app_id", "installation_id")
 MCP_RATE_KEY = "rate_limit_mcp_user_per_min"
 MCP_KEYS = ("mcp_oauth_issuer", "mcp_resource")
 #: General settings that always ask for approval (D2). Who may write to
-#: the central opens its port to every address when set to ``anyone``.
+#: the central opens its port to every address when set to ``anyone``; the
+#: heartbeat URL emptied or changed silences the check that would say the
+#: scheduled actions stopped.
 SENSITIVE_GENERAL = (
     "audit_log_retention_days", "host_session_retention_days",
     "trusted_proxy_ranges", "metrics_central_write_access",
+    "cron_heartbeat_url",
 )
 #: General settings that ask for approval when lowered: with fewer hours the
 #: copies a move froze on their old servers are removed sooner (0: at the

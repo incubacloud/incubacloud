@@ -2,7 +2,8 @@
 
 Everywhere else in this codebase the remote host is ours or a fixed
 vendor (``api.github.com``, ``api.telegram.org``). Notification webhooks
-are the exception: the URL comes from a user, and the request leaves the
+and the heartbeat of the scheduled actions are the exception: the URL
+comes from a user, and the request leaves the
 manager — a machine that reaches the cloud metadata service, its own
 loopback Odoo and the internal Postgres. Measured on 2026-08-22 from the
 production container: 169.254.169.254:80, 127.0.0.1:8069 and db:5432 all
@@ -225,6 +226,47 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         )
 
 
+def _exchange(method, url, body, headers, timeout):
+    """Send one *method* request to *url* and drop the answer, or refuse to.
+
+    The address is validated and pinned here, whatever was checked
+    before; the answer is read up to ``_MAX_RESPONSE_BYTES`` and thrown
+    away.
+
+    :param str method: ``POST`` or ``GET``.
+    :param url: destination.
+    :param body: request body as bytes, or None.
+    :param headers: headers sent as they are.
+    :param timeout: seconds for each blocking step of the exchange.
+    :raises OutboundError: the destination was refused, or the exchange
+        failed.
+    """
+    parts = validate_url(url)
+    host = parts.hostname
+    port = parts.port or _ALLOWED_PORT
+    pinned = _resolve_public(host, port)
+    path = parts.path or '/'
+    if parts.query:
+        path = f'{path}?{parts.query}'
+    conn = _PinnedHTTPSConnection(
+        host,
+        pinned,
+        port=port,
+        timeout=timeout,
+        context=ssl.create_default_context(),
+    )
+    try:
+        conn.request(method, path, body=body, headers=headers)
+        response = conn.getresponse()
+        # Drain a bounded amount so the socket closes cleanly, then
+        # drop it. The caller learns nothing about the far side.
+        response.read(_MAX_RESPONSE_BYTES)
+    except OSError as exc:
+        raise OutboundError(f'delivery to {host} failed') from exc
+    finally:
+        conn.close()
+
+
 def post_json(url, payload, headers=None, timeout=_DEFAULT_TIMEOUT):
     """POST *payload* to *url*, or refuse to.
 
@@ -237,28 +279,20 @@ def post_json(url, payload, headers=None, timeout=_DEFAULT_TIMEOUT):
     :raises OutboundError: the destination was refused, or the exchange
         failed. Callers log it; nothing from the remote end is included.
     """
-    parts = validate_url(url)
-    host = parts.hostname
-    port = parts.port or _ALLOWED_PORT
-    pinned = _resolve_public(host, port)
-    path = parts.path or '/'
-    if parts.query:
-        path = f'{path}?{parts.query}'
     sent = {'Content-Type': 'application/json', **(headers or {})}
-    conn = _PinnedHTTPSConnection(
-        host,
-        pinned,
-        port=port,
-        timeout=timeout,
-        context=ssl.create_default_context(),
-    )
-    try:
-        conn.request('POST', path, body=payload, headers=sent)
-        response = conn.getresponse()
-        # Drain a bounded amount so the socket closes cleanly, then
-        # drop it. The caller learns nothing about the far side.
-        response.read(_MAX_RESPONSE_BYTES)
-    except OSError as exc:
-        raise OutboundError(f'delivery to {host} failed') from exc
-    finally:
-        conn.close()
+    _exchange('POST', url, payload, sent, timeout)
+
+
+def ping(url, timeout=_DEFAULT_TIMEOUT):
+    """GET *url* and drop the answer: a heartbeat, or refuse to send it.
+
+    What a heartbeat service (healthchecks.io, Better Stack, Cronitor...)
+    takes as "still alive". The same checks as :func:`post_json`, so the
+    URL must be https on 443 to a public address.
+
+    :param url: destination, validated here.
+    :param timeout: seconds for each blocking step of the exchange.
+    :raises OutboundError: the destination was refused, or the exchange
+        failed. Nothing from the remote end is included.
+    """
+    _exchange('GET', url, None, {}, timeout)

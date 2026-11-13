@@ -26,7 +26,7 @@ from odoo.addons.queue_job.exception import JobError, RetryableJobError
 
 from ..github.http_utils import safe_urlopen
 from ..mail_layout import wrap_in_mail_layout
-from ..net.outbound import post_json
+from ..net.outbound import OutboundError, ping, post_json
 from ._concurrency import read_committed_cursor, run_after_commit
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
@@ -3786,6 +3786,11 @@ class CloudJob(models.Model):
     _QUEUE_HELD_ALERT_MINUTES = 30
     #: The alert of a queue held for a server that does not answer.
     _QUEUE_HELD_ALERT_CODE = "job_queue_held_unreachable"
+    #: Seconds the heartbeat's request may wait at each step (connect,
+    #: send, answer): it holds the cron thread every scheduled action
+    #: waits for, and a heartbeat service answers in well under one
+    #: (13-nov-2026).
+    _CRON_HEARTBEAT_TIMEOUT_S = 5
 
     @staticmethod
     def _worker_lost_message(env):
@@ -3846,6 +3851,10 @@ class CloudJob(models.Model):
         instead (``_let_go_unclosed_checkpoint``). A pass starts no
         clean-up once ``_RECONCILE_HOOK_BUDGET_S`` have gone by.
 
+        A pass that ends, whatever it closed, pings the heartbeat of the
+        scheduled actions (``_ping_cron_heartbeat``); one that raises
+        does not.
+
         Assumes the database lets idle transactions be
         (``idle_in_transaction_session_timeout`` off): cut off, a live
         job's lock is released and queue_job takes it for dead
@@ -3898,7 +3907,41 @@ class CloudJob(models.Model):
                 )
             if tried == "stopped_parked":
                 self._let_go_unclosed_checkpoint(job_id)
+        self._ping_cron_heartbeat()
         return closed
+
+    @api.model
+    def _ping_cron_heartbeat(self):
+        """Tell the heartbeat service of Settings that a pass ended.
+
+        With one cron thread, a pass of any scheduled action that never
+        ends holds all the others, the ones that would raise an alert
+        included: a service outside the panel that expects this ping
+        every few minutes is what notices the silence. The reconciliation
+        sends it because it runs every 5 minutes and is the scheduled
+        action a lost job waits for. Nothing is sent without a URL
+        (``cloud.settings.cron_heartbeat_url``), and a ping that fails is
+        logged and never fails the pass: the next one tries again.
+
+        :return: whether the ping was sent
+        :rtype: bool
+        """
+        url = (
+            self.env["cloud.settings"]._get_system().cron_heartbeat_url or ""
+        ).strip()
+        if not url:
+            return False
+        try:
+            ping(url, timeout=self._CRON_HEARTBEAT_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - never fails the pass
+            # Not the URL: it is the credential of the check.
+            _logger.warning(
+                "cloud.job: the heartbeat of the scheduled actions was not"
+                " sent: %s", exc if isinstance(exc, OutboundError)
+                else type(exc).__name__,
+            )
+            return False
+        return True
 
     @api.model
     def _lost_job_ids(self):

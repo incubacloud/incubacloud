@@ -42,6 +42,7 @@ from ...models.cloud_settings import (
     LOG_SEARCH_TIMEOUT_S_DEFAULT,
     ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
 )
+from ...net.outbound import OutboundError, validate_url
 from .._client_ip import client_ip
 from .._safe_error import safe_error_response
 from ._helpers import (
@@ -1919,6 +1920,7 @@ class CrudMixin:
             'log_download_max_mb': settings.log_download_max_mb or 0,
             'log_search_max_files': settings.log_search_max_files or 0,
             'log_search_timeout_s': settings.log_search_timeout_s or 0,
+            'cron_heartbeat_url': settings.cron_heartbeat_url or '',
             # ── Observability ──────────────────────────────────────────
             # The remote-write token is write-only, like the GitHub PAT:
             # it is a fleet-wide write credential, so the browser only
@@ -1996,6 +1998,7 @@ class CrudMixin:
         metrics_collect_pg=None,
         metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
         metrics_central_single_path=None, metrics_central_write_access=None,
+        cron_heartbeat_url=None,
     ):
         """Save the settings a Settings section sent, and only those.
 
@@ -2146,6 +2149,25 @@ class CrudMixin:
                             })
                     except ValidationError as exc:
                         raise _SettingRefused(name, exc) from exc
+
+                # ── Heartbeat of the scheduled actions ────────────────────
+                # Empty turns it off. Checked here so a typo is said under
+                # the field; ``ping`` checks it again at every send, as DNS
+                # may change meanwhile (see :mod:`...net.outbound`).
+                if cron_heartbeat_url is not None:
+                    url = str(cron_heartbeat_url or '').strip()
+                    if url:
+                        try:
+                            validate_url(url)
+                        except OutboundError as exc:
+                            raise _SettingRefused(
+                                'cron_heartbeat_url', ValidationError(_(
+                                    'This URL cannot be used: %s.', exc,
+                                )),
+                            ) from exc
+                    request.env['cloud.settings'].sudo()._get().write({
+                        'cron_heartbeat_url': url or False,
+                    })
 
                 # ── Observability ─────────────────────────────────────────
                 # Each field is written only when the client actually sent it, so

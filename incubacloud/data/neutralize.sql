@@ -139,7 +139,15 @@ END $$;
 -- superuser may install there, and random() holds 48 bits.
 DELETE FROM ir_config_parameter WHERE key = 'database.secret';
 
--- 10. Checkpoints of jobs with steps run apart on a server (1.0.225): a row
+-- 10. The heartbeat of the scheduled actions (1.0.228): the copy's pings
+-- would tell production's heartbeat check that production is alive. Newer
+-- than older copies.
+DO $$ BEGIN
+    UPDATE cloud_settings SET cron_heartbeat_url = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
+
+-- 11. Checkpoints of jobs with steps run apart on a server (1.0.225): a row
 -- says the job may have something running on a server of production's,
 -- which the copy's reconciliation would go and stop. Its plan holds
 -- commands with secrets too. Newer than older copies.
