@@ -489,3 +489,93 @@ ic_db_load_args() {
             ;;
     esac
 }
+
+# ── The mark of a rebuild left unapplied (#96) ──────────────────────────
+#
+# ``copier update`` rewrites the stack's files in place, and a rebuild's
+# image build retags the image, before the boot test, the module update
+# and the restart put them in service. A rebuild that ends between the
+# two (stopped, failed, its worker dead) leaves the instance running its
+# previous build over files and an image nothing has tried, and whatever
+# recreates its containers would start them. So ``rebuild.sh
+# copier-update`` lays a mark in the instance's directory right before
+# copier, and the rebuild's restart lifts it (``rebuild.sh
+# clear-unapplied``). The mark holds three lines, ``job=<id>``,
+# ``kind=build|files`` and ``at=<UTC>``: ``build`` from a job that builds
+# the image, ``files`` from one that only rewrites files (a plan change).
+# Only a ``build`` mark holds anything back: what recreates containers
+# (compose_op.sh), what boots the image apart (tenant_push.sh), and, from
+# the panel, restores and moves. ``rebuild.sh clear-unapplied <dir>``
+# without a job is the way out by hand (docs/runbooks/RB-42).
+
+#: The mark's name, in the instance's directory; kept out of the
+#: project's repository (``ic_git_exclude``).
+IC_UNAPPLIED_FILE=.incubacloud-unapplied
+#: The exit of a script that refused to go on because of a ``build`` mark
+#: (COMPOSE_OP_EXIT_UNAPPLIED in models/abstract_executor.py).
+IC_EXIT_UNAPPLIED=26
+#: Where the way out by hand is written down.
+IC_UNAPPLIED_DOC="docs/runbooks/RB-42-rebuild-left-unapplied.md"
+
+# Read the mark of <dir> into IC_UNAPPLIED_JOB and IC_UNAPPLIED_KIND.
+# Returns 0 when there is one, 1 when there is none. A mark that cannot
+# be read, or names no kind this library knows, is taken for a
+# ``build`` one: it holds back rather than let an untried image through.
+#
+# Usage: ic_unapplied_read <dir>
+ic_unapplied_read() {
+    local file="$1/$IC_UNAPPLIED_FILE" line
+    IC_UNAPPLIED_JOB=""
+    IC_UNAPPLIED_KIND=""
+    [ -e "$file" ] || return 1
+    if [ -r "$file" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in
+                job=*) IC_UNAPPLIED_JOB="${line#job=}" ;;
+                kind=*) IC_UNAPPLIED_KIND="${line#kind=}" ;;
+            esac
+        done < "$file"
+    fi
+    case "$IC_UNAPPLIED_KIND" in
+        build|files) ;;
+        *) IC_UNAPPLIED_KIND=build ;;
+    esac
+    return 0
+}
+
+# Print what a ``build`` mark read by ic_unapplied_read means, and the
+# ways out, as one sentence for the job log.
+ic_unapplied_message() {
+    printf 'rebuild #%s did not apply what it left on this server (rewritten files and an image neither boot-tested nor applied to the database): rebuild the instance first. To use those files as they are, the mark can be lifted by hand with "rebuild.sh clear-unapplied <dir>" (%s).' \
+        "${IC_UNAPPLIED_JOB:-?}" "$IC_UNAPPLIED_DOC"
+}
+
+# Exit IC_EXIT_UNAPPLIED, saying why, when <dir> holds a ``build`` mark;
+# return 0 otherwise. A ``files`` mark holds nothing back.
+#
+# Usage: ic_unapplied_refuse <dir>
+ic_unapplied_refuse() {
+    ic_unapplied_read "$1" || return 0
+    [ "$IC_UNAPPLIED_KIND" = build ] || return 0
+    printf '[incubacloud] ERROR: %s\n' "$(ic_unapplied_message)" >&2
+    exit "$IC_EXIT_UNAPPLIED"
+}
+
+# Lift the mark of <dir>: only when it is <job>'s, or whichever it is
+# without a job. Never fails: a mark that cannot be removed is warned
+# of, and holds back as before.
+#
+# Usage: ic_unapplied_clear <dir> [<job>]
+ic_unapplied_clear() {
+    local dir="$1" job="${2:-}"
+    ic_unapplied_read "$dir" || return 0
+    if [ -n "$job" ] && [ "$IC_UNAPPLIED_JOB" != "$job" ]; then
+        return 0
+    fi
+    if rm -f "$dir/$IC_UNAPPLIED_FILE"; then
+        ic_log "lifted the mark of rebuild #${IC_UNAPPLIED_JOB:-?} (${IC_UNAPPLIED_KIND})"
+    else
+        ic_warn "could not remove $dir/$IC_UNAPPLIED_FILE: the mark of rebuild #${IC_UNAPPLIED_JOB:-?} stays"
+    fi
+    return 0
+}

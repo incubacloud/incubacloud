@@ -15,6 +15,9 @@
 # ``STUB_LINK6`` and its loopback's; with ``STUB_EXEC_FAILS`` set they
 # cannot be read, and with ``STUB_TIMEOUT`` set the read times out.
 # ``STUB_STOP_FAILS`` makes a stop of the whole stack fail with 5.
+# The project's containers, one-offs included, are ``STUB_PROJECT``'s
+# ``service|oneoff`` lines (those of ``STUB_SERVICES`` unless set), and
+# with ``STUB_PS_A_FAILS`` set they cannot be listed.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/compose_op.sh"
@@ -63,6 +66,17 @@ case "$*" in
             route6 ff000000000000000000000000000000 08 "$iface"
         done
         route6 00000000000000000000000000000001 80 lo
+        exit 0 ;;
+    "ps -a --filter label=com.docker.compose.project.working_dir="*)
+        if [ -n "${STUB_PS_A_FAILS:-}" ]; then
+            echo "stub: cannot list the project's containers" >&2
+            exit 1
+        fi
+        if [ -n "${STUB_PROJECT+x}" ]; then
+            printf '%b' "$STUB_PROJECT"
+        else
+            printf '%b' "${STUB_SERVICES:-}" | awk 'NF { print $0 "|False" }'
+        fi
         exit 0 ;;
     "compose stop")
         echo "docker $*" >> "$DOCKER_CALLS"
@@ -538,4 +552,142 @@ left_behind() {
     run bash "$SCRIPT" "$HOME/project/inst" stop
     [ "$status" -eq 0 ]
     [ "$(cat "$CONFIG_READS")" -eq 0 ]
+}
+
+
+# ── a rebuild left unapplied (#96) ──────────────────────────────────────
+
+# The mark a rebuild lays before copier, of kind <kind> (build unless
+# given), and a stack whose containers are the services its compose
+# declares.
+_marked() {
+    printf 'job=400\nkind=%s\nat=2026-11-13T12:00:00Z\n' "${1:-build}" \
+        > "$HOME/project/inst/.incubacloud-unapplied"
+    export STUB_SERVICES="odoo\ndb\nsmtp\n"
+    export STUB_RUNNING="odoo\ndb\nsmtp\n"
+}
+
+@test "up over a rebuild left unapplied starts the previous build and says so" {
+    _marked
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 27 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start" ]
+    [[ "$output" == *"rebuild #400"* ]]
+    [[ "$output" == *"previous build"* ]]
+}
+
+@test "up of named services over a rebuild left unapplied starts them" {
+    _marked
+    run bash "$SCRIPT" "$HOME/project/inst" up odoo
+    [ "$status" -eq 27 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start odoo" ]
+}
+
+@test "start over a rebuild left unapplied starts and says so" {
+    _marked
+    run bash "$SCRIPT" "$HOME/project/inst" start
+    [ "$status" -eq 27 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start" ]
+}
+
+@test "up with a service of the new compose that has no container refuses, touching nothing" {
+    _marked
+    export STUB_PROJECT="odoo|False\ndb|False\n"
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 26 ]
+    [ ! -s "$DOCKER_CALLS" ]
+    [[ "$output" == *"smtp"* ]]
+    [[ "$output" == *"rebuild #400"* ]]
+    [[ "$output" == *"clear-unapplied"* ]]
+}
+
+@test "up with a container the new compose no longer names refuses, touching nothing" {
+    _marked
+    export STUB_PROJECT="odoo|False\ndb|False\nsmtp|False\nodoo_net_setup|False\n"
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 26 ]
+    [ ! -s "$DOCKER_CALLS" ]
+    [[ "$output" == *"odoo_net_setup"* ]]
+}
+
+@test "a one-off container of the project is not taken for a service" {
+    _marked
+    export STUB_PROJECT="odoo|False\ndb|False\nsmtp|False\nodoo|True\nbackup|True\n"
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 27 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start" ]
+}
+
+@test "up over a rebuild left unapplied refuses when the compose cannot be read" {
+    _marked
+    export STUB_CONFIG_FAILS=2
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 26 ]
+    [ ! -s "$DOCKER_CALLS" ]
+}
+
+@test "up over a rebuild left unapplied refuses when the containers cannot be listed" {
+    _marked
+    export STUB_PS_A_FAILS=1
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 26 ]
+    [ ! -s "$DOCKER_CALLS" ]
+}
+
+@test "restart over a rebuild left unapplied restarts and says so" {
+    _marked
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$status" -eq 27 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose stop
+docker compose start" ]
+}
+
+@test "restart with an orphan over a rebuild left unapplied refuses before the stop" {
+    _marked
+    export STUB_PROJECT="odoo|False\ndb|False\nsmtp|False\nbackup|False\n"
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$status" -eq 26 ]
+    [ ! -s "$DOCKER_CALLS" ]
+}
+
+@test "the previous build's 27 goes before the unchecked 24" {
+    _marked
+    export STUB_SERVICES="odoo\ndb\nsmtp\nodoo_net_setup\n"
+    export STUB_PS_FAILS=1
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 27 ]
+    [[ "$output" == *"could not be checked"* ]]
+}
+
+@test "a stop's failure in a restart goes before the previous build's 27" {
+    _marked
+    export STUB_STOP_FAILS=1
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$status" -eq 5 ]
+}
+
+@test "stop and down ignore the mark" {
+    _marked
+    run bash "$SCRIPT" "$HOME/project/inst" stop
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose stop" ]
+    : > "$DOCKER_CALLS"
+    run bash "$SCRIPT" "$HOME/project/inst" down
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose down --rmi all -v --remove-orphans" ]
+}
+
+@test "a plan change's mark holds nothing back: up recreates as before" {
+    _marked files
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose up -d" ]
+}
+
+@test "without a mark up recreates as before, never listing the project" {
+    export STUB_SERVICES="odoo\ndb\nsmtp\n"
+    export STUB_PS_A_FAILS=1
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose up -d" ]
 }

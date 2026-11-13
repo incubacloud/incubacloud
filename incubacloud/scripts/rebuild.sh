@@ -3,8 +3,10 @@
 #
 # Usage:
 #   rebuild.sh commit-dirty     <dir> <timestamp>
-#   rebuild.sh copier-update    <dir> <answers_file>
+#   rebuild.sh copier-update    <dir> <answers_file> [<vcs_ref> [<job> <kind>]]
 #   rebuild.sh resolve-conflicts <dir>
+#   rebuild.sh check-unapplied  <dir>
+#   rebuild.sh clear-unapplied  <dir> [<job>]
 #   rebuild.sh boot-test        <dir> <inst_id> <project> <pg_user> <pg_version> <dbname> [<cap_s>]
 #
 # Rebuild subclasses deploy and reuses deploy.sh / strip_compose_service.sh
@@ -39,6 +41,12 @@ op="$1"
 dir="$(ic_expand_home "$2")"
 shift 2
 
+# A directory that is not there holds no mark: a restore or a move asks
+# before anything else, whatever the directory's state.
+if [ "$op" = check-unapplied ] && [ ! -d "$dir" ]; then
+    ic_log "directory $dir not found: no mark of a rebuild left unapplied."
+    exit 0
+fi
 [ -d "$dir" ] || ic_die "instance directory not found: $dir"
 cd "$dir"
 
@@ -57,6 +65,10 @@ case "$op" in
         # working files are no project's either.
         ic_git_exclude_logs "$dir"
         ic_git_exclude "$dir" .walg/
+        # The mark of a rebuild left unapplied (copier-update below): the
+        # panel's, never the project's, and committed it would come back
+        # with every checkout.
+        ic_git_exclude "$dir" "$IC_UNAPPLIED_FILE"
         # Secrets, which a commit keeps for good: the SSH directory
         # doodba copies into the image as root's ~/.ssh (where a deploy
         # key goes), repos.yaml with the repository tokens the panel
@@ -124,8 +136,21 @@ case "$op" in
 
     copier-update)
         ic_require_args 1 "$#" \
-            "rebuild.sh copier-update <dir> <answers_file> [vcs_ref]"
+            "rebuild.sh copier-update <dir> <answers_file> [<vcs_ref> [<job> <kind>]]"
         answers="$1"; vcs_ref="${2:-}"
+        # The job that runs it and what it does, ``build`` (it builds the
+        # image after) or ``files`` (it only rewrites files): with both,
+        # the mark of a rebuild left unapplied is laid before copier.
+        # Without them (the warm claim, a rebuild planned before the mark
+        # existed and resumed after) none is laid or read, as before.
+        job="${3:-}"; kind="${4:-}"
+        if [ -n "$job" ] || [ -n "$kind" ]; then
+            [[ "$job" =~ ^[0-9]+$ ]] || ic_die "copier-update: not a job id: $job"
+            case "$kind" in
+                build|files) ;;
+                *) ic_die "copier-update: unknown kind: $kind (expected build or files)" ;;
+            esac
+        fi
         export PATH="$HOME/.local/bin:$PATH"
         git config --global --get init.defaultBranch >/dev/null 2>&1 \
             || git config --global init.defaultBranch master
@@ -137,6 +162,32 @@ case "$op" in
         if [ -n "$dirty" ]; then
             changed="$(sed -n '1,10{s/^...//;p}' <<<"$dirty" | tr '\n' ' ')"
             ic_die "the project changed after the rebuild's commit, and copier refuses a dirty tree: ${changed% }"
+        fi
+        # The mark, right before copier rewrites anything: a rebuild that
+        # stops before here leaves the files as they were, and none. In a
+        # project without a repository copier update refuses to run and
+        # rewrites nothing, so none either.
+        if [ -n "$job" ] && [ -d "$dir/.git" ]; then
+            # Kept out of the repository first, and checked: a mark git
+            # sees would make copier refuse this tree as dirty, and every
+            # rebuild after it, the mark staying.
+            ic_git_exclude "$dir" "$IC_UNAPPLIED_FILE"
+            git check-ignore -q "$IC_UNAPPLIED_FILE" \
+                || ic_die "could not keep $IC_UNAPPLIED_FILE out of the repository (check $dir/.git/info/exclude and the warnings above): nothing was rewritten"
+            if ic_unapplied_read "$dir" && [ "$IC_UNAPPLIED_JOB" != "$job" ] \
+                && [ "$IC_UNAPPLIED_KIND" = build ] && [ "$kind" = files ]; then
+                # Only a job that builds and tries the image may take the
+                # place of a rebuild's mark: the panel decides before it
+                # gets here (the plan change's own first step); this is
+                # the second lock.
+                printf '[incubacloud] ERROR: %s\n' "$(ic_unapplied_message)" >&2
+                exit "$IC_EXIT_UNAPPLIED"
+            fi
+            mark_tmp="$dir/$IC_UNAPPLIED_FILE.tmp.$$"
+            printf 'job=%s\nkind=%s\nat=%s\n' "$job" "$kind" \
+                "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$mark_tmp"
+            mv -f "$mark_tmp" "$dir/$IC_UNAPPLIED_FILE"
+            ic_log "marked the instance as rewritten and not applied yet (job $job, $kind)"
         fi
         # Unpinned, ``copier update`` moves the project to the template's
         # latest revision — and rebuild runs on every push, so upstream
@@ -151,6 +202,25 @@ case "$op" in
             ic_copier update --defaults --trust \
                 --data-file "$answers" "$dir"
         fi
+        ;;
+
+    check-unapplied)
+        # 0 without a mark; IC_EXIT_UNAPPLIED with one, its job and kind
+        # on one line the panel reads (``parse_unapplied_mark``).
+        if ic_unapplied_read "$dir"; then
+            printf 'IC_UNAPPLIED job=%s kind=%s\n' \
+                "${IC_UNAPPLIED_JOB:-?}" "$IC_UNAPPLIED_KIND"
+            exit "$IC_EXIT_UNAPPLIED"
+        fi
+        ic_log "no mark of a rebuild left unapplied in $dir"
+        ;;
+
+    clear-unapplied)
+        # With a job, its own mark only: the restart of the job that laid
+        # it. Without one, whichever is there: the way out by hand, which
+        # leaves the next ``up`` to put the rewritten files and image in
+        # service, as before the mark existed.
+        ic_unapplied_clear "$dir" "${1:-}"
         ;;
 
     resolve-conflicts)
