@@ -650,7 +650,7 @@ class CloudSettings(models.Model):
         if not self._central_single_in_force() or outcome.get("layer") == "dns":
             # Not in use yet, or a record that does not point at the
             # central's server: after a move to another server, the record
-            # is the step left (RB-35). The alert names it.
+            # is the step left (RB-36). The alert names it.
             self._central_dns_pending(outcome)
             return
         if new_state == "failing" and old_state != "failing":

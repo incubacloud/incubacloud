@@ -1,4 +1,4 @@
-# RB-34: The central's single name — pending, down, its certificate, a server left out
+# RB-35: The central's single name — pending, down, its certificate, a server left out
 
 **Severity:** high when `metrics_central_name_down` is raised; warning otherwise.
 **Typical trigger:** `metrics_central_dns_pending`, `metrics_central_name_down`,

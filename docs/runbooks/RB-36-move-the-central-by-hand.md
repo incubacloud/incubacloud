@@ -1,4 +1,4 @@
-# RB-35: Move the central to another server by hand, with its history
+# RB-36: Move the central to another server by hand, with its history
 
 **Severity:** planned.
 **Typical trigger:** the central's server is to be freed, or the central needs a
