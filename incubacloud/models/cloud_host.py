@@ -16,6 +16,7 @@ import yaml
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
+from odoo.sql_db import Cursor
 from odoo.tools import config, file_open
 
 from ..net.hostname import (
@@ -59,6 +60,17 @@ PUBLIC_KEY_COMMENT = "incubacloud"
 #: Geolocation is on for the zone; without it the header is absent and
 #: no country is compared. 12-nov-2026.
 CDN_COUNTRY_HEADERS = {"cf-connecting-ip": "CF-IPCountry"}
+
+
+class HostKeyChanged(asyncssh.HostKeyNotVerifiable):
+    """The server did not present the host's trusted SSH host key.
+
+    Raised by :meth:`CloudHost.get_transport` in place of asyncssh's own
+    ``HostKeyNotVerifiable``, whose words name neither the likely cause
+    nor the way out. A subclass of it, so whatever catches that error,
+    or ``asyncssh.Error``, still does, and none of them takes it for a
+    passing network failure worth a retry.
+    """
 
 
 def parse_memory_to_gb(mem_str):
@@ -303,7 +315,8 @@ class CloudHost(models.Model):
         string="Revoked Key Fingerprint",
         readonly=True,
         copy=False,
-        help="Fingerprint of the key dropped by the last endpoint change. "
+        help="Fingerprint of the key dropped by the last endpoint change, "
+             "or because the server no longer presented it. "
              "Kept so the next capture can be compared against it: an "
              "identical fingerprint proves the machine did not change, "
              "which is the one check that does not depend on an external "
@@ -1810,6 +1823,118 @@ class CloudHost(models.Model):
                 host=host,
             )
 
+    def _revoke_refused_host_key(self, trusted_entry):
+        """Revoke the trusted key a server just failed to present.
+
+        asyncssh refuses the connection during the key exchange, before
+        any credential is sent, and that used to be all: every job and
+        cron on the host failed with ``HostKeyNotVerifiable`` and nobody
+        was told. A server restored from an image, reinstalled or
+        replaced comes back with keys of its own, so the refusal is
+        treated as an endpoint change is: the key is dropped, its
+        fingerprint kept for the next capture to compare against, the
+        refusal audited and ``host_key_revoked`` raised with words of
+        its own (:meth:`_alert_host_key_refused`). "Trust SSH Key" is
+        the way back, and its ``host_key_changed`` the confirmation a
+        person gives; nothing here trusts the key the server presents.
+
+        Written on a cursor of its own, as the job's transaction is
+        rolled back when the job fails. Only *trusted_entry* is revoked:
+        a key trusted since the connection began is left alone. A write
+        that cannot be made (the host's row locked past
+        ``DURABLE_LOCK_TIMEOUT``) is logged; the error is raised anyway.
+
+        :param str trusted_entry: the ``known_hosts`` line the refused
+            connection checked against
+        :returns: the :class:`HostKeyChanged` for the caller to raise
+        """
+        # Here, not at the top: imported with this module it would load the
+        # executors' models before the ones ``models/__init__`` lists first.
+        from .abstract_executor import DURABLE_LOCK_TIMEOUT
+
+        self.ensure_one()
+        fingerprint = self._known_hosts_fingerprint(trusted_entry)
+        _logger.warning(
+            "[host %s] the server did not present the trusted SSH host key %s",
+            self.name, fingerprint or "(none)",
+        )
+        try:
+            with read_committed_cursor(self.env.registry) as cr:
+                if isinstance(cr, Cursor):
+                    cr.execute(
+                        "SET LOCAL lock_timeout = %s", (DURABLE_LOCK_TIMEOUT,),
+                    )
+                durable = api.Environment(cr, self.env.uid, self.env.context)
+                host = durable["cloud.host"].sudo().browse(self.id)
+                if trusted_entry and host.known_hosts_key == trusted_entry:
+                    host.write({
+                        "known_hosts_key": False,
+                        "revoked_key_fingerprint": fingerprint,
+                    })
+                    durable["cloud.audit.log"].sudo().create({
+                        "action": (
+                            "SSH host key revoked: the server presented "
+                            "another key"
+                        ),
+                        "host_id": host.id,
+                        "details": fingerprint,
+                    })
+                    host._alert_host_key_refused()
+        except Exception:  # noqa: BLE001 — the refusal is raised regardless
+            _logger.warning(
+                "[host %s] could not revoke the refused SSH host key",
+                self.name, exc_info=True,
+            )
+        # What this transaction cached is the key just revoked.
+        self.invalidate_recordset(
+            ["known_hosts_key", "revoked_key_fingerprint"], flush=False,
+        )
+        # ``env._``: a bare ``_`` would look for the language through this
+        # frame's ``cr``, the durable cursor already closed.
+        return HostKeyChanged(self.env._(
+            "The server '%(name)s' at %(ip)s:%(port)s did not present its "
+            "trusted SSH host key, so the connection was refused before "
+            "anything was sent. This is expected after the server was "
+            "restored from an image, reinstalled or replaced; if none of "
+            "that happened, something else may be answering at that "
+            "address. Jobs on this host stop until you run 'Trust SSH Key' "
+            "on its page, once you know why the key changed.",
+            name=self.name,
+            ip=self.sudo().ip_address,
+            port=self.sudo().port,
+        ))
+
+    def _alert_host_key_refused(self):
+        """Alert that the server no longer presents the trusted host key.
+
+        The same ``host_key_revoked`` an endpoint change raises — it is
+        the same condition, a host without a trusted key whose jobs stop,
+        and "Trust SSH Key" resolves it the same way — in words that
+        give this cause: the address did not change, the key did.
+        """
+        self.ensure_one()
+        self.env["cloud.alert"].sudo().raise_alert(
+            "host_key_revoked",
+            _(
+                "SSH host key revoked for '%(name)s': the server at "
+                "%(ip)s:%(port)s did not present the trusted key "
+                "(%(fingerprint)s), so the panel refused to connect. This is "
+                "expected after the server was restored from an image, "
+                "reinstalled or replaced; if none of that happened, "
+                "something else may be answering at that address. Jobs on "
+                "this host fail until you run 'Trust SSH Key'. Run it once "
+                "you know why the key changed: the panel then shows the new "
+                "key's fingerprint, which you can compare with the server's "
+                "own, for example from your provider's console.",
+                name=self.name,
+                ip=self.ip_address,
+                port=self.port,
+                fingerprint=self.revoked_key_fingerprint or _("not recorded"),
+            ),
+            level="critical",
+            host=self,
+        )
+
     @api.private
     def ssh_connect_kwargs(self):
         """Return kwargs dict for ``asyncssh.connect()``.
@@ -2251,8 +2376,20 @@ class CloudHost(models.Model):
         # ``ssh_connect_kwargs`` itself, which reads it as its caller.
         connect_kw = self.sudo().ssh_connect_kwargs()
         connect_kw.update(keepalive_interval=30, keepalive_count_max=10)
-        async with asyncssh.connect(**connect_kw) as conn:
-            yield SSHTransport(conn)
+        # The key this connection checks: a refusal revokes this one, never
+        # a key someone trusted while the connection was being opened.
+        trusted = self.sudo().known_hosts_key
+        connected = False
+        try:
+            async with asyncssh.connect(**connect_kw) as conn:
+                connected = True
+                yield SSHTransport(conn)
+        except asyncssh.HostKeyNotVerifiable as exc:
+            # Raised inside the session it is another connection's — a
+            # job reaching a second host from this one's — not this host's.
+            if connected:
+                raise
+            raise self._revoke_refused_host_key(trusted) from exc
 
     # ── Creation: seed default whitelist ───────────────────────────────────
 

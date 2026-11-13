@@ -991,6 +991,149 @@ class TestEndpointChangeRevokesTrust(KnownHostsCase):
         )
 
 
+class TestRefusedKeyRevokesTrust(KnownHostsCase):
+    """A server that no longer presents the trusted key is refused by
+    asyncssh before any credential is sent — and before #89 that was all:
+    every job and cron on the host failed with ``HostKeyNotVerifiable``
+    and nothing told anyone why. A server restored from an image,
+    reinstalled or replaced comes back with new keys, so the refusal is
+    now handled like an endpoint change: the key is revoked with its
+    fingerprint kept for the next capture to compare, and the alert says
+    what happened and what to do."""
+
+    def setUp(self):
+        super().setUp()
+        # The revocation is written on a cursor of its own, which has to
+        # see this test's host.
+        self.registry_enter_test_mode()
+
+    def _alerts(self, host, code="host_key_revoked"):
+        return self.env["cloud.alert"].search(
+            [
+                ("code", "=", code),
+                ("host_id", "=", host.id),
+                ("state", "=", "active"),
+            ]
+        )
+
+    def _connect(self, host, refuse_on_connect=True):
+        """Open ``get_transport`` against a stubbed SSH server.
+
+        :param host: the ``cloud.host`` to connect to
+        :param refuse_on_connect: True to have the key exchange refuse the
+            stored key; False to connect and have the session's body raise
+            the same error, as a nested connection to another host would
+        :returns: the exception ``get_transport`` raised
+        """
+        refusal = asyncssh.HostKeyNotVerifiable(
+            "Host key is not trusted for host 10.0.0.7",
+        )
+
+        def enter(*_args):
+            if refuse_on_connect:
+                raise refusal
+            return MagicMock(spec=asyncssh.SSHClientConnection)
+
+        connection = MagicMock(spec=_ACMWrapper)
+        connection.__aenter__.side_effect = enter
+        connection.__aexit__.return_value = False
+
+        async def _open():
+            async with host.get_transport():
+                if not refuse_on_connect:
+                    raise refusal
+
+        # Not ``assertRaises``: Odoo's rolls its savepoint back when the
+        # exception comes, and with it what the refusal wrote.
+        caught = None
+        with patch.object(asyncssh, "connect", return_value=connection):
+            try:
+                asyncio.run(_open())
+            except asyncssh.HostKeyNotVerifiable as exc:
+                caught = exc
+        self.assertIsNotNone(caught)
+        host.invalidate_recordset()
+        return caught
+
+    def test_a_refused_key_is_revoked_with_its_fingerprint(self):
+        host = self._host()
+        trusted = host.known_hosts_fingerprint
+        self._connect(host)
+        self.assertFalse(host.known_hosts_key)
+        self.assertEqual(host.revoked_key_fingerprint, trusted)
+
+    def test_a_refused_key_raises_a_critical_alert_saying_why(self):
+        host = self._host()
+        trusted = host.known_hosts_fingerprint
+        self._connect(host)
+        alert = self._alerts(host)
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "critical")
+        self.assertIn(trusted, alert.message)
+        self.assertIn("restored", alert.message)
+        self.assertIn("Trust SSH Key", alert.message)
+
+    def test_the_job_is_told_what_happened_and_what_to_do(self):
+        """Still a ``HostKeyNotVerifiable``, so whatever already catches
+        that (or ``asyncssh.Error``) keeps working; its words are the
+        panel's instead of asyncssh's."""
+        host = self._host()
+        exc = self._connect(host)
+        message = str(exc)
+        self.assertIn("kh-host", message)
+        self.assertIn("restored", message)
+        self.assertIn("Trust SSH Key", message)
+        self.assertNotIn("Host key is not trusted", message)
+
+    def test_the_refusal_is_audited_with_the_fingerprint(self):
+        host = self._host()
+        trusted = host.known_hosts_fingerprint
+        self._connect(host)
+        details = self._audit_details(
+            host, "SSH host key revoked: the server presented another key",
+        )
+        self.assertEqual(details, [trusted])
+
+    def test_a_key_trusted_meanwhile_is_kept(self):
+        """Only the key the refused connection checked is revoked: one a
+        person trusted while it was being opened says nothing wrong."""
+        host = self._host()
+        current = host.known_hosts_key
+        other = asyncssh.generate_private_key("ssh-ed25519")
+        checked = (
+            f"10.0.0.7 {other.export_public_key('openssh').decode().strip()}"
+        )
+        exc = host._revoke_refused_host_key(checked)
+        host.invalidate_recordset()
+        self.assertIsInstance(exc, asyncssh.HostKeyNotVerifiable)
+        self.assertEqual(host.known_hosts_key, current)
+        self.assertFalse(self._alerts(host))
+
+    def test_a_refusal_inside_the_session_is_not_this_hosts(self):
+        """A job that opens a second host's connection inside this one's
+        session (a restore from another server) must not revoke this
+        host's key when the other one is refused."""
+        host = self._host()
+        exc = self._connect(host, refuse_on_connect=False)
+        self.assertTrue(host.known_hosts_key)
+        self.assertFalse(self._alerts(host))
+        self.assertIn("Host key is not trusted", str(exc))
+
+    def test_trusting_again_reports_the_new_machine(self):
+        """The way out: Trust SSH Key closes the revocation and, the key
+        being another one, raises the critical change a person confirms."""
+        host = self._host()
+        trusted = host.known_hosts_fingerprint
+        self._connect(host)
+
+        captured = self._capture(host)
+
+        self.assertTrue(captured["changed"])
+        self.assertEqual(captured["previous_fingerprint"], trusted)
+        self.assertFalse(self._alerts(host))
+        self.assertTrue(self._alerts(host, code="host_key_changed"))
+
+
 class TestKeyIdentityOnRecapture(KnownHostsCase):
     """Comparing the newly captured key against the one the endpoint change
     revoked is the only machine-identity check that does not depend on an
