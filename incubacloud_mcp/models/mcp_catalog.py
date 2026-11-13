@@ -104,6 +104,11 @@ CORE_EXCLUDED = {
     "/cloud/instance/slow_routes": _METRICS_BOARD,
     "/cloud/monitoring/empty_central": _CENTRAL_HISTORY,
     "/cloud/monitoring/retire_central": _CENTRAL_HISTORY,
+    "/cloud/monitoring/check_central_name": (
+        "Check now under the central's public name; the direct path's job "
+        "checks it every hour and the observability cron every 15 minutes "
+        "while it is pending."
+    ),
     "/cloud/monitoring/central_sizing": (
         "The note under Where the central runs; list_hosts gives each "
         "server's disk, memory and cores."

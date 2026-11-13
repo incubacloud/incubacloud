@@ -149,7 +149,7 @@
                             </button>
                         </t>
                     </SettingRow>
-                    <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_collect_pg', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
+                    <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_collect_pg', 'metrics_central_public_host', 'metrics_central_single_path', 'metrics_central_write_access', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
                         <SettingField id="'metrics_enabled'" form="form"/>
                         <SettingField id="'metrics_central_url'" form="form"/>
                         <SettingField id="'metrics_remote_write_url'" form="form"/>
@@ -158,7 +158,21 @@
                                       placeholder="state.hasMetricsToken ? undefined : generatedText"/>
                         <SettingField id="'metrics_retention_days'" form="form"/>
                         <SettingField id="'metrics_collect_pg'" form="form"/>
-                        <SettingField id="'metrics_central_public_host'" form="form"/>
+                        <SettingField id="'metrics_central_public_host'" form="form">
+                            <t t-set-slot="after">
+                                <p t-if="centralNameStatus" class="ic-set-note" t-esc="centralNameStatus"/>
+                                <button t-if="state.centralName and state.centralHost" type="button"
+                                        class="rl-btn rl-btn-ghost rl-btn-sm"
+                                        t-att-disabled="state.checkingCentralName || null"
+                                        t-on-click="checkCentralName">
+                                    <t t-if="state.checkingCentralName">Queueing…</t>
+                                    <t t-else="">Check now</t>
+                                </button>
+                            </t>
+                        </SettingField>
+                        <SettingField id="'metrics_central_single_path'" form="form"/>
+                        <SettingField t-if="!state.writeAccessFixed" id="'metrics_central_write_access'" form="form"
+                                      options="writeAccessOptions"/>
                         <SettingField id="'metrics_central_direct_host'" form="form">
                             <t t-set-slot="after">
                                 <p t-if="centralDirectStatus" class="ic-set-note" t-esc="centralDirectStatus"/>

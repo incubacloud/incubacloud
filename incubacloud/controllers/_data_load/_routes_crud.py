@@ -1944,6 +1944,16 @@ class CrudMixin:
             },
             # Write-only, as the remote-write token above.
             'has_acme_dns_token': bool(settings.acme_dns_cloudflare_token),
+            # The single path: its switch, who may write, and what the
+            # central's name answered from its server.
+            'metrics_central_single_path': bool(
+                settings.metrics_central_single_path
+            ),
+            'metrics_central_write_access': Settings._central_write_access(),
+            'metrics_central_write_access_fixed': bool(
+                Settings._central_write_access_fixed()
+            ),
+            'metrics_central_name': self._central_name_status(settings),
             # Where the central runs, while that host is in the fleet:
             # which of Enable observability and Start an empty central
             # the chosen host gets, and what Retire names.
@@ -1981,6 +1991,7 @@ class CrudMixin:
         metrics_central_operator_sources=None,
         metrics_collect_pg=None,
         metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
+        metrics_central_single_path=None, metrics_central_write_access=None,
     ):
         """Save the settings a Settings section sent, and only those.
 
@@ -2138,6 +2149,18 @@ class CrudMixin:
                     metrics_vals['metrics_enabled'] = bool(metrics_enabled)
                 if metrics_collect_pg is not None:
                     metrics_vals['metrics_collect_pg'] = bool(metrics_collect_pg)
+                if metrics_central_single_path is not None:
+                    metrics_vals['metrics_central_single_path'] = bool(
+                        metrics_central_single_path
+                    )
+                Settings = request.env['cloud.settings'].sudo()
+                if (
+                    metrics_central_write_access in ('servers', 'anyone')
+                    and not Settings._central_write_access_fixed()
+                ):
+                    metrics_vals['metrics_central_write_access'] = (
+                        metrics_central_write_access
+                    )
                 for field, value in (
                     ('metrics_central_url', metrics_central_url),
                     ('metrics_remote_write_url', metrics_remote_write_url),
@@ -2195,6 +2218,60 @@ class CrudMixin:
                 'field': refusal.field,
             }
         return {'ok': True}
+
+    @staticmethod
+    def _central_name_status(settings):
+        """Return what Settings shows of the central's single name.
+
+        :param settings: the ``cloud.settings`` singleton.
+        :return: ``{"state", "checked_at", "failing_since", "error",
+            "cert_expires", "in_force", "record"}``, or False without a
+            single path.
+        :rtype: dict | bool
+        """
+        Settings = settings.env['cloud.settings'].sudo()
+        if not Settings._central_single_path():
+            return False
+        in_force = Settings._central_single_in_force()
+        return {
+            'state': settings.metrics_central_name_state or 'unknown',
+            'checked_at': settings.metrics_central_name_checked_at or '',
+            'failing_since': settings.metrics_central_name_failing_since or '',
+            'error': settings.metrics_central_name_error or '',
+            'cert_expires': settings.metrics_central_cert_expires or '',
+            'in_force': in_force,
+            'url': Settings._central_single_base(),
+            'record': (
+                '' if in_force or not settings.metrics_central_host_id
+                else Settings._central_dns_record_text()
+            ),
+        }
+
+    @http.route(['/cloud/monitoring/check_central_name'], type='json',
+                auth='user')
+    def cloud_monitoring_check_central_name(self):
+        """Check the central's single name now, from the central's server.
+
+        Queues the direct path's job there, which checks the name and,
+        when it answers, moves the panel and the agents to it. The 15-minute
+        cron does the same while the name is pending.
+        """
+        self._sec()._check_can_manage_hosts()
+        Settings = request.env['cloud.settings'].sudo()
+        host = Settings._live_central_host()
+        if not (Settings._central_single_path() and host and host.direct_port_shipped):
+            return {
+                'ok': False,
+                'error': _(
+                    "There is nothing to check: the central needs a public "
+                    "name, One path, without a CDN, and a server with a "
+                    "direct port."
+                ),
+            }
+        job_id = host._enqueue_direct_sync("Check now, in Settings")
+        if not job_id:
+            return {'ok': False, 'error': _("The check could not be queued.")}
+        return {'ok': True, 'job_id': job_id}
 
     @http.route(['/cloud/monitoring/deploy_central'], type='json',
                 auth='user')
