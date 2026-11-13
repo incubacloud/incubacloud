@@ -68,7 +68,8 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
 
 
 def _make_rebuild_executor(smtp_relay_host='', environment='production',
-                           odoo_version='19.0', auto_update=True, **extra):
+                           odoo_version='19.0', auto_update=True,
+                           boot_test=True, **extra):
     """Build a minimal RebuildInstanceExecutor without an Odoo environment."""
     from odoo.addons.incubacloud.models.rebuild_instance_executor import (
         RebuildInstanceExecutor,
@@ -89,6 +90,7 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
         "project_id": SimpleNamespace(remote_folder='projects'),
         "odoo_initial_lang": None,
         "auto_update": auto_update,
+        "boot_test": boot_test,
         # A test of the smart rebuild names its own.
         "rebuild_fingerprint": 'fp1',
         "last_rebuild_fingerprint": 'fp0',
@@ -248,13 +250,15 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertEqual(self.argv[2], "boot-test")
 
     def test_boot_test_passes_the_instance_and_pg_parameters(self):
-        # argv: bash <path> boot-test <dir> <inst_id> <project> <user> <pgver> <db>
-        _, _, _op, _dir, inst_id, project, pg_user, pg_ver, dbname = self.argv
+        # argv: bash <path> boot-test <dir> <inst_id> <project> <user> <pgver> <db> <cap_s>
+        _, _, _op, _dir, inst_id, project, pg_user, pg_ver, dbname, cap = self.argv
         self.assertEqual(inst_id, "42")
         self.assertEqual(project, "test_proj")
         self.assertEqual(pg_user, "odoo")
         self.assertEqual(pg_ver, "17")
         self.assertEqual(dbname, "prod")
+        # The step's cap, which the script's budget must end inside (#91).
+        self.assertEqual(cap, "21600")
 
     def test_boot_test_has_stop_on_failure(self):
         # A failed boot must abort before ``up -d`` so the instance keeps
@@ -305,8 +309,10 @@ class TestRebuildCommandsBootTest(BaseCase):
                     "stop_on_failure": True, "timeout": 1260, "detached": True,
                 }),
                 ("Rebuild Odoo image", {"stop_on_failure": True, "detached": True}),
+                # Six hours, not the transport's hour (#91): the script
+                # keeps a budget by the database's size inside it.
                 ("Test new image (safe boot check)", {
-                    "stop_on_failure": True, "detached": True,
+                    "stop_on_failure": True, "detached": True, "timeout": 21600,
                 }),
                 ("Update changed modules", {
                     "stop_on_failure": True, "detached": True,
@@ -315,6 +321,33 @@ class TestRebuildCommandsBootTest(BaseCase):
         )
         ensure = _find_cmd(self.cmds, "Ensure incubacloud_connect")
         self.assertEqual(len(ensure), 2)
+
+    def test_a_boot_test_that_stopped_itself_says_why(self):
+        """#91: the script's reason (no room, no time) is the job's error,
+        not «exited with status 1»: it is what the failure's alert shows."""
+        errors = _make_rebuild_executor().parse_results({
+            "Test new image (safe boot check)": {
+                "exit_status": 1,
+                "stdout": (
+                    "[incubacloud] boot test: the database takes 1.0 GiB\n"
+                    "[incubacloud] ERROR: boot test stopped: No room on the"
+                    " server for the boot test: x. Nothing was changed.\n"
+                ),
+            },
+        })
+        self.assertEqual(
+            errors, ["No room on the server for the boot test: x. Nothing was changed."],
+        )
+
+    def test_a_boot_that_failed_keeps_its_exit_status(self):
+        errors = _make_rebuild_executor().parse_results({
+            "Test new image (safe boot check)": {
+                "exit_status": 3, "stdout": "Traceback (most recent call last)",
+            },
+        })
+        self.assertEqual(
+            errors, ["'Test new image (safe boot check)' exited with status 3"],
+        )
 
     def test_a_staging_neutralizes_again_attached(self):
         """The UPDATEs after the update are short: not run apart."""
@@ -723,6 +756,24 @@ class TestAutoUpdateFlag(BaseCase):
             _find_cmd(cmds, "Restart instance"),
             "docker compose up -d must still run",
         )
+
+    def test_the_boot_test_switch_off_keeps_the_update(self):
+        """«Test the new image before applying it» off (#91): only the boot
+        test goes; the modules are still updated, and the log says so."""
+        said = []
+        ex = _make_rebuild_executor(boot_test=False)
+        ex._sys = said.append
+        cmds = ex.get_commands()
+        self.assertIsNone(_find_cmd(cmds, "Test new image (safe boot check)"))
+        self.assertIsNotNone(_find_cmd(cmds, "Update changed modules"))
+        self.assertTrue(any(
+            "«Test the new image before applying it» is off" in line
+            for line in said
+        ), said)
+
+    def test_auto_update_false_skips_the_boot_test_whatever_its_switch(self):
+        cmds = _make_rebuild_executor(auto_update=False, boot_test=True).get_commands()
+        self.assertIsNone(_find_cmd(cmds, "Test new image (safe boot check)"))
 
     def test_auto_update_false_keeps_image_rebuild(self):
         """The image itself must still be rebuilt; auto_update only

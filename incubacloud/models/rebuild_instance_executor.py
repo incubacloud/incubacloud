@@ -54,6 +54,23 @@ _LABEL_BUILD = "Rebuild Odoo image"
 #: return (``_no_return_from``).
 _LABEL_UPDATE = "Update changed modules"
 _LABEL_RESTART = "Restart instance"
+#: The step that boots the new image on a copy of the database first.
+_LABEL_BOOT_TEST = "Test new image (safe boot check)"
+#: The boot test's cap, in seconds (13-nov-2026, #91). The step runs apart
+#: and its job parks between requests (phase 3), so the request's
+#: ``limit_time_real`` does not bound it; this does. ``rebuild.sh
+#: boot-test`` keeps a budget by the database's size inside it (an hour
+#: and the copy at 100 MB/s) and stops before copying when that budget
+#: would not end inside it: six hours take a database up to about 1.6 TiB.
+#: Past that the copy is no longer practical on ext4, and the instance's
+#: «Test the new image before applying it» is the way.
+BOOT_TEST_CAP_S = 6 * 3600
+#: The alert of a rebuild that put its image into service untested
+#: (``_report_boot_test``).
+BOOT_TEST_SKIPPED_ALERT = "boot_test_skipped"
+#: What ``rebuild.sh boot-test`` writes before the reason it stopped the
+#: test for (no room, no time): the job's error is that reason.
+_BOOT_TEST_STOPPED_MARK = "boot test stopped: "
 
 
 class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
@@ -294,28 +311,42 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         # boot validation. ``inst.auto_update`` defaults to True for
         # all pre-existing instances, preserving current behavior.
         if inst.auto_update:
-            cmds += [
-            # 11. Safe boot test: clone the production DB, boot Odoo
-            #     with the new image against the clone, and clean up.
+            # 11. Safe boot test: copy the production DB, boot Odoo
+            #     with the new image against the copy, and clean up.
             #     If the boot fails, stop_on_failure prevents up -d
             #     so the instance keeps running with the old image.
-            #     Run apart (phase 3, 12-nov-2026): the clone of a large
+            #     Run apart (phase 3, 12-nov-2026): the copy of a large
             #     database takes minutes. Before the point of no return:
             #     a stop sends TERM, and the script's trap removes its
-            #     container and the clone.
-            (
-                "Test new image (safe boot check)",
-                self.run_script(
-                    "rebuild.sh",
-                    [
-                        "boot-test", d, inst.id, name,
-                        inst.postgres_username or "odoo",
-                        inst.postgres_version or "17",
-                        inst.postgres_dbname or "prod",
-                    ],
-                ),
-                {"stop_on_failure": True, "detached": True},
-            ),
+            #     containers and the copy. Its cap is its own
+            #     (``BOOT_TEST_CAP_S``), handed to the script too. The
+            #     instance's «Test the new image before applying it»
+            #     leaves it out alone (#91); the update stays.
+            if inst.boot_test:
+                cmds.append((
+                    _LABEL_BOOT_TEST,
+                    self.run_script(
+                        "rebuild.sh",
+                        [
+                            "boot-test", d, inst.id, name,
+                            inst.postgres_username or "odoo",
+                            inst.postgres_version or "17",
+                            inst.postgres_dbname or "prod",
+                            BOOT_TEST_CAP_S,
+                        ],
+                    ),
+                    {
+                        "stop_on_failure": True, "detached": True,
+                        "timeout": BOOT_TEST_CAP_S,
+                    },
+                ))
+            else:
+                self._sys(
+                    "⚠ «Test the new image before applying it» is off on this"
+                    " instance: the new image goes into service without the"
+                    " boot test."
+                )
+            cmds += [
             # 12. Update changed modules in the real DB.
             #     click-odoo-update compares checksums stored in the DB
             #     against the code in the new image and updates only
@@ -430,7 +461,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         # so a plain ``RetryableJobError`` was queue_job's last attempt
         # and ended the job failed. The patience below is the cap instead;
         # meanwhile the job stays pending at the head of its queue.
-        update = results.get("Update changed modules", {})
+        update = results.get(_LABEL_UPDATE, {})
         if update.get("exit_status") == _EXIT_CRONS_BUSY:
             waited = fields.Datetime.now() - self._first_attempt_started_at()
             if waited >= _CRONS_BUSY_PATIENCE:
@@ -444,6 +475,9 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 seconds=_CRONS_BUSY_RETRY_S,
                 ignore_retry=True,
             )
+        stopped = self._boot_test_stop_reason(results)
+        if stopped:
+            return [stopped]
         # "List services" exit_status != 0 only means compose isn't configured;
         # don't treat it as a fatal error — the rebuild itself may have worked.
         ignored = {"List services"}
@@ -452,6 +486,61 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             for label, data in results.items()
             if data.get("exit_status", 1) != 0 and label not in ignored
         ]
+
+    @staticmethod
+    def _boot_test_stop_reason(results):
+        """Return why the boot test stopped itself, as it said it, or None.
+
+        ``rebuild.sh boot-test`` stops before copying when the copy does
+        not fit on Docker's disk or its budget would not end inside its
+        cap, and stops a copy or a boot that runs past that budget; each
+        time it writes the reason after ``_BOOT_TEST_STOPPED_MARK`` on its
+        stdout. That reason, with the sizes it measured, is a better error
+        for the job than its exit status.
+
+        :param dict results: what the steps answered, by label
+        :return: the reason, or None when the step did not stop so
+        :rtype: str or None
+        """
+        step = results.get(_LABEL_BOOT_TEST) or {}
+        if not step.get("exit_status"):
+            return None
+        for line in reversed((step.get("stdout") or "").splitlines()):
+            _before, mark, reason = line.partition(_BOOT_TEST_STOPPED_MARK)
+            if mark and reason.strip():
+                return reason.strip()
+        return None
+
+    def _report_boot_test(self, results):
+        """Say whether the rebuild put its image into service untested.
+
+        Called from ``on_success``, before the line that says the instance
+        was rebuilt, so the result says it first. A rebuild that updated
+        the modules without the boot test ran with the instance's «Test
+        the new image before applying it» off: the log says so and the
+        warning ``boot_test_skipped`` is raised on the instance, with this
+        job. One whose boot test ran (and so passed) resolves it. A
+        rebuild that ran neither step (``auto_update`` off) changes
+        nothing: the instance's settings say so already.
+
+        :param dict results: what the steps answered, by label
+        """
+        inst = self._inst()
+        alerts = self.env["cloud.alert"].sudo()
+        if _LABEL_BOOT_TEST in results:
+            alerts.resolve_alert(BOOT_TEST_SKIPPED_ALERT, instance=inst)
+        elif _LABEL_UPDATE in results:
+            message = (
+                f"'{inst.name}' was rebuilt without the boot test: its new"
+                " image went into service, and its database's modules were"
+                " updated, without being tried on a copy first. «Test the"
+                " new image before applying it» is off on the instance."
+            )
+            self._sys(f"⚠ {message}")
+            alerts.raise_alert(
+                BOOT_TEST_SKIPPED_ALERT, message, level="warning",
+                instance=inst, job=self.job,
+            )
 
     def _first_attempt_started_at(self):
         """Return when this job's first attempt began.
@@ -510,6 +599,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         if not inst._stop_is_expected():
             write_vals.update(inst._running_confirmed_vals())
         inst.write(write_vals)
+        self._report_boot_test(results)
         self._sys(
             f"✓ '{inst.name}' rebuilt and restarted"
             f" with updated configuration."
