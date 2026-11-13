@@ -364,6 +364,9 @@ class TestParkAndResume(_ParkingCase):
         plan[1] = (update, plan[1][1], {"stop_on_failure": True, "detached": True})
         cls = self._class(tuple(plan), spend_at="follow")
         cls.parse_results = RebuildInstanceExecutor.parse_results
+        cls._boot_test_stop_reason = staticmethod(
+            RebuildInstanceExecutor._boot_test_stop_reason,
+        )
         cls._first_attempt_started_at = RebuildInstanceExecutor._first_attempt_started_at
         self.assertIsInstance(self._execute(cls), abstract_executor.JobParked)
         exc = self._execute(cls)
