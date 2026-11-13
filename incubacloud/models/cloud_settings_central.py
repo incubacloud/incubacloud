@@ -598,29 +598,46 @@ class CloudSettings(models.Model):
     def _central_dns_pending(self, outcome=None):
         """Raise or refresh ``metrics_central_dns_pending``.
 
-        A warning, critical after ``DNS_PENDING_CRITICAL`` when a central
-        was already serving under other URLs (the panel and the agents
-        are fine on those, but the move is stuck).
+        With the name in use, critical from the start: every agent writes
+        to it, and a record that no longer points at the central's server
+        (a CDN's proxy turned back on, the record deleted) leaves the
+        whole fleet writing nowhere. Not in use yet, a warning, critical
+        after ``DNS_PENDING_CRITICAL`` when a central was already serving
+        under other URLs (the panel and the agents are fine on those, but
+        the move is stuck).
 
         :param dict outcome: the last check, for its layer and detail.
         """
         settings = self._get_system()
+        detail = ""
+        if outcome and not outcome.get("ok"):
+            detail = f" ({outcome.get('layer')}: {outcome.get('detail') or ''})".rstrip()
+        record = self._central_dns_record_text()
+        if self._central_single_in_force():
+            self.env["cloud.alert"].sudo().raise_alert(
+                "metrics_central_dns_pending",
+                _(
+                    "The central's name no longer answers from its server%(detail)s. "
+                    "%(record)s No agent can write to the central meanwhile; "
+                    "they keep what they cannot send in their queues.",
+                    detail=detail, record=record,
+                ),
+                level="critical",
+            )
+            return
         since = settings.metrics_central_name_failing_since
         serving = bool((settings.metrics_central_url or "").strip())
         critical = bool(
             serving and since
             and fields.Datetime.now() - since >= DNS_PENDING_CRITICAL
         )
-        detail = ""
-        if outcome and not outcome.get("ok"):
-            detail = f" ({outcome.get('layer')}: {outcome.get('detail') or ''})".rstrip()
         self.env["cloud.alert"].sudo().raise_alert(
             "metrics_central_dns_pending",
             _(
                 "The central's name does not answer from its server yet%(detail)s. "
                 "%(record)s The panel and the agents keep their current URLs "
                 "until it does.",
-                detail=detail, record=self._central_dns_record_text(),
+                detail=detail, record=record,
             ),
             level="critical" if critical else "warning",
         )
@@ -635,6 +652,15 @@ class CloudSettings(models.Model):
         ``metrics_central_name_down``, critical, with the layer; ``ok``
         closes both. There is no path to fall back to.
 
+        A complete check that passes (the job's, which reads DNS from the
+        central's server) closes ``metrics_central_dns_pending`` at once:
+        the record is right. While the name is not in use it also ends
+        ``failing`` and moves the URLs, so one **Check now** after the
+        record is fixed is enough: the two checks and 30 minutes out of
+        ``failing`` (``_direct_probe.MIN_FAILING``) protect a name in
+        use from flapping, and a pending name has nobody on it yet. A
+        light probe reads no DNS and never moves them.
+
         :param str old_state: before the check.
         :param str new_state: after it.
         :param dict outcome: as ``_direct_probe.parse_probe`` returns it.
@@ -642,6 +668,14 @@ class CloudSettings(models.Model):
         Alert = self.env["cloud.alert"].sudo()
         if not self._central_single_path():
             return
+        if outcome.get("ok") and outcome.get("source") == "job":
+            Alert.resolve_alert("metrics_central_dns_pending")
+            if new_state != "ok" and not self._central_single_in_force():
+                self._get_system().write({
+                    f"{NAME_PREFIX}_state": "ok",
+                    f"{NAME_PREFIX}_failing_since": False,
+                })
+                new_state = "ok"
         if new_state == "ok":
             Alert.resolve_alert("metrics_central_name_down")
             Alert.resolve_alert("metrics_central_dns_pending")

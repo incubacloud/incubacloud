@@ -200,10 +200,19 @@
       when: ic_central_ca | length > 0
 
     - name: Ask the panel which address this server leaves with
-      ansible.builtin.uri:
-        url: "{{ ic_panel_url }}/cloud/egress_ip"
-        return_content: true
-        timeout: 10
+      # Over IPv4, as the central's name is reached (an A record and no
+      # AAAA): a server with IPv6 would otherwise reach the panel by it
+      # and be told an address the central never sees. The uri module
+      # cannot choose the family. An answer that is not an address (a
+      # CDN's challenge page) is dropped by the panel.
+      ansible.builtin.command:
+        argv:
+          - curl
+          - "-4"
+          - "-fsS"
+          - "--max-time"
+          - "10"
+          - "{{ ic_panel_url }}/cloud/egress_ip"
       register: ic_egress
       failed_when: false
       changed_when: false
@@ -1241,4 +1250,4 @@
           # The single name in force: what the central answered this
           # server (401 is right) and the address it leaves with.
           ic_central_reach: "{{ ic_central_try.status | default(-1) }}"
-          ic_egress_ip: "{{ (ic_egress.content | default('')) | trim | truncate(64, true, '') }}"
+          ic_egress_ip: "{{ (ic_egress.stdout | default('')) | trim | truncate(64, true, '') }}"

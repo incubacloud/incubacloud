@@ -290,7 +290,8 @@ class CloudSettings(models.Model):
         :param str prefix: ``metrics_central_direct`` (or the prefix of
             a direct name a layer adds).
         :param dict outcome: as ``_direct_probe.parse_probe`` returns it.
-        :return: ``(previous state, new state)``.
+        :return: ``(previous state, new state)``, the new one as stored
+            once the name's alerts ran.
         :rtype: tuple
         """
         now = fields.Datetime.now()
@@ -318,7 +319,9 @@ class CloudSettings(models.Model):
                 settings.write(vals)
             settings._direct_note_checked(prefix, now)
             settings._direct_alerts(prefix, current["state"], new["state"], outcome)
-        return current["state"], new["state"]
+            # As stored after the alerts: a layer's may settle the state
+            # itself (the central's single name, still pending).
+            return current["state"], settings[f"{prefix}_state"]
 
     def _direct_alerts(self, prefix, old_state, new_state, outcome):
         """Raise or close the alerts of the direct name *prefix*.

@@ -11,11 +11,6 @@ from odoo import http
 from odoo.http import request
 
 from ._client_ip import client_ip
-from ._rate_limit import Rule, first_tripped
-
-#: Asks per address and minute: one per agents' install, which runs a few
-#: times an hour at most.
-_PER_MINUTE = 30
 
 
 class CentralEgressController(http.Controller):
@@ -30,22 +25,15 @@ class CentralEgressController(http.Controller):
 
         Seen through the proxies the installation declares
         (``_client_ip``), as every rate limit here sees it. It says to
-        the caller nothing it does not know already.
+        the caller nothing it does not know already, and costs less than
+        a rate limit would: a limit per address wrote a row for every
+        address that asked, and IPv6 gives a caller as many as it wants.
+        Nothing is written and no session is opened.
 
-        :return: the address, or 429 when asked too often.
+        :return: the address.
         """
-        address = client_ip()
-        if first_tripped(Rule(
-            f"egress_ip:{address}",
-            max_per_window=_PER_MINUTE,
-            log_tag=f"egress_ip address={address}",
-        )):
-            return request.make_response(
-                "Too many requests", status=429,
-                headers=[("Content-Type", "text/plain; charset=utf-8")],
-            )
         return request.make_response(
-            address,
+            client_ip(),
             headers=[
                 ("Content-Type", "text/plain; charset=utf-8"),
                 ("Cache-Control", "no-store"),
