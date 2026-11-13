@@ -1,4 +1,4 @@
-# RB-37 — The heartbeat of the scheduled actions
+# RB-38 — The heartbeat of the scheduled actions
 
 **Severity:** planned (setting it up) · critical (when its service warns)
 · **When:** setting up a panel for daily use, or a heartbeat service
