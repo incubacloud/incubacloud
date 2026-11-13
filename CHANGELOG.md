@@ -169,6 +169,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   (`ssh_allowlist_unconfirmed`). The same notice again is ignored, the
   alert open or closed; another change raises the alert again, so it is
   sent again. Spanish translation included.
+- **Test the new image before applying it (#91)**
+  ([architecture](docs/architecture.md#safe-rebuild)). The instance's
+  settings have a switch of their own for the boot test
+  (`cloud.instance.boot_test`), on by default and independent of
+  *Auto-Update Modules on Rebuild*, which used to be the only way to skip
+  the test and left the modules unapplied with it. Off, a rebuild leaves
+  out the boot test alone, says first in its result that its image went
+  into service untested, and raises `boot_test_skipped` (warning) on the
+  instance; the next rebuild whose boot test ran resolves it. The panel,
+  `/cloud/save_instance` and the MCP's `update_instance` take it. Spanish
+  translation included.
 
 ### Security
 
@@ -238,6 +249,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **The boot test copies the database once, and measures before it
+  copies (#91)** ([architecture](docs/architecture.md#safe-rebuild)).
+  `pg_basebackup` runs in a container on the namespace of the instance's
+  database, straight into a volume `ic_boot_<id>` on Docker's disk, which
+  the throwaway PostgreSQL mounts; the copy inside the database's
+  container, `docker compose cp` to the host's `/tmp` and the `chown -R`
+  are gone, so the test needs the database's size once, not twice, and
+  about half the time. The copy keeps its `backup_label` and recovers from
+  the backup. For it the test adds a replication rule on the loopback to
+  the database's `pg_hba.conf` and reloads, and takes it out again at the
+  end. Before copying, the job's log always gives the database's size, the
+  free space of Docker's disk, what the test needs and how long the copy
+  should take; the test stops there, with the instance untouched and the
+  reason as the job's error, when the copy does not fit (`size × 1.1 +
+  5 GiB`) or its budget (an hour plus the copy at 100 MB/s) would not end
+  inside its cap, six hours instead of the hour every step had. The copy
+  and the boot run under that budget, and the log gives the copy's real
+  speed. The daily maintenance removes the copies a test killed before its
+  trap left: volumes `ic_boot_<id>` no container uses, a day old, and the
+  `/tmp/ic_boot_<id>` of older releases. The guides describe the boot test
+  as it runs: the copy made by `createdb -T` they described never existed,
+  and a staging's rebuild goes through it too.
 - **Odoo 8.0 is offered** for new projects and instances: its run of the
   series passed with the fix of Connect as user, which opens the session
   with a password of its own on a series that has no session token. The

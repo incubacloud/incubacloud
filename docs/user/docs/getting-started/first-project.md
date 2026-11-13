@@ -61,7 +61,7 @@ Each project supports:
 - **One production instance.** The customer-facing one. Deploys here go through
   the safe-rebuild flow (boot test before swap).
 - **Many staging instances.** For test copies. They share configuration with production
-  but use independent databases.
+  but use independent databases. Their deploys go through the same boot test.
 
 You can clone production data to a staging instance at any time
 (see [Backups → Restore](../backups/restore.md)).

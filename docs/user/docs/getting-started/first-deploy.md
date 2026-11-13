@@ -31,7 +31,7 @@ re-deploys, so it's worth getting comfortable with each field.
 - **Production** — the customer-facing instance. Re-deploys go through the safe-rebuild
   flow: if the new image fails its boot test, the previous version keeps serving.
 - **Staging** — a test copy of production: the project needs its production
-  instance first. You can have many. Re-deploys are direct.
+  instance first. You can have many. Re-deploys go through the same boot test.
 
 ## 3. Pick the host
 
@@ -92,14 +92,22 @@ under **Recent activity** on the instance; click it to open the job log in a
 new tab and follow it live. You'll see the steps in order:
 
 1. Build image (1–3 min depending on dependencies).
-2. **Boot test** (production only) — clone the database to `__ic_boot_test`,
-   run `click-odoo-update`, drop. If this fails, the deploy aborts before
-   touching the live instance.
-3. Update modules in the live database.
-4. Bring up the new container.
-5. Cleanup.
+2. Start the database and create it.
+3. Bring up the instance.
 
 When the job ends in green, your instance is up.
+
+Every later deploy of the instance is a rebuild, and a rebuild tries the new
+image before it touches the live one:
+
+1. Build the new image.
+2. **Boot test** — copy the database, boot the new image on the copy and run
+   `click-odoo-update` there, then remove the copy. If this fails, the rebuild
+   stops and the instance keeps serving its previous image. See
+   [The boot test](../instances/index.md#the-boot-test) for how long it takes
+   and how much disk it needs.
+3. Update the changed modules in the live database.
+4. Bring up the new image.
 
 See the boot test stop a broken push while production keeps running: [watch the 98-second video](https://youtu.be/E5u5PfTSKeo).
 
