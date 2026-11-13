@@ -170,12 +170,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   queue go on, the only way out: dismissed
   by hand it deletes the job's checkpoint, says so in the job's log and
   serves the queue; *Dismiss all* leaves it open, and it closes by itself
-  when the server answers. The sweep of the queues raises it too while
-  the reconciliation's scheduled action is off or has not run for 30
-  minutes. A cancelled job that holds reads *Cancelling…*, and the first
-  job of its queue reads «Queued · waiting for the server to answer, to
-  confirm job #N stopped». A move's restore whose target is gone still
-  holds nothing while the instance lives on its source. Spanish
+  when the server answers, when the job runs again, or with the row of a
+  job whose type has no executor any more. The sweep of the queues raises
+  it too while the reconciliation's scheduled action is off or has not
+  run for 30 minutes, counted up to the sweep's own last run and not
+  while a pass of it runs: neither a stop of the panel nor a long pass
+  reads as a stopped reconciliation. A cancelled job that holds reads
+  *Cancelling…*, and the first job of its queue reads «Queued · waiting
+  for the server to answer, to confirm job #N stopped». A move's restore
+  whose target is gone still holds nothing while the instance lives on
+  its source, and its job, cancelled, reads *Cancelled*. Spanish
   translation included.
 
 ### Fixed
