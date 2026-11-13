@@ -7809,12 +7809,13 @@ msgstr "Entrada de lista blanca del host"
 msgid ""
 "Host carrying the central stack, recorded when a deployment of it succeeds. "
 "The account sync targets it. Empty means no central was ever deployed from "
-"this panel, and accounts cannot be granted until one is."
+"this panel, or it was retired, and accounts cannot be granted until one is "
+"deployed."
 msgstr ""
 "Host que aloja la pila central, registrado cuando un despliegue de ella "
 "tiene éxito. La sincronización de cuentas apunta a él. Vacío significa que "
-"nunca se desplegó una central desde este panel, y no se pueden conceder "
-"cuentas hasta que la haya."
+"nunca se desplegó una central desde este panel, o que se retiró, y no se "
+"pueden conceder cuentas hasta que se despliegue una."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -22741,11 +22742,13 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid ""
-"VictoriaMetrics, Loki and a gateway, deployed as a job on this host. Run it "
-"again to move it."
+"VictoriaMetrics, Loki and a gateway, deployed as a job on the host picked "
+"here. Its server keeps the metrics history and the security logs, and cannot"
+" be deleted while the central runs on it."
 msgstr ""
-"VictoriaMetrics, Loki y una pasarela, desplegados como trabajo en este host."
-" Ejecútelo de nuevo para moverlos."
+"VictoriaMetrics, Loki y una pasarela, desplegados como trabajo en el host "
+"elegido aquí. Su servidor guarda el histórico de métricas y los registros de"
+" seguridad, y no se puede borrar mientras la central corra en él."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -23090,3 +23093,247 @@ msgstr ""
 "Qué versión del despliegue de la central terminó bien por última vez en su "
 "servidor. La tarea programada de reconciliación vuelve a desplegar la "
 "central mientras vaya por detrás de la del panel."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"\"%(host)s\" runs the metrics central, with the metrics history and the "
+"security logs. Before deleting it, go to Settings › Monitoring › Where the "
+"central runs and either start an empty central on another server or retire "
+"the central. Either way the history stays behind on this server; to keep it,"
+" copy the central's data first (operations guide, \"Where the central "
+"runs\")."
+msgstr ""
+"«%(host)s» lleva la central de métricas, con el histórico de métricas y los "
+"registros de seguridad. Antes de borrarlo, vaya a Configuración › "
+"Monitorización › Dónde corre la central y empiece una central vacía en otro "
+"servidor o retire la central. En los dos casos el histórico se queda en este"
+" servidor; para conservarlo, copie antes los datos de la central (guía de "
+"operación, «Where the central runs»)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"The central runs on \"%(host)s\", with the metrics history and the security "
+"logs. Deploying it on another server would start an empty one there and "
+"leave the history behind: if that is what you want, use Start an empty "
+"central."
+msgstr ""
+"La central corre en «%(host)s», con el histórico de métricas y los registros"
+" de seguridad. Desplegarla en otro servidor empezaría allí una vacía y "
+"dejaría atrás el histórico: si es lo que quiere, use «Empezar una central "
+"vacía»."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid "There is no metrics central to retire."
+msgstr "No hay ninguna central de métricas que retirar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"A job of the central waits or runs on \"%(host)s\": wait for it to end, or "
+"cancel it, and retire the central then."
+msgstr ""
+"Un trabajo de la central espera o corre en «%(host)s»: espere a que termine,"
+" o cancélelo, y retire después la central."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Only Start an empty central, in Settings › Monitoring, may deploy the "
+"metrics central without its history."
+msgstr ""
+"Solo «Empezar una central vacía», en Configuración › Monitorización, puede "
+"desplegar la central de métricas sin su histórico."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "There is no central to replace: use Enable observability."
+msgstr ""
+"No hay ninguna central que sustituir: use «Activar la observabilidad»."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"The central already runs on \"%(host)s\": Enable observability deploys it "
+"again there, with its history."
+msgstr ""
+"La central ya corre en «%(host)s»: «Activar la observabilidad» la vuelve a "
+"desplegar allí, con su histórico."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"Full Setup has not been run on this server: the deployment refuses it until "
+"it is."
+msgstr ""
+"A este servidor no se le ha hecho la Configuración completa: el despliegue "
+"lo rechaza hasta que se haga."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"The central keeps everything (retention 0): its disk grows without end. "
+"Watch it."
+msgstr ""
+"La central lo guarda todo (retención 0): su disco crece sin fin. Vigílelo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"%(servers)s servers would send to it: past 20 these figures are not "
+"measured. Give it more memory and watch it."
+msgstr ""
+"Le enviarían datos %(servers)s servidores: por encima de 20 estas cifras no "
+"están medidas. Dele más memoria y vigílela."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "Free disk %(free)s GB, about %(needed)s GB needed."
+msgstr "Disco libre %(free)s GB; hacen falta unos %(needed)s GB."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "Memory %(total)s GB, %(needed)s GB recommended."
+msgstr "Memoria %(total)s GB; se recomiendan %(needed)s GB."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"Its instances leave %(free)s GB of memory unassigned; the central needs "
+"about %(needed)s GB."
+msgstr ""
+"Sus instancias dejan %(free)s GB de memoria sin asignar; la central necesita"
+" unos %(needed)s GB."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "%(cores)s CPU core(s), %(needed)s recommended."
+msgstr "%(cores)s núcleo(s) de CPU; se recomiendan %(needed)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid ""
+"Not measured yet: the server's disk, memory and cores are read from its "
+"metrics agents."
+msgstr ""
+"Aún sin medir: el disco, la memoria y los núcleos del servidor se leen de "
+"sus agentes de métricas."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"It fits: %(disk)s GB of disk free, %(ram)s GB of memory, %(cpu)s cores."
+msgstr ""
+"Cabe: %(disk)s GB de disco libre, %(ram)s GB de memoria, %(cpu)s núcleos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Collecting, with charts available. The central runs on %s."
+msgstr "Recogiendo, con gráficas disponibles. La central corre en %s."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+msgid "Start an empty central"
+msgstr "Empezar una central vacía"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"Start an empty central on %(target)s? The central on %(central)s is left as "
+"it is, with the metrics history and the security logs, and the panel no "
+"longer reads it: the charts start empty. %(central)s can then be deleted, "
+"and the history goes with it."
+msgstr ""
+"¿Empezar una central vacía en %(target)s? La central de %(central)s se queda"
+" como está, con el histórico de métricas y los registros de seguridad, y el "
+"panel deja de leerla: las gráficas empiezan vacías. Después se puede borrar "
+"%(central)s, y el histórico se va con él."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+msgid "Retire the central"
+msgstr "Retirar la central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"Retire the central on %s? The panel forgets it and switches observability "
+"off: the metrics history and the security logs stay on that server, unread, "
+"and go when it is deleted. Agents already installed keep sending to it until"
+" observability is enabled on another host."
+msgstr ""
+"¿Retirar la central de %s? El panel la olvida y apaga la observabilidad: el "
+"histórico de métricas y los registros de seguridad se quedan en ese "
+"servidor, sin leerse, y se van cuando se borre. Los agentes ya instalados le"
+" siguen enviando datos hasta que se active la observabilidad en otro host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "The central is retired. Observability is off."
+msgstr "La central está retirada. La observabilidad está apagada."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid "Could not retire it."
+msgstr "No se pudo retirar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.js:0
+msgid ""
+"The central runs on %s, with the history. Here an empty one starts, and the "
+"history stays behind there."
+msgstr ""
+"La central corre en %s, con el histórico. Aquí empieza una vacía, y el "
+"histórico se queda allí."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_settings_block.xml:0
+msgid "Retiring…"
+msgstr "Retirando…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid "Retire the central (the history is lost)"
+msgstr "Retirar la central (se pierde el histórico)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"For a central whose server is lost, or a panel whose only server is going: "
+"the panel forgets it and observability goes off, so the server can be "
+"deleted."
+msgstr ""
+"Para una central cuyo servidor se ha perdido, o un panel cuyo único servidor"
+" se va: el panel la olvida y la observabilidad se apaga, y así el servidor "
+"se puede borrar."
