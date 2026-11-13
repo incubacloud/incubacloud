@@ -51,6 +51,13 @@ jobs:
             -name '*.py' -not -path '*/migrations/*' -print0 \
             | xargs -0 --no-run-if-empty refurb
 
+      - name: Translation entries name their module
+        # Odoo reads the module of each entry from its ``#. module:``
+        # comment; polib appends entries without it, and updating the
+        # module with Spanish loaded then fails on a None module
+        # (13-nov-2026). No coverage check notices it.
+        run: python3 .github/scripts/check_po_module_line.py .
+
       - name: Mock-spec ratchet
         # Decision log P18.3: test doubles stand in for real APIs, so
         # they must be built as ``MagicMock(spec=RealClass)`` — a bare
