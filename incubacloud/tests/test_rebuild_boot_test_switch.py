@@ -66,6 +66,18 @@ class TestBootTestSwitch(TransactionCase):
         self.assertTrue(self.inst.boot_test)
         self.assertTrue(self.inst.auto_update)
 
+    def test_turning_it_off_leaves_a_line_in_the_audit_trail(self):
+        """Who turned it off, and when, as for the instance's other settings."""
+        self.inst.write({"boot_test": False})
+        entry = self.env["cloud.audit.log"].search([
+            ("action", "=", "Config changed"),
+            ("instance_id", "=", self.inst.id),
+        ], order="id desc", limit=1)
+        self.assertEqual(
+            entry.details, "Test the New Image Before Applying It: True→False",
+        )
+        self.assertEqual(entry.user_id, self.env.user)
+
     def test_an_image_applied_untested_says_so_first_and_warns(self):
         log = self._rebuilt({_UPDATE: {"exit_status": 0, "stdout": ""}})
         ended = [line for line in log if line.startswith(("⚠", "✓"))]

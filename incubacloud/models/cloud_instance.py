@@ -5143,6 +5143,9 @@ class CloudInstance(models.Model):
             "active",
             "autopurge_exempt",
             "website_info_public",
+            # Off, a rebuild applies its image untested: who turned it off,
+            # and when (Fable's review of #91, 13-nov-2026).
+            "boot_test",
         }
     )
 
