@@ -143,7 +143,7 @@ expected_chain() {
 @test "a change of state is logged once" {
     bash "$SCRIPT" apply
     [ "$(grep -c '^logger ' "$CALLS")" -eq 1 ]
-    grep -q "logger -t incubacloud-shared-guard -p user.info IC_SHARED_GUARD_ON" "$CALLS"
+    grep -q "logger -t incubacloud-shared-guard -p user.notice IC_SHARED_GUARD_ON" "$CALLS"
     bash "$SCRIPT" apply
     [ "$(grep -c '^logger ' "$CALLS")" -eq 1 ]
     FAKE_PROXY_MAC=02:42:ac:14:00:02 bash "$SCRIPT" apply

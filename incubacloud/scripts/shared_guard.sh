@@ -92,7 +92,7 @@ report() {
         if [ "$previous" != "$line" ]; then
             printf '%s\n' "$line" > "$STATE_FILE" 2>/dev/null || true
             case "$state" in
-                ON|OFF) logger -t "$LOG_TAG" -p user.info "$line" 2>/dev/null || true ;;
+                ON|OFF) logger -t "$LOG_TAG" -p user.notice "$line" 2>/dev/null || true ;;
                 *) logger -t "$LOG_TAG" -p user.warning "$line" 2>/dev/null || true ;;
             esac
         fi
@@ -293,6 +293,10 @@ After=docker.service
 [Service]
 Type=oneshot
 ExecStart=/bin/bash $INSTALL_DIR/shared_guard.sh apply
+# A run a minute: the state goes to the log only when it changes (logger,
+# notice or warning), not each run's marker line or systemd's own lines.
+StandardOutput=null
+LogLevelMax=notice
 UNIT
     cat > "$timer_tmp" <<UNIT
 # Managed by IncubaCloud — rewritten on every Full Setup.
