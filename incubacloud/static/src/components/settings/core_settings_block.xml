@@ -82,6 +82,10 @@
                         <SettingField id="'log_search_timeout_s'" form="form"/>
                     </SettingAdvanced>
                 </SettingsBlock>
+                <SettingsBlock title.translate="Scheduled actions"
+                               how.translate="The panel's scheduled actions often share one thread, so one that never ends holds all the others, the ones that would raise an alert included. With a URL here, each pass of the reconciliation of lost jobs that ends well asks for it, every 5 minutes; a heartbeat service (healthchecks.io, Better Stack, Cronitor) warns when the asks stop. The URL must be https on port 443, to a public address.">
+                    <SettingField id="'cron_heartbeat_url'" form="form"/>
+                </SettingsBlock>
             </t>
 
             <!-- ── Network edge ────────────────────────────────────── -->

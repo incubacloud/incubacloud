@@ -131,7 +131,7 @@ settingsBlocks.add("core-instances", {
 
 settingsSections.add("logs", {
     group: "platform", sequence: 30, title: _t("Logs & retention"),
-    description: _t("How long the panel keeps its own records, and how instance logs are kept and read."),
+    description: _t("How long the panel keeps its own records, how instance logs are kept and read, and who hears when the scheduled actions stop."),
 });
 settingsBlocks.add("core-logs", {
     section: "logs", sequence: 10, Component: CoreSettingsBlock, props: { part: "logs" },
@@ -209,6 +209,13 @@ settingsBlocks.add("core-logs", {
             block: _t("Instance logs"), label: _t("Search timeout"),
             help: _t("A search that hits it says so rather than reporting no matches."),
             synonyms: ["logs", "search", "timeout"],
+        },
+        {
+            id: "cron_heartbeat_url", type: "text", width: "l", mono: true,
+            placeholder: "https://hc-ping.com/…",
+            block: _t("Scheduled actions"), label: _t("Heartbeat URL"),
+            help: _t("Asked for every 5 minutes while the scheduled actions run, so the service behind it warns when they stop. Empty: nothing is sent."),
+            synonyms: ["heartbeat", "cron", "scheduled actions", "healthchecks", "uptime", "monitoring", "dead man's switch"],
         },
     ],
 });

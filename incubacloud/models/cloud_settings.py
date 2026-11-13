@@ -314,6 +314,20 @@ class CloudSettings(models.Model):
              "before it is cut short. A search that is cut short says "
              "so instead of reporting no matches.",
     )
+
+    # ── Heartbeat of the scheduled actions ─────────────────────────────────
+    # With one cron thread, a pass that never ends holds every scheduled
+    # action, the ones that would raise an alert included: only something
+    # outside the panel can notice. Pinged by the reconciliation of lost
+    # jobs (``cloud.job._ping_cron_heartbeat``), empty by default.
+    cron_heartbeat_url = fields.Char(
+        string="Scheduled actions heartbeat URL",
+        help="Asked for (GET) at the end of each good pass of the "
+             "reconciliation of lost jobs, every 5 minutes, so a "
+             "heartbeat service warns when the panel's scheduled actions "
+             "stop. https on port 443, to a public address. Empty: "
+             "nothing is sent.",
+    )
     odoo_log_archive_days = fields.Integer(
         string="Odoo log archive (days)",
         default=ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
