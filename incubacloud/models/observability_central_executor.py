@@ -788,7 +788,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         Found: said in the job's log and by ``ACME_SAME_NAME_ALERT``, with
         how to remove it; the store is the proxy's, and this job does not
         edit it. Not found, or without the single name: the alert closes.
-        A store that could not be read is said in the log only.
+        A store that could not be read is said in the log only, and an
+        alert already open stays open, as nothing shows it was removed.
         """
         state = str(self.playbook_facts().get("ic_acme_same_name") or "").strip()
         name = (
@@ -807,7 +808,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             self._sys(f"⚠ {message}")
             self._alert(ACME_SAME_NAME_ALERT, message, level="warning")
             return
-        self._resolve_alert(ACME_SAME_NAME_ALERT)
+        if state != "unread":
+            self._resolve_alert(ACME_SAME_NAME_ALERT)
+            return
         if state == "unread":
             self._sys(
                 f"⚠ The certificate store of the proxy on {self._host().name} "
