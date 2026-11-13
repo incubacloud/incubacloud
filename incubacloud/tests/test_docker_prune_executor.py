@@ -19,7 +19,9 @@ goes — taking nothing but the stack's ability to start). Pruning only
 what occupies disk avoids the choice, so the tests below pin the absence
 of ``system prune`` as hard as they pin the label.
 """
+import json
 import os
+import shlex
 import subprocess
 import tempfile
 import time
@@ -791,31 +793,81 @@ class TestTheSweepOfBootTestCopies(TransactionCase):
         with open(path, encoding="utf-8") as fh:
             return yaml.safe_load(fh)[0]
 
-    def _run(self, tmp, volumes):
+    def _run(self, tmp, volumes, containers=None, networks=None):
         """Run the sweep against a stub docker; return its calls and output.
 
+        The stub keeps what it removed: a volume or a network a container
+        still holds is neither listed as ``dangling`` nor removed, as
+        Docker does, until that container goes.
+
         :param str tmp: a scratch directory, the sweep's /tmp too
-        :param dict volumes: ``{name: CreatedAt}`` the stub lists
+        :param dict volumes: ``{name: CreatedAt}`` or
+            ``{name: (CreatedAt, container id that mounts it)}``
+        :param dict containers: ``{id: (name, Created)}``
+        :param dict networks: ``{id: (name, Created, container id on it)}``
         :return: ``(calls, stdout)``
         """
         calls = Path(tmp, "calls")
+        state = Path(tmp, "state")
+        state.mkdir()
         bin_dir = Path(tmp, "bin")
         bin_dir.mkdir()
-        inspect = "".join(
-            f'  "volume inspect {name}") printf \'[{{"CreatedAt": "{created}",'
-            f' "Name": "{name}"}}]\\n\' ;;\n'
-            for name, created in volumes.items()
+
+        def held(holder):
+            """Shell test of whether *holder* (a container id) is still there."""
+            return f"[ ! -e {state}/rm_{holder} ]" if holder else "false"
+
+        def printed(obj):
+            """Shell command printing *obj* as ``docker inspect`` does."""
+            return f"printf '%s\\n' {shlex.quote(json.dumps([obj], indent=4))}"
+
+        cases = []
+        listed = []
+        for cid, (name, created) in (containers or {}).items():
+            listed.append(f"[ -e {state}/rm_{cid} ] || echo {cid};")
+            shown = printed({
+                "Id": cid, "Created": created, "Path": "postgres",
+                "Name": f"/{name}",
+                "HostConfig": {"RestartPolicy": {"Name": "no"}},
+            })
+            cases.append(f'  "inspect {cid}") {shown} ;;')
+            cases.append(f'  "rm -f {cid}") : > {state}/rm_{cid} ;;')
+        cases.append(
+            '  "ps -aq --filter name=ic_boot_") ' + " ".join(listed) + " ;;",
         )
-        listing = "\\n".join(volumes)
+        dangling = []
+        for name, value in volumes.items():
+            created, holder = value if isinstance(value, tuple) else (value, None)
+            dangling.append(f"{held(holder)} || echo {name};")
+            cases.append(
+                f'  "volume inspect {name}") printf \'[{{"CreatedAt": "{created}",'
+                f' "Name": "{name}"}}]\\n\' ;;',
+            )
+            cases.append(f'  "volume rm {name}") ! {held(holder)} ;;')
+        cases.append(
+            '  "volume ls -q --filter dangling=true --filter name=ic_boot_") '
+            + " ".join(dangling) + " ;;",
+        )
+        net_ids = []
+        for nid, (name, created, holder) in (networks or {}).items():
+            net_ids.append(f"echo {nid};")
+            on_it = {"x": {"Name": holder}} if holder else {}
+            shown = printed({
+                "Name": name, "Id": nid, "Created": created,
+                "Containers": on_it,
+            })
+            cases.append(f'  "network inspect {nid}") {shown} ;;')
+            cases.append(f'  "network rm {nid}") ! {held(holder)} ;;')
+        cases.append(
+            '  "network ls -q --filter name=ic_boot_") ' + " ".join(net_ids) + " ;;",
+        )
         docker = bin_dir / "docker"
         docker.write_text(
             "#!/bin/sh\n"
             f'echo "docker $*" >> {calls}\n'
             'case "$*" in\n'
-            f'  "volume ls -q --filter dangling=true --filter name=ic_boot_")'
-            f" printf '{listing}\\n' ;;\n"
-            f"{inspect}"
-            "esac\n",
+            + "\n".join(cases)
+            + "\nesac\n",
             encoding="utf-8",
         )
         docker.chmod(0o755)
@@ -826,6 +878,20 @@ class TestTheSweepOfBootTestCopies(TransactionCase):
         )
         self.assertEqual(done.returncode, 0, done.stderr)
         return calls.read_text(encoding="utf-8").splitlines(), done.stdout
+
+    @staticmethod
+    def _created(hours, docker_style=False):
+        """Return a creation date *hours* ago, as Docker writes it.
+
+        :param float hours: how long ago
+        :param bool docker_style: with nanoseconds, as a container's or a
+            network's ``Created``; a volume's ``CreatedAt`` has none
+        :rtype: str
+        """
+        stamp = time.gmtime(time.time() - hours * 3600)
+        if docker_style:
+            return time.strftime("%Y-%m-%dT%H:%M:%S.123456789Z", stamp)
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", stamp)
 
     def test_a_day_old_copy_no_container_uses_goes(self):
         def created(hours):
@@ -846,6 +912,53 @@ class TestTheSweepOfBootTestCopies(TransactionCase):
             ["docker volume rm ic_boot_7"],
         )
         self.assertIn("removed volume ic_boot_7", out)
+
+    def test_a_copy_its_stopped_container_holds_goes_with_it(self):
+        """A test killed after its throwaway PG started (Fable, M2 of #91).
+
+        Its container, stopped, still mounts the volume, which Docker then
+        does not list as ``dangling``: the container goes first, a day
+        old, then the volume and the test's network. A young test, and
+        what only looks like one, stay.
+        """
+        old, young = self._created(30, True), self._created(1, True)
+        with tempfile.TemporaryDirectory() as tmp:
+            lines, out = self._run(
+                tmp,
+                volumes={
+                    "ic_boot_7": (self._created(30), "c7"),
+                    "ic_boot_8": (self._created(30), "c8"),
+                },
+                containers={
+                    "c7": ("ic_boot_pg_7", old),
+                    "c8": ("ic_boot_odoo_8", young),
+                    "c1": ("my_ic_boot_pg_1", old),
+                    "c2": ("ic_boot_copy_2x", old),
+                    "c3": ("ic_boot_pgx_3", old),
+                },
+                networks={
+                    "n7": ("ic_boot_7", old, "c7"),
+                    "n8": ("ic_boot_8", old, "c8"),
+                    "n9": ("ic_boot_9", young, None),
+                    "n5": ("other_ic_boot_5", old, None),
+                },
+            )
+        removals = [
+            line for line in lines
+            if line.startswith(("docker rm", "docker volume rm", "docker network rm"))
+        ]
+        # The young test's network is tried, a day old, and Docker refuses it.
+        self.assertEqual(removals, [
+            "docker rm -f c7",
+            "docker volume rm ic_boot_7",
+            "docker network rm n7",
+            "docker network rm n8",
+        ])
+        self.assertEqual(out.splitlines(), [
+            "removed container ic_boot_pg_7",
+            "removed volume ic_boot_7",
+            "removed network ic_boot_7",
+        ])
 
     def test_the_old_copies_in_tmp_go_from_a_container(self):
         old = time.time() - 2 * 86400
