@@ -304,7 +304,7 @@ class TestSessionGuard(_OnTheUncorrectedProxyFix, HttpCase):
         self._switch(browser="close")
         sid = self._sign_in()
         self.assertTrue(self._check(sid, CHROME))
-        response = self._get(sid, "/web/webclient/load_menus", FIREFOX)
+        response = self._get(sid, "/web/webclient/load_menus/1", FIREFOX)
         self.assertIn(response.status_code, (302, 303))
         self.assertIn("/web/login", response.headers["Location"])
         self.assertIsNone(self._stored(sid).uid)
