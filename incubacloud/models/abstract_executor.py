@@ -2431,10 +2431,13 @@ class AbstractExecutor(ABC):
         step: ``before_execute`` and ``get_commands()`` are not called
         again. A step that was started on the server is followed from the
         offset its log had reached. The row is marked as taken up,
-        ``parked``, ``holds_queue_since`` and ``step_alive_since`` cleared.
+        ``parked``, ``holds_queue_since`` and ``step_alive_since`` cleared,
+        and the alert of the queue a mark held, if any, closed: the job
+        runs again (13-nov-2026).
 
         :param row: the job's ``cloud.job.checkpoint``
         """
+        held = bool(row.holds_queue_since or row.step_alive_since)
         self._adopt_checkpoint(row)
         self._write_checkpoint({
             "parked": False,
@@ -2446,6 +2449,17 @@ class AbstractExecutor(ABC):
             "step_alive_since": False,
             "attempts": row.attempts + 1,
         })
+        if not held:
+            return
+        with self._durable_env() as env:
+            try:
+                with env.cr.savepoint():
+                    env["cloud.job"]._resolve_queue_held_alert(self.job)
+            except Exception:  # noqa: BLE001 — the job runs all the same
+                logging.getLogger("AbstractExecutor").exception(
+                    "[job %s] could not close the alert of its held queue",
+                    self.job.id,
+                )
 
     def _adopt_checkpoint(self, row):
         """Take on what the job's earlier attempts left, as the checkpoint says.

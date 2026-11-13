@@ -4260,6 +4260,8 @@ class CloudJob(models.Model):
         deleted at once for an ended job (``checkpoint``), by the close
         for the others: kept, either would read as a job to close at
         every pass, and its job as *Cancelling…* for good (12-nov-2026).
+        The ``_QUEUE_HELD_ALERT_CODE`` alert of the queue it held, if
+        any, is closed with it (13-nov-2026).
         Never raises: the job is closed next whatever happens here.
 
         :param int job_id: the ``cloud.job``
@@ -4320,6 +4322,17 @@ class CloudJob(models.Model):
                             _logger.exception(
                                 "cloud.job %s: the alert of its given-up"
                                 " clean-up failed", job_id,
+                            )
+                        try:
+                            with cr.savepoint():
+                                # The row goes: an alert of the queue it
+                                # held says what no longer is, and closed
+                                # by hand it would let go of nothing.
+                                self.with_env(job.env)._resolve_queue_held_alert(job)
+                        except Exception:
+                            _logger.exception(
+                                "cloud.job %s: the alert of its held queue"
+                                " could not be closed", job_id,
                             )
                     if case == "checkpoint":
                         cr.execute(
