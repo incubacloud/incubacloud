@@ -46,6 +46,11 @@ _METRICS_BOARD = (
     "yet, read_access_log reads an instance's requests."
 )
 
+_CENTRAL_HISTORY = (
+    "Leaves the metrics central's history behind: a person decides it in "
+    "Settings › Monitoring, after a confirmation."
+)
+
 #: Core routes no tool calls, each with why.
 CORE_EXCLUDED = {
     "/cloud": _SPA,
@@ -97,6 +102,12 @@ CORE_EXCLUDED = {
     "/cloud/fleet/resource_series": _METRICS_BOARD,
     "/cloud/instance/db_activity": _METRICS_BOARD,
     "/cloud/instance/slow_routes": _METRICS_BOARD,
+    "/cloud/monitoring/empty_central": _CENTRAL_HISTORY,
+    "/cloud/monitoring/retire_central": _CENTRAL_HISTORY,
+    "/cloud/monitoring/central_sizing": (
+        "The note under Where the central runs; list_hosts gives each "
+        "server's disk, memory and cores."
+    ),
     "/cloud/ping": _FORMS,
     "/cloud/get_nav_counts": (
         "The sidebar's count badges; the list tools count the same records."

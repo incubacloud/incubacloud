@@ -109,20 +109,45 @@
                                           options="centralHostOptions"
                                           value="state.centralHostId"
                                           placeholder.translate="Destination host…"
-                                          onChange="(v) => this.state.centralHostId = v"/>
+                                          onChange="(v) => this.pickCentralHost(v)"/>
                             </div>
                         </t>
                         <t t-set-slot="action">
-                            <button type="button" class="rl-btn rl-btn-primary rl-btn-sm"
+                            <button type="button"
+                                    t-att-class="centralAction === 'empty' ? 'rl-btn rl-btn-danger rl-btn-sm' : 'rl-btn rl-btn-primary rl-btn-sm'"
                                     t-att-disabled="state.deployingCentral || !state.centralHostId || null"
                                     t-on-click="deployCentral">
                                 <t t-if="state.deployingCentral">Queueing…</t>
+                                <t t-elif="centralAction === 'empty'">Start an empty central</t>
                                 <t t-else="">Enable observability</t>
                             </button>
+                        </t>
+                        <t t-set-slot="after">
+                            <p t-if="centralAction === 'empty'" class="ic-set-warn">
+                                <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
+                                <t t-esc="centralElsewhereText"/>
+                            </p>
+                            <t t-if="state.centralSizing">
+                                <p t-if="centralSizingSummary" class="ic-set-note" t-esc="centralSizingSummary"/>
+                                <p t-foreach="state.centralSizing.notes" t-as="note" t-key="note_index"
+                                   class="ic-set-warn">
+                                    <i class="fa fa-exclamation-triangle" aria-hidden="true"/> <t t-esc="note"/>
+                                </p>
+                            </t>
                         </t>
                     </SettingRow>
                     <SettingRow id="'observability_status'" plain="true">
                         <span class="ic-set-ro" t-esc="observabilityStatus"/>
+                    </SettingRow>
+                    <SettingRow t-if="state.centralHost" id="'central_retire'" button="true">
+                        <t t-set-slot="action">
+                            <button type="button" class="rl-btn rl-btn-danger rl-btn-sm"
+                                    t-att-disabled="state.retiringCentral || null"
+                                    t-on-click="retireCentral">
+                                <t t-if="state.retiringCentral">Retiring…</t>
+                                <t t-else="">Retire the central</t>
+                            </button>
+                        </t>
                     </SettingRow>
                     <SettingAdvanced form="form" fields="['metrics_enabled', 'metrics_central_url', 'metrics_remote_write_url', 'metrics_remote_write_token', 'metrics_retention_days', 'metrics_collect_pg', 'metrics_central_public_host', 'metrics_central_direct_host', 'acme_dns_cloudflare_token', 'metrics_central_operator_sources']">
                         <SettingField id="'metrics_enabled'" form="form"/>
@@ -144,6 +169,13 @@
                         <SettingField id="'metrics_central_operator_sources'" form="form"/>
                     </SettingAdvanced>
                 </SettingsBlock>
+                <IcConfirmDialog t-if="state.confirmDialog"
+                                 title="state.confirmDialog.title"
+                                 message="state.confirmDialog.message"
+                                 confirmLabel="state.confirmDialog.confirmLabel"
+                                 isDanger="state.confirmDialog.isDanger"
+                                 onConfirm="state.confirmDialog.onConfirm"
+                                 onCancel="state.confirmDialog.onCancel"/>
             </t>
         </t>
     </t>

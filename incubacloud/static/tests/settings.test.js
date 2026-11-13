@@ -15,7 +15,7 @@ import {
     editDistance, fold, markMatch, scoreField, searchElsewhere, searchSettings, suggestion,
 } from "@incubacloud/components/settings/settings_search";
 import {
-    coreForm, CORE_PARTS, coreSaveVals,
+    centralAction, coreForm, CORE_PARTS, coreSaveVals,
 } from "@incubacloud/components/settings/core_settings_block";
 import { SettingField, SettingRow } from "@incubacloud/components/settings_form/settings_form";
 import { GithubSettingsBlock } from "@incubacloud/components/settings/github_settings_block";
@@ -274,6 +274,14 @@ describe("Settings — unsaved changes", () => {
         form.metrics_retention_days = 30;
         expect(coreSaveVals(changedValues(form, saved))).toEqual({ metrics_retention_days: 30 });
         expect(Object.keys(changedValues(form, undefined))).toEqual(CORE_PARTS.monitoring);
+    });
+
+    test("a host other than the central's offers an empty central, never a plain deploy", () => {
+        const central = { id: 7, name: "metrics-1" };
+        expect(centralAction(central, 9)).toBe("empty");
+        expect(centralAction(central, 7)).toBe("enable");
+        expect(centralAction(central, null)).toBe("enable");
+        expect(centralAction(null, 9)).toBe("enable");
     });
 
     test("no default destination is sent as 0, and only when it changed", () => {

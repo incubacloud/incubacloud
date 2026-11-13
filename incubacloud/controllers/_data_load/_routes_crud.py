@@ -28,6 +28,7 @@ from ...models._repo_requirements import (
     repo_key_for_source_label,
     resolved_pip_source,
 )
+from ...models._central_sizing import central_sizing
 from ...models._odoo_versions import (
     offered_versions,
     picker_facts,
@@ -1052,6 +1053,10 @@ class CrudMixin:
             return {'ok': False, 'error': _('Host not found')}
         if host.instance_ids:
             return {'ok': False, 'error': _('Host still has instances. Delete all instances first.')}
+        Settings = request.env['cloud.settings'].sudo()
+        if host == Settings._live_central_host():
+            # Before the teardown, which removes the host's proxy first.
+            return {'ok': False, 'error': Settings._central_host_refusal(host)}
         if not host.traefik_deployed:
             # Nothing was deployed remotely — no SSH cleanup needed.
             # Two sub-cases by job history:
@@ -1879,6 +1884,7 @@ class CrudMixin:
         ) or 0)
         Settings = request.env['cloud.settings'].sudo()
         settings = Settings._get()
+        central = Settings._live_central_host()
         return {
             'autoassign_enabled': ICP.get_param(
                 'incubacloud.host_autoassign', '0',
@@ -1938,6 +1944,12 @@ class CrudMixin:
             },
             # Write-only, as the remote-write token above.
             'has_acme_dns_token': bool(settings.acme_dns_cloudflare_token),
+            # Where the central runs, while that host is in the fleet:
+            # which of Enable observability and Start an empty central
+            # the chosen host gets, and what Retire names.
+            'metrics_central_host': (
+                {'id': central.id, 'name': central.name} if central else False
+            ),
             # ── Edge ───────────────────────────────────────────────────
             # The override plus what actually applies and where it comes
             # from, because the field alone says nothing about the list
@@ -2194,6 +2206,15 @@ class CrudMixin:
         host = request.env['cloud.host'].browse(int(host_id or 0))
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
+        Settings = request.env['cloud.settings'].sudo()
+        central = Settings._live_central_host()
+        if central and central != host:
+            # It would start an empty central there and leave the history
+            # behind; the job refuses it too (``pre_run_checks``).
+            return {
+                'ok': False,
+                'error': Settings._central_elsewhere_refusal(central),
+            }
         try:
             job_id = request.env['cloud.job'].sudo().enqueue(
                 host.id, False, 'deploy_metrics_central',
@@ -2203,6 +2224,150 @@ class CrudMixin:
                 exc, _("Failed to queue the central deployment"),
             )
         return {'ok': True, 'job_id': job_id}
+
+    @http.route(['/cloud/monitoring/empty_central'], type='jsonrpc',
+                auth='user')
+    def cloud_monitoring_empty_central(self, host_id):
+        """Start an empty central on *host_id*, leaving the history behind.
+
+        The way out when the central's server is lost, or must go and its
+        history need not follow: the deployment runs as *Enable
+        observability* does and moves the panel to the new central, while
+        the old one is left as it was on its server, no longer read. The
+        browser asks the person first; the payload's ``discard_history``
+        is what lets the job run on a host other than the central's, and
+        only this route may set it (``_check_internal_queue_flags``).
+
+        :param int host_id: the host to start the empty central on
+        :return: ``{'ok': True, 'job_id': ...}``, or ``{'ok': False,
+            'error': ...}`` when there is no central elsewhere to replace
+        """
+        self._sec()._check_can_manage_hosts()
+        host = request.env['cloud.host'].browse(int(host_id or 0))
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+        central = request.env['cloud.settings'].sudo()._live_central_host()
+        if not central:
+            return {'ok': False, 'error': _(
+                "There is no central to replace: use Enable observability.",
+            )}
+        if central == host:
+            return {'ok': False, 'error': _(
+                'The central already runs on "%(host)s": Enable '
+                "observability deploys it again there, with its history.",
+                host=host.name,
+            )}
+        try:
+            job_id = request.env['cloud.job'].sudo().enqueue(
+                host.id, False, 'deploy_metrics_central',
+                {'discard_history': True},
+            )
+        except Exception as exc:
+            return safe_error_response(
+                exc, _("Failed to queue the central deployment"),
+            )
+        request.env['cloud.audit.log'].sudo().create({
+            'action': 'Empty metrics central started',
+            'details': f'{host.name} (was on {central.name})',
+        })
+        return {'ok': True, 'job_id': job_id}
+
+    @http.route(['/cloud/monitoring/retire_central'], type='jsonrpc',
+                auth='user')
+    def cloud_monitoring_retire_central(self):
+        """Forget the metrics central, after the person confirmed.
+
+        :return: ``{'ok': True, 'host': name}``, or ``{'ok': False,
+            'error': ...}`` saying why not
+        """
+        self._sec()._check_can_manage_hosts()
+        try:
+            name = request.env['cloud.settings'].retire_metrics_central()
+        except UserError as exc:
+            return {'ok': False, 'error': exc.args[0]}
+        return {'ok': True, 'host': name}
+
+    @http.route(['/cloud/monitoring/central_sizing'], type='jsonrpc',
+                auth='user')
+    def cloud_monitoring_central_sizing(self, host_id):
+        """Say whether the central fits on *host_id*: a note, not a refusal.
+
+        From the host's last measures (the metrics agents), the servers
+        that would send to the central and its retention
+        (``models/_central_sizing.py`` holds the figures and their source).
+
+        :param int host_id: the host picked under Where the central runs
+        :return: the figures and ``notes``, each a sentence to show
+        """
+        self._sec()._check_can_manage_hosts()
+        host = request.env['cloud.host'].browse(int(host_id or 0))
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+        settings = request.env['cloud.settings'].sudo()._get_system()
+        senders = request.env['cloud.host'].sudo().search([
+            ('traefik_deployed', '=', True),
+        ]) | host
+        sizing = central_sizing(
+            servers=len(senders),
+            retention_days=settings.metrics_retention_days or 0,
+            disk_free_gb=host.disk_free_gb or 0.0,
+            ram_total_gb=host.ram_total_gb or 0.0,
+            ram_available_gb=host.available_ram_gb or 0.0,
+            cpu_cores=host.cpu_cores or 0,
+            has_instances=bool(host.instance_ids),
+            full_setup=bool(host.traefik_deployed),
+        )
+        words = {
+            'no_full_setup': lambda v: _(
+                "Full Setup has not been run on this server: the deployment "
+                "refuses it until it is.",
+            ),
+            'keeps_everything': lambda v: _(
+                "The central keeps everything (retention 0): its disk grows "
+                "without end. Watch it.",
+            ),
+            'not_measured': lambda v: _(
+                "%(servers)s servers would send to it: past 20 these figures "
+                "are not measured. Give it more memory and watch it.",
+                servers=v['servers'],
+            ),
+            'disk': lambda v: _(
+                "Free disk %(free)s GB, about %(needed)s GB needed.",
+                free=v['free'], needed=v['needed'],
+            ),
+            'ram': lambda v: _(
+                "Memory %(total)s GB, %(needed)s GB recommended.",
+                total=v['total'], needed=v['needed'],
+            ),
+            'ram_free': lambda v: _(
+                "Its instances leave %(free)s GB of memory unassigned; the "
+                "central needs about %(needed)s GB.",
+                free=v['free'], needed=v['needed'],
+            ),
+            'cpu': lambda v: _(
+                "%(cores)s CPU core(s), %(needed)s recommended.",
+                cores=v['cores'], needed=v['needed'],
+            ),
+        }
+        notes = [words[code](values) for code, values in sizing['warnings']]
+        if not sizing['measured']:
+            notes.insert(0, _(
+                "Not measured yet: the server's disk, memory and cores are "
+                "read from its metrics agents.",
+            ))
+        return {
+            'ok': True,
+            'servers': len(senders),
+            'measured': sizing['measured'],
+            'disk_free_gb': host.disk_free_gb or 0.0,
+            'disk_needed_gb': sizing['disk_needed_gb'],
+            'ram_total_gb': host.ram_total_gb or 0.0,
+            'ram_needed_gb': sizing['ram_needed_gb'],
+            'cpu_cores': host.cpu_cores or 0,
+            'cpu_needed': sizing['cpu_needed'],
+            'fits': not sizing['warnings'] and sizing['measured'],
+            'notes': notes,
+        }
 
     # ── Core rate-limit settings ──────────────────────────────────────────
 

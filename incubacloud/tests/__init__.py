@@ -300,3 +300,4 @@ from . import test_session_guard
 from . import test_pg_collector
 from . import test_security_logs
 from . import test_central_without_grafana
+from . import test_central_delete_guard
