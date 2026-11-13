@@ -441,10 +441,9 @@ export class CoreSettingsBlock extends Component {
         }
         this.state.deployingCentral = true;
         try {
-            const res = await rpc(
-                empty ? "/cloud/monitoring/empty_central" : "/cloud/monitoring/deploy_central",
-                { host_id: hostId },
-            );
+            const res = empty
+                ? await rpc("/cloud/monitoring/empty_central", { host_id: hostId })
+                : await rpc("/cloud/monitoring/deploy_central", { host_id: hostId });
             if (res?.ok) {
                 await announceJob(this.env.toast, res.job_id);
             } else {
