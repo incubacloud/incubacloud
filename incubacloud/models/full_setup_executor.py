@@ -772,8 +772,9 @@ class FullSetupExecutor(
         Guarded as asked, or removed as asked, resolves
         ``shared_guard_open``. Left open (the proxy without its fixed
         address, a firewall without the MAC match or without Docker's
-        ``DOCKER-USER``) or not run to the end raises it as a warning: the
-        host serves, and its instances still reach each other. A run
+        ``DOCKER-USER``) raises it as a warning: the host serves, and its
+        instances still reach each other. So does a step that did not run
+        to the end, saying that how it left the host is not known. A run
         without the step (a test, a layer that dropped it) says nothing.
 
         :param dict results: the run's results, by step label
@@ -789,12 +790,18 @@ class FullSetupExecutor(
                 "✓ The guard on the proxy network is off, as set on this host."
             )
             return
-        detail = f" ({reason})" if reason else ""
-        message = (
-            "The guard on the proxy network was left open"
-            f"{detail}: the instances on this host can reach each other "
-            "directly. Full Setup applies it again; RB-39 says what to check."
-        )
+        if state == "FAILED":
+            message = (
+                f"The guard on the proxy network did not finish ({reason}): "
+                "whether the instances on this host reach each other is not "
+                "known. The step's log says why; see RB-39."
+            )
+        else:
+            message = (
+                f"The guard on the proxy network was left open ({reason}): "
+                "the instances on this host can reach each other directly. "
+                "Full Setup applies it again; RB-39 says what to check."
+            )
         self._sys(f"⚠ {message}")
         self._alert(SHARED_GUARD_ALERT, message, level="warning")
 
