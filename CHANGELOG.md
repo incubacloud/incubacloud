@@ -148,6 +148,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   two rebuilds asked for by people (10) and make them wait its whole
   build. Equal priorities keep the old order, and a parked job coming
   back never gives its lock away.
+- **A server that does not answer holds the queue of what may still run
+  there, with no expiry** ([architecture](docs/architecture.md)). A job
+  cancelled, failed or cut off while a step it started on its server may
+  still run there, and whose server did not answer, keeps its instance's
+  queue (or its server's, for a server job) busy until the
+  reconciliation reaches the server and stops the step, before or past
+  the point of no return alike: if the server comes back, the step and
+  the next job must not run together. The hold used to expire 2 h 10 min
+  after it began (`DETACHED_HOLDS_QUEUE_MAX_S`, removed), and before the
+  point of no return there was none. Such a row is never given up. After
+  30 minutes the warning alert `job_queue_held_unreachable`, on the
+  server and the instance, says the queue waits, what to stop and remove
+  on the server, and that dismissing it lets the queue go on: dismissed
+  by hand it deletes the job's checkpoint, says so in the job's log and
+  serves the queue; *Dismiss all* leaves it open, and it closes by itself
+  when the server answers. The sweep of the queues raises it too while
+  the reconciliation's scheduled action is off or has not run for 30
+  minutes. A cancelled job that holds reads *Cancelling…*, and the first
+  job of its queue reads «Queued · waiting for the server to answer, to
+  confirm job #N stopped». A move's restore whose target is gone still
+  holds nothing while the instance lives on its source. Spanish
+  translation included.
 
 ### Fixed
 
