@@ -480,11 +480,16 @@ class CloudSettings(models.Model):
         string='Metrics central host',
         readonly=True,
         copy=False,
-        ondelete='set null',
+        # The host holds the metrics history and the security logs: it
+        # cannot leave the fleet while the central runs on it
+        # (``cloud.host._check_not_metrics_central``); this is the last
+        # line under that check.
+        ondelete='restrict',
         help='Host carrying the central stack, recorded when a '
              'deployment of it succeeds. The account sync targets it. '
              'Empty means no central was ever deployed from this panel, '
-             'and accounts cannot be granted until one is.',
+             'or it was retired, and accounts cannot be granted until one '
+             'is deployed.',
     )
     metrics_accounts_deployed = fields.Text(
         string='Accounts on the central',
@@ -524,6 +529,109 @@ class CloudSettings(models.Model):
         now their settings, rather than leaving them to its next
         reconciliation.
         """
+
+    @api.model
+    def _live_central_host(self):
+        """Return the host the metrics central runs on, or an empty record.
+
+        The host the last good deployment recorded, while it is still in
+        the fleet. A central recorded on an archived host (before 1.0.227
+        nothing stopped archiving it) counts as none: there is no host
+        left to protect or to deploy beside.
+
+        :return: a ``cloud.host`` record, empty when there is no central
+        """
+        host = self._get_system().metrics_central_host_id.sudo()
+        return host if host and host.active else self.env["cloud.host"]
+
+    @api.model
+    def _central_host_refusal(self, host):
+        """Say why *host* cannot be deleted or archived, and the ways out.
+
+        One wording for the model, the route and the job, so the person
+        reads the same whichever of them refused.
+
+        :param host: the ``cloud.host`` the central runs on
+        :return: the translated message
+        :rtype: str
+        """
+        return _(
+            '"%(host)s" runs the metrics central, with the metrics history '
+            "and the security logs. Before deleting it, go to Settings › "
+            "Monitoring › Where the central runs and either start an empty "
+            "central on another server or retire the central. Either way "
+            "the history stays behind on this server; to keep it, copy the "
+            'central\'s data first (operations guide, "Where the central '
+            'runs").',
+            host=host.name,
+        )
+
+    @api.model
+    def _central_elsewhere_refusal(self, central):
+        """Say why the central cannot simply be deployed on another host.
+
+        :param central: the ``cloud.host`` the central runs on now
+        :return: the translated message
+        :rtype: str
+        """
+        return _(
+            'The central runs on "%(host)s", with the metrics history and '
+            "the security logs. Deploying it on another server would start "
+            "an empty one there and leave the history behind: if that is "
+            "what you want, use Start an empty central.",
+            host=central.name,
+        )
+
+    def retire_metrics_central(self):
+        """Forget the metrics central, its history with it.
+
+        The way out for a central whose server is lost, or for a panel
+        whose only server is going away: the panel stops recording a
+        host, stops reading and switches observability off, so the host
+        can be deleted. Nothing is done on the server: the central's
+        stack and its data stay there until the server goes. Agents
+        already installed keep sending to the old address until
+        observability is enabled again on another host.
+
+        Refused while a deployment or an account sync of the central
+        waits or runs: it would record the host again when it ends.
+
+        :return: the name of the host the central ran on
+        :rtype: str
+        :raises UserError: when there is no central to retire, or a job
+            of the central is still to end
+        """
+        self.env["cloud.security.mixin"]._check_can_manage_hosts()
+        settings = self._get_system()
+        host = settings.metrics_central_host_id.sudo()
+        if not host:
+            raise UserError(_("There is no metrics central to retire."))
+        pending = self.env["cloud.job"].sudo().search_count([
+            ("host_id", "=", host.id),
+            ("job_type_id.code", "in", (
+                "deploy_metrics_central", "sync_metrics_accounts",
+            )),
+            ("state", "in", (
+                "queued", "pending", "enqueued", "wait_dependencies", "started",
+            )),
+        ])
+        if pending:
+            raise UserError(_(
+                'A job of the central waits or runs on "%(host)s": wait for '
+                "it to end, or cancel it, and retire the central then.",
+                host=host.name,
+            ))
+        settings.write({
+            "metrics_central_host_id": False,
+            "metrics_central_url": False,
+            "metrics_remote_write_url": False,
+            "metrics_enabled": False,
+        })
+        self.env["cloud.audit.log"].sudo().create({
+            "action": "Metrics central retired",
+            "details": host.name,
+        })
+        return host.name
 
     # The central's credentials are for system administrators only: the
     # panel's code reads and mints them elevated (``_get_system``), and the

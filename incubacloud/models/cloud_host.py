@@ -2419,6 +2419,24 @@ class CloudHost(models.Model):
                     % (host.name, len(host.instance_ids))
                 )
 
+    def _check_not_metrics_central(self):
+        """Refuse to delete or archive the host the metrics central runs on.
+
+        The central's server holds the metrics history and the security
+        logs, and ``metrics_central_host_id`` used to let go of it on its
+        own (``ondelete='set null'``): a host deleted or archived took the
+        central out of the panel's sight, and its history with it. The
+        ways out are in Settings: start an empty central on another host,
+        or retire the central.
+
+        :raises UserError: naming the host and the ways out
+        """
+        central = self.env["cloud.settings"].sudo()._live_central_host()
+        if central and central in self:
+            raise UserError(
+                self.env["cloud.settings"]._central_host_refusal(central)
+            )
+
     def _release_external_resources(self):
         """Lifecycle hook fired before a host is archived or unlinked.
 
@@ -2454,6 +2472,7 @@ class CloudHost(models.Model):
     def unlink(self):
         self._check_can_manage_hosts()
         self._check_no_instances()
+        self._check_not_metrics_central()
         self._release_external_resources()
         for host in self:
             self.env["cloud.audit.log"].sudo().create(
@@ -2474,6 +2493,7 @@ class CloudHost(models.Model):
         retiring = []
         if vals.get("active") is False:
             self._check_no_instances()
+            self._check_not_metrics_central()
             self.filtered("active")._release_external_resources()
             self.filtered("active")._dismiss_alerts_on_retirement()
             # Archiving is how a host leaves the fleet (the teardown job

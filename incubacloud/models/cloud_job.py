@@ -4763,13 +4763,26 @@ class CloudJob(models.Model):
         instead of queuing a follow-up at the tail, or a recovery behind
         the failure it recovers from.
 
+        ``discard_history`` lets a deployment of the metrics central start
+        an empty one on a host other than the central's, leaving the
+        history behind: only *Start an empty central* asks for it, after
+        the person confirmed (``/cloud/monitoring/empty_central``).
+
         :param bool bypass_running_check: what the caller asked for
         :param payloads: the payload of the job, or of each step of a chain
         :raises AccessError: when a caller without superuser rights asks
-            for either
+            for any of them
         """
         if self.env.su:
             return
+        if any(
+            isinstance(payload, dict) and "discard_history" in payload
+            for payload in payloads
+        ):
+            raise AccessError(_(
+                "Only Start an empty central, in Settings › Monitoring, may "
+                "deploy the metrics central without its history.",
+            ))
         if bypass_running_check or any(
             isinstance(payload, dict) and payload.get("move_rollback")
             for payload in payloads

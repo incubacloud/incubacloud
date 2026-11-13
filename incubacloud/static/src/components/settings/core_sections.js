@@ -301,12 +301,18 @@ settingsBlocks.add("core-monitoring", {
         {
             id: "central_host", type: "custom", block: _t("Observability"),
             label: _t("Where the central runs"),
-            help: _t("VictoriaMetrics, Loki and a gateway, deployed as a job on this host. Run it again to move it."),
+            help: _t("VictoriaMetrics, Loki and a gateway, deployed as a job on the host picked here. Its server keeps the metrics history and the security logs, and cannot be deleted while the central runs on it."),
             synonyms: ["metrics", "victoriametrics", "loki", "prometheus", "observability"],
         },
         {
             id: "observability_status", type: "custom", block: _t("Observability"),
             label: _t("Status"), synonyms: ["metrics", "observability"],
+        },
+        {
+            id: "central_retire", type: "custom", block: _t("Observability"),
+            label: _t("Retire the central (the history is lost)"),
+            help: _t("For a central whose server is lost, or a panel whose only server is going: the panel forgets it and observability goes off, so the server can be deleted."),
+            synonyms: ["metrics", "central", "delete", "remove"],
         },
         {
             id: "metrics_enabled", type: "toggle", advanced: true, block: _t("Observability"),

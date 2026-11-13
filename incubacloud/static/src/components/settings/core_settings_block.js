@@ -5,6 +5,8 @@ import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { announceJob } from "../../utils/job_queue";
 import { GitProvidersTab } from "../git_providers_tab/git_providers_tab";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { confirmVia } from "../../utils/use_confirm";
 import { RlSelect } from "../rl_select/rl_select";
 import {
     SettingAdvanced, SettingField, SettingRow, SettingsBlock,
@@ -137,7 +139,9 @@ export function coreSaveVals(changes) {
  */
 export class CoreSettingsBlock extends Component {
     static template = "incubacloud.CoreSettingsBlock";
-    static components = { RlSelect, SettingAdvanced, SettingField, SettingRow, SettingsBlock };
+    static components = {
+        IcConfirmDialog, RlSelect, SettingAdvanced, SettingField, SettingRow, SettingsBlock,
+    };
     static props = {
         part: { type: String, validate: (p) => p in CORE_PARTS },
     };
@@ -153,6 +157,12 @@ export class CoreSettingsBlock extends Component {
             hosts: [],
             centralHostId: null,
             deployingCentral: false,
+            // Where the central runs now ({id, name}), or null.
+            centralHost: null,
+            // What the picked host offers the central, or null.
+            centralSizing: null,
+            retiringCentral: false,
+            confirmDialog: null,
             auditPurging: false,
             // Read-only, derived on the server; never sent back.
             effectiveProxyRanges: [],
@@ -190,6 +200,7 @@ export class CoreSettingsBlock extends Component {
             this.state.hasMetricsToken = Boolean(data.has_metrics_remote_write_token);
             this.state.hasAcmeDnsToken = Boolean(data.has_acme_dns_token);
             this.state.centralDirect = data.metrics_central_direct || null;
+            this.state.centralHost = data.metrics_central_host || null;
             if (part === "monitoring") {
                 // The central's destination picker. The rest of the page
                 // works without it.
@@ -313,6 +324,62 @@ export class CoreSettingsBlock extends Component {
         return this.state.hosts.map((h) => ({ value: h.id, label: h.name }));
     }
 
+    /**
+     * What the button under Where the central runs does with the picked
+     * host: deploy the central there, or, while it runs on another host,
+     * start an empty one there.
+     *
+     * @returns {"enable"|"empty"} the action
+     */
+    get centralAction() {
+        return centralAction(this.state.centralHost, this.state.centralHostId);
+    }
+
+    /**
+     * Pick the central's host and read whether the central fits on it.
+     *
+     * @param {number|null} hostId the picked host
+     */
+    async pickCentralHost(hostId) {
+        this.state.centralHostId = hostId;
+        this.state.centralSizing = null;
+        if (!hostId) {
+            return;
+        }
+        try {
+            const sizing = await rpc("/cloud/monitoring/central_sizing", { host_id: hostId });
+            // Only the answer for the host still picked.
+            if (this.state.centralHostId === hostId && sizing?.ok) {
+                this.state.centralSizing = sizing;
+            }
+        } catch {
+            // The note is a help, not a condition: the picker works without it.
+        }
+    }
+
+    /** @returns {string} what Start an empty central leaves behind */
+    get centralElsewhereText() {
+        return _t(
+            "The central runs on %s, with the history. Here an empty one starts, and the history stays behind there.",
+            this.state.centralHost?.name || "",
+        );
+    }
+
+    /** @returns {string} what the picked host gives the central, in one line */
+    get centralSizingSummary() {
+        const sizing = this.state.centralSizing;
+        if (!sizing?.measured) {
+            return "";
+        }
+        if (sizing.fits) {
+            return _t(
+                "It fits: %(disk)s GB of disk free, %(ram)s GB of memory, %(cpu)s cores.",
+                { disk: sizing.disk_free_gb, ram: sizing.ram_total_gb, cpu: sizing.cpu_cores },
+            );
+        }
+        return "";
+    }
+
     /** @returns {string} where observability stands, in one line */
     get observabilityStatus() {
         const form = this.state.form;
@@ -321,6 +388,9 @@ export class CoreSettingsBlock extends Component {
         }
         if (!form.metrics_central_url) {
             return _t("On, but no query URL is set: nothing can be read back.");
+        }
+        if (this.state.centralHost) {
+            return _t("Collecting, with charts available. The central runs on %s.", this.state.centralHost.name);
         }
         return _t("Collecting, with charts available.");
     }
@@ -353,9 +423,28 @@ export class CoreSettingsBlock extends Component {
             this.env.toast?.error(_t("Pick the host that should run it."));
             return;
         }
+        const empty = this.centralAction === "empty";
+        if (empty) {
+            const target = this.state.hosts.find((h) => h.id === hostId)?.name || "";
+            const confirmed = await confirmVia(this.state, {
+                title: _t("Start an empty central"),
+                message: _t(
+                    "Start an empty central on %(target)s? The central on %(central)s is left as it is, with the metrics history and the security logs, and the panel no longer reads it: the charts start empty. %(central)s can then be deleted, and the history goes with it.",
+                    { target, central: this.state.centralHost.name },
+                ),
+                confirmLabel: _t("Start an empty central"),
+                isDanger: true,
+            });
+            if (!confirmed) {
+                return;
+            }
+        }
         this.state.deployingCentral = true;
         try {
-            const res = await rpc("/cloud/monitoring/deploy_central", { host_id: hostId });
+            const res = await rpc(
+                empty ? "/cloud/monitoring/empty_central" : "/cloud/monitoring/deploy_central",
+                { host_id: hostId },
+            );
             if (res?.ok) {
                 await announceJob(this.env.toast, res.job_id);
             } else {
@@ -367,6 +456,54 @@ export class CoreSettingsBlock extends Component {
             this.state.deployingCentral = false;
         }
     }
+
+    /**
+     * Forget the central after the person confirmed: observability goes
+     * off, and the server it ran on can be deleted.
+     */
+    async retireCentral() {
+        const central = this.state.centralHost;
+        if (!central || this.state.retiringCentral) {
+            return;
+        }
+        const confirmed = await confirmVia(this.state, {
+            title: _t("Retire the central"),
+            message: _t(
+                "Retire the central on %s? The panel forgets it and switches observability off: the metrics history and the security logs stay on that server, unread, and go when it is deleted. Agents already installed keep sending to it until observability is enabled on another host.",
+                central.name,
+            ),
+            confirmLabel: _t("Retire the central"),
+            isDanger: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        this.state.retiringCentral = true;
+        try {
+            const res = await rpc("/cloud/monitoring/retire_central", {});
+            if (res?.ok) {
+                this.env.toast?.success(_t("The central is retired. Observability is off."));
+                await this.reload();
+            } else {
+                this.env.toast?.error(res?.error || _t("Could not retire it."));
+            }
+        } catch (e) {
+            this.env.toast?.error(e.data?.message || e.message || _t("Could not retire it."));
+        } finally {
+            this.state.retiringCentral = false;
+        }
+    }
+}
+
+/**
+ * What the button under Where the central runs does with a picked host.
+ *
+ * @param {{id: number, name: string}|null} central where the central runs now
+ * @param {number|null} hostId the picked host
+ * @returns {"enable"|"empty"} "empty" while the central runs on another host
+ */
+export function centralAction(central, hostId) {
+    return central && hostId && central.id !== hostId ? "empty" : "enable";
 }
 
 /** Settings → Git providers: the GitLab servers, each saved on its own. */

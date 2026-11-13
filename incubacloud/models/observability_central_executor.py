@@ -385,17 +385,55 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         return yaml.safe_dump({"users": users}, sort_keys=False)
 
     def pre_run_checks(self):
-        """Refuse to publish the central's direct name on a host without a port.
+        """Refuse a run that would orphan the central or publish it wrongly.
 
-        The router would name an entrypoint the host's proxy does not have.
+        On a host other than the central's it would start an empty
+        central and leave the history behind; on a host without Full
+        Setup or without a direct port, the router would name a proxy or
+        an entrypoint the host does not have.
 
         :raises JobRefused: saying what to do.
         """
         super().pre_run_checks()
-        problem = self._public_proxy_problem() or self._direct_port_problem()
+        problem = (
+            self._central_elsewhere_problem()
+            or self._public_proxy_problem()
+            or self._direct_port_problem()
+        )
         if problem:
             self._write_system_direct(f"⚠ {problem}")
             raise JobRefused(problem)
+
+    def _discards_history(self):
+        """Return whether this run was asked to start an empty central.
+
+        Only *Start an empty central* sets ``discard_history``, through
+        ``/cloud/monitoring/empty_central``; ``enqueue`` refuses it to
+        anyone without superuser rights (``_check_internal_queue_flags``).
+
+        :rtype: bool
+        """
+        payload = self.job.payload
+        return isinstance(payload, dict) and payload.get("discard_history") is True
+
+    def _central_elsewhere_problem(self):
+        """Return why this run must not touch a central on this host, or ''.
+
+        A deployment on a host other than the central's started an empty
+        central there and moved the panel to it, leaving the history
+        behind on the old host, unread. While the central runs elsewhere,
+        only *Start an empty central* may do that. The account sync,
+        which inherits this check, only ever targets the central's host.
+
+        :rtype: str
+        """
+        Settings = self.env["cloud.settings"].sudo()
+        central = Settings._live_central_host()
+        if not central or central == self._host():
+            return ""
+        if self._discards_history():
+            return ""
+        return Settings._central_elsewhere_refusal(central)
 
     def _public_proxy_problem(self):
         """Return why this run cannot publish the central under a name, or ''.
@@ -555,6 +593,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         gateway = str(self.playbook_facts().get("ic_central_gateway") or "")
         # Already minted before the playbook ran; read it back for the log.
         account = settings.metrics_account or ""
+        # The central this one replaces, when it was started empty.
+        left_behind = settings._live_central_host() - self._host()
 
         # Where the central lives, so a later account sync knows which
         # host to reach. Recorded on success rather than on enqueue: the
@@ -612,6 +652,13 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "For agents on OTHER hosts, set a public HTTPS "
                 "remote-write URL under Advanced — the local address is "
                 "not reachable from them."
+            )
+        if left_behind:
+            self._sys(
+                f"The central on {left_behind.name} is left as it was, with "
+                "its history: the panel no longer reads it. It goes "
+                "with that server, or by hand with `docker compose -p "
+                "incubacloud-central down -v` there."
             )
         self._resolve_alert("metrics_central_failed")
 
