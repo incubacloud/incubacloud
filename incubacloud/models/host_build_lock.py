@@ -37,8 +37,16 @@ The namespace is shared with the build lock a layer may take for
 builds of its own (the first one solved this for its builds only). One
 namespace is what makes "at most one build per host" true across all of
 them: two families each holding their own lock would still collide.
+
+A deferral says what it waits for (13-nov-2026, #68). Its message starts
+with ``BUILD_LOCK_WAIT_MARKER`` and names the job when there is one
+(``(job #N)``); queue_job keeps it in ``queue.job.result`` until the job
+ends, and ``cloud.job._build_waits`` reads it there for the lists. The
+job's log says it once per job it waits for.
 """
 from odoo.addons.queue_job.exception import RetryableJobError
+
+from .registry import executor_registry
 
 # Single namespace for every per-host lock, whatever enqueued the work:
 # manual rebuild, a layer's deploys and rebuilds, and the instance
@@ -46,6 +54,14 @@ from odoo.addons.queue_job.exception import RetryableJobError
 # ``cloud.job`` so the two lock families never collide. Released on
 # COMMIT/ROLLBACK automatically.
 _HOST_BUILD_LOCK_NS = 0x0C70BB1D
+
+#: How every deferral for the lock starts. ``cloud.job._build_waits``
+#: reads it in ``queue.job.result``: the message comes from here alone,
+#: ``(job #N)`` after it when a job is named.
+BUILD_LOCK_WAIT_MARKER = "Another build is running on this host"
+
+#: Seconds before a deferred job tries again.
+_BUILD_LOCK_RETRY_S = 30
 
 
 class HostBuildLockMixin:
@@ -100,11 +116,7 @@ class HostBuildLockMixin:
         if not host:
             return
         if not self._try_host_build_lock(host):
-            raise RetryableJobError(
-                "Another build is running on this host; deferring.",
-                seconds=30,
-                ignore_retry=True,
-            )
+            raise self._build_lock_deferral(self._build_running_on(host))
         with self.env["cloud.job"]._fresh_env() as env:
             env.cr.execute(
                 "SELECT job_id FROM cloud_job_checkpoint"
@@ -115,12 +127,63 @@ class HostBuildLockMixin:
             )
             row = env.cr.fetchone()
         if row:
-            raise RetryableJobError(
-                f"Another build is running on this host (job #{row[0]});"
-                " deferring.",
-                seconds=30,
-                ignore_retry=True,
+            raise self._build_lock_deferral(row[0])
+
+    def _build_running_on(self, host):
+        """Return the job that holds *host*'s lock, when only one may hold it.
+
+        The jobs of the host, this one aside, whose ``queue.job`` runs and
+        whose type has an executor that takes the lock: one of them holds
+        it. Read on a fresh cursor.
+
+        :param host: the ``cloud.host``
+        :return: its id when there is exactly one such job, else None
+        :rtype: int
+        """
+        with self.env["cloud.job"]._fresh_env() as env:
+            env.cr.execute(
+                "SELECT c.id, t.code FROM cloud_job c"
+                " JOIN queue_job q ON q.uuid = c.queue_job_uuid"
+                " JOIN cloud_job_type t ON t.id = c.job_type_id"
+                " WHERE c.host_id = %s AND c.id != %s AND q.state = 'started'",
+                (host.id, self.job.id),
             )
+            rows = env.cr.fetchall()
+        building = []
+        for job_id, code in rows:
+            cls = executor_registry.get(code)
+            if cls and issubclass(cls, HostBuildLockMixin) and cls._takes_host_build_lock:
+                building.append(job_id)
+        return building[0] if len(building) == 1 else None
+
+    def _build_lock_deferral(self, job_id):
+        """Say in the log what the job waits for, and return its deferral.
+
+        The line goes once per job waited for (``cloud.job._note_once``,
+        on a cursor of its own: the deferral rolls the job's transaction
+        back). The message starts with ``BUILD_LOCK_WAIT_MARKER``, which
+        the lists read.
+
+        :param int job_id: the job waited for, or None when none is known
+        :return: the ``RetryableJobError`` to raise; it spends no retry
+        """
+        if job_id:
+            note = self.job.env._(
+                "Waiting for job #%(job)s to finish building on this server:"
+                " tried again every 30 s.",
+                job=job_id,
+            )
+            message = f"{BUILD_LOCK_WAIT_MARKER} (job #{job_id}); deferring."
+        else:
+            note = self.job.env._(
+                "Waiting for another build on this server to finish:"
+                " tried again every 30 s."
+            )
+            message = f"{BUILD_LOCK_WAIT_MARKER}; deferring."
+        self.job._note_once(note)
+        return RetryableJobError(
+            message, seconds=_BUILD_LOCK_RETRY_S, ignore_retry=True,
+        )
 
     def _try_host_build_lock(self, host):
         """Try the build lock of *host* in the job's transaction.
