@@ -960,3 +960,191 @@ _instance_repo_with_trees() {
     [[ "$output" == *"fetched repository trees are still in the repository's index"* ]]
     [ -z "$(git -C "$DIR" rev-parse -q --verify HEAD)" ]
 }
+
+
+# ── the mark of a rebuild left unapplied (#96) ──────────────────────────
+
+# A real repository, committed clean, and a copier that writes whether the
+# mark was there when it ran, and what it held, to $TMP/mark-at-copier.
+_instance_repo_for_the_mark() {
+    rm -f "$TMP/bin/git"
+    cat > "$HOME/.local/bin/copier" <<'STUB'
+#!/usr/bin/env bash
+echo "copier $*" >> "$CALLS"
+dir="${!#}"
+if [ -f "$dir/.incubacloud-unapplied" ]; then
+    cp "$dir/.incubacloud-unapplied" "$TMP/mark-at-copier"
+else
+    echo none > "$TMP/mark-at-copier"
+fi
+STUB
+    chmod +x "$HOME/.local/bin/copier"
+    git -C "$DIR" init -q
+    printf 'template\n' > "$DIR/prod.yaml"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261113T120000Z
+    [ "$status" -eq 0 ]
+}
+
+# Write a mark as copier-update writes it.
+#   _mark <job> <kind>
+_mark() {
+    printf 'job=%s\nkind=%s\nat=2026-11-13T12:00:00Z\n' "$1" "$2" \
+        > "$DIR/.incubacloud-unapplied"
+}
+
+@test "copier-update lays the mark of its job before copier runs" {
+    _instance_repo_for_the_mark
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 0 ]
+    grep -qx 'job=512' "$TMP/mark-at-copier"
+    grep -qx 'kind=build' "$TMP/mark-at-copier"
+    grep -q '^at=20[0-9-]*T[0-9:]*Z$' "$TMP/mark-at-copier"
+    # Copier's run leaves it, for the restart to lift.
+    grep -qx 'job=512' "$DIR/.incubacloud-unapplied"
+}
+
+@test "copier-update lays no mark on a tree it refuses as dirty" {
+    _instance_repo_for_the_mark
+    printf 'edited on the host\n' >> "$DIR/prod.yaml"
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 1 ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    [ ! -e "$TMP/mark-at-copier" ]
+}
+
+@test "copier-update stops before copier when git would see the mark" {
+    [ "$(id -u)" -ne 0 ] || skip "root writes a read-only exclude file anyway"
+    _instance_repo_for_the_mark
+    : > "$DIR/.git/info/exclude"
+    chmod 444 "$DIR/.git/info/exclude"
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ERROR"*".incubacloud-unapplied"* ]]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    [ ! -e "$TMP/mark-at-copier" ]
+}
+
+@test "copier-update lays no mark in a project without a repository" {
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 0 ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+}
+
+@test "copier-update of a plan change stops at a rebuild's mark, without copier" {
+    _instance_repo_for_the_mark
+    _mark 400 build
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 files
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"rebuild #400"* ]]
+    [ ! -e "$TMP/mark-at-copier" ]
+    grep -qx 'job=400' "$DIR/.incubacloud-unapplied"
+    grep -qx 'kind=build' "$DIR/.incubacloud-unapplied"
+}
+
+@test "copier-update of a rebuild takes the place of another job's mark" {
+    _instance_repo_for_the_mark
+    _mark 400 build
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 0 ]
+    grep -qx 'job=512' "$TMP/mark-at-copier"
+    grep -qx 'kind=build' "$TMP/mark-at-copier"
+}
+
+@test "copier-update of a plan change takes the place of another plan change's mark" {
+    _instance_repo_for_the_mark
+    _mark 400 files
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 files
+    [ "$status" -eq 0 ]
+    grep -qx 'job=512' "$TMP/mark-at-copier"
+    grep -qx 'kind=files' "$TMP/mark-at-copier"
+}
+
+@test "copier-update writes its own job's mark again on a second attempt" {
+    _instance_repo_for_the_mark
+    _mark 512 files
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 files
+    [ "$status" -eq 0 ]
+    grep -qx 'job=512' "$TMP/mark-at-copier"
+}
+
+@test "copier-update without a job neither lays nor reads a mark (the warm claim)" {
+    _instance_repo_for_the_mark
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/mark-at-copier")" = none ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    # Another job's mark is left as it is, and copier runs.
+    rm -f "$TMP/mark-at-copier"
+    _mark 400 build
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8
+    [ "$status" -eq 0 ]
+    grep -qx 'job=400' "$TMP/mark-at-copier"
+}
+
+@test "copier-update refuses a kind it does not know" {
+    _instance_repo_for_the_mark
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 image
+    [ "$status" -eq 1 ]
+    [ ! -e "$TMP/mark-at-copier" ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+}
+
+@test "the mark never shows in git status, and commit-dirty keeps it out of the index" {
+    _instance_repo_for_the_mark
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8 512 build
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" status --porcelain --untracked-files=all)" ]
+    # One committed before the exclusion existed is taken out of the index.
+    git -C "$DIR" add -f .incubacloud-unapplied
+    git -C "$DIR" -c user.email=t@example.com -c user.name=T commit -qm "a mark taken in"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261113T130000Z
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" ls-files .incubacloud-unapplied)" ]
+    [ -f "$DIR/.incubacloud-unapplied" ]
+}
+
+@test "clear-unapplied of a job lifts only that job's mark" {
+    _mark 400 build
+    run bash "$SCRIPT" clear-unapplied "$DIR" 512
+    [ "$status" -eq 0 ]
+    grep -qx 'job=400' "$DIR/.incubacloud-unapplied"
+    run bash "$SCRIPT" clear-unapplied "$DIR" 400
+    [ "$status" -eq 0 ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    # No mark at all is nothing to do.
+    run bash "$SCRIPT" clear-unapplied "$DIR" 400
+    [ "$status" -eq 0 ]
+}
+
+@test "clear-unapplied without a job lifts any mark, the way out by hand" {
+    _mark 400 build
+    run bash "$SCRIPT" clear-unapplied "$DIR"
+    [ "$status" -eq 0 ]
+    [ ! -e "$DIR/.incubacloud-unapplied" ]
+    [[ "$output" == *"rebuild #400"* ]]
+}
+
+@test "check-unapplied says 0 without a mark and 26 with one, naming job and kind" {
+    run bash "$SCRIPT" check-unapplied "$DIR"
+    [ "$status" -eq 0 ]
+    _mark 400 build
+    run bash "$SCRIPT" check-unapplied "$DIR"
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"IC_UNAPPLIED job=400 kind=build"* ]]
+    _mark 401 files
+    run bash "$SCRIPT" check-unapplied "$DIR"
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"IC_UNAPPLIED job=401 kind=files"* ]]
+}
+
+@test "check-unapplied takes a mark it cannot read for a rebuild's" {
+    printf 'garbage\n' > "$DIR/.incubacloud-unapplied"
+    run bash "$SCRIPT" check-unapplied "$DIR"
+    [ "$status" -eq 26 ]
+    [[ "$output" == *"kind=build"* ]]
+}
+
+@test "check-unapplied finds no mark where there is no directory" {
+    run bash "$SCRIPT" check-unapplied "$HOME/projects/gone"
+    [ "$status" -eq 0 ]
+}

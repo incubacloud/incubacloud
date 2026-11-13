@@ -19,6 +19,14 @@
 #       not be read (see ``unchecked`` below); the executors take it for
 #       a step done, with a warning (COMPOSE_OP_EXIT_UNCHECKED in
 #       models/abstract_executor.py)
+#   26  a rebuild left its files and image unapplied here (the mark of
+#       lib/common.sh), and the containers the project has are not the
+#       services its rewritten compose declares: nothing was run
+#       (COMPOSE_OP_EXIT_UNAPPLIED)
+#   27  the same mark, with the containers matching: ``up`` started the
+#       existing containers instead, the previous build, and the steps
+#       that follow ran (COMPOSE_OP_EXIT_PREVIOUS_BUILD); it goes before
+#       the 24, whose warnings stay in the log
 #   *   whatever docker compose returned
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
@@ -40,6 +48,65 @@ if [ ! -d "$dir" ]; then
 fi
 
 cd "$dir"
+
+# The services of the project's containers, one per line, sorted, one-off
+# containers left out. Read by the compose's working-directory label, as
+# project_containers_check.sh does, not with ``docker compose ps``, which
+# reads the rewritten compose and may leave out a container it no longer
+# names. Returns 1 when docker cannot list them.
+project_services() {
+    local label=com.docker.compose.project.working_dir resolved listed
+    resolved="$(readlink -f .)"
+    listed="$(docker ps -a --filter "label=$label=$resolved" \
+        --format '{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.oneoff"}}')" \
+        || return 1
+    awk -F'|' '$1 != "" && $2 != "True" { print $1 }' <<<"$listed" | sort -u
+}
+
+# What a rebuild left unapplied allows (#96, F2 of 13-nov-2026). Copier
+# has rewritten the compose and the build may have retagged the image, and
+# ``up`` would recreate the containers from them, untried. ``start`` and
+# ``restart`` recreate nothing: they bring back the previous build, but
+# from the rewritten compose's list of services, so only when the project
+# has a container for every service it declares and none it no longer
+# does. A sidecar the new compose drops would stay down, and odoo would
+# run without the egress it filtered. Then ``up`` becomes ``start``, and
+# the script ends with EXIT_PREVIOUS_BUILD. Otherwise, or when either
+# list cannot be read, it exits EXIT_UNAPPLIED before running anything.
+# Only a mark of a build: a plan change's (``files``) rewrote files alone,
+# which its own restart would have recreated the containers from.
+EXIT_UNAPPLIED=26
+EXIT_PREVIOUS_BUILD=27
+previous_build=0
+case "$op" in
+    up | start | restart)
+        if ic_unapplied_read "$dir" && [ "$IC_UNAPPLIED_KIND" = build ]; then
+            declared=""
+            existing=""
+            if declared="$(ic_compose_services)" \
+                && existing="$(project_services)"; then
+                declared="$(sort -u <<<"$declared" | awk NF)"
+            else
+                declared=""
+            fi
+            if [ -z "$declared" ] || [ "$declared" != "$existing" ]; then
+                if [ -z "$declared" ]; then
+                    why="the compose or the project's containers could not be read"
+                else
+                    missing="$(comm -23 <(printf '%s\n' "$declared") <(printf '%s\n' "$existing") | awk NF | paste -sd ' ' -)"
+                    extra="$(comm -13 <(printf '%s\n' "$declared") <(printf '%s\n' "$existing") | awk NF | paste -sd ' ' -)"
+                    why="services without a container: ${missing:-none}; containers the compose no longer names: ${extra:-none}"
+                fi
+                ic_warn "refusing to $op: the previous build cannot be started as it was (${why})"
+                printf '[incubacloud] ERROR: %s\n' "$(ic_unapplied_message)" >&2
+                exit "$EXIT_UNAPPLIED"
+            fi
+            ic_warn "rebuild #${IC_UNAPPLIED_JOB:-?} left its files and image unapplied: starting the previous build's containers as they are, without recreating them"
+            [ "$op" != up ] || op=start
+            previous_build=1
+        fi
+        ;;
+esac
 
 # Whether the operation may start odoo: it names no service (the whole
 # stack) or names odoo among them.
@@ -229,4 +296,8 @@ if [ "${#unchecked[@]}" -gt 0 ]; then
     ic_warn "the $op ran, but the steps that follow it could not be checked (see the warnings above): until the instance is restarted, ${risks%; }"
 fi
 [ "$stop_status" -eq 0 ] || exit "$stop_status"
+if [ "$previous_build" -eq 1 ]; then
+    ic_warn "the $op started the previous build, not what rebuild #${IC_UNAPPLIED_JOB:-?} left: $(ic_unapplied_message)"
+    exit "$EXIT_PREVIOUS_BUILD"
+fi
 [ "${#unchecked[@]}" -eq 0 ] || exit "$EXIT_UNCHECKED"
