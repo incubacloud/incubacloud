@@ -10,7 +10,9 @@
         the names where its grammar wants them; the rest is translated
         here. Nothing in it asks anything (the platform owner's decision,
         11-nov-2026): it says what happened and what to do if it was not
-        the recipient.
+        the recipient; to the account's holder, of a way in somebody else
+        opened (``third_hint``), whom to talk to instead, as the holder's
+        page does not list it.
     -->
     <template id="mail_session_notice" name="IncubaCloud: sessions and access notice">
 <div>
@@ -30,13 +32,16 @@
             <td style="padding:2px 0;" t-out="device"/>
         </tr>
     </table>
-    <p style="margin:0 0 12px;">If it was you, there is nothing to do.</p>
-    <p style="margin:0 0 6px;">If you do not recognise it:</p>
-    <ol style="margin:0 0 12px;padding-left:20px;">
-        <li t-out="open_page"/>
-        <li>Revoke there whatever you do not recognise: agents, API keys, tokens.</li>
-        <li>Sign out of the sessions of the account you sign in with too (Google, GitHub…): whoever took one session cookie usually holds the others.</li>
-    </ol>
+    <p t-if="third_hint" style="margin:0 0 12px;" t-out="third_hint"/>
+    <t t-else="">
+        <p style="margin:0 0 12px;">If it was you, there is nothing to do.</p>
+        <p style="margin:0 0 6px;">If you do not recognise it:</p>
+        <ol style="margin:0 0 12px;padding-left:20px;">
+            <li t-out="open_page"/>
+            <li>Revoke there whatever you do not recognise: agents, API keys, tokens.</li>
+            <li>Sign out of the sessions of the account you sign in with too (Google, GitHub…): whoever took one session cookie usually holds the others.</li>
+        </ol>
+    </t>
 </div>
     </template>
 </odoo>

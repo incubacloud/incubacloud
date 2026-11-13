@@ -61,6 +61,54 @@ PAGE_CLOSES = 10
 #: The API keys of this scope are Odoo's "trusted devices" of two-factor
 #: authentication, not a way in of their own.
 TRUSTED_DEVICE_SCOPE = "browser"
+#: How the page and the notices write the browser families and systems
+#: Odoo's parser names (``odoo.tools._vendor.useragents``), where a
+#: capital first letter would not do ("Macos", "Iphone").
+PROPER_NAMES = {
+    "aix": "AIX",
+    "amiga": "Amiga",
+    "android": "Android",
+    "blackberry": "BlackBerry",
+    "bsd": "BSD",
+    "chrome": "Chrome",
+    "chromeos": "ChromeOS",
+    "dragonflybsd": "DragonFly BSD",
+    "edge": "Edge",
+    "firefox": "Firefox",
+    "freebsd": "FreeBSD",
+    "hpux": "HP-UX",
+    "ipad": "iPad",
+    "iphone": "iPhone",
+    "irix": "IRIX",
+    "kmeleon": "K-Meleon",
+    "linux": "Linux",
+    "macos": "macOS",
+    "msedge": "Edge",
+    "msie": "Internet Explorer",
+    "netbsd": "NetBSD",
+    "openbsd": "OpenBSD",
+    "opera": "Opera",
+    "safari": "Safari",
+    "sco": "SCO",
+    "seamonkey": "SeaMonkey",
+    "solaris": "Solaris",
+    "symbian": "Symbian",
+    "webkit": "WebKit",
+    "wii": "Wii",
+    "windows": "Windows",
+}
+
+
+def proper_name(value):
+    """Return how a browser family or system is written to a person.
+
+    :param str value: a name as Odoo's parser gives it, e.g. ``macos``
+    :return: its proper name (:data:`PROPER_NAMES`), or *value* with a
+        capital first letter when the table does not have it
+    :rtype: str
+    """
+    value = value or ""
+    return PROPER_NAMES.get(value.lower()) or value[:1].upper() + value[1:]
 
 
 class CloudSessionSeen(models.Model):
@@ -226,7 +274,10 @@ class CloudSessionNotice(models.AbstractModel):
         :param str reason: ``country``, ``browser``, ``agent`` (an agent
             or an API key), ``git_token`` or ``invited_user``
         :param dict facts: what the email names, see the template
-            ``incubacloud.mail_session_notice``
+            ``incubacloud.mail_session_notice``; besides, ``by``, the id
+            of the user who opened the way in (each other recipient is
+            told whom to talk to, as their page does not list it), and
+            ``door_unverified``, a way in whose name nobody verified
         :param dict origin: the country, browser and system it came
             from; by default the request's (:meth:`_session_notice_origin`)
         :return: the users told
@@ -282,6 +333,10 @@ class CloudSessionNotice(models.AbstractModel):
         """
         lang = user.lang or user.partner_id.lang or "en_US"
         env = self.with_context(lang=lang).env
+        _ = env._
+        facts = dict(facts)
+        by = env["res.users"].sudo().browse(facts.pop("by", False) or [])
+        unverified = facts.pop("door_unverified", False)
         country = ""
         if origin.get("country"):
             country = env["res.country"].sudo().search(
@@ -301,17 +356,27 @@ class CloudSessionNotice(models.AbstractModel):
                 user.with_context(tz=user.tz or "UTC"), now,
             ).strftime("%Y-%m-%d %H:%M %Z").strip(),
             "country": country,
-            "browser": (origin.get("browser") or "").capitalize()
+            "browser": proper_name(origin.get("browser"))
             if known_browser(origin.get("browser")) else "",
-            "platform": (origin.get("platform") or "").capitalize(),
+            "platform": proper_name(origin.get("platform")),
             "page_url": self._session_notice_page_url(),
             **facts,
         }
         if reason in ("country", "browser") and not values["seen"]:
             values["seen"] = values["country"] if reason == "country" else values["browser"]
+        if unverified and values["door"]:
+            values["door"] = _("%(name)s (not verified)", name=values["door"])
         notice = self.with_env(env)
         subject = notice._session_notice_subject(reason, values)
-        _ = env._
+        # Somebody else opened it: the recipient's page does not list it,
+        # and only its user can revoke it.
+        third_hint = ""
+        if by and by != user:
+            third_hint = _(
+                "If you did not expect it, talk to %(by)s, or take away "
+                "their access to the panel: Users, then Remove.",
+                by=by.name or by.login,
+            )
         device = values["browser"]
         if device and values["platform"]:
             device = _("%(browser)s on %(platform)s", **values)
@@ -326,6 +391,7 @@ class CloudSessionNotice(models.AbstractModel):
             "when": values["when"],
             "country": values["country"],
             "device": device,
+            "third_hint": third_hint,
         }, minimal_qcontext=True)
         env["mail.mail"].sudo().create({
             "subject": subject,
@@ -565,8 +631,8 @@ class ResUsers(models.Model):
             ),
             "first": first,
             "last": last,
-            "browsers": sorted(browser.capitalize() for browser in browsers or []),
-            "platforms": sorted(platform.capitalize() for platform in platforms or []),
+            "browsers": sorted(proper_name(browser) for browser in browsers or []),
+            "platforms": sorted(proper_name(platform) for platform in platforms or []),
             "countries": sorted(names.get(country, country) for country in countries or []),
         } for identifier, first, last, revoked, browsers, platforms, countries in rows]
 
@@ -593,7 +659,7 @@ class ResUsers(models.Model):
                 pinned = special.get(pinned) or names.get(pinned, pinned)
                 seen = special.get(seen) or names.get(seen, seen)
             elif close.signal == "browser":
-                pinned, seen = pinned.capitalize(), seen.capitalize()
+                pinned, seen = proper_name(pinned), proper_name(seen)
             else:
                 pinned = seen = ""
             rows.append({
@@ -625,7 +691,7 @@ class ResUsers(models.Model):
                 )
             else:
                 result["browsers"].append({
-                    "name": row.value.capitalize(),
+                    "name": proper_name(row.value),
                     "first": row.first_seen, "last": row.last_seen,
                 })
         return result
@@ -638,7 +704,8 @@ class ResUsers(models.Model):
         add theirs.
 
         :return: one dict per way in: ``kind``, ``id``, ``kind_label``,
-            ``name``, ``detail``, ``created``, ``expires``, ``last_used``
+            ``name``, ``detail``, ``note`` (what Revoke does not do),
+            ``created``, ``expires``, ``last_used``
         :rtype: list
         """
         self.ensure_one()
@@ -650,7 +717,7 @@ class ResUsers(models.Model):
         for key in keys:
             doors.append({
                 "kind": "api_key", "id": key.id, "kind_label": _("API key"),
-                "name": key.name, "detail": "",
+                "name": key.name, "detail": "", "note": "",
                 "created": key.create_date, "expires": key.expiration_date,
                 "last_used": False,
             })
@@ -664,6 +731,8 @@ class ResUsers(models.Model):
                 doors.append({
                     "kind": "git_token", "id": cred.id, "kind_label": _("Git token"),
                     "name": where, "detail": kinds.get(cred.kind, ""),
+                    "note": _("Revoke only deletes it here: revoke it in "
+                              "GitLab or GitHub too."),
                     "created": cred.create_date, "expires": cred.expires_on,
                     "last_used": False,
                 })
@@ -725,17 +794,21 @@ class ResUsersApikeys(models.Model):
         """Tell the user, and the account's holder, of a new API key.
 
         Two-factor's trusted devices are API keys of their own scope and
-        are not told. A notice that fails is logged; the key is made.
+        are not told. A notice that fails, a database error included, is
+        rolled back to its savepoint and logged; the key is made.
         """
         key = super()._generate(scope, name, expiration_date)
         if scope != TRUSTED_DEVICE_SCOPE:
             user = self.env.user
             Notice = self.env["cloud.session.notice"].sudo()
             try:
-                Notice._session_notify(
-                    user | Notice._session_notice_holders(), "agent",
-                    {"door_kind": "api_key", "door": name, "owner": user.name},
-                )
+                with self.env.cr.savepoint():
+                    Notice._session_notify(
+                        user | Notice._session_notice_holders(), "agent", {
+                            "door_kind": "api_key", "door": name,
+                            "owner": user.name, "by": user.id,
+                        },
+                    )
             except Exception:  # noqa: BLE001 - the key is made all the same
                 _logger.exception("[session-notice] could not tell of a new API key")
         return key
@@ -761,7 +834,8 @@ class CloudGitCredential(models.Model):
     def _ic_tell_new_token(self):
         """Tell whoever saved these tokens, and the account's holder.
 
-        A notice that fails is logged; the token is saved.
+        A notice that fails, a database error included, is rolled back to
+        its savepoint and logged; the token is saved.
         """
         if not self:
             return
@@ -772,9 +846,10 @@ class CloudGitCredential(models.Model):
             if credential.namespace:
                 where = f"{where} · {credential.namespace}" if where else credential.namespace
             try:
-                Notice._session_notify(
-                    user | Notice._session_notice_holders(), "git_token",
-                    {"door": where, "actor": user.name},
-                )
+                with self.env.cr.savepoint():
+                    Notice._session_notify(
+                        user | Notice._session_notice_holders(), "git_token",
+                        {"door": where, "actor": user.name, "by": user.id},
+                    )
             except Exception:  # noqa: BLE001 - the token is saved all the same
                 _logger.exception("[session-notice] could not tell of a new Git token")
