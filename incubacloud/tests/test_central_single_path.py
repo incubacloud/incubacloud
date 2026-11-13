@@ -941,6 +941,124 @@ class TestTheAgents(SinglePathCase):
         )
 
 
+def _fingerprint(pem):
+    """Return the SHA-256 fingerprint of the certificate in *pem*, in hex.
+
+    :rtype: str
+    """
+    from cryptography.hazmat.primitives import hashes
+
+    return _load(pem).fingerprint(hashes.SHA256()).hex()
+
+
+class TestTheAuthorityInstalled(SinglePathCase):
+    """Each host keeps the fingerprint of the authority its agents trust.
+
+    The reconciliation re-applies a host whose fingerprint is not the one
+    in force, as it does one whose URL is not: installed with the name's
+    URL and no authority, or with an authority since rotated.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.settings._ensure_metrics_ca()
+        self.host.write({
+            "metrics_agents_state": "installed",
+            "metrics_agents_write_url": SINGLE_WRITE,
+            "known_hosts_key": "hx ssh-ed25519 AAAA",
+        })
+
+    def _reasons(self):
+        """Run the reconciliation; return why this host was queued, if at all.
+
+        :return: the reasons given for this host, in order.
+        :rtype: list
+        """
+        with patch.object(
+            type(self.host), "_enqueue_observability", autospec=True, return_value=1,
+        ) as enqueue:
+            self.env["cloud.host"]._reconcile_direct_agents()
+        return [
+            call.args[1] for call in enqueue.call_args_list
+            if call.args[0] == self.host
+        ]
+
+    def _installed(self):
+        """Run an install from its extra vars to its ``on_success``."""
+        executor = self._make(ObservabilityAgentsExecutor)
+        extra = executor.get_extra_vars()
+        executor._facts = {
+            "ic_agents_running_services": '["node-exporter", "cadvisor", "vmagent"]',
+            "ic_write_url_installed": extra["ic_remote_write_url"],
+            "ic_central_reach": "401", "ic_egress_ip": "46.4.0.80",
+        }
+        asyncio.run(executor.on_success({}))
+        return extra
+
+    def test_an_install_records_the_authority_it_installed(self):
+        self._check(_OK)
+        self._installed()
+        self.assertEqual(
+            self.host.metrics_agents_ca_fingerprint,
+            _fingerprint(self.settings.metrics_ca_cert),
+        )
+        self.assertEqual(self._reasons(), [])
+
+    def test_a_host_on_the_name_without_the_authority_is_reapplied(self):
+        self._check(_OK)
+        self.host.metrics_agents_ca_fingerprint = False
+        self.assertEqual(self._reasons(), ["central authority changed"])
+
+    def test_a_host_with_a_rotated_authority_is_reapplied(self):
+        self._check(_OK)
+        self.host.metrics_agents_ca_fingerprint = "0" * 64
+        self.assertEqual(self._reasons(), ["central authority changed"])
+
+    def test_a_host_with_the_authority_in_force_is_left_alone(self):
+        self._check(_OK)
+        self.host.metrics_agents_ca_fingerprint = _fingerprint(
+            self.settings.metrics_ca_cert,
+        )
+        self.assertEqual(self._reasons(), [])
+
+    def test_an_authority_forgotten_until_the_next_deployment_reapplies_nothing(self):
+        """Rotating: between forgetting the authority and minting the next."""
+        self._check(_OK)
+        self.host.metrics_agents_ca_fingerprint = _fingerprint(
+            self.settings.metrics_ca_cert,
+        )
+        self.settings.metrics_ca_cert = False
+        self.assertEqual(self._reasons(), [])
+
+    def test_a_changed_url_is_still_the_reason_given(self):
+        self._check(_OK)
+        self.host.write({
+            "metrics_agents_write_url": LEGACY_WRITE,
+            "metrics_agents_ca_fingerprint": False,
+        })
+        self.assertEqual(self._reasons(), ["direct path changed"])
+
+    def test_switched_off_an_authority_on_the_panel_reapplies_nothing(self):
+        """Off, no authority goes to the agents: no fingerprint, no re-apply."""
+        self.settings.metrics_central_single_path = False
+        self.host.write({
+            "metrics_agents_write_url": LEGACY_WRITE,
+            "metrics_agents_ca_fingerprint": False,
+        })
+        self.assertTrue(self.settings.metrics_ca_cert)
+        self.assertEqual(self._reasons(), [])
+        extra = self._installed()
+        self.assertEqual(extra["ic_central_ca"], "")
+        self.assertFalse(self.host.metrics_agents_ca_fingerprint)
+        self.assertEqual(self._reasons(), [])
+
+    def test_switched_off_a_host_recorded_before_is_left_alone(self):
+        """A host with no fingerprint, as every host before this field, stays."""
+        self.settings.metrics_central_single_path = False
+        self.host.metrics_agents_write_url = False
+        self.assertEqual(self._reasons(), [])
+
+
 class TestTheReads(TransactionCase):
 
     def test_a_query_verifies_with_what_it_is_given(self):

@@ -220,6 +220,34 @@ def ca_bundle_path(ca_pem, directory=None):
     return str(path)
 
 
+def ca_fingerprint(ca_pem):
+    """Return the SHA-256 fingerprint of the authority in *ca_pem*, or ''.
+
+    What each host records of the authority its agents were installed
+    with (``cloud.host.metrics_agents_ca_fingerprint``), and what the
+    reconciliation compares with the one in force. The digest of the
+    certificate's DER encoding, in lowercase hex, as ``openssl x509
+    -fingerprint -sha256`` gives it without the colons; text that is not
+    a certificate is digested as it is, so it still changes when it does.
+
+    :param str ca_pem: the authority's certificate; empty for none.
+    :return: 64 hex characters, or '' without an authority.
+    :rtype: str
+    """
+    pem = (ca_pem or "").strip()
+    if not pem:
+        return ""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+
+    try:
+        return x509.load_pem_x509_certificate(pem.encode()).fingerprint(
+            hashes.SHA256(),
+        ).hex()
+    except ValueError:
+        return hashlib.sha256(pem.encode()).hexdigest()
+
+
 class CloudSettings(models.Model):
     _inherit = "cloud.settings"
 
@@ -376,6 +404,18 @@ class CloudSettings(models.Model):
         :rtype: str
         """
         return self._central_ca_pem() if self._central_single_in_force() else ""
+
+    @api.model
+    def _central_agents_ca_fingerprint(self):
+        """Return the fingerprint of the authority the agents are installed with, or ''.
+
+        Of :meth:`_central_agents_ca`, which a layer may answer
+        differently: the reconciliation re-applies a host whose recorded
+        fingerprint is not this one.
+
+        :rtype: str
+        """
+        return ca_fingerprint(self._central_agents_ca())
 
     @api.model
     def _central_tls_verify(self):
