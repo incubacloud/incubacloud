@@ -58,7 +58,7 @@ _DNS = {
     "cert_expires": None, "source": "job",
 }
 _TLS = {"ok": False, "layer": "tls", "detail": "curl 60", "cert_expires": None, "source": "job"}
-_LIGHT_OK = {**_OK, "source": "light"}
+_LIGHT_OK = _OK | {"source": "light"}
 
 
 def _load(pem):
