@@ -160,7 +160,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   point of no return there was none. Such a row is never given up, nor
   is one whose server comes back after a long outage with the step still
   alive, past the point of no return or outliving its stop: the queue
-  waits for the step's own end. After 30 minutes the warning alert
+  waits for the step's own end, and 30 minutes after the panel first saw
+  it alive the same alert says the step still runs there, closes by
+  itself when it ends and, dismissed by hand, lets the queue go. After
+  30 minutes the warning alert
   `job_queue_held_unreachable`, on the server and the instance, says the
   queue waits, what to stop and remove on the server (a step past the
   point of no return is to be let end), and that dismissing it lets the

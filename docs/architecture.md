@@ -421,7 +421,14 @@ each with its own review and QA.
   back after an outage longer than the step's cap): each pass reads it
   again until the step's own `timeout` ends it, and the first job of the
   queue reads «waiting for job #N to end on the server» again
-  (`reconcile_tried_at` cleared).
+  (`reconcile_tried_at` cleared). Nothing holds a queue for good unsaid:
+  30 minutes after the first read that saw the step alive
+  (`step_alive_since`, cleared once the server stops answering) the same
+  alert says, in its own words, that the step still runs on a server
+  that answers, past the point of no return or after a stop that did not
+  end it, and what to do there (`payload.running`). It closes by itself
+  once the step ends, and dismissing it by hand lets the queue go as the
+  other does.
   `_QUEUE_HELD_ALERT_MINUTES` = 30 after the mark (three tries of the
   reconciliation: a server's reboot takes less, an outage of its provider
   more) the reconciliation raises `job_queue_held_unreachable` (warning,
