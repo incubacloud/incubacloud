@@ -146,6 +146,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   at each ping. A neutralized copy loses it, and the MCP's
   `update_settings` changes it only with approval. Spanish translation
   included.
+- **Odoo.sh's notice that the panel's address changed**
+  ([RB-41](docs/runbooks/RB-41-panel-address-change.md)). A hardened host
+  with a list of allowed SSH addresses admits the panel by the address its
+  last hardening came from, and refused it once the panel left with
+  another, with nothing saying why. When Odoo.sh moves a project's
+  production it calls `GET /_odoo.sh/ip-change` with `old` and `new`; the
+  panel now raises `panel_address_changed`, critical, naming the hardened
+  hosts whose list (or the panel's address a module that extends it
+  knows) does not admit the new address, every hardened host with a list
+  when no new address comes or it is not a public one. It changes no host:
+  the request carries no credential, and the alert asks to check the
+  address against Odoo.sh's email or the project's page on Odoo.sh. The
+  route answers only where `ODOO_STAGE` is `production`, 404 elsewhere,
+  Odoo.sh's staging and development branches included. A host leaves the
+  alert once it is hardened again after the change, the list it last
+  confirmed admits the new address, or it is archived, deleted or no
+  longer hardened; the alert closes when none is left. The list judged is
+  the one the host confirmed, by its last hardening or its answer to a
+  live change of the list: an edit of `allowed_ssh_ips` by hand reaches
+  the host only with the next hardening, so until then the host is named
+  (`ssh_allowlist_unconfirmed`). The same notice again is ignored, the
+  alert open or closed; another change raises the alert again, so it is
+  sent again. Spanish translation included.
 
 ### Security
 
@@ -410,29 +433,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   step by hand.
 
 ---
-- **Odoo.sh's notice that the panel's address changed**
-  ([RB-41](docs/runbooks/RB-41-panel-address-change.md)). A hardened host
-  with a list of allowed SSH addresses admits the panel by the address its
-  last hardening came from, and refused it once the panel left with
-  another, with nothing saying why. When Odoo.sh moves a project's
-  production it calls `GET /_odoo.sh/ip-change` with `old` and `new`; the
-  panel now raises `panel_address_changed`, critical, naming the hardened
-  hosts whose list (or the panel's address a module that extends it
-  knows) does not admit the new address, every hardened host with a list
-  when no new address comes or it is not a public one. It changes no host:
-  the request carries no credential, and the alert asks to check the
-  address against Odoo.sh's email or the project's page on Odoo.sh. The
-  route answers only where `ODOO_STAGE` is `production`, 404 elsewhere,
-  Odoo.sh's staging and development branches included. A host leaves the
-  alert once it is hardened again after the change, the list it last
-  confirmed admits the new address, or it is archived, deleted or no
-  longer hardened; the alert closes when none is left. The list judged is
-  the one the host confirmed, by its last hardening or its answer to a
-  live change of the list: an edit of `allowed_ssh_ips` by hand reaches
-  the host only with the next hardening, so until then the host is named
-  (`ssh_allowlist_unconfirmed`). The same notice again is ignored, the
-  alert open or closed; another change raises the alert again, so it is
-  sent again. Spanish translation included.
 
 ## [1.0.227] — 2026-11-12
 
