@@ -109,6 +109,10 @@ CORE_EXCLUDED = {
         "checks it every hour and the observability cron every 15 minutes "
         "while it is pending."
     ),
+    "/cloud/egress_ip": (
+        "Public: a server's agents' install asks it the address they leave "
+        "with; no screen or user calls it."
+    ),
     "/cloud/monitoring/central_sizing": (
         "The note under Where the central runs; list_hosts gives each "
         "server's disk, memory and cores."
