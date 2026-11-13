@@ -38,6 +38,7 @@ export const CORE_PARTS = Object.freeze({
         "metrics_collect_pg",
         "metrics_central_public_host", "metrics_central_direct_host",
         "acme_dns_cloudflare_token", "metrics_central_operator_sources",
+        "metrics_central_single_path", "metrics_central_write_access",
     ],
 });
 
@@ -74,6 +75,8 @@ const DEFAULTS = {
     metrics_central_direct_host: "",
     acme_dns_cloudflare_token: "",
     metrics_central_operator_sources: "",
+    metrics_central_single_path: true,
+    metrics_central_write_access: "servers",
 };
 
 /**
@@ -172,6 +175,11 @@ export class CoreSettingsBlock extends Component {
             hasMetricsToken: false,
             hasAcmeDnsToken: false,
             centralDirect: null,
+            // The central's single name: its check, or false without one.
+            centralName: false,
+            // Whether a module above decides who may write to the central.
+            writeAccessFixed: false,
+            checkingCentralName: false,
         });
         // The page's record of what is saved, for "Save first".
         this.formStore = this.env.settingsForm ? useState(this.env.settingsForm.store) : null;
@@ -202,6 +210,8 @@ export class CoreSettingsBlock extends Component {
             this.state.hasMetricsToken = Boolean(data.has_metrics_remote_write_token);
             this.state.hasAcmeDnsToken = Boolean(data.has_acme_dns_token);
             this.state.centralDirect = data.metrics_central_direct || null;
+            this.state.centralName = data.metrics_central_name || false;
+            this.state.writeAccessFixed = Boolean(data.metrics_central_write_access_fixed);
             this.state.centralHost = data.metrics_central_host || null;
             this.state.centralRetirable = Boolean(data.metrics_central_retirable);
             if (part === "monitoring") {
@@ -411,6 +421,58 @@ export class CoreSettingsBlock extends Component {
             return _t("Failing since %s", (status.failing_since || "").slice(0, 16));
         }
         return _t("Not checked yet");
+    }
+
+    /** @returns {{value: string, label: string}[]} who may write to the central */
+    get writeAccessOptions() {
+        return [
+            { value: "servers", label: _t("Only this panel's servers, by their address") },
+            { value: "anyone", label: _t("Any address, with each account's credential") },
+        ];
+    }
+
+    /** @returns {string} what the central's single name answered, or "" */
+    get centralNameStatus() {
+        const status = this.state.centralName;
+        if (!status) {
+            return "";
+        }
+        if (status.state === "ok" && status.in_force) {
+            return _t("The panel and the agents use %(url)s; certificate valid until %(date)s.", {
+                url: status.url,
+                date: (status.cert_expires || "").slice(0, 10),
+            });
+        }
+        if (status.state === "failing" && status.in_force) {
+            return _t("Not answering since %(since)s (%(error)s).", {
+                since: (status.failing_since || "").slice(0, 16),
+                error: status.error,
+            });
+        }
+        if (status.record) {
+            return _t("Waiting for the name: %s", status.record);
+        }
+        return _t("Not checked yet");
+    }
+
+    /** Check the central's single name now, from the central's server. */
+    async checkCentralName() {
+        if (this.state.checkingCentralName) {
+            return;
+        }
+        this.state.checkingCentralName = true;
+        try {
+            const res = await rpc("/cloud/monitoring/check_central_name", {});
+            if (res?.ok) {
+                await announceJob(this.env.toast, res.job_id);
+            } else {
+                this.env.toast?.error(res?.error || _t("Could not check it."));
+            }
+        } catch (e) {
+            this.env.toast?.error(e.data?.message || e.message || _t("Could not check it."));
+        } finally {
+            this.state.checkingCentralName = false;
+        }
     }
 
     /**

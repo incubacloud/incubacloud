@@ -359,6 +359,19 @@ settingsBlocks.add("core-monitoring", {
             synonyms: ["dns", "metrics"],
         },
         {
+            id: "metrics_central_single_path", type: "toggle", advanced: true, block: _t("Observability"),
+            label: _t("One path, without a CDN"),
+            help: _t("The central answers under its public name only, on its server's direct port and outside any CDN, with a certificate this panel signs. The panel and the agents move to it once the name answers."),
+            synonyms: ["cdn", "certificate", "direct", "port", "9443"],
+        },
+        {
+            id: "metrics_central_write_access", type: "select", width: "l", advanced: true,
+            block: _t("Observability"),
+            label: _t("Who can write to the central"),
+            help: _t("With One path: only this panel's servers, by their address, or any address with its account's credential, for servers behind NAT or with an address that changes."),
+            synonyms: ["allowlist", "nat", "firewall", "metrics"],
+        },
+        {
             id: "metrics_central_direct_host", type: "text", width: "m", mono: true, advanced: true,
             placeholder: "direct.metrics.example.com", block: _t("Observability"),
             label: _t("Central's direct name"),

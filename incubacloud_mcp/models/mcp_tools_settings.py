@@ -37,6 +37,8 @@ SAVE_GENERAL_PARAMS = (
     "metrics_central_public_host",
     "metrics_central_direct_host",
     "metrics_central_operator_sources",
+    "metrics_central_single_path",
+    "metrics_central_write_access",
     "move_frozen_source_hours",
     "move_cut_alert_seconds",
 )
@@ -58,8 +60,12 @@ CORE_RATE_KEYS = (
 GITHUB_APP_KEYS = ("app_id", "installation_id")
 MCP_RATE_KEY = "rate_limit_mcp_user_per_min"
 MCP_KEYS = ("mcp_oauth_issuer", "mcp_resource")
-#: General settings that always ask for approval (D2).
-SENSITIVE_GENERAL = ("audit_log_retention_days", "trusted_proxy_ranges")
+#: General settings that always ask for approval (D2). Who may write to
+#: the central opens its port to every address when set to ``anyone``.
+SENSITIVE_GENERAL = (
+    "audit_log_retention_days", "trusted_proxy_ranges",
+    "metrics_central_write_access",
+)
 #: General settings that ask for approval when lowered: with fewer hours the
 #: copies a move froze on their old servers are removed sooner (0: at the
 #: next hourly pass), and what they hold with them.
@@ -73,6 +79,8 @@ OBSERVABILITY_FIELDS = (
     "metrics_central_public_host",
     "metrics_central_direct_host",
     "metrics_central_operator_sources",
+    "metrics_central_single_path",
+    "metrics_central_write_access",
 )
 
 

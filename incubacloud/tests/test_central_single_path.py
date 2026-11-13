@@ -17,8 +17,10 @@ import yaml
 
 from odoo import fields
 from odoo.exceptions import AccessError
+from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user
 
+from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.models import cloud_settings_central as central
 from odoo.addons.incubacloud.models._direct_probe import ANY_ADDRESS
 from odoo.addons.incubacloud.models.abstract_executor import JobRefused
@@ -619,3 +621,62 @@ class TestTheEgressAnswer(TransactionCase):
         routing = CentralEgressController.egress_ip.original_routing
         self.assertEqual(routing["auth"], "none")
         self.assertEqual(routing["methods"], ["GET"])
+
+
+class TestTheSettingsScreen(SinglePathCase):
+    """Settings › Monitoring reads, saves and checks the single path."""
+
+    def setUp(self):
+        super().setUp()
+        self.controller = _routes_crud.CrudMixin()
+        self.controller._sec = lambda: self.env["cloud.security.mixin"]
+
+    def _route(self, method, **values):
+        """Call the route handler *method* with *values* on this environment."""
+        fake = MagicMock(spec=Request)
+        fake.env = self.env
+        with patch.object(_routes_crud, "request", fake):
+            return getattr(self.controller, method)(**values)
+
+    def test_the_switch_who_writes_and_the_name_are_read_back(self):
+        data = self._route("cloud_get_general_settings")
+        self.assertIs(data["metrics_central_single_path"], True)
+        self.assertEqual(data["metrics_central_write_access"], "servers")
+        self.assertIs(data["metrics_central_write_access_fixed"], False)
+        self.assertEqual(data["metrics_central_name"]["state"], "unknown")
+        self.assertIn("46.4.0.80", data["metrics_central_name"]["record"])
+
+    def test_switched_off_there_is_no_name_to_show(self):
+        self.settings.metrics_central_single_path = False
+        data = self._route("cloud_get_general_settings")
+        self.assertIs(data["metrics_central_name"], False)
+
+    def test_both_are_saved(self):
+        answer = self._route(
+            "cloud_save_general_settings",
+            metrics_central_single_path=False, metrics_central_write_access="anyone",
+        )
+        self.assertEqual(answer, {"ok": True})
+        self.assertFalse(self.settings.metrics_central_single_path)
+        self.assertEqual(self.settings.metrics_central_write_access, "anyone")
+
+    def test_a_choice_a_layer_fixes_is_not_saved(self):
+        with patch.object(
+            type(self.env["cloud.settings"]), "_central_write_access_fixed",
+            autospec=True, return_value="servers",
+        ):
+            self._route("cloud_save_general_settings", metrics_central_write_access="anyone")
+        self.assertEqual(self.settings.metrics_central_write_access, "servers")
+
+    def test_check_now_queues_the_direct_path_on_the_central(self):
+        answer = self._route("cloud_monitoring_check_central_name")
+        self.assertTrue(answer["ok"])
+        job = self.env["cloud.job"].browse(answer["job_id"])
+        self.assertEqual(job.job_type_id.code, "sync_direct_path")
+        self.assertEqual(job.host_id, self.host)
+
+    def test_check_now_without_a_single_path_says_why(self):
+        self.settings.metrics_central_single_path = False
+        answer = self._route("cloud_monitoring_check_central_name")
+        self.assertFalse(answer["ok"])
+        self.assertIn("One path", answer["error"])
