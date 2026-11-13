@@ -90,6 +90,24 @@
       '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
       -user "$(id -u)" -mmin +4320 -exec rm -rf {} +; } || true
 
+    # What boot tests killed before their trap left: the copy of the
+    # database in a volume ``ic_boot_<id>`` that no container uses, a day
+    # old, and the copies releases before 1.0.228 made in /tmp/ic_boot_<id>
+    # (owned by the postgres uid 70: removed from a container). The panel
+    # passes the same command (``BOOT_TEST_SWEEP``).
+    ic_boot_test_sweep: >-
+      now=$(date +%s); for v in $(docker volume ls -q --filter dangling=true
+      --filter name=ic_boot_ 2>/dev/null); do case "$v" in
+      ic_boot_*[!0-9]*|ic_boot_) continue ;; ic_boot_*) ;; *) continue ;; esac;
+      c=$(docker volume inspect "$v" 2>/dev/null | sed -n 's/.*"CreatedAt":
+      *"\([^"]*\)".*/\1/p' | head -n 1); t=$(date -d "$c" +%s 2>/dev/null) ||
+      continue; [ $((now - t)) -ge 86400 ] || continue; docker volume rm "$v"
+      >/dev/null 2>&1 && echo "removed volume $v"; done; if find /tmp -mindepth
+      1 -maxdepth 1 -type d -name 'ic_boot_[0-9]*' -mmin +1440 -print -quit
+      2>/dev/null | grep -q .; then docker run --rm -v /tmp:/host_tmp alpine
+      find /host_tmp -mindepth 1 -maxdepth 1 -type d -name 'ic_boot_[0-9]*'
+      -mmin +1440 -exec rm -rf {} + ; fi; true
+
   tasks:
     # First, so a prune that fails has still swept; as the account the
     # panel connects as, never through a link (see ``TMP_SWEEP``). A
@@ -100,6 +118,15 @@
       ansible.builtin.shell:
         cmd: "{{ ic_tmp_sweep }}"
       changed_when: false
+      failed_when: false
+
+    # Right after the sweep of /tmp, and like it never fails the play:
+    # what it cannot remove waits for the next night (``boot_test_sweep``).
+    - name: Remove the copies boot tests left behind  # noqa: command-instead-of-shell
+      ansible.builtin.shell:
+        cmd: "{{ ic_boot_test_sweep }}"
+      register: ic_boot_sweep
+      changed_when: "'removed ' in (ic_boot_sweep.stdout | default(''))"
       failed_when: false
 
     # Deliberately NOT ``docker system prune``: that prunes networks

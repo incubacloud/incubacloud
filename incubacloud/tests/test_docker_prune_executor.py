@@ -165,6 +165,7 @@ class TestDockerPruneProtectFilter(TransactionCase):
                 "ic_protect_label": PROTECT_LABEL,
                 "ic_tmp_sweep": docker_prune_executor.tmp_sweep(self.env, host),
                 "ic_network_sweep": docker_prune_executor.network_sweep(self.env, host),
+                "ic_boot_test_sweep": docker_prune_executor.BOOT_TEST_SWEEP,
                 # No instance that fetches its repositories: no helper.
                 "ic_git_helper_image": "",
             },
@@ -770,6 +771,115 @@ class TestTheDailySweepOfTmp(TransactionCase):
             self.assertEqual(
                 (outside / "hostfile").read_text(encoding="utf-8"), "keep",
             )
+
+
+class TestTheSweepOfBootTestCopies(TransactionCase):
+    """What a boot test killed before its trap leaves (#91, 13-nov-2026).
+
+    Its copy of the database, the size of the database, in a volume
+    ``ic_boot_<id>`` that no container uses once the test is gone; and,
+    from releases before 1.0.228, the copy in ``/tmp/ic_boot_<id>``, owned
+    by the postgres uid 70, which the panel's account cannot remove.
+    """
+
+    def _play(self):
+        """Return the parsed maintenance playbook (single play)."""
+        path = os.path.join(
+            get_module_path("incubacloud"),
+            "ansible", "playbooks", "host_maintenance.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            return yaml.safe_load(fh)[0]
+
+    def _run(self, tmp, volumes):
+        """Run the sweep against a stub docker; return its calls and output.
+
+        :param str tmp: a scratch directory, the sweep's /tmp too
+        :param dict volumes: ``{name: CreatedAt}`` the stub lists
+        :return: ``(calls, stdout)``
+        """
+        calls = Path(tmp, "calls")
+        bin_dir = Path(tmp, "bin")
+        bin_dir.mkdir()
+        inspect = "".join(
+            f'  "volume inspect {name}") printf \'[{{"CreatedAt": "{created}",'
+            f' "Name": "{name}"}}]\\n\' ;;\n'
+            for name, created in volumes.items()
+        )
+        listing = "\\n".join(volumes)
+        docker = bin_dir / "docker"
+        docker.write_text(
+            "#!/bin/sh\n"
+            f'echo "docker $*" >> {calls}\n'
+            'case "$*" in\n'
+            f'  "volume ls -q --filter dangling=true --filter name=ic_boot_")'
+            f" printf '{listing}\\n' ;;\n"
+            f"{inspect}"
+            "esac\n",
+            encoding="utf-8",
+        )
+        docker.chmod(0o755)
+        env = os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+        cmd = docker_prune_executor.boot_test_sweep(root=tmp)
+        done = subprocess.run(
+            ["sh", "-c", cmd], check=False, env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return calls.read_text(encoding="utf-8").splitlines(), done.stdout
+
+    def test_a_day_old_copy_no_container_uses_goes(self):
+        def created(hours):
+            return time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours * 3600),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            lines, out = self._run(tmp, {
+                "ic_boot_7": created(30),
+                "ic_boot_8": created(1),
+                "ic_boot_x9": created(30),
+                "other_ic_boot_1": created(30),
+            })
+        self.assertIn("docker volume rm ic_boot_7", lines)
+        self.assertEqual(
+            [line for line in lines if line.startswith("docker volume rm")],
+            ["docker volume rm ic_boot_7"],
+        )
+        self.assertIn("removed volume ic_boot_7", out)
+
+    def test_the_old_copies_in_tmp_go_from_a_container(self):
+        old = time.time() - 2 * 86400
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "ic_boot_5").mkdir()
+            os.utime(Path(tmp, "ic_boot_5"), (old, old))
+            Path(tmp, "ic_boot_6").mkdir()
+            lines, _out = self._run(tmp, {})
+        runs = [line for line in lines if line.startswith("docker run")]
+        self.assertEqual(len(runs), 1)
+        self.assertIn(f"-v {tmp}:/host_tmp alpine find /host_tmp", runs[0])
+        self.assertIn("-name ic_boot_[0-9]* -mmin +1440 -exec rm -rf {} +", runs[0])
+
+    def test_nothing_old_in_tmp_starts_no_container(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "ic_boot_6").mkdir()
+            lines, _out = self._run(tmp, {})
+        self.assertFalse([line for line in lines if line.startswith("docker run")])
+
+    def test_the_play_runs_it_without_failing_and_alone_the_same(self):
+        play = self._play()
+        self.assertEqual(
+            play["vars"]["ic_boot_test_sweep"], docker_prune_executor.BOOT_TEST_SWEEP,
+        )
+        tasks = [
+            task for task in play["tasks"]
+            if task.get("ansible.builtin.shell", {}).get("cmd")
+            == "{{ ic_boot_test_sweep }}"
+        ]
+        self.assertEqual(len(tasks), 1)
+        self.assertIs(tasks[0]["failed_when"], False)
+        self.assertNotIn("{{", docker_prune_executor.BOOT_TEST_SWEEP)
+        self.assertNotIn("{%", docker_prune_executor.BOOT_TEST_SWEEP)
+        self.assertNotIn("{#", docker_prune_executor.BOOT_TEST_SWEEP)
 
 
 class TestPruneSummary(TransactionCase):

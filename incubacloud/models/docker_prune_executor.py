@@ -416,6 +416,52 @@ TMP_SWEEP = (
     f" {upload_dir_sweep()}"
 )
 
+def boot_test_sweep(root="/tmp"):
+    """Return the command that removes the copies boot tests left behind.
+
+    ``rebuild.sh boot-test`` copies the database into a volume
+    ``ic_boot_<id>`` and its trap removes it; a test killed before its
+    trap (a worker that died, a server that rebooted) leaves it, the size
+    of the database (#91, 13-nov-2026). The next boot test of the same
+    instance removes it first; this takes those of instances that do not
+    rebuild again: volumes named so that no container uses and that were
+    created a day ago, each read from ``docker volume inspect``. Then the
+    copies releases before 1.0.228 made in *root* as ``ic_boot_<id>``, a
+    day old: owned by the postgres uid 70, which this account cannot
+    remove, they go from a container, as the boot test removed them, and
+    only after a search this account can do found one, so a host with
+    none pulls no image. ``find`` follows no link, and ``rm -rf`` none
+    inside a directory either. Says ``removed volume <name>`` for each;
+    it never fails, and contains no braces Ansible would read.
+
+    :param str root: the directory of the old copies, ``/tmp`` but in tests
+    :rtype: str
+    """
+    quoted = shlex.quote(root)
+    match = "-mindepth 1 -maxdepth 1 -type d -name 'ic_boot_[0-9]*' -mmin +1440"
+    return (
+        "now=$(date +%s);"
+        " for v in $(docker volume ls -q --filter dangling=true"
+        " --filter name=ic_boot_ 2>/dev/null); do"
+        ' case "$v" in ic_boot_*[!0-9]*|ic_boot_) continue ;; ic_boot_*) ;;'
+        " *) continue ;; esac;"
+        ' c=$(docker volume inspect "$v" 2>/dev/null'
+        r""" | sed -n 's/.*"CreatedAt": *"\([^"]*\)".*/\1/p' | head -n 1);"""
+        ' t=$(date -d "$c" +%s 2>/dev/null) || continue;'
+        ' [ $((now - t)) -ge 86400 ] || continue;'
+        ' docker volume rm "$v" >/dev/null 2>&1 && echo "removed volume $v";'
+        " done;"
+        f" if find {quoted} {match} -print -quit 2>/dev/null | grep -q .; then"
+        f" docker run --rm -v {quoted}:/host_tmp alpine find /host_tmp {match}"
+        " -exec rm -rf {} + ;"
+        " fi; true"
+    )
+
+
+#: The sweep of the boot tests' copies as the play runs it, alone or for
+#: the panel: it asks the panel nothing.
+BOOT_TEST_SWEEP = boot_test_sweep()
+
 # Docker prints sizes with SI units (``12.86GB``, ``938.4kB``, ``0B``).
 _SIZE_UNITS = {"b": 1, "kb": 10 ** 3, "mb": 10 ** 6, "gb": 10 ** 9,
                "tb": 10 ** 12}
@@ -483,6 +529,7 @@ class DockerPruneExecutor(AnsibleExecutor):
             "ic_protect_label": PROTECT_LABEL,
             "ic_tmp_sweep": tmp_sweep(self.env, self.job.host_id),
             "ic_network_sweep": network_sweep(self.env, self.job.host_id),
+            "ic_boot_test_sweep": BOOT_TEST_SWEEP,
             "ic_git_helper_image": self._git_helper_image(),
         }
 
