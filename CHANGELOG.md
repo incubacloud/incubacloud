@@ -8,6 +8,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.228] — 2026-11-13
 
+### Added
+
+- **Start an empty central, and Retire the central (#61).** Settings ›
+  Monitoring › *Where the central runs* has the two ways out for a
+  central whose server must go, each after a confirmation. Picking
+  another host offers *Start an empty central* there
+  (`/cloud/monitoring/empty_central`): the panel moves to a new, empty
+  central and leaves the old one, with its history, on its server; the
+  job's log says so. *Retire the central (the history is lost)*
+  (`/cloud/monitoring/retire_central`) forgets it, empties the query and
+  remote-write URLs and switches observability off; it is refused while a
+  deployment or an account sync of the central waits or runs.
+- **Whether the central fits on a host.** Picking a host under *Where the
+  central runs* shows a note from its last measures: free disk for the
+  servers that would send and the retention, memory (4 GB alone, 8 GB with
+  instances and 1.5 GB unassigned) and 2 cores, or *Not measured yet*.
+  Advice only (`/cloud/monitoring/central_sizing`; figures and source in
+  `models/_central_sizing.py`). Spanish translation included.
+
 ### Changed
 
 - **Odoo 8.0 is offered** for new projects and instances: its run of the
@@ -41,6 +60,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   trace: Odoo's session token includes `active`, so a session left on
   disk was accepted again once the user was reactivated, and with its
   trace gone *Log out from all devices* could not find it.
+- **The central's server can no longer be deleted or archived (#61).**
+  `metrics_central_host_id` let go of its host (`ondelete='set null'`),
+  and nothing stopped deleting or archiving it: the panel lost sight of
+  the central, its metrics history and its security logs. The model, the
+  `/cloud/delete_host` route (and with it the MCP's `delete_host`) and a
+  `delete_host` job queued before now refuse, naming the ways out above,
+  and the foreign key is `ondelete='restrict'`, which the update applies
+  with no step by hand. Every other change to that server and every job
+  on it runs as before.
+- **Enable observability no longer orphans the central (#61).** On a
+  host other than the central's it started an empty central there and
+  left the history behind, unread. The route and the job refuse it while
+  the central runs elsewhere; *Start an empty central* is the only way,
+  through a payload key (`discard_history`) that `enqueue` refuses to
+  anyone without superuser rights, so `call_kw` and the MCP cannot set it.
+  On the central's own host, or with no central, it deploys as before.
 
 ---
 

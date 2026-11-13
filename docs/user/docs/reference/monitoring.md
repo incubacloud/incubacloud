@@ -100,6 +100,30 @@ own: when you publish it under a public name, it uses the one that Full
 Setup leaves on every managed server, so a server that has not been
 through Full Setup refuses the job and says so.
 
+When you pick a server, a note under it says whether the central fits
+there: free disk for your number of servers and retention, memory and
+cores, from what the server last measured. It is advice; nothing is
+refused for it.
+
+### The central's server keeps your history
+
+The server running the central holds the metrics history and the
+security logs, so the panel will not delete or archive it, and *Enable
+observability* on another server is refused while the central runs.
+Under *Where the central runs* you have two ways out, each asking you to
+confirm:
+
+- **Start an empty central** on another server: the panel moves to a new,
+  empty central. The old one stays on its server with the history,
+  unread; you can then delete that server.
+- **Retire the central (the history is lost)**: for a central whose
+  server is gone, or when your only server is going. The panel forgets
+  it and observability is switched off; enable it again on another
+  server whenever you want.
+
+To keep the history while changing servers, see *Where the central runs*
+in the [operations guide](https://github.com/incubacloud/incubacloud/blob/19.0/docs/observability-operations.md#where-the-central-runs).
+
 ### Hosted on Odoo.sh
 
 Odoo.sh does not let you run the central, so a panel installed there

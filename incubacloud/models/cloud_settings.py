@@ -535,7 +535,7 @@ class CloudSettings(models.Model):
         """Return the host the metrics central runs on, or an empty record.
 
         The host the last good deployment recorded, while it is still in
-        the fleet. A central recorded on an archived host (before 1.0.227
+        the fleet. A central recorded on an archived host (before 1.0.228
         nothing stopped archiving it) counts as none: there is no host
         left to protect or to deploy beside.
 
