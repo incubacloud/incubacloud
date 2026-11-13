@@ -302,3 +302,4 @@ from . import test_security_logs
 from . import test_central_without_grafana
 from . import test_central_delete_guard
 from . import test_central_single_path
+from . import test_instance_name_index_real_cursors

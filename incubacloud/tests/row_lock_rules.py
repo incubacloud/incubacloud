@@ -23,14 +23,15 @@ UPDATE`` + ``UPDATE`` passes.
 
 What the soft lock cannot do: for PostgreSQL the key of a row is every
 plain column of a unique index that is not partial (deferrable or not), the
-primary key's and, say, ``UNIQUE (project_id, name)`` of
-``cloud.instance``. An ``UPDATE`` that changes one of those columns is a
-change of the key whatever lock came before, or none: the older
-transaction fails all the same (measured on 8-nov-2026: ``FOR NO KEY
-UPDATE`` + another column passes, ``FOR NO KEY UPDATE`` + ``project_id``
-fails, no lock + ``project_id`` fails). There the lock decides nothing,
-and ``FOR UPDATE`` is as good: a layer's hand-over of a ready instance,
-which moves it to its owner's project, is such a write.
+primary key's above all. An ``UPDATE`` that changes one of those columns
+is a change of the key whatever lock came before, or none: the older
+transaction fails all the same (measured on 8-nov-2026 on ``project_id``
+of ``cloud.instance``, then in the constraint ``UNIQUE (project_id,
+name)``: ``FOR NO KEY UPDATE`` + another column passes, ``FOR NO KEY
+UPDATE`` + ``project_id`` fails, no lock + ``project_id`` fails). There
+the lock decides nothing. Since 1.0.228 that rule is a partial unique
+index, which is no key, and moving an instance to another project is no
+such write.
 
 A strong lock that is really needed carries the comment
 ``# lock: key-update needed — <why>`` on the line before its statement

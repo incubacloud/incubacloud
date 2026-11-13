@@ -195,8 +195,17 @@ class CloudInstance(models.Model):
     ]
     _description = "Cloud Instance"
 
-    _name_project_uniq = models.Constraint(
-        "unique (project_id, name)",
+    # A partial unique index, not the table constraint ``unique
+    # (project_id, name)`` it was until 1.0.228: PostgreSQL counts the
+    # index of such a constraint as a key, so moving an instance to
+    # another project took its row FOR UPDATE and failed to serialize
+    # every older REPEATABLE READ transaction (a job's) that then stored a
+    # row pointing at it. A partial index is no key. The predicate leaves
+    # out only rows the constraint never compared either (NULLs are
+    # distinct), so the rule is the same. Migration 1.0.228 drops the old
+    # constraint, whose index would otherwise be kept under this name.
+    _name_project_uniq = models.UniqueIndex(
+        "(project_id, name) WHERE project_id IS NOT NULL",
         "Instance name must be unique within a project.",
     )
     _one_production_per_project = models.Constraint(

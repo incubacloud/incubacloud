@@ -266,6 +266,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   deadlock) is raised for Odoo to run the request again: a GitHub
   `synchronize` swallowed it and answered 500 on an aborted transaction,
   losing the delivery, and a push dropped its rebuild in silence.
+- **Moving an instance to another project no longer fails the jobs
+  under way on it (#88).** An instance's name is unique within its
+  project through `cloud_instance_name_project_uniq`, a table constraint
+  `UNIQUE (project_id, name)` whose index PostgreSQL counts as a key: a
+  write of `project_id` was a change of the instance's key, and any
+  REPEATABLE READ transaction begun before it committed that then stored
+  a row pointing at the instance (a job, a log) failed to serialize. The
+  rule is now a unique index of the same name with a predicate,
+  `(project_id, name) WHERE project_id IS NOT NULL`, which leaves out
+  only rows the constraint never compared (NULLs are distinct) and which
+  PostgreSQL does not count as a key. Two instances of one name in a
+  project are refused as before, an archived one's included. The update
+  drops the constraint (migration 1.0.228) and creates the index, with no
+  step by hand.
 
 ---
 
