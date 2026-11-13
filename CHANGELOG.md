@@ -275,6 +275,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   type has no executor any more says once in its log that nothing can
   clean what it left, and a cancelled one raises `job_cleanup_given_up`.
   Spanish translation included.
+- **A job cancelled while it ran whose worker died holds its queue until
+  it is closed (#96).** queue_job fails a job whose worker died three
+  times `JobFoundDead`, and the queue let it go then: the next job of the
+  instance (or of the server, for a server's job) could start while the
+  reconciliation was still stopping and undoing what the cancelled one
+  left on the server. Such a job now holds its queue, and every queue of
+  its chain, until the reconciliation closes it, and reads
+  *Cancelling…* until then, with or without a step apart. What its hook
+  queues on its own instance (a move's rollback) waits for that close,
+  and starts with it. If it is not closed 30 minutes after the sweep of
+  the queues first saw it, the sweep raises `job_stop_unclosed` (warning,
+  on the server and the instance): the reconciliation's scheduled action
+  off, or a close that fails at every pass. The alert closes by itself
+  once the job is closed; dismissing it by hand closes the job without
+  putting back what it left, as its log says, and *Dismiss all* leaves
+  it open. Spanish translation included.
+  **Before upgrading**, count those jobs, read only, on every database
+  that runs the panel; it should return 0, and the queue of each one
+  found waits from the upgrade until the reconciliation closes it:
+  `SELECT count(*) FROM cloud_job c JOIN queue_job q ON q.uuid =
+  c.queue_job_uuid WHERE c.state = 'cancelled' AND q.state = 'failed'
+  AND q.exc_name = 'JobFoundDead'`.
 - **The trace of a user's sessions goes with the user (#74).** Odoo
   keeps the trace of every session (`res.device.log`, with its address,
   country and browser) for good, and the privacy policy keeps it while
