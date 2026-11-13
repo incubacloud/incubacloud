@@ -162,14 +162,15 @@ def _card(
 # (``default_version``); the platform's own panels name theirs.
 VERSIONS = {
     # 7.0 to 17.0 were not offered at the launch (owner, 2-nov-2026): each
-    # opens here once its own run of the series passes on the code that
-    # will serve it. 16.0 and 17.0 opened on 10-nov-2026, after their run
+    # opened here once its own run of the series passed on the code that
+    # serves it. 16.0 and 17.0 opened on 10-nov-2026, after their run
     # passed on the production image of 9-nov-2026; 9.0 to 15.0 opened on
-    # 11-nov-2026 after theirs passed on that same image (316be7595692).
-    # 8.0 waits for its run to be repeated with the candidate that fixes
-    # Connect as user (res_users.share). A record that holds one that is
-    # not offered keeps it, and an administrator can still deploy one,
-    # which is how that run tests it.
+    # 11-nov-2026 after theirs passed on that same image (316be7595692);
+    # 8.0 on 13-nov-2026, its run repeated with the fix of Connect as user
+    # (res_users.share) having passed. A series being prepared lands with
+    # ``offered=False``; a record that holds one that is not offered keeps
+    # it, and an administrator can still deploy one, which is how that run
+    # tests it.
     # 7.0 is retired (7-nov-2026): the click-odoo of its image can
     # neither dump, restore nor update its database, so no panel deploys it
     # and the table no longer names it. No instance of production held it.
@@ -189,7 +190,7 @@ VERSIONS = {
     # 10.0 are on Debian 8, gone from the mirrors, and have no
     # ``--no-http`` (7-nov-2026).
     "8.0": _card(
-        False, ("12", "12", "12"), "click-odoo", None, "sql",
+        True, ("12", "12", "12"), "click-odoo", None, "sql",
         debian_archive=True, headless="--no-xmlrpc",
         postgres_beyond_template=True, image_git_safe=False,
     ),

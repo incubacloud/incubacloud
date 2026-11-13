@@ -177,6 +177,11 @@ before updating (`docs/observability-operations.md`, "Undo").
 
 ### Changed
 
+- **Odoo 8.0 is offered** for new projects and instances: its run of the
+  series passed with the fix of Connect as user, which opens the session
+  with a password of its own on a series that has no session token. The
+  panel now offers 8.0 to 20.0; 7.0 stays retired. The user guide gives
+  the range 8.0 to 20.0 and the PostgreSQL range of each series.
 - **Monitoring appears wherever there is a central to read.** The
   `dashboards` axis of `_observability_capabilities()` asks for a
   central URL instead of a Grafana URL, so a managed panel that reads a
