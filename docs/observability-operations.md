@@ -793,6 +793,91 @@ behind. A certificate with less than 21 days left raises
 `direct_certificate_expiring`. When it goes wrong, see
 [RB-24](runbooks/RB-24-direct-path.md).
 
+## The single path: one name, the platform port, the panel's authority
+
+Settings → Monitoring → *Advanced…* → **One path, without a CDN**. With it on and
+**Central's public name** set, the central is published under that one name only,
+outside every CDN, on the **platform port** of its server: the direct entrypoint
+above (`direct_port`, 9443 for example), with its two barriers, nftables and Traefik.
+The URL carries the port: `https://metrics.example.com:9443/r` for the panel,
+`…:9443/w/api/v1/write` for the agents. Nothing is published on 443 for the name.
+Without a public name the switch changes nothing: the central stays on its server's
+Docker bridge, as on a single server.
+
+The switch is on in a new database. An update leaves it **off** where a central was
+already recorded: that panel keeps every path it had (the public name on 443, the
+direct name, a hand-written gateway) until its operator turns it on. Off, nothing of
+this section runs.
+
+**What the name needs.** An A record pointing at the central's server, **without a
+CDN proxy and without an AAAA record**, and a direct port applied on that server (Full
+Setup). The deployment refuses a server without the port. The DNS record is created
+by hand; the panel checks it instead of trusting it.
+
+**The certificate.** The panel holds a certificate authority of its own
+(`metrics_ca_cert`, and its key `metrics_ca_key`, encrypted and readable only by
+system administrators): ECDSA P-256, ten years, minted at the first deployment that
+needs it. Each deployment of the central signs a certificate for the name, valid one
+year, and writes it on the central's server with its TLS option, `ic-central`
+(TLS 1.2 at least): `~/traefik/certs/ic-central.{crt,key}` (the key 0600) and
+`~/traefik/dynamic/ic-central-tls.yml`, which Traefik reloads without a restart. The
+job writes these itself, not Full Setup, so it works on a proxy kept by hand as long
+as it mounts `~/traefik/certs` at `/etc/certs` and watches `dynamic/`. The
+reconciliation cron deploys the central again when its certificate has less than 60
+days left; at 21 days `metrics_central_cert_expiring` (critical) says renewing has
+been failing. The agents trust the authority for the central only, from a file of
+their own (`~/observability/central-ca.pem`, given to vmagent as
+`-remoteWrite.tlsCAFile` and to Fluent Bit as `tls.ca_file`), never through the
+system's store; the panel verifies its reads with the usual roots plus the authority.
+
+**When the URLs move.** The deployment leaves the panel's URLs as they were. The
+direct path's job (`sync_direct_path`) then checks the name from the central's server
+with the authority: DNS resolves to the server and nothing else, the TLS handshake
+validates, `POST /w/api/v1/write` answers 401 and `/flags` is refused. Until it
+passes, `metrics_central_dns_pending` (warning; critical after 12 hours when a central
+was already serving) names the record to create, and the check runs again every 15
+minutes and with **Check now** under the name. When it passes, the panel writes
+`https://<name>:<port>/r` and `…/w/api/v1/write` as its URLs, keeps the earlier two in
+the system parameter `incubacloud.metrics_central_legacy_urls`, and the
+reconciliation re-applies every server's agents with the new URL and the authority.
+From then on, two failed checks in a row raise `metrics_central_name_down` (critical,
+with the layer: `connect`, `tls` or `route`); a DNS answer that is not the central's
+server raises `metrics_central_dns_pending` again, with the record to fix, as after a
+move to another server. There is no path to fall back to;
+the agents' queues (512 MB per URL for vmagent, 64 MB for Fluent Bit) hold what they
+cannot send. See [RB-34](runbooks/RB-34-central-name.md).
+
+**The way back.** Turning the switch off puts back the two URLs kept, and the
+reconciliation re-applies the agents to them. A central's direct name, while set, is
+published beside the single name on the same port, so both work during a transition.
+
+**Who can write to the central.** *Only this panel's servers, by their address* (the
+default): the platform port of the central's server admits the panel's hosts, the
+private ranges (what is born on that server) and, with the single path on, the
+addresses in **Who may delete series and read the fleet on the central** (the panel
+itself, when it runs elsewhere). *Any address, with each account's credential*: that
+one port admits every address, and vmauth's credential is the only barrier; for
+servers behind NAT or with an address that changes. The other servers' ports keep the
+list. A module that serves several panels may fix the choice, and the setting is then
+not shown.
+
+With the servers only, a server whose traffic leaves with an address the port does not
+admit cannot write. Its agents' install checks the central from the server (401 is the
+central reached) and asks the panel which address it leaves with
+(`GET /cloud/egress_ip`, answered without a session, 30 per minute and address); a 403
+or no answer, or 20 minutes without its metrics while other servers write, raises
+`metrics_central_writer_outside` for that server, with both addresses and the two ways
+out: correct the server's address in the panel, or let any address write.
+
+**The operator's routes** (`/admin-r/`, `/admin-d/`) answer under the name on the
+platform port to the server itself, the private ranges (a panel beside the central
+reaches the port through Docker's DNAT, with a container's address) and the addresses
+in **Who may delete series and read the fleet on the central**; the operator's
+credential and the deletion key still guard them.
+
+To move a central with its history to another server by hand, see
+[RB-35](runbooks/RB-35-move-the-central-by-hand.md).
+
 ## cAdvisor version requirement (do not pin it back)
 
 **cAdvisor must be v0.54.0 or newer.** Docker 28/29 default to the
