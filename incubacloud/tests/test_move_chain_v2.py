@@ -4,19 +4,24 @@
 does what it promises: the deploy builds no database, the quiet check
 postpones a busy instance without stopping it, the fingerprint and the
 restore compare what crossed, the stop and the cutover measure the cut,
-the old copy is frozen and removed later, the rollback hook hears why
+the old copy is frozen, gives its networks back and is removed later,
+the rollback hook hears why
 the move did not happen, a moving instance counts on both hosts, and a
 priority weighs a stack against its neighbours.
 """
 import asyncio
+import os
+import subprocess
+import tempfile
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import yaml
 
 from odoo import fields
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import BaseCase, TransactionCase
 from odoo.tools.misc import file_path
 
 from ..models.abstract_executor import CANCELLED_WHILE_RUNNING, JobCancelled, JobRefused
@@ -685,6 +690,83 @@ class TestTheOldCopyIsFrozen(_MoveCase):
             ("action", "=", "Frozen copy forgotten"),
             ("host_id", "=", self.source.id),
         ]))
+
+
+#: A ``docker`` that records its calls, one argument line each, and
+#: answers the reads of ``move_steps.sh freeze``: the stack's containers
+#: (``STUB_IDS``), their compose project (``STUB_PROJECT``) and that
+#: project's networks (``STUB_NETS``). Removing ``STUB_RM_FAILS`` fails.
+_FAKE_DOCKER = """#!/bin/sh
+echo "$*" >> "$STUB_LOG"
+case "$*" in
+    "compose ps -aq") printf '%s' "$STUB_IDS" ;;
+    "inspect -f "*) echo "$STUB_PROJECT" ;;
+    "network ls -q --filter label=com.docker.compose.project=$STUB_PROJECT")
+        printf '%s' "$STUB_NETS" ;;
+    "network rm $STUB_RM_FAILS") exit 1 ;;
+esac
+exit 0
+"""
+
+
+class TestTheFreezeReleasesTheNetworks(BaseCase):
+    """The frozen copy keeps its containers, volumes and directory, not
+    its networks: each held one of the host's address pools for as long
+    as the copy is kept, which no capacity of the host counts (#103).
+    """
+
+    def _freeze(self, ids="c1\nc2\n", nets="n1\nn2\n", rm_fails="none"):
+        """Run ``move_steps.sh freeze`` on an empty directory, docker faked.
+
+        :param str ids: the containers ``compose ps -aq`` lists
+        :param str nets: the networks of the stack's project
+        :param str rm_fails: the network whose removal fails
+        :return: the exit status, the error output and the ``docker`` calls
+        :rtype: tuple[int, str, list[str]]
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp, "docker")
+            fake.write_text(_FAKE_DOCKER, encoding="utf-8")
+            fake.chmod(0o755)
+            stack = Path(tmp, "stack")
+            stack.mkdir()
+            log = Path(tmp, "calls")
+            env = os.environ | {
+                "PATH": f"{tmp}:{os.environ.get('PATH', '')}",
+                "STUB_LOG": str(log), "STUB_IDS": ids,
+                "STUB_PROJECT": "v2proj", "STUB_NETS": nets,
+                "STUB_RM_FAILS": rm_fails,
+            }
+            done = subprocess.run(
+                ["bash", file_path("incubacloud/scripts/move_steps.sh"),
+                 "freeze", str(stack)],
+                capture_output=True, text=True, env=env, timeout=30, check=False,
+            )
+            calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return done.returncode, done.stderr, calls
+
+    def test_the_stack_is_stopped_then_its_own_networks_removed(self):
+        status, _err, calls = self._freeze()
+        self.assertEqual(status, 0)
+        self.assertEqual(calls[:3], [
+            "compose ps -aq", "update --restart=no c1 c2", "compose stop",
+        ])
+        self.assertIn(
+            "network ls -q --filter label=com.docker.compose.project=v2proj",
+            calls,
+        )
+        self.assertEqual(calls[-2:], ["network rm n1", "network rm n2"])
+
+    def test_a_network_that_will_not_go_fails_nothing(self):
+        status, err, calls = self._freeze(rm_fails="n1")
+        self.assertEqual(status, 0)
+        self.assertIn("network rm n2", calls)
+        self.assertIn("could not remove network n1", err)
+
+    def test_a_stack_without_containers_removes_no_network(self):
+        status, _err, calls = self._freeze(ids="")
+        self.assertEqual(status, 0)
+        self.assertFalse([call for call in calls if call.startswith("network")])
 
 
 class TestCapacityDuringAMove(_MoveCase):

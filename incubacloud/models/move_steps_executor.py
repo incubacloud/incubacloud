@@ -272,9 +272,11 @@ class MoveFreezeSourceExecutor(AbstractSSHExecutor):
     database kept, for ``cloud.settings.move_frozen_source_hours``. It is
     the operator's copy for a restore by hand; ``move_cleanup_source``
     removes it later (``cloud.instance.cron_clean_frozen_move_sources``,
-    the instance's delete or a new move). A copy kept costs disk and a
-    Docker network until then, but no CPU or memory: the host no longer
-    counts the instance.
+    the instance's delete or a new move). A copy kept costs disk until
+    then, which the host's free-disk reading counts, and no CPU, memory or
+    Docker network: the host no longer counts the instance, and the
+    freeze removes the networks of the stack's project, each one of the
+    host's address pools (#103).
     """
 
     _job_type = "move_freeze_source"

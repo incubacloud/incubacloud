@@ -32,7 +32,13 @@
 # directory, database — as the old copy an operator can still restore
 # from by hand. Each container's restart policy is set to ``no`` first:
 # with ``always``, a reboot of the host would start the old copy again,
-# its crons and its mail with it, beside the instance that moved.
+# its crons and its mail with it, beside the instance that moved. Then
+# the networks of the stack's compose project go (``release_networks``):
+# each holds one of the host's address pools for as long as it exists,
+# about 31 without ``default-address-pools``, and the stopped copy needs
+# none. Its containers still point at them, so the copy cannot be
+# started as it is; ``docker compose down`` (never ``-v``) and a ``run``
+# or an ``up`` make it again from the same images, volumes and directory.
 #
 # Every table name is checked against [a-z_][a-z0-9_]* before it
 # reaches SQL.
@@ -81,6 +87,30 @@ count_files() {
     ic_compose_run --rm --no-deps --entrypoint="" odoo sh -c \
         'find "/var/lib/odoo/filestore/$1" -type f 2>/dev/null | wc -l' \
         sh "$1" | tr -d '\r\n '
+}
+
+# Remove the networks the compose project of the given containers made.
+# Only its own: an external network (the proxy's) carries no project
+# label and stays. A network that will not go is left, with a warning,
+# for the removal of the copy (``docker compose down``), and fails
+# nothing: the copy is stopped by then, which is what matters.
+# Usage: release_networks <container id>...
+release_networks() {
+    local project nets net
+    [ "$#" -gt 0 ] || return 0
+    project="$(docker inspect -f \
+        '{{index .Config.Labels "com.docker.compose.project"}}' "$1")" \
+        || { ic_warn "could not read the compose project of $dir; its networks stay"; return 0; }
+    [ -n "$project" ] || return 0
+    nets="$(docker network ls -q \
+        --filter "label=com.docker.compose.project=$project")" \
+        || { ic_warn "could not list the networks of $project; they stay"; return 0; }
+    [ -n "$nets" ] || return 0
+    ic_log "releasing the networks of $project"
+    for net in $nets; do
+        docker network rm "$net" >/dev/null \
+            || ic_warn "could not remove network $net of $project; it goes with the copy"
+    done
 }
 
 # Start ``db`` when it is not running and wait until it answers.
@@ -178,6 +208,9 @@ case "$op" in
         fi
         ic_log "stopping every container in $dir and keeping them"
         docker compose stop
+        # Word splitting again: the ids, then the first one's project.
+        # shellcheck disable=SC2086
+        release_networks $ids
         ;;
     *)
         ic_die "unknown operation: $op"

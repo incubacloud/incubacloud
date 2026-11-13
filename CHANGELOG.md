@@ -304,6 +304,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   actions, actions on the host's page); an Ansible-backed job connects
   through OpenSSH and still fails with its `Host key verification
   failed`.
+- **The copy a move freezes gives its Docker networks back (#103).** It
+  kept them for the 48 h it is kept (`move_frozen_source_hours`), each one
+  of the host's address pools, and no capacity of the host counted them:
+  a server without `default-address-pools` (about 31 networks) could run
+  out with a few moves away and fail the next deploy with «all predefined
+  address pools have been fully subnetted». `move_steps.sh freeze` now
+  removes the networks of the stack's compose project once its
+  containers are stopped; the external ones, such as the proxy's, stay.
+  The containers, images, volumes and directory stay as before, and the
+  copy's removal is unchanged. A network that will not go is left for
+  that removal, with a warning, and fails nothing. The frozen
+  containers then cannot start as they are: `docker compose down`
+  (never `-v`) before a `run` or an `up` makes the stack again.
 - **vmagent keeps its queue across a re-apply.** Its compose file mounted
   a volume at `/vmagentdata` that it did not use: without
   `-remoteWrite.tmpDataPath` the queue of what the central had not taken
