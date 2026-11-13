@@ -2431,7 +2431,7 @@ class AbstractExecutor(ABC):
         step: ``before_execute`` and ``get_commands()`` are not called
         again. A step that was started on the server is followed from the
         offset its log had reached. The row is marked as taken up,
-        ``parked`` and ``holds_queue_since`` cleared.
+        ``parked``, ``holds_queue_since`` and ``step_alive_since`` cleared.
 
         :param row: the job's ``cloud.job.checkpoint``
         """
@@ -2443,6 +2443,7 @@ class AbstractExecutor(ABC):
             # A mark a closed run left, which a later close would take for
             # its own (``_hold_queue`` keeps the first one).
             "holds_queue_since": False,
+            "step_alive_since": False,
             "attempts": row.attempts + 1,
         })
 

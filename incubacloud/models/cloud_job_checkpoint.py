@@ -116,6 +116,12 @@ class CloudJobCheckpoint(models.Model):
              " the reconciliation finds the step ended or stops it, or a"
              " person closes the alert of the held queue.",
     )
+    step_alive_since = fields.Datetime(
+        help="When the reconciliation first found the step the row holds"
+             " the queue for still running on a server that answered: past"
+             " the job's point of no return, or outliving its stop. The"
+             " alert of the held queue counts from it.",
+    )
     build_lock_host_id = fields.Many2one(
         "cloud.host",
         ondelete="set null",
