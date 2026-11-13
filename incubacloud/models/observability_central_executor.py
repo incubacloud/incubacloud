@@ -111,6 +111,10 @@ _OPERATOR_MAX_CONCURRENT = 16
 #: replaces such a key once and hands the new one in the file.
 _DELETE_KEY_IN_FILE_PARAM = "incubacloud.metrics_delete_key_in_file"
 
+#: Raised when the proxy of the central's server keeps a certificate of
+#: the single name in its ACME store (``_report_acme_same_name``).
+ACME_SAME_NAME_ALERT = "metrics_central_acme_same_name"
+
 #: The ``cloud.settings`` credentials a run may mint. Minted on a durable
 #: cursor, then copied into the job's cache so the rest of the run reads
 #: them from there.
@@ -701,6 +705,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         settings.write(vals)
         self._record_shipped_accounts()
         self._report_grafana_purge()
+        self._report_acme_same_name()
         if (settings.metrics_central_direct_host or "").strip() or single:
             # Probe the name now rather than at the cron's next pass.
             self._host()._enqueue_direct_sync("central deployed", chained=True)
@@ -731,7 +736,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "agent use it. Agents already installed pick it up when "
                 "they are next applied."
             )
-        elif gateway:
+        elif gateway and not single:
+            # Under the single name the agents move to it, said above.
             self._sys(
                 "Agents on this host will push to the local gateway. "
                 "For agents on OTHER hosts, set a public HTTPS "
@@ -772,6 +778,41 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 f"({state[len('failed:'):].strip()}). Remove the volume "
                 "incubacloud-central_grafana-data on the central's server "
                 "by hand; the central works without it."
+            )
+
+    def _report_acme_same_name(self):
+        """Say whether the proxy's store holds a certificate of the single name.
+
+        Traefik would serve that certificate or the panel's after each
+        reload, and the agents refuse the first (spike of 13-nov-2026).
+        Found: said in the job's log and by ``ACME_SAME_NAME_ALERT``, with
+        how to remove it; the store is the proxy's, and this job does not
+        edit it. Not found, or without the single name: the alert closes.
+        A store that could not be read is said in the log only.
+        """
+        state = str(self.playbook_facts().get("ic_acme_same_name") or "").strip()
+        name = (
+            self.env["cloud.settings"].sudo()._get_system().metrics_central_public_host
+            or ""
+        ).strip().lower()
+        if state == "found":
+            message = _(
+                "The certificate store of the proxy on %(host)s holds a "
+                "certificate for %(name)s, obtained when the name was "
+                "published on 443. The proxy serves it or the panel's after "
+                "each reload, and the agents refuse it: remove it from the "
+                "store as RB-35 says.",
+                host=self._host().name, name=name,
+            )
+            self._sys(f"⚠ {message}")
+            self._alert(ACME_SAME_NAME_ALERT, message, level="warning")
+            return
+        self._resolve_alert(ACME_SAME_NAME_ALERT)
+        if state == "unread":
+            self._sys(
+                f"⚠ The certificate store of the proxy on {self._host().name} "
+                f"could not be read: check by hand that it holds no "
+                f"certificate for {name} (RB-35)."
             )
 
     async def on_failure(self, results, errors):

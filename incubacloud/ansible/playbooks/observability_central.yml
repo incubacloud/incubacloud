@@ -266,6 +266,36 @@
                   ic-central:
                     minVersion: VersionTLS12
 
+    # A certificate ACME obtained earlier under the same name (the name
+    # once published on 443) stays in the proxy's store and competes with
+    # the file's: Traefik serves one or the other after each reload, and
+    # the agents refuse the ACME one (spike of 13-nov-2026). Only looked
+    # for, and said: the store holds every name's key and is the proxy's.
+    # grep prints how many lines name it, so 0 with rc 1 is "none", and a
+    # store that cannot be read (no proxy, no store) is neither.
+    - name: Look for a stored certificate of the single name
+      when: ic_single_host | length > 0
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - -p
+          - inverseproxy
+          - -f
+          - inverseproxy.yaml
+          - exec
+          - -T
+          - proxy
+          - grep
+          - -c
+          - -F
+          - '"{{ ic_single_host }}"'
+          - /etc/traefik/acme/acme.json
+        chdir: "{{ ic_traefik_dir }}"
+      register: ic_acme_grep
+      changed_when: false
+      failed_when: false
+
     - name: Remove what the single name left
       when: ic_single_host | length == 0
       ansible.builtin.file:
@@ -494,3 +524,9 @@
           ic_central_gateway: "http://{{ ic_gateway_bind }}"
           # removed, failed and why, or kept (incubacloud.metrics_keep_grafana_data).
           ic_grafana_purge: "{{ ic_grafana_purge | default('kept') }}"
+          # Under the single name: found, absent or unread; empty without it.
+          ic_acme_same_name: >-
+            {{ '' if (ic_acme_grep.rc is not defined)
+               else 'found' if (ic_acme_grep.rc == 0)
+               else 'absent' if (ic_acme_grep.rc == 1 and (ic_acme_grep.stdout | trim) == '0')
+               else 'unread' }}

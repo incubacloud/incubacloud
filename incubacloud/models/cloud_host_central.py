@@ -38,6 +38,12 @@ _PENDING_CHECK_EVERY = timedelta(minutes=10)
 #: of a credential, which is the right answer without one.
 _REACHED = 401
 
+#: What the panel records when the server's check got an answer whose
+#: certificate the authority did not sign: the port let the server in,
+#: so its address is not what is wrong (another certificate of the same
+#: name in the proxy's store, spike of 13-nov-2026).
+CERT_REFUSED = -2
+
 ALERT = "metrics_central_writer_outside"
 
 
@@ -75,7 +81,8 @@ class CloudHost(models.Model):
         copy=False,
         help="HTTP status the central's write URL answered this server at "
              "the agents' last install, without a credential: 401 is "
-             "right; -1 means no answer.",
+             "right; -1 means no answer, -2 a certificate the panel's "
+             "authority did not sign.",
     )
     metrics_central_reach_at = fields.Datetime(
         string="Central last checked from the server", readonly=True, copy=False,
@@ -88,6 +95,15 @@ class CloudHost(models.Model):
         """
         self.ensure_one()
         Settings = self.env["cloud.settings"].sudo()
+        if self.metrics_central_reach == CERT_REFUSED:
+            # The port let it in: its address is not the cause.
+            return _(
+                '"%(host)s" cannot write to the metrics central: the central\'s '
+                "server answers its name with a certificate the panel's "
+                "authority did not sign. Look for another certificate of the "
+                "same name in the store of that server's proxy (RB-35).",
+                host=self.name,
+            )
         egress = self.metrics_egress_ip or _("an address the panel could not learn")
         message = _(
             '"%(host)s" cannot write to the metrics central: it leaves with '
@@ -119,10 +135,12 @@ class CloudHost(models.Model):
 
         401 is the central reached; a 403 or no answer is the port
         refusing the server, which the alert names with the address it
-        leaves with. Another status (a 5xx) is the central's, not the
-        server's, and says nothing about the list.
+        leaves with; ``CERT_REFUSED`` is a certificate the server refused,
+        which the alert names instead. Another status (a 5xx) is the
+        central's, not the server's, and says nothing about the list.
 
-        :param int status: what the write URL answered, -1 for nothing.
+        :param int status: what the write URL answered, -1 for nothing,
+            ``CERT_REFUSED`` for a certificate the authority did not sign.
         :param str egress: the address the panel saw the server with;
             anything but an IPv4 address is dropped (``_egress_address``).
         """
@@ -136,7 +154,7 @@ class CloudHost(models.Model):
         Alert = self.env["cloud.alert"].sudo()
         if status == _REACHED or not self._central_outside_applies():
             Alert.resolve_alert(ALERT, host=self)
-        elif status in (403, -1):
+        elif status in (403, -1, CERT_REFUSED):
             Alert.raise_alert(ALERT, self._central_outside_message(), host=self)
 
     def _central_silence_explained(self):

@@ -1252,4 +1252,6 @@
           # The single name in force: what the central answered this
           # server (401 is right) and the address it leaves with.
           ic_central_reach: "{{ ic_central_try.status | default(-1) }}"
+          # Why it got no answer: a certificate refused is not the port.
+          ic_central_reach_error: "{{ (ic_central_try.msg | default('')) | string | truncate(300, true, '') }}"
           ic_egress_ip: "{{ (ic_egress.stdout | default('')) | trim | truncate(64, true, '') }}"

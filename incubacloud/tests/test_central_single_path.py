@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import jinja2
 import requests
 import yaml
 
@@ -30,7 +31,9 @@ from odoo.addons.incubacloud.models.cloud_metric_rule import promql_query
 from odoo.addons.incubacloud.models.observability_agents_executor import (
     ObservabilityAgentsExecutor,
 )
+from odoo.addons.incubacloud.models.cloud_host_central import CERT_REFUSED
 from odoo.addons.incubacloud.models.observability_central_executor import (
+    ACME_SAME_NAME_ALERT,
     ObservabilityCentralExecutor,
 )
 from odoo.addons.incubacloud.models.sync_direct_path_executor import (
@@ -59,6 +62,28 @@ _DNS = {
 }
 _TLS = {"ok": False, "layer": "tls", "detail": "curl 60", "cert_expires": None, "source": "job"}
 _LIGHT_OK = _OK | {"source": "light"}
+#: What the uri module says when the server refused the certificate.
+_CERT_REFUSED_MSG = (
+    "Status code was -1 and not [401]: Request failed: <urlopen error [SSL: "
+    "CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local "
+    "issuer certificate (_ssl.c:1010)>"
+)
+_CENTRAL_PLAYBOOK = (
+    Path(__file__).resolve().parent.parent / "ansible" / "playbooks"
+    / "observability_central.yml"
+)
+
+
+def _central_task(name):
+    """Return the central's playbook task called *name*.
+
+    :param str name: the task's name.
+    :rtype: dict
+    """
+    return next(
+        t for t in yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+        if t.get("name") == name
+    )
 
 
 def _load(pem):
@@ -154,13 +179,21 @@ class SinglePathCase(ObservabilityExecutorCase):
         ):
             executor.pre_run_checks()
 
-    def _deployed(self):
-        """Run a deployment's extra vars and ``on_success``; return the vars."""
+    def _deployed(self, **facts):
+        """Run a deployment's extra vars and ``on_success``; return the vars.
+
+        What the job's log said is kept in ``self.lines``.
+
+        :param facts: what the playbook exported besides its health.
+        """
         executor = self._make(ObservabilityCentralExecutor)
+        self.lines = []
+        executor._sys = self.lines.append
+        executor.job.id = False
         extra = executor.get_extra_vars()
         executor._facts = {
             "ic_central_up": "True", "ic_central_gateway": "http://172.17.0.1:8428",
-        }
+        } | facts
         executor._shipped_accounts = []
         asyncio.run(executor.on_success({}))
         self.settings.invalidate_recordset()
@@ -268,6 +301,55 @@ class TestTheDeployment(SinglePathCase):
             ("host_id", "=", self.host.id),
             ("job_type_id.code", "=", "sync_direct_path"),
         ]))
+
+    def test_the_log_does_not_send_the_agents_to_the_bridge(self):
+        """They move to the name: the hint of a central on one server is wrong."""
+        self._deployed()
+        self.assertFalse([line for line in self.lines if "local gateway" in line])
+
+    def test_a_stored_certificate_of_the_name_is_said(self):
+        """Traefik would serve it or the panel's, by turns (H3)."""
+        self._deployed(ic_acme_same_name="found")
+        alert = self._alert(ACME_SAME_NAME_ALERT, self.host)
+        self.assertEqual(alert.level, "warning")
+        self.assertIn(NAME, alert.message)
+        self.assertIn("RB-35", alert.message)
+        self.assertTrue([
+            line for line in self.lines if line.startswith("⚠") and NAME in line
+        ])
+
+    def test_a_store_without_it_closes_the_alert(self):
+        self._deployed(ic_acme_same_name="found")
+        self._deployed(ic_acme_same_name="absent")
+        self.assertFalse(self._alert(ACME_SAME_NAME_ALERT, self.host))
+
+    def test_a_store_that_cannot_be_read_is_said_in_the_log_only(self):
+        self._deployed(ic_acme_same_name="unread")
+        self.assertFalse(self._alert(ACME_SAME_NAME_ALERT, self.host))
+        self.assertTrue([line for line in self.lines if "could not be read" in line])
+
+    def test_the_store_is_looked_at_under_the_single_name_only(self):
+        task = _central_task("Look for a stored certificate of the single name")
+        self.assertEqual(task["when"], "ic_single_host | length > 0")
+        self.assertIs(task["failed_when"], False)
+        argv = task["ansible.builtin.command"]["argv"]
+        self.assertIn('"{{ ic_single_host }}"', argv)
+        self.assertEqual(argv[-1], "/etc/traefik/acme/acme.json")
+
+    def test_what_the_store_said_is_exported(self):
+        stats = _central_task("Export the central facts")["ansible.builtin.set_stats"]
+        template = jinja2.Environment(  # nosec B701 — renders a fact as Ansible does, never HTML
+            autoescape=False,
+        ).from_string(stats["data"]["ic_acme_same_name"])
+        for grep, said in (
+            ({"rc": 0, "stdout": "1"}, "found"),
+            ({"rc": 1, "stdout": "0"}, "absent"),
+            ({"rc": 1, "stdout": ""}, "unread"),
+            ({"rc": 2, "stdout": ""}, "unread"),
+            ({"skipped": True}, ""),
+        ):
+            with self.subTest(grep=grep):
+                self.assertEqual(template.render(ic_acme_grep=grep).strip(), said)
 
     def test_a_first_deployment_reads_on_the_bridge_meanwhile(self):
         self.settings.write({
@@ -642,7 +724,7 @@ class TestTheAgents(SinglePathCase):
             self.env["cloud.host"]._reconcile_direct_agents()
         self.assertIn(self.host, [call.args[0] for call in enqueue.call_args_list])
 
-    def _install(self, status, egress="203.0.113.9"):
+    def _install(self, status, egress="203.0.113.9", error=""):
         """Run an install's ``on_success`` with what the server's check said."""
         self._check(_OK)
         executor = self._make(ObservabilityAgentsExecutor)
@@ -651,6 +733,7 @@ class TestTheAgents(SinglePathCase):
             "ic_agents_running_services": '["node-exporter", "cadvisor", "vmagent"]',
             "ic_write_url_installed": SINGLE_WRITE,
             "ic_central_reach": str(status), "ic_egress_ip": egress,
+            "ic_central_reach_error": error,
         }
         asyncio.run(executor.on_success({}))
 
@@ -667,6 +750,38 @@ class TestTheAgents(SinglePathCase):
         self.assertTrue(self._alert("metrics_central_writer_outside", self.host))
         self._install(401)
         self.assertFalse(self._alert("metrics_central_writer_outside", self.host))
+
+    def test_a_certificate_the_server_refuses_is_not_blamed_on_its_address(self):
+        """The port let it in: another certificate of the name answered (H3)."""
+        self._install(-1, egress="46.4.0.80", error=_CERT_REFUSED_MSG)
+        self.assertEqual(self.host.metrics_central_reach, CERT_REFUSED)
+        alert = self._alert("metrics_central_writer_outside", self.host)
+        self.assertNotIn("Correct the server's address", alert.message)
+        self.assertNotIn("Any address", alert.message)
+        self.assertIn("certificate", alert.message)
+        self.assertIn("RB-35", alert.message)
+
+    def test_its_silence_says_the_same(self):
+        self._install(-1, egress="46.4.0.80", error=_CERT_REFUSED_MSG)
+        now = self._silent_beside_a_writer()
+        self.env["cloud.alert"].sudo().resolve_alert(
+            "metrics_central_writer_outside", host=self.host,
+        )
+        self.assertEqual(self.env["cloud.host"]._central_silent_writers(now), 1)
+        alert = self._alert("metrics_central_writer_outside", self.host)
+        self.assertIn("RB-35", alert.message)
+        self.assertNotIn("Correct the server's address", alert.message)
+
+    def test_no_answer_for_another_reason_is_still_the_port(self):
+        self._install(-1, error="Status code was -1 and not [401]: Request failed: "
+                      "<urlopen error timed out>")
+        self.assertEqual(self.host.metrics_central_reach, -1)
+        alert = self._alert("metrics_central_writer_outside", self.host)
+        self.assertIn("Correct the server's address", alert.message)
+
+    def test_why_it_got_no_answer_is_exported(self):
+        stats = agents_playbook.task("Export the agent facts")["ansible.builtin.set_stats"]
+        self.assertIn("ic_central_try.msg", stats["data"]["ic_central_reach_error"])
 
     def test_an_answer_that_is_not_an_address_is_dropped(self):
         """A CDN's challenge page is not shown as the address."""
