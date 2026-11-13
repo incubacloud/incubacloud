@@ -163,7 +163,8 @@ class TestThePanelAddressChange(PanelAddressCase):
         with patch.object(
             ICP, "set_param", autospec=True, side_effect=ICP.set_param,
         ) as set_param:
-            self.Host._panel_address_changed(NEW, LATER)
+            # Within pa-ready's list: no host is left at risk.
+            self.Host._panel_address_changed(NEW, "45.10.20.150")
         self.assertEqual(
             [c.args[1] for c in set_param.call_args_list], [PARAM],
         )
@@ -245,7 +246,8 @@ class TestTheListTheHostConfirmed(PanelAddressCase):
         super().setUp()
         # The list is kept on a cursor of its own: test mode makes it ride
         # on this transaction, so the write is seen and rolled back.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
 
     def _confirm(self, host, op, ips, answer):
         """Change *host*'s list live, the host answering *answer*."""
@@ -292,6 +294,8 @@ class TestTheListTheHostConfirmed(PanelAddressCase):
 
     def test_the_host_s_answer_confirms_a_list_edited_by_hand(self):
         self.listed.write({"allowed_ssh_ips": f"{OLD}, {NEW}"})
+        # The edit by hand is a request of its own, done before.
+        self.env.flush_all()
         self._confirm(self.listed, "add", [NEW], f"{OLD}, {NEW}")
         self.assertFalse(self.listed.ssh_allowlist_unconfirmed)
         self.Host._panel_address_changed(OLD, NEW)
