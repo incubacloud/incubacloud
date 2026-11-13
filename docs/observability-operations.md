@@ -465,15 +465,27 @@ Two ways out, both in Settings › Monitoring, both with a confirmation:
   empty central; the old one is left as it was on its server, its
   history with it, and the job's log says so. The old server can then
   be deleted, or the stack removed by hand there with
-  `docker compose -p incubacloud-central down -v`.
+  `docker compose -p incubacloud-central down -v`. Under a public name
+  (`metrics_central_public_host`) the panel and the agents keep using
+  the name, so point its DNS record at the new server first: the
+  confirmation and the job's log say so. The panel does not check the
+  record (13-nov-2026): behind a CDN the name answers with the CDN's
+  addresses, and a host's own address may be one only the panel reaches,
+  so a comparison would refuse good setups.
 - **Retire the central (the history is lost).** For a central whose
   server is lost, or a panel whose only server is going
   (`/cloud/monitoring/retire_central`, `cloud.settings.retire_metrics_central`):
-  the panel forgets the host, empties the query and remote-write URLs and
-  switches observability off. Nothing runs on the server. Refused while a
+  the panel forgets the host, empties the query and remote-write URLs,
+  the public name and the list of accounts on the central, closes the
+  central's open alerts and switches observability off. The direct name
+  stays: it is probed before it is used. The remote-write URL goes even
+  when it was written by hand. Nothing runs on the server. Refused while a
   deployment or an account sync of the central waits or runs, which would
   record the host again. Agents already installed keep sending to the
   old address until observability is enabled on another host.
+  A module above core may refuse it, when its central serves more than
+  this panel (`cloud.settings._central_retire_refusal`); the button is
+  then not offered.
 
 **To keep the history**, by hand: start the empty central on the new
 host, then stop VictoriaMetrics and Loki on both servers

@@ -18,8 +18,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   central and leaves the old one, with its history, on its server; the
   job's log says so. *Retire the central (the history is lost)*
   (`/cloud/monitoring/retire_central`) forgets it, empties the query and
-  remote-write URLs and switches observability off; it is refused while a
-  deployment or an account sync of the central waits or runs.
+  remote-write URLs, the public name and the list of accounts on the
+  central, closes the central's open alerts and switches observability
+  off; it is refused while a deployment or an account sync of the central
+  waits or runs, and where a layer refuses it
+  (`cloud.settings._central_retire_refusal`, then not offered). Under a
+  public name, *Start an empty central* asks for the name's DNS record to
+  point at the new server first, in its confirmation and in the job's log.
+  A retry of its job is an ordinary deployment: it does not carry
+  `discard_history`.
 - **Whether the central fits on a host.** Picking a host under *Where the
   central runs* shows a note from its last measures: free disk for the
   servers that would send and the retention, memory (4 GB alone, 8 GB with
