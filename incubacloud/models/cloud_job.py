@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from markupsafe import escape
 from psycopg2 import OperationalError
+from psycopg2.extensions import TransactionRollbackError
 
 from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, UserError
@@ -4912,6 +4913,14 @@ class CloudJob(models.Model):
         raises the alert then for every row marked that long ago, holding
         its queue, without one open (``_alert_queue_held``).
 
+        Late is counted up to the sweep's own last run, not up to now
+        (``lastcall`` in the context of its scheduled action): after the
+        panel was stopped for longer, the first sweep may run before the
+        reconciliation, which was not late, only stopped with the rest. A
+        pass that runs now is not late either (``_cron_runs_now``):
+        ``lastcall`` is written once a pass ends, and one longer than
+        ``_QUEUE_HELD_ALERT_MINUTES`` would read as stopped (13-nov-2026).
+
         :return: how many alerts were raised
         :rtype: int
         """
@@ -4922,7 +4931,19 @@ class CloudJob(models.Model):
         cutoff = fields.Datetime.now() - timedelta(
             minutes=self._QUEUE_HELD_ALERT_MINUTES,
         )
-        if cron and cron.active and cron.lastcall and cron.lastcall >= cutoff:
+        late = cutoff
+        sweep = self.env.ref(
+            "incubacloud.cron_job_queue_dispatch", raise_if_not_found=False,
+        )
+        swept = self.env.context.get("lastcall")
+        if sweep and swept and self.env.context.get("cron_id") == sweep.id:
+            late = min(late, swept - timedelta(
+                minutes=self._QUEUE_HELD_ALERT_MINUTES,
+            ))
+        if cron and cron.active and (
+            (cron.lastcall and cron.lastcall >= late)
+            or self._cron_runs_now(cron)
+        ):
             return 0
         rows = self.env["cloud.job.checkpoint"].sudo().search([
             ("holds_queue_since", "!=", False),
@@ -4946,6 +4967,35 @@ class CloudJob(models.Model):
             )
             raised += 1
         return raised
+
+    @api.model
+    def _cron_runs_now(self, cron):
+        """Whether a cron worker runs *cron* at this moment.
+
+        A worker holds the cron's row locked for the whole run
+        (``ir.cron._acquire_one_job``, ``FOR NO KEY UPDATE``) and writes
+        its ``lastcall`` only once the run ends. The same lock is tried
+        without waiting, in a savepoint rolled back at once: it is never
+        held past this read, and a worker that comes for the cron in that
+        instant only takes it at its next poll. A run that never ends
+        reads as running for good. A row written since this transaction
+        began (PostgreSQL refuses its lock then) is a run that ended
+        meanwhile: the cron runs.
+
+        :param cron: the ``ir.cron``
+        :rtype: bool
+        """
+        cr = self.env.cr
+        try:
+            with contextlib.closing(cr.savepoint(flush=False)):
+                cr.execute(
+                    "SELECT 1 FROM ir_cron WHERE id = %s"
+                    " FOR NO KEY UPDATE SKIP LOCKED", (cron.id,),
+                    log_exceptions=False,
+                )
+                return not cr.fetchone()
+        except TransactionRollbackError:
+            return True
 
     @api.model
     def _close_lost_job(self, job_id, claimed=None, release=None):
