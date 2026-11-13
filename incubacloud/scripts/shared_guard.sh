@@ -35,9 +35,14 @@
 #   guard open within a minute), then runs ``apply``. Without the timer it
 #   applies nothing.
 # * ``apply`` (the timer): idempotent; a rule is written only when missing.
+#   One run at a time, under a lock: the one ``install`` starts and the
+#   timer's could otherwise both rewrite the chain and leave a ``DROP``
+#   first, which cuts the whole host until the next tick. A run that
+#   waits too long for the lock exits 1 and touches nothing.
 #   A change of state is written to the system log, tag
 #   ``incubacloud-shared-guard``.
-# * ``uninstall``: the timer, the files and the rules go.
+# * ``uninstall``: the timer, the files and the rules go; a run of the
+#   timer under way is stopped first, so it cannot write them back.
 # * ``status``: reads, changes nothing.
 #
 # Each operation ends with one line: ``IC_SHARED_GUARD_ON``,
@@ -59,6 +64,9 @@ INSTALL_DIR="${IC_SHARED_GUARD_DIR:-/usr/local/lib/incubacloud-shared-guard}"
 SYSTEMD_DIR="${IC_SYSTEMD_DIR:-/etc/systemd/system}"
 UNIT="incubacloud-shared-guard"
 STATE_FILE="${IC_SHARED_GUARD_STATE:-/run/incubacloud-shared-guard.state}"
+LOCK_FILE="${IC_SHARED_GUARD_LOCK:-/run/incubacloud-shared-guard.lock}"
+# Seconds a run waits for the one before it: an apply takes a few.
+LOCK_WAIT="${IC_SHARED_GUARD_LOCK_WAIT:-30}"
 BRIDGE_NF="${IC_BRIDGE_NF_FILE:-/proc/sys/net/bridge/bridge-nf-call-iptables}"
 SYS_NET="${IC_SYS_CLASS_NET:-/sys/class/net}"
 LOG_TAG="incubacloud-shared-guard"
@@ -185,6 +193,14 @@ docker_uses_nftables() {
         nftables*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# Hold the guard's lock for the rest of this run, waiting for a run under
+# way. Exits 1 when it cannot: the rules are left as they are.
+take_lock() {
+    exec 9>>"$LOCK_FILE" || ic_die "could not open the lock $LOCK_FILE"
+    flock -w "$LOCK_WAIT" 9 \
+        || ic_die "another run of the guard kept its lock for ${LOCK_WAIT}s"
 }
 
 # Whether the chain holds exactly its three rules.
@@ -354,6 +370,8 @@ do_uninstall() {
         return 0
     fi
     as_root systemctl disable --now "$UNIT.timer" >/dev/null 2>&1 || true
+    # A run the timer started just before would write the rules back.
+    as_root systemctl stop "$UNIT.service" >/dev/null 2>&1 || true
     as_root rm -f "$SYSTEMD_DIR/$UNIT.timer" "$SYSTEMD_DIR/$UNIT.service" \
         || ic_die "could not remove the $UNIT units"
     as_root systemctl daemon-reload >/dev/null 2>&1 || true
@@ -387,6 +405,7 @@ case "$op" in
     install) do_install ;;
     apply)
         [ "$(id -u)" -eq 0 ] || ic_die "apply runs as root"
+        take_lock
         do_apply
         ;;
     uninstall) do_uninstall ;;

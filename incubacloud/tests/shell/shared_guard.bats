@@ -4,8 +4,13 @@
 # ``iptables`` is a small fake over files, one per chain and one rule spec
 # per line, so what the script leaves behind can be read back. ``docker``,
 # ``id``, ``sudo``, ``systemctl``, ``logger`` and ``modprobe`` are stubbed;
-# the install directory, the systemd directory, the state file, the
-# sysctl and /sys/class/net are temporary ones.
+# the install directory, the systemd directory, the state file, the lock,
+# the sysctl and /sys/class/net are temporary ones.
+#
+# With FAKE_RACE set to a path, the first ``-A IC-SHARED -m mac`` starts
+# a second ``apply`` (FAKE_RACE_SCRIPT) and gives it two seconds to run
+# before the first one goes on: the install's apply and the timer's tick
+# crossing on a chain not written yet.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/shared_guard.sh"
@@ -18,6 +23,7 @@ setup() {
     export IC_SHARED_GUARD_DIR="$TMP/lib/incubacloud-shared-guard"
     export IC_SYSTEMD_DIR="$TMP/systemd"
     export IC_SHARED_GUARD_STATE="$TMP/state"
+    export IC_SHARED_GUARD_LOCK="$TMP/lock"
     export IC_BRIDGE_NF_FILE="$TMP/bridge-nf-call-iptables"
     export IC_SYS_CLASS_NET="$TMP/sys"
     echo 1 > "$IC_BRIDGE_NF_FILE"
@@ -44,6 +50,16 @@ case "$cmd" in
     -A)
         [ -f "$f" ] || exit 1
         [ -n "${FAKE_NO_MAC:-}" ] && [[ "$spec" == *"-m mac"* ]] && exit 1
+        if [ -n "${FAKE_RACE:-}" ] && [ "$chain" = IC-SHARED ] \
+            && [[ "$spec" == *"-m mac"* ]] && mkdir "$FAKE_RACE.started" 2>/dev/null; then
+            ( exec 3>&- 9>&-
+              bash "$FAKE_RACE_SCRIPT" apply > "$FAKE_RACE.out" 2>&1
+              touch "$FAKE_RACE.done" ) &
+            for _ in $(seq 20); do
+                [ -e "$FAKE_RACE.done" ] && break
+                sleep 0.1
+            done
+        fi
         echo "$spec" >> "$f"
         ;;
     -I)
@@ -195,6 +211,36 @@ expected_chain() {
     [ ! -e "$IPT_DIR/IC-SHARED" ]
 }
 
+@test "two applies at once leave the chain whole" {
+    FAKE_RACE="$TMP/race" FAKE_RACE_SCRIPT="$SCRIPT" run bash "$SCRIPT" apply
+    [ "$status" -eq 0 ]
+    [[ "${lines[-1]}" == IC_SHARED_GUARD_ON* ]]
+    [ -d "$TMP/race.started" ]
+    for _ in $(seq 100); do
+        [ -e "$TMP/race.done" ] && break
+        sleep 0.1
+    done
+    [ -e "$TMP/race.done" ]
+    [ "$(tail -n 1 "$TMP/race.out")" = "IC_SHARED_GUARD_ON bridge br-0123456789ab, proxy 02:69:63:00:00:01" ]
+    [ "$(cat "$IPT_DIR/IC-SHARED")" = "$(expected_chain)" ]
+    [ "$(grep -c 'IC-SHARED' "$IPT_DIR/DOCKER-USER")" -eq 1 ]
+}
+
+@test "a run that cannot take the lock leaves the rules alone" {
+    bash "$SCRIPT" apply
+    before="$(cat "$IPT_DIR/DOCKER-USER" "$IPT_DIR/IC-SHARED")"
+    flock "$IC_SHARED_GUARD_LOCK" sleep 5 3>&- &
+    holder=$!
+    sleep 0.3
+    : > "$CALLS"
+    FAKE_PROXY_MAC=02:42:ac:14:00:02 IC_SHARED_GUARD_LOCK_WAIT=1 run bash "$SCRIPT" apply
+    kill "$holder" 2>/dev/null || true
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"another run of the guard kept its lock for 1s"* ]]
+    [ "$(cat "$IPT_DIR/DOCKER-USER" "$IPT_DIR/IC-SHARED")" = "$before" ]
+    ! grep -q "^iptables " "$CALLS"
+}
+
 @test "bridged packets that skip iptables: nothing applied" {
     echo 0 > "$IC_BRIDGE_NF_FILE"
     run bash "$SCRIPT" apply
@@ -262,6 +308,9 @@ expected_chain() {
     [ "$status" -eq 0 ]
     [[ "${lines[-1]}" == "IC_SHARED_GUARD_OFF removed" ]]
     grep -q "systemctl disable --now incubacloud-shared-guard.timer" "$CALLS"
+    # A tick under way stopped before the rules go, after the timer.
+    [ "$(grep -n "systemctl stop incubacloud-shared-guard.service" "$CALLS" | cut -d: -f1)" -gt \
+      "$(grep -n "systemctl disable --now incubacloud-shared-guard.timer" "$CALLS" | cut -d: -f1)" ]
     [ ! -e "$IC_SYSTEMD_DIR/incubacloud-shared-guard.timer" ]
     [ ! -e "$IC_SYSTEMD_DIR/incubacloud-shared-guard.service" ]
     [ ! -e "$IC_SHARED_GUARD_DIR" ]
