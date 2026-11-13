@@ -86,7 +86,9 @@ the Docker daemon or a system service.
   its container.
 - **What is recorded** — who opened it, when, from which address and browser,
   and when it closed. What you type and what the server answers are **not**
-  recorded, because a shell is where passwords get typed.
+  recorded, because a shell is where passwords get typed. By default the record
+  is kept for a year after the shell closes (Settings → Logs & retention → Host
+  shell session retention), then deleted.
 - **Limits** — one open shell per person and host, and at most 3 opened per
   minute (tunable in Settings → Rate limits). A shell with no keystrokes for 2
   minutes closes itself.
