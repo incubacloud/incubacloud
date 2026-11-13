@@ -424,32 +424,71 @@ def boot_test_sweep(root="/tmp"):
     trap (a worker that died, a server that rebooted) leaves it, the size
     of the database (#91, 13-nov-2026). The next boot test of the same
     instance removes it first; this takes those of instances that do not
-    rebuild again: volumes named so that no container uses and that were
-    created a day ago, each read from ``docker volume inspect``. Then the
-    copies releases before 1.0.228 made in *root* as ``ic_boot_<id>``, a
-    day old: owned by the postgres uid 70, which this account cannot
-    remove, they go from a container, as the boot test removed them, and
-    only after a search this account can do found one, so a host with
-    none pulls no image. ``find`` follows no link, and ``rm -rf`` none
-    inside a directory either. Says ``removed volume <name>`` for each;
-    it never fails, and contains no braces Ansible would read.
+    rebuild again.
+
+    First the test's containers, ``ic_boot_copy_<id>``, ``ic_boot_pg_<id>``
+    and ``ic_boot_odoo_<id>``, running or not, created a day ago: one
+    killed after the throwaway PG started still mounts the volume, which
+    is then no volume ``dangling`` and would stay for good (Fable's review
+    of #91, 13-nov-2026). A test has six hours at most
+    (``BOOT_TEST_CAP_S``), so none of a day is one still running. Then
+    the volumes so named that no container uses and that were created a
+    day ago, and the test's networks ``ic_boot_<id>`` of a day, which
+    Docker refuses to remove while a container is on them. Each date is
+    read from ``docker inspect``. Then the copies releases before 1.0.228
+    made in *root* as ``ic_boot_<id>``, a day old: owned by the postgres
+    uid 70, which this account cannot remove, they go from a container,
+    as the boot test removed them, and only after a search this account
+    can do found one, so a host with none pulls no image. ``find``
+    follows no link, and ``rm -rf`` none inside a directory either.
+
+    Says ``removed container|volume|network <name>`` for each; it never
+    fails, and contains no braces Ansible would read.
 
     :param str root: the directory of the old copies, ``/tmp`` but in tests
     :rtype: str
     """
     quoted = shlex.quote(root)
     match = "-mindepth 1 -maxdepth 1 -type d -name 'ic_boot_[0-9]*' -mmin +1440"
+    # The first "Name" and "Created" of what ``docker inspect`` prints are
+    # the object's own; a container's name starts with a slash.
+    name_of = r"""sed -n 's/^[[:space:]]*"Name": *"\/\{0,1\}\([^"]*\)".*/\1/p' | head -n 1"""
+    created = r"""sed -n 's/^[[:space:]]*"Created": *"\([^"]*\)".*/\1/p' | head -n 1"""
+    day_old = (
+        ' t=$(date -d "$c" +%s 2>/dev/null) || continue;'
+        " [ $((now - t)) -ge 86400 ] || continue;"
+    )
     return (
         "now=$(date +%s);"
+        " for id in $(docker ps -aq --filter name=ic_boot_ 2>/dev/null); do"
+        ' j=$(docker inspect "$id" 2>/dev/null) || continue;'
+        f""" n=$(printf '%s\\n' "$j" | {name_of});"""
+        ' case "$n" in'
+        " ic_boot_copy_*[!0-9]*|ic_boot_pg_*[!0-9]*|ic_boot_odoo_*[!0-9]*)"
+        " continue ;;"
+        " ic_boot_copy_?*|ic_boot_pg_?*|ic_boot_odoo_?*) ;;"
+        " *) continue ;; esac;"
+        f""" c=$(printf '%s\\n' "$j" | {created});"""
+        f"{day_old}"
+        ' docker rm -f "$id" >/dev/null 2>&1 && echo "removed container $n";'
+        " done;"
         " for v in $(docker volume ls -q --filter dangling=true"
         " --filter name=ic_boot_ 2>/dev/null); do"
         ' case "$v" in ic_boot_*[!0-9]*|ic_boot_) continue ;; ic_boot_*) ;;'
         " *) continue ;; esac;"
         ' c=$(docker volume inspect "$v" 2>/dev/null'
         r""" | sed -n 's/.*"CreatedAt": *"\([^"]*\)".*/\1/p' | head -n 1);"""
-        ' t=$(date -d "$c" +%s 2>/dev/null) || continue;'
-        ' [ $((now - t)) -ge 86400 ] || continue;'
+        f"{day_old}"
         ' docker volume rm "$v" >/dev/null 2>&1 && echo "removed volume $v";'
+        " done;"
+        " for id in $(docker network ls -q --filter name=ic_boot_ 2>/dev/null); do"
+        ' j=$(docker network inspect "$id" 2>/dev/null) || continue;'
+        f""" n=$(printf '%s\\n' "$j" | {name_of});"""
+        ' case "$n" in ic_boot_*[!0-9]*|ic_boot_) continue ;; ic_boot_*) ;;'
+        " *) continue ;; esac;"
+        f""" c=$(printf '%s\\n' "$j" | {created});"""
+        f"{day_old}"
+        ' docker network rm "$id" >/dev/null 2>&1 && echo "removed network $n";'
         " done;"
         f" if find {quoted} {match} -print -quit 2>/dev/null | grep -q .; then"
         f" docker run --rm -v {quoted}:/host_tmp alpine find /host_tmp {match}"
