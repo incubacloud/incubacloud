@@ -9470,6 +9470,11 @@ msgid "Job log retention (days)"
 msgstr "Retención de log de jobs (días)"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__host_session_retention_days
+msgid "Host shell session retention (days)"
+msgstr "Retención de las sesiones de shell del host (días)"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Job not found"
@@ -11503,6 +11508,17 @@ msgstr ""
 "(cloud.job.log.chunk) para jobs terminados. Los jobs activos nunca se "
 "purgan. Ponga 0 para desactivar completamente la purga (la tabla crecerá sin"
 " límite)."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__host_session_retention_days
+msgid ""
+"Number of days to keep the audit rows of closed host shell sessions "
+"(cloud.host.session), counted from their close. Open sessions are never "
+"purged. Set to 0 to keep them all."
+msgstr ""
+"Número de días que se conservan las filas de auditoría de las sesiones de "
+"shell del host cerradas (cloud.host.session), contados desde su cierre. Las "
+"sesiones abiertas nunca se purgan. 0 las conserva todas."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__github_event_retention_days
@@ -22941,6 +22957,12 @@ msgstr "Retención de los logs de trabajos"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid "Host shell session retention"
+msgstr "Retención de las sesiones de shell del host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
 msgid "Job retention"
 msgstr "Retención de trabajos"
 
@@ -22988,6 +23010,16 @@ msgid ""
 msgstr ""
 "Salida de los trabajos terminados. Los trabajos activos nunca se purgan. 0 "
 "la conserva toda."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/core_sections.js:0
+msgid ""
+"Who opened a shell on a host, when and from where. Counted from the close; "
+"open sessions are never purged. 0 keeps them all."
+msgstr ""
+"Quién abrió una shell en un host, cuándo y desde dónde. Se cuenta desde el "
+"cierre; las sesiones abiertas nunca se purgan. 0 las conserva todas."
 
 #. module: incubacloud
 #. odoo-javascript
