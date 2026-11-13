@@ -1007,6 +1007,16 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         else:
             raise ValueError(f"Unknown restore mode: {mode!r}")
 
+        # Before any step, which stops, loads and updates with the image
+        # and the files the server holds: over what a rebuild left
+        # unapplied there, refused (#96). After the payload's own checks,
+        # which refuse without asking the host, and after the archive came
+        # into the job's directory, which touches nothing of the instance
+        # and goes with the job's staging; a browser upload's copy on the
+        # panel is already gone (its ``finally`` above).
+        await self._refuse_unapplied_rebuild(
+            transport, self._inst_dir(self._inst()), "restoring it",
+        )
         if payload.get('share_secret_key'):
             await self._take_source_secret_key(transport)
         inst = self._inst()

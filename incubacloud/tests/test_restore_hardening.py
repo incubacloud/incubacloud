@@ -478,6 +478,11 @@ class TestTheLinkIsNeverAWordOfTheCommand(RestoreFixture, TransactionCase):
     def setUp(self):
         """A restore from a presigned link, its job directory here."""
         super().setUp()
+        # The mark of a rebuild left unapplied is not this class's
+        # subject (test_rebuild_unapplied_mark): the server holds none.
+        self.startPatcher(patch.object(
+            RestoreInstanceExecutor, "_refuse_unapplied_rebuild", autospec=True,
+        ))
         self.host = self.env["cloud.host"].create({
             "name": "argv-host", "ip_address": "198.51.100.41",
             "user": "ubuntu", "wildcard_domain": "argv.example",

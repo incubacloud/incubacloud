@@ -3,6 +3,7 @@ from odoo import _
 from .abstract_executor import (
     COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
+    UnappliedRebuild,
     validate_dup_time,
 )
 
@@ -53,6 +54,11 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         # validating the format up-front is the only defense against
         # shell injection through this field.
         validate_dup_time(payload['time'])
+        # Before anything stops: the update and the start below would use
+        # what a rebuild left unapplied on the server (#96).
+        await self._refuse_unapplied_rebuild(
+            transport, self._inst_dir(inst), "restoring it",
+        )
         if inst.auto_update:
             self._say_update_target(inst)
 
@@ -146,12 +152,14 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         instance said nothing of it. Once a step ran the restore closes
         as ``on_failure`` closes it, the step that never answered counted
         as failed. Before its steps nothing changed on the host and the
-        instance keeps its status.
+        instance keeps its status. A restore refused for a rebuild left
+        unapplied is not one to try again as it is: its refusal says what
+        to do instead.
 
         :param Exception exc: what stopped the run
         """
         await self._fail_cut_off_run(exc)
-        if self._step_results is None:
+        if self._step_results is None and not isinstance(exc, UnappliedRebuild):
             self._say_restore_not_started()
 
     def _say_restore_not_started(self):

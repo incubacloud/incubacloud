@@ -274,9 +274,13 @@ class TestBackupRestoreSaysWhichCode(BaseCase):
             ),
         ]
         lines = []
+        # The server's answer on a rebuild left unapplied is not this
+        # test's (test_rebuild_unapplied_mark).
         with patch.object(
             BackupRestoreExecutor, "_sys", autospec=True,
             side_effect=lambda _self, line: lines.append(line),
+        ), patch.object(
+            BackupRestoreExecutor, "_refuse_unapplied_rebuild", autospec=True,
         ):
             asyncio.run(ex.before_execute(None))
         return lines

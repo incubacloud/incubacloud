@@ -648,6 +648,15 @@ class TestTheProxySecretsAreStagedPrivately(_StagingCase):
 class TestTheArchivesAndTheirCredentialsStayInIt(_StagingCase):
     """The purge's environment and the restore's archive."""
 
+    def setUp(self):
+        """The staging case, its server holding no unapplied rebuild."""
+        super().setUp()
+        # The mark of a rebuild left unapplied is not this class's
+        # subject (test_rebuild_unapplied_mark): the server holds none.
+        self.startPatcher(patch.object(
+            RestoreInstanceExecutor, "_refuse_unapplied_rebuild", autospec=True,
+        ))
+
     def test_the_purge_environment_is_created_owner_only_in_it(self):
         """No directory of a predictable name, no unchecked ``install -d``:
         the environment is a private file in the job's directory, and
@@ -992,6 +1001,11 @@ class TestAnUploadThroughTheTemporaryKey(_StagingCase):
     def setUp(self):
         """A grant whose upload was checked, and a restore consuming it."""
         super().setUp()
+        # The mark of a rebuild left unapplied is not this class's
+        # subject (test_rebuild_unapplied_mark): the server holds none.
+        self.startPatcher(patch.object(
+            RestoreInstanceExecutor, "_refuse_unapplied_rebuild", autospec=True,
+        ))
         self.grant, _private = self.env["cloud.restore.upload.grant"]._open(
             self.inst,
         )

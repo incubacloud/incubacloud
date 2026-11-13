@@ -31,6 +31,7 @@ from odoo.addons.incubacloud.models import _odoo_versions
 from odoo.addons.incubacloud.models.abstract_executor import (
     JobCancelled,
     JobWorkerLost,
+    UnappliedRebuild,
 )
 from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.delete_instance_executor import (
@@ -1410,6 +1411,41 @@ class TestARestore(_PitrCase):
         transport.run = AsyncMock(return_value=CommandResult(answer or self.LIST, 0))
         asyncio.run(executor.before_execute(transport))
         return executor
+
+    def test_a_rebuild_left_unapplied_refuses_before_anything(self):
+        """#96: the restore would update and start what a rebuild left
+        untried. Refused once the host said no restore of this job is
+        there, before the listing and before anything stops."""
+        executor = self._executor(
+            ex.PitrRestoreExecutor, "pitr_restore",
+            payload={"target": "2026-10-18 22:31:00"},
+        )
+
+        async def _run(command, *_args, **_kwargs):
+            """The mark of rebuild 400 there; nothing of this restore."""
+            if "rebuild.sh check-unapplied" in command:
+                return CommandResult("IC_UNAPPLIED job=400 kind=build\n", 26)
+            return CommandResult("", 0)
+
+        transport = MagicMock(spec=SSHTransport)
+        transport.upload_text_files = AsyncMock()
+        transport.run = AsyncMock(side_effect=_run)
+        with self.assertRaises(UnappliedRebuild):
+            asyncio.run(executor.before_execute(transport))
+        commands = [c.args[0] for c in transport.run.await_args_list]
+        self.assertFalse(any(" list " in c for c in commands))
+        self.assertTrue(executor._probed)
+        transport.execute.assert_not_called()
+
+    def test_a_restore_that_follows_never_asks_for_the_mark(self):
+        executor = self._executor(
+            ex.PitrRestoreExecutor, "pitr_restore",
+            payload={"target": "2026-10-18 22:31:00", "follow": 7},
+        )
+        transport = MagicMock(spec=SSHTransport)
+        transport.run = AsyncMock(return_value=CommandResult("", 26))
+        asyncio.run(executor.before_execute(transport))
+        transport.run.assert_not_called()
 
     def test_it_starts_on_the_host_from_the_newest_copy_and_is_followed(self):
         executor = self._planned()

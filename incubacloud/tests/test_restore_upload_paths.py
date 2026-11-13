@@ -787,6 +787,11 @@ class TestTheJobSecretIsTheServers(TransactionCase):
     def setUp(self):
         """A project with a stakeholder and a developer, and an instance."""
         super().setUp()
+        # The mark of a rebuild left unapplied is not this class's
+        # subject (test_rebuild_unapplied_mark): the server holds none.
+        self.startPatcher(patch.object(
+            RestoreInstanceExecutor, "_refuse_unapplied_rebuild", autospec=True,
+        ))
         self.registry_enter_test_mode()
         self.host = self.env["cloud.host"].create({
             "name": "secret-reader-host",
@@ -903,6 +908,11 @@ class TestADownloadFromALinkRunsNothingItCarries(TransactionCase):
     def setUp(self):
         """A from-URL restore with a credential, its job directory here."""
         super().setUp()
+        # The mark of a rebuild left unapplied is not this class's
+        # subject (test_rebuild_unapplied_mark): the server holds none.
+        self.startPatcher(patch.object(
+            RestoreInstanceExecutor, "_refuse_unapplied_rebuild", autospec=True,
+        ))
         host = self.env["cloud.host"].create({
             "name": "quoted-link-host", "ip_address": "198.51.100.25",
             "user": "ubuntu", "wildcard_domain": "quoted-link.example",
