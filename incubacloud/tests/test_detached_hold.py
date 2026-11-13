@@ -1364,7 +1364,9 @@ class TestARowThatHoldsTheQueue(TransactionCase):
         job = self._ended("deploy_instance", self.inst)
         self._marked_ago(job, 31)
         cron = self._reconcile_cron()
-        cron.write({"lastcall": fields.Datetime.now()})
+        # On and just run, whatever the database had: a neutralized copy
+        # keeps its scheduled actions off.
+        cron.write({"active": True, "lastcall": fields.Datetime.now()})
         self.Job._cron_dispatch_queued()
         self.assertFalse(self._held_alert(job))
         cron.write({"active": False})
