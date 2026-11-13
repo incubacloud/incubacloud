@@ -5,7 +5,7 @@
 #   rebuild.sh commit-dirty     <dir> <timestamp>
 #   rebuild.sh copier-update    <dir> <answers_file>
 #   rebuild.sh resolve-conflicts <dir>
-#   rebuild.sh boot-test        <dir> <inst_id> <project> <pg_user> <pg_version> <dbname>
+#   rebuild.sh boot-test        <dir> <inst_id> <project> <pg_user> <pg_version> <dbname> [<cap_s>]
 #
 # Rebuild subclasses deploy and reuses deploy.sh / strip_compose_service.sh
 # for the steps they share (ensure/inject secret env, cap hostname, strip
@@ -14,6 +14,24 @@
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
+
+#: The boot test's measures (``boot-test``, #91, plan of 6-nov-2026).
+#: What it leaves free on Docker's disk besides its copy, in KiB: the 5 GiB
+#: a restore leaves to the server's other instances
+#: (``restore_space.RESERVE_BYTES``).
+IC_BOOT_RESERVE_KB=$(( 5 * 1024 * 1024 ))
+#: The speed its estimate assumes, in MB/s: pg_basebackup into a volume ran
+#: at 285-300 MB/s on a Hetzner CX with local disk (spike of 6-nov-2026),
+#: halved for slower disks. The log gives the real speed after each copy.
+IC_BOOT_ESTIMATE_MBPS=150
+#: Its time budget, in seconds: an hour to boot the new image and update
+#: the copy, plus the copy at IC_BOOT_BUDGET_MBPS, slower than the estimate
+#: on purpose. An hour is what the whole step had before.
+IC_BOOT_BUDGET_BASE_S=3600
+IC_BOOT_BUDGET_MBPS=100
+#: What its trap needs once the budget ends, in seconds: a budget that
+#: leaves less than this of the step's cap is not started.
+IC_BOOT_TRAP_MARGIN_S=300
 
 ic_require_args 2 "$#" "rebuild.sh <operation> <dir> ..."
 
@@ -152,20 +170,32 @@ case "$op" in
 
     boot-test)
         ic_require_args 5 "$#" \
-            "rebuild.sh boot-test <dir> <inst_id> <project> <pg_user> <pg_version> <dbname>"
+            "rebuild.sh boot-test <dir> <inst_id> <project> <pg_user> <pg_version> <dbname> [<cap_s>]"
         # <project> is accepted and no longer read: the boot test stopped
         # going through the project network when it got a network of its
         # own. Kept so the callers' argv does not have to change.
+        # <cap_s> is the step's cap, the panel's ``timeout``: a test whose
+        # budget (below) would not end inside it stops before it copies.
         inst_id="$1"; pg_user="$3"; pg_version="$4"; dbname="$5"
-        # Boot the new image against a throwaway physical clone of the
-        # production DB before touching the live stack. Every path is
+        cap_s="${6:-}"
+        # Boot the new image against a throwaway physical copy of the
+        # production DB before touching the live stack. Every name is
         # suffixed by the instance id so concurrent rebuilds never overlap.
         ic_log "safe boot test for instance $inst_id"
-        backup_in_db="/tmp/ic_boot_backup_${inst_id}"
-        clone_on_host="/tmp/ic_boot_${inst_id}"
+        boot_volume="ic_boot_${inst_id}"
+        copy_container="ic_boot_copy_${inst_id}"
         pg_container="ic_boot_pg_${inst_id}"
         boot_net="ic_boot_${inst_id}"
         odoo_container="ic_boot_odoo_${inst_id}"
+        # postgres-autoconf (not vanilla postgres:*-alpine) bundles
+        # pgvector, which the copied Odoo 19 cluster needs to open its
+        # ``ai`` embedding index. The copy and the volume's preparation
+        # run in it too: one image, with the database's own pg_basebackup.
+        pg_image="ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine"
+        # The rule that lets the copy in, marked so the trap removes this
+        # line and no other.
+        hba_rule="host replication all 127.0.0.1/32 trust # incubacloud boot test"
+        hba_file=""
 
         # Whether the test needs the gatekeeper (below) is read from the
         # compose, and a compose that cannot be read says nothing about
@@ -180,7 +210,7 @@ case "$op" in
 
         # Whatever this test disturbs has to come back up, so the restore
         # runs from a trap rather than from the tail of the block: with
-        # ``set -e`` any unexpected failure in between (a cp that breaks,
+        # ``set -e`` any unexpected failure in between (a copy that breaks,
         # a container that will not start) would jump straight past a
         # cleanup written at the end and leave the stack down. That is
         # how a failed boot test used to take the instance with it.
@@ -195,11 +225,15 @@ case "$op" in
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
             ic_boot_rc=$?
+            docker rm -f "$copy_container" 2>/dev/null || true
             docker rm -f "$odoo_container" 2>/dev/null || true
             docker rm -f "$pg_container" 2>/dev/null || true
             docker network rm "$boot_net" 2>/dev/null || true
-            docker run --rm -v /tmp:/host_tmp alpine \
-                rm -rf "/host_tmp/ic_boot_${inst_id}" 2>/dev/null || true
+            # After the containers that mount it.
+            docker volume rm "$boot_volume" >/dev/null 2>&1 || true
+            if [ -n "$hba_file" ]; then
+                ic_boot_hba_drop 2>/dev/null || true
+            fi
             if [ -n "${gatekeeper_started:-}" ] && [ "$ic_boot_rc" -ne 0 ]; then
                 # A first boot under the gatekeeper that failed leaves the
                 # stack as it found it: the old egress model, no gatekeeper.
@@ -210,29 +244,132 @@ case "$op" in
                 # shellcheck disable=SC2086
                 docker compose start $running_before 2>/dev/null || true
             fi
-            docker compose exec -T db rm -rf "$backup_in_db" 2>/dev/null || true
         }
         trap ic_boot_restore EXIT
 
-        # Defensive pre-cleanup: pg_basebackup refuses a non-empty target,
-        # and an interrupted run may have left a UID-70 dir on the host.
-        docker compose exec -T db rm -rf "$backup_in_db"
-        docker run --rm -v /tmp:/host_tmp alpine rm -rf "/host_tmp/ic_boot_${inst_id}"
+        # ic_boot_stop MESSAGE: end the test with MESSAGE, on stdout, where
+        # the panel reads it to say why the rebuild stopped
+        # (``RebuildInstanceExecutor.parse_results``). The trap puts back
+        # whatever the test had touched.
+        ic_boot_stop() {
+            printf '[incubacloud] ERROR: boot test stopped: %s\n' "$*"
+            exit 1
+        }
+        # ic_boot_psql SQL: one answer of the live database, as text.
+        ic_boot_psql() {
+            docker compose exec -T db psql -U "$pg_user" -d "$dbname" -tAc "$1"
+        }
+        # ic_boot_gib KIB: a size in KiB as the messages say it.
+        ic_boot_gib() {
+            awk -v k="$1" 'BEGIN { printf "%.1f GiB", k / 1048576 }'
+        }
+        # ic_boot_hba_drop: take the rule ``hba_rule`` out of the live
+        # database's pg_hba.conf, in place (the file keeps its owner and
+        # mode), and reload.
+        # shellcheck disable=SC2317  # reached through the EXIT trap
+        ic_boot_hba_drop() {
+            # shellcheck disable=SC2016  # expanded by the container's sh
+            docker compose exec -T db sh -c \
+                'grep -vxF "$1" "$2" > /tmp/ic_boot_hba; cat /tmp/ic_boot_hba > "$2"; rm -f /tmp/ic_boot_hba' \
+                sh "$hba_rule" "$hba_file"
+            ic_boot_psql 'SELECT pg_reload_conf()' >/dev/null
+        }
 
-        # Physical copy of the PG cluster (no exclusive lock → zero
-        # downtime). Drop backup_label inside the container before the
-        # host sees the files: postgres would otherwise try to replay WAL
-        # from a backup, and once the mount is chowned to UID 70 the host
-        # user can no longer remove anything in there.
-        docker compose exec -T db pg_basebackup -U "$pg_user" \
-            -D "$backup_in_db" --checkpoint=fast --no-sync -X fetch
-        docker compose exec -T db rm -f "$backup_in_db/backup_label"
-        docker compose cp "db:$backup_in_db" "$clone_on_host"
-        docker compose exec -T db rm -rf "$backup_in_db"
+        # What a run killed before its trap left (a job whose worker died,
+        # a server that rebooted): its containers, then its volume, which
+        # pg_basebackup would refuse as a target that is not empty; and
+        # the copy releases before 1.0.228 made inside the database's own
+        # container, the size of the database.
+        docker rm -f "$copy_container" "$odoo_container" "$pg_container" 2>/dev/null || true
+        docker network rm "$boot_net" 2>/dev/null || true
+        docker volume rm "$boot_volume" >/dev/null 2>&1 || true
+        docker compose exec -T db rm -rf "/tmp/ic_boot_backup_${inst_id}" 2>/dev/null || true
 
-        # Flip ownership to the postgres UID via an ephemeral root
-        # container (the host user lacks CAP_CHOWN).
-        docker run --rm -v "$clone_on_host:/data" alpine chown -R 70:70 /data
+        # Measure before copying (#91, plan of 6-nov-2026): the database's
+        # size, as ``du`` counts its directory (what pg_basebackup copies,
+        # its WAL included), and the free space of the disk the copy goes
+        # to, read on the volume itself. A test that does not fit stops
+        # here, with the instance as it was.
+        db_id="$(docker compose ps -q db | head -n 1)"
+        [ -n "$db_id" ] \
+            || ic_boot_stop "The database of the instance is not running: there is nothing to copy. Nothing was changed. Start the instance and rebuild it again."
+        data_dir="$(ic_boot_psql 'SHOW data_directory' | tr -d '[:space:]')" \
+            || ic_die "could not ask the database where its data lives"
+        size_kb="$(docker compose exec -T db du -sk "$data_dir" | awk 'NR == 1 { print $1 }')" \
+            || size_kb=""
+        case "$size_kb" in
+            ''|*[!0-9]*) ic_die "could not measure the database at $data_dir" ;;
+        esac
+        docker volume create "$boot_volume" >/dev/null
+        # PostgreSQL refuses a data directory in the 755 Docker creates, and
+        # the SSH user may not chown: the volume is made postgres's, mode
+        # 700, from a container, which reads its free space too.
+        free_kb="$(docker run --rm -v "$boot_volume:/out" --user root --entrypoint sh "$pg_image" \
+            -c 'chown postgres:postgres /out && chmod 700 /out && df -Pk /out | awk "NR == 2 { print \$4 }"')" \
+            || free_kb=""
+        case "$free_kb" in
+            ''|*[!0-9]*) ic_die "could not read the free space of Docker's disk" ;;
+        esac
+        # The copy needs the database's size and a tenth more, for the WAL
+        # of the test and what the update writes, and leaves free the 5 GiB
+        # a restore leaves to the server's other instances
+        # (``restore_space.RESERVE_BYTES``): 6-nov-2026, plan §2.3.
+        need_kb=$(( size_kb * 11 / 10 + IC_BOOT_RESERVE_KB ))
+        size_bytes=$(( size_kb * 1024 ))
+        copy_s=$(( size_bytes / (IC_BOOT_ESTIMATE_MBPS * 1000000) ))
+        budget_s=$(( IC_BOOT_BUDGET_BASE_S + size_bytes / (IC_BOOT_BUDGET_MBPS * 1000000) ))
+        ic_log "boot test: the database takes $(ic_boot_gib "$size_kb"), Docker's disk has $(ic_boot_gib "$free_kb") free and the test needs $(ic_boot_gib "$need_kb"); the copy should take about $(( (copy_s + 59) / 60 )) min, and the test has $(( (budget_s + 59) / 60 )) min"
+        if [ "$free_kb" -lt "$need_kb" ]; then
+            ic_boot_stop "No room on the server for the boot test: the database takes $(ic_boot_gib "$size_kb"), Docker's disk has $(ic_boot_gib "$free_kb") free and the test needs $(ic_boot_gib "$need_kb") (the database, a tenth more for what the update writes, and $(ic_boot_gib "$IC_BOOT_RESERVE_KB") left to the server's other instances). Nothing was changed. Free space on the server, enlarge its disk, or turn off «Test the new image before applying it» on the instance."
+        fi
+        if [ -n "$cap_s" ] && [ "$budget_s" -gt $(( cap_s - IC_BOOT_TRAP_MARGIN_S )) ]; then
+            ic_boot_stop "The boot test would need about $(( (budget_s + 1800) / 3600 )) h for a database of $(ic_boot_gib "$size_kb") (the copy at ${IC_BOOT_BUDGET_MBPS} MB/s and an hour to boot and update it), more than the $(( (cap_s + 1800) / 3600 )) h a step may run. Nothing was changed. Turn off «Test the new image before applying it» on the instance to rebuild without it."
+        fi
+        deadline=$(( SECONDS + budget_s ))
+
+        # postgres-autoconf writes /etc/postgres/pg_hba.conf on every start
+        # with no rule for a replication connection on the loopback (the
+        # word ``all`` does not cover one; spike of 6-nov-2026): the test
+        # adds its own, reloads, and its trap takes it out again.
+        hba_file="$(ic_boot_psql 'SHOW hba_file' | tr -d '[:space:]')"
+        [ -n "$hba_file" ] || ic_die "could not ask the database for its pg_hba.conf"
+        # shellcheck disable=SC2016  # expanded by the container's sh
+        docker compose exec -T db sh -c \
+            'grep -qxF "$1" "$2" || printf "%s\n" "$1" >> "$2"' \
+            sh "$hba_rule" "$hba_file"
+        ic_boot_psql 'SELECT pg_reload_conf()' >/dev/null
+
+        # One physical copy (no exclusive lock → zero downtime), straight
+        # into the volume: pg_basebackup in a container of its own on the
+        # database's network namespace, which reaches it on 127.0.0.1. The
+        # copy keeps its backup_label and the WAL streamed while it ran, so
+        # the throwaway PG recovers from the backup rather than as after a
+        # crash. Under ``timeout`` with the test's budget; the shell itself
+        # says every minute that it still copies, so a test orphaned by a
+        # request cut short dies at its next line rather than at the end.
+        ic_log "copying the database into the volume $boot_volume"
+        copy_started=$SECONDS
+        timeout --kill-after=60 "$budget_s" docker run --rm --name "$copy_container" \
+            --network "container:$db_id" -v "$boot_volume:/out" \
+            --user postgres --entrypoint pg_basebackup "$pg_image" \
+            -h 127.0.0.1 -U "$pg_user" -D /out -Fp -X stream --checkpoint=fast --no-sync &
+        copy_pid=$!
+        said=$SECONDS
+        while kill -0 "$copy_pid" 2>/dev/null; do
+            sleep 1
+            if [ $(( SECONDS - said )) -ge 60 ]; then
+                said=$SECONDS
+                ic_log "still copying the database: $(( (SECONDS - copy_started) / 60 )) min so far"
+            fi
+        done
+        copy_rc=0
+        wait "$copy_pid" || copy_rc=$?
+        if [ "$copy_rc" -eq 124 ] || [ "$copy_rc" -eq 137 ]; then
+            ic_boot_stop "The boot test ran past its time budget of $(( (budget_s + 59) / 60 )) min while it copied the database. Nothing was changed."
+        fi
+        [ "$copy_rc" -eq 0 ] || ic_die "the copy of the database failed (exit $copy_rc)"
+        copied_s=$(( SECONDS - copy_started ))
+        ic_log "copied in ${copied_s} s, about $(( size_bytes / 1000000 / (copied_s > 0 ? copied_s : 1) )) MB/s"
 
         # The throwaway PG lives on a network of its own, never on the
         # project's. A container holding an endpoint on the project
@@ -249,10 +386,6 @@ case "$op" in
         # it. The first staging rebuild in production waited for it
         # forever (2026-10-03). The boot container joins this network
         # instead, which works whatever the project's networks are.
-        #
-        # postgres-autoconf (not vanilla postgres:*-alpine) bundles
-        # pgvector, which the cloned Odoo 19 cluster needs to open its
-        # ``ai`` embedding index.
         #
         # A staging rendered by doodba template v10 is different again:
         # its ``odoo`` runs inside the network namespace of the
@@ -274,8 +407,6 @@ case "$op" in
         # test fails. Docker Compose will not let the boot container
         # share the namespace of a one-off gatekeeper ("container
         # missing"), so it has to be the service's own.
-        docker rm -f "$odoo_container" "$pg_container" 2>/dev/null || true
-        docker network rm "$boot_net" 2>/dev/null || true
         gatekeeper=""
         gatekeeper_started=""
         if printf '%s\n' "$services" | grep -qx gatekeeper; then
@@ -299,9 +430,8 @@ case "$op" in
             docker network create "$boot_net"
         fi
         docker run -d --name "$pg_container" --network "$pg_network" \
-            -v "$clone_on_host:/var/lib/postgresql/data" \
-            --user postgres --entrypoint postgres \
-            "ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine" \
+            -v "$boot_volume:/var/lib/postgresql/data" \
+            --user postgres --entrypoint postgres "$pg_image" \
             -D /var/lib/postgresql/data
 
         # The boot test itself: click-odoo-update against the throwaway PG
@@ -318,14 +448,18 @@ case "$op" in
         # own wait for Postgres has no deadline — an unreachable database
         # hung the job for good — so it is replaced by a bounded one; and
         # the unaccent hook, which would query before the network is
-        # joined, is skipped: the clone already carries the extension.
+        # joined, is skipped: the copy already carries the extension.
         # ``--no-deps``: the services it depends on are running, and
         # without it Compose recreates any whose definition the template
-        # changed — under v10 the live ``db``, restarted mid-test.
+        # changed — under v10 the live ``db``, restarted mid-test. What is
+        # left of the budget bounds the boot as it bounded the copy.
         ic_boot_join() {
             [ -n "$gatekeeper" ] \
                 || docker network connect "$boot_net" "$odoo_container"
         }
+        remaining=$(( deadline - SECONDS ))
+        [ "$remaining" -gt 0 ] \
+            || ic_boot_stop "The boot test ran past its time budget of $(( (budget_s + 59) / 60 )) min before it booted the new image. Nothing was changed."
         set +e
         # shellcheck disable=SC2016  # expanded by the container's bash
         ic_compose_run -d --no-deps --name "$odoo_container" \
@@ -339,12 +473,15 @@ case "$op" in
                      echo "boot test: the throwaway postgres never answered" >&2
                      exit 1' "$dbname" \
             && ic_boot_join \
-            && docker logs -f "$odoo_container"
+            && timeout "$remaining" docker logs -f "$odoo_container"
         ic_test_exit=$?
         if [ "$ic_test_exit" -eq 0 ]; then
             ic_test_exit="$(docker wait "$odoo_container")"
         fi
         set -e
+        if [ "$ic_test_exit" -eq 124 ]; then
+            ic_boot_stop "The boot test ran past its time budget of $(( (budget_s + 59) / 60 )) min while it booted the new image. Nothing was changed."
+        fi
         # Cleanup and stack restore both run from the EXIT trap.
         exit "$ic_test_exit"
         ;;
