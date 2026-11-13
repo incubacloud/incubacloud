@@ -195,18 +195,35 @@ class CloudInstance(models.Model):
     ]
     _description = "Cloud Instance"
 
+    # A partial unique index, not the table constraint ``unique
+    # (project_id, name)`` it was until 1.0.228: PostgreSQL counts the
+    # index of such a constraint as a key, so moving an instance to
+    # another project took its row FOR UPDATE and failed to serialize
+    # every older REPEATABLE READ transaction (a job's) that then stored a
+    # row pointing at it. A partial index is no key. The predicate leaves
+    # out only rows the constraint never compared either (NULLs are
+    # distinct), so the rule is the same. Migration 1.0.228 drops the old
+    # constraint, whose index would otherwise be kept under this name.
     _sql_constraints = [
-        (
-            'name_project_uniq',
-            "unique (project_id, name)",
-            "Instance name must be unique within a project."
-        ),
         (
             'one_production_per_project',
             "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
             "A project can only have one production instance."
         ),
     ]
+
+    def init(self):
+        """Create the partial unique index on (project_id, name).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS cloud_instance_name_project_uniq "
+            "ON cloud_instance (project_id, name) WHERE project_id IS NOT NULL"
+        )
 
     active = fields.Boolean(default=True)
     auto_rebuild = fields.Boolean(
