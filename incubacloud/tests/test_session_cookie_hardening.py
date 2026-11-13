@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import werkzeug.wrappers
 import yaml
 
-from odoo.http import FutureResponse, Request, _Response
+from odoo.http import FutureResponse, Request, Response, _Response
 from odoo.tests.common import BaseCase, TransactionCase
 
 from ..models.cloud_host import CloudHost, _read_traefik_template
@@ -133,6 +133,20 @@ class TestSessionCookieAttributes(BaseCase):
         header = _cookie_header(response)
         self.assertIn('Secure', header)
         self.assertIn('SameSite=Lax', header)
+
+    def test_the_response_facade_goes_through_the_wrapper(self):
+        """The expired-session handler's redirection is a ``Response``, the
+        facade, whose ``set_cookie`` held ``_Response``'s from before the
+        wrapper was installed."""
+        with patch('odoo.http.request', _mock_request(True)):
+            response = Response()
+            response.set_cookie('session_id', 'value')
+        wrapped = response._wrapped__
+        self.assertIn('Secure', _cookie_header(wrapped))
+        self.assertIn('SameSite=Lax', _cookie_header(wrapped))
+        self.assertTrue(_cookie_header(wrapped, BINDING_COOKIE).startswith(
+            f'{BINDING_COOKIE}={binding_of("value")};',
+        ))
 
     def test_only_the_session_cookie_is_pinned(self):
         self.assertEqual(SAMESITE_LAX_COOKIES, frozenset({'session_id'}))

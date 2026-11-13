@@ -58,6 +58,13 @@ that the binding names (``bound_session_id``); with none, it starts a new
 anonymous session, as for a visitor without cookies. The digest is not a
 secret: what protects it is that only this host can set the cookie.
 
+Both cookies are read from the raw ``Cookie`` header, by their exact
+name (``_cookie_values``): werkzeug strips each name with ``str.strip()``,
+which also drops Unicode spaces (U+00A0, U+2000, U+3000, U+0085...), so
+`` __Host-session_bind`` with such a space in front, which a browser keeps
+as a cookie of another name and lets any host of the domain set, would
+read as this host's own binding.
+
 Plain HTTP (a development instance) is left as Odoo has it: no
 ``__Host-`` cookie exists there. On the first secure request after this
 is installed, a browser holding a session without its binding starts a new
@@ -84,6 +91,16 @@ SESSION_COOKIE = 'session_id'
 #: (see "Cookie tossing" in the module docstring).
 BINDING_COOKIE = '__Host-session_bind'
 
+#: What pads a cookie in a ``Cookie`` header: the ASCII space and tab
+#: only (RFC 6265's ``OWS``), never the Unicode spaces ``str.strip()``
+#: removes too.
+_COOKIE_PADDING = ' \t'
+
+#: The session key that says the session was already warned about a
+#: session cookie set by another host, so the warning is logged once per
+#: session rather than on every request.
+_TOSSING_WARNED = 'incubacloud_tossed_session_cookie_warned'
+
 #: Set once the wrappers are installed, so a second import (module reload,
 #: test re-import) does not wrap the wrappers.
 _PATCHED = False
@@ -98,26 +115,52 @@ def binding_of(sid):
     return hashlib.sha256(sid.encode()).hexdigest()
 
 
+def _cookie_values(httprequest, name):
+    """Return the values of the cookies of *httprequest* named exactly *name*.
+
+    Read from the raw ``Cookie`` header (as WSGI hands it over: the bytes
+    the browser sent, decoded as latin-1), split on ``;``, with only the
+    ASCII space and tab taken as padding. Not ``httprequest.cookies``:
+    werkzeug strips names with ``str.strip()``, so a cookie whose name
+    starts with a Unicode space would be read under *name*.
+
+    :param httprequest: Odoo's wrapper of the incoming request.
+    :param str name: the cookie name, compared exactly.
+    :returns: the values, in the order the header lists them.
+    :rtype: list[str]
+    """
+    values = []
+    for part in httprequest.environ.get('HTTP_COOKIE', '').split(';'):
+        key, sep, value = part.partition('=')
+        if sep and key.strip(_COOKIE_PADDING) == name:
+            values.append(value.strip(_COOKIE_PADDING))
+    return values
+
+
 def bound_session_id(httprequest):
     """Return the ``session_id`` Odoo may use for *httprequest*.
 
     Over HTTPS, the one value of the request's ``session_id`` cookies
     that its binding cookie names, in whatever order the browser lists
-    them; ``None`` when there is no binding or it names none of them.
+    them; ``None`` when there is no binding, more than one, or it names
+    none of them. Both are read by their exact name (``_cookie_values``).
     Over plain HTTP, the first ``session_id``, as Odoo reads it.
 
     :param httprequest: Odoo's wrapper of the incoming request.
     :returns: the session id, or ``None`` for a new anonymous session.
     :rtype: str | None
     """
-    sids = httprequest.cookies.getlist(SESSION_COOKIE)
     if not httprequest.is_secure:
+        sids = httprequest.cookies.getlist(SESSION_COOKIE)
         return sids[0] if sids else None
-    bound = httprequest.cookies.get(BINDING_COOKIE)
-    if bound:
-        for sid in sids:
-            if hmac.compare_digest(binding_of(sid), bound):
-                return sid
+    bindings = _cookie_values(httprequest, BINDING_COOKIE)
+    if len(bindings) != 1 or not bindings[0]:
+        # Only this host sets the binding, with Path=/ and no Domain: a
+        # browser holds one at most. Two are not a choice to make.
+        return None
+    for sid in _cookie_values(httprequest, SESSION_COOKIE):
+        if hmac.compare_digest(binding_of(sid), bindings[0]):
+            return sid
     return None
 
 
@@ -175,26 +218,59 @@ def _bind_session_reading(original):
     :param original: the unbound ``_get_session_and_dbname`` being replaced.
     :returns: a wrapper that replaces the session id Odoo read from the
         first ``session_id`` cookie with ``bound_session_id``'s answer,
-        then delegates to *original*.
+        then delegates to *original*. Session cookies left unused beside
+        another are logged as a WARNING once per session (marked in it),
+        then at DEBUG.
     """
 
     @functools.wraps(original)
     def _get_session_and_dbname(self):
         httprequest = self.httprequest
         sid = bound_session_id(httprequest)
+        tossed = 0
         if sid != httprequest._session_id__:
+            # Every session cookie Odoo itself would have read, the ones
+            # named with a Unicode space in front included.
             offered = len(httprequest.cookies.getlist(SESSION_COOKIE))
+            tossed = offered - (sid is not None)
+            httprequest._session_id__ = sid
             # Several session cookies only come from a parent domain; one
             # alone is also a browser that predates the binding.
+            if offered <= 1:
+                _logger.debug(
+                    "%s: %d session cookie(s) without this host's binding not used",
+                    httprequest.path, tossed,
+                )
+                tossed = 0
+        session, dbname = original(self)
+        if tossed:
+            # Each request of the visitor carries the tossed cookie until
+            # it expires: one warning per session, the rest at DEBUG.
+            warned = session.get(_TOSSING_WARNED)
             _logger.log(
-                logging.WARNING if offered > 1 else logging.DEBUG,
+                logging.DEBUG if warned else logging.WARNING,
                 "%s: %d session cookie(s) without this host's binding not used",
-                httprequest.path, offered - (sid is not None),
+                httprequest.path, tossed,
             )
-            httprequest._session_id__ = sid
-        return original(self)
+            if not warned:
+                session[_TOSSING_WARNED] = True
+        return session, dbname
 
     return _get_session_and_dbname
+
+
+def _forward_set_cookie(self, *args, **kwargs):
+    """Set a cookie through the ``set_cookie`` of the ``_Response`` that a
+    ``Response`` facade wraps, as it is now.
+
+    The facade's own ``set_cookie`` (a ``ProxyFunc``) holds the function
+    ``_Response.set_cookie`` was when ``odoo.http`` was imported, so it
+    would skip the wrapper installed on ``_Response`` since.
+
+    :param self: the ``Response`` facade.
+    :returns: ``None``, as the facade's own.
+    """
+    self._wrapped__.set_cookie(*args, **kwargs)
 
 
 def _patch_set_cookie():
@@ -205,7 +281,10 @@ def _patch_set_cookie():
     is a facade that forwards to it), and ``FutureResponse`` is the header
     placeholder used while a request is still being dispatched. Both need
     wrapping: the session cookie is written through the second one on a
-    normal request and through the first one when a session expires.
+    normal request and through the first one when a session expires. The
+    facade is made to forward to the wrapped ``_Response.set_cookie``: the
+    redirection of an expired session (``HttpDispatcher.handle_error``) is
+    a facade, whose ``set_cookie`` would otherwise skip the wrapper.
 
     Idempotent — importing this module twice does not stack wrappers.
     """
@@ -214,12 +293,13 @@ def _patch_set_cookie():
         return
     http._Response.set_cookie = _harden(http._Response.set_cookie)
     http.FutureResponse.set_cookie = _harden(http.FutureResponse.set_cookie)
+    http.Response.set_cookie = _forward_set_cookie
     http.Request._get_session_and_dbname = _bind_session_reading(
         http.Request._get_session_and_dbname,
     )
     _PATCHED = True
-    _logger.debug("Hardened set_cookie on _Response and FutureResponse, "
-                  "and bound the session read on Request")
+    _logger.debug("Hardened set_cookie on _Response, Response and "
+                  "FutureResponse, and bound the session read on Request")
 
 
 _patch_set_cookie()
