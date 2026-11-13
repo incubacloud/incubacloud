@@ -540,6 +540,18 @@
                                         With direct access refused, also require every TLS connection to present a client certificate signed by this authority. The CDN's addresses are shared by all its customers; only your zone's certificate tells your traffic apart. Leave empty to accept any connection the firewall lets in. Applied by Full Setup or Push Trusted Proxy Settings.
                                     </span>
                                 </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Proxy network</label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input id="host-shared-guard" type="checkbox"
+                                               t-att-checked="state.form.shared_guard"
+                                               t-on-change="(ev) => { this.state.form.shared_guard = ev.target.checked; }"/>
+                                        <span>Only the proxy may open connections to the instances</span>
+                                    </div>
+                                    <span class="ic-form-note">
+                                        Every instance on this host shares a network with the proxy. With this on, the host's firewall keeps one instance from reaching another directly, past the proxy and the CDN. Applied, or removed, by Full Setup.
+                                    </span>
+                                </div>
                                 <t t-if="env.features?.observability?.configure !== false">
                                     <div class="rl-frow rl-full">
                                         <label for="host-direct-port">Direct port</label>

@@ -18,6 +18,8 @@
     ic_obs_dir: "{{ ansible_env.HOME }}/observability"
     ic_lib_dir: /usr/local/lib/incubacloud
     ic_pg_cron_file: /etc/cron.d/incubacloud-collect-pg
+    # Where Full Setup installs the guard on the proxy network.
+    ic_shared_guard_dir: /usr/local/lib/incubacloud-shared-guard
 
   tasks:
     # The metrics agents go first. Left running, a host the panel no
@@ -95,6 +97,31 @@
       ansible.builtin.file:
         path: "{{ ic_obs_dir }}"
         state: absent
+
+    # Before the proxy goes: Full Setup's guard on its network
+    # (scripts/shared_guard.sh), whose timer would otherwise keep running
+    # every minute on a server the panel no longer knows.
+    - name: Look for the guard on the proxy network
+      ansible.builtin.stat:
+        path: "{{ ic_shared_guard_dir }}/shared_guard.sh"
+      register: ic_shared_guard
+
+    - name: Remove the guard on the proxy network
+      when: ic_shared_guard.stat.exists
+      block:
+        - name: Remove the guard's timer, rules and files
+          become: "{{ ansible_user_id != 'root' }}"
+          ansible.builtin.command:
+            cmd: bash {{ ic_shared_guard_dir }}/shared_guard.sh uninstall
+          changed_when: true
+      rescue:
+        - name: Say the guard was left on the server
+          ansible.builtin.debug:
+            msg: >-
+              The guard on the proxy network could not be removed
+              ({{ (ansible_failed_result.msg | default('') | string)[:300] }}).
+              Run "bash {{ ic_shared_guard_dir }}/shared_guard.sh uninstall"
+              as root on this server.
 
     - name: Check whether Traefik is deployed
       ansible.builtin.stat:

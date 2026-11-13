@@ -932,6 +932,7 @@ class CrudMixin:
             'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
             'block_direct_access': host.block_direct_access,
             'cdn_client_ca': host.cdn_client_ca or '',
+            'shared_guard': host.shared_guard,
             # The default certificate is shown and described; its key is
             # only ever reported as stored or not, never returned.
             'tls_default_cert': host.tls_default_cert or '',
@@ -992,7 +993,7 @@ class CrudMixin:
         'exclude_from_autoassign', 'http_conn_rate',
         'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
         'cdn_client_ca', 'direct_port', 'direct_path_opt_out',
-        'security_logs_enabled',
+        'security_logs_enabled', 'shared_guard',
         # The key is write-only: the model ignores an empty one, so a
         # save that does not paste a new key keeps the stored one.
         'tls_default_cert', 'tls_default_key',
