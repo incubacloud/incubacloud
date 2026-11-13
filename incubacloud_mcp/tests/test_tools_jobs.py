@@ -365,6 +365,42 @@ class TestJobTools(PanelFixtureMixin, McpUsersMixin, TransactionCase):
         self.assertIs(rows[stopping.id]["stopping"], True)
         self.assertIs(rows[ended.id]["stopping"], False)
 
+    def test_a_job_deferred_by_the_build_lock_is_listed_with_its_wait(self):
+        """list_jobs reads build_wait for a job another build on its server
+        defers, naming that build, and none for the others."""
+        from odoo.addons.incubacloud.models.host_build_lock import (
+            BUILD_LOCK_WAIT_MARKER,
+        )
+
+        holder = self._job("deploy_instance", "started", instance=self.staging)
+        qjob = (
+            self.env["queue.job"]
+            .sudo()
+            .create(
+                {
+                    "uuid": "mcp-list-build-wait",
+                    "name": "build wait",
+                    "state": "pending",
+                    "result": f"{BUILD_LOCK_WAIT_MARKER} (job #{holder.id});"
+                    " deferring.",
+                    "method_name": "execute",
+                    "model_name": "cloud.job",
+                    "func_string": "execute()",
+                }
+            )
+        )
+        waiting = self._job("deploy_instance", "pending", instance=self.staging)
+        waiting.sudo().with_context(ic_skip_state_hook=True).write(
+            {"queue_job_uuid": qjob.uuid}
+        )
+        self.env.flush_all()
+        page = self._tools(self.consultant)._tool_list_jobs(
+            {"instance_id": self.staging.id}
+        )
+        rows = {row["id"]: row for row in page["items"]}
+        self.assertEqual(rows[waiting.id]["build_wait"]["job_id"], holder.id)
+        self.assertIsNone(rows[holder.id]["build_wait"])
+
     # ── clean_frozen_copy ─────────────────────────────────────────────────
 
     def test_cleaning_a_frozen_copy_names_its_server_and_is_a_manager_s(self):
