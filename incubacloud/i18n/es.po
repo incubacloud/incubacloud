@@ -118,7 +118,6 @@ msgid "%(count)s requests"
 msgstr "%(count)s peticiones"
 
 #. module: incubacloud
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "\"%s\" has not started yet. Cancel it and take it out of the queue?"
@@ -23349,6 +23348,7 @@ msgstr ""
 " se va: el panel la olvida y la observabilidad se apaga, y así el servidor "
 "se puede borrar."
 
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "Pending · waiting for job #%s to finish building on this server"

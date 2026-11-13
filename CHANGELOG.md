@@ -33,6 +33,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   instances and 1.5 GB unassigned) and 2 cores, or *Not measured yet*.
   Advice only (`/cloud/monitoring/central_sizing`; figures and source in
   `models/_central_sizing.py`). Spanish translation included.
+- **A job another build on its server defers says what it waits for.**
+  It read *Pending* with an empty log. The lists and the history say
+  *Pending · waiting for job #41 to finish building on this server*, or
+  *waiting for another build on this server* when no job is named or the
+  reader may not read it (on a shared server it may be another
+  project's), and the job's log says it once per job it waits for. Read
+  from what queue_job keeps of the deferral; nothing is stored. The MCP's
+  `get_job` and `list_jobs` answer `build_wait`. Spanish translation
+  included.
 
 ### Changed
 
@@ -41,6 +50,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   with a password of its own on a series that has no session token. The
   panel now offers 8.0 to 20.0; 7.0 stays retired. The user guide gives
   the range 8.0 to 20.0 and the PostgreSQL range of each series.
+- **A build of better priority takes a server's build lock first.** A job
+  does not try the lock while a job of the same server with a strictly
+  better queue_job priority waits for it, for at most 30 minutes after it
+  was dispatched; then it tries as before, so a server that is always busy
+  still runs it. Whoever tried first used to take it: a background build
+  a module that extends the panel queues with priority 15 could go before
+  two rebuilds asked for by people (10) and make them wait its whole
+  build. Equal priorities keep the old order, and a parked job coming
+  back never gives its lock away.
 
 ### Fixed
 
