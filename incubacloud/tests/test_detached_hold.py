@@ -879,6 +879,103 @@ class TestAServerThatDoesNotAnswerHoldsTheQueue(_HoldCase):
         self.assertTrue(following._format()[0]["server_unanswered"])
         self.assertTrue(following._format_history()[0]["server_unanswered"])
 
+    def _back_days_later(self, cls):
+        """Unreached past the alert, then its dates days back, as after a long outage.
+
+        :return: the job queued behind it
+        """
+        self._unreached_pass(cls)
+        following = self._next()
+        self._marked_ago(3 * 24 * 60)
+        self._unreached_pass(cls)
+        self.assertEqual(self._held_alert().state, "active")
+        self.env.cr.execute(
+            "UPDATE cloud_job SET write_date = write_date - interval '3 days'"
+            " WHERE id = %s", (self.job.id,),
+        )
+        self._row().write({
+            "step_started_at": fields.Datetime.now() - timedelta(days=3),
+            "lost_contact_since": False,
+        })
+        self._retry_due()
+        self.env.invalidate_all()
+        self.assertTrue(following._format()[0]["server_unanswered"])
+        return following
+
+    def _still_held_for_the_server(self, following, dispatch):
+        """The row kept and the queue held, the server said to answer."""
+        row = self._row()
+        self.assertTrue(row)
+        self.assertTrue(row.holds_queue_since)
+        self.assertTrue(self._busy())
+        self.assertFalse(any(
+            tuple(self._scope()) in {tuple(scope) for scope in call.args[1]}
+            for call in dispatch.call_args_list
+        ), dispatch.call_args_list)
+        self.assertFalse(any("gives up on it" in line for line in self._log()))
+        # The server answers: the queue waits for the job, not the server,
+        # and the alert that asked a person is closed.
+        self.assertFalse(row.reconcile_tried_at)
+        self.env.invalidate_all()
+        waiting = following._format()[0]
+        self.assertEqual(waiting["server_wait"], self.job.id)
+        self.assertFalse(waiting["server_unanswered"])
+        alert = self._held_alert()
+        self.assertEqual(alert.state, "dismissed")
+        self.assertEqual(alert.resolution, "auto")
+        self.env["cloud.job"]._dispatch_next(None, self.host.id)
+        self.assertEqual(following.state, "queued")
+
+    def test_back_after_days_with_the_step_past_the_point_running_it_holds(self):
+        """(M1) The pass that sees the step alive does not give the row up."""
+        cls = self._lost(_no_return_from="Apart")
+        following = self._back_days_later(cls)
+        Job = type(self.env["cloud.job"])
+        with patch.object(Job, "_schedule_dispatch", autospec=True) as dispatch:
+            self._reconcile(cls)
+        self.assertTrue(Path(f"{self.directory}/ctl.sh").exists())
+        self.assertFalse(Path(f"{self.directory}/exit").exists())
+        self._still_held_for_the_server(following, dispatch)
+
+    def test_back_after_days_with_a_stop_that_fails_it_holds(self):
+        """(M1) The server answers and the step outlives its stop: kept too."""
+        cls = self._lost()
+        following = self._back_days_later(cls)
+        transport = _local_transport()
+        real_run = transport.run.side_effect
+
+        async def _run(command, timeout=3600):
+            """``stop`` says something of the step still runs."""
+            if "ctl.sh stop" in command:
+                return CommandResult(stdout="still there", exit_status=1)
+            return await real_run(command, timeout)
+
+        transport.run.side_effect = _run
+
+        @contextlib.asynccontextmanager
+        async def _connect(_host):
+            yield transport
+
+        Job = type(self.env["cloud.job"])
+        with patch.object(
+            Job, "_schedule_dispatch", autospec=True,
+        ) as dispatch, mute_logger("AbstractExecutor"):
+            self._reconcile(cls, connect=_connect)
+        self._still_held_for_the_server(following, dispatch)
+
+    def test_a_step_past_the_point_is_not_said_to_be_stopped(self):
+        """(B4) Past the point of no return, the alert says to let it end."""
+        cls = self._lost(_no_return_from="Apart")
+        self._unreached_pass(cls)
+        self._marked_ago(31)
+        self._unreached_pass(cls)
+        alert = self._held_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertNotIn("ctl.sh stop", alert.message)
+        self.assertIn("past the point of no return", alert.message)
+        self.assertIn(self.directory, alert.message)
+        self.assertIn("let it end", alert.message)
+
     def test_deleting_the_server_is_not_a_way_out(self):
         """(13) A job keeps its server (``host_id`` is required): the alert is."""
         self._cancelled_unreached()
