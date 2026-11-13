@@ -750,8 +750,10 @@ class TestTheEgressAnswer(TransactionCase):
         before = Limit.search_count([])
         with patch.object(central_egress, "request", fake), \
                 patch.object(central_egress, "client_ip", return_value="203.0.113.9"):
+            # The function under the route: its wrapper wants a real response.
+            answer = central_egress.CentralEgressController.egress_ip.__wrapped__
             for _attempt in range(40):
-                central_egress.CentralEgressController().egress_ip()
+                answer(central_egress.CentralEgressController())
         self.assertEqual(Limit.search_count([]), before)
         self.assertEqual(fake.make_response.call_args.args[0], "203.0.113.9")
         self.assertNotIn("status", fake.make_response.call_args.kwargs)

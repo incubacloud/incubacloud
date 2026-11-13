@@ -39,7 +39,7 @@ _logger = logging.getLogger(__name__)
 NAME_PREFIX = _direct_probe.CENTRAL_NAME_PREFIX
 
 #: The authority's life. Rotating it re-applies every agent and every
-#: tenant's panel, so it is long; the leaf below is what renews.
+#: panel it is sent to, so it is long; the leaf below is what renews.
 CA_LIFETIME = timedelta(days=3650)
 
 #: A leaf's life, and how long before its end a deployment renews it and
