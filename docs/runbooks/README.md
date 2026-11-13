@@ -42,6 +42,7 @@ deployment, kept with that deployment.
 | [RB-38](RB-38-scheduled-actions-heartbeat.md) | The heartbeat of the scheduled actions | planned · critical | Setting up a panel for daily use, a heartbeat service saying the panel's pings stopped |
 | [RB-39](RB-39-proxy-network-guard.md) | The guard on the proxy network | planned · warning | A host's first Full Setup with 1.0.228, a `shared_guard_open` alert, an instance that cannot reach another one, turning the guard off |
 | [RB-41](RB-41-panel-address-change.md) | The panel's outgoing address changed | critical | A `panel_address_changed` alert, Odoo.sh moving the project's production, a hardened host's jobs failing to connect after the panel moved |
+| [RB-42](RB-42-rebuild-left-unapplied.md) | A rebuild left its work unapplied on the server | warning | Start bringing back the previous build, a Start that started nothing, a restore refused, a move postponed `unapplied` |
 
 ## Conventions
 
