@@ -218,13 +218,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `__Host-session_bind` beside it, a digest of its value with the same
   lifetime: a `__Host-` cookie can only come from the host itself. Odoo
   is given only the `session_id` that cookie names, whatever their order;
-  with none, a new anonymous session. Several `session_id` cookies on one
-  request are logged as a warning (`… session cookie(s) without this
-  host's binding not used`). Plain HTTP is unchanged. On the first visit
-  after the update every browser signs in once more: its session predates
-  the binding. The instances themselves are untouched: between two of
-  them under one domain, only a domain of their own on the Public Suffix
-  List separates their cookies.
+  with none, a new anonymous session. Both cookies are read by their
+  exact name: werkzeug strips names of Unicode spaces too, so a cookie
+  named with one in front, which any host may set, would have read as the
+  binding. Several `session_id` cookies on one request are logged as a
+  warning once per session (`… session cookie(s) without this host's
+  binding not used`), then at debug level. The redirection to the login
+  of an expired session now sets its cookie through the same hardening
+  (`Secure`, `SameSite=Lax` and the binding): it is a `Response`, whose
+  `set_cookie` skipped it. Plain HTTP is unchanged, and so is a panel
+  whose proxy does not tell Odoo the visit was HTTPS
+  ([INSTALL](INSTALL.md#https-as-odoo-sees-it) says how to check).
+  **After the update every user signs in once more**, on each browser:
+  no session open before it has a binding, and accepting one without it,
+  even once, is accepting a lone `session_id`, the very cookie another
+  host can set to sign a visitor into its account. The instances
+  themselves are untouched: between two of them under one domain, only a
+  domain of their own on the Public Suffix List separates their cookies.
 
 ### Changed
 
