@@ -54,6 +54,7 @@ from . import restore_upload_key_executors
 from . import cloud_instance_domain
 from . import cloud_instance_whitelist
 from . import cloud_instance_move
+from . import cloud_instance_frozen_copy
 from . import cloud_job
 from . import cloud_job_log_chunk
 from . import cloud_job_outcome
