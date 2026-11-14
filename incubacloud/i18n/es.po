@@ -24925,3 +24925,132 @@ msgstr ""
 "del proxy» activada, el firewall del host impide que una instancia llegue "
 "directamente a otra, saltándose el proxy y la CDN. La configuración completa"
 " la aplica o la quita."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_write_user
+msgid "Agents write with"
+msgstr "Los agentes escriben con"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_write_user
+msgid ""
+"The credential this server's agents were last installed with: the agents' "
+"own user, which may only write, or the account's, which also reads every "
+"server's logs and metrics. Empty: installed by a version before 1.0.230. The"
+" account's read credential is rotated once every server writes with the "
+"agents' user."
+msgstr ""
+"La credencial con la que se instalaron por última vez los agentes de este "
+"servidor: la del usuario propio de los agentes, que solo puede escribir, o "
+"la de la cuenta, que además lee los registros y las métricas de todos los "
+"servidores. Vacío: instalado por una versión anterior a la 1.0.230. La "
+"credencial de lectura de la cuenta se rota cuando todos los servidores "
+"escriben con el usuario de los agentes."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_write_user__agent
+msgid "Agents' user"
+msgstr "Usuario de los agentes"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_write_user__account
+msgid "Account credential"
+msgstr "Credencial de la cuenta"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_panel_uid
+msgid "Panel's uid on the server"
+msgstr "UID del panel en el servidor"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_panel_uid
+msgid ""
+"The uid of the user the panel signs in as on this server, as the agents' "
+"install read it: what tells the panel's changes from anyone else's in "
+"auditd's records."
+msgstr ""
+"El uid del usuario con el que el panel inicia sesión en este servidor, tal "
+"como lo leyó la instalación de los agentes: lo que distingue los cambios del"
+" panel de los de cualquier otra persona en los registros de auditd."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__security_panel_sources
+msgid "Panel's addresses seen"
+msgstr "Direcciones del panel vistas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__security_panel_sources
+msgid ""
+"The addresses the panel was seen connecting from by the agents' install, "
+"with when, as JSON: the last five, each forgotten 30 days after it was last "
+"seen. Never taken from a notice or from a log line."
+msgstr ""
+"Las direcciones desde las que la instalación de los agentes vio conectarse "
+"al panel, con la fecha, en JSON: las últimas cinco, cada una olvidada 30 "
+"días después de la última vez que se vio. Nunca se toman de un aviso ni de "
+"una línea de registro."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_agent_token
+msgid "Agents' metrics credential"
+msgstr "Credencial de métricas de los agentes"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_agent_token
+msgid ""
+"Password of this panel's agents' user on the central (<account>-agent), "
+"which may only write, under the account's label. The servers write with it "
+"once the central knows it; the panel reads with the account's credential. "
+"Stored encrypted; written to each server as root-only 0600."
+msgstr ""
+"Contraseña del usuario de los agentes de este panel en la central "
+"(<account>-agent), que solo puede escribir, bajo la etiqueta de la cuenta. "
+"Los servidores escriben con ella cuando la central la conoce; el panel lee "
+"con la credencial de la cuenta. Se guarda cifrada; se escribe en cada "
+"servidor accesible solo para root, con permisos 0600."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_read_token_next
+msgid "Next metrics read credential"
+msgstr "Nueva credencial de lectura de métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_read_token_next
+msgid ""
+"The account's new read credential while it is rotated in: on the central "
+"beside the old one until the panel uses it."
+msgstr ""
+"La nueva credencial de lectura de la cuenta mientras se incorpora: en la "
+"central junto a la anterior hasta que el panel la usa."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_read_rotated
+msgid "Metrics read credential rotated"
+msgstr "Credencial de lectura de métricas rotada"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_read_rotated
+msgid ""
+"The account's credential was rotated once every server wrote with the "
+"agents' user: since then it only reads, with a cap on requests in flight, "
+"and no server holds it."
+msgstr ""
+"La credencial de la cuenta se rotó cuando todos los servidores escribían con"
+" el usuario de los agentes: desde entonces solo lee, con un tope de "
+"solicitudes simultáneas, y ningún servidor la tiene."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_credentials_deployed
+msgid "Credentials on the central"
+msgstr "Credenciales en la central"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_credentials_deployed
+msgid ""
+"A digest of each credential the last successful deployment or sync put on "
+"the central, one per line: what says a new credential is in force without "
+"keeping it twice."
+msgstr ""
+"Un resumen (digest) de cada credencial que el último despliegue o "
+"sincronización correctos puso en la central, uno por línea: lo que indica "
+"que una credencial nueva está en vigor sin guardarla dos veces."
