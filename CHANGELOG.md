@@ -521,6 +521,17 @@ then. The rest is the panel's assets and the Spanish catalogue.
 
 ### Fixed
 
+- **A backup retention other than three months applies.** With the
+  duplicity cron owning the retention, the doodba template renders
+  `JOB_800_WHAT` with `3M` in the `backup` service's `environment:`, and
+  Compose gives that precedence over `.docker/backup.env`, where the panel
+  wrote its retention: a 7D or 1Y destination kept three months. The
+  retention now rides the compose override, which wins over the template,
+  on every deploy and rebuild while the cron owns it. With «Nobody» or
+  «Bucket lifecycle» owning the retention, `backup.env` no longer carries
+  a `JOB_800_WHAT` line. Instances already deployed take it on their next
+  rebuild.
+
 - **A backup destination's, a project's and a host's pages after the form
   standard's review (#123).** On a backup destination, saving confirms the
   retention owner at once: «Unconfirmed…» goes and Advanced, no longer

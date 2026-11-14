@@ -901,11 +901,37 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if bb.s3_endpoint_url:
             lines.append(f"AWS_ENDPOINT_URL={bb.s3_endpoint_url}")
         lines.append(f"PASSPHRASE={bb.passphrase or ''}")
-        # Override retention if different from copier default (3M)
-        retention = self._backup_retention()
-        if retention != "3M":
-            lines.append(f"JOB_800_WHAT=dup --force remove-older-than {retention} $DST")
+        # What applies is the override's (``_backup_deletion_job``): the
+        # template's own ``JOB_800_WHAT`` sits in the service's
+        # ``environment:``, which wins over this file. The line stays so
+        # the file states the retention the instance runs with.
+        job = self._backup_deletion_job()
+        if job and self._backup_retention() != "3M":
+            lines.append(f"JOB_800_WHAT={job}")
         return "\n".join(lines) + "\n"
+
+    def _backup_deletion_job(self):
+        """Return the backup container's ``JOB_800_WHAT`` command, or None.
+
+        Only when the daily duplicity cron owns the retention
+        (``retention_owner == "cron"``, the template's ``backup_deletion``).
+        The template then renders ``JOB_800_WHAT`` with ``3M`` in the
+        service's ``environment:``, which wins over ``.docker/backup.env``,
+        so a retention set in the panel only applies from the override
+        (:meth:`_resource_override_content`), which wins over the template
+        (14-nov-2026: a 7D or 1Y destination kept three months). Under
+        ``lifecycle`` the bucket deletes and under ``none`` nobody does:
+        no command.
+
+        :return: the duplicity command, with ``$DST`` as the container
+            expands it, or None
+        :rtype: str
+        """
+        if not self._backup_enabled():
+            return None
+        if self._inst().effective_backup_backend.retention_owner != "cron":
+            return None
+        return f"dup --force remove-older-than {self._backup_retention()} $DST"
 
     def _copier_template(self):
         """Return ``(template_url, vcs_ref)`` for the copier run.
@@ -2083,6 +2109,13 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 services.setdefault(svc, {}).update(
                     self._scheduling_priority_entry(inst, services[svc]),
                 )
+        # The panel's retention, over the template's ``3M``; see
+        # ``_backup_deletion_job``. ``$$``: compose expands ``$`` here.
+        deletion_job = self._backup_deletion_job() if "backup" in allowed else None
+        if deletion_job:
+            services.setdefault("backup", {}).setdefault("environment", {})[
+                "JOB_800_WHAT"
+            ] = deletion_job.replace("$", "$$")
         key, value = PROTECT_LABEL.split("=", 1)
         settings = self.env["cloud.settings"].sudo()._get()
         for svc in allowed:
