@@ -132,6 +132,11 @@ its switch is off.
   the changes around it.
 - **Alerts start from the moment the panel first reads**: nothing earlier is
   alerted on.
+- **An open event alert does not notify again.** While a sign-in, `sudo` or
+  change alert is open on a server, a repeat only adds to its count and
+  updates its text; your notification channels hear nothing more until it
+  is dismissed. Dismiss each one once you know what it was, so the next one
+  reaches you.
 - **A failed web login with a request longer than 32 KB** is banned by
   fail2ban as any other, but is not counted or sent.
 - **The addresses fail2ban never bans** (the panel's own and the proxies the
