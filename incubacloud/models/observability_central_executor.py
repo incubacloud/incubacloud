@@ -48,7 +48,9 @@ _LOKI_URL = "http://loki:3100/"
 #:
 #: 1. 12-nov-2026: the central without Grafana, whose volume, provisioning
 #:    and image it removes.
-CENTRAL_REVISION = 1
+#: 2. 14-nov-2026: Loki's ``max_query_series``, and Loki restarted when its
+#:    configuration changes; the agents' write-only users (plan #84, C1).
+CENTRAL_REVISION = 2
 
 #: Its existence keeps what Grafana left on the central through the
 #: deployments, for an operator who wants it before the update removes it
