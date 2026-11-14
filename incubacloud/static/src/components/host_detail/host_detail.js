@@ -59,6 +59,7 @@ const EMPTY_FORM = () => ({
     traefik_inverseproxy_yaml: "",
     traefik_yml:              "",
     exclude_from_autoassign:  false,
+    behind_cdn:               false,
     http_conn_rate:           50,
     trusted_proxy_ranges:     "",
     block_direct_access:      false,

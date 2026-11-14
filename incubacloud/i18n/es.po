@@ -2005,14 +2005,14 @@ msgid ""
 "no TLS config for this router; the host proxy still redirects HTTP to HTTPS,"
 " so in practice this ends up self-signed."
 msgstr ""
-"Automático: lo decide el host — su propio certificado cuando un CDN responde"
-" por este nombre y ese certificado lo cubre; Let's Encrypt en los demás "
-"casos. Let's Encrypt: emite un certificado automáticamente. Certificado "
-"existente: sirve un certificado que ya tiene el host (el suyo por defecto en"
-" Host › Traefik, o uno cargado a mano según RB-12); el despliegue se detiene"
-" si el host no tiene ninguno. Sin TLS: sin configuración TLS para este "
-"router; el proxy del host sigue redirigiendo HTTP a HTTPS, así que en la "
-"práctica acaba en autofirmado."
+"Automático: lo decide el host — su propio certificado cuando una CDN "
+"responde por este nombre y ese certificado lo cubre; Let's Encrypt en los "
+"demás casos. Let's Encrypt: emite un certificado automáticamente. "
+"Certificado existente: sirve un certificado que ya tiene el host (el suyo "
+"por defecto en Host › Traefik, o uno cargado a mano según RB-12); el "
+"despliegue se detiene si el host no tiene ninguno. Sin TLS: sin "
+"configuración TLS para este router; el proxy del host sigue redirigiendo "
+"HTTP a HTTPS, así que en la práctica acaba en autofirmado."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__auto_rebuild
@@ -8243,7 +8243,7 @@ msgid ""
 msgstr ""
 "El host %(host)s está configurado para aceptar solo tráfico de sus proxies "
 "de confianza, pero su último hardening dejó el cortafuegos abierto a "
-"cualquiera en los puertos 80 y 443, así que su dirección permite saltarse el"
+"cualquiera en los puertos 80 y 443, así que su dirección permite saltarse la"
 " CDN. Quien administre los hosts puede cerrarlo desde la ficha del host con "
 "«Volver a aplicar hardening»."
 
@@ -12385,7 +12385,7 @@ msgid ""
 "empty to keep obtaining certificates on the host itself."
 msgstr ""
 "Cadena de certificados PEM que Traefik sirve cuando no encaja ningún otro. "
-"Detrás de un CDN es a lo que se conecta el CDN, y puede ser un certificado "
+"Detrás de una CDN es a lo que se conecta la CDN, y puede ser un certificado "
 "de origen de larga duración en vez de uno obtenido por cada nombre: un reto "
 "no puede llegar a un host cuyos visitantes entran por un proxy que termina "
 "el TLS. Déjelo vacío para seguir obteniendo los certificados en el propio "
@@ -13224,13 +13224,13 @@ msgstr "Volver a confiar en la clave SSH del host"
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__behind_cdn
 msgid "Reached Through a CDN"
-msgstr "Se llega a través de un CDN"
+msgstr "Se llega a través de una CDN"
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Reached through a CDN"
-msgstr "Se llega a través de un CDN"
+msgstr "Se llega a través de una CDN"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -16852,13 +16852,13 @@ msgid ""
 "turning it on there collapses every visitor into one rate-limit bucket, "
 "because a direct request carries no forwarded chain to read."
 msgstr ""
-"Este host atiende a sus visitantes a través de un CDN o proxy inverso en vez"
-" de directamente. Cambia lo que se genera para él: el límite de peticiones "
-"cuenta la cadena reenviada, se respeta la cabecera del cliente real y se "
-"espera que los certificados se le entreguen en lugar de obtenerlos él mismo."
-" Déjelo desactivado en un host al que el mundo llega directo: activarlo ahí "
-"mete a todos los visitantes en un único cubo de límite, porque una petición "
-"directa no lleva cadena reenviada que leer."
+"Este host atiende a sus visitantes a través de una CDN o proxy inverso en "
+"vez de directamente. Cambia lo que se genera para él: el límite de "
+"peticiones cuenta la cadena reenviada, se respeta la cabecera del cliente "
+"real y se espera que los certificados se le entreguen en lugar de obtenerlos"
+" él mismo. Déjelo desactivado en un host al que el mundo llega directo: "
+"activarlo ahí mete a todos los visitantes en un único cubo de límite, porque"
+" una petición directa no lleva cadena reenviada que leer."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -18222,7 +18222,7 @@ msgstr "Ver la configuración Odoo generada (addons_path, workers, límites)"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Visitors reach this host through a CDN or reverse proxy"
-msgstr "Los visitantes llegan a este host por un CDN o proxy inverso"
+msgstr "Los visitantes llegan a este host por una CDN o proxy inverso"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__volumes
@@ -20277,7 +20277,7 @@ msgstr "la IP del nuevo host"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "the platform's CDN, refreshed daily"
-msgstr "el CDN de la plataforma, refrescado a diario"
+msgstr "la CDN de la plataforma, actualizada a diario"
 
 #. module: incubacloud
 #. odoo-python
@@ -20482,8 +20482,8 @@ msgstr "— seleccione —"
 msgid ""
 "— served when a router has none of its own; what a CDN in front connects to"
 msgstr ""
-"— se sirve cuando un router no tiene uno propio; es al que se conecta un CDN"
-" que esté delante"
+"— se sirve cuando un router no tiene uno propio; es al que se conecta una "
+"CDN que esté delante"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -24784,18 +24784,18 @@ msgstr "Tráfico interno"
 msgid ""
 "The rate limit counts a visitor by the address that opened the connection "
 "or, with Reached through a CDN on, by the forwarded client, so one CDN edge "
-"is not one bucket shared by everyone behind it. Turning it on for a host the"
-" world reaches directly is the worse mistake of the two: a direct request "
-"carries no forwarded chain, so every visitor collapses into a single shared "
-"bucket."
+"is not one bucket shared by everyone behind it. Turning Reached through a "
+"CDN on for a host the world reaches directly is the worse mistake of the "
+"two: a direct request carries no forwarded chain, so every visitor collapses"
+" into a single shared bucket."
 msgstr ""
 "El límite de peticiones cuenta a cada visitante por la dirección que abrió "
-"la conexión o, con «Se llega a través de un CDN» activado, por el cliente "
-"que reenvía el CDN, así un borde del CDN no es un único cubo compartido por "
-"todos los que hay detrás. Activarlo en un host al que el mundo llega directo"
-" es el peor de los dos errores: una petición directa no lleva cadena "
-"reenviada, así que todos los visitantes se cuentan como el mismo y comparten"
-" un único límite."
+"la conexión o, con «Se llega a través de una CDN» activado, por el cliente "
+"que reenvía la CDN, así un borde de la CDN no es un único cubo compartido "
+"por todos los que hay detrás. Activar «Se llega a través de una CDN» en un "
+"host al que el mundo llega directo es el peor de los dos errores: una "
+"petición directa no lleva cadena reenviada, así que todos los visitantes se "
+"cuentan como el mismo y comparten un único límite."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -24836,7 +24836,7 @@ msgid ""
 " to accept any connection the firewall lets in; it is applied by Full Setup "
 "or Push Trusted Proxy Settings."
 msgstr ""
-"Las direcciones del CDN las comparten todos sus clientes; solo el "
+"Las direcciones de la CDN las comparten todos sus clientes; solo el "
 "certificado de cliente de su zona distingue su tráfico. Deje vacía la "
 "autoridad del certificado para aceptar cualquier conexión que deje pasar el "
 "firewall; se aplica con «Configuración completa» o «Enviar ajustes de "

@@ -69,11 +69,12 @@ limits. Their databases and Sablier are not on that network.
   opened after Full Setup (a reboot onto a kernel without `xt_mac`, the
   proxy recreated by hand) reaches the panel at the next Check; between
   two Checks only the host's system log has it.
-- **The switch:** host page › *General* › *Proxy network* › *Only the
-  proxy may open connections to the instances* (`cloud.host.shared_guard`), on by
-  default. It is part of the host's configuration: changed, the host
-  shows its configuration as not applied until a Full Setup, which then
-  installs the guard or removes it, timer and files included.
+- **The switch:** host page › *General* › *Network edge* › *Proxy
+  network* › *Only the proxy may open connections to the instances*
+  (`cloud.host.shared_guard`), on by default. It is part of the host's
+  configuration: changed, the host shows its configuration as not applied
+  until a Full Setup, which then installs the guard or removes it, timer
+  and files included.
 - The host's teardown removes it too.
 - The system log has one line per change of state, tag
   `incubacloud-shared-guard`; the minute runs log nothing else.
