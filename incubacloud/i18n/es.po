@@ -15743,9 +15743,18 @@ msgstr "Texto"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__message
-msgid "Text shown in the alert. '%(host)s' and '%(value)s' are substituted."
+msgid ""
+"Text shown in the alert, in the language the rules are evaluated in. "
+"'%(host)s' and '%(value)s' are substituted, and '%(sources)s' by what a rule"
+" adds (the web-login rule: the addresses with the most attempts); '%%' is a "
+"percent sign. A translation with any other marker falls back to the English "
+"text."
 msgstr ""
-"Texto que se muestra en la alerta. Se sustituyen '%(host)s' y '%(value)s'."
+"Texto que se muestra en la alerta, en el idioma en que se evalúan las "
+"reglas. Se sustituyen '%(host)s' y '%(value)s', y '%(sources)s' por lo que "
+"añade una regla (la del inicio de sesión web: las direcciones con más "
+"intentos); '%%' es un signo de porcentaje. Una traducción con cualquier otro"
+" marcador cae al texto en inglés."
 
 #. module: incubacloud
 #. odoo-python
@@ -25422,3 +25431,255 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_event__event_at
 msgid "Event At"
 msgstr "Momento del evento"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_host_down
+msgid "Host stopped reporting"
+msgstr "El servidor dejó de enviar métricas"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_host_down
+msgid "Host %(host)s has stopped reporting metrics."
+msgstr "El servidor %(host)s ha dejado de enviar métricas."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_disk_critical
+msgid "Disk almost full"
+msgstr "Disco casi lleno"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_disk_critical
+msgid "Disk on %(host)s is %(value)s%% full."
+msgstr "El disco de %(host)s está al %(value)s%% de su capacidad."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_memory_high
+msgid "Memory nearly exhausted"
+msgstr "Memoria casi agotada"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_memory_high
+msgid "Memory on %(host)s is %(value)s%% used."
+msgstr "La memoria de %(host)s está al %(value)s%% de uso."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_load_high
+msgid "Sustained CPU saturation"
+msgstr "CPU saturada de forma sostenida"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_load_high
+msgid "CPU on %(host)s has been saturated (load/core %(value)s)."
+msgstr "La CPU de %(host)s ha estado saturada (carga por núcleo: %(value)s)."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_proxy_down
+msgid "Host proxy not running"
+msgstr "El proxy del servidor no está en marcha"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_proxy_down
+msgid "The proxy on %(host)s is not running: no instance on it answers."
+msgstr ""
+"El proxy de %(host)s no está en marcha: no responde ninguna de sus "
+"instancias."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_host_io_pressure
+msgid "Disk saturated"
+msgstr "Disco saturado"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_host_io_pressure
+msgid ""
+"The disk of %(host)s has been saturated for 15 minutes: tasks waited for it "
+"%(value)s%% of the time, so every instance on it is slow. If a backup or a "
+"migration is running, wait for it to end; otherwise the server needs a "
+"faster disk."
+msgstr ""
+"El disco de %(host)s lleva 15 minutos saturado: las tareas lo esperaron el "
+"%(value)s%% del tiempo, así que todas sus instancias van lentas. Si hay un "
+"backup o una migración en curso, espere a que termine; si no, el servidor "
+"necesita un disco más rápido."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_host_memory_pressure
+msgid "Server out of memory"
+msgstr "Servidor sin memoria"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_host_memory_pressure
+msgid ""
+"%(host)s has run out of memory: its tasks all stalled waiting for it "
+"%(value)s%% of the time, so every instance on it slows down. Move an "
+"instance to another server or give this one more memory."
+msgstr ""
+"%(host)s se ha quedado sin memoria: todas sus tareas se detuvieron "
+"esperándola el %(value)s%% del tiempo, así que todas sus instancias se "
+"ralentizan. Mueva una instancia a otro servidor o dé más memoria a este."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_down
+msgid "Instance stopped reporting"
+msgstr "La instancia dejó de enviar métricas"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_down
+msgid "Instance %(host)s has stopped reporting containers."
+msgstr "La instancia %(host)s ha dejado de informar de sus contenedores."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_errors
+msgid "Instance returning server errors"
+msgstr "Instancia con errores del servidor"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_errors
+msgid "Instance %(host)s is returning %(value)s server errors per second."
+msgstr ""
+"La instancia %(host)s está devolviendo %(value)s errores del servidor por "
+"segundo."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_oom
+msgid "Instance container out of memory"
+msgstr "Contenedor de la instancia sin memoria"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_oom
+msgid ""
+"Instance %(host)s ran out of memory: the kernel killed %(value)s process(es)"
+" of its odoo, db or smtp container in the last 15 minutes."
+msgstr ""
+"La instancia %(host)s se quedó sin memoria: el kernel terminó %(value)s "
+"proceso(s) de su contenedor odoo, db o smtp en los últimos 15 minutos."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_cpu_throttled
+msgid "Instance held back by its CPU quota"
+msgstr "Instancia frenada por su cuota de CPU"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_cpu_throttled
+msgid ""
+"Instance %(host)s has been held back by its CPU quota for 15 minutes "
+"(%(value)s%% of the time): its requests wait. Raise the quota in Resources "
+"or spread the instances over more servers."
+msgstr ""
+"La instancia %(host)s lleva 15 minutos frenada por su cuota de CPU (el "
+"%(value)s%% del tiempo): sus peticiones esperan. Aumente la cuota en "
+"Recursos o reparta las instancias entre más servidores."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_db_lock_wait
+msgid "Instance's database waiting on locks"
+msgstr "Base de datos de la instancia esperando bloqueos"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_db_lock_wait
+msgid ""
+"In %(host)s, queries have been waiting for a lock for 10 minutes (%(value)s "
+"at least at every reading). See \"Queries now\" in its Metrics tab."
+msgstr ""
+"En %(host)s hay consultas esperando un bloqueo desde hace 10 minutos (al "
+"menos %(value)s en cada lectura). Consulte «Consultas ahora» en su pestaña "
+"Métricas."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_instance_db_connections
+msgid "Instance's database near its connection ceiling"
+msgstr "Base de datos de la instancia cerca de su límite de conexiones"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_instance_db_connections
+msgid ""
+"The database of %(host)s uses %(value)s%% of its connections: new ones will "
+"soon be refused. Check its workers and crons, or raise max_connections."
+msgstr ""
+"La base de datos de %(host)s usa el %(value)s%% de sus conexiones: pronto se"
+" rechazarán las nuevas. Revise sus workers y crons, o aumente "
+"max_connections."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_security_ssh_bruteforce
+msgid "SSH brute force"
+msgstr "Fuerza bruta por SSH"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_security_ssh_bruteforce
+msgid ""
+"%(host)s has received %(value)s failed SSH logins in 10 minutes. The detail "
+"is in Metrics → Security; to keep them from reaching the server, limit the "
+"addresses that may connect in Servers → Hardening."
+msgstr ""
+"%(host)s ha recibido %(value)s accesos SSH fallidos en 10 minutos. El "
+"detalle está en Métricas → Seguridad; para que no lleguen al servidor, "
+"limite las direcciones que pueden conectarse en Servidores → Hardening."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_security_f2b_ineffective
+msgid "fail2ban bans not taking effect"
+msgstr "Los bloqueos de fail2ban no surten efecto"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_security_f2b_ineffective
+msgid ""
+"fail2ban banned addresses on %(host)s but they keep arriving (%(value)s "
+"attempts from banned addresses in 30 minutes): the bans are not taking "
+"effect. Re-apply the hardening (Servers → Hardening) and, if it persists, "
+"check nftables."
+msgstr ""
+"fail2ban bloqueó direcciones en %(host)s, pero siguen llegando (%(value)s "
+"intentos de direcciones bloqueadas en 30 minutos): el bloqueo no está "
+"surtiendo efecto. Reaplique el hardening (Servidores → Hardening) y, si "
+"persiste, revise nftables."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_security_weblogin_bruteforce
+msgid "Web login brute force"
+msgstr "Fuerza bruta en el inicio de sesión web"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_security_weblogin_bruteforce
+msgid ""
+"%(host)s has received %(value)s failed web logins in 10 minutes.%(sources)s "
+"Check that its users have strong passwords or two-factor authentication; the"
+" detail is in Metrics → Security of its server."
+msgstr ""
+"%(host)s ha recibido %(value)s inicios de sesión web fallidos en 10 "
+"minutos.%(sources)s Compruebe que sus usuarios tienen contraseñas fuertes o "
+"doble factor; el detalle está en Métricas → Seguridad de su servidor."
+
+#. module: incubacloud
+#: model:cloud.metric.rule,name:incubacloud.metric_rule_security_logs_silent
+msgid "Security logs not arriving"
+msgstr "No llegan los registros de seguridad"
+
+#. module: incubacloud
+#: model:cloud.metric.rule,message:incubacloud.metric_rule_security_logs_silent
+msgid ""
+"%(host)s sends its security logs, but they are not reaching the central: its"
+" collector stopped answering, dropped lines or cannot deliver the lines it "
+"reads. Without them no access or change on it is detected. Run Install "
+"Observability again from the server's page."
+msgstr ""
+"%(host)s envía sus registros de seguridad, pero no llegan a la central: su "
+"recolector dejó de responder, descartó líneas o no puede entregar las que "
+"lee. Sin ellos no se detecta ningún acceso ni cambio en él. Vuelva a "
+"ejecutar «Instalar observabilidad» desde la página del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_metric_rule.py:0
+msgid ""
+" Its server is behind a CDN: its proxy sees only the CDN's addresses, so "
+"none is named."
+msgstr ""
+" Su servidor está detrás de una CDN: su proxy solo ve las direcciones de la "
+"CDN, así que no se indica ninguna."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_metric_rule.py:0
+msgid " Most attempts: %(sources)s."
+msgstr " Más intentos: %(sources)s."
