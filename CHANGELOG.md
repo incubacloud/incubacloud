@@ -267,6 +267,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Settings' blocks join the save bar through one hook (#13).**
+  `useSettingsSave` (`components/settings_form/use_settings_save.js`)
+  joins a block's form to the save bar once it loaded and while it is
+  mounted, takes it out on unmount, and joins again when the block calls
+  `register()` after a reload or a save. The blocks of the panel's own
+  settings, GitHub, the rate limits, the agents' settings and limit, and
+  the assistant use it instead of their own copies of that code, and a
+  layer's block can do the same. On unmount a block takes out only what
+  it joined: one that never joined (read-only, or whose load failed) no
+  longer drops a form another block registered under the same key.
+  Nothing on screen changes.
 - **The boot test copies the database once, and measures before it
   copies (#91)** ([architecture](docs/architecture.md#safe-rebuild)).
   `pg_basebackup` runs in a container on the namespace of the instance's

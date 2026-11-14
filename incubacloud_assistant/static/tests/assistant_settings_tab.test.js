@@ -34,7 +34,7 @@ function tab({ hasKey = false, models = [], form = {} } = {}) {
     comp.registered = 0;
     comp.warnings = [];
     comp.env = { toast: { warning: (text) => comp.warnings.push(text) } };
-    comp._register = () => comp.registered++;
+    comp.settingsSave = { register: () => comp.registered++ };
     comp.state = {
         refreshing: false,
         notice: null,

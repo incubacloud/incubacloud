@@ -1,9 +1,10 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillStart, onWillUnmount, status, useState } from "@odoo/owl";
+import { Component, onWillStart, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { SettingField, SettingsBlock } from "@incubacloud/components/settings_form/settings_form";
+import { useSettingsSave } from "@incubacloud/components/settings_form/use_settings_save";
 
 /** Calls per user and minute when the setting is empty, as the server says. */
 export const MCP_RATE_DEFAULT = 120;
@@ -21,16 +22,22 @@ export class McpRatesSection extends Component {
             loaded: false,
             // What failed while loading, shown with Retry instead of the field.
             loadError: null,
-            // A form, as Settings compares it to what was read (see _register).
+            // A form, as Settings compares it to what was read (see settingsSave).
             form: { rate_limit_mcp_user_per_min: MCP_RATE_DEFAULT },
         });
         onWillStart(() => this.load());
         // Registered once mounted, and only if it loaded, as core's Rates
         // tab is: a section Settings cancelled while it loaded never
         // mounts, and one that failed to load shows the error and Retry
-        // instead of the field, joining once a retry loads it.
-        onMounted(() => this._register());
-        onWillUnmount(() => this.env.unregisterSettingsSave?.("McpRates"));
+        // instead of the field, joining once a retry loads it. Settings
+        // then saves it, and counts it as an unsaved change, only while
+        // the limit differs from what was read.
+        this.settingsSave = useSettingsSave({
+            key: "McpRates",
+            save: () => this._save(),
+            state: this.state,
+            ready: () => this.state.loaded,
+        });
     }
 
     /** Read the limit. */
@@ -50,31 +57,15 @@ export class McpRatesSection extends Component {
         }
     }
 
-    /**
-     * Join Settings' save registry, once the field holds what the server has.
-     *
-     * Only while mounted: a retry can answer after its section was taken
-     * down (Settings loading again), and that section must not stand in
-     * for the one now on screen. Settings then saves it, and counts it as
-     * an unsaved change, only while the limit differs from what was read.
-     */
-    _register() {
-        if (this.state.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.(
-                "McpRates", () => this._save(), this.state, [],
-            );
-        }
-    }
-
     /** Load again after a failure, and join Settings if it worked. */
     async reload() {
         await this.load();
-        this._register();
+        this.settingsSave.register();
     }
 
     /**
      * Save with the page's Save button. Never over a limit that was not
-     * read: the section registers only once it loaded (see _register).
+     * read: the section registers only once it loaded (see settingsSave).
      *
      * @returns {Promise<{ok: boolean, error?: string}>} the save's answer
      */
