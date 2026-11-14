@@ -44,11 +44,11 @@ The operator credential is in **Settings → Monitoring → Advanced** on the
 panel that owns the central. It is not the account credential the hosts
 carry, and it is deliberately not on any host.
 
-`/admin-r/` serves `/health` and the read endpoints of `/r/` (`query`,
-`query_range`, `series`, `labels`, label values, `metadata`, `rules`,
-`status/buildinfo`); since 12-nov-2026 anything else there answers
-**400** ("missing route"), which is the list working, not the central
-failing.
+`/admin-r/` serves `/health` and the read endpoints of `/r/`, `query` and
+`query_range` (since 1.0.230: `series`, `labels`, label values, `metadata`,
+`rules` and `status/buildinfo` went with Grafana); anything else there
+answers **400** ("missing route"), which is the list working, not the
+central failing.
 
 - `health` answers and containers are up → the panel cannot *reach* it:
   jump to step 3.
