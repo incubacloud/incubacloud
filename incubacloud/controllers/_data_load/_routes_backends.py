@@ -3,6 +3,7 @@
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 
+import asyncssh
 import boto3
 from botocore.exceptions import ClientError, ParamValidationError
 
@@ -10,6 +11,7 @@ from odoo import _, http
 from odoo.exceptions import UserError
 from odoo.http import request
 
+from ...models.cloud_backup_backend import SftpUnreachable
 from .._safe_error import safe_error_response
 from ._helpers import _capped_search, _has_encrypted
 
@@ -365,6 +367,11 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found.")}
+        if b.backend_type == "sftp":
+            limited = self._sftp_rate_limited()
+            if limited:
+                return limited
+            return self._sftp_test_answer(b)
         if b.backend_type != "s3":
             return {
                 "ok": False,
@@ -433,6 +440,54 @@ class BackendsMixin:
         except Exception as exc:
             return safe_error_response(exc, _("Backend connection test failed"))
 
+    def _sftp_failure(self, b, exc):
+        """Say why the panel could not use an SFTP destination.
+
+        A failed key exchange is told apart by reading the key the server
+        presents now and comparing fingerprints
+        (``_sftp_check_presented_key``, which raises the alert), not by
+        the error's type.
+
+        :param b: the ``cloud.backup.backend``
+        :param exc: what was raised
+        :rtype: dict
+        """
+        if isinstance(exc, UserError):
+            return {"ok": False, "error": str(exc)}
+        cause = exc.__cause__ if isinstance(exc, SftpUnreachable) else exc
+        presented = b._sftp_check_presented_key()
+        if presented:
+            return {"ok": False, "error": _(
+                "The server presents the key %(presented)s, not the trusted "
+                "%(trusted)s. Check it with your provider before trusting it.",
+                presented=presented, trusted=b.sftp_host_key_fingerprint,
+            )}
+        if isinstance(cause, asyncssh.PermissionDenied):
+            return {"ok": False, "error": _(
+                "The server refused the key. Add this line to the user's "
+                "authorized_keys: %(key)s",
+                key=b.sftp_public_key,
+            )}
+        if isinstance(cause, asyncssh.SFTPPermissionDenied):
+            return {"ok": False, "error": _(
+                "The user may not write in %(path)s.", path=b.sftp_path or "~",
+            )}
+        if isinstance(cause, TimeoutError):
+            return {"ok": False, "error": _("The server did not answer in time.")}
+        return {"ok": False, "error": _(
+            "Could not use the SFTP server: %(error)s",
+            error=str(cause) or type(cause).__name__,
+        )}
+
+    def _sftp_test_answer(self, b):
+        """Run the SFTP connection test of *b* and shape the answer."""
+        try:
+            result = b._sftp_test()
+        except (UserError, SftpUnreachable, asyncssh.Error, OSError,
+                TimeoutError) as exc:
+            return self._sftp_failure(b, exc)
+        return {"ok": True, **result}
+
     @http.route(["/cloud/measure_backup_usage"], type="json", auth="user")
     def cloud_measure_backup_usage(self, backend_id):
         """Run an on-demand usage measurement for *backend_id*.
@@ -445,6 +500,22 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found.")}
+        if b.backend_type == "sftp":
+            limited = self._sftp_rate_limited()
+            if limited:
+                return limited
+            try:
+                b.sudo()._measure_usage()
+            except (UserError, SftpUnreachable, asyncssh.Error, OSError,
+                    TimeoutError) as exc:
+                return self._sftp_failure(b, exc)
+            return {
+                "ok": True,
+                "last_measured_gb": b.last_measured_gb or 0.0,
+                "last_measured_at": (
+                    b.last_measured_at.isoformat() if b.last_measured_at else ""
+                ),
+            }
         if not b.s3_bucket or not b.s3_access_key_id:
             return {
                 "ok": False,

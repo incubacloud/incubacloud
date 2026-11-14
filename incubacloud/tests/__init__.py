@@ -324,3 +324,4 @@ from . import test_frame_ancestors
 from . import test_backup_backend_sftp
 from . import test_backup_backend_sftp_host_key
 from . import test_backup_sftp_deploy
+from . import test_backup_backend_sftp_use
