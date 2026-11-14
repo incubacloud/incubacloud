@@ -161,12 +161,15 @@ panel's assets and the Spanish catalogue change.
   of *Network edge*, which reads «N changed» while any of them is
   unsaved. Their long explanations, and that of *Direct access*, moved
   from under each field to the group's *How it works*; each field keeps
-  a one-line help. Every label of the host's form names its control
-  (`for`/`id`, the tag field's input too), and the read-only values
-  (*Applied to this host*, *Admitted on the direct port*, *Agents write
-  to*, *Public key*) carry a caption instead of a `<label>`. On a phone
-  the Traefik tab's file names scroll in their own row instead of
-  widening the page. The labels and the checkbox words do not change.
+  a one-line help. Every label this module draws on the host's form
+  names its control (`for`/`id`, the tag field's input too), and the
+  read-only values (*Applied to this host*, *Admitted on the direct
+  port*, *Agents write to*, *Public key*) carry a caption instead of a
+  `<label>`; the fields a layer adds keep theirs. On a phone the Traefik
+  tab's file names scroll in their own row instead of widening the page.
+  The English labels and checkbox words do not change; the Spanish
+  writes CDN in the feminine throughout («una CDN», «la CDN»), the label
+  of *Reached through a CDN* included.
 
 ### Fixed
 

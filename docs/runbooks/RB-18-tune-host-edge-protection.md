@@ -314,11 +314,11 @@ above admits anybody's zone pointed at our origin. A host behind the CDN
 with direct access refused can be given the authority the CDN's client
 certificate is signed by (Host → General → Network edge → Advanced → CDN
 client certificate authority, or the zone's from Settings); the proxy then
-requires it on every TLS connection. Turning it on: the CDN must already be presenting the
-certificate, or the host refuses the CDN itself — for the zone's own,
-Settings does it in two steps and the second waits for Cloudflare to
-report the certificate deployed. Check with `curl` against the origin:
-without the client certificate the handshake fails.
+requires it on every TLS connection. Turning it on: the CDN must already
+be presenting the certificate, or the host refuses the CDN itself — for
+the zone's own, Settings does it in two steps and the second waits for
+Cloudflare to report the certificate deployed. Check with `curl` against
+the origin: without the client certificate the handshake fails.
 
 ---
 

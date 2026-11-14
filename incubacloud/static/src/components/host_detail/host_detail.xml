@@ -513,13 +513,12 @@
                                 <div class="ic-set-block__head">
                                     <h3 class="ic-set-block__title" id="hd-g-edge">Network edge</h3>
                                     <button type="button" class="ic-set-how"
-                                            aria-controls="hd-g-edge-how"
                                             t-att-aria-expanded="state.edgeHowOpen ? 'true' : 'false'"
                                             t-on-click="() => { this.state.edgeHowOpen = !this.state.edgeHowOpen; }">
                                         <i class="fa fa-info-circle" aria-hidden="true"/> How it works
                                     </button>
                                     <div id="hd-g-edge-how" class="ic-set-how__text" t-if="state.edgeHowOpen">
-                                        <p>The rate limit counts a visitor by the address that opened the connection or, with Reached through a CDN on, by the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Turning it on for a host the world reaches directly is the worse mistake of the two: a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.</p>
+                                        <p>The rate limit counts a visitor by the address that opened the connection or, with Reached through a CDN on, by the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Turning Reached through a CDN on for a host the world reaches directly is the worse mistake of the two: a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.</p>
                                         <p>Traefik believes X-Forwarded-For only on connections from the ranges applied to this host, and strips it from every other, which is what makes the header unspoofable and lets the per-client rate limit key on the real visitor instead of a handful of edge addresses. The ranges are whatever the platform supplies, unless this host's override pins it to a different proxy than the rest.</p>
                                         <p>Direct access is ignored while no range is applied, where it would lock out every visitor. An empty override does not mean that, since the platform may be supplying the list.</p>
                                         <p>The CDN's addresses are shared by all its customers; only your zone's client certificate tells your traffic apart. Leave the certificate authority empty to accept any connection the firewall lets in; it is applied by Full Setup or Push Trusted Proxy Settings.</p>
