@@ -10,10 +10,13 @@ panel keeps the account's.
 
 Handed out **by state, never by version** (plan #84, A2):
 
-* the agents use it only while it is *in force*: on the central's
-  access-control list (``metrics_accounts_deployed``), or handed to this
-  panel by a layer that only hands it over once it is
-  (``_metrics_credentials_injected``); otherwise they keep the account's;
+* the agents use it only while it is *in force*: its credential, user and
+  password, on the list last put on the central
+  (``metrics_credentials_deployed``), or handed to this panel by a layer
+  that only hands it over once it is (``_metrics_credentials_injected``);
+  otherwise they keep the account's. By the credential, not by the
+  user's name: a token minted again while the name is still on the list
+  is not in force until a sync puts it there;
 * the moment it comes into force, every server's agents are applied again
   (``_reapply_observability_everywhere``), so none stays on the account's
   credential without anyone seeing it;
@@ -164,6 +167,11 @@ class CloudSettings(models.Model):
     def _metrics_agent_in_force(self):
         """Return whether the agents may write with their own user now.
 
+        Where this panel mints its credentials, when the last list put on
+        the central carries the agents' user with the token this panel
+        holds (:meth:`_metrics_credential_in_force`): the predicate the
+        installs and the reconciliation's revision pass both decide by.
+
         :rtype: bool
         """
         settings = self._get_system()
@@ -171,8 +179,9 @@ class CloudSettings(models.Model):
             return False
         if self._metrics_credentials_injected():
             return True
-        deployed = (settings.metrics_accounts_deployed or "").split()
-        return agent_user(settings.metrics_account) in deployed
+        return self._metrics_credential_in_force(
+            agent_user(settings.metrics_account), settings.metrics_agent_token,
+        )
 
     @api.model
     def _metrics_agent_auth(self):
