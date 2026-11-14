@@ -43,13 +43,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The panel reads the servers' security logs back from the central and
 raises an alert for what it did not do: a sign-in that is not its own, its
 key used from an address it does not connect from, another user's sudo,
-and a change to the watched files outside its jobs and consoles. The
-country of an address is looked up on the panel; by default the panel
-downloads DB-IP's free country database once a month.
+and a change to the watched files outside its jobs and consoles. Four
+metric rules watch Fluent Bit's security counters, the failed web logins
+per instance among them. The country of an address is looked up on the
+panel; by default the panel downloads DB-IP's free country database once
+a month.
 
 The update adds two tables and columns, and no data migration. The new
 cron starts reading from the moment it first runs: nothing earlier is
-alerted on.
+alerted on. The name and message of the metric rules become translatable
+columns: Odoo keeps what each holds as its English text.
 
 ### Added
 
@@ -90,6 +93,36 @@ alerted on.
   as an attachment. Turn off *Show the country of addresses*
   (`security_geoip`) in the settings to stop both the lookup and the
   download. No address leaves the panel.
+- **Four security rules (#84).** `security_ssh_bruteforce` (failed SSH
+  connections in 10 minutes), `security_f2b_ineffective` (fail2ban's
+  bans not stopping the addresses, critical), `security_weblogin_bruteforce`
+  (failed web logins in 10 minutes, per instance and raised on it) and
+  `security_logs_silent` (a server whose security logs are on and do not
+  reach the central: its collector down, dropping lines, or reading lines
+  it cannot deliver). They read Fluent Bit's counters, so a server with
+  its security logs off has no series and no alert. Their thresholds are
+  provisional until measured (`docs/observability-operations.md`,
+  "Tuning alerts").
+- **The web-login alert names the addresses with the most attempts
+  (#84).** Only when the rule fires, the three addresses with the most
+  failed logins on that instance in the window, with their count and IPv6
+  by /64, are read from the logs and added to the text (`%(sources)s`)
+  and the payload, never a line; at most 10 reads a pass, the instances
+  with the most attempts first. A server behind a CDN is not read, and
+  the text says why there are none.
+
+### Changed
+
+- **The rules' names and messages are translatable (#84),** the 13 that
+  shipped before included, with their Spanish. An alert is written in the
+  language its rules are evaluated in; a translation with a marker the
+  rule does not know falls back to the English text, and an English text
+  broken by an edit goes out with the markers it knows filled instead of
+  failing the pass.
+- **One verdict per target and pass (#84).** A rule judges each host or
+  instance once, on its worst sample: a server renamed within a window
+  answered twice and the second sample could resolve what the first
+  raised.
 
 ## [1.0.230] — unreleased
 
