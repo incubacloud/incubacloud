@@ -136,8 +136,7 @@ class SecurityEventsCase(TransactionCase):
             "ip_address": f"10.77.250.{self._made}",
             "user": "incubacloud",
             "wildcard_domain": f"{name.lower()}.example.com",
-            **vals,
-        })
+        } | vals)
         host.write({
             "security_logs_enabled": True,
             "metrics_agents_state": "installed",
@@ -798,3 +797,99 @@ class TestRootPanel(SecurityEventsCase):
         alert = self._alerts(events.CODE_CHANGE)
         self.assertEqual(alert.level, events.ROOT_CHANGE_LEVEL)
         self.assertEqual(alert.payload["last"]["who"], "root")
+
+
+class TestNotices(SecurityEventsCase):
+    """An open event alert notifies again, once an hour per server (D8)."""
+
+    def setUp(self):
+        """Count what reaches the channels, alert by alert."""
+        super().setUp()
+        patcher = patch.object(
+            type(self.env["cloud.alert"]), "_dispatch_notifications",
+            autospec=True,
+        )
+        self.dispatch = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _notified(self, alert):
+        """Return how many times *alert* went to the channels.
+
+        :rtype: int
+        """
+        return sum(
+            1 for call in self.dispatch.call_args_list if call.args[0] == alert
+        )
+
+    def test_a_second_sign_in_within_the_hour_only_refreshes(self):
+        """The alert counts it and says it; the channels hear nothing."""
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._run()
+        alert = self._alerts(events.CODE_FOREIGN)
+        self.assertEqual(self._notified(alert), 1)
+        self.now += 30 * MINUTE
+        self._add("accepted", _accepted("203.0.113.67", OTHER_FP))
+        self._run()
+        self.assertEqual(alert.payload["count"], 2)
+        self.assertIn("203.0.113.67", alert.message)
+        self.assertEqual(self._notified(alert), 1)
+
+    def test_past_the_hour_a_new_sign_in_notifies_again(self):
+        """Once an hour, and the next within it is quiet again."""
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._run()
+        alert = self._alerts(events.CODE_FOREIGN)
+        self.now += 61 * MINUTE
+        self._add("accepted", _accepted("203.0.113.67", OTHER_FP))
+        self._run()
+        self.assertEqual(alert.payload["count"], 2)
+        self.assertEqual(self._notified(alert), 2)
+        self.now += 5 * MINUTE
+        self._add("accepted", _accepted("203.0.113.68", OTHER_FP))
+        self._run()
+        self.assertEqual(alert.payload["count"], 3)
+        self.assertEqual(self._notified(alert), 2)
+
+    def test_each_server_has_its_own_hour(self):
+        """Two servers notify once each, however many events each has."""
+        other = self._host("S2")
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP), host=other)
+        self._run()
+        first = self._alerts(events.CODE_FOREIGN)
+        second = self._alerts(events.CODE_FOREIGN, host=other)
+        self.now += 61 * MINUTE
+        self._add("accepted", _accepted("203.0.113.67", OTHER_FP), ago=3 * MINUTE)
+        self._add("accepted", _accepted("203.0.113.68", OTHER_FP))
+        self._add("accepted", _accepted("203.0.113.67", OTHER_FP), host=other)
+        self._run()
+        self.assertEqual(first.payload["count"], 3)
+        self.assertEqual(self._notified(first), 2)
+        self.assertEqual(second.payload["count"], 2)
+        self.assertEqual(self._notified(second), 2)
+
+    def test_the_hour_is_the_server_s_not_the_alert_s(self):
+        """A sudo alert just sent keeps a sign-in's repeat quiet."""
+        self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._run()
+        login = self._alerts(events.CODE_FOREIGN)
+        self.now += 61 * MINUTE
+        self._add("sudo", _sudo())
+        self._run()
+        self.assertEqual(self._notified(self._alerts(events.CODE_SUDO)), 1)
+        self.now += 5 * MINUTE
+        self._add("accepted", _accepted("203.0.113.67", OTHER_FP))
+        self._run()
+        self.assertEqual(login.payload["count"], 2)
+        self.assertEqual(self._notified(login), 1)
+
+    def test_a_line_read_again_does_not_notify(self):
+        """The same sign-in read again an hour later is not a new one."""
+        ns = self._add("accepted", _accepted(STRANGER_IP, OTHER_FP))
+        self._run()
+        alert = self._alerts(events.CODE_FOREIGN)
+        self.now += 61 * MINUTE
+        self._cursor("accepted", ns - SECOND)
+        self._run()
+        self.assertEqual(alert.payload["count"], 1)
+        self.assertEqual(self._notified(alert), 1)

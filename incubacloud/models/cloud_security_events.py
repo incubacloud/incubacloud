@@ -128,6 +128,16 @@ CODE_CHANGE = "security_sensitive_change"
 CODE_SUDO = "security_sudo_foreign"
 CODE_BACKLOG = "security_events_backlog"
 
+#: The event alerts: raised once per event, never closed by themselves.
+EVENT_CODES = (CODE_FOREIGN, CODE_ELSEWHERE, CODE_UNCONFIRMED, CODE_CHANGE, CODE_SUDO)
+
+#: How often an open event alert's repeats reach the channels, per server.
+#: Each new event notifies again while its alert is open, but one server
+#: notifies once an hour at most, counting the alerts it opened: the
+#: panel's own operators sign in to their servers over SSH, and every
+#: sign-in would page them otherwise (plan #84, D8, decided 2026-11-14).
+NOTICE_EVERY = timedelta(hours=1)
+
 #: A sign-in left for the next pass: no connection left to confirm it.
 HOLD = "hold"
 
@@ -942,7 +952,12 @@ class CloudSecurityEvents(models.AbstractModel):
         The event is remembered first: one read again, or one already
         counted by another pass, changes nothing. The alert keeps the
         worst level it had, counts its events since the first and says
-        the last; its payload holds those fields alone, never a line.
+        the last; its payload holds those fields alone, never a line,
+        and when it last reached the channels (``notified``). A new
+        event on an open alert reaches them again once the server's
+        event alerts have been quiet for :data:`NOTICE_EVERY`; within
+        it, it refreshes the alert alone. A new alert and one turning
+        critical notify as every alert does.
 
         :param host: the ``cloud.host``.
         :param str code: the alert's code.
@@ -965,16 +980,53 @@ class CloudSecurityEvents(models.AbstractModel):
                 since = at
         if existing.level == "critical":
             level = "critical"
-        Alert.raise_alert(
+        now = _to_datetime(self._security_now_ns())
+        # raise_alert notifies a new alert and one turning critical.
+        notifies = not existing or (existing.level != "critical" and level == "critical")
+        notice = not notifies and self._security_quiet(host, now)
+        if notifies or notice:
+            notified = fields.Datetime.to_string(now)
+        else:
+            notified = before.get("notified") or fields.Datetime.to_string(
+                existing.create_date,
+            )
+        alert = Alert.raise_alert(
             code, self._security_text(code, host, detail, count, since, at),
             level=level, host=host,
             payload={
                 "count": count, "since": fields.Datetime.to_string(since),
-                "last": detail,
+                "last": detail, "notified": notified,
             },
             extra={"occurrences": count},
             confirm_after=1, confirm_window=3600,
         )
+        if notice and alert:
+            alert._dispatch_notifications()
+
+    def _security_quiet(self, host, now):
+        """Return whether *host*'s open event alerts notified an hour ago or more.
+
+        Read from the alerts themselves, so it holds across restarts and
+        writes no row of the server: an alert from before ``notified``
+        was kept counts from its creation.
+
+        :param host: the ``cloud.host``.
+        :param datetime now: this pass's moment, naive UTC.
+        :rtype: bool
+        """
+        alerts = self.env["cloud.alert"].sudo().search([
+            ("host_id", "=", host.id), ("instance_id", "=", False),
+            ("code", "in", EVENT_CODES), ("state", "=", "active"),
+        ])
+        for alert in alerts:
+            payload = alert.payload if isinstance(alert.payload, dict) else {}
+            try:
+                last = fields.Datetime.to_datetime(payload.get("notified"))
+            except (TypeError, ValueError):
+                last = None
+            if (last or alert.create_date) > now - NOTICE_EVERY:
+                return False
+        return True
 
     def _security_text(self, code, host, detail, count, since, at):
         """Return the alert's text, in the language of this environment.
