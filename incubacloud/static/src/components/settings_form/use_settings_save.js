@@ -31,6 +31,10 @@ export function useSettingsSave({ key, save, state, writeOnly = [], ready }) {
     // The key this block joined under, or null while it has not joined.
     let joined = null;
 
+    /**
+     * Join the save bar under the block's key, if its form is ready and
+     * it is still mounted; a later call replaces the earlier registration.
+     */
     const register = () => {
         if (ready() && status(component) === "mounted") {
             joined = typeof key === "function" ? key() : key;
