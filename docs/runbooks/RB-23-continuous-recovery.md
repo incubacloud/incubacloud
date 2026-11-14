@@ -174,15 +174,20 @@ rebuild that follows a backend change). What to expect:
   where it was, and nothing empties it.** The housekeeping reaches only the
   prefix the instance archives to now, with the destination it has now,
   and a delete or a purge empties that one. Every rebuild that writes
-  `pitr.env` keeps the prefix and destination it rendered
-  (`pitr_rendered_prefix`, `pitr_rendered_backend_id`); one that renders
-  another raises `pitr_prefix_changed` on the instance, keyed by the old
-  prefix, naming the destination it is on and the day from which no
-  restore needs it (the change plus the backup window). From that day,
-  empty the old prefix by hand as in §5, with that destination's
+  `pitr.env` while the instance archives keeps the prefix and destination
+  it rendered (`pitr_rendered_prefix`, `pitr_rendered_backend_id`); one
+  that renders another raises `pitr_prefix_changed` on the instance, keyed
+  by the old prefix, naming the destination it is on and the day from
+  which no restore needs it (the change plus the backup window). From that
+  day, empty the old prefix by hand as in §5, with that destination's
   credentials, then resolve the alert. A destination edited in place
   (bucket or path) shows as another prefix; its endpoint or keys changed
-  in place do not.
+  in place do not. Switched off, a rebuild leaves the prefix kept as it
+  is and raises nothing: nothing archives at the new one, and the purge
+  of §6 empties the one it archived at; the alert comes with the rebuild
+  that switches it on again. The alert hangs on the instance: deleting
+  the instance takes it away, so note the old prefix before deleting one
+  with the alert active, and empty it from that note.
 
 ## 5. An archive left in the bucket
 
@@ -230,9 +235,21 @@ the archive for the backup window the instance has then, and empties it
 after (1.0.229). `pitr_disable`, once it ends well, fixes the dates on
 the instance: `pitr_off_at` (archiving stopped) and `pitr_purge_at`
 (`pitr_off_at` plus the window). They are not recalculated: a plan that
-lowers the retention switches it off too. Switching on again before
-`pitr_purge_at` clears them and cancels a purge still waiting; the archive
-is kept.
+lowers the retention switches it off too. Switching off again (a switch
+on that left them, such as a move's) dates them anew. Switching on again
+before `pitr_purge_at` clears them and cancels a purge still waiting; the
+archive is kept. Once `pitr_purge_at` has come, a switch on waits for the
+purge: the card refuses it with a message, and a plan that wants it on is
+switched on by the watch once the archive is emptied, from a new archive.
+The purge may have started, and it deletes the oldest base copies first:
+one cut short leaves deltas without their base, and a first copy taken
+over them would show a window that cannot be restored.
+
+The window is the one the instance has once archiving stopped. A layer
+that switches it off with a plan (one that overrides `_pitr_window_days`)
+dates it with the window after the change, often its destination's: with
+a shorter one before, the oldest data in the archive is that shorter
+window plus the new one old when it goes.
 
 Once `pitr_purge_at` has come, the watch queues `pitr_purge` (jobs drawer:
 *Empty a Switched-Off Recovery Archive*). It does not use the host's
@@ -240,9 +257,9 @@ Once `pitr_purge_at` has come, the watch queues `pitr_purge` (jobs drawer:
 directory, removed when it ends) with the destination's credentials, the
 prefix last rendered and `PURGE_BEFORE` = `pitr_off_at`, and runs
 `backup_purge_archived.sh`; then it removes `.docker/pitr.env` from the
-instance's directory, and the panel forgets the clusters, base copies and
-dates. Only what was archived before the switch off goes: a switch on
-that crossed a running purge keeps what it archived since, and the record.
+instance's directory (not for one wanted on again, whose stack names it),
+and the panel forgets the clusters, base copies and dates. Only what was archived before the switch off goes. A purge queued
+before the date, or on a server the instance left since, empties nothing.
 
 ```sql
 db$ SELECT name, pitr_state, pitr_cluster_id, pitr_off_at, pitr_purge_at,
@@ -251,7 +268,8 @@ db$ SELECT name, pitr_state, pitr_cluster_id, pitr_off_at, pitr_purge_at,
     WHERE pitr_purge_at IS NOT NULL ORDER BY pitr_purge_at;
 ```
 
-`pitr_purge_failed` says why it failed: no backup destination (give it
+`pitr_purge_failed` (to the service provider on a managed destination)
+says why it failed: no backup destination (give it
 one, or empty the prefix by hand as in §5), the storage refused the
 credentials (fix them on the destination), or the job's log. The watch
 tries again a day after the failure; **Retry** in the jobs drawer runs it

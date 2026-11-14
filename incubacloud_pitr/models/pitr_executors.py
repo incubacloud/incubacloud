@@ -278,7 +278,8 @@ class _PitrExecutor(AbstractSSHExecutor):
             }
         inst.sudo().write(vals)
 
-    def _pitr_alert(self, code, message, level="warning", even_if_cancelled=False):
+    def _pitr_alert(self, code, message, level="warning", even_if_cancelled=False,
+                    audience="fleet"):
         """Raise *code* on the instance, from an outcome hook (durable).
 
         Not core's ``_alert``, which is about the job's host and opens a
@@ -287,11 +288,14 @@ class _PitrExecutor(AbstractSSHExecutor):
         :param bool even_if_cancelled: raise it from the hook closing a
             job a person cancelled too (``ic_job_cancelled``): for what
             the stop left, not for the failure the person stopped
+        :param str audience: who sees it (``cloud.alert.raise_alert``)
         """
         alerts = self.env["cloud.alert"]
         if even_if_cancelled:
             alerts = alerts.with_context(ic_job_cancelled=False)
-        alerts.raise_alert(code, message, level=level, instance=self._inst())
+        alerts.raise_alert(
+            code, message, level=level, instance=self._inst(), audience=audience,
+        )
 
     def _pitr_resolve(self, *codes):
         """Close *codes* on the instance, from an outcome hook (durable)."""
@@ -674,12 +678,14 @@ class PitrDisableExecutor(_PitrExecutor):
         """Off; the archive stays for the window, then ``pitr_purge`` goes.
 
         The purge date is fixed here, when archiving stopped
-        (``cloud.instance._pitr_schedule_purge``).
+        (``cloud.instance._pitr_schedule_purge``), anew: a date left by a
+        switch on that did not clear it would hold an old cutoff, and what
+        was archived since would never go.
         """
         inst = self._inst()
         inst.sudo().write({"pitr_state": "off"})
         self._pitr_resolve(ALERT_FAILING, ALERT_LAGGING, ALERT_BASE_MISSING)
-        inst._pitr_schedule_purge()
+        inst._pitr_schedule_purge(again=True)
         if inst.pitr_purge_at:
             self._sys(
                 "✓ Continuous recovery is off. The archive stays in the "
@@ -706,12 +712,15 @@ class PitrPurgeExecutor(_PitrExecutor):
     ``backup_purge_archived.sh``, the deletion every purge shares. A
     switch on that crossed it loses only what predates the switch off.
     Then the host's ``pitr.env`` goes, and the record forgets the archive
-    (``_pitr_forget_archive``).
+    (``_pitr_forget_archive``). Not the ``pitr.env`` of an instance wanted
+    on again meanwhile, whose stack names it: the rebuild that switches it
+    on from nothing writes it anew.
 
-    Idempotent: a run again finds nothing before the cutoff (10, taken
-    as done) and goes on to what is left. A job whose cutoff is no longer
-    the instance's when it starts (switched on again, or off again since)
-    touches nothing.
+    Idempotent: a run again finds nothing before the cutoff (10, which
+    goes on to the next step and is taken as done) and goes on to what is
+    left. A job whose cutoff is no longer the instance's when it starts
+    (switched on again, or off again since), one queued before the date,
+    and one queued on a server the instance left since, touch nothing.
     """
 
     _job_type = "pitr_purge"
@@ -724,10 +733,19 @@ class PitrPurgeExecutor(_PitrExecutor):
         return (self.job.payload or {}).get("before") or ""
 
     def _will_purge(self):
-        """Whether this run empties anything (``_pitr_purge_pending``)."""
+        """Whether this run empties anything (``_pitr_purge_pending``).
+
+        Not from a server the instance left (a move since it was queued):
+        the ``pitr.env`` to remove is on the new one, and the watch queues
+        the purge there.
+        """
         if self._purging is None:
             before = self._before()
-            self._purging = bool(before) and self._inst()._pitr_purge_pending(before)
+            inst = self._inst()
+            self._purging = (
+                bool(before) and self.job.host_id == inst.host_id
+                and inst._pitr_purge_pending(before)
+            )
         return self._purging
 
     def _env_path(self):
@@ -768,22 +786,23 @@ class PitrPurgeExecutor(_PitrExecutor):
         image = (
             self.env["cloud.settings"].sudo()._get_system().archived_purge_image
         )
+        # 10, nothing left before the cutoff, is a run again: the
+        # credentials' removal still runs (``_outcome_errors`` fails a run
+        # that skipped a step).
+        steps = [(
+            PURGE_STEP_LABEL,
+            self.run_script("backup_purge_archived.sh", [self._env_path(), image]),
+            {"stop_on_failure": True, "continue_on": (PURGE_EMPTY_EXIT,)},
+        )]
+        if self._inst()._pitr_renders():
+            return steps
         # The directory as every step names it (``~`` left to the shell);
         # one already gone has no credentials left to remove.
         forget = (
             f"if cd {self._inst_dir(self._inst())} 2>/dev/null; then"
             f" rm -f {ENV_FILE}; fi"
         )
-        return [
-            (
-                PURGE_STEP_LABEL,
-                self.run_script(
-                    "backup_purge_archived.sh", [self._env_path(), image],
-                ),
-                {"stop_on_failure": True},
-            ),
-            (PURGE_FORGET_LABEL, forget),
-        ]
+        return [*steps, (PURGE_FORGET_LABEL, forget)]
 
     def parse_results(self, results):
         """An archive already empty before the cutoff (10) is done."""
@@ -793,33 +812,37 @@ class PitrPurgeExecutor(_PitrExecutor):
         return super().parse_results(results)
 
     async def on_success(self, results):
-        """Forget the archive, unless the instance archives again."""
+        """Forget the archive; one wanted on again starts from nothing.
+
+        Nothing switches it on while its purge runs (``_pitr_cancel_purge``
+        leaves an archive past its date alone); the watch's next pass does
+        it then (``_pitr_reconcile``).
+        """
         inst = self._inst()
         if PURGE_IDLE_LABEL in results:
             self._sys(
                 "Nothing emptied: continuous recovery was switched on again, "
-                "or off again, since this purge was queued."
+                "or off again, since this purge was queued, its date has not "
+                "come, or the instance moved to another server."
             )
             return
         self._pitr_resolve(ALERT_PURGE_FAILED)
         if inst._pitr_purge_pending(self._before()):
             inst._pitr_forget_archive()
-            self._sys(
-                f"✓ The continuous recovery archive of '{inst.name}', "
-                f"switched off on {self._before()} UTC, is emptied."
-            )
-            return
         self._sys(
-            f"✓ What was archived before {self._before()} UTC is emptied. "
-            "Continuous recovery was switched on again meanwhile: what it "
-            "archives since is kept."
+            f"✓ The continuous recovery archive of '{inst.name}', "
+            f"switched off on {self._before()} UTC, is emptied."
         )
 
     async def on_failure(self, results, errors):
-        """Say why; the watch tries again in a day."""
+        """Say why; the watch tries again in a day.
+
+        To the service provider when the destination is managed: only
+        whoever runs that bucket can fix it.
+        """
         self._log_errors(errors)
         inst = self._inst()
-        _backend, prefix = inst._pitr_purge_target()
+        backend, prefix = inst._pitr_purge_target()
         step = results.get(PURGE_STEP_LABEL) or {}
         status = step.get("exit_status")
         if not prefix:
@@ -833,11 +856,13 @@ class PitrPurgeExecutor(_PitrExecutor):
             )
         else:
             why = "the job's log says why"
+        managed = bool(backend and backend.sudo().managed_reservation_id)
         self._pitr_alert(
             ALERT_PURGE_FAILED,
             f"The continuous recovery archive of '{inst.name}', switched "
             f"off on {self._before()} UTC, could not be emptied at {prefix or '?'}: "
             f"{why}. The panel tries again in a day (RB-23 §6).",
+            audience="provider" if managed else "fleet",
         )
 
 
