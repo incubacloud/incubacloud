@@ -127,7 +127,7 @@ path and write into the copy being kept.
 - Rebuild after pushing changes to your repo (Instance detail → Rebuild)
 - [View logs](logs.md) (Instance detail → Logs). Odoo's log is kept one file per day and survives rebuilds: pick a day, search every day at once, or download one
 - Open a shell on the container (Instance detail → Shell)
-- [Size its memory and CPU](resources.md) (Instance detail → Resources), and what the panel derives from them
+- [Size its memory and CPU](resources.md) (Instance detail → More → Resources), and what the panel derives from them
 - [Restore from a backup](../backups/restore.md)
 - [Refresh a staging with production data](#refresh-from-production)
 - [Get a preview instance for every pull request](#pull-request-previews)
@@ -208,7 +208,7 @@ If you push commits to a connected repo, these settings control what happens:
 - **Test the new image before applying it** — the boot test below. On by
   default.
 
-They live under `Instance detail → Networking`.
+They live under `Instance detail → More → Build`.
 
 **Auto-rebuild** acts on GitHub's push notifications, which reach the panel
 through the [GitHub App](../projects/index.md#private-repositories), and on
@@ -345,7 +345,7 @@ instance's own header, from the first warning on.
 
 - **Use it.** Anything in the list above starts the 90 days over.
 - **Press Keep** on the badge in the instance header. One click, same effect.
-- **Mark it as permanent** — *Instance detail → Settings → Never purge
+- **Mark it as permanent** — *Instance detail → General → Never purge
   automatically*. For the ones that should stay regardless: a QA environment
   nobody logs into for months is still not disposable.
 
@@ -384,7 +384,7 @@ attached.
 what this button sends" readable.
 
 Production is the opposite: its email is real and leaves the server. There is no
-Mails tab there, and the SMTP relay you configure under *Networking* is the one
+Mails tab there, and the SMTP relay you configure under *Email* is the one
 that will actually deliver: see [Mail relay](mail-relay.md), which covers
 Microsoft 365 with OAuth2 and **Send test mail**.
 
@@ -396,7 +396,7 @@ refused at the network, before Odoo ever sees it. That is what stops a staging
 from calling a payment gateway, a tax agency or a customer's webhook while
 somebody is trying things out in it.
 
-Open **Instance detail → Whitelist** to see and edit the list. A new staging
+Open **Instance detail → More → Whitelist** to see and edit the list. A new staging
 starts with whatever its host publishes, so in the usual case there is nothing
 to decide. Add the hostname of any API the code under test genuinely needs —
 written plainly, `api.example.com`, with no `https://`, no port and no path.

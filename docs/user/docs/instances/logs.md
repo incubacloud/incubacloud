@@ -52,7 +52,7 @@ Reading logs requires the **Developer** role or higher, and you only
 see instances you already have access to.
 
 Log access is recorded in the instance's audit log
-(**Instance detail → Audit Logs**):
+(**Instance detail → More → Audit Logs**):
 
 - opening the log viewer for an instance,
 - searching every archived day (the search term is recorded),

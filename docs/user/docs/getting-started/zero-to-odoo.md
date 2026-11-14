@@ -142,9 +142,9 @@ domain, opens Odoo's sign-in page. Details in
 
 Every instance starts with the limits of a small team: Odoo with 2 workers,
 2 GB of memory and 2 CPUs, and its database with 1 GB. Two workers serve about
-12 users at once. Above that, raise them: on the instance's **Resources** tab,
+12 users at once. Above that, raise them: on the instance's **Resources** tab (under **More**),
 the **Memory limit** and **CPUs** of Odoo and of the database, and on its
-**Config** tab, `workers` (Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
+**Odoo Config** tab, `workers` (Odoo's rule of thumb: two for each CPU, plus one). They apply on the next
 **Deploy**. See [Memory and resources](../instances/resources.md).
 
 ## 6. Your own domain
@@ -185,7 +185,7 @@ More choices, such as certificates you already have, in
 ## 7. Mail that leaves Odoo
 
 Odoo sends invoices, quotations and password resets by mail. In production, it
-delivers them through the SMTP server you set on the instance: **Networking**,
+delivers them through the SMTP server you set on the instance: **Email**,
 fields **SMTP host**, **SMTP port**, **SMTP encryption**, **SMTP user** and
 **SMTP password**. A staging never sends mail to anybody
 ([why](../instances/index.md#email-on-staging)).

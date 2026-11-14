@@ -3,7 +3,7 @@
 A production instance sends its email through a **mail relay**: a small mail
 server next to Odoo that hands every message to your provider's SMTP server.
 Odoo always sends to the relay; what changes is how the relay signs in to your
-provider. You set it under **Instance detail → Networking**, and a **rebuild**
+provider. You set it under **Instance detail → Email**, and a **rebuild**
 applies it.
 
 The relay signs in in one of two ways:
@@ -85,7 +85,7 @@ Give the app this one mailbox only: whoever holds its secret can send as it.
 
 ### 3. Fill in the relay
 
-Under **Instance detail → Networking**:
+Under **Instance detail → Email**:
 
 1. **SMTP authentication**: *OAuth2 – Microsoft 365*. The host, port and
    encryption are set for you.

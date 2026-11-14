@@ -1,6 +1,6 @@
 # Memory and resources
 
-**Instance detail → Resources** sets how much memory and CPU each container of
+**Instance detail → More → Resources** sets how much memory and CPU each container of
 the instance may use: Odoo, the database, the backups and the mail relay. A
 container that reaches its memory limit has a process killed by the system, so
 the panel also sizes Odoo and PostgreSQL to stay inside those limits.
@@ -23,7 +23,7 @@ recycled past 1228 MiB and stopped at 2560 MiB, and PostgreSQL runs with
 `shared_buffers = 256MB`, `work_mem = 64MB` and `effective_cache_size = 512MB`.
 An instance with no memory limit keeps Odoo's and PostgreSQL's own defaults.
 The Odoo limits are set only when Odoo runs workers (`workers` above 0 in
-**Config**; a staging always runs three): without workers Odoo measures the
+**Odoo Config**; a staging always runs three): without workers Odoo measures the
 soft limit on the whole server and would restart itself over and over.
 
 **Why.** Odoo's own defaults (2 GiB soft and 2.5 GiB hard per worker) are more
@@ -46,7 +46,7 @@ its settings change: a few seconds, after which Odoo reconnects by itself.
 ## Using your own values
 
 - **Odoo:** write `limit_memory_soft` or `limit_memory_hard`, in bytes, in
-  **Instance detail → Config**. If either one is there, the panel sets neither
+  **Instance detail → Odoo Config**. If either one is there, the panel sets neither
   and yours apply as written. `0` turns a limit off.
 - **PostgreSQL:** run `ALTER SYSTEM SET work_mem = '128MB';` and then
   `SELECT pg_reload_conf();` in the instance's database (`shared_buffers` needs
@@ -62,7 +62,7 @@ its settings change: a few seconds, after which Odoo reconnects by itself.
   hour for passing `limit_memory_soft`. The instance works, but its workers
   reach the limit as soon as they warm up and requests often land on a fresh
   one: raise Odoo's memory limit in **Resources**, or set a higher
-  `limit_memory_soft` in **Config**.
+  `limit_memory_soft` in **Odoo Config**.
 - **Out of memory:** the system killed a process in the Odoo, database or mail
   container for lack of memory. This one is critical: something was stopped
   mid-way. Raise the container's limit in **Resources**, or look for the
