@@ -22,7 +22,7 @@ from odoo.addons.incubacloud.models import cloud_session_guard as guard_module
 from odoo.addons.incubacloud.net import real_ip
 
 from .test_real_ip import EDGE, TRUSTED, _OnTheUncorrectedProxyFix
-from .test_session_guard import CHROME, FIREFOX, HOME
+from .test_session_guard import CHROME, FIREFOX, HOME, TWO_DAYS
 
 PARAM = "incubacloud.session_guard."
 NOTICE_LOGGER = "odoo.addons.incubacloud.models.cloud_session_access"
@@ -286,6 +286,96 @@ class TestSessionsPage(_GuardedRequests, HttpCase):
         other["_trace"] = []
         store.save(other)
         return other.sid
+
+    def _in_use(self, sid):
+        """Return the page's sessions, asked from session *sid*, as a
+        sorted list of ``(current, in use)``.
+
+        :rtype: list
+        """
+        data = self._result(sid, "/cloud/sessions/get", visitor=None)
+        return sorted((row["current"], row["active"]) for row in data["sessions"])
+
+    def test_a_session_whose_token_no_longer_matches_is_not_in_use(self):
+        """Moving the counter (another database's sign-out, a close on a
+        panel) leaves every earlier session's file stored, refused."""
+        before = self._sign_in()
+        self.assertTrue(self._check(before, visitor=None))
+        other = self._another_session()
+        self.assertEqual(self._in_use(other), [(False, True), (True, True)])
+        self.user.sudo().backchannel_logout_counter = (
+            self.user.backchannel_logout_counter or 0
+        ) + 1
+        self.env.flush_all()
+        later = self._another_session()
+        self.assertEqual(
+            self._in_use(later), [(False, False), (False, False), (True, True)],
+        )
+        # As Odoo itself says.
+        self.assertFalse(self._check(before, visitor=None))
+        self.assertFalse(self._check(other, visitor=None))
+
+    def test_a_later_oauth_sign_in_ends_the_session_before_it(self):
+        """Odoo 19's session token holds the OAuth access token, and each
+        OAuth sign-in writes a new one: the session before it is refused
+        with its file still stored."""
+        if "oauth_access_token" not in self.user._fields:
+            self.skipTest("auth_oauth is not installed")
+        before = self._sign_in()
+        self.assertTrue(self._check(before, visitor=None))
+        self.user.sudo().oauth_access_token = "a-later-sign-in"
+        self.env.flush_all()
+        later = self._another_session()
+        self.assertEqual(self._in_use(later), [(False, False), (True, True)])
+        self.assertFalse(self._check(before, visitor=None))
+
+    def test_a_session_closed_for_inactivity_or_revoked_is_not_in_use(self):
+        """A session idle past the guard's limit is closed by its next
+        request, and then its files are gone while its trace stays as it
+        was; a revoked one is marked in the trace."""
+        # A layer may do more on a close (a panel moves the counter, which
+        # would end the current session too): core's close only.
+        Guard = type(self.env["cloud.session.guard"])
+        self.startPatcher(patch.object(
+            Guard, "_session_guard_closed",
+            guard_module.CloudSessionGuard._session_guard_closed,
+        ))
+        self.ICP.set_param(PARAM + "inactivity", "close")
+        self.ICP.set_param(PARAM + "inactivity_seconds", TWO_DAYS)
+        # Odoo's own idle limit, a week, longer than the guard's (a layer
+        # may set it shorter).
+        self.ICP.set_param("sessions.max_inactivity_seconds", 7 * 24 * 3600)
+        current = self._sign_in()
+        idle = self._another_session()
+        revoked = self._another_session()
+        self.assertTrue(self._check(revoked, visitor=None))
+        last = datetime.now() - timedelta(seconds=TWO_DAYS + 3600)
+        self.env["res.device.log"].sudo().create({
+            "session_identifier": idle[:guard_module.SESSION_IDENTIFIER_LENGTH],
+            "user_id": self.user.id, "platform": "linux", "browser": "chrome",
+            "ip_address": "192.0.2.1", "first_activity": last,
+            "last_activity": last, "revoked": False,
+        })
+        store = odoo.http.root.session_store
+        stored = store.get(idle)
+        stored[guard_module.PIN_KEY] = {
+            "uid": self.user.id, "country": "", "browser": "", "limit": TWO_DAYS,
+        }
+        stored["_trace"] = [{
+            "platform": "linux", "browser": "chrome", "ip_address": "192.0.2.1",
+            "first_activity": int(last.timestamp()),
+            "last_activity": int(last.timestamp()),
+        }]
+        store.save(stored)
+        self.env["res.device"].sudo().search([
+            ("session_identifier", "=", revoked[:guard_module.SESSION_IDENTIFIER_LENGTH]),
+        ])._revoke()
+        ended = [(False, False), (False, False), (True, True)]
+        # Idle past the limit, before its next request closes it...
+        self.assertEqual(self._in_use(current), ended)
+        self.assertFalse(self._check(idle, visitor=None))
+        # ... and once it did.
+        self.assertEqual(self._in_use(current), ended)
 
     def test_sign_out_everywhere_asks_nothing_and_spares_api_keys(self):
         second = self._sign_in()

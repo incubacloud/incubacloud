@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- **«In use» on Sessions and access means the session still works (#48).**
+  The page called a session in use while Odoo's trace had it unrevoked and
+  used within Odoo's idle limit, so a user could see nineteen of them where
+  each sign-in ends the one before, and with OAuth every session before the
+  last sign-in: Odoo 19's session token holds the OAuth access token, which
+  each sign-in replaces. A session other than the current one is now in use
+  only when one of its stored files is of the database and the user, is not
+  past its deletion time after a rotation, holds the token the user's fields
+  give now (as Odoo checks it on each request) and, while the guard closes
+  idle sessions, is not idle past the limit pinned in it. Any other reads
+  «Ended»: one refused after Sign out everywhere or another database's
+  sign-out, one the guard closed or would close on its next request, and
+  one revoked. Only the files the user's own trace names are read.
+
 ## [1.0.228] — 2026-11-13
 
 ### Added

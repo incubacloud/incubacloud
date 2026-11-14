@@ -30,6 +30,8 @@ values, and why: ``docs/runbooks/RB-33-session-guard.md``.
 """
 import hmac
 import logging
+import os
+import time
 from datetime import timedelta
 from hashlib import sha256
 from urllib.parse import urlsplit
@@ -37,18 +39,21 @@ from urllib.parse import urlsplit
 from markupsafe import Markup, escape
 
 from odoo import api, fields, models, tools
-from odoo.http import get_session_max_inactivity, request
+from odoo.http import get_session_max_inactivity, request, root
 from odoo.tools import SQL
+from odoo.tools.misc import consteq
 
 from ..mail_layout import wrap_in_mail_layout
 from .cloud_session_guard import (
     COUNTRY_DIRECT,
     COUNTRY_TOR,
     PARAM_PREFIX,
+    PIN_KEY,
     SESSION_IDENTIFIER_LENGTH,
     known_browser,
     known_country,
 )
+from .res_device_log import IDENTIFIER_RE
 
 _logger = logging.getLogger(__name__)
 
@@ -635,6 +640,10 @@ class ResUsers(models.Model):
     def _ic_session_rows(self):
         """Return this user's last sessions, from Odoo's trace of them.
 
+        A session is ``active`` ("In use") when it is the current one or
+        one Odoo still accepts (:meth:`_ic_live_sessions`); any other is
+        ended.
+
         :return: one dict per session, the most recently used first:
             ``current``, ``active``, ``first`` and ``last`` (datetimes),
             ``browsers``, ``platforms`` and ``countries``
@@ -661,17 +670,109 @@ class ResUsers(models.Model):
         names = self._ic_country_names(
             names=[name for row in rows for name in (row[6] or [])],
         )
+        live = self._ic_live_sessions(
+            identifier for identifier, _first, last, revoked, *_rest in rows
+            if identifier != current and not revoked and last and now - last < idle
+        )
         return [{
             "current": identifier == current,
-            "active": identifier == current or (
-                not revoked and bool(last) and now - last < idle
-            ),
+            "active": identifier == current or identifier in live,
             "first": first,
             "last": last,
             "browsers": sorted(proper_name(browser) for browser in browsers or []),
             "platforms": sorted(proper_name(platform) for platform in platforms or []),
             "countries": sorted(names.get(country, country) for country in countries or []),
         } for identifier, first, last, revoked, browsers, platforms, countries in rows]
+
+    def _ic_live_sessions(self, identifiers):
+        """Return which of *identifiers* name a session Odoo still accepts
+        as this user's.
+
+        Odoo's trace calls a session revoked when it is revoked from the
+        trace, or once its vacuum finds the stored file gone, a week of
+        idleness later; it never sees a token stop matching. Each OAuth
+        sign-in writes a new access token, part of Odoo 19's session
+        token, and Sign out everywhere moves a counter that is part of it
+        too: every earlier session is refused, its file still stored. A
+        session the guard closes has its files deleted and its trace left
+        as it was. So the stored sessions are read as ``check_session``
+        reads them: one lives when a file of its identifier (the one it
+        was rotated to, or the one it was rotated from until Odoo deletes
+        it) is of this database and this user, is not past its deletion
+        time and holds the token this user's fields give now; and, while
+        the guard closes idle sessions, has not been idle past the limit
+        pinned in it, past which its next request closes it. Only the
+        files this user's trace names are read, and nothing of them
+        leaves this method.
+
+        :param identifiers: ``session_identifier`` values of this user's
+            trace
+        :return: the identifiers of the sessions still valid
+        :rtype: set
+        """
+        store = root.session_store
+        wanted = {}
+        for identifier in identifiers:
+            if identifier and IDENTIFIER_RE.match(identifier):
+                wanted.setdefault(identifier[:2], set()).add(identifier)
+        if not wanted:
+            return set()
+        closing = (
+            self.env["cloud.session.guard"]._session_guard_modes()["inactivity"]
+            == "close"
+        )
+        now = time.time()
+        live = set()
+        for directory, names in wanted.items():
+            try:
+                with os.scandir(os.path.join(store.path, directory)) as entries:
+                    sids = [
+                        entry.name for entry in entries
+                        if entry.name[:SESSION_IDENTIFIER_LENGTH] in names
+                        and store.is_valid_key(entry.name)
+                    ]
+            except OSError:
+                continue
+            for sid in sids:
+                identifier = sid[:SESSION_IDENTIFIER_LENGTH]
+                if identifier not in live and self._ic_session_valid(
+                    store.get(sid), now, closing,
+                ):
+                    live.add(identifier)
+        return live
+
+    def _ic_session_valid(self, session, now, closing):
+        """Return whether Odoo accepts the stored *session* as this user's.
+
+        :param session: an ``odoo.http.Session`` read from the store
+        :param float now: the time it is judged at
+        :param bool closing: whether the guard closes idle sessions
+        :rtype: bool
+        """
+        if session.uid != self.id or session.db != self.env.cr.dbname:
+            return False
+        deletion = session.get("deletion_time")
+        if deletion and deletion <= now:
+            return False
+        token = session.session_token
+        if not isinstance(token, str) or not token:
+            return False
+        expected = self._compute_session_token(session.sid)
+        if not (expected and consteq(expected, token)):
+            legacy = self._legacy_session_token_hash_compute(session.sid)
+            if not (legacy and consteq(legacy, token)):
+                return False
+        pin = session.get(PIN_KEY)
+        if closing and isinstance(pin, dict) and pin.get("uid") == self.id:
+            limit = pin.get("limit") or 0
+            last = max(
+                (trace.get("last_activity") or 0
+                 for trace in session.get("_trace") or []),
+                default=0,
+            )
+            if limit and last and now - last > limit:
+                return False
+        return True
 
     def _ic_close_rows(self):
         """Return the last closes of this user's sessions, with their reason.
