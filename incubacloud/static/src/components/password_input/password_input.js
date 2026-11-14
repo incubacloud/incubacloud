@@ -1,22 +1,44 @@
-import { Component, useState } from "@odoo/owl";
+import { Component, useEffect, useRef, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
+
+let nextId = 0;
 
 /**
  * PasswordInput — secure password field with show/hide and copy buttons.
  *
  * Stored passwords are never fetched back from the server. When a value is
- * already saved, the field shows a visual "set" indicator and a hint telling
- * the user to type a new value only if they want to replace the current one.
+ * already saved, the field shows «Stored» with a lock and a «Replace»
+ * button, as Settings' secrets do (ESTANDAR-FORMULARIOS §8); Replace opens
+ * an empty input with «Keep stored» beside it, which drops what was typed
+ * and shows «Stored» again. With nothing stored, the input is empty and
+ * says «Not set».
  *
  * Props:
  *   hasValue  — bool: whether a password is already stored server-side
  *   required  — bool (default false)
  *   emptyHint — str:  custom hint shown when no value is stored and the
- *                     user hasn't typed anything (replaces the default
- *                     "Leave blank to auto-generate a strong password")
+ *                     user hasn't typed anything (takes the place of
+ *                     autoGenerate's)
+ *   autoGenerate — bool (default false): the server generates a strong
+ *                     password when the field is left blank, which the hint
+ *                     then says («Leave blank to auto-generate a strong
+ *                     password»); without it and without emptyHint, no hint
+ *   id        — str:  the input's id, for the form's ``<label for>``.
+ *                     While «Stored» shows there is no input, so pressing
+ *                     the label does nothing, as in Settings; Replace takes
+ *                     ``<id>-replace``. The label carries ``<id>-label`` as
+ *                     its own id: it describes Replace, which keeps the
+ *                     name its text gives.
+ *   value     — str:  what the form holds for the field, which the input
+ *                     shows: the field is controlled by its form, so a
+ *                     field mounted again (a tab or a section shown again)
+ *                     shows what the form will save. A value that is not
+ *                     empty opens the field as Replace did. Every form
+ *                     passes it; left out, the field reads as empty.
  *   onChange  — (value: string) => void — called with the new value as the
- *               user types; called with "" when the field is cleared
- *               (backend keeps the existing value when "" is received)
+ *               user types; called with "" when the field is cleared or
+ *               the stored value kept (backend keeps the existing value
+ *               when "" is received)
  */
 export class PasswordInput extends Component {
     static template = "incubacloud.PasswordInput";
@@ -24,39 +46,116 @@ export class PasswordInput extends Component {
         hasValue:  { type: Boolean },
         required:  { type: Boolean, optional: true },
         emptyHint: { type: String, optional: true },
+        autoGenerate: { type: Boolean, optional: true },
+        id:        { type: String, optional: true },
+        value:     { type: String, optional: true },
         onChange:  { type: Function },
     };
 
+    /**
+     * Hold whether a stored value is being replaced (open already when the
+     * form holds a new value), and move the focus when Replace or Keep
+     * stored takes away the button it was on.
+     */
     setup() {
         this.state = useState({
             visible:    false,  // show/hide typed value
             copied:     false,  // copy confirmation flash
-            inputValue: "",     // current value in the input box
+            // Replace pressed over a stored value, or the form already
+            // holds a new one: a field mounted again stays open on it.
+            replacing:  !!this.value,
         });
+        this.uid = `ic-password-${++nextId}`;
+        this.inputRef = useRef("input");
+        this.replaceRef = useRef("replace");
+        // Where the focus goes once the control it was on is gone: "edit"
+        // (the input opened) or "stored" (the Replace button), set by the
+        // click and taken on the render that follows.
+        this.focusNext = null;
+        useEffect(() => this.restoreFocus(), () => [this.showsStored]);
     }
 
-    /** True when a value is stored server-side and the user has not typed a replacement. */
-    get isSet() {
-        return this.props.hasValue && !this.state.inputValue;
+    /**
+     * Give the focus to the control that took the place of the one the
+     * reader pressed, so it does not fall to the page and a screen reader
+     * keeps its place. Does nothing unless a click asked for it.
+     */
+    restoreFocus() {
+        const target = this.focusNext;
+        this.focusNext = null;
+        if (target === "edit") {
+            this.inputRef.el?.focus();
+        } else if (target === "stored") {
+            this.replaceRef.el?.focus();
+        }
     }
 
+    /** @returns {string} what the form holds for the field, "" when nothing */
+    get value() {
+        return this.props.value || "";
+    }
+
+    /** @returns {boolean} whether the stored value shows as «Stored», with Replace */
+    get showsStored() {
+        return this.props.hasValue && !this.state.replacing && !this.value;
+    }
+
+    /** @returns {string|undefined} the Replace button's id, apart from the input's */
+    get replaceId() {
+        return this.props.id ? `${this.props.id}-replace` : undefined;
+    }
+
+    /** @returns {string|undefined} the id of the hint line, which describes the input */
+    get hintId() {
+        return this.hint ? `${this.props.id || this.uid}-hint` : undefined;
+    }
+
+    /** @returns {string|undefined} the label's id, which describes the Replace button */
+    get labelId() {
+        return this.props.id ? `${this.props.id}-label` : undefined;
+    }
+
+    /** @returns {string} the input's placeholder: «New value» over a stored one, else «Not set» */
+    get placeholder() {
+        return this.props.hasValue ? _t("New value") : _t("Not set");
+    }
+
+    /** @returns {string} the line under the input, or "" while nothing needs saying */
     get hint() {
-        if (this.state.inputValue) {
+        if (this.value) {
             return _t("New value entered — will be saved");
         }
         if (this.props.hasValue) {
-            return _t("Value stored — type a new one to replace it");
+            return "";
         }
         if (this.props.emptyHint) {
             return _t(this.props.emptyHint);
         }
-        return _t("Leave blank to auto-generate a strong password");
+        if (this.props.autoGenerate) {
+            return _t("Leave blank to auto-generate a strong password");
+        }
+        return "";
+    }
+
+    // ── Stored value ────────────────────────────────────────────────────────
+
+    /** Open the stored value for a new one, and move the focus to the input. */
+    replace() {
+        this.focusNext = "edit";
+        this.state.replacing = true;
+    }
+
+    /** Keep the stored value: drop what was typed over it, and return the focus to Replace. */
+    keep() {
+        this.focusNext = "stored";
+        this.state.replacing = false;
+        this.state.visible = false;
+        this.props.onChange("");
     }
 
     // ── Typing ──────────────────────────────────────────────────────────────
 
     onInput(ev) {
-        this.state.inputValue = ev.target.value;
         this.props.onChange(ev.target.value);
     }
 
@@ -69,7 +168,7 @@ export class PasswordInput extends Component {
     // ── Copy to clipboard ────────────────────────────────────────────────────
 
     async copyToClipboard() {
-        const value = this.state.inputValue;
+        const value = this.value;
         if (!value) return;
         try {
             await navigator.clipboard.writeText(value);

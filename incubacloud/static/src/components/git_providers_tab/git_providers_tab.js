@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, onWillStart } from "@odoo/owl";
+import { Component, useEffect, useState, onWillStart } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
@@ -23,6 +23,7 @@ export function blankCredential() {
     return {
         id: false, namespace: "", kind: "project", username: "", token: "",
         expires_on: "", has_token: false, scopes: "", token_user: "",
+        replacing: false,
     };
 }
 
@@ -97,7 +98,24 @@ export class GitProvidersTab extends Component {
             hookBusy: null,
         });
         this.safePoll = useSafePoll();
+        // The id of the control the focus goes to once Replace or Keep
+        // stored took away the button it was on, taken on the next render.
+        this.focusNext = null;
+        useEffect(() => this.restoreFocus());
         onWillStart(() => this.load());
+    }
+
+    /**
+     * Give the focus to the control that took the place of the one the
+     * reader pressed (the token's input, or its Replace button), so it
+     * does not fall to the page. Does nothing unless a click asked for it.
+     */
+    restoreFocus() {
+        const id = this.focusNext;
+        this.focusNext = null;
+        if (id) {
+            document.getElementById(id)?.focus();
+        }
     }
 
     /**
@@ -383,16 +401,60 @@ export class GitProvidersTab extends Component {
     }
 
     /**
-     * The placeholder of a credential's token field: a stored token is
-     * kept when the field is left blank.
+     * The id of a control of the editor's credential row *index*.
+     *
+     * @param {number} index the row
+     * @param {string} part ``namespace``, ``kind``, ``username``, ``token`` or ``expires``
+     * @returns {string}
+     */
+    credId(index, part) {
+        return `ic-gitp-cred-${index}-${part}`;
+    }
+
+    /**
+     * Whether a credential's token shows as «Stored», with Replace: one is
+     * saved, and it is neither being replaced nor typed over.
+     *
+     * @param {Object} cred a credential row of the editor
+     * @returns {boolean}
+     */
+    tokenStored(cred) {
+        return !!cred.has_token && !cred.replacing && !cred.token;
+    }
+
+    /**
+     * The placeholder of a credential's token field: «New value» over a
+     * stored token, the shape of a GitLab token otherwise.
      *
      * @param {Object} cred a credential row of the editor
      * @returns {string}
      */
     tokenPlaceholder(cred) {
-        return cred.has_token
-            ? _t("•••••••• (stored, leave blank to keep)")
-            : "glpat-… / gldt-…";
+        return cred.has_token ? _t("New value") : "glpat-… / gldt-…";
+    }
+
+    /**
+     * Open a stored token for a new one, and move the focus to its input.
+     *
+     * @param {Object} cred a credential row of the editor
+     * @param {number} index its row
+     */
+    replaceToken(cred, index) {
+        this.focusNext = this.credId(index, "token");
+        cred.replacing = true;
+    }
+
+    /**
+     * Keep the stored token: drop what was typed over it (an empty token
+     * keeps the stored one), and return the focus to Replace.
+     *
+     * @param {Object} cred a credential row of the editor
+     * @param {number} index its row
+     */
+    keepToken(cred, index) {
+        this.focusNext = `${this.credId(index, "token")}-replace`;
+        cred.replacing = false;
+        cred.token = "";
     }
 
     /**
@@ -427,7 +489,7 @@ export class GitProvidersTab extends Component {
             base_url: provider.base_url,
             ca_bundle: provider.ca_bundle || "",
             credentials: (provider.credentials || []).map((c) => ({
-                ...c, token: "", expires_on: c.expires_on || "",
+                ...c, token: "", expires_on: c.expires_on || "", replacing: false,
             })),
         };
     }

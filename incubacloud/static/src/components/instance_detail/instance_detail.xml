@@ -2335,8 +2335,11 @@
                     </t>
                 </div>
                 <div class="rl-frow">
-                    <label>Admin password</label>
+                    <label for="idet-odoo_admin_password" id="idet-odoo_admin_password-label">Admin password</label>
                     <PasswordInput
+            id="'idet-odoo_admin_password'"
+            value="state.form.odoo_admin_password"
+            autoGenerate="true"
             hasValue="state.has_odoo_admin_password"
             required="true"
             onChange="(val) => this.onPasswordChange('odoo_admin_password', val)"
@@ -2385,8 +2388,11 @@
           />
                 </div>
                 <div class="rl-frow rl-full">
-                    <label>DB password</label>
+                    <label for="idet-postgres_password" id="idet-postgres_password-label">DB password</label>
                     <PasswordInput
+            id="'idet-postgres_password'"
+            value="state.form.postgres_password"
+            autoGenerate="true"
             hasValue="state.has_postgres_password"
             required="true"
             onChange="(val) => this.onPasswordChange('postgres_password', val)"
@@ -2530,8 +2536,10 @@
                 </div>
                 <t t-if="!isOAuthRelay">
                     <div class="rl-frow">
-                        <label>SMTP password</label>
+                        <label for="idet-smtp_relay_password" id="idet-smtp_relay_password-label">SMTP password</label>
                         <PasswordInput
+            id="'idet-smtp_relay_password'"
+            value="state.form.smtp_relay_password"
             hasValue="state.has_smtp_relay_password"
             onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"
           />
@@ -2557,8 +2565,10 @@
           />
                     </div>
                     <div class="rl-frow">
-                        <label>Client secret</label>
+                        <label for="idet-smtp_relay_oauth_client_secret" id="idet-smtp_relay_oauth_client_secret-label">Client secret</label>
                         <PasswordInput
+            id="'idet-smtp_relay_oauth_client_secret'"
+            value="state.form.smtp_relay_oauth_client_secret"
             hasValue="state.has_smtp_relay_oauth_client_secret"
             emptyHint.translate="Paste the Value of a client secret from Entra ID."
             onChange="(val) => this.onPasswordChange('smtp_relay_oauth_client_secret', val)"

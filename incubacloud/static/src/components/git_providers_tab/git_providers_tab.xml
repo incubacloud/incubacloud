@@ -310,33 +310,53 @@
         <t t-foreach="state.draft.credentials" t-as="cred" t-key="cred_index">
             <div class="ic-gitp-credrow">
                 <div class="rl-frow">
-                    <label>Namespace</label>
+                    <label t-att-for="credId(cred_index, 'namespace')">Namespace</label>
                     <input type="text" placeholder="group/subgroup"
+                           t-att-id="credId(cred_index, 'namespace')"
                            t-att-value="cred.namespace"
                            t-on-input="(ev) => cred.namespace = ev.target.value"/>
                 </div>
                 <div class="rl-frow">
-                    <label>Type</label>
+                    <label t-att-for="credId(cred_index, 'kind')">Type</label>
                     <RlSelect options="kindOptions" value="cred.kind"
+                              id="credId(cred_index, 'kind')"
                               onChange="(value) => cred.kind = value"
                               ariaLabel.translate="Token type"/>
                 </div>
                 <div class="rl-frow" t-if="cred.kind === 'deploy'">
-                    <label>User name</label>
+                    <label t-att-for="credId(cred_index, 'username')">User name</label>
                     <input type="text" placeholder="gitlab+deploy-token-1"
+                           t-att-id="credId(cred_index, 'username')"
                            t-att-value="cred.username"
                            t-on-input="(ev) => cred.username = ev.target.value"/>
                 </div>
                 <div class="rl-frow">
-                    <label>Access token</label>
-                    <input type="password" autocomplete="new-password"
-                           t-att-placeholder="tokenPlaceholder(cred)"
-                           t-att-value="cred.token"
-                           t-on-input="(ev) => cred.token = ev.target.value"/>
+                    <!-- A stored token never comes back: «Stored» until replaced. The
+                         label names the input, and describes Replace while it shows. -->
+                    <label t-att-for="tokenStored(cred) ? undefined : credId(cred_index, 'token')"
+                           t-att-id="credId(cred_index, 'token') + '-label'">Access token</label>
+                    <div t-if="tokenStored(cred)" class="ic-set-secret ic-gitp-token">
+                        <t t-out="env.icon('lock', 14)"/>
+                        <span class="ic-set-secret__state">Stored</span>
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-att-id="credId(cred_index, 'token') + '-replace'"
+                                t-att-aria-describedby="credId(cred_index, 'token') + '-label'"
+                                t-on-click="() => this.replaceToken(cred, cred_index)">Replace</button>
+                    </div>
+                    <div t-else="" class="ic-set-secret-edit ic-gitp-token">
+                        <input type="password" autocomplete="new-password"
+                               t-att-id="credId(cred_index, 'token')"
+                               t-att-placeholder="tokenPlaceholder(cred)"
+                               t-att-value="cred.token"
+                               t-on-input="(ev) => cred.token = ev.target.value"/>
+                        <button t-if="cred.has_token" type="button" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="() => this.keepToken(cred, cred_index)">Keep stored</button>
+                    </div>
                 </div>
                 <div class="rl-frow" t-if="cred.kind === 'deploy'">
-                    <label>Expires on</label>
-                    <input type="date" t-att-value="cred.expires_on"
+                    <label t-att-for="credId(cred_index, 'expires')">Expires on</label>
+                    <input type="date" t-att-id="credId(cred_index, 'expires')"
+                           t-att-value="cred.expires_on"
                            t-on-input="(ev) => cred.expires_on = ev.target.value"/>
                 </div>
                 <button class="rl-repo-rm ic-gitp-credrm" title="Remove credential"

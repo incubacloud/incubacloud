@@ -11523,6 +11523,7 @@ msgstr "No se ejecutó: el paso #%(step)s terminó con error."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: code:addons/incubacloud/static/src/components/password_input/password_input.js:0
 msgid "Not set"
 msgstr "No establecido"
 
@@ -15515,6 +15516,8 @@ msgstr "Almacenamiento"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: code:addons/incubacloud/static/src/components/password_input/password_input.xml:0
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "Stored"
 msgstr "Almacenado"
 
@@ -18186,12 +18189,6 @@ msgstr "Valor del encabezado X-GitHub-Delivery — único por entrega."
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__event_type
 msgid "Value of the X-GitHub-Event header (e.g. push, pull_request)."
 msgstr "Valor del encabezado X-GitHub-Event (ej. push, pull_request)."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/password_input/password_input.js:0
-msgid "Value stored — type a new one to replace it"
-msgstr "Valor guardado — escriba uno nuevo para reemplazarlo"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__threshold
@@ -21734,12 +21731,6 @@ msgid "Access token"
 msgstr "Token de acceso"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
-msgid "•••••••• (stored, leave blank to keep)"
-msgstr "•••••••• (guardado, déjelo en blanco para conservarlo)"
-
-#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_git_providers.py:0
 msgid ""
@@ -23213,6 +23204,8 @@ msgstr "Retención de trabajos"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
+#: code:addons/incubacloud/static/src/components/password_input/password_input.xml:0
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "Keep stored"
 msgstr "Conservar el guardado"
 
@@ -23324,6 +23317,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.js:0
+#: code:addons/incubacloud/static/src/components/password_input/password_input.js:0
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.js:0
 msgid "New value"
 msgstr "Valor nuevo"
 
@@ -23510,6 +23505,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
+#: code:addons/incubacloud/static/src/components/password_input/password_input.xml:0
+#: code:addons/incubacloud/static/src/components/git_providers_tab/git_providers_tab.xml:0
 msgid "Replace"
 msgstr "Sustituir"
 

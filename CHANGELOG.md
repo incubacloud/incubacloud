@@ -57,10 +57,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 The panel's help text is easier to read, its switches and tab bars say
 what they are to a screen reader, and a tab bar that scrolls shows that
 it has more tabs. A module update stopped while the instance's database
-is out of reach no longer leaves its container running.
+is out of reach no longer leaves its container running. A stored
+password, secret or token reads «Stored» with Replace across the panel,
+as in Settings.
 
 The update adds no table or column and needs no data migration; only the
-panel's assets change.
+panel's assets and the Spanish catalogue change.
 
 ### Changed
 
@@ -81,6 +83,33 @@ panel's assets change.
   without scroll-driven animations. No text changes. The backup
   backend's «Report on success» switch takes its name from its label
   (`aria-labelledby`).
+
+- **Stored secrets show «Stored · Replace» outside Settings too (#13).**
+  The password fields of an instance (admin, database, SMTP password and
+  the OAuth2 client secret), a host (SSH password and Traefik's panel
+  password), a backup destination (secret access key and passphrase) and
+  the notifications (Telegram bot token and webhook signing secret)
+  show a stored value as a lock, «Stored» and a Replace button, where they
+  showed an empty input with a check and «Value stored — type a new one to
+  replace it». Replace opens an empty input, focused, with «Keep stored»
+  beside it, which drops what was typed and gives the focus back to
+  Replace. With nothing stored the input is empty and says «Not set»; the
+  hint under it stays, set in the text font at 12.5 px, and «Leave blank to
+  auto-generate a strong password» shows only where the server generates
+  one (an instance's admin and database passwords, a host's SSH and
+  Traefik panel passwords, a backup destination's passphrase): an
+  instance's SMTP password and a destination's secret access key, which
+  nothing generates, said it too and show no hint now. A token of Settings
+  › Git providers follows the same pattern instead of the placeholder
+  «•••••••• (stored, leave blank to keep)», and the Namespace, Type, User
+  name, Access token and Expires on of each credential carry `for`/`id`.
+  The ten password fields' labels name their input the same way; while
+  «Stored» shows, pressing the label does nothing, as in Settings, and the
+  label describes Replace. Each field shows what its form holds: one shown
+  again (an instance's tab, the SMTP authentication switched back, a
+  notification channel unfolded) still shows the new value it will save,
+  where it came back empty while the form kept what was typed. An empty
+  value still keeps the stored one on save.
 
 ### Fixed
 
