@@ -702,13 +702,11 @@ class CloudMetricRule(models.Model):
         """Return the failed web logins' addresses of an instance, counted.
 
         **The join with the log reader (plan #84, C2).** The reading is
-        ``logs.weblogin_top_sources``: the last lines (two pages of 500)
-        of ``{log_type="security", source="weblogin", host_id="…"} |=
+        :func:`logs.weblogin_top_sources`: the last lines of
+        ``{log_type="security", source="weblogin", host_id="…"} |=
         " instance=<id> "`` in the window, through the account's ``/lr``
-        route with the credential in *central*, never raising. Until it
-        joins this tree there is nothing to read with, and the alert
-        goes out with its figure alone; once it does, this body becomes
-        that call, its answer reduced to ``(address, count)`` pairs.
+        route (derived from ``central["base_url"]``) with the credential
+        in *central*, never raising.
 
         :param host: the ``cloud.host`` whose proxy counted the attempts.
         :param int instance_id: the ``cloud.instance`` id.
@@ -719,7 +717,14 @@ class CloudMetricRule(models.Model):
             is nothing to say (no lines, a central busy or failing).
         :rtype: list[tuple[str, int]] | None
         """
-        return None
+        # Imported here: logs.py takes its transport from this module.
+        from . import logs
+
+        return logs.weblogin_top_sources(
+            central["base_url"], host.id, instance_id, minutes=minutes,
+            token=central.get("token"), user=central.get("user"),
+            verify=central.get("verify", True),
+        )
 
     def _resolve_instance(self, Instance, labels):
         """Map a sample's labels back to a ``cloud.instance``, or False."""
