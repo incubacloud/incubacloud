@@ -31,6 +31,7 @@ from ..net.trusted_proxies import (
     parse_ranges,
 )
 from . import _config_snapshot_diff as _snapshot_diff
+from . import ssh_host_keys
 from ._concurrency import read_committed_cursor
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .cloud_security_mixin import defaults_as_sent
@@ -1741,17 +1742,7 @@ class CloudHost(models.Model):
         :returns: the fingerprint, or ``''`` when no line carries a
             decodable key (a blank entry, a comment-only file, garbage).
         """
-        for line in (entry or "").splitlines():
-            parts = line.split()
-            if len(parts) < 3 or line.lstrip().startswith("#"):
-                continue
-            try:
-                digest = hashlib.sha256(base64.b64decode(parts[2])).digest()
-            except Exception:
-                continue
-            fingerprint = base64.b64encode(digest).rstrip(b"=").decode("ascii")
-            return f"SHA256:{fingerprint}"
-        return ""
+        return ssh_host_keys.fingerprint(entry)
 
     @api.depends("known_hosts_key")
     def _compute_known_hosts_fingerprint(self):
@@ -1771,8 +1762,7 @@ class CloudHost(models.Model):
         Ansible-backed job) reaches the same host and reports it as
         unknown.
         """
-        port = int(port or 22)
-        return f"[{ip_address}]:{port}" if port != 22 else str(ip_address)
+        return ssh_host_keys.known_hosts_prefix(ip_address, port)
 
     def _relabel_known_hosts_entry(self):
         """Re-file the stored key under the current endpoint, key unchanged.

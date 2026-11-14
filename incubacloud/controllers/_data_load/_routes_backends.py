@@ -7,6 +7,7 @@ import boto3
 from botocore.exceptions import ClientError, ParamValidationError
 
 from odoo import _, http
+from odoo.exceptions import UserError
 from odoo.http import request
 
 from .._safe_error import safe_error_response
@@ -194,6 +195,88 @@ class BackendsMixin:
         # Writing the retention owner confirms it (see the model's write):
         # the page drops its «Unconfirmed» note on this answer.
         return {"ok": True, "retention_owner_declared": b.retention_owner_declared}
+
+    #: Connections to SFTP servers a user may open from the panel per hour
+    #: (reading the key, trusting it, testing, measuring), as the relay test.
+    _SFTP_CONNECTIONS_PER_HOUR = 20
+
+    def _sftp_rate_limited(self):
+        """Count one connection to an SFTP server against the user's hour.
+
+        :return: the deny dict when over the limit, else None
+        :rtype: dict or None
+        """
+        uid = request.env.uid
+        allowed = request.env["cloud.rate.limit"].sudo().hit(
+            f"sftp_backend:{uid}",
+            max_per_window=self._SFTP_CONNECTIONS_PER_HOUR,
+            window_seconds=3600,
+        )
+        if allowed:
+            return None
+        return {
+            "ok": False,
+            "error": _(
+                "Too many connections to SFTP servers in the last hour. "
+                "Try again later."
+            ),
+        }
+
+    def _sftp_backend(self, backend_id):
+        """Return the SFTP destination *backend_id*, or the error dict.
+
+        :return: ``(backend, None)`` or ``(None, {'ok': False, ...})``
+        :rtype: tuple
+        """
+        self._sec()._check_can_manage_settings()
+        b = request.env["cloud.backup.backend"].browse(backend_id)
+        if not b.exists():
+            return None, {"ok": False, "error": _("Backend not found")}
+        if b.backend_type != "sftp":
+            return None, {
+                "ok": False, "error": _("This destination is not SFTP."),
+            }
+        return b, None
+
+    @http.route(["/cloud/sftp_backend_read_host_key"], type="json", auth="user")
+    def cloud_sftp_backend_read_host_key(self, backend_id):
+        """Read the key the SFTP server presents; trust nothing.
+
+        Only the key exchange runs: no credential is sent.
+        """
+        b, error = self._sftp_backend(backend_id)
+        if error:
+            return error
+        limited = self._sftp_rate_limited()
+        if limited:
+            return limited
+        try:
+            return {"ok": True, **b._sftp_read_host_key()}
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    @http.route(["/cloud/sftp_backend_trust_host_key"], type="json", auth="user")
+    def cloud_sftp_backend_trust_host_key(self, backend_id, expected_fingerprint):
+        """Trust the server key the person saw, if it is still the one presented."""
+        b, error = self._sftp_backend(backend_id)
+        if error:
+            return error
+        limited = self._sftp_rate_limited()
+        if limited:
+            return limited
+        try:
+            found = b._sftp_trust_host_key(expected_fingerprint)
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        return {
+            "ok": True,
+            "sftp_host_key_fingerprint": found,
+            "sftp_host_key_trusted_at": (
+                b.sftp_host_key_trusted_at.isoformat()
+                if b.sftp_host_key_trusted_at else ""
+            ),
+            "sftp_host_key_trusted_by": b.sftp_host_key_trusted_by.name or "",
+        }
 
     @http.route(["/cloud/sftp_backend_regenerate_key"], type="json", auth="user")
     def cloud_sftp_backend_regenerate_key(self, backend_id):
