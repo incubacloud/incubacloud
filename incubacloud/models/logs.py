@@ -22,6 +22,13 @@ and to a closed set of characters (:func:`sanitize`) before it can reach
 a message, and a record never carries the line itself: the line stays
 on its :class:`LogLine`, for whoever is allowed to see lines.
 
+**The instances' failed web logins.** A server's Fluent Bit sends one
+line of its own per failed login, ``weblogin failed ip=… instance=…
+t=…`` (C1.9), with ``source="weblogin"``. :func:`count_weblogin_sources`
+reads the last of them for one instance and counts them by address on
+the panel: lines, never an aggregation by address, so it needs no
+series per address anywhere.
+
 **auditd.** A change is a ``SYSCALL`` record and the ``PATH`` records
 with the same ``audit(seconds:serial)``. They are joined once every page
 is read (:func:`join_audit`), by ``host_id`` and that stamp, never by
@@ -29,11 +36,13 @@ the line. A ``SYSCALL`` whose ``PATH`` has not arrived within the last
 minute of the window is left for the next pass, whose overlap brings it
 whole.
 
-Plan #84, cut C2 (13-nov-2026), with Fable's review: M5 and point 6.
+Plan #84, cut C2 (13-nov-2026), with Fable's review: M5 and point 6;
+the web logins of 14-nov-2026 (D3, D5).
 """
 import ipaddress
 import logging
 import re
+import time
 from typing import NamedTuple
 
 from .cloud_metric_rule import _promql_get
@@ -127,11 +136,14 @@ def _host_id(labels):
 def logql_query_range(
     base_url, expression, start_ns, end_ns, limit=PAGE_LIMIT,
     timeout=QUERY_TIMEOUT, token=None, user=None, retries=1, verify=True,
+    direction="forward",
 ):
-    """Run one LogQL log query, oldest first, and return its lines.
+    """Run one LogQL log query and return its lines, oldest first.
 
     One page: Loki gives the first *limit* lines of the window across
-    every stream. :func:`read_lines` takes the pages that follow.
+    every stream, or the last with ``direction="backward"``; the window
+    holds *start_ns* and not *end_ns*. :func:`read_lines` takes the
+    pages that follow.
 
     :param str base_url: the log read root (:func:`loki_base`).
     :param str expression: LogQL selecting lines.
@@ -144,6 +156,8 @@ def logql_query_range(
         or a 429.
     :param verify: the central's certificate check
         (``cloud.settings._central_tls_verify``).
+    :param str direction: ``forward`` (the first lines of the window) or
+        ``backward`` (its last).
     :returns: the lines, oldest first.
     :rtype: list[LogLine]
     :raises requests.RequestException: on transport or HTTP failure.
@@ -152,7 +166,8 @@ def logql_query_range(
     payload = _promql_get(
         base_url, "query_range",
         {"query": expression, "start": int(start_ns), "end": int(end_ns),
-         "limit": int(limit), "direction": "forward"},
+         "limit": int(limit),
+         "direction": "backward" if direction == "backward" else "forward"},
         timeout=timeout, token=token, user=user, retries=retries,
         verify=verify,
     )
@@ -293,6 +308,9 @@ LOGQL_LINES = {
     # fail2ban's findings, bans and lifts.
     "fail2ban":
         '{log_type="security", source="fail2ban", %(hosts)s}',
+    # The instances' failed web logins (C1.9).
+    "weblogin":
+        '{log_type="security", source="weblogin", %(hosts)s}',
     # Every line of a server: "see lines".
     "lines":
         '{log_type="security", %(hosts)s}',
@@ -318,6 +336,29 @@ def logql_lines(name, host_ids):
     else:
         hosts = 'host_id=~"' + "|".join(str(i) for i in ids) + '"'
     return template % {"hosts": hosts}
+
+
+def logql_weblogin(host_id, instance_id):
+    """Return the LogQL of one instance's failed web logins on one server.
+
+    The instance is not a label (C1.9): the line filter keeps the lines
+    whose ``instance=`` is that id, spaces around it so ``4`` is not
+    ``42``.
+
+    :param int host_id: the ``cloud.host`` id.
+    :param int instance_id: the ``cloud.instance`` id, or 0 for the
+        logins the server could not tell an instance of.
+    :rtype: str
+    :raises ValueError: for an id that is not an integer, or a host id
+        that is not positive.
+    """
+    if isinstance(instance_id, bool) or not isinstance(instance_id, int) \
+            or instance_id < 0:
+        raise ValueError(f"Not an instance id: {instance_id!r}")
+    return (
+        logql_lines("weblogin", [host_id])
+        + f' |= " instance={instance_id} "'
+    )
 
 
 def _positive_int(value):
@@ -558,6 +599,63 @@ def parse_fail2ban(line):
 
 
 # ---------------------------------------------------------------------------
+# The instances' failed web logins
+# ---------------------------------------------------------------------------
+
+#: ``weblogin failed ip=<ip> instance=<id> t=<time>``, the line the
+#: server's classification writes itself (C1.9), the whole line: nothing
+#: before it and nothing after.
+_WEBLOGIN = re.compile(
+    r"^weblogin failed ip=(?P<ip>[0-9A-Fa-f:.]{2,45})"
+    r" instance=(?P<instance>\d{1,12})"
+    r" t=(?P<time>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?"
+    r"(?:Z|[+-]\d\d:\d\d))\Z"
+)
+
+
+def parse_weblogin(line):
+    """Return the record of a failed web login line, or None.
+
+    ``{"ip", "instance_id", "time"}``: the address as ``ipaddress``
+    writes it, the instance's id (0 when the server could not tell
+    which), and the proxy's time as it wrote it (RFC 3339). Anything
+    else on the line, an address ``ipaddress`` refuses or an id that is
+    not a number, and the line is none.
+
+    :param str line: the line, as Loki holds it.
+    :rtype: dict | None
+    """
+    match = _WEBLOGIN.match(line or "")
+    if not match:
+        return None
+    ip = _address(match["ip"])
+    if ip is None:
+        return None
+    return {
+        "ip": ip,
+        "instance_id": int(match["instance"]),
+        "time": match["time"],
+    }
+
+
+def source_key(address):
+    """Return what tells two attackers apart: the address, IPv6 by its /64.
+
+    Whoever holds an IPv6 /64 can take a new address of it for every
+    attempt; counted by address, a single attacker would look like
+    many with one attempt each.
+
+    :param str address: an address ``ipaddress`` reads.
+    :returns: the address, or its /64 written ``2001:db8:1:2::/64``.
+    :rtype: str
+    """
+    ip = ipaddress.ip_address(address)
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)
+
+
+# ---------------------------------------------------------------------------
 # auditd
 # ---------------------------------------------------------------------------
 
@@ -726,3 +824,248 @@ def join_audit(lines, window_end_ns, defer_seconds=AUDIT_DEFER_SECONDS):
         events.append(event)
     events.sort(key=lambda event: (event["ns"], event["host_id"] or 0))
     return AuditJoin(events, deferred)
+
+
+# ---------------------------------------------------------------------------
+# The reader: the account's log route and its credential, together
+# ---------------------------------------------------------------------------
+
+#: Lines :func:`count_weblogin_sources` counts at most: the last
+#: two pages of the window.
+WEBLOGIN_SAMPLE_PAGES = 2
+
+#: Addresses :func:`count_weblogin_sources` names.
+WEBLOGIN_TOP = 3
+
+
+class WebloginSources(NamedTuple):
+    """The addresses with the most failed web logins on one instance.
+
+    :ivar top: ``[(address, attempts)]``, most attempts first, at most
+        :data:`WEBLOGIN_TOP`; an IPv6 address is its /64
+        (:func:`source_key`).
+    :ivar distinct: how many addresses the lines counted came from.
+    :ivar attempts: how many lines were counted.
+    :ivar cut: True when the window held more lines than were read, so
+        the counts are of its last ones.
+    """
+
+    top: list
+    distinct: int
+    attempts: int
+    cut: bool
+
+
+def read_last_lines(
+    base_url, expression, start_ns, end_ns, pages=WEBLOGIN_SAMPLE_PAGES,
+    limit=PAGE_LIMIT, timeout=QUERY_TIMEOUT, token=None, user=None,
+    verify=True,
+):
+    """Read the last lines of a window, newest page first, by time.
+
+    Each page ends at the first instant of the one after it, included
+    (Loki's window leaves its end out, so it ends one nanosecond later);
+    a line read twice, the same server, instant and text, counts once.
+
+    :param str base_url: the log read root (:func:`loki_base`).
+    :param str expression: LogQL selecting lines.
+    :param int start_ns: first instant, nanoseconds, included.
+    :param int end_ns: last instant, nanoseconds, left out.
+    :param int pages: pages at most.
+    :param int limit: lines a page asks for.
+    :returns: the lines, oldest first, and whether the window held more.
+    :rtype: tuple[list[LogLine], bool]
+    :raises requests.RequestException: as :func:`logql_query_range`.
+    :raises ValueError: as :func:`logql_query_range`.
+    """
+    seen = set()
+    lines = []
+    end = int(end_ns)
+    for _page in range(pages):
+        page = logql_query_range(
+            base_url, expression, start_ns, end, limit=limit,
+            timeout=timeout, token=token, user=user, verify=verify,
+            direction="backward",
+        )
+        fresh = [item for item in page if item[:3] not in seen]
+        for item in fresh:
+            seen.add(item[:3])
+        lines.extend(fresh)
+        if len(page) < limit:
+            return _read(lines, complete=True).lines, False
+        if not fresh:
+            # More lines at one instant than a page holds: what is left
+            # is older than what a sample takes.
+            break
+        end = page[0].ns + 1
+    return _read(lines, complete=False).lines, True
+
+
+class LogReader:
+    """The account's log read route on the central, with its credential.
+
+    What reads the security logs from a model: built from the settings
+    by :meth:`from_env`, so a caller never handles the URL or the
+    credential, and a test hands a ``MagicMock(spec=LogReader)`` in its
+    place.
+    """
+
+    def __init__(self, base_url, token=None, user=None, verify=True):
+        """Keep where and as whom to read.
+
+        :param str base_url: the log read root (:func:`loki_base`).
+        :param token: password half of the account's credential.
+        :param user: its user.
+        :param verify: the central's certificate check.
+        """
+        self.base_url = base_url
+        self.token = token
+        self.user = user
+        self.verify = verify
+
+    @classmethod
+    def from_env(cls, env):
+        """Return the reader of this panel's central, or None.
+
+        None when observability is off, without a central, or with one
+        that is not a central this panel's version deploys (no ``/r``
+        to put ``/lr`` beside).
+
+        :param env: an Odoo environment.
+        :rtype: LogReader | None
+        """
+        settings = env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return None
+        base = loki_base(settings.metrics_central_url)
+        if not base:
+            return None
+        user, token = settings._metrics_auth()
+        return cls(base, token=token, user=user,
+                   verify=settings._central_tls_verify())
+
+    def read_lines(self, expression, start_ns, end_ns, max_pages=MAX_PAGES,
+                   limit=PAGE_LIMIT):
+        """Read a window page after page: :func:`read_lines`.
+
+        :rtype: LogRead
+        """
+        return read_lines(
+            self.base_url, expression, start_ns, end_ns, max_pages=max_pages,
+            limit=limit, token=self.token, user=self.user, verify=self.verify,
+        )
+
+    def query(self, expression, at_ns=None):
+        """Run a LogQL metric query at one instant: :func:`logql_query`.
+
+        :rtype: list[tuple[dict, float]]
+        """
+        return logql_query(
+            self.base_url, expression, at_ns=at_ns, token=self.token,
+            user=self.user, verify=self.verify,
+        )
+
+    def weblogin_sources(self, host_id, instance_id, minutes=10, now_ns=None):
+        """Return the addresses with the most failed web logins, or None.
+
+        :func:`count_weblogin_sources` on this reader's central.
+
+        :rtype: WebloginSources | None
+        """
+        return count_weblogin_sources(
+            self.base_url, host_id, instance_id, minutes=minutes,
+            now_ns=now_ns, token=self.token, user=self.user,
+            verify=self.verify,
+        )
+
+
+def count_weblogin_sources(
+    base_url, host_id, instance_id, minutes=10, now_ns=None, token=None,
+    user=None, verify=True,
+):
+    """Return the addresses with the most failed web logins, or None.
+
+    Reads lines, not an aggregation: the last two pages (1 000 lines) of
+    the instance's failed logins on that server in the last *minutes*,
+    counted by address on the panel (IPv6 by its /64). So no series per
+    address is made anywhere and Loki's ``max_query_series`` never
+    refuses it, also under an attack from thousands of addresses.
+
+    Never raises: a central that is busy, fails or does not answer gives
+    None, "no data", and the alert that asked goes out without
+    addresses.
+
+    :param str base_url: the log read root (:func:`loki_base`).
+    :param int host_id: the ``cloud.host`` id.
+    :param int instance_id: the ``cloud.instance`` id.
+    :param int minutes: the window, up to now.
+    :param now_ns: the end of the window, nanoseconds; now when None.
+    :param token: password half of the account's credential.
+    :param user: its user.
+    :param verify: the central's certificate check.
+    :rtype: WebloginSources | None
+    """
+    end = int(now_ns if now_ns is not None else time.time_ns())
+    start = end - int(minutes) * 60 * 1_000_000_000
+    try:
+        expression = logql_weblogin(host_id, instance_id)
+        lines, cut = read_last_lines(
+            base_url, expression, start, end + 1,
+            pages=WEBLOGIN_SAMPLE_PAGES, limit=PAGE_LIMIT,
+            token=token, user=user, verify=verify,
+        )
+    except Exception as exc:  # noqa: BLE001 — "no data", never a failure
+        _logger.warning(
+            "[logs] failed web logins of instance %s on host %s not "
+            "read: %s", instance_id, host_id, exc,
+        )
+        return None
+    counts = {}
+    attempts = 0
+    for log_line in lines:
+        record = parse_weblogin(log_line.line)
+        if record is None or record["instance_id"] != instance_id:
+            continue
+        attempts += 1
+        key = source_key(record["ip"])
+        counts[key] = counts.get(key, 0) + 1
+    top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return WebloginSources(top[:WEBLOGIN_TOP], len(counts), attempts, cut)
+
+
+def weblogin_top_sources(
+    base_url, host_id, instance_id, minutes=10, token=None, user=None,
+    verify=True, now_ns=None,
+):
+    """Return the ``(address, count)`` pairs of an instance's failed web logins.
+
+    What the web-login rule's alert names (C5): the addresses with the
+    most attempts, most first, at most :data:`WEBLOGIN_TOP`, IPv6 as its
+    /64 (``2001:db8:1:2::/64``), counted as :func:`count_weblogin_sources`
+    does. Never raises.
+
+    :param str base_url: ``metrics_central_url`` (its ``/r`` becomes
+        ``/lr/loki``), or the log read root itself.
+    :param int host_id: the ``cloud.host`` id.
+    :param int instance_id: the ``cloud.instance`` id.
+    :param int minutes: the window, up to now.
+    :param token: password half of the account's credential.
+    :param user: its user.
+    :param verify: the central's certificate check.
+    :param now_ns: the end of the window, nanoseconds; now when None.
+    :returns: the pairs, or None with nothing to say: no attempt read, a
+        central busy, failing or not one of ours.
+    :rtype: list[tuple[str, int]] | None
+    """
+    root = (base_url or "").strip().rstrip("/")
+    if not root.endswith(_LOG_READ_ROOT):
+        root = loki_base(root)
+    if not root:
+        return None
+    counted = count_weblogin_sources(
+        root, host_id, instance_id, minutes=minutes, now_ns=now_ns,
+        token=token, user=user, verify=verify,
+    )
+    if not counted or not counted.top:
+        return None
+    return list(counted.top)
