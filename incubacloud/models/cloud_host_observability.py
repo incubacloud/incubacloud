@@ -126,9 +126,9 @@ class CloudHost(models.Model):
         copy=False,
         groups="incubacloud.group_cloud_manager",
         help="The addresses the panel was seen connecting from by the "
-             "agents' install and by the hardening, with when, as JSON: the "
-             "last five, each forgotten 30 days after it was last seen. "
-             "Never taken from a notice or from a log line.",
+             "agents' install, with when, as JSON: the last five, each "
+             "forgotten 30 days after it was last seen. Never taken from a "
+             "notice or from a log line.",
     )
 
     @api.model

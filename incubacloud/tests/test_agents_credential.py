@@ -509,7 +509,11 @@ class TestThePanelsAddresses(AgentsCase):
         self.assertEqual(self._sources(), ["203.0.113.20"])
 
     def test_the_playbooks_read_it_without_become(self):
-        """sudo clears SSH_CONNECTION: both reads run as the connecting user."""
+        """sudo clears SSH_CONNECTION: both reads run as the connecting user.
+
+        The hardening's recipe does not hand it to the panel yet (review
+        of 14-nov-2026, M4): its executor records it once it does.
+        """
         agents = playbook.task("Read the address the panel connects from")
         self.assertIs(agents["become"], False)
         self.assertEqual(agents["ansible.builtin.command"], "printenv SSH_CONNECTION")
@@ -518,11 +522,6 @@ class TestThePanelsAddresses(AgentsCase):
         )
         with open(path, encoding="utf-8") as fh:
             tasks = yaml.safe_load(fh)[0]["tasks"]
-        export = next(t for t in tasks if t.get("name") == "Export the hardening facts")
-        rendered = Environment().from_string(
-            export["ansible.builtin.set_stats"]["data"]["ic_panel_source"],
-        ).render(ic_ssh_connection={"stdout": "198.51.100.7 51234 10.0.0.40 22"})
-        self.assertEqual(rendered.strip(), "198.51.100.7")
         read = next(
             t for t in tasks if t.get("name") == "Determine the address this play is connecting from"
         )
