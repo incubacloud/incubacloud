@@ -40,6 +40,14 @@
 // ── Backend detail form ─────────────────────────────────────────────────────
 .ic-backend-detail {
 
+    // The first card sits under the tabs' own 22 px, as on a project's page:
+    // the shared body's 24 px on top doubled the gap.
+    .ic-detail-body { padding-block-start: 0; }
+
+    // Type has one value and no list to open: without the chevron,
+    // «S3 Compatible» fits the half row a phone gives it.
+    .rl-sel__trigger:disabled .rl-sel__chevron { display: none; }
+
     // Backup-destination preview chip.
     .ic-backup-dst {
         display: block;

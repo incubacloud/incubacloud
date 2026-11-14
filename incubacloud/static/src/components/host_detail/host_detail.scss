@@ -180,24 +180,20 @@
     .ic-set-how__text p { margin: 0 0 6px; }
 }
 
+// The record grid is settings_form.scss' `.ic-rgrid`; a host's adds only this.
 .ic-host-detail .ic-rgrid {
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 14px 18px;
-
-    > .ic-w-s { grid-column: span 3; }
-    > .ic-w-m { grid-column: span 6; }
-    > .ic-w-l { grid-column: 1 / -1; }
     > * { min-inline-size: 0; }
 
     code { overflow-wrap: anywhere; }
-    .rl-frow { margin: 0; }
 }
 
 // The help of an S field, on the row under it, close to the field.
 .ic-host-detail .ic-rgrid > .ic-rgrid__note { margin-block-start: -8px; }
 
 // Placement keeps `ic-form-grid` for a layer's rows: one column, inside the card.
+// Without a row (no layer, or New Host) the card has nothing to show.
+.ic-host-detail .ic-host-placement.ic-form-grid:not(:has(> .rl-frow)) { display: none; }
+
 .ic-host-detail .ic-host-placement.ic-form-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -210,12 +206,6 @@
 }
 
 @media (max-width: 900px) {
-    .ic-host-detail .ic-rgrid {
-        > .ic-w-s { grid-column: span 6; }
-        > .ic-w-m { grid-column: 1 / -1; }
-        > .ic-rgrid__gap { display: none; }
-    }
-
     .ic-host-detail .ic-host-placement.ic-form-grid { padding-inline: 16px; }
 }
 

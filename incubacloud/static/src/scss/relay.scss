@@ -326,6 +326,10 @@
     cursor:pointer; font-family:var(--rl-fb);
     &:hover { color:var(--rl-fg); }
     &.active { color:var(--rl-fg); border-block-end-color:var(--rl-fg2); font-weight:600; } }
+  // On a phone a tab is 6 px narrower: a short bar (a backup destination's
+  // three tabs in Spanish at 390 px) then fits whole, instead of scrolling
+  // 3 px under the fade that cut its last tab; a longer one still scrolls.
+  @media (max-width: 480px) { .rl-tab { padding-inline:10px; } }
 
   // ── Overview cards + services ────────────────────────────────────────────
   .rl-ovcards { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-block-end:18px; }
@@ -439,7 +443,9 @@
     // Listed with the ``:not([class])`` form too: that branch of the field
     // rule above outweighs a bare ``textarea``, and would set the body font.
     textarea, textarea:not([class]) { font-family:var(--rl-fm); resize:vertical; min-block-size:90px; }
-    .rl-req { color:var(--rl-green); }
+    // With its space inside (``Odoo version<span class="rl-req"> *</span>``)
+    // the asterisk never opens a line of its own on a phone.
+    .rl-req { color:var(--rl-green); white-space:nowrap; }
     // The note a label carries (« · optional», «— production only») reads as help.
     .rl-opt { font-size:12.5px; font-weight:400; color:var(--rl-muted); } }
   // A field with a button beside it: the field takes what is left.

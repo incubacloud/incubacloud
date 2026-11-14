@@ -149,19 +149,20 @@ panel's assets and the Spanish catalogue change.
   and the notes under the quota, the alert threshold, the retention
   period and the retention owner describe their field. `SettingAdvanced`
   takes `forceOpen` and `changed` from a page outside Settings.
-- **A host's General tab is in groups (#13).** Its fields, on the host's
-  page and on *New Host*, sit in four cards no wider than 920 px:
-  *Details* (name, IP address and port, tags, description), *Placement*
-  (auto-assignment, and the host pool and warm spares a layer adds),
-  *Network edge* (connection-rate cap, proxy network, the ranges applied
-  and direct access) and *Internal traffic* (direct port and the public
-  path), on a 12-column grid with the label above the field. *Reached
+- **A host's General tab is in groups (#13, #123).** Its fields, on the
+  host's page and on *New Host*, sit in cards no wider than 920 px:
+  *Details* (name, IP address and port, tags, description and
+  auto-assignment), *Network edge* (connection-rate cap, proxy network,
+  the ranges applied and direct access) and *Internal traffic* (direct
+  port and the public path), with *Placement* between the first two only
+  when a layer adds its rows to it (a host pool, warm spares), on a
+  12-column grid with the label above the field. *Reached
   through a CDN*, *Trusted proxy ranges (override)* and *CDN client
   certificate authority* fold under *Advanced · 3 settings* at the end
   of *Network edge*, which reads «N changed» while any of them is
-  unsaved. Their long explanations, and that of *Direct access*, moved
-  from under each field to the group's *How it works*; each field keeps
-  a one-line help. Every label this module draws on the host's form
+  unsaved. Their long explanations, and those of *Direct access*, the
+  connection-rate cap and *Proxy network*, moved from under each field
+  to the group's *How it works*; each field keeps a one-line help. Every label this module draws on the host's form
   names its control (`for`/`id`, the tag field's input too), and the
   read-only values (*Applied to this host*, *Admitted on the direct
   port*, *Agents write to*, *Public key*) carry a caption instead of a
@@ -173,6 +174,26 @@ panel's assets and the Spanish catalogue change.
 
 ### Fixed
 
+- **A backup destination's, a project's and a host's pages after the form
+  standard's review (#123).** On a backup destination, saving confirms the
+  retention owner at once: «Unconfirmed…» goes and Advanced, no longer
+  held open, folds by hand, where both stayed until the page was
+  reloaded; an Advanced fold a page stops holding open stays open until
+  folded, instead of snapping shut. The save answers with
+  `retention_owner_declared`. The first card sits 22 px under the tabs,
+  as on a project's page, not 46; a stored or new secret's field is as
+  tall as the inputs beside it (40 px, not 35); the disabled Type select
+  drops its chevron, so «S3 Compatible» fits a phone's half row instead
+  of «S3 Compati…». On a phone (480 px and under) every tab is 6 px
+  narrower, so the destination's three tabs fit at 390 px in Spanish
+  instead of scrolling 3 px with «Notificaciones» under the fade. A
+  required field's asterisk (`.rl-req`) does not wrap: «Odoo version *»
+  keeps it on its last word. The usage line's «GB (69.8%)» is no longer
+  a translatable term that depended on the template's indentation. The
+  fields under the destination's Advanced are listed once, and the
+  record grid (`.ic-rgrid`, `.ic-w-s|m|l`) is defined once, in
+  `settings_form.scss`, instead of in an instance's and, again, a host's
+  stylesheet; it looks the same.
 - **A fold's count of unsaved fields reads «1 changed» in the singular
   (#13).** The «Advanced» folds of Settings and of the pages that share
   them said «1 cambiados» in Spanish; the count now has a string for one

@@ -183,25 +183,6 @@
 // A switch that only applies while the one above it is on.
 .rl-ftoggle.ic-ftoggle--nested { padding-inline-start: 22px; }
 
-.ic-rgrid {
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 14px 18px;
-
-    > .ic-w-s { grid-column: span 3; }
-    > .ic-w-m { grid-column: span 6; }
-    > .ic-w-l { grid-column: 1 / -1; }
-
-    .rl-frow { margin: 0; min-width: 0; }
-
-    input:disabled,
-    select:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-        pointer-events: none;
-    }
-}
-
 // Resources: one half-width card per service, its two S fields side by side.
 .ic-res-grid {
     display: grid;
@@ -211,15 +192,9 @@
     .ic-rgrid > .ic-w-s { grid-column: span 6; }
 }
 
-// Phones and narrow windows (§9): S fields two by two, M and L whole rows,
-// the empty cells that kept a row's shape dropped, one service card a row.
+// Phones and narrow windows (§9): one service card a row. The record grid
+// itself (`.ic-rgrid`) is in settings_form.scss.
 @media (max-width: 900px) {
-    .ic-rgrid {
-        > .ic-w-s { grid-column: span 6; }
-        > .ic-w-m { grid-column: 1 / -1; }
-        > .ic-rgrid__gap { display: none; }
-    }
-
     .ic-res-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
