@@ -56,7 +56,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The panel's help text is easier to read, its switches and tab bars say
 what they are to a screen reader, and a tab bar that scrolls shows that
-it has more tabs.
+it has more tabs. A module update stopped while the instance's database
+is out of reach no longer leaves its container running.
 
 The update adds no table or column and needs no data migration; only the
 panel's assets change.
@@ -77,7 +78,20 @@ panel's assets change.
   and their tabs `role="tab"` with `aria-selected`. A tab bar wider than
   its box fades out on the side that has more tabs, following its own
   scroll; one that fits does not fade, nor does any bar in a browser
-  without scroll-driven animations. No text changes.
+  without scroll-driven animations. No text changes. The backup
+  backend's «Report on success» switch takes its name from its label
+  (`aria-labelledby`).
+
+### Fixed
+
+- **A module update stopped with the instance's database out of reach
+  leaves no container running (#120).** When `cron_guard.sh` cannot talk
+  to the database it runs the update unguarded, and that run had neither
+  a name for its container nor a trap: a stop made `docker compose run`
+  leave at once and the update went on in an orphan container. It now
+  starts the update the way the guarded run does, with a name, and its
+  trap removes the container on a stop; with no crons paused, the trap
+  leaves the database alone.
 
 ---
 
