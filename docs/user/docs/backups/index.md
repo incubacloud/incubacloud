@@ -193,7 +193,7 @@ Treat it like a master key — store a copy in your password manager.
 - [Restore to any minute](any-minute.md) with continuous recovery
 - Receive an email when a backup completes (Backend detail → Notifications)
 - Override the project-level backend on a single instance
-  (Instance detail → Settings → Backup backend)
+  (Instance detail → Backups → Destination)
 
 !!! note "Reference page is in progress"
     A full per-screen reference for the Backup backend UI is coming soon.
