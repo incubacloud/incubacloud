@@ -183,7 +183,7 @@ class BackupListExecutor(AbstractSSHExecutor):
             (
                 "List backups",
                 f"cd {d} && docker compose exec -T backup"
-                f" dup collection-status \"{dst}\"",
+                f" dup collection-status \"{dst}\" </dev/null",
             ),
         ]
 

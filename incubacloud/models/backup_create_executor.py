@@ -72,7 +72,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 (
                     "Create backup",
                     f"cd {d} && docker compose exec -T backup"
-                    f" /etc/periodic/daily/jobrunner",
+                    f" /etc/periodic/daily/jobrunner </dev/null",
                     {"detached": True},
                 ),
             ]
