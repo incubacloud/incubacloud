@@ -1870,8 +1870,10 @@ class CloudInstance(models.Model):
         not stop the delete for it (the credentials it needed were not on
         the host) says so here, so it reaches a person instead of a line
         of the job's log. An addon raises its alert from its override; an
-        alert on the instance goes with the record, so one that must
-        outlive it is raised on the host.
+        alert on the instance goes with the record, and one on the host
+        with the host, so one that must outlive both is raised on
+        neither. Asked in a savepoint, and an exception is logged rather
+        than failing the delete (``DeleteInstanceExecutor._teardown_left``).
 
         :param dict results: ``{label: {'stdout', 'exit_status'}}`` of the
             steps that ran
@@ -1894,6 +1896,10 @@ class CloudInstance(models.Model):
         same destination's credentials and the same cutoff
         (``purge_cutoff_at``), and the record only goes once every one of
         them is empty.
+
+        Also asked by ``delete_archived`` of an instance with no chain
+        path: one that names a prefix here is deleted by the job, not
+        unlinked outright.
 
         :return: one ``boto3+s3://`` or ``s3://bucket/path`` DST per
             prefix, on the instance's backup destination; none in core
@@ -4098,10 +4104,12 @@ class CloudInstance(models.Model):
         a container created for that one command.
 
         Two shortcuts, both safe. An instance archived without a
-        destination has no chain to delete, so it unlinks here. And an
-        instance whose host is gone cannot run a container anywhere,
-        which is a refusal rather than a licence to unlink: the objects
-        would outlive it.
+        destination has no chain to delete and, when no addon names a
+        further prefix of its copy either
+        (``_archived_copy_extra_prefixes``), it unlinks here; one that
+        names one goes through the job for it. And an instance whose
+        host is gone cannot run a container anywhere, which is a refusal
+        rather than a licence to unlink: the objects would outlive it.
 
         The first call stamps ``purge_cutoff_at`` and every later one
         reuses it, so a retry deletes exactly what the original call
@@ -4122,7 +4130,12 @@ class CloudInstance(models.Model):
         self.env["cloud.security.mixin"]._check_cloud_group("group_cloud_manager")
         if self.active:
             raise UserError(_("This instance is not archived."))
-        if not self.custom_backup_dst:
+        prefixes = [
+            dst for dst in (
+                self.custom_backup_dst, *self._archived_copy_extra_prefixes(),
+            ) if dst
+        ]
+        if not prefixes:
             # Archived with nothing behind it — the teardown destroyed
             # its data and no copy was ever taken.
             self.sudo().unlink()
@@ -4135,7 +4148,7 @@ class CloudInstance(models.Model):
                     "instance and try again — deleting the record alone "
                     "would leave the copy behind with nothing pointing "
                     "at it.",
-                    name=self.name, path=self.custom_backup_dst,
+                    name=self.name, path=prefixes[0],
                 )
             )
         if not self.purge_cutoff_at:
@@ -4169,20 +4182,32 @@ class CloudInstance(models.Model):
         No-op when there is nothing to freeze (no destination resolves)
         or when an explicit override is already set: an imported instance
         carries its real location there and must not be overwritten.
+
+        The destination is pinned too (``backup_backend_id``, when the
+        instance had none of its own): the copy is read and deleted with
+        that destination's credentials, and one inherited from the
+        project or the global default would follow a later change of
+        either to a bucket that does not hold it. Pinned, it also counts
+        among what keeps the destination from being deleted
+        (``cloud.backup.backend._deletion_blockers``).
         """
         self.ensure_one()
-        if self.custom_backup_dst:
-            return
+        vals = {}
+        backend = self.effective_backup_backend
+        if backend and not self.backup_backend_id:
+            vals["backup_backend_id"] = backend.id
         computed = self.instance_backup_dst
-        if not computed:
+        if computed and not self.custom_backup_dst:
+            vals["custom_backup_dst"] = computed
+        if not vals:
             return
         # As the platform: the copy's place is an administrator's field
         # (``_MANAGER_FIELDS``), frozen here at the end of a teardown that
         # was authorised when it was asked for.
-        self.sudo().write({"custom_backup_dst": computed})
+        self.sudo().write(vals)
         _logger.info(
-            "instance %s archived: backup path frozen at %s",
-            self.name, computed,
+            "instance %s archived: backup path frozen at %s on %s",
+            self.name, self.custom_backup_dst, backend.name,
         )
 
     @api.model
@@ -5326,6 +5351,32 @@ class CloudInstance(models.Model):
                         "Instance name '%(name)s' is invalid. It must start with "
                         "a lowercase letter or digit and contain only lowercase "
                         "letters, digits, hyphens and underscores (max 63 chars).",
+                        name=inst.name,
+                    )
+                )
+
+    @api.constrains("name")
+    def _check_name_not_a_recovery_prefix(self):
+        """Refuse a name that ends in ``-pitr``, on create and on rename.
+
+        An instance's continuous recovery archive is kept beside its
+        backups under its own name and ``-pitr`` (``incubacloud_pitr``):
+        ``x-pitr``'s chain and ``x``'s archive would share one prefix, and
+        emptying either would empty both. Checked here rather than in the
+        module, so it holds for instances created before it is installed;
+        only a name being written is checked, so an existing one goes on
+        working.
+
+        :raise ValidationError: for such a name
+        """
+        for inst in self:
+            if (inst.name or "").endswith("-pitr"):
+                raise ValidationError(
+                    _(
+                        "Instance name '%(name)s' cannot end in '-pitr': "
+                        "an instance's continuous recovery archive is kept "
+                        "under its name with that ending, beside the "
+                        "backups of the instance that has it.",
                         name=inst.name,
                     )
                 )

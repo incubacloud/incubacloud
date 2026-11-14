@@ -101,6 +101,23 @@ class TestDeleteArchivedGuards(_ArchivedPurgeBase):
         self.assertEqual(inst.delete_archived(), [])
         self.assertFalse(inst.exists())
 
+    def test_an_addon_s_prefix_without_a_chain_still_goes_through_the_job(self):
+        """Unlinked outright, nothing would be left that names it."""
+        inst = self._archive()
+        inst.sudo().custom_backup_dst = False
+        extra = "s3://pa-bucket/backups/default/pa-inst-extra"
+        with patch.object(
+            type(inst), "_archived_copy_extra_prefixes",
+            autospec=True, return_value=[extra],
+        ):
+            job_ids = inst.delete_archived()
+            self.assertTrue(job_ids)
+            self.assertTrue(inst.exists())
+            executor = self._executor(self.env["cloud.job"].browse(job_ids[0]))
+            contents = executor._env_contents()
+        self.assertEqual(list(contents), [executor._env_path()])
+        self.assertIn(f"DST={extra}\n", contents[executor._env_path()])
+
     def test_a_copy_with_no_host_left_is_refused(self):
         """Refusing is the safe answer: unlinking would strand the chain
         with nothing left that knows where it is."""

@@ -1,8 +1,11 @@
+import logging
 import shlex
 
 from .abstract_executor import AbstractSSHExecutor
 from .docker_prune_executor import build_cache_prune
 from .host_build_lock import HostBuildLockMixin
+
+_logger = logging.getLogger(__name__)
 
 #: Label of the purge step. The failure classifier looks the step up by
 #: this exact string, so it lives here rather than being repeated.
@@ -363,7 +366,7 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             # What an addon's step could not do and let the delete go on
             # without: the person reading the log is told here, and the
             # addon alerts (``cloud.instance._teardown_pre_steps_left``).
-            for left in inst._teardown_pre_steps_left(results, self.job):
+            for left in self._teardown_left(inst, results):
                 self._sys(f"⚠ {left}")
         host = inst.host_id
         keep = self._keeps_the_record()
@@ -378,6 +381,33 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             self._unlink_after_job_commit(inst, sudo=True)
         if host:
             host.refresh_observability_labels(reason="instance removed")
+
+    def _teardown_left(self, inst, results):
+        """Ask the addons what their steps left, never at the delete's cost.
+
+        The host is clean by now: an addon's report that fails must not
+        make the delete fail with it (``on_abort`` would put an instance
+        whose stack is gone back to 'deployed'). Asked in a savepoint, so
+        what it wrote before failing goes with it; the failure is logged
+        and written in the job's log.
+
+        :param inst: the deleted ``cloud.instance``
+        :param dict results: what the steps answered
+        :return: one message per thing left behind
+        :rtype: list
+        """
+        try:
+            with inst.env.cr.savepoint():
+                return list(inst._teardown_pre_steps_left(results, self.job))
+        except Exception as exc:  # noqa: BLE001 — logged, never fatal
+            _logger.exception(
+                "delete of %s: reporting what its steps left failed",
+                inst.name,
+            )
+            return [
+                "Could not tell what the delete's steps left behind "
+                f"({type(exc).__name__}: {exc}); see the server log.",
+            ]
 
     async def on_failure(self, results, errors):
         """Report the failure, and put the instance back out of 'deleting'.
