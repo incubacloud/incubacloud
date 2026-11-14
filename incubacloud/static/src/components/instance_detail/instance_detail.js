@@ -320,9 +320,13 @@ export class InstanceDetail extends JobsMixin(
       : 0;
   }
 
-  /** Put the page back as it was loaded or last saved. */
+  /**
+   * Put the page back as it was loaded or last saved. A repository's
+   * requirements still being fetched no longer reach the dependencies.
+   */
   discard() {
     if (!this._savedForm) return;
+    this._discards = (this._discards || 0) + 1;
     const {selectedTags, pipDeps, aptDeps, ...form} = JSON.parse(this._savedForm);
     restoreForm(this.state.form, form);
     Object.assign(this.state, {selectedTags, pipDeps, aptDeps});
@@ -331,6 +335,23 @@ export class InstanceDetail extends JobsMixin(
     if (this.state.langs.length) {
       const lang = this.state.langs.find((l) => l.id === this.state.form.odoo_initial_lang);
       this.state.langSearch = lang ? `${lang.name} (${lang.code})` : "";
+    }
+  }
+
+  /**
+   * Take a saved repository's pin as saved: freezing and unfreezing
+   * write it on the server at once.
+   *
+   * @param {number|null} repoId the repository's id; none for a new row
+   * @param {string} sha the commit it is pinned to, "" when unpinned
+   */
+  _pinSaved(repoId, sha) {
+    if (!repoId || !this._savedForm) return;
+    const saved = JSON.parse(this._savedForm);
+    const row = (saved.repos || []).find((r) => r.id === repoId);
+    if (row) {
+      row.commit_sha = sha;
+      this._savedForm = JSON.stringify(saved);
     }
   }
 
@@ -466,6 +487,9 @@ export class InstanceDetail extends JobsMixin(
 
     this._pollTimer = null;
     this._savedForm = null;
+    // How many times Discard ran: a requirements fetch started before
+    // one leaves the dependencies alone.
+    this._discards = 0;
 
     this.validator = useFormValidation(() => ({
       name: [required(_t("Instance name is required")), instanceName()],
@@ -1357,6 +1381,9 @@ export class InstanceDetail extends JobsMixin(
           instance_id: result.id,
         });
       } else {
+        // What was sent is what is saved; an edit made while the save
+        // was out stays unsaved.
+        const sent = JSON.stringify(this._editedValues());
         const saved = await rpc("/cloud/save_instance", {
           instance_id: this.props.instance_id,
           vals,
@@ -1372,7 +1399,7 @@ export class InstanceDetail extends JobsMixin(
         if (saved?.warning) {
           this.env.toast?.warning(saved.warning);
         }
-        this._savedForm = JSON.stringify(this._editedValues());
+        this._savedForm = sent;
       }
     } catch (e) {
       // The server's reason only when Odoo refused the save on purpose
@@ -1407,7 +1434,10 @@ export class InstanceDetail extends JobsMixin(
   }
 
   onRepoChange(idx, field, value) {
-    this.state.form.repos[idx][field] = value;
+    const repo = this.state.form.repos[idx];
+    repo[field] = value;
+    // RepoEditor pins and unpins a saved repository on the server.
+    if (field === "commit_sha") this._pinSaved(repo.id, value);
 
     if (field === "branch" && value && this.state.form.repos[idx].url) {
       this._fetchAndMergeRequirements(this.state.form.repos[idx].url, value);
@@ -1427,7 +1457,10 @@ export class InstanceDetail extends JobsMixin(
       });
       if (res.ok) {
         for (const repo of this.state.form.repos) {
-          if (res.results[repo.id]) repo.commit_sha = res.results[repo.id];
+          if (res.results[repo.id]) {
+            repo.commit_sha = res.results[repo.id];
+            this._pinSaved(repo.id, repo.commit_sha);
+          }
         }
       }
     } finally {
@@ -1447,13 +1480,17 @@ export class InstanceDetail extends JobsMixin(
     }
     for (const repo of this.state.form.repos) {
       repo.commit_sha = "";
+      this._pinSaved(repo.id, "");
     }
   }
 
   async _fetchAndMergeRequirements(url, branch) {
+    const discards = this._discards;
     try {
       const data = await rpc("/cloud/get_repo_requirements", {url, branch});
       if (!data.ok || !data.found || !data.content) return;
+      // Discarded meanwhile: the page is back as saved and stays so.
+      if (this._discards !== discards) return;
       const result = mergeRequirements(this.state.pipDeps, data.content, url, branch);
       this.state.pipDeps = result.content;
       if (result.conflicts.length) {

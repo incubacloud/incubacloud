@@ -243,9 +243,13 @@ export class ProjectDetail extends Component {
             : 0;
     }
 
-    /** Put the page back as it was loaded or last saved. */
+    /**
+     * Put the page back as it was loaded or last saved. A repository's
+     * requirements still being fetched no longer reach the dependencies.
+     */
     discard() {
         if (!this._savedForm) return;
+        this._discards = (this._discards || 0) + 1;
         const { selectedTags, repos, pipDeps, aptDeps, members, ...form } =
             JSON.parse(this._savedForm);
         restoreForm(this.state.form, form);
@@ -327,6 +331,9 @@ export class ProjectDetail extends Component {
         });
 
         this._savedForm = null;
+        // How many times Discard ran: a requirements fetch started before
+        // one leaves the dependencies alone.
+        this._discards = 0;
 
         this.validator = useFormValidation(() => ({
             name: [required(_t("Project name is required"))],
@@ -592,9 +599,12 @@ export class ProjectDetail extends Component {
     }
 
     async _fetchAndMergeRequirements(url, branch) {
+        const discards = this._discards;
         try {
             const data = await rpc("/cloud/get_repo_requirements", { url, branch });
             if (!data.ok || !data.found || !data.content) return;
+            // Discarded meanwhile: the page is back as saved and stays so.
+            if (this._discards !== discards) return;
             const result = mergeRequirements(this.state.pipDeps, data.content, url, branch);
             this.state.pipDeps = result.content;
             if (result.conflicts.length) {
@@ -671,17 +681,27 @@ export class ProjectDetail extends Component {
                 this._snapshotForm();
                 this.env.navigate("project_detail", { project_id: result.id });
             } else {
+                // What was sent is what is saved; an edit made while the
+                // save was out stays unsaved.
+                const sent = JSON.parse(JSON.stringify(this._editedValues()));
                 const saved = await rpc("/cloud/save_project", {
                     project_id: this.props.project_id,
                     vals,
                 });
                 // The rows' ids as saved, in the order sent: a new row
-                // gets its id, so pinning it finds it.
-                const rows = this.state.repos.filter(r => (r.url || "").trim());
-                (saved?.repos || []).forEach((r, i) => { if (rows[i]) rows[i].id = r.id; });
+                // gets its id, so pinning it finds it. The rows are
+                // matched by their key, as a row may be added or removed
+                // while the save is out.
+                const keyed = (sent.repos || []).filter(r => (r.url || "").trim());
+                (saved?.repos || []).forEach((r, i) => {
+                    if (!keyed[i]) return;
+                    keyed[i].id = r.id;
+                    const row = this.state.repos.find(x => x._key === keyed[i]._key);
+                    if (row) row.id = r.id;
+                });
                 this.state.project.name = this.state.form.name;
                 this.env.toast?.success(_t("Changes saved"));
-                this._snapshotForm();
+                this._savedForm = JSON.stringify(sent);
                 this.env.refreshAlertCount();
             }
         } catch (e) {

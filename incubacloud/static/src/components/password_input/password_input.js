@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState } from "@odoo/owl";
+import { Component, onWillUpdateProps, useEffect, useRef, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 
 let nextId = 0;
@@ -33,8 +33,12 @@ let nextId = 0;
  *                     shows: the field is controlled by its form, so a
  *                     field mounted again (a tab or a section shown again)
  *                     shows what the form will save. A value that is not
- *                     empty opens the field as Replace did. Every form
- *                     passes it; left out, the field reads as empty.
+ *                     empty opens the field as Replace did. A value the
+ *                     form changes by itself, not from the input (Discard
+ *                     putting the page back), sets the field as it would
+ *                     open on it: «Stored» again over a stored value when
+ *                     the form holds none. Every form passes it; left out,
+ *                     the field reads as empty.
  *   onChange  — (value: string) => void — called with the new value as the
  *               user types; called with "" when the field is cleared or
  *               the stored value kept (backend keeps the existing value
@@ -73,6 +77,26 @@ export class PasswordInput extends Component {
         // click and taken on the render that follows.
         this.focusNext = null;
         useEffect(() => this.restoreFocus(), () => [this.showsStored]);
+        // The value this field last gave the form, to tell a change the
+        // form made by itself from one typed here.
+        this._lastSent = this.value;
+        onWillUpdateProps((next) => this.followForm(next.value || ""));
+    }
+
+    /**
+     * Follow a value the form changed by itself: the field shows it as it
+     * would open on it, so a page put back as saved shows «Stored» (or an
+     * empty input when nothing is stored) instead of an open, empty
+     * Replace. A value this field sent is left as it is.
+     *
+     * @param {string} value what the form holds for the field now
+     */
+    followForm(value) {
+        if (value !== this._lastSent) {
+            this.state.replacing = !!value;
+            this.state.visible = false;
+        }
+        this._lastSent = value;
     }
 
     /**
@@ -150,12 +174,14 @@ export class PasswordInput extends Component {
         this.focusNext = "stored";
         this.state.replacing = false;
         this.state.visible = false;
+        this._lastSent = "";
         this.props.onChange("");
     }
 
     // ── Typing ──────────────────────────────────────────────────────────────
 
     onInput(ev) {
+        this._lastSent = ev.target.value;
         this.props.onChange(ev.target.value);
     }
 

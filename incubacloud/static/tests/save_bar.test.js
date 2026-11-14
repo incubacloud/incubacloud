@@ -1,12 +1,13 @@
-import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { click } from "@odoo/hoot-dom";
-import { animationFrame } from "@odoo/hoot-mock";
+import { animationFrame, beforeEach, describe, expect, test, tick } from "@odoo/hoot";
+import { click, edit, queryOne } from "@odoo/hoot-dom";
 import { Component, useState, xml } from "@odoo/owl";
-import { mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { allowTranslations, mountWithCleanup, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import {
     restoreForm, SaveBar, unsavedCount,
 } from "@incubacloud/components/settings_form/save_bar";
+import { PasswordInput } from "@incubacloud/components/password_input/password_input";
+import { relayIcon } from "@incubacloud/utils/icons";
 
 /**
  * SaveBar: the bar Settings and the records' pages share. It shows only
@@ -22,7 +23,11 @@ let page = null;
 class Page extends Component {
     static template = xml`
         <div>
-            <input class="name" t-att-value="state.form.name"/>
+            <input class="name" t-att-value="state.form.name"
+                   t-on-change="(ev) => { state.form.name = ev.target.value; }"/>
+            <div t-if="state.dialog" class="dialog" role="dialog" aria-modal="true">
+                <input class="in-dialog"/>
+            </div>
             <SaveBar count="count" saving="state.saving" canSave="state.canSave"
                      onSave.bind="save" onDiscard.bind="discard" reserveSpace="true"/>
         </div>`;
@@ -35,6 +40,7 @@ class Page extends Component {
             form: { name: "web", port: 8069, tags: [1] },
             saving: false,
             canSave: true,
+            dialog: false,
         });
         this.saved = JSON.parse(JSON.stringify(this.state.form));
         this.saves = 0;
@@ -181,6 +187,36 @@ describe("SaveBar — on the page", () => {
         expect(page.saves).toBe(0);
     });
 
+    test("Ctrl S takes the value of the field being typed in, which a change hands over", async () => {
+        await mountWithCleanup(Page, { noMainContainer: true });
+        const input = queryOne("input.name");
+        input.focus();
+        // Typed, not left yet: the form has not had the value.
+        input.value = "web2";
+        expect(page.state.form.name).toBe("web");
+        pressSave();
+        await tick();
+        expect(page.saves).toBe(1);
+        expect(page.saved.name).toBe("web2");
+        // The focus stays in the field.
+        expect(input).toBeFocused();
+    });
+
+    test("with a dialog open, Ctrl S leaves the page under it alone", async () => {
+        await mountWithCleanup(Page, { noMainContainer: true });
+        page.state.form.port = 1;
+        page.state.dialog = true;
+        await animationFrame();
+        queryOne("input.in-dialog").focus();
+        expect(pressSave().defaultPrevented).toBe(true);
+        await tick();
+        expect(page.saves).toBe(0);
+        page.state.dialog = false;
+        await animationFrame();
+        pressSave();
+        expect(page.saves).toBe(1);
+    });
+
     test("it stays to say a field needs attention", async () => {
         class Errors extends Component {
             static template = xml`<SaveBar count="0" errors="2" onSave="() => {}" onDiscard="() => {}"/>`;
@@ -190,5 +226,91 @@ describe("SaveBar — on the page", () => {
         await mountWithCleanup(Errors, { noMainContainer: true });
         expect(bar().textContent).toInclude("2 fields need attention");
         expect(document.querySelector(".ic-set-savebar__dot--err")).not.toBe(null);
+    });
+});
+
+/** The page with a password field on screen, to reach its form. */
+let secretPage = null;
+
+/**
+ * A record's page with a stored password, as an instance's, a host's and a
+ * backup destination's are: the form holds "" for it until a new one is
+ * typed, and the field shows what the form holds.
+ */
+class SecretPage extends Component {
+    static template = xml`
+        <div>
+            <PasswordInput id="'pw'" value="state.form.secret" hasValue="props.stored"
+                           onChange="(value) => { state.form.secret = value; }"/>
+            <SaveBar count="count" onSave="() => {}" onDiscard.bind="discard"/>
+        </div>`;
+    static components = { PasswordInput, SaveBar };
+    static props = { stored: Boolean };
+
+    /** Keep the form and what was saved. */
+    setup() {
+        this.state = useState({ form: { secret: "" } });
+        this.saved = { secret: "" };
+        secretPage = this;
+    }
+
+    /** @returns {number} the fields that differ from what was saved */
+    get count() {
+        return unsavedCount(this.state.form, this.saved);
+    }
+
+    /** Put the form back as saved. */
+    discard() {
+        restoreForm(this.state.form, this.saved);
+    }
+}
+
+describe("SaveBar — Discard and a password field", () => {
+    beforeEach(() => {
+        // The field's placeholder is translated, read here as text.
+        allowTranslations();
+        patchWithCleanup(rpc, { _rpc: () => Promise.resolve(false) });
+    });
+
+    /**
+     * Mount the page with its password stored or not.
+     *
+     * @param {boolean} stored whether a password is stored
+     */
+    async function mountSecret(stored) {
+        await mountWithCleanup(SecretPage, {
+            props: { stored },
+            env: { icon: relayIcon },
+            noMainContainer: true,
+        });
+    }
+
+    test("a stored one replaced, then discarded, reads Stored again", async () => {
+        await mountSecret(true);
+        await click(".ic-password-stored button");
+        await animationFrame();
+        await click("input#pw");
+        await edit("typed-then-discarded");
+        await animationFrame();
+        expect(secretPage.state.form.secret).toBe("typed-then-discarded");
+        await click(button("Discard"));
+        await animationFrame();
+        expect(secretPage.state.form.secret).toBe("");
+        expect(".ic-password-stored").toHaveText(/Stored/);
+        expect("input#pw").toHaveCount(0);
+        expect(bar()).toBe(null);
+    });
+
+    test("one not stored, typed, then discarded, is an empty input again", async () => {
+        await mountSecret(false);
+        await click("input#pw");
+        await edit("typed-then-discarded");
+        await animationFrame();
+        await click(button("Discard"));
+        await animationFrame();
+        expect(".ic-password-stored").toHaveCount(0);
+        expect("input#pw").toHaveValue("");
+        expect("input#pw").toHaveAttribute("placeholder", "Not set");
+        expect(".ic-password-hint").toHaveCount(0);
     });
 });

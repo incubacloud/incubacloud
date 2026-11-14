@@ -54,4 +54,9 @@
         }
         .ic-set-savebar__count { display: none; }
     }
+
+    // On a phone the bar wraps to two lines (the text, then the buttons).
+    @media (max-width: 560px) {
+        .ic-set-savebar-room { block-size: 104px; }
+    }
 }

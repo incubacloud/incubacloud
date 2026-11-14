@@ -261,12 +261,15 @@ export class BackupBackendDetail extends Component {
         this._snapshotForm();
         this.env.navigate("backup_backend_detail", {backend_id: result.id});
       } else {
+        // What was sent is what is saved; an edit made while the save
+        // was out stays unsaved.
+        const sent = JSON.stringify(vals);
         await rpc("/cloud/save_backup_backend", {
           backend_id: this.props.backend_id,
           vals,
         });
         this.state.backend.name = vals.name;
-        this._snapshotForm();
+        this._savedForm = sent;
         this.env.toast?.success(_t("Changes saved"));
       }
     } catch (e) {

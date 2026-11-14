@@ -1,4 +1,4 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { Deferred, describe, expect, test } from "@odoo/hoot";
 import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
@@ -1158,6 +1158,43 @@ describe("InstanceDetail — save", () => {
 });
 
 describe("InstanceDetail — the save bar", () => {
+    /**
+     * A validator that takes only the call Discard makes, and logs it.
+     *
+     * @returns {object} the double
+     */
+    const strictValidator = () => ({ clearErrors: () => expect.step("clearErrors") });
+
+    /**
+     * A stand-in for a saved instance with two saved repositories and a
+     * new row, taken as saved.
+     *
+     * @returns {object} the stand-in
+     */
+    function withRepos() {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.props = { instance_id: 7 };
+        comp.state = {
+            saving: false,
+            form: {
+                name: "web",
+                repos: [
+                    { id: 4, url: "https://x/a.git", branch: "19.0", commit_sha: "" },
+                    { id: 5, url: "https://x/b.git", branch: "19.0", commit_sha: "" },
+                    { id: null, url: "https://x/c.git", branch: "19.0", commit_sha: "" },
+                ],
+            },
+            selectedTags: [],
+            pipDeps: "",
+            aptDeps: "",
+            langs: [],
+            inst: { id: 7, name: "web" },
+        };
+        comp.validator = strictValidator();
+        comp._savedForm = JSON.stringify(comp._editedValues());
+        return comp;
+    }
+
     test("tags and dependencies count, and Discard puts the page back", () => {
         const comp = Object.create(InstanceDetail.prototype);
         comp.state = {
@@ -1167,7 +1204,7 @@ describe("InstanceDetail — the save bar", () => {
             aptDeps: "",
             langs: [],
         };
-        comp.validator = { clearErrors() {} };
+        comp.validator = strictValidator();
         comp._savedForm = JSON.stringify(comp._editedValues());
         expect(comp.unsavedCount).toBe(0);
         comp.state.form.domains.push({ name: "b.example" });
@@ -1181,5 +1218,83 @@ describe("InstanceDetail — the save bar", () => {
         expect(comp.state.selectedTags).toEqual([]);
         expect(comp.state.aptDeps).toBe("");
         expect(comp.hasUnsavedChanges).toBe(false);
+        expect.verifySteps(["clearErrors"]);
+    });
+
+    test("a pin the server stored is not unsaved, and Discard keeps it", () => {
+        const comp = withRepos();
+        // RepoEditor froze a saved repository on the server.
+        comp.onRepoChange(0, "commit_sha", "abc123");
+        expect(comp.unsavedCount).toBe(0);
+        expect(comp.hasUnsavedChanges).toBe(false);
+        // A new row's pin is only on the page until a save.
+        comp.onRepoChange(2, "commit_sha", "fff000");
+        expect(comp.unsavedCount).toBe(1);
+        comp.state.form.name = "web2";
+        comp.discard();
+        expect(comp.state.form.name).toBe("web");
+        expect(comp.state.form.repos[0].commit_sha).toBe("abc123");
+        expect(comp.state.form.repos[2].commit_sha).toBe("");
+        // Unfrozen on the server: not unsaved either.
+        comp.onRepoChange(0, "commit_sha", "");
+        expect(comp.unsavedCount).toBe(0);
+        expect.verifySteps(["clearErrors"]);
+    });
+
+    test("Freeze all and Unfreeze all write on the server: nothing is left unsaved", async () => {
+        const calls = [];
+        patchWithCleanup(rpc, {
+            _rpc: (route, params) => {
+                calls.push([route, params.repo_ids]);
+                return Promise.resolve(
+                    route === "/cloud/freeze_all_repos"
+                        ? { ok: true, results: { 4: "aaa111", 5: "bbb222" } }
+                        : { ok: true }
+                );
+            },
+        });
+        const comp = withRepos();
+        await comp.freezeAllRepos();
+        expect(comp.state.form.repos.map((r) => r.commit_sha)).toEqual(["aaa111", "bbb222", ""]);
+        expect(comp.unsavedCount).toBe(0);
+        comp.discard();
+        expect(comp.state.form.repos[1].commit_sha).toBe("bbb222");
+        await comp.unfreezeAllRepos();
+        expect(comp.unsavedCount).toBe(0);
+        expect(calls).toEqual([
+            ["/cloud/freeze_all_repos", [4, 5]],
+            ["/cloud/unfreeze_all_repos", [4, 5]],
+        ]);
+        expect.verifySteps(["clearErrors"]);
+    });
+
+    test("an edit made while the save is out stays unsaved", async () => {
+        const answer = new Deferred();
+        patchWithCleanup(rpc, { _rpc: () => answer });
+        const comp = withRepos();
+        comp.validator = { validate: () => ({ isValid: true, firstError: "" }) };
+        comp.env = { toast: { success: () => expect.step("saved") } };
+        comp.state.form.name = "web2";
+        const saving = comp.save();
+        comp.state.form.name = "web3";
+        answer.resolve({ ok: true });
+        await saving;
+        expect.verifySteps(["saved"]);
+        expect(comp.unsavedCount).toBe(1);
+        expect(JSON.parse(comp._savedForm).name).toBe("web2");
+    });
+
+    test("requirements fetched after Discard leave the dependencies as saved", async () => {
+        const answer = new Deferred();
+        patchWithCleanup(rpc, { _rpc: () => answer });
+        const comp = withRepos();
+        comp.state.form.name = "web2";
+        const fetching = comp._fetchAndMergeRequirements("https://x/a.git", "19.0");
+        comp.discard();
+        answer.resolve({ ok: true, found: true, content: "lxml\n" });
+        await fetching;
+        expect(comp.state.pipDeps).toBe("");
+        expect(comp.unsavedCount).toBe(0);
+        expect.verifySteps(["clearErrors"]);
     });
 });

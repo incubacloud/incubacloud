@@ -117,20 +117,28 @@ panel's assets and the Spanish catalogue change.
   `settings_form/save_bar.js` (`SaveBar`), which Settings keeps using:
   it floats at the bottom only while something is unsaved, says
   *Unsaved changes* and how many, and holds *Discard* and *Save
-  changes*; `Ctrl/⌘ S` saves while it is on the page. An instance's, a
-  host's, a project's and a backup destination's page use it in edit
-  mode instead of the *Save changes* button of their footer, on every
-  tab, and keep room under their content so it covers nothing.
-  *Discard* puts the page back as it was loaded or last saved. *Delete*,
-  *Test Connection* and *Purge old logs* stay at the end of the page,
-  outside the bar; a new record is still created with the button of its
-  footer (*Create Instance*, *Create Host*, …). The button keeps its
-  name and the notice *Changes saved* does not change. What counts as
-  unsaved, which the warning on leaving reads too, now takes in the
-  tags and the dependencies kept beside an instance's form, and on a
-  project also its repositories and members, which a save already sent;
-  a pin that freezing or unfreezing wrote on the server at once is not
-  an unsaved change.
+  changes*. `Ctrl/⌘ S` saves while it is on the page, with the value of
+  the field being typed in (the field hands it over as leaving it
+  would), and does nothing under a dialog. An instance's, a host's, a
+  project's and a backup destination's page use it in edit mode instead
+  of the *Save changes* button of their footer, on every tab, and keep
+  room under their content so it covers nothing, two lines' worth on a
+  phone. *Discard* puts the page back as it was loaded or last saved: a
+  password field replaced shows «Stored» again (an empty input where
+  nothing is stored), a host's key file input is emptied, and the
+  requirements of a branch that arrive afterwards leave the
+  dependencies alone. A save takes as saved what it sent, so an edit
+  made while it is out stays unsaved. *Delete*, *Test Connection* and
+  *Purge old logs* stay at the end of the page, outside the bar; a new
+  record is still created with the button of its footer (*Create
+  Instance*, *Create Host*, …). The button keeps its name and the notice
+  *Changes saved* does not change. What counts as unsaved, which the
+  warning on leaving reads too, now takes in the tags and the
+  dependencies kept beside an instance's form, and on a project also its
+  repositories and members, which a save already sent. A pin that
+  freezing or unfreezing a saved repository wrote on the server at once,
+  on an instance or a project, is not an unsaved change, and *Discard*
+  keeps it: the next save no longer sends the repository unpinned.
 
 ### Fixed
 
