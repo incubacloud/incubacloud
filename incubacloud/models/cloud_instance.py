@@ -1839,6 +1839,47 @@ class CloudInstance(models.Model):
         self.ensure_one()
         return []
 
+    def _teardown_pre_steps_left(self, results, job):
+        """What the addon steps of a delete that succeeded left behind.
+
+        Called by the delete, on its durable cursor, once the teardown
+        succeeded and before the record goes: a step of
+        ``_teardown_pre_steps`` that could not do all of its work and must
+        not stop the delete for it (the credentials it needed were not on
+        the host) says so here, so it reaches a person instead of a line
+        of the job's log. An addon raises its alert from its override; an
+        alert on the instance goes with the record, so one that must
+        outlive it is raised on the host.
+
+        :param dict results: ``{label: {'stdout', 'exit_status'}}`` of the
+            steps that ran
+        :param job: the delete's ``cloud.job``
+        :return: one message per thing left behind, for the job's log;
+            none in core
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
+    def _archived_copy_extra_prefixes(self):
+        """Other prefixes of this archived instance's copy, emptied with it.
+
+        Deleting an archived instance empties its duplicity chain
+        (``custom_backup_dst``) before the record goes
+        (``PurgeArchivedBackupsExecutor``). An addon that keeps part of
+        the instance's copy under a prefix of its own, beside the chain,
+        names it here: the same job empties it in the same way, with the
+        same destination's credentials and the same cutoff
+        (``purge_cutoff_at``), and the record only goes once every one of
+        them is empty.
+
+        :return: one ``boto3+s3://`` or ``s3://bucket/path`` DST per
+            prefix, on the instance's backup destination; none in core
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
     def _after_stack_rendered(self):
         """Called once a deploy or rebuild has shipped the current stack.
 

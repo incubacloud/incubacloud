@@ -28,6 +28,7 @@ setup() {
     : > "$DOCKER_CALLS"
     : > "$DOCKER_STDIN"
     echo 0 > "$DOCKER_EXIT"
+    export DOCKER_EXITS="$TMP/exits"
 
     # Stub docker: record argv and whatever was piped in, then exit with
     # whatever the test asked for. ``compose config --services`` answers
@@ -40,6 +41,14 @@ if [ "$1" = "compose" ] && [ "$2" = "config" ]; then
     exit 0
 fi
 cat >> "$DOCKER_STDIN"
+# ``$DOCKER_EXITS``, when a test writes it, answers call by call: its
+# first line is consumed by this call. Otherwise ``$DOCKER_EXIT``.
+if [ -s "${DOCKER_EXITS:-}" ]; then
+    head -n 1 "$DOCKER_EXITS" > "$DOCKER_EXITS.this"
+    tail -n +2 "$DOCKER_EXITS" > "$DOCKER_EXITS.rest"
+    mv "$DOCKER_EXITS.rest" "$DOCKER_EXITS"
+    exit "$(cat "$DOCKER_EXITS.this")"
+fi
 exit "$(cat "$DOCKER_EXIT")"
 STUB
     chmod +x "$TMP/bin/docker"
@@ -254,6 +263,73 @@ STUB
     run bash "$ARCHIVED_PURGE" "$TMP/purge.env"
     [ "$status" -eq 1 ]
     [[ "$output" == *"Usage: backup_purge_archived.sh"* ]]
+}
+
+# ── backup_purge_archived.sh: further prefixes of the same copy ──────
+
+# A further environment file, for one more prefix of the copy.
+_more_env_file() {
+    printf 'DST=s3://bucket/path/proj/inst-%s\n' "$1" > "$TMP/purge-$1.env"
+    printf '%s\n' "$TMP/purge-$1.env"
+}
+
+@test "archived purge empties every prefix it is handed, each in its own container" {
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'docker run' "$DOCKER_CALLS")" -eq 2 ]
+    grep -q -- "--env-file $env_file " "$DOCKER_CALLS"
+    grep -q -- "--env-file $more " "$DOCKER_CALLS"
+}
+
+@test "archived purge stops at the first prefix that fails, with its code" {
+    # The record stays for the next run; what is left goes then.
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '21\n0\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 21 ]
+    [ "$(grep -c 'docker run' "$DOCKER_CALLS")" -eq 1 ]
+}
+
+@test "archived purge fails when a further prefix fails after the first emptied" {
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '0\n125\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 22 ]
+}
+
+@test "archived purge is already empty only when every prefix was" {
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '10\n0\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 0 ]
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '10\n10\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 10 ]
+}
+
+@test "archived purge deletes every environment file, failure included" {
+    env_file="$(_env_file)"
+    more="$(_more_env_file pitr)"
+    printf '0\n22\n' > "$DOCKER_EXITS"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$more"
+    [ "$status" -eq 22 ]
+    [ ! -f "$env_file" ]
+    [ ! -f "$more" ]
+}
+
+@test "archived purge deletes nothing when a further environment never arrived" {
+    env_file="$(_env_file)"
+    run bash "$ARCHIVED_PURGE" "$env_file" "some/image:tag" "$TMP/never.env"
+    [ "$status" -eq 20 ]
+    [ ! -s "$DOCKER_CALLS" ]
+    [ ! -f "$env_file" ]
 }
 
 # ── The two must delete the same way ─────────────────────────────────

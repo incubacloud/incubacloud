@@ -2,7 +2,8 @@
 
 **Severity:** critical · **When:** a `pitr_failing`, `pitr_archive_lagging`
 or `pitr_base_missing` alert; a restore to a moment that never ended; an
-instance that moved host or changed backend and is no longer archiving.
+instance that moved host or changed backend and is no longer archiving; a
+`pitr_prefix_left` alert, an archive a delete left in the bucket.
 
 How it works, in one paragraph (the rest is in
 [architecture.md](../architecture.md#continuous-recovery-incubacloud_pitr)):
@@ -52,6 +53,7 @@ db$ SELECT i.name, a.code, a.level, a.message, a.create_date
 | `pitr_failing` (warning) | *The cancelled restore … is still being undone* | The host had not finished undoing within the job's wait; a job follows it. Leave the instance alone until it ends. |
 | `pitr_archive_lagging` | *is behind archiving* | The log or the files are more than three objectives late. Usually transient. |
 | `pitr_base_missing` | *first base copy failed* / *no base copy for 36 h* | Nothing (or nothing recent) to restore from. |
+| `pitr_prefix_left` (warning, on the host) | *The continuous recovery archive of … was left in the bucket* | The instance was deleted while its host had no `.docker/pitr.env`: its archive is still in the bucket. See §5. |
 
 ## 2. Diagnose on the host
 
@@ -147,18 +149,47 @@ rebuild that follows a backend change). What to expect:
 
 - The card says *Switching on…* for a few minutes, then `OK · Archiving`
   with the window starting at the new base copy.
-- **The old archive stays in the bucket** under the old cluster's
-  prefix until the backup retention expires it. A restore to a moment
-  before the move is not offered by the card: do it by hand with
-  `wal-g` against the old prefix, on a copy, never on the live data.
+- **A move: the old cluster's archive stays** under its own prefix
+  (`<prefix>/<old system id>`) until it leaves the backup window; the
+  daily base copy's housekeeping then purges it (`pitr_previous_clusters`).
+  A restore to a moment before the move is not offered by the card: do it
+  by hand with `wal-g` against the old prefix, on a copy, never on the
+  live data.
 - A move that rolled back: the source's archive continues; the
   destination's partial one expires.
+- **A change of backend, or of the project's folder: the old prefix stays
+  where it was, and nothing empties it.** The housekeeping reaches only the
+  prefix the instance archives to now, with the destination it has now,
+  and a delete empties that one. Once its window has passed and nobody
+  needs a restore to before the change, empty the old prefix by hand as in
+  §5.
+
+## 5. An archive left in the bucket
+
+A delete empties the instance's recovery prefix (`<folder>/<name>-pitr`):
+a live instance's from its host, with `.docker/pitr.env`; an archived
+one's in the job that deletes it for good (`purge_archived_backups`),
+after its duplicity chain. With no `pitr.env` on the host the delete goes
+on and raises `pitr_prefix_left` on the host, naming the prefix
+(`s3://<bucket>/<path>`). Empty it with the backup destination's
+credentials, from a machine that has them (they are never printed):
+
+```
+$ export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
+$ rclone purge ":s3,provider=Other,env_auth=true,endpoint='<endpoint>':<bucket>/<path>"
+```
+
+Check first that `<path>` ends in `<name>-pitr` and names the deleted
+instance: a purge of the bucket, or of the folder, takes every instance on
+the destination. Then resolve the alert. Switching continuous recovery
+off empties nothing: the archive stays until the instance is deleted.
 
 ## Rollback
 
 Switching continuous recovery off from the card stops archiving and
 drops the PostgreSQL settings on the next rebuild; nothing else changes
-for the instance. The nightly backups are independent of it.
+for the instance, and its archive stays in the bucket until the instance
+is deleted. The nightly backups are independent of it.
 
 ## See also
 

@@ -359,6 +359,12 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         for code in self._purge_alert_targets():
             Alert.resolve_alert(code, host=self._host(), instance=inst)
         self._sys(f"✓ Instance '{inst.name}' removed from host.")
+        if self._owns_instance_lifecycle:
+            # What an addon's step could not do and let the delete go on
+            # without: the person reading the log is told here, and the
+            # addon alerts (``cloud.instance._teardown_pre_steps_left``).
+            for left in inst._teardown_pre_steps_left(results, self.job):
+                self._sys(f"⚠ {left}")
         host = inst.host_id
         keep = self._keeps_the_record()
         # The unlink is the one thing the hook must not do itself: it

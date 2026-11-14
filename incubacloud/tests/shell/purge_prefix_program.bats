@@ -202,6 +202,23 @@ _run_program() {
     [ -z "$(_remaining)" ]
 }
 
+@test "a prefix beside the chain empties itself and nothing of the chain" {
+    # Continuous recovery's ``<name>-pitr``, handed as ``s3://``: its
+    # name starts with the chain's, and neither one may take the other.
+    _seed \
+        "backups/proj/inst/full=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst-pitr/7698/wal=2026-01-01T00:00:00+00:00" \
+        "backups/proj/inst-pitr/fs/current/x=2026-01-02T00:00:00+00:00" \
+        "backups/proj/inst-pitr/9001/successor=2026-03-01T00:00:00+00:00"
+    export DST="s3://bucket/backups/proj/inst-pitr"
+    export PURGE_BEFORE="2026-02-01T00:00:00+00:00"
+    run _run_program
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"removed 2 object(s)"* ]]
+    [ "$(_remaining)" = "$(printf '%s\n' \
+        backups/proj/inst-pitr/9001/successor backups/proj/inst/full)" ]
+}
+
 @test "a bare bucket is still refused with a cutoff set" {
     _seed "anything=2026-01-01T00:00:00+00:00"
     export DST="boto3+s3://bucket"

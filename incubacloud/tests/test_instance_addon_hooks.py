@@ -7,6 +7,7 @@ where it adds instead (``cloud.instance._extra_services`` and friends).
 Pinned here: without an addon nothing changes, and what an addon adds
 never replaces what the platform renders.
 """
+import asyncio
 from unittest.mock import patch
 
 import yaml
@@ -83,6 +84,10 @@ class TestAddonHooks(TransactionCase):
         self.assertEqual(self.inst._compose_override_fragments(), {})
         self.assertEqual(self.inst._extra_env_files(), {})
         self.assertEqual(self.inst._teardown_pre_steps("~/d", False), [])
+        self.assertEqual(
+            self.inst._teardown_pre_steps_left({}, self.env["cloud.job"]), [],
+        )
+        self.assertEqual(self.inst._archived_copy_extra_prefixes(), [])
         self.assertIsNone(self.inst._after_restore_hook("restore"))
 
     def test_without_an_addon_no_step_is_added(self):
@@ -161,6 +166,26 @@ class TestAddonHooks(TransactionCase):
                 self._executor(MoveCleanupSourceExecutor, "move_cleanup_source"),
             )
         self.assertNotIn("Purge sidecar data", labels)
+
+    def test_what_a_teardown_step_left_is_written_in_the_delete_s_log(self):
+        """Once the delete succeeded, before the record goes."""
+        results = {"Purge sidecar data": {"stdout": "left", "exit_status": 0}}
+        with (
+            patch.object(
+                self.Instance, "_teardown_pre_steps_left",
+                return_value=["the sidecar's data is left"],
+            ) as hook,
+            patch.object(DeleteInstanceExecutor, "_sys", autospec=True) as log,
+            patch.object(
+                self.Instance, "_finalize_removal", autospec=True,
+            ) as finalize,
+        ):
+            executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+            asyncio.run(executor.on_success(results))
+            hook.assert_called_once_with(results, executor.job)
+            lines = [call.args[1] for call in log.call_args_list]
+            self.assertIn("⚠ the sidecar's data is left", lines)
+            finalize.assert_called_once()
 
     def test_each_env_file_move_must_succeed(self):
         files = {".docker/a.env": "A=1\n", ".docker/b.env": "B=1\n"}

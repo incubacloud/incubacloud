@@ -17,9 +17,12 @@ leaves its container running. A stored password, secret or token reads
 «Stored» with Replace across the panel, as in Settings, and an
 instance's, a host's, a project's and a backup destination's page save
 with Settings' save bar. Switching a notification channel off deletes its
-bot token or signing secret.
+bot token or signing secret. Deleting an archived instance for good
+empties its continuous recovery archive too, and a delete that cannot
+empty it says so with an alert.
 
-The update adds no table or column. Its one data migration, 1.0.229's
+The update adds one column, `pitr_archived_prefix` on instances
+(`incubacloud_pitr` 1.0.15 comes with it). Its one data migration, 1.0.229's
 post-migrate, deletes the Telegram bot tokens saved without a chat ID and
 the webhook secrets left without a URL; the rest is the panel's assets
 and the Spanish catalogue.
@@ -292,6 +295,43 @@ and the Spanish catalogue.
   «Ended»: one refused after Sign out everywhere or another database's
   sign-out, one the guard closed or would close on its next request, and
   one revoked. Only the files the user's own trace names are read.
+- **Deleting an archived instance empties its continuous recovery archive
+  too.** The recovery prefix (`<folder>/<name>-pitr`, beside the duplicity
+  one) was emptied when a live instance was deleted, but an instance
+  archived and then deleted for good (`delete_archived`, which a closed
+  account's archived copies go through too) had only its duplicity chain
+  emptied: the archive stayed in the bucket with nothing left that knew
+  where it was. `purge_archived_backups` now empties every prefix of the
+  copy in the same job. Core asks the instance for the others
+  (`_archived_copy_extra_prefixes`, none in core) and hands
+  `backup_purge_archived.sh` one environment file per prefix after the
+  chain's; each is emptied by the same deletion program, in a container
+  of its own, with the destination's credentials and the delete's cutoff
+  (`PURGE_BEFORE`), so a later instance of the same name keeps what it
+  wrote since. The first prefix that fails stops the others with its exit
+  code and the record stays for the next attempt; the job reads «already
+  empty» only when every prefix was. `incubacloud_pitr` names the recovery
+  prefix of an instance that had an archive (on, or a cluster recorded:
+  switching off keeps both), frozen when the instance was archived
+  (`pitr_archived_prefix`), as core freezes the chain's path, because the
+  computed one follows the project, which may change or go meanwhile; an
+  instance archived before this has it computed when it is deleted, and
+  one brought back forgets it. The archive's own extension, not the
+  executor's: a Python override of the executor would apply to every
+  database of the server, installed or not.
+- **A delete that leaves the recovery archive in the bucket says so.** With
+  no `.docker/pitr.env` on the host the delete's purge printed «the prefix
+  is left in the bucket» and the delete succeeded with nothing else to
+  show. The line is now marked (`IC_PITR_PREFIX_LEFT`): the delete writes a
+  ⚠ line in its log and `incubacloud_pitr` raises `pitr_prefix_left`
+  (warning) on the host, since the instance goes, naming the prefix to
+  empty by hand (RB-23 §5). The delete is not refused: that would leave an
+  instance nobody can delete until a rebuild writes the file again. Core
+  calls the new hook `_teardown_pre_steps_left` once a delete succeeded,
+  before the record goes; it answers nothing in core. RB-23 §4 no longer
+  says the retention expires an old archive after a change of backend:
+  nothing empties the old prefix then, nor after a change of the
+  project's folder.
 
 ### Tests
 

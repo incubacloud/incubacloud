@@ -13,7 +13,7 @@ other way round) and the refusals: nothing here is allowed to remove a
 record while its copy still exists.
 """
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -190,6 +190,34 @@ class TestPurgeArchivedExecutor(_ArchivedPurgeBase):
         self.assertIn("AWS_ACCESS_KEY_ID=AKIAPA", env_text)
         self.assertIn("AWS_SECRET_ACCESS_KEY=shh", env_text)
         self.assertIn("AWS_ENDPOINT_URL=https://pa.example.net", env_text)
+
+    def test_core_purges_the_chain_alone(self):
+        executor = self._executor(self._job())
+        self.assertEqual(executor._env_paths(), [executor._env_path()])
+
+    def test_an_addon_s_prefix_is_purged_with_the_chain(self):
+        """One more environment, its own DST, the same credentials and
+        cutoff; its file goes to the script after the image."""
+        extra = "s3://pa-bucket/backups/default/pa-inst-extra"
+        with patch.object(
+            type(self.instance), "_archived_copy_extra_prefixes",
+            autospec=True, return_value=[extra],
+        ):
+            job = self._job()
+            inst = job.with_context(active_test=False).instance_id
+            executor = self._executor(job)
+            chain, more = executor._env_paths()
+            contents = executor._env_contents()
+            command = executor.get_commands()[0][1]
+        self.assertEqual(sorted(contents), sorted([chain, more]))
+        self.assertIn(f"DST={inst.custom_backup_dst}\n", contents[chain])
+        self.assertIn(f"DST={extra}\n", contents[more])
+        cutoff = f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}\n"
+        for content in contents.values():
+            self.assertIn(cutoff, content)
+            self.assertIn("AWS_SECRET_ACCESS_KEY=shh\n", content)
+        self.assertLess(command.index(chain), command.index(more))
+        self.assertNotIn("shh", command)
 
     def test_the_command_passes_no_secret_as_an_argument(self):
         """Arguments are visible in ``ps`` to every account on the host
