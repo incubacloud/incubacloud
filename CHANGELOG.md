@@ -59,7 +59,8 @@ what they are to a screen reader, and a tab bar that scrolls shows that
 it has more tabs. A module update stopped while the instance's database
 is out of reach no longer leaves its container running. A stored
 password, secret or token reads «Stored» with Replace across the panel,
-as in Settings.
+as in Settings, and an instance's, a host's, a project's and a backup
+destination's page save with Settings' save bar.
 
 The update adds no table or column and needs no data migration; only the
 panel's assets and the Spanish catalogue change.
@@ -110,6 +111,26 @@ panel's assets and the Spanish catalogue change.
   notification channel unfolded) still shows the new value it will save,
   where it came back empty while the form kept what was typed. An empty
   value still keeps the stored one on save.
+
+- **The records' pages save with Settings' save bar (#13).** The bar
+  Settings drew in `settings.js` is a component of its own,
+  `settings_form/save_bar.js` (`SaveBar`), which Settings keeps using:
+  it floats at the bottom only while something is unsaved, says
+  *Unsaved changes* and how many, and holds *Discard* and *Save
+  changes*; `Ctrl/⌘ S` saves while it is on the page. An instance's, a
+  host's, a project's and a backup destination's page use it in edit
+  mode instead of the *Save changes* button of their footer, on every
+  tab, and keep room under their content so it covers nothing.
+  *Discard* puts the page back as it was loaded or last saved. *Delete*,
+  *Test Connection* and *Purge old logs* stay at the end of the page,
+  outside the bar; a new record is still created with the button of its
+  footer (*Create Instance*, *Create Host*, …). The button keeps its
+  name and the notice *Changes saved* does not change. What counts as
+  unsaved, which the warning on leaving reads too, now takes in the
+  tags and the dependencies kept beside an instance's form, and on a
+  project also its repositories and members, which a save already sent;
+  a pin that freezing or unfreezing wrote on the server at once is not
+  an unsaved change.
 
 ### Fixed
 

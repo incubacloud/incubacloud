@@ -30,6 +30,7 @@ import { _t } from "@web/core/l10n/translation";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { confirmVia } from "../../utils/use_confirm";
+import { SaveBar } from "../settings_form/save_bar";
 import {
     blocksOf, fieldProblem, sectionShown, settingField, settingsMenu,
 } from "./settings_registry";
@@ -81,7 +82,7 @@ export function snapshot(form) {
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";
-    static components = { IcConfirmDialog, SettingsSearch };
+    static components = { IcConfirmDialog, SaveBar, SettingsSearch };
     static props = {
         // The section the URL names; General when none.
         section: { type: String, optional: true },
@@ -236,23 +237,6 @@ export class Settings extends Component {
     /** @returns {number} how many fields show an error */
     get errorCount() {
         return Object.values(this.store.errors).filter(Boolean).length;
-    }
-
-    /** @returns {string} what the save bar says */
-    get barText() {
-        const errors = this.errorCount;
-        if (errors) {
-            return errors === 1
-                ? _t("1 field needs attention")
-                : _t("%s fields need attention", errors);
-        }
-        return _t("Unsaved changes");
-    }
-
-    /** @returns {string} how many settings the bar would save */
-    get barCount() {
-        const n = this.changedCount;
-        return n === 1 ? _t("1 setting") : _t("%s settings", n);
     }
 
     /**
@@ -465,19 +449,12 @@ export class Settings extends Component {
     }
 
     /**
-     * ``/`` focuses the search unless typing in a field; ``Ctrl/⌘ S``
-     * saves the page.
+     * ``/`` focuses the search unless typing in a field. ``Ctrl/⌘ S`` is
+     * the save bar's.
      *
      * @param {KeyboardEvent} ev
      */
     onKeydown(ev) {
-        if ((ev.ctrlKey || ev.metaKey) && (ev.key === "s" || ev.key === "S")) {
-            ev.preventDefault();
-            if (this.isDirty) {
-                this.save();
-            }
-            return;
-        }
         if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey) {
             return;
         }

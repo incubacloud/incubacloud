@@ -9,6 +9,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { IcMenu } from "../ic_menu/ic_menu";
+import { restoreForm, SaveBar, unsavedCount } from "../settings_form/save_bar";
 import { agoText, parseUTC } from "../../utils/dates";
 import { ACTIVE_STATES, announceJob, cancelPrompt, holdReason, jobStateText, jobTone } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
@@ -78,7 +79,7 @@ export class HostDetail extends Component {
     static template = "incubacloud.HostDetail";
     static components = {
         PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
-        HostHardeningModal, IcMenu, HostBoard,
+        HostHardeningModal, IcMenu, HostBoard, SaveBar,
     };
 
     /** Rows per page for the server-paginated audit log. */
@@ -283,6 +284,29 @@ export class HostDetail extends Component {
 
     _snapshotForm() {
         this._savedForm = this._currentFormKey();
+    }
+
+    /** @returns {number} how many fields of the form, and the tags, are unsaved */
+    get unsavedCount() {
+        if (!this._savedForm) return 0;
+        const now = JSON.parse(this._currentFormKey());
+        const saved = JSON.parse(this._savedForm);
+        return unsavedCount({ ...now.form, tags: now.tags }, { ...saved.form, tags: saved.tags });
+    }
+
+    /**
+     * Put the form and the tags back as they were loaded or last saved.
+     * The text typed in the whitelist box and the generated key stay.
+     */
+    discard() {
+        if (!this._savedForm) return;
+        const saved = JSON.parse(this._savedForm);
+        restoreForm(this.state.form, saved.form, ["newWhitelistEntry", "generated_key"]);
+        const known = [...this.state.selectedTags, ...this.state.allTags];
+        this.state.selectedTags = saved.tags
+            .map((id) => known.find((t) => t.id === id))
+            .filter(Boolean);
+        this.validator.clearErrors();
     }
 
     // ── Data loading ─────────────────────────────────────────────────────

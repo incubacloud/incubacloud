@@ -478,12 +478,9 @@
 
                         </div>
 
-                        <!-- Footer -->
-                        <div class="rl-formfoot">
-                            <t t-if="hasUnsavedChanges">
-                                <span class="rl-ff-hint ic-unsaved-hint">Unsaved changes</span>
-                            </t>
-                            <t t-elif="!isValid">
+                        <!-- Footer (create): the button that creates it -->
+                        <div t-if="isCreate" class="rl-formfoot">
+                            <t t-if="!isValid">
                                 <span class="rl-ff-hint">
                                     <span class="rl-req">*</span> Name and Odoo version are required.
                                 </span>
@@ -491,25 +488,38 @@
                             <t t-else="">
                                 <span class="rl-ff-hint"/>
                             </t>
-                            <t t-if="!isCreate and canDeleteProject">
-                                <button class="rl-btn rl-btn-danger" t-on-click="deleteProject">
-                                    <t t-out="env.icon('trash', 15)"/> Delete
-                                </button>
-                            </t>
                             <button class="rl-btn rl-btn-primary"
                                     t-att-disabled="!isValid || state.saving || null"
                                     t-on-click="save">
                                 <t t-if="state.saving">
                                     <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
                                     <t t-if="isCreate">Creating…</t>
-                                    <t t-else="">Saving…</t>
                                 </t>
                                 <t t-else="">
                                     <t t-if="isCreate">Create Project</t>
-                                    <t t-else="">Save changes</t>
                                 </t>
                             </button>
                         </div>
+                        <!-- End of the page (edit): what is wrong, and Delete;
+                             saving is the save bar's -->
+                        <div t-elif="!isValid or canDeleteProject" class="rl-formfoot">
+                            <t t-if="!isValid">
+                                <span class="rl-ff-hint">
+                                    <span class="rl-req">*</span> Name and Odoo version are required.
+                                </span>
+                            </t>
+                            <t t-else="">
+                                <span class="rl-ff-hint"/>
+                            </t>
+                            <t t-if="canDeleteProject">
+                                <button class="rl-btn rl-btn-danger" t-on-click="deleteProject">
+                                    <t t-out="env.icon('trash', 15)"/> Delete
+                                </button>
+                            </t>
+                        </div>
+                        <SaveBar t-if="!isCreate" count="unsavedCount" saving="state.saving"
+                                 canSave="isValid" onSave.bind="save" onDiscard.bind="discard"
+                                 reserveSpace="true"/>
 
                     </div>
                 </div>

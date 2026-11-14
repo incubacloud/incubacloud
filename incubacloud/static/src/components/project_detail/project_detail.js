@@ -6,6 +6,7 @@ import { RepoEditor } from "../repo_editor/repo_editor";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
+import { restoreForm, SaveBar, unsavedCount } from "../settings_form/save_bar";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
@@ -157,7 +158,7 @@ export class ProjectDetail extends Component {
         pipFocus:   { type: Object, optional: true },
     };
     static template = "incubacloud.ProjectDetail";
-    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect };
+    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect, SaveBar };
 
     get isCreate() { return !this.props.project_id; }
 
@@ -210,7 +211,68 @@ export class ProjectDetail extends Component {
     }
 
     get hasUnsavedChanges() {
-        return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+        return this._savedForm && JSON.stringify(this._editedValues()) !== this._savedForm;
+    }
+
+    /**
+     * What the person edits on the page and a save sends: the form, and
+     * the tags, repositories, dependencies and members kept beside it.
+     *
+     * @returns {object} one entry per thing the save bar counts
+     */
+    _editedValues() {
+        return {
+            ...this.state.form,
+            selectedTags: this.state.selectedTags,
+            repos: this.state.repos,
+            pipDeps: this.state.pipDeps,
+            aptDeps: this.state.aptDeps,
+            members: this.state.members,
+        };
+    }
+
+    /** Take what is on the page as saved. */
+    _snapshotForm() {
+        this._savedForm = JSON.stringify(this._editedValues());
+    }
+
+    /** @returns {number} how many things on the page are unsaved */
+    get unsavedCount() {
+        return this._savedForm
+            ? unsavedCount(this._editedValues(), JSON.parse(this._savedForm))
+            : 0;
+    }
+
+    /** Put the page back as it was loaded or last saved. */
+    discard() {
+        if (!this._savedForm) return;
+        const { selectedTags, repos, pipDeps, aptDeps, members, ...form } =
+            JSON.parse(this._savedForm);
+        restoreForm(this.state.form, form);
+        Object.assign(this.state, { selectedTags, repos, pipDeps, aptDeps, members });
+        this.validator.clearErrors();
+        // The language box shows a name, not the id the form keeps.
+        if (this.state.langs.length) {
+            const lang = this.state.langs.find((l) => l.id === this.state.form.odoo_initial_lang);
+            this.state.langSearch = lang ? `${lang.name} (${lang.code})` : "";
+        }
+    }
+
+    /**
+     * Take a saved repository's pin as saved: freezing and unfreezing
+     * write it on the server at once.
+     *
+     * @param {number|null} repoId the repository's id; none for a new row
+     * @param {string} sha the commit it is pinned to, "" when unpinned
+     */
+    _pinSaved(repoId, sha) {
+        if (!repoId || !this._savedForm) return;
+        const saved = JSON.parse(this._savedForm);
+        const row = (saved.repos || []).find((r) => r.id === repoId);
+        if (row) {
+            row.commit_sha = sha;
+            this._savedForm = JSON.stringify(saved);
+        }
     }
 
     get isValid() {
@@ -303,7 +365,7 @@ export class ProjectDetail extends Component {
                     backup_backend_id: null,
                     pr_reviews_enabled: false,
                 };
-                this._savedForm = JSON.stringify(this.state.form);
+                this._snapshotForm();
             } else {
                 const [p, backends, archived] = await Promise.all([
                     rpc("/cloud/get_project", { project_id: this.props.project_id }),
@@ -344,7 +406,7 @@ export class ProjectDetail extends Component {
                 this.state.aptDeps = p.apt_dependencies || "";
                 this.state.members = p.member_ids || [];
                 this.state.archived = archived;
-                this._savedForm = JSON.stringify(this.state.form);
+                this._snapshotForm();
             }
         } catch (e) {
             this.state.error = this.isCreate ? _t("Failed to load form data.") : _t("Failed to load project.");
@@ -484,6 +546,7 @@ export class ProjectDetail extends Component {
     onRepoChange(key, field, value) {
         const repo = this.state.repos.find(r => r._key === key);
         if (repo) repo[field] = value;
+        if (repo && field === "commit_sha") this._pinSaved(repo.id, value);
 
         if (field === 'branch' && value && repo && repo.url) {
             this._fetchAndMergeRequirements(repo.url, value);
@@ -502,7 +565,10 @@ export class ProjectDetail extends Component {
             });
             if (res.ok) {
                 for (const repo of this.state.repos) {
-                    if (res.results[repo.id]) repo.commit_sha = res.results[repo.id];
+                    if (res.results[repo.id]) {
+                        repo.commit_sha = res.results[repo.id];
+                        this._pinSaved(repo.id, repo.commit_sha);
+                    }
                 }
             }
         } finally {
@@ -521,6 +587,7 @@ export class ProjectDetail extends Component {
         }
         for (const repo of this.state.repos) {
             repo.commit_sha = "";
+            this._pinSaved(repo.id, "");
         }
     }
 
@@ -601,7 +668,7 @@ export class ProjectDetail extends Component {
                 // nav guard doesn't fire on this programmatic
                 // transition (matches the pattern HostDetail.save()
                 // already uses for the new-host create path).
-                this._savedForm = JSON.stringify(this.state.form);
+                this._snapshotForm();
                 this.env.navigate("project_detail", { project_id: result.id });
             } else {
                 const saved = await rpc("/cloud/save_project", {
@@ -614,7 +681,7 @@ export class ProjectDetail extends Component {
                 (saved?.repos || []).forEach((r, i) => { if (rows[i]) rows[i].id = r.id; });
                 this.state.project.name = this.state.form.name;
                 this.env.toast?.success(_t("Changes saved"));
-                this._savedForm = JSON.stringify(this.state.form);
+                this._snapshotForm();
                 this.env.refreshAlertCount();
             }
         } catch (e) {

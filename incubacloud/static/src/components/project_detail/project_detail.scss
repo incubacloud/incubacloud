@@ -162,16 +162,6 @@
     &:hover { color: var(--rl-red); background: rgba(var(--rl-red-rgb), 0.1); }
 }
 
-.ic-unsaved-hint {
-    color: $state-warning-text;
-    animation: ic-fade-in 0.3s ease;
-}
-
-@keyframes ic-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
 // ── Archived instances tab ───────────────────────────────────────────────────
 // A row is three claims side by side — what it was, what its copy is, and
 // where that copy lives — because an archived instance is only worth what

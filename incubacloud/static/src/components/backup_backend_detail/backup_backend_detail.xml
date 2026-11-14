@@ -443,7 +443,8 @@
 
                     </div>
 
-                    <!-- Footer -->
+                    <!-- Footer: Delete and Test Connection act at once; a new
+                         destination is created here -->
                     <div class="rl-formfoot ic-detail-footer">
                         <t t-if="!isNew">
                             <button
@@ -468,6 +469,7 @@
                             </button>
                         </t>
                         <button
+              t-if="isNew"
               class="rl-btn rl-btn-primary ic-btn-save"
               t-att-disabled="state.saving"
               t-on-click="save"
@@ -478,14 +480,15 @@
                   style="margin-right:5px"
                 />
                                 <t t-if="isNew">Creating…</t>
-                                <t t-else="">Saving…</t>
                             </t>
                             <t t-else="">
                                 <t t-if="isNew">Create Destination</t>
-                                <t t-else="">Save changes</t>
                             </t>
                         </button>
                     </div>
+                    <!-- Saving an existing destination is the save bar's -->
+                    <SaveBar t-if="!isNew" count="unsavedCount" saving="state.saving"
+                             onSave.bind="save" onDiscard.bind="discard" reserveSpace="true"/>
 
                 </div>
             </t>

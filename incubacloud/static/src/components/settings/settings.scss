@@ -305,44 +305,6 @@
         font-size: 13px;
     }
 
-    // ── The save bar ─────────────────────────────────────────────────────────
-    .ic-set-savebar {
-        position: fixed;
-        z-index: 40;
-        inset-block-end: 18px;
-        inset-inline-end: 24px;
-        inline-size: calc(100vw - 48px);
-        max-inline-size: 920px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        padding: 10px 12px 10px 16px;
-        border-radius: var(--rl-r);
-        background: var(--rl-savebar-bg);
-        color: var(--rl-savebar-fg);
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
-
-        .rl-btn-ghost {
-            color: var(--rl-savebar-fg);
-            border-color: var(--rl-savebar-line);
-            background: transparent;
-            &:hover { background: var(--rl-savebar-hover); }
-        }
-    }
-
-    .ic-set-savebar__dot {
-        inline-size: 8px;
-        block-size: 8px;
-        border-radius: 50%;
-        background: var(--rl-savebar-dirty);
-        &--err { background: var(--rl-savebar-err); }
-    }
-
-    .ic-set-savebar__text { font-weight: 600; font-size: 13.5px; }
-    .ic-set-savebar__count { font-size: 12px; color: var(--rl-savebar-muted); }
-    .ic-set-savebar__gap { flex: 1 1 auto; }
-
     // ── Phones and narrow windows ────────────────────────────────────────────
     @media (max-width: 900px) {
         .ic-set { display: block; background: none; }
@@ -370,13 +332,6 @@
         }
 
         .ic-set-crumb { display: none; }
-
-        .ic-set-savebar {
-            inset-inline: 8px;
-            inset-block-end: 8px;
-            inline-size: auto;
-        }
-        .ic-set-savebar__count { display: none; }
     }
 
     // ── What the GitHub App's steps draw inside their block ──────────────────

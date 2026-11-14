@@ -71,19 +71,8 @@
             </div>
 
             <!-- The save bar: only with something unsaved on the page -->
-            <div t-if="isDirty or errorCount" class="ic-set-savebar" role="region" aria-label="Unsaved changes">
-                <span t-att-class="'ic-set-savebar__dot' + (errorCount ? ' ic-set-savebar__dot--err' : '')" aria-hidden="true"/>
-                <span class="ic-set-savebar__text" aria-live="polite" t-esc="barText"/>
-                <span class="ic-set-savebar__count"><t t-esc="barCount"/> · Ctrl S saves</span>
-                <span class="ic-set-savebar__gap"/>
-                <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-set-savebar__discard"
-                        t-att-disabled="state.saving || null" t-on-click="discard">Discard</button>
-                <button type="button" class="rl-btn rl-btn-primary rl-btn-sm"
-                        t-att-disabled="state.saving || null" t-on-click="save">
-                    <t t-if="state.saving"><i class="fa fa-spinner fa-spin" aria-hidden="true"/> Saving…</t>
-                    <t t-else="">Save changes</t>
-                </button>
-            </div>
+            <SaveBar count="changedCount" errors="errorCount" saving="state.saving"
+                     onSave.bind="save" onDiscard.bind="discard"/>
 
         </div>
 
