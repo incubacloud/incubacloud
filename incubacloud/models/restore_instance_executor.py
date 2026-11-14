@@ -671,9 +671,9 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         (#118). The TERMs are ignored for the two commands between the
         opening and the removal, and given back to curl before it is
         executed (an ignored signal would stay ignored in it). Sent only
-        to the address the link names: no redirect is followed. Every value is one quoted word:
-        the address is the requester's, and a quote in it ended the
-        quoting it was written in (28-oct-2026).
+        to the address the link names: no redirect is followed. Every
+        value is one quoted word: the address is the requester's, and a
+        quote in it ended the quoting it was written in (28-oct-2026).
 
         And it writes no more than ``_download_limit``, what the disk
         free leaves (``restore_space``): curl refuses a larger file it

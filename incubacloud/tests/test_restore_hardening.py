@@ -803,10 +803,11 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
         self.assertEqual(self.executor._download_limit, limit)
         words = shlex.split(command)
         self.assertEqual(words[words.index("--max-filesize") + 1], str(limit))
-        self.assertEqual(words[:2], ["bash", "-c"])
-        self.assertIn('ulimit -f "$1"', words[2])
-        self.assertIn('trap "" XFSZ', words[2])
-        self.assertEqual(words[4], str(limit // 1024 + 1))
+        i = words.index("bash")
+        self.assertEqual(words[i:i + 2], ["bash", "-c"])
+        self.assertIn('ulimit -f "$1"', words[i + 2])
+        self.assertIn('trap "" XFSZ', words[i + 2])
+        self.assertEqual(words[i + 4], str(limit // 1024 + 1))
         self.assertEqual(words[words.index("curl") + 1], "-q")
 
     def test_lab_a_server_that_never_stops_sending_stops_at_the_limit(self):
@@ -832,6 +833,10 @@ class TestARestoreTakesNoMoreDiskThanIsFree(RestoreFixture, TransactionCase):
             _label, command, _opts = self.executor._download_command(remote)
         for send, status in ((10 * 1024 * 1024, 23), (10 * 1024, 0)):
             with self.subTest(send=send):
+                # Each run removes the config it is given.
+                Path(self.executor._curl_config_path()).write_text(
+                    'url = "x"\n', encoding="utf-8",
+                )
                 done = subprocess.run(
                     ["bash", "-c", command], cwd=tmp, check=False,
                     capture_output=True,
