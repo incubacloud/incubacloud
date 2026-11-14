@@ -933,7 +933,18 @@
                              panel from the metrics central. -->
                         <t t-if="state.tab === 'metrics' and canViewMetrics">
                             <div class="ic-host-metrics">
-                                <HostBoard hostId="props.host_id" canConfigure="canConfigureObservability"/>
+                                <div class="ic-mb-seg ic-host-metrics-view" role="group" aria-label="Metrics view">
+                                    <button type="button" t-att-class="'ic-mb-segbtn' + (state.metricsView === 'performance' ? ' active' : '')"
+                                            t-att-aria-pressed="state.metricsView === 'performance' ? 'true' : 'false'"
+                                            data-view="performance"
+                                            t-on-click="() => { state.metricsView = 'performance'; }">Performance</button>
+                                    <button type="button" t-att-class="'ic-mb-segbtn' + (state.metricsView === 'security' ? ' active' : '')"
+                                            t-att-aria-pressed="state.metricsView === 'security' ? 'true' : 'false'"
+                                            data-view="security"
+                                            t-on-click="() => { state.metricsView = 'security'; }">Security</button>
+                                </div>
+                                <HostSecurityBoard t-if="state.metricsView === 'security'" hostId="props.host_id" canConfigure="canConfigureObservability"/>
+                                <HostBoard t-else="" hostId="props.host_id" canConfigure="canConfigureObservability"/>
                             </div>
                         </t>
 

@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- A server's Security view (host_security_board.js). The tables
+         are drawn only from an answer that carries them: the server
+         sends them to whoever manages servers alone. -->
+    <t t-name="incubacloud.HostSecurityBoard">
+        <div class="ic-mb ic-sb">
+            <t t-if="!state.board">
+                <t t-call="incubacloud.ChartBoardStates"/>
+            </t>
+            <t t-elif="viewState === 'unavailable'">
+                <div class="rl-stub ic-mb-stub" data-reason="unavailable">
+                    <span class="rl-si"><t t-out="env.icon('shield', 46)"/></span>
+                    <h3>Security logs are not available on this panel yet</h3>
+                    <p>Its servers do not send their security logs until the panel's provider allows them.</p>
+                </div>
+            </t>
+            <t t-elif="viewState === 'off'">
+                <div class="rl-stub ic-mb-stub" data-reason="off">
+                    <span class="rl-si"><t t-out="env.icon('shield', 46)"/></span>
+                    <h3>This server does not send its security logs</h3>
+                    <p>Turn on Send security logs in the server's Connection tab: its SSH sign-ins, sudo, fail2ban's bans, the changes to its sensitive files and its instances' failed web logins then show here.</p>
+                </div>
+            </t>
+            <t t-else="">
+                <t t-call="incubacloud.ChartBoardBusy"/>
+                <!-- What is happening -->
+                <section class="ic-mb-section" aria-labelledby="ic-sb-now">
+                    <div class="ic-mb-head">
+                        <h3 class="ic-mb-h" id="ic-sb-now">What is happening?</h3>
+                        <t t-call="incubacloud.ChartBoardRange"/>
+                    </div>
+                    <div t-att-class="'rl-card ic-mb-diag ic-mb-tone-' + diagnosis.tone" role="status">
+                        <t t-if="!diagnosis.current">
+                            <p class="ic-mb-diag-text">The window shown ends in the past: the diagnosis reads only the last minutes up to now. Reset the zoom to see it.</p>
+                        </t>
+                        <t t-else="">
+                            <div class="ic-mb-diag-head">
+                                <span t-att-class="'ic-mb-dot ic-mb-dot-' + diagnosis.tone" aria-hidden="true"/>
+                                <strong t-esc="diagnosisHeading"/>
+                            </div>
+                            <ul class="ic-mb-findings">
+                                <t t-foreach="diagnosis.findings" t-as="f" t-key="f.code">
+                                    <li t-att-class="'ic-mb-finding ic-mb-tone-' + f.tone" t-att-data-code="f.code" t-esc="f.text"/>
+                                </t>
+                            </ul>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- Is the defence working? -->
+                <section class="ic-mb-section" aria-labelledby="ic-sb-defense">
+                    <h3 class="ic-mb-h" id="ic-sb-defense">Is the defence working?</h3>
+                    <ul class="rl-card ic-sb-defense">
+                        <t t-foreach="defenseItems" t-as="d" t-key="d.key">
+                            <li t-att-class="'ic-mb-finding ic-mb-tone-' + d.tone" t-att-data-defense="d.key" t-esc="d.text"/>
+                        </t>
+                    </ul>
+                </section>
+
+                <!-- SSH -->
+                <section class="ic-mb-section" aria-labelledby="ic-sb-ssh">
+                    <h3 class="ic-mb-h" id="ic-sb-ssh">SSH attempts and bans</h3>
+                    <p class="ic-mb-sub">
+                        <t t-if="isZoomed">Zoomed window.</t>
+                        <t t-else="">Drag across a chart to zoom.</t>
+                    </p>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')" t-att-aria-busy="state.loading ? 'true' : 'false'">
+                        <t t-foreach="cardsOf('ssh')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                        <t t-if="hasTables">
+                            <div class="rl-card ic-mb-card ic-mb-wide" data-table="ssh_sources">
+                                <div class="ic-mb-cardhead">
+                                    <span class="rl-ovtitle">Addresses with the most failed connections</span>
+                                    <span class="ic-mb-hint">last 24 hours</span>
+                                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-sb-lines"
+                                            t-on-click="() => this.showLines('sshd')">See lines</button>
+                                </div>
+                                <p t-if="tableError('ssh_sources')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('ssh_sources')"/>
+                                <t t-elif="table('ssh_sources').rows.length">
+                                    <div class="ic-mb-tablebox">
+                                        <table class="rl-table ic-mb-table">
+                                            <thead><tr><th>Address</th><th>Country</th><th>Attempts</th><th>Banned now</th><th>Last attempt</th></tr></thead>
+                                            <tbody>
+                                                <t t-foreach="table('ssh_sources').rows" t-as="row" t-key="row.address">
+                                                    <tr t-att-class="row.blocked ? '' : 'ic-sb-open'">
+                                                        <td class="ic-mb-cardtitle ic-mb-mono" t-esc="row.address"/>
+                                                        <td><span class="ic-mb-k">Country</span><t t-esc="countryText(row.country)"/></td>
+                                                        <td class="ic-mb-num"><span class="ic-mb-k">Attempts</span><t t-esc="fmtNumber(row.attempts)"/></td>
+                                                        <td><span class="ic-mb-k">Banned now</span><t t-esc="blockedText(row.blocked)"/></td>
+                                                        <td class="ic-mb-num"><span class="ic-mb-k">Last attempt</span><t t-esc="fmtAt(row.last)"/></td>
+                                                    </tr>
+                                                </t>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <p class="ic-mb-dbline">
+                                        <span>Users tried:</span>
+                                        <t t-foreach="table('ssh_sources').users" t-as="u" t-key="u.user">
+                                            <span class="ic-sb-user"><span class="ic-mb-mono" t-esc="u.user"/> <t t-esc="fmtNumber(u.attempts)"/></span>
+                                        </t>
+                                        <span t-if="distinctUsersText" class="ic-mb-hint" t-esc="distinctUsersText"/>
+                                    </p>
+                                    <p t-if="sampleText('ssh_sources')" class="ic-mb-hint ic-sb-sample" t-esc="sampleText('ssh_sources')"/>
+                                </t>
+                                <p t-else="" class="ic-mb-empty">No failed SSH connection in the last 24 hours.</p>
+                            </div>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- Sign-ins, sudo, changes -->
+                <section class="ic-mb-section" aria-labelledby="ic-sb-activity">
+                    <h3 class="ic-mb-h" id="ic-sb-activity">Sign-ins, sudo and changes</h3>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <t t-foreach="cardsOf('activity')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                        <t t-if="hasTables">
+                            <div class="rl-card ic-mb-card ic-mb-wide" data-table="accepted">
+                                <div class="ic-mb-cardhead">
+                                    <span class="rl-ovtitle">Sign-ins over SSH</span>
+                                    <span class="ic-mb-hint">last 7 days · newest first</span>
+                                </div>
+                                <p t-if="tableError('accepted')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('accepted')"/>
+                                <div t-elif="table('accepted').rows.length" class="ic-mb-tablebox">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead><tr><th>When</th><th>User</th><th>From</th><th>Country</th><th>Key</th><th>Whose</th></tr></thead>
+                                        <tbody>
+                                            <t t-foreach="table('accepted').rows" t-as="row" t-key="row_index">
+                                                <tr t-att-class="attributionBad(row.attribution) ? 'ic-mb-blocked' : ''">
+                                                    <td class="ic-mb-cardtitle ic-mb-num" t-esc="fmtAt(row.at)"/>
+                                                    <td class="ic-mb-mono"><span class="ic-mb-k">User</span><t t-esc="row.user"/></td>
+                                                    <td class="ic-mb-mono"><span class="ic-mb-k">From</span><t t-esc="row.address"/></td>
+                                                    <td><span class="ic-mb-k">Country</span><t t-esc="countryText(row.country)"/></td>
+                                                    <td><span class="ic-mb-k">Key</span><t t-esc="keyText(row.key)"/></td>
+                                                    <td t-att-data-attribution="row.attribution"><span class="ic-mb-k">Whose</span><t t-esc="attributionText(row.attribution)"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p t-else="" class="ic-mb-empty">Nobody signed in over SSH in the last 7 days.</p>
+                            </div>
+                            <div class="rl-card ic-mb-card" data-table="sudo">
+                                <div class="ic-mb-cardhead">
+                                    <span class="rl-ovtitle">sudo</span>
+                                    <span class="ic-mb-hint">last 7 days · the program, never its arguments</span>
+                                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-sb-lines"
+                                            t-on-click="() => this.showLines('sudo')">See lines</button>
+                                </div>
+                                <p t-if="tableError('sudo')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('sudo')"/>
+                                <div t-elif="table('sudo').rows.length" class="ic-mb-tablebox">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead><tr><th>When</th><th>User</th><th>Program</th><th>Whose</th></tr></thead>
+                                        <tbody>
+                                            <t t-foreach="table('sudo').rows" t-as="row" t-key="row_index">
+                                                <tr t-att-class="attributionBad(row.attribution) ? 'ic-mb-blocked' : ''">
+                                                    <td class="ic-mb-cardtitle ic-mb-num" t-esc="fmtAt(row.at)"/>
+                                                    <td class="ic-mb-mono"><span class="ic-mb-k">User</span><t t-esc="row.user"/><t t-if="row.run_as"> → <t t-esc="row.run_as"/></t></td>
+                                                    <td class="ic-mb-mono ic-mb-query"><span class="ic-mb-k">Program</span><t t-esc="row.program or '—'"/><t t-if="row.refused"> (refused)</t></td>
+                                                    <td t-att-data-attribution="row.attribution"><span class="ic-mb-k">Whose</span><t t-esc="attributionText(row.attribution)"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p t-else="" class="ic-mb-empty">No sudo command in the last 7 days.</p>
+                            </div>
+                            <div class="rl-card ic-mb-card" data-table="changes">
+                                <div class="ic-mb-cardhead">
+                                    <span class="rl-ovtitle">Changes to watched files</span>
+                                    <span class="ic-mb-hint">last 7 days</span>
+                                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-sb-lines"
+                                            t-on-click="() => this.showLines('auditd')">See lines</button>
+                                </div>
+                                <p t-if="tableError('changes')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('changes')"/>
+                                <div t-elif="table('changes').rows.length" class="ic-mb-tablebox">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead><tr><th>When</th><th>File</th><th>By</th><th>Whose</th></tr></thead>
+                                        <tbody>
+                                            <t t-foreach="table('changes').rows" t-as="row" t-key="row_index">
+                                                <tr t-att-class="attributionBad(row.attribution) ? 'ic-mb-blocked' : ''">
+                                                    <td class="ic-mb-cardtitle ic-mb-num" t-esc="fmtAt(row.at)"/>
+                                                    <td class="ic-mb-mono ic-mb-query"><span class="ic-mb-k">File</span><t t-esc="row.file or '—'"/></td>
+                                                    <td><span class="ic-mb-k">By</span><t t-esc="whoText(row.who)"/><t t-if="row.program"> · <span class="ic-mb-mono" t-esc="row.program"/></t></td>
+                                                    <td t-att-data-attribution="row.attribution"><span class="ic-mb-k">Whose</span><t t-esc="attributionText(row.attribution)"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p t-else="" class="ic-mb-empty">No change to the watched files in the last 7 days.</p>
+                            </div>
+                        </t>
+                    </div>
+                </section>
+
+                <!-- HTTP and web logins -->
+                <section class="ic-mb-section" aria-labelledby="ic-sb-web">
+                    <h3 class="ic-mb-h" id="ic-sb-web">HTTP and web logins of the instances</h3>
+                    <p t-if="state.board.behind_cdn" class="ic-mb-sub" data-note="cdn">This server answers through a CDN: its proxy sees the CDN's addresses, not the visitors', and the web-login jail is off. The figures per instance still count.</p>
+                    <div t-att-class="'ic-mb-grid' + (state.loading ? ' is-loading' : '')">
+                        <div class="rl-card ic-mb-card ic-mb-wide" data-panel="http">
+                            <div class="ic-mb-cardhead"><span class="rl-ovtitle">Per instance</span><span class="ic-mb-hint">means over the range shown</span></div>
+                            <p t-if="panelError('http')" class="ic-mb-empty ic-mb-panel-error" t-esc="panelError('http')"/>
+                            <div t-elif="httpRows.length" class="ic-mb-tablebox">
+                                <table class="rl-table ic-mb-table">
+                                    <thead><tr><th>Instance</th><th>Requests</th><th>4xx</th><th>5xx</th><th>Failed web logins</th></tr></thead>
+                                    <tbody>
+                                        <t t-foreach="httpRows" t-as="row" t-key="row.id">
+                                            <tr>
+                                                <td class="ic-mb-cardtitle" t-esc="instanceName(row)"/>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Requests</span><t t-esc="fmtValue('rps', row.rps)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">4xx</span><t t-esc="fmtValue('rps', row.r4xx)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">5xx</span><t t-esc="fmtValue('rps', row.r5xx)"/></td>
+                                                <td class="ic-mb-num"><span class="ic-mb-k">Failed web logins</span><t t-esc="fmtNumber(row.weblogin or 0)"/></td>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p t-else="" class="ic-mb-empty">No instance of this server answered requests in this window.</p>
+                        </div>
+                        <t t-foreach="cardsOf('collector')" t-as="c" t-key="c.key">
+                            <t t-call="incubacloud.ChartBoardCard"/>
+                        </t>
+                        <div class="rl-card ic-mb-card ic-mb-wide" data-block="weblogin">
+                            <div class="ic-mb-cardhead">
+                                <span class="rl-ovtitle">Web logins</span>
+                                <span class="ic-mb-hint">failed attempts in the range shown</span>
+                            </div>
+                            <ul class="ic-sb-figures">
+                                <li><strong t-esc="fmtNumber(weblogin.bans || 0)"/> <span>bans of the server</span></li>
+                                <li><strong t-esc="fmtNumber(weblogin.unbans || 0)"/> <span>lifted</span></li>
+                                <li><strong t-esc="fmtNumber(weblogin.unidentified || 0)"/> <span>attempts no instance was identified for</span></li>
+                                <li t-if="webloginDistinctText" data-figure="distinct" t-esc="webloginDistinctText"/>
+                            </ul>
+                            <p t-if="weblogin.error" class="ic-mb-empty ic-mb-panel-error">The addresses could not be counted: the central's logs did not answer.</p>
+                            <t t-if="hasTables">
+                                <div class="ic-sb-filter">
+                                    <label for="ic-sb-instance">Instance</label>
+                                    <select id="ic-sb-instance" class="rl-input ic-sb-select" t-on-change="onFilter">
+                                        <option value="0" t-att-selected="!state.instanceId">Every instance (24 hours)</option>
+                                        <t t-foreach="filterInstances" t-as="inst" t-key="inst.id">
+                                            <option t-att-value="inst.id" t-att-selected="state.instanceId === inst.id" t-esc="inst.name"/>
+                                        </t>
+                                    </select>
+                                    <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm ic-sb-lines"
+                                            t-on-click="() => this.showLines('weblogin')">See lines</button>
+                                </div>
+                                <h4 class="ic-mb-h5">Addresses with the most attempts <span class="ic-mb-hint" t-esc="webloginWindowText"/></h4>
+                                <p t-if="tableError('weblogin_sources')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('weblogin_sources')"/>
+                                <div t-elif="table('weblogin_sources').rows.length" class="ic-mb-tablebox" data-table="weblogin_sources">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead><tr><th>Address</th><th>Country</th><th>Attempts</th><th>Instances</th><th>Banned now</th></tr></thead>
+                                        <tbody>
+                                            <t t-foreach="table('weblogin_sources').rows" t-as="row" t-key="row.address">
+                                                <tr>
+                                                    <td class="ic-mb-cardtitle ic-mb-mono" t-esc="row.address"/>
+                                                    <td><span class="ic-mb-k">Country</span><t t-esc="countryText(row.country)"/></td>
+                                                    <td class="ic-mb-num"><span class="ic-mb-k">Attempts</span><t t-esc="fmtNumber(row.attempts)"/></td>
+                                                    <td class="ic-mb-query"><span class="ic-mb-k">Instances</span><t t-esc="instancesText(row.instances)"/></td>
+                                                    <td><span class="ic-mb-k">Banned now</span><t t-esc="blockedText(row.blocked)"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p t-else="" class="ic-mb-empty" data-empty="weblogin_sources">No failed web login in this window.</p>
+                                <p t-if="sampleText('weblogin_sources')" class="ic-mb-hint ic-sb-sample" t-esc="sampleText('weblogin_sources')"/>
+                                <h4 class="ic-mb-h5">Bans (last 7 days)</h4>
+                                <p t-if="tableError('weblogin_bans')" class="ic-mb-empty ic-mb-panel-error" t-esc="tableError('weblogin_bans')"/>
+                                <div t-elif="table('weblogin_bans').rows.length" class="ic-mb-tablebox" data-table="weblogin_bans">
+                                    <table class="rl-table ic-mb-table">
+                                        <thead><tr><th>When</th><th>Address</th><th>Country</th><th>Instances tried before</th></tr></thead>
+                                        <tbody>
+                                            <t t-foreach="table('weblogin_bans').rows" t-as="row" t-key="row_index">
+                                                <tr>
+                                                    <td class="ic-mb-cardtitle ic-mb-num" t-esc="fmtAt(row.at)"/>
+                                                    <td class="ic-mb-mono"><span class="ic-mb-k">Address</span><t t-esc="row.address"/></td>
+                                                    <td><span class="ic-mb-k">Country</span><t t-esc="countryText(row.country)"/></td>
+                                                    <td class="ic-mb-query"><span class="ic-mb-k">Instances tried before</span><t t-esc="instancesText(row.instances)"/></td>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p t-else="" class="ic-mb-empty" data-empty="weblogin_bans">The web-login jail banned no address in the last 7 days.</p>
+                            </t>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- The lines a manager asked for -->
+                <section t-if="state.lines !== null" class="ic-mb-section" aria-labelledby="ic-sb-lines" data-section="lines">
+                    <div class="ic-mb-head">
+                        <h3 class="ic-mb-h" id="ic-sb-lines">Lines: <t t-esc="state.linesTitle"/></h3>
+                        <button type="button" class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="hideLines">Close</button>
+                    </div>
+                    <p t-if="state.linesLoading" class="ic-mb-empty">Reading…</p>
+                    <p t-elif="state.linesError" class="ic-mb-empty ic-mb-panel-error" t-esc="state.linesError"/>
+                    <pre t-elif="state.lines.length" class="ic-mb-trace ic-sb-pre"><t t-foreach="state.lines" t-as="l" t-key="l_index"><t t-esc="fmtAt(l.at)"/>  <t t-esc="l.line"/>
+</t></pre>
+                    <p t-else="" class="ic-mb-empty">No line in this window.</p>
+                </section>
+
+                <p class="ic-mb-meta" t-if="state.updatedAt">
+                    <t t-esc="metaText"/>
+                    <t t-if="attributionLine"> · <span>Country:</span> <t t-esc="attributionLine"/></t>
+                </p>
+            </t>
+        </div>
+    </t>
+
+</templates>
