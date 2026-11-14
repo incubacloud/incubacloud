@@ -52,6 +52,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   close on its next request, and one revoked. Only the files the user's own
   trace names are read.
 
+## [1.0.229] — 2026-11-14
+
+The panel's help text is easier to read, its switches and tab bars say
+what they are to a screen reader, and a tab bar that scrolls shows that
+it has more tabs.
+
+The update adds no table or column and needs no data migration; only the
+panel's assets change.
+
+### Changed
+
+- **Help text, switches and tab bars follow the panel's form standard
+  (#13).** A tab's note (`.rl-tabnote`), a switch's help (`.rl-ftoggle
+  .rl-th`, and the Git providers tab's copy of it) and the hint of a
+  form's footer (`.rl-ff-hint`) are set in the panel's text font at
+  12.5 px in `--rl-muted` instead of the monospace at 10.5–11 px, in
+  `--rl-faint` for the note and the hint: 5.2:1 against the light page
+  and 6.3:1 against the dark one, where `--rl-faint` gave 3.3:1 in light.
+  The switches of an instance's, a project's and a backup backend's
+  page and of the email notifications are `role="switch"` with
+  `aria-checked`, as Settings' already were. The tab bars of an
+  instance, a host, a project and a backup backend are `role="tablist"`,
+  and their tabs `role="tab"` with `aria-selected`. A tab bar wider than
+  its box fades out on the side that has more tabs, following its own
+  scroll; one that fits does not fade, nor does any bar in a browser
+  without scroll-driven animations. No text changes.
+
+---
+
 ## [1.0.228] — 2026-11-13
 
 ### Added

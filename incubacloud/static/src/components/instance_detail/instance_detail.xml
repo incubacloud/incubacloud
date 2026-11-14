@@ -46,29 +46,41 @@
                             </div>
 
                             <!-- Tabs (create mode subset) -->
-                            <div class="rl-tabs">
+                            <div class="rl-tabs" role="tablist">
                                 <button
                   t-att-class="state.tab === 'general'    ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('general')"
                 >General</button>
                                 <button
                   t-att-class="state.tab === 'database'   ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'database' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('database')"
                 >Database</button>
                                 <button
                   t-att-class="state.tab === 'networking' ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'networking' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('networking')"
                 >Networking</button>
                                 <button
                   t-att-class="state.tab === 'repos'      ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'repos' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('repos')"
                 >Repos</button>
                                 <button
                   t-att-class="state.tab === 'resources'  ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'resources' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('resources')"
                 >Resources</button>
                                 <button
                   t-att-class="state.tab === 'deps'       ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'deps' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('deps')"
                 >Dependencies</button>
                             </div>
@@ -449,49 +461,69 @@
                     </t>
 
                     <!-- Tabs -->
-                    <div class="rl-tabs">
+                    <div class="rl-tabs" role="tablist">
                         <button
               t-att-class="state.tab === 'overview' ? 'rl-tab active' : 'rl-tab'"
+              role="tab"
+              t-att-aria-selected="state.tab === 'overview' ? 'true' : 'false'"
               t-on-click="() => this.setTab('overview')"
             >Overview</button>
                         <t t-if="env.permissions?.can_edit_instance">
                             <button
                 t-att-class="state.tab === 'general'    ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('general')"
               >General</button>
                             <button
                 t-att-class="state.tab === 'database'   ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'database' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('database')"
               >Database</button>
                             <button
                 t-att-class="state.tab === 'networking' ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'networking' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('networking')"
               >Networking</button>
                             <button
                 t-att-class="state.tab === 'config' ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'config' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('config')"
               >Config</button>
                             <button
                 t-att-class="state.tab === 'repos'      ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'repos' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('repos')"
               >Repos</button>
                             <button
                 t-att-class="state.tab === 'resources'  ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'resources' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('resources')"
               >Resources</button>
                             <button
                 t-att-class="state.tab === 'deps'       ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'deps' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('deps')"
               >Dependencies</button>
                             <t t-if="canShowBackups">
                                 <button
                   t-att-class="state.tab === 'backups' ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'backups' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('backups')"
                 >Backups</button>
                             </t>
                             <t t-if="canShowWhitelist">
                                 <button
                   t-att-class="state.tab === 'whitelist' ? 'rl-tab active' : 'rl-tab'"
+                  role="tab"
+                  t-att-aria-selected="state.tab === 'whitelist' ? 'true' : 'false'"
                   t-on-click="() => this.setTab('whitelist')"
                 >Whitelist</button>
                             </t>
@@ -499,18 +531,24 @@
                         <t t-if="canShowMails">
                             <button
                 t-att-class="state.tab === 'mails' ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'mails' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('mails')"
               >Mails</button>
                         </t>
                         <t t-if="env.permissions?.can_view_metrics">
                             <button
                 t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'metrics' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('metrics')"
               >Metrics</button>
                         </t>
                         <t t-if="env.permissions?.can_manage_hosts">
                             <button
                 t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
+                role="tab"
+                t-att-aria-selected="state.tab === 'activity' ? 'true' : 'false'"
                 t-on-click="() => this.setTab('activity')"
               >Audit Logs</button>
                         </t>
@@ -2594,6 +2632,8 @@
                         <button
               type="button"
               t-att-class="'rl-sw' + (state.form.auto_rebuild ? ' on' : '')"
+              role="switch"
+              t-att-aria-checked="state.form.auto_rebuild ? 'true' : 'false'"
               aria-label="Toggle auto-rebuild"
               t-on-click="() => { state.form.auto_rebuild = !state.form.auto_rebuild; state.saved = false; }"
             />
@@ -2610,6 +2650,8 @@
                         <button
               type="button"
               t-att-class="'rl-sw' + (state.form.auto_update ? ' on' : '')"
+              role="switch"
+              t-att-aria-checked="state.form.auto_update ? 'true' : 'false'"
               aria-label="Toggle auto-update"
               t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
             />
@@ -2626,6 +2668,8 @@
                         <button
               type="button"
               t-att-class="'rl-sw' + (state.form.boot_test ? ' on' : '')"
+              role="switch"
+              t-att-aria-checked="state.form.boot_test ? 'true' : 'false'"
               aria-label="Toggle the boot test"
               t-on-click="() => { state.form.boot_test = !state.form.boot_test; state.saved = false; }"
             />
@@ -2643,6 +2687,8 @@
                             <button
                 type="button"
                 t-att-class="'rl-sw' + (state.form.website_info_public ? ' on' : '')"
+                role="switch"
+                t-att-aria-checked="state.form.website_info_public ? 'true' : 'false'"
                 aria-label="Toggle public website info page"
                 t-on-click="() => { state.form.website_info_public = !state.form.website_info_public; state.saved = false; }"
               />
@@ -2659,6 +2705,8 @@
                             <button
                 type="button"
                 t-att-class="'rl-sw' + (state.form.autopurge_exempt ? ' on' : '')"
+                role="switch"
+                t-att-aria-checked="state.form.autopurge_exempt ? 'true' : 'false'"
                 aria-label="Toggle never purge automatically"
                 t-on-click="() => { state.form.autopurge_exempt = !state.form.autopurge_exempt; state.saved = false; }"
               />

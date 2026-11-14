@@ -184,26 +184,40 @@
                      Tabs — keeps `ic-detail-tabs` so a layer's Security patch
                      (xpath on `hasclass('ic-detail-tabs')`) resolves.
                      ═══════════════════════════════════════════════════════════ -->
-                <div class="rl-tabs ic-detail-tabs">
+                <div class="rl-tabs ic-detail-tabs" role="tablist">
                     <t t-if="!isNew">
                         <button t-att-class="state.tab === 'overview' ? 'rl-tab active' : 'rl-tab'"
+                                role="tab"
+                                t-att-aria-selected="state.tab === 'overview' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('overview')">Overview</button>
                     </t>
                     <button t-att-class="state.tab === 'general' ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="state.tab === 'general' ? 'true' : 'false'"
                             t-on-click="() => this.setTab('general')">General</button>
                     <button t-att-class="state.tab === 'connection' ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="state.tab === 'connection' ? 'true' : 'false'"
                             t-on-click="() => this.setTab('connection')">Connection</button>
                     <button t-att-class="state.tab === 'traefik' ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="state.tab === 'traefik' ? 'true' : 'false'"
                             t-on-click="() => this.setTab('traefik')">Traefik</button>
                     <button t-att-class="state.tab === 'whitelist' ? 'rl-tab active' : 'rl-tab'"
+                            role="tab"
+                            t-att-aria-selected="state.tab === 'whitelist' ? 'true' : 'false'"
                             t-on-click="() => this.setTab('whitelist')">Whitelist</button>
                     <t t-if="canViewMetrics">
                         <button t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
+                                role="tab"
+                                t-att-aria-selected="state.tab === 'metrics' ? 'true' : 'false'"
                                 data-tab="metrics"
                                 t-on-click="() => this.setTab('metrics')">Metrics</button>
                     </t>
                     <t t-if="!isNew and env.permissions?.can_manage_hosts">
                         <button t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
+                                role="tab"
+                                t-att-aria-selected="state.tab === 'activity' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('activity')">Audit Logs</button>
                     </t>
                 </div>
