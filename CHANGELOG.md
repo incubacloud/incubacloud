@@ -385,6 +385,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   gives curl the open file as its standard input (`--config -`), so it is
   gone from the disk before curl starts; the TERMs that land in the two
   commands between are ignored.
+- **A module update that is stopped puts the instance's crons back
+  (#117).** Run apart on the server, the update through `cron_guard.sh`
+  gets the TERM of a stop two or three times (the step's session, then
+  its `timeout`), and one that landed as the script went into its trap
+  killed it there: the instance's crons stayed paused until its next
+  update. The first TERM now leaves through the trap, which ignores the
+  others and always reactivates the crons and drops their list.
 - **A rebuild that ends before its restart leaves a mark on the server,
   and nothing puts its untried work in service (#96)**
   ([RB-42](docs/runbooks/RB-42-rebuild-left-unapplied.md)). A rebuild
