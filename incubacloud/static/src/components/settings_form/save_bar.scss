@@ -55,8 +55,11 @@
         .ic-set-savebar__count { display: none; }
     }
 
-    // On a phone the bar wraps to two lines (the text, then the buttons).
+    // On a phone the bar always takes two lines, in every language: the
+    // text fills the first, so Discard and Save go together, at the end of
+    // the second.
     @media (max-width: 560px) {
+        .ic-set-savebar__text { flex: 1 1 calc(100% - 18px); }
         .ic-set-savebar-room { block-size: 104px; }
     }
 }
