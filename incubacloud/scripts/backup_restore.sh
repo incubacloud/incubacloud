@@ -36,7 +36,7 @@ case "$op" in
         when="$1"
         ic_log "restoring the backup store into the container ($when)"
         docker compose exec -T backup \
-            sh -c "dup restore --time \"$when\" --force \"\$DST\" \"\$SRC\""
+            sh -c "dup restore --time \"$when\" --force \"\$DST\" \"\$SRC\"" </dev/null
         ;;
     dropdb)
         ic_require_args 1 "$#" "backup_restore.sh dropdb <dir> <dbname>"

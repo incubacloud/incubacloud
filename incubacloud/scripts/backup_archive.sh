@@ -159,7 +159,7 @@ dup full "$SRC" "$DST"
 # incremental, goes: after the teardown nothing is left to prune it.
 dup --force remove-all-but-n-full 1 "$DST"
 dup --force cleanup "$DST"
-' 2>&1
+' </dev/null 2>&1
 rc=$?
 set -e
 

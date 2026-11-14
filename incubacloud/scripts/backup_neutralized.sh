@@ -53,7 +53,7 @@ case "$op" in
         docker compose exec -T backup sh -c \
             "rm -rf $ctr_tmp && mkdir -p $ctr_tmp && dup restore --force \
              $(dup_time_flag "$when") --path-to-restore ${dbname}.sql \
-             \"\$DST\" $ctr_tmp/src.sql"
+             \"\$DST\" $ctr_tmp/src.sql" </dev/null
         rm -rf "$host_tmp"
         mkdir -p "$host_tmp"
         docker compose cp "backup:$ctr_tmp/src.sql" "$host_tmp/dump.sql"
