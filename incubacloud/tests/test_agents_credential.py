@@ -26,6 +26,7 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
     HostHardeningExecutor,
 )
 from odoo.addons.incubacloud.models.observability_agents_executor import (
+    AGENTS_REVISION,
     ObservabilityAgentsExecutor,
 )
 from odoo.addons.incubacloud.models.observability_central_executor import (
@@ -203,6 +204,106 @@ class TestTheAgentsAreAppliedAgain(AgentsCase):
         executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "account"}
         asyncio.run(executor.on_success({}))
         self.assertEqual(self.host.metrics_agents_revision, 0)
+
+
+class TestTheAgentsUserIsAppliedByState(AgentsCase):
+    """A server left out of the moment the agents' user came into force.
+
+    The reconciliation re-applies, by state, every installed server whose
+    agents still write with the account's credential while the agents'
+    user is in force, whatever its revision (review of 14-nov-2026, M1).
+    """
+
+    def setUp(self):
+        """The agents' user in force; the other servers of the database on it."""
+        super().setUp()
+        self.settings.write({
+            "metrics_agent_token": "agent-secret",
+            "metrics_accounts_deployed": f"{ACCOUNT}\n{AGENT}",
+        })
+        # A copy of production holds servers of its own: on the current
+        # revision and the agents' user, they stay out of the counts.
+        self.env["cloud.host"].sudo().search([("id", "!=", self.host.id)]).write({
+            "metrics_agents_revision": AGENTS_REVISION, "metrics_write_user": "agent",
+        })
+
+    def _reconcile(self):
+        """Run the reconciliation's revision pass and return how many it queued."""
+        return self.env["cloud.host"]._reconcile_agents_revision()
+
+    def _queued(self):
+        """Return how many agents' installs wait on this test's host."""
+        return self.env["cloud.job"].search_count([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "install_observability"),
+        ])
+
+    def test_a_retry_on_the_account_credential_is_applied_again(self):
+        """A failed server retried on the old credential as the new came in."""
+        self._install(metrics_agents_state="failed", metrics_agents_attempts=1)
+        self.settings.metrics_accounts_deployed = ACCOUNT
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor.get_extra_vars()
+        self.settings.metrics_accounts_deployed = f"{ACCOUNT}\n{AGENT}"
+        executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "account"}
+        asyncio.run(executor.on_success({}))
+        self.assertEqual(self.host.metrics_agents_state, "installed")
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertEqual(self.host.metrics_write_user, "account")
+        self.assertEqual(self._reconcile(), 1)
+        self.assertEqual(self._queued(), 1)
+
+    def test_a_resumed_job_on_the_account_credential_records_no_revision(self):
+        """Resumed by a worker that did not render it: the playbook's word."""
+        self._install(metrics_agents_revision=0, metrics_write_user="account")
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "account"}
+        asyncio.run(executor.on_success({}))
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+        self.assertEqual(self._reconcile(), 1)
+        # Installed with the agents' user, it records the revision.
+        executor = self._make(ObservabilityAgentsExecutor)
+        executor._facts = {"ic_agents_running": "3", "ic_write_user_installed": "agent"}
+        asyncio.run(executor.on_success({}))
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertEqual(self.host.metrics_write_user, "agent")
+
+    def test_a_layer_that_starts_handing_it_over_later(self):
+        """Handed down before the layer said so: no moment, yet it converges."""
+        self.settings.write({
+            "metrics_agent_token": False, "metrics_accounts_deployed": ACCOUNT,
+        })
+        self._install(metrics_write_user="account")
+        self.settings.write({"metrics_agent_token": "agent-secret"})
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertEqual(self._reconcile(), 0)
+        # The layer is updated and now says it hands it over.
+        self.injected.return_value = True
+        self.assertEqual(self._reconcile(), 1)
+        self.assertEqual(self._queued(), 1)
+
+    def test_a_host_brought_back_from_the_archive(self):
+        """Archived when the agents' user came into force, then restored."""
+        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._install(metrics_write_user="account", active=False)
+        self.settings._metrics_record_deployed(self.settings._vmauth_users())
+        self.assertTrue(self.settings._metrics_agent_in_force())
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.host.active = True
+        self.assertEqual(self._reconcile(), 1)
+        self.assertEqual(self._queued(), 1)
+
+    def test_a_host_on_the_agents_user_is_left_alone(self):
+        self._install(metrics_write_user="agent")
+        self.assertEqual(self._reconcile(), 0)
+        self.assertEqual(self._queued(), 0)
+
+    def test_the_account_credential_is_right_until_it_is_in_force(self):
+        """The way back (A2): nothing to re-apply while the central lacks it."""
+        self.settings.metrics_accounts_deployed = ACCOUNT
+        self._install(metrics_write_user="account")
+        self.assertEqual(self._reconcile(), 0)
+        self.assertEqual(self._queued(), 0)
 
 
 class TestTheReadCredentialRotates(AgentsCase):

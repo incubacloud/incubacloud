@@ -622,7 +622,12 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
                 "install: it is applied again."
             )
             return None
+        # What this executor sent, or, for a job resumed by a worker that
+        # did not render its variables, what the playbook says it installed.
         sent_user = getattr(self, "_sent_write_user", None)
+        if sent_user is None:
+            installed = str(facts.get("ic_write_user_installed") or "").strip()
+            sent_user = installed if installed in ("agent", "account") else None
         if sent_user is not None and sent_user != settings._metrics_agent_auth()[2]:
             # The agents' user came into force while this ran: the
             # reconciliation applies it (A2).

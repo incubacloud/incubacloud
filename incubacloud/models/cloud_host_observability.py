@@ -658,7 +658,14 @@ class CloudHost(models.Model):
         (``metrics_agents_revision``). One below ``AGENTS_REVISION`` was
         installed before this version, or by a panel still on older code
         (a panel rebuilt by another), and nothing else would run the
-        playbook there again until its instances change. Oldest first,
+        playbook there again until its instances change. While the agents'
+        user is in force, a host whose agents still write with the
+        account's credential is behind too, whatever its revision: the
+        moment it came into force re-applied the hosts installed then, and
+        a host is left out of that moment by an install that ran on the
+        old credential as it came, a job resumed by another worker, a
+        layer that started handing it over only after an update, or a host
+        brought back from the archive (A2, by state). Oldest first,
         ``_REAPPLY_PER_PASS`` per pass; a host whose install is already
         waiting or running is left to it and not counted. One that fails
         leaves "installed" and is retried with the back-off of any other.
@@ -666,13 +673,16 @@ class CloudHost(models.Model):
         :return: how many installs were queued.
         :rtype: int
         """
-        settings = self.env["cloud.settings"].sudo()._get_system()
+        Settings = self.env["cloud.settings"].sudo()
+        settings = Settings._get_system()
         if not settings.metrics_enabled:
             return 0
+        agent_in_force = Settings._metrics_agent_in_force()
         behind = self.sudo().search([
             ("metrics_agents_state", "=", "installed"), ("active", "=", True),
         ]).filtered(
-            lambda h: (h.metrics_agents_revision or 0) < AGENTS_REVISION,
+            lambda h: (h.metrics_agents_revision or 0) < AGENTS_REVISION
+            or (agent_in_force and h.metrics_write_user != "agent"),
         ).sorted(lambda h: (h.metrics_agents_revision or 0, h.id))
         if not behind:
             return 0
@@ -692,7 +702,8 @@ class CloudHost(models.Model):
         if queued:
             _logger.info(
                 "[metrics] re-applied the agents of %s host(s) on an older "
-                "revision (%s left)", queued, len(behind) - queued,
+                "revision or the account's credential (%s left)",
+                queued, len(behind) - queued,
             )
         return queued
 
