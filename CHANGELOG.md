@@ -589,6 +589,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   project are refused as before, an archived one's included. The update
   drops the constraint (migration 1.0.228) and creates the index, with no
   step by hand.
+- **A stopped boot test puts the instance back up, whatever TERM comes
+  after the first (#119).** Its trap ignored the later TERMs of a stop,
+  but its docker calls did not: the docker client sets its own handlers,
+  and one of those TERMs cut the call while `|| true` hid it, which could
+  leave the replication rule live in the database's memory, the copy's
+  container or volume on the server, or the instance stopped. The trap's
+  docker calls and the rule's removal now run in a session of their own
+  (`_apart` in `lib/common.sh`), out of reach of the stop's signals, and
+  the removal edits `pg_hba.conf` and reloads in one call inside the
+  database's container, with no step between the two for a stop to cut.
 
 ---
 
