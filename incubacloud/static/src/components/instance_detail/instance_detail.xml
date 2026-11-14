@@ -65,7 +65,7 @@
                                             <i t-att-class="'fa ' + (sectionOpen(sec.key) ? 'fa-chevron-down' : 'fa-chevron-right')" aria-hidden="true"/>
                                             <span t-esc="sec.label"/>
                                             <span class="ic-new-sec__adv">Advanced</span>
-                                            <span t-if="sectionChanged(sec.key)" class="ic-new-sec__changed">Changed</span>
+                                            <span t-if="sectionChangedCount(sec.key)" class="ic-new-sec__changed" t-esc="sectionChangedText(sec.key)"/>
                                         </button>
                                     </h2>
                                     <h2 t-else="" class="ic-new-sec__title" t-att-id="'idet-s-' + sec.key" t-esc="sec.label"/>
@@ -85,7 +85,7 @@
                                  window, and says how many fields need attention
                                  once Create found some. -->
                             <div class="rl-formfoot ic-new-foot">
-                                <span t-if="newErrorCount" class="rl-ff-hint ic-new-foot__err" role="alert">
+                                <span t-if="newErrorCount" class="rl-ff-hint ic-new-foot__err">
                                     <t t-out="env.icon('alert', 14)"/>
                                     <t t-esc="newErrorText"/>
                                 </span>
@@ -2183,8 +2183,9 @@
                 class="rl-frow ic-w-m"
                 t-att-class="validator.fieldError('name') ? 'has-error' : ''"
               >
-                                <label>Name <span class="rl-req">*</span></label>
+                                <label for="idet-name">Name <span class="rl-req">*</span></label>
                                 <input
+                  id="idet-name"
                     t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('name') ? 'idet-err-name' : undefined"
                   type="text"
@@ -2192,7 +2193,7 @@
                   t-att-value="state.form.name"
                   t-att-disabled="(!isCreate and state.inst.deployed) || null"
                   t-on-input="(ev) => this.onInput('name', ev)"
-                  t-on-blur="() => validator.touch('name')"
+                  t-on-blur="() => validator.touch('name', state.form)"
                 />
                                 <t t-if="validator.fieldError('name')">
                                     <span
@@ -2206,7 +2207,7 @@
                 class="rl-frow ic-host-row ic-w-m"
                 t-att-class="validator.fieldError('host_id') ? 'has-error' : ''"
               >
-                                <label>Host
+                                <label for="idet-host_id">Host
                                     <t t-if="!state.autoassignEnabled">
                                         <span class="rl-req">*</span>
                                     </t>
@@ -2220,13 +2221,14 @@
                                 </t>
                                 <t t-else="">
                                     <RlSelect
+                    id="'idet-host_id'"
                     ariaInvalid="validator.fieldError('host_id') ? true : false"
                     ariaDescribedby="validator.fieldError('host_id') ? 'idet-err-host_id' : undefined"
                     value="state.form.host_id"
                     options="hostOptions"
                     emptyLabel="state.autoassignEnabled ? 'Auto (recommended)' : '— select host —'"
                     disabled="hostLocked"
-                    onChange="(value) => { this.onHostSelect({ target: { value: value } }); validator.touch('host_id'); }"
+                    onChange="(value) => { this.onHostSelect({ target: { value: value } }); validator.touch('host_id', state.form); }"
                     ariaLabel="'Host'"
                   />
                                 </t>
@@ -2251,8 +2253,9 @@
                             </div>
                             <div class="ic-w-m ic-rgrid__gap" aria-hidden="true"/>
                             <div class="rl-frow ic-w-l">
-                                <label>Tags</label>
+                                <label for="idet-tags">Tags</label>
                                 <TagSelector
+                  id="'idet-tags'"
                   selected="state.selectedTags"
                   available="state.allTags"
                   onAdd.bind="addTag"
@@ -2308,8 +2311,9 @@
                                 </div>
                             </t>
                             <div class="rl-frow ic-w-s">
-                                <label>PostgreSQL version</label>
+                                <label for="idet-postgres_version">PostgreSQL version</label>
                                 <RlSelect
+                  id="'idet-postgres_version'"
                   options="pgVersions"
                   value="state.form.postgres_version"
                   disabled="(!isCreate and state.inst.deployed)"
@@ -2318,8 +2322,9 @@
                             </div>
                             <div class="ic-w-s ic-rgrid__gap" aria-hidden="true"/>
                             <div class="rl-frow ic-w-m">
-                                <label>DB user</label>
+                                <label for="idet-postgres_username">DB user</label>
                                 <input
+                  id="idet-postgres_username"
                   type="text"
                   placeholder="odoo"
                   t-att-disabled="(!isCreate and state.inst.deployed) || null"
@@ -2461,8 +2466,9 @@
                         <div class="ic-rgrid">
                             <t t-if="showsRelayAuth">
                                 <div class="rl-frow ic-w-m">
-                                    <label>SMTP authentication</label>
+                                    <label for="idet-smtp_relay_auth">SMTP authentication</label>
                                     <RlSelect
+                    id="'idet-smtp_relay_auth'"
                     options="relayAuthOptions"
                     ariaLabel="'SMTP authentication'"
                     value="state.form.smtp_relay_auth"
@@ -2472,12 +2478,13 @@
                                 <div class="ic-w-m ic-rgrid__gap" aria-hidden="true"/>
                             </t>
                             <div class="rl-frow ic-w-m">
-                                <label>SMTP host <span
+                                <label for="idet-smtp_relay_host">SMTP host <span
                     t-if="!isOAuthRelay"
                     class="rl-opt"
                   >— leave empty to skip</span></label>
                                 <input
                   type="text"
+                  id="idet-smtp_relay_host"
                   placeholder="smtp.example.com"
                   t-att-value="state.form.smtp_relay_host"
                   t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
@@ -2488,15 +2495,16 @@
                 class="rl-frow ic-w-s"
                 t-att-class="validator.fieldError('smtp_relay_port') ? 'has-error' : ''"
               >
-                                <label>SMTP port</label>
+                                <label for="idet-smtp_relay_port">SMTP port</label>
                                 <input
+                    id="idet-smtp_relay_port"
                     t-att-aria-invalid="validator.fieldError('smtp_relay_port') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('smtp_relay_port') ? 'idet-err-smtp_relay_port' : undefined"
                   type="number"
                   t-att-value="state.form.smtp_relay_port"
                   t-att-readonly="isOAuthRelay ? 'readonly' : undefined"
                   t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"
-                  t-on-blur="() => validator.touch('smtp_relay_port')"
+                  t-on-blur="() => validator.touch('smtp_relay_port', state.form)"
                 />
                                 <t t-if="validator.fieldError('smtp_relay_port')">
                                     <span
@@ -2507,8 +2515,9 @@
                                 </t>
                             </div>
                             <div class="rl-frow ic-w-s">
-                                <label>SMTP encryption</label>
+                                <label for="idet-smtp_relay_security">SMTP encryption</label>
                                 <RlSelect
+                  id="'idet-smtp_relay_security'"
                   options="[{value:'none',label:'None'},{value:'starttls',label:'STARTTLS'},{value:'ssl',label:'SSL/TLS'}]"
                   value="state.form.smtp_relay_security"
                   disabled="isOAuthRelay"
@@ -2516,9 +2525,10 @@
                 />
                             </div>
                             <div class="rl-frow ic-w-m">
-                                <label t-if="isOAuthRelay">Sender mailbox</label>
-                                <label t-else="">SMTP user</label>
+                                <label t-if="isOAuthRelay" for="idet-smtp_relay_user">Sender mailbox</label>
+                                <label t-else="" for="idet-smtp_relay_user">SMTP user</label>
                                 <input
+                  id="idet-smtp_relay_user"
                   type="text"
                   t-att-placeholder="isOAuthRelay ? 'notifications@example.com' : undefined"
                   t-att-value="state.form.smtp_relay_user"
@@ -2548,8 +2558,9 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-m">
-                                    <label>Directory ID</label>
+                                    <label for="idet-smtp_relay_oauth_directory_id">Directory ID</label>
                                     <input
+                    id="idet-smtp_relay_oauth_directory_id"
                     type="text"
                     placeholder="00000000-0000-0000-0000-000000000000"
                     t-att-value="state.form.smtp_relay_oauth_directory_id"
@@ -2557,8 +2568,9 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-m">
-                                    <label>Application (client) ID</label>
+                                    <label for="idet-smtp_relay_oauth_client_id">Application (client) ID</label>
                                     <input
+                    id="idet-smtp_relay_oauth_client_id"
                     type="text"
                     placeholder="00000000-0000-0000-0000-000000000000"
                     t-att-value="state.form.smtp_relay_oauth_client_id"
@@ -2725,8 +2737,10 @@
                         <div class="ic-set-block__body">
                             <div class="ic-rgrid">
                                 <div class="rl-frow ic-w-s">
-                                    <label>Memory limit</label>
+                                    <label for="idet-res-odoo-memory_limit" id="idet-res-odoo-memory_limit-label">Memory limit</label>
                                     <input
+                    id="idet-res-odoo-memory_limit"
+                    aria-labelledby="idet-g-res-odoo idet-res-odoo-memory_limit-label"
                     type="text"
                     t-att-value="state.form.odoo_memory_limit"
                     t-on-input="(ev) => this.onInput('odoo_memory_limit', ev)"
@@ -2734,8 +2748,10 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-s">
-                                    <label>CPUs</label>
+                                    <label for="idet-res-odoo-cpus" id="idet-res-odoo-cpus-label">CPUs</label>
                                     <input
+                    id="idet-res-odoo-cpus"
+                    aria-labelledby="idet-g-res-odoo idet-res-odoo-cpus-label"
                     type="number"
                     step="0.25"
                     t-att-value="state.form.odoo_cpus"
@@ -2752,8 +2768,10 @@
                         <div class="ic-set-block__body">
                             <div class="ic-rgrid">
                                 <div class="rl-frow ic-w-s">
-                                    <label>Memory limit</label>
+                                    <label for="idet-res-db-memory_limit" id="idet-res-db-memory_limit-label">Memory limit</label>
                                     <input
+                    id="idet-res-db-memory_limit"
+                    aria-labelledby="idet-g-res-db idet-res-db-memory_limit-label"
                     type="text"
                     t-att-value="state.form.db_memory_limit"
                     t-on-input="(ev) => this.onInput('db_memory_limit', ev)"
@@ -2761,8 +2779,10 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-s">
-                                    <label>CPUs</label>
+                                    <label for="idet-res-db-cpus" id="idet-res-db-cpus-label">CPUs</label>
                                     <input
+                    id="idet-res-db-cpus"
+                    aria-labelledby="idet-g-res-db idet-res-db-cpus-label"
                     type="number"
                     step="0.25"
                     t-att-value="state.form.db_cpus"
@@ -2779,8 +2799,10 @@
                         <div class="ic-set-block__body">
                             <div class="ic-rgrid">
                                 <div class="rl-frow ic-w-s">
-                                    <label>Memory limit</label>
+                                    <label for="idet-res-backup-memory_limit" id="idet-res-backup-memory_limit-label">Memory limit</label>
                                     <input
+                    id="idet-res-backup-memory_limit"
+                    aria-labelledby="idet-g-res-backup idet-res-backup-memory_limit-label"
                     type="text"
                     t-att-value="state.form.backup_memory_limit"
                     t-on-input="(ev) => this.onInput('backup_memory_limit', ev)"
@@ -2788,8 +2810,10 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-s">
-                                    <label>CPUs</label>
+                                    <label for="idet-res-backup-cpus" id="idet-res-backup-cpus-label">CPUs</label>
                                     <input
+                    id="idet-res-backup-cpus"
+                    aria-labelledby="idet-g-res-backup idet-res-backup-cpus-label"
                     type="number"
                     step="0.05"
                     t-att-value="state.form.backup_cpus"
@@ -2806,8 +2830,10 @@
                         <div class="ic-set-block__body">
                             <div class="ic-rgrid">
                                 <div class="rl-frow ic-w-s">
-                                    <label>Memory limit</label>
+                                    <label for="idet-res-smtp-memory_limit" id="idet-res-smtp-memory_limit-label">Memory limit</label>
                                     <input
+                    id="idet-res-smtp-memory_limit"
+                    aria-labelledby="idet-g-res-smtp idet-res-smtp-memory_limit-label"
                     type="text"
                     t-att-value="state.form.smtp_memory_limit"
                     t-on-input="(ev) => this.onInput('smtp_memory_limit', ev)"
@@ -2815,8 +2841,10 @@
                   />
                                 </div>
                                 <div class="rl-frow ic-w-s">
-                                    <label>CPUs</label>
+                                    <label for="idet-res-smtp-cpus" id="idet-res-smtp-cpus-label">CPUs</label>
                                     <input
+                    id="idet-res-smtp-cpus"
+                    aria-labelledby="idet-g-res-smtp idet-res-smtp-cpus-label"
                     type="number"
                     step="0.05"
                     t-att-value="state.form.smtp_cpus"
@@ -2897,8 +2925,9 @@
                         <div class="ic-set-block__body">
                             <div class="ic-rgrid">
                                 <div class="rl-frow ic-w-m">
-                                    <label>Backup backend</label>
+                                    <label for="idet-backup_backend_id">Backup backend</label>
                                     <RlSelect
+                    id="'idet-backup_backend_id'"
                     value="state.form.backup_backend_id"
                     options="backupBackendOptions"
                     disabled="backupBackendLocked"

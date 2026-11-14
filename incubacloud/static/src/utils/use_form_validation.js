@@ -35,9 +35,11 @@
  *     field has been touched (explicit ``touch(name)`` or via a
  *     failed ``validate()``). Safe to call from the template for
  *     every render.
- *   - ``touch(name)`` → mark a single field as touched (e.g. from a
- *     ``t-on-blur`` handler) so its error, if any, becomes visible
- *     without waiting for a save attempt.
+ *   - ``touch(name, form?)`` → mark a single field as touched (e.g. from
+ *     a ``t-on-blur`` handler) so its error, if any, becomes visible
+ *     without waiting for a save attempt. Given the form, a field that
+ *     shows an error is checked again, so correcting it takes the error
+ *     away on leaving the field instead of at the next save.
  *   - ``clearErrors()`` → wipe errors and touched. Call after a
  *     successful save or load so stale flags don't persist across
  *     form reloads.
@@ -87,8 +89,16 @@ export function useFormValidation(rulesFactory) {
         return Object.keys(errors).length === 0;
     }
 
-    function touch(name) {
+    function touch(name, form) {
         state.touched[name] = true;
+        if (form && name in state.errors) {
+            const { errors } = _run(form);
+            if (errors[name]) {
+                state.errors[name] = errors[name];
+            } else {
+                delete state.errors[name];
+            }
+        }
     }
 
     function fieldError(name) {
