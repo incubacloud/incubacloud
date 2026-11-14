@@ -66,22 +66,17 @@ _KEEP_GRAFANA_PARAM = "incubacloud.metrics_keep_grafana_data"
 # and the other account then saw the series as its own. The same route
 # created snapshots, forced merges and read the backend's flags.
 #
-# Writes are the one path each agent posts to. Reads are the query API a
-# dashboard and a metrics browser call; the panel uses ``query`` and
-# ``query_range``, and which of the rest the security view needs is
-# decided with it (review of 12-nov-2026). The log read route is
-# read-only, for the panel's reading of the security logs.
+# Writes are the one path each agent posts to. Reads are what the panel
+# calls, ``query`` and ``query_range``, on the metrics and on the logs
+# alike: nothing in the panel, the agents or the runbooks used the rest
+# (``series``, ``labels``, label values, metadata, the log index), which
+# Grafana asked for until 12-nov-2026 (plan #84, C1.6). The log read route
+# is read-only, for the panel's reading of the security logs.
 _ACCOUNT_WRITE_PATH = "/w/api/v1/write"
-_READ_ENDPOINTS = (
-    "query|query_range|query_exemplars|series|labels"
-    "|label/[^/]+/values|metadata|rules|status/buildinfo"
-)
+_READ_ENDPOINTS = "query|query_range"
 _ACCOUNT_READ_PATHS = f"/r/api/v1/({_READ_ENDPOINTS})"
 _ACCOUNT_LOG_WRITE_PATH = "/lw/loki/api/v1/push"
-_ACCOUNT_LOG_READ_PATHS = (
-    "/lr/loki/api/v1/(query|query_range|series|labels"
-    "|label/[^/]+/values|index/stats|index/volume|index/volume_range)"
-)
+_ACCOUNT_LOG_READ_PATHS = f"/lr/loki/api/v1/({_READ_ENDPOINTS})"
 
 #: The operator's cross-account read: the accounts' read endpoints and
 #: ``health``. It was ``/admin-r/.*``, the whole backend: imports,
