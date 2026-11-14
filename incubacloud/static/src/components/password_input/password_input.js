@@ -29,6 +29,10 @@ let nextId = 0;
  *                     ``<id>-replace``. The label carries ``<id>-label`` as
  *                     its own id: it describes Replace, which keeps the
  *                     name its text gives.
+ *   ariaInvalid     — bool: the input is marked aria-invalid, as a plain
+ *                     input of a row in error is
+ *   ariaDescribedby — str: the id of the row's error message, which
+ *                     describes the input before the hint does
  *   value     — str:  what the form holds for the field, which the input
  *                     shows: the field is controlled by its form, so a
  *                     field mounted again (a tab or a section shown again)
@@ -52,6 +56,8 @@ export class PasswordInput extends Component {
         emptyHint: { type: String, optional: true },
         autoGenerate: { type: Boolean, optional: true },
         id:        { type: String, optional: true },
+        ariaInvalid:     { type: Boolean, optional: true },
+        ariaDescribedby: { type: String, optional: true },
         value:     { type: String, optional: true },
         onChange:  { type: Function },
     };
@@ -132,6 +138,15 @@ export class PasswordInput extends Component {
     /** @returns {string|undefined} the id of the hint line, which describes the input */
     get hintId() {
         return this.hint ? `${this.props.id || this.uid}-hint` : undefined;
+    }
+
+    /**
+     * @returns {string|undefined} what describes the input: the row's
+     *     error message, if any, then the hint line
+     */
+    get inputDescribedby() {
+        const ids = [this.props.ariaDescribedby, this.hintId].filter(Boolean);
+        return ids.length ? ids.join(" ") : undefined;
     }
 
     /** @returns {string|undefined} the label's id, which describes the Replace button */

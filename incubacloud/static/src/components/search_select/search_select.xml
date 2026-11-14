@@ -14,6 +14,7 @@
             <div class="ic-search-select__input-wrap" t-ref="wrap" t-on-click="onInputClick">
                 <input
                     class="ic-search-select__input"
+                    t-att-id="props.id"
                     type="text"
                     autocomplete="off"
                     t-att-placeholder="props.loading ? 'Loading…' : props.placeholder"

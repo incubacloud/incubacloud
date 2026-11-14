@@ -1,4 +1,4 @@
-import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useEffect, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { session } from "@web/session";
 import { _t } from "@web/core/l10n/translation";
@@ -8,6 +8,13 @@ import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
 import { SearchSelect } from "../search_select/search_select";
 import { PasswordInput } from "../password_input/password_input";
+
+// The control of each field a notification Save can stop on.
+const NOTIF_FIELD_IDS = {
+    telegramToken: "ic-notif-telegram-token",
+    telegramChatId: "ic-notif-telegram-chat",
+    webhookUrl: "ic-notif-webhook-url",
+};
 
 export class AppHeader extends Component {
     static template = "incubacloud.AppHeader";
@@ -57,7 +64,13 @@ export class AppHeader extends Component {
             webhookSecretConfigured: false,
             _webhookSecret: "",    // a new signing secret typed, "" keeps the stored one
             webhookUrl: "",
+            // The message of the field Save stopped on, by field:
+            // telegramToken, telegramChatId or webhookUrl.
+            notifErrors: {},
         });
+        // The id of the field Save stopped on, focused on the next render.
+        this.focusNext = null;
+        useEffect(() => this.restoreFocus());
 
         this._closeMenus = (ev) => {
             if (!ev.target.closest(".ic-header-user-wrap")) {
@@ -347,6 +360,7 @@ export class AppHeader extends Component {
     async openNotifModal() {
         this.state.showUserMenu = false;
         this.state.expandedSection = null;
+        this.state.notifErrors = {};
         this.state._telegramToken = "";
         this.state._webhookSecret = "";
         try {
@@ -411,13 +425,15 @@ export class AppHeader extends Component {
             );
             const hasChatId = !!this.state.telegramChatId;
             if (hasToken && !hasChatId) {
-                this.env.toast?.error(
+                this._notifFieldError(
+                    "telegramChatId", "telegram",
                     _t("Telegram Chat ID is required when a bot token is configured"),
                 );
                 return;
             }
             if (hasChatId && !hasToken) {
-                this.env.toast?.error(
+                this._notifFieldError(
+                    "telegramToken", "telegram",
                     _t("Telegram Bot Token is required when a chat ID is configured"),
                 );
                 return;
@@ -427,7 +443,8 @@ export class AppHeader extends Component {
             );
             const hasUrl = !!this.state.webhookUrl;
             if (hasSecret && !hasUrl) {
-                this.env.toast?.error(
+                this._notifFieldError(
+                    "webhookUrl", "webhook",
                     _t("Webhook URL is required when a signing secret is configured"),
                 );
                 return;
@@ -477,12 +494,64 @@ export class AppHeader extends Component {
         }
     }
 
+    /**
+     * Show a Save refusal under its field: the field's card opens, the
+     * control is marked invalid and described by the message, and the
+     * focus goes to it on the next render. The toast still says it.
+     *
+     * @param {string} field telegramToken, telegramChatId or webhookUrl
+     * @param {string} section the card holding it: telegram or webhook
+     * @param {string} message what to fix
+     */
+    _notifFieldError(field, section, message) {
+        this.state.notifErrors = { [field]: message };
+        this.state.expandedSection = section;
+        this.focusNext = NOTIF_FIELD_IDS[field];
+        this.env.toast?.error(message);
+    }
+
+    /**
+     * Give the focus to the field a Save refusal named, once rendered.
+     * Does nothing unless a refusal asked for it.
+     */
+    restoreFocus() {
+        const id = this.focusNext;
+        this.focusNext = null;
+        if (id) {
+            document.getElementById(id)?.focus();
+        }
+    }
+
     /** Set from PasswordInput onChange — store in temp state for save. */
     onTelegramTokenChange(value) {
         this.state._telegramToken = value;
+        this.state.notifErrors = {};
     }
 
     onWebhookSecretChange(value) {
         this.state._webhookSecret = value;
+        this.state.notifErrors = {};
+    }
+
+    /**
+     * Take the chat ID typed; the refusals tie it to the token, so a
+     * change clears them.
+     *
+     * @param {string} value the chat ID as typed
+     */
+    onTelegramChatIdInput(value) {
+        this.state.telegramChatId = value;
+        this.state.notifErrors = {};
+    }
+
+    /**
+     * Take the webhook URL typed; the refusal ties it to the signing
+     * secret, so a change clears it.
+     *
+     * @param {string} value the URL as typed
+     */
+    onWebhookUrlInput(value) {
+        this.state.webhookUrl = value;
+        this.state.notifErrors = {};
     }
 }

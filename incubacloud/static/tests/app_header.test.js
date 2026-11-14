@@ -178,4 +178,44 @@ describe("AppHeader — notification preferences", () => {
         expect(saved[0].cloud_telegram_bot_token).toBe("");
         expect(saved[0].cloud_webhook_secret).toBe("");
     });
+
+    test("a chat ID without a token: Save stops on the token, opens Telegram and sends nothing", async () => {
+        const saved = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                if (url === "/cloud/save_user_preferences") {
+                    saved.push(params);
+                }
+                return Promise.resolve({});
+            },
+        });
+        const header = standIn();
+        Object.assign(header.state, {
+            telegramTokenConfigured: false, _telegramToken: "", telegramChatId: "42",
+            webhookSecretConfigured: false, _webhookSecret: "", webhookUrl: "",
+        });
+        await header.saveNotifPrefs();
+        expect(saved).toHaveLength(0);
+        expect(Object.keys(header.state.notifErrors)).toEqual(["telegramToken"]);
+        expect(header.state.expandedSection).toBe("telegram");
+        expect(header.focusNext).toBe("ic-notif-telegram-token");
+        // Typing clears it.
+        header.onTelegramTokenChange("123:abc");
+        expect(header.state.notifErrors).toEqual({});
+    });
+
+    test("a signing secret without a URL: Save stops on the webhook URL", async () => {
+        const header = standIn();
+        Object.assign(header.state, {
+            telegramTokenConfigured: false, _telegramToken: "", telegramChatId: "",
+            webhookSecretConfigured: true, _webhookSecret: "", webhookUrl: "",
+        });
+        await header.saveNotifPrefs();
+        expect(Object.keys(header.state.notifErrors)).toEqual(["webhookUrl"]);
+        expect(header.state.expandedSection).toBe("webhook");
+        expect(header.focusNext).toBe("ic-notif-webhook-url");
+        header.onWebhookUrlInput("https://hooks.example.com/cloud");
+        expect(header.state.webhookUrl).toBe("https://hooks.example.com/cloud");
+        expect(header.state.notifErrors).toEqual({});
+    });
 });
