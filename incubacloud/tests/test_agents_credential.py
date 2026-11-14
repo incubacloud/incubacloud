@@ -307,6 +307,33 @@ class TestTheAgentsUserIsAppliedByState(AgentsCase):
         self.assertEqual(self._reconcile(), 0)
         self.assertEqual(self._queued(), 0)
 
+    def test_a_token_minted_again_waits_for_the_sync(self):
+        """The user's name still on the list, its new token not (B1, 14-nov-2026).
+
+        The agents keep the account's credential, and nothing is applied
+        again, until a sync records the new token's digest; then every
+        server moves to it.
+        """
+        self._install(metrics_write_user="account")
+        self.settings.metrics_agent_token = "agent-secret-2"
+        self.assertIn(AGENT, self.settings.metrics_accounts_deployed.split())
+        self.assertFalse(self.settings._metrics_agent_in_force())
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_remote_write_user"], ACCOUNT)
+        self.assertEqual(extra["ic_remote_write_token"], "shared-secret")
+        self.assertEqual(extra["ic_write_user_kind"], "account")
+        self.assertEqual(self.host.metrics_agents_revision, AGENTS_REVISION)
+        self.assertEqual(self._reconcile(), 0)
+        self.assertEqual(self._queued(), 0)
+        # The sync puts the new token on the central.
+        self.settings._metrics_record_deployed(self.settings._vmauth_users())
+        self.assertTrue(self.settings._metrics_agent_in_force())
+        self.assertEqual(self.host.metrics_agents_revision, 0)
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_remote_write_user"], AGENT)
+        self.assertEqual(extra["ic_remote_write_token"], "agent-secret-2")
+        self.assertEqual(extra["ic_write_user_kind"], "agent")
+
     def test_the_account_credential_is_right_until_it_is_in_force(self):
         """The way back (A2): nothing to re-apply while the central lacks it."""
         self._agents_in_force(False)
