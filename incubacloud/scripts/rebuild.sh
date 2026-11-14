@@ -302,7 +302,9 @@ case "$op" in
         ic_boot_restore() {
             ic_boot_rc=$?
             # The TERMs a stop sends after the first one (below) must not
-            # cut the restore short.
+            # cut the restore short: the shell ignores them, and its docker
+            # calls, which do not keep an ignored TERM, run apart
+            # (``_apart``): one cut used to leave the instance stopped.
             trap '' TERM INT HUP
             # First of all: a stop gives the trap 60 s before its KILL
             # (``CANCEL_TERM_WAIT_S``), and removing a volume the size of
@@ -315,21 +317,21 @@ case "$op" in
                     ic_boot_hba_warn
                 fi
             fi
-            docker rm -f "$copy_container" 2>/dev/null || true
-            docker rm -f "$odoo_container" 2>/dev/null || true
-            docker rm -f "$pg_container" 2>/dev/null || true
-            docker network rm "$boot_net" 2>/dev/null || true
+            _apart docker rm -f "$copy_container" 2>/dev/null || true
+            _apart docker rm -f "$odoo_container" 2>/dev/null || true
+            _apart docker rm -f "$pg_container" 2>/dev/null || true
+            _apart docker network rm "$boot_net" 2>/dev/null || true
             # After the containers that mount it.
-            docker volume rm "$boot_volume" >/dev/null 2>&1 || true
+            _apart docker volume rm "$boot_volume" >/dev/null 2>&1 || true
             if [ -n "${gatekeeper_started:-}" ] && [ "$ic_boot_rc" -ne 0 ]; then
                 # A first boot under the gatekeeper that failed leaves the
                 # stack as it found it: the old egress model, no gatekeeper.
-                docker compose rm -sf gatekeeper 2>/dev/null || true
+                _apart docker compose rm -sf gatekeeper 2>/dev/null || true
             fi
             if [ -n "${running_before// /}" ]; then
                 # Word splitting is the point: a space-separated service list.
                 # shellcheck disable=SC2086
-                docker compose start $running_before 2>/dev/null || true
+                _apart docker compose start $running_before 2>/dev/null || true
             fi
         }
         trap ic_boot_restore EXIT
@@ -366,15 +368,16 @@ case "$op" in
         # worked: a temporary copy that could not be written, or came out
         # empty (a full disk, the very case this test risks), never
         # replaces the file, which PostgreSQL would then fail to reload
-        # while it kept the rule in memory. Fails when the rule is still
-        # in the file or the reload failed.
+        # while it kept the rule in memory. The edit and the reload run in
+        # one call, apart (``_apart``): a call cut between two would leave
+        # the file without the rule and the rule live in memory. Fails
+        # when the rule is still in the file or the reload failed.
         # shellcheck disable=SC2317  # reached through the EXIT trap too
         ic_boot_hba_drop() {
             # shellcheck disable=SC2016  # expanded by the container's sh
-            docker compose exec -T db sh -c \
-                'grep -vxF "$1" "$2" > /tmp/ic_boot_hba && [ -s /tmp/ic_boot_hba ] && cat /tmp/ic_boot_hba > "$2" && ! grep -qxF "$1" "$2"; rc=$?; rm -f /tmp/ic_boot_hba; exit "$rc"' \
-                sh "$hba_rule" "$hba_file" \
-                && ic_boot_psql 'SELECT pg_reload_conf()' >/dev/null
+            _apart docker compose exec -T db sh -c \
+                'grep -vxF "$1" "$2" > /tmp/ic_boot_hba && [ -s /tmp/ic_boot_hba ] && cat /tmp/ic_boot_hba > "$2" && ! grep -qxF "$1" "$2"; rc=$?; rm -f /tmp/ic_boot_hba; [ "$rc" -eq 0 ] && psql -U "$3" -d "$4" -tAc "SELECT pg_reload_conf()" >/dev/null' \
+                sh "$hba_rule" "$hba_file" "$pg_user" "$dbname"
         }
         # ic_boot_hba_warn: say, in the job's log, that the rule could not
         # be taken out, and how it goes.

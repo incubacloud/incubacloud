@@ -38,6 +38,19 @@ ic_die() {
     exit 1
 }
 
+# Run a command in a session of its own, where a stop's TERM, sent to the
+# caller's session and to its process group, does not reach it: for the
+# docker calls of a trap that has to finish what it started. The docker
+# client sets its own signal handlers, so a TERM the calling shell ignores
+# still kills it. Without ``setsid`` (util-linux), as it is.
+_apart() {
+    if command -v setsid >/dev/null 2>&1; then
+        setsid -w "$@"
+    else
+        "$@"
+    fi
+}
+
 # Expand a leading ``~/`` in a path.
 #
 # Instance directories are stored as ``~/project/instance`` (see
