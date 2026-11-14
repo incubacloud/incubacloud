@@ -183,9 +183,9 @@ There are **no** dedicated `/cloud/*` routes for job history, log chunks or canc
 | Path | Gate | Description |
 |---|---|---|
 | `/cloud/get_user_preferences` | own user | Notification prefs; secrets returned only as booleans (`cloud_telegram_configured`, `cloud_webhook_configured`). |
-| `/cloud/save_user_preferences` | own user | Save prefs (level, mode, email toggle, muted projects, Telegram, webhook; webhook URL must be `https://`). |
-| `/cloud/telegram_detect_chat_id` | own user | Poll the bot's `getUpdates` to auto-detect the chat id. |
-| `/cloud/telegram_send_test` | own user | Send a test message to the configured chat. |
+| `/cloud/save_user_preferences` | own user | Save prefs (level, mode, email toggle, muted projects, Telegram, webhook; webhook URL must be `https://`). An empty bot token or signing secret keeps the stored one, unless the save leaves the channel's address empty (Telegram's chat ID, the webhook URL): the channel is then off, and its secret is deleted with it, one sent in the same save included. |
+| `/cloud/telegram_detect_chat_id` | own user | Poll the bot's `getUpdates` to auto-detect the chat id, with the token typed (`bot_token`) or else the stored one. Saves nothing. |
+| `/cloud/telegram_send_test` | own user | Send a test message, with the token and chat typed (`bot_token`, `chat_id`) or else the stored ones. Saves nothing. |
 
 The outbound job-state webhook (payload, `X-IncubaCloud-Signature` HMAC header) is documented in `docs/architecture.md`.
 

@@ -9,12 +9,25 @@ password and a Manager the central's operator credential. They carry
 so what uses them keeps working for the roles it is meant for.
 """
 
+import importlib.util
+import os
+import socket
+from http.client import HTTPResponse
 from unittest.mock import MagicMock, patch
 
 from odoo import http
 from odoo.api import call_kw
 from odoo.exceptions import AccessError
+from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase, new_test_user, tagged
+
+from odoo.addons.incubacloud.net import outbound
+
+#: What a public webhook host resolves to, so a URL saved here passes the
+#: check of its address without a DNS lookup.
+PUBLIC_HOST = [
+    (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.215.14", 443)),
+]
 
 #: The four roles of the panel, by the group each one is given.
 ROLES = {
@@ -178,13 +191,16 @@ class TestUserNotificationSecrets(_SecretFieldCase):
 
         controller = connect.InstanceConnectController()
         developer = self.roles["developer"]
-        answer = self._call(
-            controller, "save_user_preferences", developer,
-            cloud_notification_level="all",
-            cloud_notification_mode="immediate",
-            cloud_telegram_bot_token="987654:developer-bot-token",
-            cloud_webhook_secret="developer-signing-secret",
-        )
+        with patch.object(outbound, "getaddrinfo", return_value=PUBLIC_HOST):
+            answer = self._call(
+                controller, "save_user_preferences", developer,
+                cloud_notification_level="all",
+                cloud_notification_mode="immediate",
+                cloud_telegram_bot_token="987654:developer-bot-token",
+                cloud_telegram_chat_id="515151",
+                cloud_webhook_url="https://hooks.example.com/developer",
+                cloud_webhook_secret="developer-signing-secret",
+            )
         self.assertEqual(answer, {"ok": True})
         self.assertEqual(
             developer._get_cloud_telegram_bot_token(), "987654:developer-bot-token",
@@ -276,6 +292,218 @@ class TestUserNotificationSecrets(_SecretFieldCase):
         )
         self.assertIn(
             "X-IncubaCloud-Signature", webhook.call_args.kwargs["headers"],
+        )
+
+
+def _load_channel_off_migration():
+    """Import 1.0.229's post-migrate script as a module."""
+    path = os.path.join(
+        get_module_path("incubacloud"), "migrations", "1.0.229", "post-migrate.py",
+    )
+    spec = importlib.util.spec_from_file_location("ic_post_1_0_229_channels", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@tagged("post_install", "-at_install")
+class TestChannelOffDeletesItsSecret(_SecretFieldCase):
+    """A notification channel switched off takes its secret with it.
+
+    Telegram is on while a chat ID is saved and the webhook while a URL
+    is; a save that leaves the address empty deletes the bot token or
+    the signing secret, whatever the request carries. While the channel
+    stays on, an empty secret field keeps the stored one.
+    """
+
+    def setUp(self):
+        """Give the Manager both channels, each with its secret."""
+        super().setUp()
+        self.manager = self.roles["manager"]
+        self.manager.write({
+            "cloud_telegram_bot_token": "123456:manager-bot-token",
+            "cloud_telegram_chat_id": "424242",
+            "cloud_webhook_url": "https://hooks.example.com/manager",
+            "cloud_webhook_secret": "manager-signing-secret",
+        })
+        from odoo.addons.incubacloud.controllers import connect
+
+        self.controller = connect.InstanceConnectController()
+        dns = patch.object(outbound, "getaddrinfo", return_value=PUBLIC_HOST)
+        dns.start()
+        self.addCleanup(dns.stop)
+
+    def _save(self, user, **channels):
+        """Save *user*'s preferences with *channels* as the panel sends them.
+
+        :param user: who saves
+        :param channels: the Telegram and webhook fields of the request
+        :return: the route's answer
+        """
+        return self._call(
+            self.controller, "save_user_preferences", user,
+            cloud_notification_level="all",
+            cloud_notification_mode="immediate",
+            **channels,
+        )
+
+    def test_switching_telegram_off_deletes_the_token_and_the_chat(self):
+        """The panel's switch off sends both fields empty."""
+        answer = self._save(
+            self.manager, cloud_telegram_bot_token="", cloud_telegram_chat_id="",
+        )
+        self.assertEqual(answer, {"ok": True})
+        self.assertFalse(self.manager._get_cloud_telegram_bot_token())
+        self.assertFalse(self.manager.cloud_telegram_chat_id)
+        prefs = self._call(self.controller, "get_user_preferences", self.manager)
+        self.assertFalse(prefs["cloud_telegram_configured"])
+        self.assertEqual(prefs["cloud_telegram_chat_id"], "")
+        # The webhook was not asked about and keeps its secret.
+        self.assertEqual(
+            self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
+        )
+
+    def test_switching_the_webhook_off_deletes_the_url_and_the_secret(self):
+        """An empty URL is the webhook off, with its secret."""
+        answer = self._save(
+            self.manager, cloud_webhook_url="", cloud_webhook_secret="",
+        )
+        self.assertEqual(answer, {"ok": True})
+        self.assertFalse(self.manager._get_cloud_webhook_secret())
+        self.assertFalse(self.manager.cloud_webhook_url)
+        prefs = self._call(self.controller, "get_user_preferences", self.manager)
+        self.assertFalse(prefs["cloud_webhook_configured"])
+        self.assertEqual(prefs["cloud_webhook_url"], "")
+        self.assertEqual(
+            self.manager._get_cloud_telegram_bot_token(), "123456:manager-bot-token",
+        )
+
+    def test_a_secret_typed_with_the_channel_off_is_not_kept(self):
+        """No request leaves a secret that nothing uses."""
+        answer = self._save(
+            self.manager,
+            cloud_telegram_bot_token="999:typed-bot-token",
+            cloud_telegram_chat_id="  ",
+            cloud_webhook_url="",
+            cloud_webhook_secret="typed-signing-secret",
+        )
+        self.assertEqual(answer, {"ok": True})
+        self.assertFalse(self.manager._get_cloud_telegram_bot_token())
+        self.assertFalse(self.manager._get_cloud_webhook_secret())
+        # Nor by leaving the address out, when none is saved.
+        developer = self.roles["developer"]
+        self._save(
+            developer,
+            cloud_telegram_bot_token="888:typed-bot-token",
+            cloud_webhook_secret="typed-signing-secret",
+        )
+        self.assertFalse(developer._get_cloud_telegram_bot_token())
+        self.assertFalse(developer._get_cloud_webhook_secret())
+
+    def test_an_empty_secret_field_keeps_the_stored_one_while_on(self):
+        """The fields read «Stored»: leaving them empty changes nothing."""
+        answer = self._save(
+            self.manager,
+            cloud_telegram_bot_token="",
+            cloud_telegram_chat_id="424242",
+            cloud_webhook_url="https://hooks.example.com/manager",
+            cloud_webhook_secret="",
+        )
+        self.assertEqual(answer, {"ok": True})
+        self.assertEqual(
+            self.manager._get_cloud_telegram_bot_token(), "123456:manager-bot-token",
+        )
+        self.assertEqual(
+            self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
+        )
+        # A save that leaves both addresses out keeps them, and so the secrets.
+        self._save(self.manager)
+        self.assertEqual(
+            self.manager._get_cloud_telegram_bot_token(), "123456:manager-bot-token",
+        )
+        self.assertEqual(
+            self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
+        )
+
+    def test_another_user_cannot_delete_them(self):
+        """A save reaches only its caller's own channels."""
+        developer = self.roles["developer"]
+        # The route takes no user to act on: Odoo drops the argument.
+        with self.assertLogs("odoo.http", "WARNING"):
+            self._save(
+                developer, user_id=self.manager.id,
+                cloud_telegram_bot_token="", cloud_telegram_chat_id="",
+                cloud_webhook_url="", cloud_webhook_secret="",
+            )
+        self.assertEqual(
+            self.manager._get_cloud_telegram_bot_token(), "123456:manager-bot-token",
+        )
+        self.assertEqual(self.manager.cloud_telegram_chat_id, "424242")
+        self.assertEqual(
+            self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
+        )
+        self.assertEqual(
+            self.manager.cloud_webhook_url, "https://hooks.example.com/manager",
+        )
+        # Nor does the ORM let them clear another user's.
+        for fname in ("cloud_telegram_bot_token", "cloud_webhook_secret",
+                      "cloud_telegram_chat_id", "cloud_webhook_url"):
+            with self.subTest(field=fname), self.assertRaises(AccessError):
+                self.manager.with_user(developer).write({fname: False})
+
+    def test_detect_and_test_use_what_is_typed_without_saving_it(self):
+        """The token being set up reaches Telegram without being stored."""
+        from odoo.addons.incubacloud.controllers import connect
+
+        developer = self.roles["developer"]
+        response = MagicMock(spec=HTTPResponse)
+        response.__enter__.return_value = response
+        response.read.return_value = (
+            b'{"ok": true, "result": [{"message": {"chat": {"id": 515151}}}]}'
+        )
+        with patch.object(
+            connect.urllib.request, "urlopen", autospec=True,
+            return_value=response,
+        ) as urlopen:
+            detected = self._call(
+                self.controller, "telegram_detect_chat_id", developer,
+                bot_token="777:typed-bot-token",
+            )
+            tested = self._call(
+                self.controller, "telegram_send_test", developer,
+                bot_token="777:typed-bot-token", chat_id=" 515151 ",
+            )
+        self.assertEqual(detected, {"ok": True, "chat_id": "515151"})
+        self.assertEqual(tested, {"ok": True})
+        detect_req, test_req = (c.args[0] for c in urlopen.call_args_list)
+        self.assertIn("/bot777:typed-bot-token/getUpdates", detect_req.full_url)
+        self.assertIn("/bot777:typed-bot-token/sendMessage", test_req.full_url)
+        self.assertIn(b'"515151"', test_req.data)
+        self.assertFalse(developer._get_cloud_telegram_bot_token())
+        self.assertFalse(developer.cloud_telegram_chat_id)
+
+    def test_the_update_deletes_the_secrets_of_channels_already_off(self):
+        """A token without a chat ID or a secret without a URL goes."""
+        developer = self.roles["developer"]
+        consultant = self.roles["consultant"]
+        developer.write({
+            "cloud_telegram_bot_token": "555:orphan-bot-token",
+            "cloud_telegram_chat_id": False,
+            "cloud_webhook_url": " ",
+            "cloud_webhook_secret": "orphan-signing-secret",
+        })
+        consultant.write({"cloud_webhook_secret": "orphan-signing-secret"})
+        self.env.flush_all()
+        _load_channel_off_migration().migrate(self.env.cr, "1.0.228")
+        self.env.invalidate_all()
+        self.assertFalse(developer._get_cloud_telegram_bot_token())
+        self.assertFalse(developer._get_cloud_webhook_secret())
+        self.assertFalse(consultant._get_cloud_webhook_secret())
+        self.assertEqual(
+            self.manager._get_cloud_telegram_bot_token(), "123456:manager-bot-token",
+        )
+        self.assertEqual(
+            self.manager._get_cloud_webhook_secret(), "manager-signing-secret",
         )
 
 

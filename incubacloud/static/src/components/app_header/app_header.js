@@ -55,12 +55,18 @@ export class AppHeader extends Component {
             notifProjects: [],     // [{id, name}] pickable projects
             notifSaving: false,
             // Telegram
+            // The card's switch: on while the channel is saved; off on
+            // Save deletes the token and the chat ID.
+            telegramEnabled: false,
             telegramTokenConfigured: false,
             _telegramToken: "",    // a new bot token typed, "" keeps the stored one
             telegramChatId: "",
             telegramDetecting: false,
             telegramTesting: false,
             // Webhook
+            // The card's switch: on while the channel is saved; off on
+            // Save deletes the URL and the signing secret.
+            webhookEnabled: false,
             webhookSecretConfigured: false,
             _webhookSecret: "",    // a new signing secret typed, "" keeps the stored one
             webhookUrl: "",
@@ -337,19 +343,39 @@ export class AppHeader extends Component {
     }
 
     async _savePrefsSilent() {
-        // Persist current form values without closing the modal.
-        // Used by Detect / Send test buttons so the backend sees
-        // the values the user just typed.
+        // Persist current form values without closing the modal. A
+        // channel switched off goes with its address empty, which the
+        // server takes as off: it deletes the channel's secret too.
+        const telegram = this.state.telegramEnabled;
+        const webhook = this.state.webhookEnabled;
         await rpc("/cloud/save_user_preferences", {
             cloud_notification_level: this.state.notifLevel,
             cloud_notification_mode: this.state.notifMode,
             cloud_email_enabled: this.state.emailEnabled,
             cloud_muted_project_ids: this.state.notifMuted.map((p) => p.id),
-            cloud_telegram_bot_token: this.state._telegramToken || "",
-            cloud_telegram_chat_id: this.state.telegramChatId || "",
-            cloud_webhook_url: this.state.webhookUrl || "",
-            cloud_webhook_secret: this.state._webhookSecret || "",
+            cloud_telegram_bot_token: (telegram && this.state._telegramToken) || "",
+            cloud_telegram_chat_id: (telegram && this.state.telegramChatId) || "",
+            cloud_webhook_url: (webhook && this.state.webhookUrl) || "",
+            cloud_webhook_secret: (webhook && this.state._webhookSecret) || "",
         });
+    }
+
+    /**
+     * Turn the Telegram card's switch; off, the card hides its fields and
+     * Save deletes the stored token and chat ID.
+     */
+    toggleTelegram() {
+        this.state.telegramEnabled = !this.state.telegramEnabled;
+        this.state.notifErrors = {};
+    }
+
+    /**
+     * Turn the webhook card's switch; off, the card hides its fields and
+     * Save deletes the stored URL and signing secret.
+     */
+    toggleWebhook() {
+        this.state.webhookEnabled = !this.state.webhookEnabled;
+        this.state.notifErrors = {};
     }
 
     /**
@@ -373,6 +399,12 @@ export class AppHeader extends Component {
             this.state.telegramChatId = prefs?.cloud_telegram_chat_id || "";
             this.state.webhookSecretConfigured = prefs?.cloud_webhook_configured || false;
             this.state.webhookUrl = prefs?.cloud_webhook_url || "";
+            this.state.telegramEnabled = (
+                this.state.telegramTokenConfigured || !!this.state.telegramChatId
+            );
+            this.state.webhookEnabled = (
+                this.state.webhookSecretConfigured || !!this.state.webhookUrl
+            );
         } catch (_e) { console.debug("Preferences fetch skipped:", _e); }
         try {
             const data = await rpc("/cloud/get_projects", {});
@@ -420,10 +452,11 @@ export class AppHeader extends Component {
     async saveNotifPrefs() {
         this.state.notifSaving = true;
         try {
-            const hasToken = (
+            const telegram = this.state.telegramEnabled;
+            const hasToken = telegram && (
                 this.state._telegramToken || this.state.telegramTokenConfigured
             );
-            const hasChatId = !!this.state.telegramChatId;
+            const hasChatId = telegram && !!this.state.telegramChatId;
             if (hasToken && !hasChatId) {
                 this._notifFieldError(
                     "telegramChatId", "telegram",
@@ -438,10 +471,11 @@ export class AppHeader extends Component {
                 );
                 return;
             }
-            const hasSecret = (
+            const webhook = this.state.webhookEnabled;
+            const hasSecret = webhook && (
                 this.state._webhookSecret || this.state.webhookSecretConfigured
             );
-            const hasUrl = !!this.state.webhookUrl;
+            const hasUrl = webhook && !!this.state.webhookUrl;
             if (hasSecret && !hasUrl) {
                 this._notifFieldError(
                     "webhookUrl", "webhook",
@@ -462,8 +496,11 @@ export class AppHeader extends Component {
     async detectChatId() {
         this.state.telegramDetecting = true;
         try {
-            await this._savePrefsSilent();
-            const res = await rpc("/cloud/telegram_detect_chat_id", {});
+            // The token typed goes with the check instead of being saved
+            // first: the server keeps a token only with a chat ID.
+            const res = await rpc("/cloud/telegram_detect_chat_id", {
+                bot_token: this.state._telegramToken || "",
+            });
             if (res?.ok) {
                 this.state.telegramChatId = res.chat_id || "";
                 this.env.toast?.success(_t("Chat ID detected"));
@@ -480,8 +517,11 @@ export class AppHeader extends Component {
     async sendTelegramTest() {
         this.state.telegramTesting = true;
         try {
-            await this._savePrefsSilent();
-            const res = await rpc("/cloud/telegram_send_test", {});
+            // What the card shows, saved or not; the test saves nothing.
+            const res = await rpc("/cloud/telegram_send_test", {
+                bot_token: this.state._telegramToken || "",
+                chat_id: this.state.telegramChatId || "",
+            });
             if (res?.ok) {
                 this.env.toast?.success(_t("Test message sent"));
             } else {

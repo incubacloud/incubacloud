@@ -191,6 +191,7 @@ describe("AppHeader — notification preferences", () => {
         });
         const header = standIn();
         Object.assign(header.state, {
+            telegramEnabled: true, webhookEnabled: false,
             telegramTokenConfigured: false, _telegramToken: "", telegramChatId: "42",
             webhookSecretConfigured: false, _webhookSecret: "", webhookUrl: "",
         });
@@ -207,6 +208,7 @@ describe("AppHeader — notification preferences", () => {
     test("a signing secret without a URL: Save stops on the webhook URL", async () => {
         const header = standIn();
         Object.assign(header.state, {
+            telegramEnabled: false, webhookEnabled: true,
             telegramTokenConfigured: false, _telegramToken: "", telegramChatId: "",
             webhookSecretConfigured: true, _webhookSecret: "", webhookUrl: "",
         });
@@ -217,5 +219,84 @@ describe("AppHeader — notification preferences", () => {
         header.onWebhookUrlInput("https://hooks.example.com/cloud");
         expect(header.state.webhookUrl).toBe("https://hooks.example.com/cloud");
         expect(header.state.notifErrors).toEqual({});
+    });
+
+    test("both channels switched off: Save skips their checks and sends their fields empty", async () => {
+        const saved = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                if (url === "/cloud/get_user_preferences") {
+                    return Promise.resolve({
+                        cloud_telegram_configured: true, cloud_telegram_chat_id: "42",
+                        cloud_webhook_configured: true,
+                        cloud_webhook_url: "https://hooks.example.com/cloud",
+                    });
+                }
+                if (url === "/cloud/get_projects") {
+                    return Promise.resolve({ items: [] });
+                }
+                if (url === "/cloud/save_user_preferences") {
+                    saved.push(params);
+                }
+                return Promise.resolve({});
+            },
+        });
+        const header = standIn();
+        await header.openNotifModal();
+        // A saved channel opens switched on.
+        expect(header.state.telegramEnabled).toBe(true);
+        expect(header.state.webhookEnabled).toBe(true);
+        header.onTelegramTokenChange("typed-before-off");
+        header.toggleTelegram();
+        header.toggleWebhook();
+        await header.saveNotifPrefs();
+        expect(header.state.notifErrors).toEqual({});
+        expect(saved).toHaveLength(1);
+        // Empty addresses: the server deletes the token and the secret.
+        expect(saved[0].cloud_telegram_bot_token).toBe("");
+        expect(saved[0].cloud_telegram_chat_id).toBe("");
+        expect(saved[0].cloud_webhook_url).toBe("");
+        expect(saved[0].cloud_webhook_secret).toBe("");
+    });
+
+    test("a channel never saved opens switched off", async () => {
+        patchWithCleanup(rpc, {
+            _rpc(url) {
+                if (url === "/cloud/get_projects") {
+                    return Promise.resolve({ items: [] });
+                }
+                return Promise.resolve({
+                    cloud_telegram_configured: false, cloud_telegram_chat_id: "",
+                    cloud_webhook_configured: false, cloud_webhook_url: "",
+                });
+            },
+        });
+        const header = standIn();
+        await header.openNotifModal();
+        expect(header.state.telegramEnabled).toBe(false);
+        expect(header.state.webhookEnabled).toBe(false);
+    });
+
+    test("Detect and Send test carry what the card shows and save nothing", async () => {
+        const calls = [];
+        patchWithCleanup(rpc, {
+            _rpc(url, params) {
+                calls.push([url, params]);
+                return Promise.resolve({ ok: true, chat_id: "77" });
+            },
+        });
+        const header = standIn();
+        Object.assign(header.state, {
+            telegramEnabled: true, telegramTokenConfigured: false,
+            _telegramToken: "", telegramChatId: "",
+        });
+        header.onTelegramTokenChange("123:typed");
+        await header.detectChatId();
+        expect(header.state.telegramChatId).toBe("77");
+        await header.sendTelegramTest();
+        expect(calls).toEqual([
+            ["/cloud/telegram_detect_chat_id", { bot_token: "123:typed" }],
+            ["/cloud/telegram_send_test", { bot_token: "123:typed", chat_id: "77" }],
+        ]);
     });
 });

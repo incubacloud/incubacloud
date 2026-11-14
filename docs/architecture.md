@@ -1147,8 +1147,8 @@ All channels share one recipient rule: **active internal users filtered by recor
 |---|---|---|
 | Bus (real-time) | always | `cloud_jobs` (job events → toasts) and `cloud_overview` (alert badge + critical alert toasts) |
 | Email | per-user toggle | Immediate or **daily digest** (07:00 cron, QWeb template, watermark per user). Critical alerts and severe failures bypass digest mode. |
-| Telegram | bot token + chat id set | Markdown message via the Bot API, every name and message in it escaped as text (`telegram_markdown`); chat-id auto-detect and test-message endpoints in the UI |
-| Webhook (HMAC) | HTTPS URL set | JSON POST per event, optionally signed |
+| Telegram | bot token + chat id set | Markdown message via the Bot API, every name and message in it escaped as text (`telegram_markdown`); chat-id auto-detect and test-message endpoints in the UI. A save with the chat id empty deletes the token |
+| Webhook (HMAC) | HTTPS URL set | JSON POST per event, optionally signed. A save with the URL empty deletes the signing secret |
 
 For users at level `failures`, the alert pipeline only delivers `job_failed` alerts and critical alerts.
 
