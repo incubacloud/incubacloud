@@ -456,12 +456,17 @@ itself and its counters never expire).
   was when the read fails, and moves only to the last line read when the
   pages ran out, two passes in a row of which raise
   `security_events_backlog` (a warning per read, closed by the next pass
-  that reads to the end). After an outage the window reaches 24 hours
+  that reads to the end, or by a pass with no server or no central to
+  read). After an outage the window reaches 24 hours
   back. One more instant query a pass counts each server's sshd, sudo,
   fail2ban and auditd lines of the last 15 minutes: a server silent
   longer than that (`cloud.host.security_last_line_at`) is read again
   alone from where it went quiet, five a pass, since Fluent Bit sends what
-  it kept with the time it happened.
+  it kept with the time it happened. That field and the panel's addresses
+  a connection learns are written on a READ COMMITTED cursor of their
+  own, as the metrics cron writes its hosts: the cron's transaction never
+  writes a server's row, so a job's hook or a save of the server during
+  the pass does not roll the pass back.
   - *Sign-ins.* With the panel's key from an address it connects from
     (`security_panel_sources`, or `_hardening_panel_ip` where a layer
     knows it; IPv6 by /64), never an alert. Another key, or a password on
@@ -487,7 +492,11 @@ itself and its counters never expire).
     instances, console and terminal of the panel (a minute's margin around
     each), critical; root there, a warning (`ROOT_CHANGE_LEVEL`,
     provisional until root's changes on the fleet are measured: root's
-    crontab writes with login uid 0 too); the system's own, nothing.
+    crontab writes with login uid 0 too), also where the panel signs in as
+    root; the system's own, nothing. Each event is judged in a savepoint
+    of its own: one that fails is logged and skipped, and the pass goes
+    on. A change's time is auditd's stamp, or Loki's instant when the
+    stamp is more than 24 hours away from it.
   - *Once.* `cloud.security.event` keeps each event that raised or
     refreshed an alert, by server and line digest (or auditd's stamp),
     never the line, for 7 days: the overlap never counts one twice and a
@@ -978,7 +987,7 @@ and date when they are.
 | `security_ssh_bruteforce` | failed SSH connections in 10 min, per server | > 100 | 2 cycles | Ten a minute: a person who mistypes makes a few, a scanner of the internet hundreds (the F0 burst: 600 a minute) |
 | `security_f2b_ineffective` | fail2ban's `already banned` in 30 min, per server | > 20, critical | 2 cycles | An address banned that keeps arriving means the ban is not applied; under a heavy attack a few repeats while a ban is set may be normal, so a second reading before paging |
 | `security_weblogin_bruteforce` | failed web logins in 10 min, **per instance** (`ic_weblogin_failed_total`, `instance_id="0"` left out) | > 50 | 2 cycles | Five a minute against one instance: more than a forgotten password, well under what the web-login jail bans an address for |
-| `security_logs_silent` | 1 when Fluent Bit's exporter has not answered in 15 min, its Loki output dropped lines in 30 min, or it read lines of sshd, sudo or weblogin in 30 min and delivered none | > 0 | 1 cycle | Each condition is a window already; "up" alone says Fluent Bit lives, not that Loki takes what it sends (a 401 is retried for hours without dropping anything) |
+| `security_logs_silent` | 1 when Fluent Bit's exporter has not answered in 15 min, its Loki output dropped lines in 30 min, or it read lines of sshd, sudo or weblogin in 30 min and delivered none | > 0 | 2 cycles | "up" alone says Fluent Bit lives, not that Loki takes what it sends (a 401 is retried for hours without dropping anything); a second reading, as the other silence rules, so a line counted and not yet delivered at the scrape, or Loki down for a minute, does not page every server |
 
 Every one of them ends in `or (… * 0)`, a 0 for each target seen in the
 last hour (the reporting servers, for the silence rule): the evaluator
