@@ -1159,7 +1159,8 @@ class CloudInstance(models.Model):
         (archiving had already stopped): not archiving, not wanted to,
         with a cluster recorded. Not a stack configured outside the panel
         (its runbook), nor an archived instance (its archive goes with the
-        record, ``_archived_copy_extra_prefixes``).
+        record, ``_archived_copy_extra_prefixes``). One instance that fails
+        does not stop the others.
 
         :param bool from_jobs: date it from the last switch off its jobs
             record (``_pitr_last_switched_off``), the update's way; else,
@@ -1174,12 +1175,18 @@ class CloudInstance(models.Model):
         ])
         scheduled = 0
         for inst in found:
-            if inst._pitr_active():
-                continue
-            inst._pitr_schedule_purge(
-                inst._pitr_last_switched_off() if from_jobs else None,
-            )
-            scheduled += 1
+            try:
+                with self.env.cr.savepoint():
+                    if inst._pitr_active():
+                        continue
+                    inst._pitr_schedule_purge(
+                        inst._pitr_last_switched_off() if from_jobs else None,
+                    )
+                    scheduled += 1
+            except Exception as exc:  # noqa: BLE001 — one must not stop all
+                _logger.warning(
+                    "Continuous recovery purge date skipped %s: %s", inst.name, exc,
+                )
         return scheduled
 
     @api.model
