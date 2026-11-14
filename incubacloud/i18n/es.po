@@ -1339,7 +1339,8 @@ msgstr "Admitidos en el puerto directo"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings_search_box.xml:0
+#: code:addons/incubacloud/static/src/components/settings_form/settings_form.xml:0
 msgid "Advanced"
 msgstr "Avanzado"
 
@@ -6775,16 +6776,6 @@ msgstr "Configuración completa"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "GB"
 msgstr "GB"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid ""
-"GB\n"
-"                                        ("
-msgstr ""
-"GB\n"
-"                                        ("
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13175,8 +13166,6 @@ msgid "Queueing…"
 msgstr "Encolando…"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__quota_gb
 msgid "Quota (GB)"
 msgstr "Cuota (GB)"
@@ -24793,6 +24782,22 @@ msgstr "Instancia › Correo electrónico, en cada instancia"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Access and encryption"
+msgstr "Acceso y cifrado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"GB\n"
+"                                                ("
+msgstr ""
+"GB\n"
+"                                                ("
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
 "Opening a pull request (GitHub) or a merge request (GitLab) on a repository "
@@ -24817,3 +24822,9 @@ msgstr "Plantilla del proyecto"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Pull request previews"
 msgstr "Vistas previas de pull requests"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Quota"
+msgstr "Cuota"

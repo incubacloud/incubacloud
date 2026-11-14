@@ -360,9 +360,9 @@
 }
 
 // ── A record's page: group cards on the record grid (§2, §3) ────────────────
-// A project's fields sit in group cards no wider than 920 px, on the
-// 12-column record grid an instance's page brought (`.ic-rgrid`,
-// instance_detail.scss): S takes 3 columns, M 6, L the row.
+// A project's or a backup destination's fields sit in group cards no wider
+// than 920 px, on the 12-column record grid an instance's page brought
+// (`.ic-rgrid`, instance_detail.scss): S takes 3 columns, M 6, L the row.
 
 .ic-rec-col {
     max-inline-size: 920px;
@@ -374,5 +374,22 @@
     .ic-set-block__body > .rl-ftoggle:first-child {
         border-block-start: 0;
         padding-block-start: 4px;
+    }
+
+    // The fields folded under Advanced, close under its toggle.
+    .ic-set-adv .ic-set-block__body { padding-block-start: 4px; }
+}
+
+// A number with its unit as a suffix (Settings' `.ic-set-num`), as wide as
+// its cell and as tall as the fields beside it.
+.ic-rgrid .ic-set-num {
+    display: flex;
+    inline-size: 100%;
+
+    .ic-set-input {
+        flex: 1 1 auto;
+        inline-size: auto;
+        min-inline-size: 0;
+        padding: 9px 12px;
     }
 }
