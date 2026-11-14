@@ -315,6 +315,43 @@ class TestWebLoginAlert(_RuleCase):
         self.assertFalse(self._alerts("security_ssh_bruteforce").payload)
 
 
+class TestWebLoginReaderJoin(_RuleCase):
+    """The hook reads with ``logs.weblogin_top_sources`` and the central's details."""
+
+    def setUp(self):
+        """The shipped web-login rule."""
+        super().setUp()
+        self.rule = self._shipped("metric_rule_security_weblogin_bruteforce")
+
+    def _reader(self, answer):
+        """Patch the log reader's function with an autospec answering *answer*."""
+        return patch(
+            "odoo.addons.incubacloud.models.logs.weblogin_top_sources",
+            autospec=True, return_value=answer,
+        )
+
+    def test_the_reader_gets_the_central_the_server_and_the_instance(self):
+        """``base_url``, the host's id, the instance's id, the window and the credential."""
+        with self._reader([("203.0.113.5", 41), ("2001:db8:1:2::7", 5)]) as reader:
+            self.rule._sync_alerts([
+                ({"host_id": str(self.host.id), "instance_id": str(self.instance.id)}, 63.0),
+            ], central=CENTRAL)
+        reader.assert_called_once_with(
+            CENTRAL["base_url"], self.host.id, self.instance.id,
+            minutes=WEBLOGIN_MINUTES, token="t", user="acct", verify=True,
+        )
+        alert = self._alerts(WEBLOGIN_CODE)
+        self.assertIn("Most attempts: 203.0.113.5 (41), 2001:db8:1:2::/64 (5).", alert.message)
+
+    def test_a_reader_with_nothing_to_say_leaves_the_figure_alone(self):
+        """None from the reader: the alert goes out without addresses."""
+        with self._reader(None):
+            self.rule._sync_alerts([
+                ({"host_id": str(self.host.id), "instance_id": str(self.instance.id)}, 63.0),
+            ], central=CENTRAL)
+        self.assertNotIn("Most attempts", self._alerts(WEBLOGIN_CODE).message)
+
+
 class TestTopSources(TransactionCase):
     """The addresses an alert names, from what the reader counted."""
 
