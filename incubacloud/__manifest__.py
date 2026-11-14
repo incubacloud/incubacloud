@@ -158,6 +158,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "incubacloud/static/src/components/metrics/time_series_chart.xml",
             "incubacloud/static/src/components/metrics/chart_board.xml",
             "incubacloud/static/src/components/metrics/host_board.xml",
+            "incubacloud/static/src/components/metrics/host_security_board.xml",
             "incubacloud/static/src/components/metrics/fleet_board.xml",
             "incubacloud/static/src/components/monitoring/monitoring.xml",
             "incubacloud/static/src/components/search_select/search_select.xml",

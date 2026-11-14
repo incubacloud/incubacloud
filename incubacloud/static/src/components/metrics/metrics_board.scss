@@ -560,6 +560,73 @@
   overflow-wrap: anywhere;
 }
 
+// A server's Metrics tab: Performance | Security above its board.
+.ic-host-metrics-view {
+  margin-block-end: 14px;
+}
+
+// The Security view (host_security_board.js): the defence as a list of
+// findings, the web logins' figures, the filter and the lines read.
+.ic-sb-defense {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 6px 18px;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+}
+
+.ic-sb-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 6px 0 10px;
+  padding: 0;
+  list-style: none;
+  color: var(--rl-fg2);
+  font-size: 12.5px;
+
+  strong {
+    color: var(--rl-fg);
+    font-family: var(--rl-fm);
+  }
+}
+
+.ic-sb-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block: 4px 6px;
+
+  label {
+    color: var(--rl-muted);
+    font-size: 12.5px;
+  }
+}
+
+.ic-sb-select {
+  max-inline-size: 260px;
+}
+
+.ic-sb-lines {
+  margin-inline-start: auto;
+}
+
+.ic-sb-user {
+  margin-inline-start: 8px;
+  white-space: nowrap;
+}
+
+.ic-sb-sample {
+  margin-block: 6px 0;
+}
+
+.ic-sb-pre {
+  max-block-size: 420px;
+  overflow: auto;
+}
+
 // On a phone every table of the app becomes cards (app.scss, "Lists
 // become cards"): here a card is the row's name on a line of its own,
 // then each figure with its label, wrapping as the width allows.
