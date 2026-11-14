@@ -1,4 +1,6 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { Deferred, describe, expect, test } from "@odoo/hoot";
+import { patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { rpc } from "@web/core/network/rpc";
 import { ProjectDetail } from "@incubacloud/components/project_detail/project_detail";
 
 /**
@@ -547,8 +549,10 @@ describe("ProjectDetail — the save bar", () => {
             aptDeps: "",
             members: [],
             langs: [],
+            project: { name: "shop" },
         };
-        comp.validator = { clearErrors() {} };
+        // Takes only the call Discard makes, and logs it.
+        comp.validator = { clearErrors: () => expect.step("clearErrors") };
         comp._snapshotForm();
         return comp;
     }
@@ -566,6 +570,7 @@ describe("ProjectDetail — the save bar", () => {
         expect(comp.state.selectedTags).toEqual([{ id: 1, name: "eu" }]);
         expect(comp.state.pipDeps).toBe("requests");
         expect(comp.hasUnsavedChanges).toBe(false);
+        expect.verifySteps(["clearErrors"]);
     });
 
     test("a pin the server stored is not an unsaved change", () => {
@@ -575,5 +580,41 @@ describe("ProjectDetail — the save bar", () => {
         expect(comp.unsavedCount).toBe(0);
         comp.onRepoChange("srv_4", "addons", "sale_x");
         expect(comp.unsavedCount).toBe(1);
+    });
+
+    test("what was sent is saved, with the ids of new rows; a later edit stays unsaved", async () => {
+        const answer = new Deferred();
+        patchWithCleanup(rpc, { _rpc: () => answer });
+        const comp = page();
+        comp.props = { project_id: 3 };
+        comp.validator = { validate: () => ({ isValid: true, firstError: "" }) };
+        comp.env = {
+            toast: { success: () => expect.step("saved") },
+            refreshAlertCount: () => expect.step("alerts"),
+        };
+        comp.state.repos.unshift({ _key: "new_1", id: null, url: "https://x/z.git", commit_sha: "" });
+        const saving = comp.save();
+        comp.state.form.name = "shop2";
+        answer.resolve({ repos: [{ id: 9 }, { id: 4 }] });
+        await saving;
+        expect.verifySteps(["saved", "alerts"]);
+        expect(comp.state.repos[0].id).toBe(9);
+        expect(JSON.parse(comp._savedForm).repos[0].id).toBe(9);
+        // Only the name typed while the save was out is unsaved.
+        expect(comp.unsavedCount).toBe(1);
+    });
+
+    test("requirements fetched after Discard leave the dependencies as saved", async () => {
+        const answer = new Deferred();
+        patchWithCleanup(rpc, { _rpc: () => answer });
+        const comp = page();
+        comp.state.form.name = "shop2";
+        const fetching = comp._fetchAndMergeRequirements("https://x/y.git", "19.0");
+        comp.discard();
+        answer.resolve({ ok: true, found: true, content: "lxml\n" });
+        await fetching;
+        expect(comp.state.pipDeps).toBe("requests");
+        expect(comp.unsavedCount).toBe(0);
+        expect.verifySteps(["clearErrors"]);
     });
 });

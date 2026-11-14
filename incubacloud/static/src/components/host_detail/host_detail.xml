@@ -666,7 +666,7 @@
                                     </div>
                                     <div class="rl-frow rl-full" t-if="!isNew or state.form.key_source === 'upload'">
                                         <label>SSH private key <span class="rl-req">*</span></label>
-                                        <input type="file" accept=".pem,.key,.txt"
+                                        <input type="file" accept=".pem,.key,.txt" t-ref="keyFile"
                                                t-on-change="onKeyFileChange"/>
                                         <t t-if="!isNew and state.has_key_file and !state.form.key_file">
                                             <span class="ic-form-note ic-form-note--set">

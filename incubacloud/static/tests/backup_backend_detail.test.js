@@ -1,4 +1,6 @@
-import {describe, expect, test} from "@odoo/hoot";
+import {Deferred, describe, expect, test} from "@odoo/hoot";
+import {patchWithCleanup} from "@web/../tests/web_test_helpers";
+import {rpc} from "@web/core/network/rpc";
 import {BackupBackendDetail} from "@incubacloud/components/backup_backend_detail/backup_backend_detail";
 
 /**
@@ -221,5 +223,26 @@ describe("BackupBackendDetail — method existence", () => {
 
   test("onPasswordChange method exists", () => {
     expect(typeof BackupBackendDetail.prototype.onPasswordChange).toBe("function");
+  });
+});
+
+describe("BackupBackendDetail — the save bar", () => {
+  test("what was sent is saved; an edit made while the save is out stays unsaved", async () => {
+    const answer = new Deferred();
+    patchWithCleanup(rpc, {_rpc: () => answer});
+    const comp = Object.create(BackupBackendDetail.prototype);
+    comp.props = {backend_id: 5};
+    comp.state = {saving: false, form: {name: "r2", quota_gb: 0}, backend: {name: "r2"}};
+    comp.validator = {validate: () => ({isValid: true, firstError: ""})};
+    comp.env = {toast: {success: () => expect.step("saved")}};
+    comp._snapshotForm();
+    comp.state.form.quota_gb = 50;
+    const saving = comp.save();
+    comp.state.form.name = "r2-eu";
+    answer.resolve(true);
+    await saving;
+    expect.verifySteps(["saved"]);
+    expect(JSON.parse(comp._savedForm)).toEqual({name: "r2", quota_gb: 50});
+    expect(comp.unsavedCount).toBe(1);
   });
 });

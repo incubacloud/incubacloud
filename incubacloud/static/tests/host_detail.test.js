@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { beforeEach, Deferred, describe, expect, test } from "@odoo/hoot";
 import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
@@ -969,6 +969,8 @@ describe("HostDetail — save sends the key the person chose", () => {
             },
             _refreshDefaultCertificate: () => Promise.resolve(),
             _snapshotForm: () => {},
+            // The real one: a save takes what it sends as saved.
+            _currentFormKey: HostDetail.prototype._currentFormKey,
         };
     }
 
@@ -1098,15 +1100,32 @@ describe("HostDetail — a password host on a panel without sshpass", () => {
 });
 
 describe("HostDetail — the save bar", () => {
-    test("the form and the tags count; Discard keeps what is typed in the whitelist box", () => {
+    /**
+     * A stand-in for a saved host's page, taken as saved; its validator
+     * takes only the call Discard makes, and logs it.
+     *
+     * @returns {object} the stand-in
+     */
+    function savedHost() {
         const comp = Object.create(HostDetail.prototype);
+        comp.props = { host_id: 3 };
         comp.state = {
-            form: { name: "pool-1", port: 22, newWhitelistEntry: "", generated_key: "k" },
+            saving: false,
+            form: {
+                name: "pool-1", port: 22, newWhitelistEntry: "", generated_key: "k",
+                whitelist: [], key_source: "upload", key_file: null, tls_default_key: "",
+            },
             selectedTags: [{ id: 1, name: "eu" }],
             allTags: [{ id: 1, name: "eu" }, { id: 2, name: "big" }],
+            host: { name: "pool-1" },
         };
-        comp.validator = { clearErrors() {} };
+        comp.validator = { clearErrors: () => expect.step("clearErrors") };
         comp._snapshotForm();
+        return comp;
+    }
+
+    test("the form and the tags count; Discard keeps what is typed in the whitelist box", () => {
+        const comp = savedHost();
         comp.state.form.port = 2222;
         comp.state.form.newWhitelistEntry = "typing.example";
         comp.state.selectedTags = [{ id: 2, name: "big" }];
@@ -1117,5 +1136,50 @@ describe("HostDetail — the save bar", () => {
         expect(comp.state.form.generated_key).toBe("k");
         expect(comp.state.selectedTags).toEqual([{ id: 1, name: "eu" }]);
         expect(comp.hasUnsavedChanges).toBe(false);
+        expect.verifySteps(["clearErrors"]);
+    });
+
+    test("Discard empties the key's file input with the key it read", () => {
+        const comp = savedHost();
+        const input = document.createElement("input");
+        input.type = "file";
+        const picked = new DataTransfer();
+        picked.items.add(new File(["-----BEGIN KEY-----"], "id_ed25519.pem"));
+        input.files = picked.files;
+        comp.keyFileRef = { el: input };
+        comp.state.form.key_file = "LS0tLS1CRUdJTg==";
+        expect(comp.unsavedCount).toBe(1);
+        expect(input.files.length).toBe(1);
+        comp.discard();
+        expect(comp.state.form.key_file).toBe(null);
+        expect(input.value).toBe("");
+        expect(input.files.length).toBe(0);
+        expect.verifySteps(["clearErrors"]);
+    });
+
+    test("what was sent is saved, the stored keys gone from it; a later edit stays unsaved", async () => {
+        const answer = new Deferred();
+        const routes = [];
+        patchWithCleanup(rpc, {
+            _rpc: (route) => {
+                routes.push(route);
+                return route === "/cloud/save_host" ? answer : Promise.resolve({ has_key_file: true });
+            },
+        });
+        const comp = savedHost();
+        comp.validator = { validate: () => ({ isValid: true, firstError: "" }) };
+        comp.env = { toast: { success: () => expect.step("saved") } };
+        comp.state.form.key_file = "LS0tLS1CRUdJTg==";
+        comp.state.form.tls_default_key = "-----BEGIN PRIVATE KEY-----";
+        const saving = comp.save();
+        comp.state.form.port = 2200;
+        answer.resolve(true);
+        await saving;
+        expect.verifySteps(["saved"]);
+        expect(routes).toEqual(["/cloud/save_host", "/cloud/get_host"]);
+        expect(comp.state.form.key_file).toBe(null);
+        // Only the port typed while the save was out is unsaved.
+        expect(comp.unsavedCount).toBe(1);
+        expect(JSON.parse(comp._savedForm).form.port).toBe(22);
     });
 });

@@ -1,4 +1,4 @@
-import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv } from "@odoo/owl";
+import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv, useRef } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
@@ -92,6 +92,8 @@ export class HostDetail extends Component {
         this.orm = useService("orm");
         this.traefikFiles = TRAEFIK_FILES;
         this.isNew = !this.props.host_id;
+        // The SSH private key's file input, which Discard empties.
+        this.keyFileRef = useRef("keyFile");
 
         this.state = useState({
             tab: this.isNew ? "general" : (LINKABLE_TABS.has(this.props.tab) ? this.props.tab : "overview"),
@@ -295,13 +297,15 @@ export class HostDetail extends Component {
     }
 
     /**
-     * Put the form and the tags back as they were loaded or last saved.
+     * Put the form and the tags back as they were loaded or last saved,
+     * and empty the key's file input, whose file the form no longer holds.
      * The text typed in the whitelist box and the generated key stay.
      */
     discard() {
         if (!this._savedForm) return;
         const saved = JSON.parse(this._savedForm);
         restoreForm(this.state.form, saved.form, ["newWhitelistEntry", "generated_key"]);
+        if (this.keyFileRef?.el) this.keyFileRef.el.value = "";
         const known = [...this.state.selectedTags, ...this.state.allTags];
         this.state.selectedTags = saved.tags
             .map((id) => known.find((t) => t.id === id))
@@ -980,10 +984,16 @@ export class HostDetail extends Component {
                 this._snapshotForm();
                 this.env.navigate("host_detail", { host_id: result.id });
             } else {
+                // What was sent is what is saved; an edit made while the
+                // save was out stays unsaved.
+                const sent = JSON.parse(this._currentFormKey());
                 await rpc("/cloud/save_host", { host_id: this.props.host_id, vals });
                 this.state.host.name = vals.name;
                 await this._refreshDefaultCertificate();
-                this._snapshotForm();
+                // The pasted keys leave the form once stored.
+                sent.form.tls_default_key = "";
+                sent.form.key_file = null;
+                this._savedForm = JSON.stringify(sent);
                 this.env.toast?.success(_t("Changes saved"));
             }
         } catch (e) {
