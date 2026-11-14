@@ -9,8 +9,11 @@ replaced at ``requests.get`` (its PromQL and its Loki alike) and the
 country lookup by an autospec.
 """
 import json
+import shutil
+import tempfile
 import time
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import create_autospec, patch
 
 from odoo.tests.common import HttpCase, TransactionCase, tagged
@@ -19,6 +22,7 @@ from ..models import geoip, metrics_security
 from ..models.metrics_charts import PANELS
 from ..models.logs import LogLine
 from ..models.metrics_diagnosis import diagnose_host_security
+from .test_geoip import _mmdb
 from .test_host_fleet_series import _ROLES, _matrix, _response, _vector
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
@@ -266,6 +270,38 @@ class TestSecurityBoard(HttpCase):
         self.assertEqual(sudo[0]["program"], "/usr/bin/true")
         self.assertEqual(sudo[0]["attribution"], "other_user")
         self.assertEqual(res["attribution"], geoip.ATTRIBUTION)
+
+    def test_a_real_lookup_with_a_public_address_gives_its_country_and_attribution(self):
+        """A real ``CountryLookup``, not the autospec: ``attribution`` is a property.
+
+        A public address of the sign-ins resolves to a country, so the
+        attribution is read: DB-IP's line from DB-IP's database, none
+        from Odoo's.
+        """
+        if geoip.maxminddb is None:
+            self.skipTest("maxminddb is not installed")
+        tmp = tempfile.mkdtemp(prefix="test-secboard-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = Path(tmp, "country.mmdb")
+        path.write_bytes(_mmdb({"8.8.8.0/24": "US"}))
+        reader = geoip.maxminddb.open_database(str(path))
+        self.addCleanup(reader.close)
+        for source, attribution in (("dbip", geoip.ATTRIBUTION), ("odoo", None)):
+            with self.subTest(source=source):
+                metrics_security._CACHE.clear()
+                central = _Central(self.instance, self.stranger)
+                central.lines["accepted"] = [(
+                    time.time_ns() - 100 * _SECOND,
+                    "Accepted publickey for probador from 8.8.8.8 port 60560 ssh2",
+                )]
+                lookup = geoip.CountryLookup(reader, source)
+                with patch.object(geoip, "resolver", return_value=lookup):
+                    res, _central = self._board("secb-mgr", central=central, range_key="24h")
+                self.assertTrue(res["ok"], res)
+                accepted = res["tables"]["accepted"]["rows"]
+                self.assertEqual(accepted[0]["address"], "8.8.8.8")
+                self.assertEqual(accepted[0]["country"], "US")
+                self.assertEqual(res["attribution"], attribution)
 
     def test_seven_days_of_an_aggregation_are_cut_to_24_hours(self):
         """The failed SSH sample reaches 24 h; the sign-ins, filtered, 7 days."""

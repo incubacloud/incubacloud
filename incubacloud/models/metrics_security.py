@@ -369,7 +369,7 @@ class CloudHost(models.Model):
         if detail:
             answer["tables"] = self._security_tables(reads, names, country, instance_id)
         answer["diagnosis"] = diagnose_host_security(answer, self, now=time.time())
-        answer["attribution"] = lookup.attribution() if countries else None
+        answer["attribution"] = lookup.attribution if countries else None
         return answer
 
     # ── Reading the logs ──────────────────────────────────────────────────
