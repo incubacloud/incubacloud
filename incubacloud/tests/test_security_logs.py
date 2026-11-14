@@ -50,6 +50,33 @@ CLOSED_VALUES = {
 }
 
 
+#: The web-login jail's filter, the collector's grep before its Lua and
+#: the Lua's test of the same failure, as they must change: together, with
+#: the bats run (review of 14-nov-2026, M3).
+_WEBLOGIN_FAILREGEX = (
+    '^(?=.*"RequestMethod":"POST")'
+    '(?=.*"RequestPath":"/web/login(?:/totp)?(?:\\?[^"]*)?")'
+    '(?=.*"DownstreamStatus":200,).*"ClientHost":"<HOST>"'
+)
+_WEBLOGIN_GREP = ['log "RequestMethod":"POST"', 'log "RequestPath":"/web/login']
+_WEBLOGIN_LUA = """\
+local function weblogin_failed(line)
+    if not line:find('"RequestMethod":"POST"', 1, true) then
+        return false
+    end
+    if not line:find('"DownstreamStatus":200,', 1, true) then
+        return false
+    end
+    local path = field(line, "RequestPath")
+    if not path then
+        return false
+    end
+    local query = path:find("?", 1, true)
+    local base = query and path:sub(1, query - 1) or path
+    return base == "/web/login" or base == "/web/login/totp"
+end"""
+
+
 def _key_file():
     """Return a new key as ``key_file`` stores it, and its fingerprint."""
     key = asyncssh.generate_private_key("ssh-ed25519")
@@ -197,6 +224,49 @@ class TestTheRenderedCollector(TransactionCase):
         self.assertNotIn("ClientUsername", lua)
         # The instance is an id the panel wrote, or "0".
         self.assertIn('local best, best_len = "0", 0', lua)
+
+    def test_the_lua_and_the_jail_change_together(self):
+        """The collector counts what the web-login jail bans, and nothing else.
+
+        Only the bats runs the Lua (``fluent_bit_lines.bats``, which
+        GitHub's CI skips without Docker): the jail's filter, the native
+        grep before the Lua and the Lua's own test are pinned here
+        together, so that one cannot move without this failing (review of
+        14-nov-2026, M3).
+        """
+        hint = (
+            "the web-login jail's filter, the collector's grep or its Lua "
+            "changed: change the other two to match, run "
+            "IC_FLUENT_BIT_TEST=1 bats incubacloud/tests/shell/fluent_bit_lines.bats "
+            "and update this test"
+        )
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks", "host_hardening.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            tasks = yaml.safe_load(fh)[0]["tasks"]
+        jail = next(
+            t for t in tasks if t.get("name") == "Write the fail2ban web-login filter"
+        )["ansible.builtin.copy"]["content"]
+        failregex = re.search(r"^failregex = (.+)$", jail, re.MULTILINE)[1]
+        self.assertEqual(failregex, _WEBLOGIN_FAILREGEX, hint)
+        grep = self._config()["pipeline"]["filters"][0]
+        self.assertEqual(grep["regex"], _WEBLOGIN_GREP, hint)
+        lua = playbook.fluent_bit_files()["classify.lua"]
+        body = re.search(
+            r"^local function weblogin_failed\(line\)\n.*?^end$", lua,
+            re.MULTILINE | re.DOTALL,
+        )
+        self.assertTrue(body, hint)
+        self.assertEqual(body[0], _WEBLOGIN_LUA, hint)
+        # And what the Lua asks for is what the filter asks for.
+        for literal in ('"RequestMethod":"POST"', '"DownstreamStatus":200,'):
+            self.assertIn(literal, body[0], hint)
+            self.assertIn(literal, failregex, hint)
+        self.assertIn('"RequestPath":"/web/login(?:/totp)?(?:\\?[^"]*)?"', failregex, hint)
+        self.assertIn(
+            'return base == "/web/login" or base == "/web/login/totp"', body[0], hint,
+        )
 
     def test_the_log_store_url_is_split(self):
         loki = self._config(
