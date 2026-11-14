@@ -545,7 +545,7 @@ exit 0
         self.assertIn("pitr-inst-pitr", alert.message)
 
     def test_on_a_managed_destination_the_alert_goes_to_the_provider(self):
-        """The tenant holds no credentials of that bucket."""
+        """Whoever runs the panel holds no credentials of that bucket."""
         self.inst.pitr_cluster_id = "7698"
         self.backend.sudo().managed_reservation_id = "managed-1"
         _left, alert = self._left()
