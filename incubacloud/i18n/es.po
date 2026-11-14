@@ -11546,6 +11546,7 @@ msgstr "Sin enrolar todavía"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "Not hardened"
 msgstr "Sin endurecer"
 
@@ -15039,6 +15040,7 @@ msgid "Session not found"
 msgstr "Sesión no encontrada"
 
 #. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_session_guard.py:0
 #, python-format
 msgid ""
@@ -15998,6 +16000,7 @@ msgstr ""
 " el host y pulse «Configuración completa»."
 
 #. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/observability_central_executor.py:0
 msgid ""
 "Full Setup has not been run on this server: run it and enable observability "
@@ -23934,6 +23937,7 @@ msgid "an address the panel could not learn"
 msgstr "una dirección que el panel no ha podido conocer"
 
 #. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_session_guard.py:0
 msgid "browser family"
 msgstr "familia de navegador"
@@ -23945,6 +23949,7 @@ msgid "close"
 msgstr "cerrar"
 
 #. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_session_guard.py:0
 msgid "country"
 msgstr "país"
@@ -25677,7 +25682,9 @@ msgstr ""
 "doble factor; el detalle está en Métricas → Seguridad de su servidor."
 
 #. module: incubacloud
+#. odoo-javascript
 #: model:cloud.metric.rule,name:incubacloud.metric_rule_security_logs_silent
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
 msgid "Security logs not arriving"
 msgstr "No llegan los registros de seguridad"
 
@@ -26026,6 +26033,7 @@ msgstr "¿Funciona la defensa?"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid ""
 "Its servers do not send their security logs until the panel's provider "
 "allows them."
@@ -26295,6 +26303,7 @@ msgstr "root"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid "Security"
 msgstr "Seguridad"
 
@@ -26313,6 +26322,7 @@ msgstr "Líneas de seguridad que envió este servidor por hora, por origen"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/metrics/host_security_board.xml:0
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
 msgid "Security logs are not available on this panel yet"
 msgstr "Los registros de seguridad aún no están disponibles en este panel"
 
@@ -26607,3 +26617,158 @@ msgstr "sí"
 #: code:addons/incubacloud/static/src/components/metrics/host_security_board.js:0
 msgid "· %s different users"
 msgstr "· %s usuarios distintos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "failed SSH logins"
+msgstr "inicios de sesión SSH fallidos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "addresses banned"
+msgstr "direcciones bloqueadas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Failed SSH logins in the last hour"
+msgstr "Inicios de sesión SSH fallidos en la última hora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers under SSH brute force now"
+msgstr "Servidores bajo fuerza bruta por SSH ahora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Addresses banned in the last hour"
+msgstr "Direcciones bloqueadas en la última hora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Instances under web-login brute force now"
+msgstr "Instancias bajo fuerza bruta en el inicio de sesión web ahora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers with security alerts"
+msgstr "Servidores con alertas de seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers whose security logs are not arriving"
+msgstr "Servidores cuyos registros de seguridad no llegan"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers with security logs off"
+msgstr "Servidores con los registros de seguridad apagados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Servers without hardening"
+msgstr "Servidores sin endurecer"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Failed SSH logins and bans"
+msgstr "Inicios de sesión SSH fallidos y bloqueos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "per hour · every server"
+msgstr "por hora · todos los servidores"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Failed SSH logins and addresses banned on the servers per hour"
+msgstr ""
+"Inicios de sesión SSH fallidos y direcciones bloqueadas en los servidores "
+"por hora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "No failed SSH login on the servers in this window."
+msgstr ""
+"Ningún inicio de sesión SSH fallido en los servidores en este intervalo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "%s more servers with something to look at."
+msgstr "Otros %s servidores con algo que revisar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Security alerts: %s"
+msgstr "Alertas de seguridad: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "SSH brute force: %s failed in 10 min"
+msgstr "Fuerza bruta por SSH: %s intentos fallidos en 10 min"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Web-login brute force, instances: %s"
+msgstr "Fuerza bruta en el inicio de sesión web, instancias: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.js:0
+msgid "Security logs off"
+msgstr "Registros de seguridad apagados"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid ""
+"Figures only: who tried and from where is in each server's Metrics tab, "
+"under Security."
+msgstr ""
+"Solo cifras: quién lo intentó y desde dónde se ve en la pestaña Métricas de "
+"cada servidor, en Seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid ""
+"The central's figures count every account's servers; only this panel's "
+"servers are listed."
+msgstr ""
+"Las cifras de la central cuentan los servidores de todas las cuentas; solo "
+"se listan los servidores de este panel."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "Servers to look at"
+msgstr "Servidores que revisar"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "this panel's own"
+msgstr "solo los de este panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/metrics/fleet_board.xml:0
+msgid "No server of this panel has anything to look at."
+msgstr "Ningún servidor de este panel tiene nada que revisar."
