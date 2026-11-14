@@ -30,7 +30,9 @@ from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 from ._constants import (
     AGENT_SERVICE,
     ALERT_MODULES,
+    ALERT_PREFIX_CHANGED,
     ALERT_PREFIX_LEFT,
+    ALERT_PURGE_FAILED,
     ENV_FILE,
     OBJECTIVES,
     PGDATA,
@@ -48,7 +50,7 @@ _logger = logging.getLogger(__name__)
 #: Job types of this module that change the stack, in flight one at a time.
 PITR_STACK_JOBS = ("pitr_enable", "pitr_disable", "pitr_restore")
 #: Every job type of this module.
-PITR_JOBS = (*PITR_STACK_JOBS, "pitr_status", "pitr_base_backup")
+PITR_JOBS = (*PITR_STACK_JOBS, "pitr_status", "pitr_base_backup", "pitr_purge")
 #: A recovery target, as the panel and the API accept it (UTC).
 _TARGET_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?Z?$")
 #: ``backup_retention`` (duplicity syntax) to days.
@@ -62,7 +64,8 @@ PITR_FIELDS = frozenset({
     "pitr_state", "pitr_cluster_id", "pitr_previous_clusters",
     "pitr_oldest_base_at", "pitr_last_base_at", "pitr_last_archived_at",
     "pitr_failed_count", "pitr_checked_at", "pitr_timelines",
-    "pitr_archived_prefix",
+    "pitr_archived_prefix", "pitr_off_at", "pitr_purge_at",
+    "pitr_rendered_prefix", "pitr_rendered_backend_id",
 })
 #: Label of the delete's first purge of the recovery prefix.
 PURGE_LABEL = "Purge the continuous recovery archive"
@@ -174,6 +177,28 @@ class CloudInstance(models.Model):
         "archived (s3://bucket/path), emptied when it is deleted for "
         "good. Frozen as the duplicity path is: the computed one follows "
         "the project, which may change or go meanwhile.",
+    )
+    pitr_off_at = fields.Datetime(
+        string="Recovery Switched Off", copy=False, readonly=True,
+        help="When the instance stopped archiving with an archive in the "
+        "bucket. What was archived before it is emptied on the purge date.",
+    )
+    pitr_purge_at = fields.Datetime(
+        string="Recovery Archive Purge", copy=False, readonly=True,
+        help="When the archive of an instance switched off is emptied: the "
+        "moment it was switched off plus the backup window it had then. "
+        "Switching it on again before then keeps the archive.",
+    )
+    pitr_rendered_prefix = fields.Char(
+        string="Rendered Recovery Prefix", copy=False, readonly=True,
+        help="The prefix the instance's server was last given to archive "
+        "to (s3://bucket/path), kept by every rebuild that writes the "
+        "recovery credentials.",
+    )
+    pitr_rendered_backend_id = fields.Many2one(
+        "cloud.backup.backend", string="Rendered Recovery Destination",
+        copy=False, readonly=True, ondelete="set null",
+        help="The backup destination of the rendered recovery prefix.",
     )
 
     # ── What applies ─────────────────────────────────────────────────────
@@ -565,11 +590,7 @@ class CloudInstance(models.Model):
         """
         files = super()._extra_env_files()
         renders = self._pitr_renders()
-        keeps_archive = (
-            self.pitr_cluster_id and self._pitr_applicable()
-            and not self.pitr_stack_external and self.sudo().pitr_key
-        )
-        if not (renders or keeps_archive):
+        if not self._pitr_writes_env():
             return files
         files = dict(files)
         files[ENV_FILE] = self._pitr_env()
@@ -584,6 +605,22 @@ class CloudInstance(models.Model):
                 "filestore copy that worked started.\n"
             )
         return files
+
+    def _pitr_writes_env(self):
+        """Whether the stack gets the agent's environment (``pitr.env``).
+
+        While it archives, and once switched off while the instance still
+        has an archive (a cluster recorded): the delete's purge reads it.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self._pitr_renders():
+            return True
+        return bool(
+            self.pitr_cluster_id and self._pitr_applicable()
+            and not self.pitr_stack_external and self.sudo().pitr_key
+        )
 
     def _pitr_env(self):
         """The agent's environment: wal-g, the database, rclone's remotes.
@@ -800,8 +837,12 @@ class CloudInstance(models.Model):
         to a moment whose database could not be updated to the code
         (``ALERT_MODULES``). A flow that renders the stack without that
         update (a flow that skips the step, a move's deploy) does not.
+
+        It also keeps where the stack was told to archive
+        (``_pitr_record_rendered``).
         """
         super()._after_stack_rendered()
+        self._pitr_record_rendered()
         self._pitr_reconcile(after_rebuild=True)
         if self.env.context.get("ic_modules_updated"):
             self.env["cloud.alert"].resolve_alert(ALERT_MODULES, instance=self)
@@ -879,6 +920,10 @@ class CloudInstance(models.Model):
         self.ensure_one()
         if self.move_origin_host_id or self.pitr_stack_external or not self.host_id:
             return None
+        if self._pitr_active():
+            # Wanted on again (a plan raised, the field set): the archive
+            # is kept, and a purge still waiting would hold the switch.
+            self._pitr_cancel_purge()
         if self._pitr_job_in_flight(PITR_JOBS):
             return None
         if after_rebuild and self._pitr_others_busy():
@@ -921,6 +966,259 @@ class CloudInstance(models.Model):
         if (self.pitr_state or "off") == "enabling":
             self.sudo().pitr_state = "off"
         return None
+
+    # ── Where it archives, and the archive once switched off ────────────
+
+    def _pitr_record_rendered(self):
+        """Keep the prefix and destination the stack was just given.
+
+        Read once a rebuild wrote ``pitr.env`` (``_pitr_writes_env``): what
+        the server archives to, and what the purge of an instance switched
+        off empties (``_pitr_purge_target``). A prefix that differs from
+        the one last recorded (a backend changed, the project's folder
+        renamed, a bucket edited), or the same prefix on another
+        destination, leaves what was archived before where it was, with
+        nothing that empties it: ``pitr_prefix_changed`` says where
+        (``_pitr_alert_prefix_changed``).
+        """
+        self.ensure_one()
+        if not self._pitr_writes_env():
+            return
+        backend = self.effective_backup_backend
+        prefix = self._pitr_prefix_base()
+        old_prefix = self.pitr_rendered_prefix
+        old_backend = self.pitr_rendered_backend_id
+        if old_prefix == prefix and old_backend == backend:
+            return
+        if old_prefix and (
+            old_prefix != prefix or (old_backend and old_backend != backend)
+        ):
+            self._pitr_alert_prefix_changed(old_prefix, old_backend, prefix)
+        self.sudo().write({
+            "pitr_rendered_prefix": prefix,
+            "pitr_rendered_backend_id": backend.id,
+        })
+
+    def _pitr_alert_prefix_changed(self, old_prefix, old_backend, prefix):
+        """Raise ``pitr_prefix_changed`` for the prefix a rebuild left.
+
+        On the instance, keyed by the old prefix: each change leaves one.
+        Restores to a moment before the change may still need it for a
+        backup window; from then on a person empties it (RB-23 §4). To the
+        service provider when that destination is managed.
+
+        :param str old_prefix: the prefix rendered before
+        :param old_backend: the ``cloud.backup.backend`` it was on, possibly
+            empty (deleted since)
+        :param str prefix: the prefix rendered now
+        """
+        self.ensure_one()
+        until = fields.Datetime.now() + timedelta(days=self._pitr_window_days())
+        where = old_backend.name if old_backend else "a destination since deleted"
+        managed = bool(old_backend and old_backend.sudo().managed_reservation_id)
+        self.env["cloud.alert"].sudo().raise_alert(
+            ALERT_PREFIX_CHANGED,
+            f"The continuous recovery archive of '{self.name}' now goes to "
+            f"{prefix}; what it archived before stays at {old_prefix} on "
+            f"'{where}', and nothing empties it. A restore to a moment "
+            f"before the change may need it until "
+            f"{fields.Datetime.to_string(until)} UTC; from then on, empty "
+            "that prefix by hand (RB-23 §4), then resolve this alert.",
+            level="warning", instance=self, key=old_prefix,
+            audience="provider" if managed else "fleet",
+        )
+
+    def _pitr_purge_target(self):
+        """Where the archive of an instance switched off is.
+
+        The prefix and destination last rendered (``_pitr_record_rendered``):
+        what its server archived to. One rendered before they were kept
+        falls back to the computed prefix on the destination it has now.
+
+        :return: ``(backend, prefix)``; *prefix* is ``""`` with no S3
+            destination to name it
+        :rtype: tuple
+        """
+        self.ensure_one()
+        if self.pitr_rendered_prefix:
+            return (
+                self.pitr_rendered_backend_id or self.effective_backup_backend,
+                self.pitr_rendered_prefix,
+            )
+        backend = self.effective_backup_backend
+        if not (backend and backend.backend_type == "s3" and backend.s3_bucket):
+            return backend, ""
+        return backend, self._pitr_prefix_base()
+
+    def _pitr_schedule_purge(self, off_at=None):
+        """Fix the day the archive of an instance switched off is emptied.
+
+        The moment it stopped archiving plus the backup window it has
+        then: fixed now, never recalculated, as a plan that lowers the
+        retention also switches it off. Only for an instance with an
+        archive (a cluster recorded, or a prefix rendered); a date already
+        fixed is kept.
+
+        :param datetime off_at: when it stopped archiving (now by default)
+        """
+        self.ensure_one()
+        if self.pitr_purge_at or not (
+            self.pitr_cluster_id or self.pitr_rendered_prefix
+        ):
+            return
+        off_at = off_at or fields.Datetime.now()
+        self.sudo().write({
+            "pitr_off_at": off_at,
+            "pitr_purge_at": off_at + timedelta(days=self._pitr_window_days()),
+        })
+
+    def _pitr_cancel_purge(self):
+        """Keep the archive: the instance is to archive again.
+
+        Clears the purge date and cancels a ``pitr_purge`` still waiting
+        in the queue. One already running goes on: its cutoff keeps it to
+        what was archived before the switch off, and it leaves the record
+        alone (``_pitr_purge_pending``).
+        """
+        self.ensure_one()
+        if not (self.pitr_off_at or self.pitr_purge_at):
+            return
+        self.sudo().write({"pitr_off_at": False, "pitr_purge_at": False})
+        waiting = self._pitr_jobs_in_flight(("pitr_purge",)).filtered(
+            lambda job: job.state == "queued",
+        )
+        if waiting:
+            self.env["cloud.job"].sudo()._cancel_queued(waiting, _(
+                "Cancelled: continuous recovery is switched on again, and "
+                "its archive is kept.",
+            ))
+        self.env["cloud.alert"].sudo().resolve_alert(
+            ALERT_PURGE_FAILED, instance=self,
+        )
+
+    def _pitr_purge_pending(self, before=None):
+        """Whether the archive is still to be emptied as switched off.
+
+        Not archiving, nor wanted to, with a purge date; with *before*,
+        switched off at that moment, the cutoff a purge was queued with.
+
+        :param str before: ``pitr_off_at`` as a string, or None
+        :rtype: bool
+        """
+        self.ensure_one()
+        if not (self.pitr_purge_at and self.pitr_off_at):
+            return False
+        if (self.pitr_state or "off") != "off" or self._pitr_active():
+            return False
+        return before is None or fields.Datetime.to_string(self.pitr_off_at) == before
+
+    def _pitr_forget_archive(self):
+        """The archive of an instance switched off is empty: forget it.
+
+        Its clusters, base copies and restores, the purge date and the
+        prefix it was rendered at. With no cluster left, no rebuild
+        writes ``pitr.env`` again (``_pitr_writes_env``).
+        """
+        self.ensure_one()
+        self.sudo().write({
+            "pitr_cluster_id": False, "pitr_previous_clusters": False,
+            "pitr_timelines": False, "pitr_oldest_base_at": False,
+            "pitr_last_base_at": False, "pitr_off_at": False,
+            "pitr_purge_at": False, "pitr_rendered_prefix": False,
+            "pitr_rendered_backend_id": False,
+        })
+
+    def _pitr_last_switched_off(self):
+        """When the instance last stopped archiving, as its jobs say.
+
+        The end of the last ``pitr_disable`` that ended well, unless a
+        ``pitr_enable`` was asked for after it.
+
+        :return: a naive UTC datetime, or None when they do not say
+        """
+        self.ensure_one()
+        Job = self.env["cloud.job"].sudo()
+        off = Job.search([
+            ("instance_id", "=", self.id), ("state", "=", "done"),
+            ("job_type_id.code", "=", "pitr_disable"),
+            ("date_done", "!=", False),
+        ], order="date_done desc", limit=1)
+        if not off or Job.search_count([
+            ("instance_id", "=", self.id),
+            ("job_type_id.code", "=", "pitr_enable"),
+            ("create_date", ">", off.date_done),
+        ]):
+            return None
+        return off.date_done
+
+    @api.model
+    def _pitr_schedule_leftover_purges(self, from_jobs=False):
+        """Fix the purge date of instances switched off without one.
+
+        Switched off before the purge existed, or without a ``pitr_disable``
+        (archiving had already stopped): not archiving, not wanted to,
+        with a cluster recorded. Not a stack configured outside the panel
+        (its runbook), nor an archived instance (its archive goes with the
+        record, ``_archived_copy_extra_prefixes``).
+
+        :param bool from_jobs: date it from the last switch off its jobs
+            record (``_pitr_last_switched_off``), the update's way; else,
+            and when they record none, from now
+        :return: how many got a date
+        :rtype: int
+        """
+        found = self.sudo().search([
+            ("pitr_cluster_id", "!=", False), ("pitr_purge_at", "=", False),
+            ("pitr_stack_external", "=", False),
+            ("pitr_state", "in", (False, "off")),
+        ])
+        scheduled = 0
+        for inst in found:
+            if inst._pitr_active():
+                continue
+            inst._pitr_schedule_purge(
+                inst._pitr_last_switched_off() if from_jobs else None,
+            )
+            scheduled += 1
+        return scheduled
+
+    @api.model
+    def _pitr_queue_due_purges(self):
+        """Queue the purge of every archive whose date has come.
+
+        Instances switched off (``_pitr_purge_pending``), deployed on a
+        server, not moving, not a stack configured outside the panel; not
+        beside another job of this module, nor within a day of a purge
+        that failed. The cutoff goes with the job, which empties nothing
+        if it is no longer the instance's when it starts. One instance that
+        fails does not stop the others.
+
+        :return: how many got a purge
+        :rtype: int
+        """
+        Job = self.env["cloud.job"].sudo()
+        queued = 0
+        for inst in self.sudo().search([
+            ("pitr_purge_at", "<=", fields.Datetime.now()),
+            ("deployed", "=", True), ("host_id", "!=", False),
+            ("move_origin_host_id", "=", False),
+            ("pitr_stack_external", "=", False),
+        ] + self._periodic_maintenance_domain()):
+            try:
+                with self.env.cr.savepoint():
+                    if not inst._pitr_purge_pending() \
+                            or inst._pitr_job_in_flight(PITR_JOBS) \
+                            or inst._pitr_failed_lately("pitr_purge"):
+                        continue
+                    Job.enqueue(inst.host_id.id, inst.id, "pitr_purge", payload={
+                        "before": fields.Datetime.to_string(inst.pitr_off_at),
+                    })
+                    queued += 1
+            except Exception as exc:  # noqa: BLE001 — one must not stop all
+                _logger.warning(
+                    "Continuous recovery purge skipped %s: %s", inst.name, exc,
+                )
+        return queued
 
     # ── Actions ─────────────────────────────────────────────────────────
 
@@ -1015,7 +1313,9 @@ class CloudInstance(models.Model):
 
         The rebuild renders the agent and the archive command into the
         stack; ``pitr_enable`` then installs wal-g, turns archiving on
-        (one restart of the database) and takes the first base copy.
+        (one restart of the database) and takes the first base copy. An
+        archive switched off and not emptied yet is kept
+        (``_pitr_cancel_purge``).
 
         :param str objective: optional new objective (minutes)
         :return: the first job's id
@@ -1036,6 +1336,7 @@ class CloudInstance(models.Model):
             raise UserError(_("Unknown recovery objective: %s", objective))
         self._pitr_refuse_name_taken()
         self._pitr_ensure_key()
+        self._pitr_cancel_purge()
         vals = {"pitr_enabled": True, "pitr_state": "enabling"}
         if objective:
             vals["pitr_objective"] = str(objective)
@@ -1085,7 +1386,9 @@ class CloudInstance(models.Model):
     def action_pitr_disable(self):
         """Switch continuous recovery off: stop archiving, then rebuild.
 
-        What is in the bucket stays until the instance is deleted.
+        What is in the bucket stays for the backup window the instance
+        has when archiving stops, then ``pitr_purge`` empties it
+        (``_pitr_schedule_purge``, at the end of ``pitr_disable``).
 
         :return: the first job's id
         """
@@ -1283,7 +1586,10 @@ class CloudInstance(models.Model):
         is the only place the daily copy is queued, and a reading queued
         here would hold it back, as no instance gets a second job of
         this module while one is in flight. One instance that fails
-        does not stop the others: each runs in its own savepoint.
+        does not stop the others: each runs in its own savepoint. Then
+        the archives of instances switched off: a purge date for those
+        without one (``_pitr_schedule_leftover_purges``), the purge for
+        those whose date has come (``_pitr_queue_due_purges``).
 
         :return: how many instances got a job
         :rtype: int
@@ -1311,4 +1617,5 @@ class CloudInstance(models.Model):
                 _logger.warning(
                     "Continuous recovery watch skipped %s: %s", inst.name, exc,
                 )
-        return queued
+        self._pitr_schedule_leftover_purges()
+        return queued + self._pitr_queue_due_purges()

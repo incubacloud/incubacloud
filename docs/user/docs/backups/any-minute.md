@@ -75,7 +75,8 @@ once; from then on it archives. The first base copy takes a few minutes,
 and the card says *Switching on…* until it is done.
 
 **Switch off** stops archiving and lets the archive expire with the backup
-retention. The nightly backups go on as before.
+retention: it is kept for the backup window, then emptied. Switched on
+again before then, it is kept. The nightly backups go on as before.
 
 ## See also
 

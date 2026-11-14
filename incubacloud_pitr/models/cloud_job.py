@@ -14,13 +14,15 @@ class CloudJob(models.Model):
 
     @api.model
     def _get_job_type_min_group(self):
-        """Managers switch it, restore with it; the watch queues the rest."""
+        """Managers switch it, restore with it; the watch queues the rest,
+        the purge of an archive switched off included."""
         return super()._get_job_type_min_group() | {
             "pitr_enable": "group_cloud_manager",
             "pitr_disable": "group_cloud_manager",
             "pitr_restore": "group_cloud_manager",
             "pitr_status": "group_cloud_manager",
             "pitr_base_backup": "group_cloud_manager",
+            "pitr_purge": "group_cloud_manager",
         }
 
     def _get_health_blocking_job_types(self):

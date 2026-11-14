@@ -132,6 +132,16 @@ msgid "Cancel"
 msgstr "Cancelar"
 
 #. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"Cancelled: continuous recovery is switched on again, and its archive is "
+"kept."
+msgstr ""
+"Cancelado: la recuperación continua se vuelve a activar y su archivo se "
+"conserva."
+
+#. module: incubacloud_pitr
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Checked"
@@ -246,6 +256,23 @@ msgstr ""
 "Cada restauración a un momento inicia una nueva línea temporal del clúster: "
 "[{'job', 'cluster', 'timeline', 'since', 'target'}]. Una restauración "
 "posterior las sigue para elegir su copia base."
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_purge
+msgid ""
+"Empties the continuous recovery archive of an instance switched off once its"
+" backup window has passed, and removes the recovery credentials from its "
+"server. Only what was archived before it was switched off."
+msgstr ""
+"Vacía el archivo de recuperación continua de una instancia con la "
+"recuperación desactivada cuando ha pasado su ventana de backups, y elimina "
+"las credenciales de recuperación de su servidor. Solo lo archivado antes de "
+"desactivarla."
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_purge
+msgid "Empty a Switched-Off Recovery Archive"
+msgstr "Vaciar un archivo de recuperación desactivado"
 
 #. module: incubacloud_pitr
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_key
@@ -393,6 +420,11 @@ msgid "Recoverable From"
 msgstr "Recuperable desde"
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_purge_at
+msgid "Recovery Archive Purge"
+msgstr "Purga del archivo de recuperación"
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_key
 msgid "Recovery Encryption Key"
 msgstr "Clave de cifrado de la recuperación"
@@ -411,6 +443,21 @@ msgstr "Objetivo de recuperación"
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_state
 msgid "Recovery State"
 msgstr "Estado de la recuperación"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_off_at
+msgid "Recovery Switched Off"
+msgstr "Recuperación desactivada el"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_rendered_backend_id
+msgid "Rendered Recovery Destination"
+msgstr "Destino de recuperación aplicado"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_rendered_prefix
+msgid "Rendered Recovery Prefix"
+msgstr "Prefijo de recuperación aplicado"
 
 #. module: incubacloud_pitr
 #. odoo-javascript
@@ -530,6 +577,11 @@ msgstr ""
 "es más antiguo que la ventana de backups."
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_rendered_backend_id
+msgid "The backup destination of the rendered recovery prefix."
+msgstr "El destino de backups del prefijo de recuperación aplicado."
+
+#. module: incubacloud_pitr
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid ""
@@ -563,6 +615,17 @@ msgstr ""
 "los ficheros nuevos."
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_rendered_prefix
+msgid ""
+"The prefix the instance's server was last given to archive to "
+"(s3://bucket/path), kept by every rebuild that writes the recovery "
+"credentials."
+msgstr ""
+"El último prefijo al que se indicó al servidor de la instancia que archivara"
+" (s3://bucket/ruta), guardado en cada reconstrucción que escribe las "
+"credenciales de recuperación."
+
+#. module: incubacloud_pitr
 #. odoo-python
 #: code:addons/incubacloud_pitr/models/cloud_instance.py:0
 msgid ""
@@ -592,12 +655,13 @@ msgstr "Horas en su hora local"
 #: model:cloud.job.type,description:incubacloud_pitr.pitr_disable
 msgid ""
 "Turns database archiving off (one restart of the database) and stops the "
-"filestore copy. The archive stays in the bucket until the instance is "
-"deleted."
+"filestore copy. The archive stays in the bucket for the backup window, then "
+"it is emptied; switching on again before then keeps it."
 msgstr ""
 "Desactiva el archivado de la base de datos (un reinicio de la base de datos)"
-" y detiene la copia del filestore. El archivo se queda en el bucket hasta "
-"que se elimine la instancia."
+" y detiene la copia del filestore. El archivo se queda en el bucket durante "
+"la ventana de backups y después se vacía; si se vuelve a activar antes, se "
+"conserva."
 
 #. module: incubacloud_pitr
 #. odoo-javascript
@@ -616,6 +680,26 @@ msgstr "Escriba el nombre de la instancia para confirmar la restauración."
 #: code:addons/incubacloud_pitr/models/cloud_instance.py:0
 msgid "Unknown recovery objective: %s"
 msgstr "Objetivo de recuperación desconocido: %s"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_purge_at
+msgid ""
+"When the archive of an instance switched off is emptied: the moment it was "
+"switched off plus the backup window it had then. Switching it on again "
+"before then keeps the archive."
+msgstr ""
+"Cuándo se vacía el archivo de una instancia con la recuperación desactivada:"
+" el momento en que se desactivó más la ventana de backups que tenía "
+"entonces. Si se vuelve a activar antes, el archivo se conserva."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_off_at
+msgid ""
+"When the instance stopped archiving with an archive in the bucket. What was "
+"archived before it is emptied on the purge date."
+msgstr ""
+"Cuándo dejó de archivar la instancia con un archivo en el bucket. Lo "
+"archivado antes de ese momento se vacía en la fecha de purga."
 
 #. module: incubacloud_pitr
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_archived_prefix

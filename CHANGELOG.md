@@ -51,13 +51,17 @@ instance's, a host's, a project's and a backup destination's page save
 with Settings' save bar. Switching a notification channel off deletes its
 bot token or signing secret. Deleting an archived instance for good
 empties its continuous recovery archive too, and a delete that cannot
-empty it says so with an alert.
+empty it says so with an alert. Switching continuous recovery off keeps
+the archive for the backup window, then empties it.
 
-The update adds one column, `pitr_archived_prefix` on instances
-(`incubacloud_pitr` 1.0.15 comes with it). Its one data migration, 1.0.229's
-post-migrate, deletes the Telegram bot tokens saved without a chat ID and
-the webhook secrets left without a URL; the rest is the panel's assets
-and the Spanish catalogue.
+The update adds five columns on instances, `pitr_archived_prefix`,
+`pitr_off_at`, `pitr_purge_at`, `pitr_rendered_prefix` and
+`pitr_rendered_backend_id` (`incubacloud_pitr` 1.0.16 comes with them).
+Its data migrations: 1.0.229's post-migrate deletes the Telegram bot
+tokens saved without a chat ID and the webhook secrets left without a
+URL, and `incubacloud_pitr` 1.0.16's end-migrate records where each
+instance archives and dates the purge of the archives switched off
+before it. The rest is the panel's assets and the Spanish catalogue.
 
 ### Changed
 
@@ -385,6 +389,40 @@ and the Spanish catalogue.
   says the retention expires an old archive after a change of backend:
   nothing empties the old prefix then, nor after a change of the
   project's folder.
+- **Switching continuous recovery off empties the archive once the backup
+  window passed.** Switched off, the archive stayed in the bucket for as
+  long as the instance lived, past the retention the panel states. Now
+  `pitr_disable`, once it ends well, fixes when archiving stopped
+  (`pitr_off_at`) and when the archive goes (`pitr_purge_at`: that moment
+  plus the backup window it has then, never recalculated, since a plan
+  that lowers the retention switches it off too). Once the date came, the
+  watch queues `pitr_purge` (*Empty a Switched-Off Recovery Archive*), a
+  visible job that waits its turn in the instance's queue. It does not
+  depend on the host's `pitr.env`: it uploads an environment of its own,
+  0600 in its directory, with the destination's credentials, the prefix
+  last rendered and `PURGE_BEFORE` = `pitr_off_at`, and runs core's
+  `backup_purge_archived.sh`; then it removes `.docker/pitr.env` and the
+  panel forgets the clusters, base copies and dates. Switching on again
+  before the date, from the card or with a plan that has it, clears the
+  dates and cancels a purge still waiting; one already running is held to
+  its cutoff and leaves the record, and one that starts after its cutoff
+  stopped being the instance's empties nothing. A run again finds nothing
+  left before the cutoff and goes on; a failure raises `pitr_purge_failed`
+  and is tried again a day later. Not for a stack configured outside the
+  panel, nor an archived instance, whose archive goes with its record.
+  The 1.0.16 end-migrate dates the archives switched off before it, from
+  their last `pitr_disable` (unless a switch on was asked for after it) or
+  from the update, and the watch dates any left without one (RB-23 §6).
+- **A rebuild that moves the recovery archive says so.** A change of
+  backend, of the project's folder or of the bucket started the archive
+  at a new prefix and left the old one where it was, unannounced. Every
+  rebuild that writes `pitr.env` now keeps the prefix and destination it
+  rendered (`pitr_rendered_prefix`, `pitr_rendered_backend_id`), which the
+  purge above empties; one that renders another raises
+  `pitr_prefix_changed` (warning) on the instance, keyed by the old
+  prefix, with the destination it is on and the day from which no restore
+  needs it, to empty it by hand (RB-23 §4). The old prefix is not emptied
+  automatically yet.
 - **An instance name ending in `-pitr` is refused.** `x`'s continuous
   recovery archive is kept at `<folder>/x-pitr`, beside the backups: an
   instance `x-pitr` in the same folder keeps its duplicity chain at that
