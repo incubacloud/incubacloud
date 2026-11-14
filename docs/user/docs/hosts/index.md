@@ -31,8 +31,9 @@ the platform are billed on your IncubaCloud subscription invoice.
 ## Hosts behind a CDN
 
 A host can be reached by its visitors directly, or through a CDN or reverse
-proxy that answers for it. The **General** tab has a switch for this, and it
-decides three things:
+proxy that answers for it. The **General** tab has a switch for this,
+*Reached through a CDN*, under **Network edge → Advanced**, and it decides
+three things:
 
 - **Who counts as a visitor.** With the switch on, the rate limit counts the
   client the CDN forwards; with it off, the address that opened the connection.

@@ -181,8 +181,8 @@ Hardening applies a security recipe on the host:
 - a non-root operator user when you connect as `root`, and SSH on a rotated
   port, key-only, with root login disabled at the end;
 - an nftables firewall that accepts only SSH, HTTP and HTTPS, with a cap of
-  new connections per visitor's address (50 a second by default, set on the
-  host's Advanced tab);
+  new connections per visitor's address (50 a second by default, set in the
+  host's **General → Network edge → HTTP connection-rate cap**);
 - fail2ban: an address that fails SSH three times, or the Odoo login form ten
   times in ten minutes, is banned for an hour (the login ban is off on a host
   behind a CDN);
