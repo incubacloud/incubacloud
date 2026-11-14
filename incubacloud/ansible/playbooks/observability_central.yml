@@ -89,7 +89,10 @@
     ic_purge_grafana: true
     ic_grafana_image: "grafana/grafana:11.2.0"
     # The account boundary. vmauth is VictoriaMetrics' own auth proxy;
-    # pinned to the same release train as the backend.
+    # pinned to the same release train as the backend. The read
+    # credential's rotation relies on it admitting two passwords for one
+    # user (measured on this release, 14-nov-2026): try that again before
+    # moving to another.
     ic_vmauth_image: "victoriametrics/vmauth:v1.102.0"
     ic_loki_image: "grafana/loki:2.9.8"
     # Anything that is not a security log: nothing new arrives since the

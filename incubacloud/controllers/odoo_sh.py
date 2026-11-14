@@ -12,9 +12,12 @@ Only the platform's proxy keeps others out, and only on Odoo.sh: on any
 other installation this path is as public as the rest. So the route
 answers only where Odoo.sh's production says it runs (``ODOO_STAGE`` is
 ``production``), and 404 everywhere else, its staging and development
-branches included. Even there it changes nothing: it raises an alert
-(``cloud.host._panel_address_changed``), which is all a forged request
-could get.
+branches included. Even there it changes no server: it raises an alert
+(``cloud.host._panel_address_changed``), and when that alert closes the
+servers forget the address it names as the old one among the panel's own
+(``_forget_panel_source``). A forged request can get that much: an
+address forgotten that the panel still uses, until its next job on those
+servers learns it again. Never an address learned.
 """
 import logging
 import os
