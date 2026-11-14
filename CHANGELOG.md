@@ -99,8 +99,13 @@ panel's assets and the Spanish catalogue change.
   Metrics; Dependencies, Build, Resources, Database, Whitelist and Audit
   Logs sit under «More ▾», which takes the open tab's name while it is one
   of its own and shows a dot when one of them has a change not saved or
-  a field to fix, as every tab does. A production shows Backups before
-  its first deploy, to choose the destination. Each tab's fields sit in
+  a field to fix, as every tab does; the tags mark General and the pip
+  and apt dependencies Dependencies, each told against what was loaded
+  or last saved, as the save bar counts them. «More» is a tab of the bar
+  to a screen reader, selected while the open tab is one of its own and
+  naming its list in `aria-controls` while it is open. A production shows
+  Backups before its first deploy, to choose the destination, and lists
+  its backups there once that deploy ends with the tab open. Each tab's fields sit in
   group cards on the form standard's 12-column grid, no wider than
   920 px, and on a phone each domain is a card. The new-instance form
   has General, Database, Networking, Email and Backups (production),

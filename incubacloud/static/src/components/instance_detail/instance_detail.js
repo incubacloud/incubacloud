@@ -199,14 +199,17 @@ function applyPipResolutions(text, choices) {
 }
 
 /**
- * The tab of the form that holds each field, for the marks on the tab bar.
- * Fields no tab edits (the environment, the series, the proxy) are left out.
+ * The tab of the form that holds each field, for the marks on the tab bar,
+ * with the tags and dependencies the page keeps beside the form: the keys
+ * of ``_editedValues()``, which the save bar counts. Fields no tab edits
+ * (the environment, the series, the proxy) are left out.
  */
 export const FIELD_TABS = {
   name: "general",
   host_id: "general",
   odoo_admin_password: "general",
   autopurge_exempt: "general",
+  selectedTags: "general",
   postgres_version: "database",
   postgres_username: "database",
   postgres_password: "database",
@@ -222,6 +225,8 @@ export const FIELD_TABS = {
   smtp_relay_oauth_client_id: "email",
   smtp_relay_oauth_client_secret: "email",
   repos: "repos",
+  pipDeps: "deps",
+  aptDeps: "deps",
   odoo_conf: "config",
   backup_backend_id: "backups",
   auto_rebuild: "build",
@@ -606,10 +611,19 @@ export class InstanceDetail extends JobsMixin(
       const inst = await rpc("/cloud/get_instance", {
         instance_id: this.props.instance_id,
       });
+      const firstDeploy = !this.state.inst?.deployed && inst.deployed;
       this.state.inst = inst;
       this.state.activeJobs = inst.activeJobs || [];
       this.state.recentJobs = inst.recentJobs || [];
       this.state.jobsTotal = inst.jobsTotal || 0;
+      // A production's Backups tab, open before its first deploy, only
+      // offered the destination: once deployed it has a list to show.
+      if (
+        firstDeploy && this.state.tab === "backups"
+        && !this.state.backupsData && !this.state.backupsLoading
+      ) {
+        this._loadBackups();
+      }
       // Patch the project store so the sidebar reflects this
       // instance's fresh status without waiting for its own bus
       // refresh tick.
@@ -903,16 +917,18 @@ export class InstanceDetail extends JobsMixin(
 
   /**
    * The tabs holding a change not saved yet or a field to fix, by the
-   * field each one holds (``FIELD_TABS``).
+   * field each one holds (``FIELD_TABS``). A change is told against what
+   * was loaded or last saved, as the save bar counts it.
    *
    * @returns {string[]} their keys
    */
   get markedTabs() {
     const saved = this._savedForm ? JSON.parse(this._savedForm) : null;
+    const edited = this._editedValues();
     const marked = new Set();
     for (const [field, tab] of Object.entries(FIELD_TABS)) {
       const changed = saved
-        && JSON.stringify(this.state.form[field]) !== JSON.stringify(saved[field]);
+        && JSON.stringify(edited[field]) !== JSON.stringify(saved[field]);
       if (changed || this.validator.fieldError(field)) {
         marked.add(tab);
       }

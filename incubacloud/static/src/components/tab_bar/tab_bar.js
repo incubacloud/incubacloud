@@ -7,6 +7,8 @@ import {
 } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 
+let nextId = 0;
+
 /**
  * A record's tab bar, with the tabs that do not fit under «More ▾».
  *
@@ -19,7 +21,9 @@ import { _t } from "@web/core/l10n/translation";
  *
  * The list is a sibling of the bar, not inside it: the bar scrolls on
  * its own (``overflow-x``) and would clip it. Its entries keep the class
- * ``rl-tab`` and the role ``tab``, as the bar's own.
+ * ``rl-tab`` and the role ``tab``, as the bar's own. «More» is a tab of
+ * the bar too, selected while the open tab is in the list, and names the
+ * list in ``aria-controls`` while it is open.
  */
 export class TabBar extends Component {
     static template = "incubacloud.TabBar";
@@ -62,11 +66,14 @@ export class TabBar extends Component {
     }
 
     /**
-     * Set up the open state and refs, the close on a press outside or a
-     * resize, and the focus on an entry when the list opens.
+     * Set up the open state, the list's id and the refs, the close on a
+     * press outside or a resize, and the focus on an entry when the list
+     * opens.
      */
     setup() {
         this.state = useState({ open: false, menuStyle: "" });
+        // The list's id, which «More» names in aria-controls while it is open.
+        this.menuId = `ic-tabbar-menu-${++nextId}`;
         this.root = useRef("root");
         this.moreButton = useRef("more");
         this.menu = useRef("menu");

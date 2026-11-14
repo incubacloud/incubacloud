@@ -962,6 +962,37 @@ describe("InstanceDetail — the backups tab is for who manages backups", () => 
         expect(page(inst, true).canShowBackups).toBe(true);
         expect(page(inst, false).canShowBackups).toBe(false);
     });
+
+    test("the open tab lists the backups once the first deploy ends, and only then", async () => {
+        const routes = [];
+        let deployed = false;
+        patchWithCleanup(rpc, {
+            _rpc: (route) => {
+                routes.push(route);
+                if (route === "/cloud/list_backups") {
+                    return Promise.resolve({ ok: true, result: { backups: [], total: 0 } });
+                }
+                return Promise.resolve({ id: 7, deployed, environment: "production" });
+            },
+        });
+        const comp = page({ deployed: false, environment: "production" }, true);
+        Object.assign(comp.state, {
+            tab: "backups", backupsData: null, backupsLoading: false, backupsOffset: 0,
+        });
+        comp.env.projectStore = null;
+        InstanceDetail.prototype.setTab.call(comp, "backups");
+        await InstanceDetail.prototype._silentRefresh.call(comp);
+        expect(routes).toEqual(["/cloud/get_instance"]);
+        deployed = true;
+        await InstanceDetail.prototype._silentRefresh.call(comp);
+        for (let i = 0; i < 5; i++) {
+            await Promise.resolve();
+        }
+        expect(routes).toEqual(["/cloud/get_instance", "/cloud/get_instance", "/cloud/list_backups"]);
+        expect(comp.state.backupsData).toEqual({ backups: [], total: 0 });
+        await InstanceDetail.prototype._silentRefresh.call(comp);
+        expect(routes.filter((r) => r === "/cloud/list_backups")).toHaveLength(1);
+    });
 });
 
 // ── Monitoring tab: Recent requests ─────────────────────────────────────────
